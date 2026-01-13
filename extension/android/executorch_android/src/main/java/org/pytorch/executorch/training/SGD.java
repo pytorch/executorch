@@ -8,8 +8,6 @@
 
 package org.pytorch.executorch.training;
 
-import com.facebook.jni.HybridData;
-import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.util.Map;
@@ -32,16 +30,17 @@ public class SGD {
     NativeLoader.loadLibrary("executorch");
   }
 
-  private final HybridData mHybridData;
+  private long mNativeHandle;
 
-  @DoNotStrip
-  private static native HybridData initHybrid(
+  private static native long initHybrid(
       Map<String, Tensor> namedParameters,
       double learningRate,
       double momentum,
       double dampening,
       double weightDecay,
       boolean nesterov);
+
+  private static native void nativeDestroy(long nativeHandle);
 
   private SGD(
       Map<String, Tensor> namedParameters,
@@ -50,7 +49,7 @@ public class SGD {
       double dampening,
       double weightDecay,
       boolean nesterov) {
-    mHybridData =
+    mNativeHandle =
         initHybrid(namedParameters, learningRate, momentum, dampening, weightDecay, nesterov);
   }
 
@@ -92,12 +91,23 @@ public class SGD {
    * @param namedGradients Map of parameter names to gradient tensors
    */
   public void step(Map<String, Tensor> namedGradients) {
-    if (!mHybridData.isValid()) {
+    if (mNativeHandle == 0) {
       throw new RuntimeException("Attempt to use a destroyed SGD optimizer");
     }
-    stepNative(namedGradients);
+    stepNative(mNativeHandle, namedGradients);
   }
 
-  @DoNotStrip
-  private native void stepNative(Map<String, Tensor> namedGradients);
+  private static native void stepNative(long nativeHandle, Map<String, Tensor> namedGradients);
+
+  @Override
+  protected void finalize() throws Throwable {
+    try {
+      if (mNativeHandle != 0) {
+        nativeDestroy(mNativeHandle);
+        mNativeHandle = 0;
+      }
+    } finally {
+      super.finalize();
+    }
+  }
 }
