@@ -19,6 +19,7 @@
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // Include SlimTensor headers for CUDA backend
@@ -398,7 +399,7 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         args.size())
 
-    // NOTE: ExecuTorch tensors are always on CPU/host memory
+    // NOTE: ExecuTorch tensors maybe on CPU or GPU due to the skip-copy optimization
     // We need to create GPU copies for CUDA kernel execution using SlimTensor
     std::vector<SlimTensor> gpu_input_tensors(n_inputs);
     std::vector<SlimTensor*> gpu_inputs(n_inputs);
@@ -489,35 +490,42 @@ class ET_EXPERIMENTAL CudaBackend final
     } else {
       // Skip-copy optimization: wrap GPU data as ETensor using from_blob
       // The caller is responsible for handling GPU data directly
-      for (size_t i = 0; i < n_outputs; i++) {
-        // Move output SlimTensors to cached_outputs for lifetime management
-        handle->cached_outputs.push_back(std::move(gpu_output_tensors[i]));
+      {
+        std::lock_guard<std::mutex> guard(cached_outputs_mutex_);
+        auto& cached_outputs = cached_outputs_[handle];
 
-        // Create an ETensor wrapper pointing to the GPU data
-        // The data stays on GPU and the caller handles it
-        SlimTensor& cached = handle->cached_outputs.back();
-        auto slim_sizes = cached.sizes();
-        auto slim_strides = cached.strides();
+        // Clear cached outputs for previous round
+        cached_outputs.clear();
+        for (size_t i = 0; i < n_outputs; i++) {
+          // Move output SlimTensors to cached_outputs for lifetime management
+          cached_outputs.push_back(std::move(gpu_output_tensors[i]));
 
-        std::vector<executorch::aten::SizesType> et_sizes(cached.dim());
-        std::vector<executorch::aten::StridesType> et_strides(cached.dim());
-        for (size_t d = 0; d < cached.dim(); d++) {
-          et_sizes[d] =
-              static_cast<executorch::aten::SizesType>(slim_sizes[d]);
-          et_strides[d] =
-              static_cast<executorch::aten::StridesType>(slim_strides[d]);
+          // Create an ETensor wrapper pointing to the GPU data
+          // The data stays on GPU and the caller handles it
+          SlimTensor& cached = cached_outputs.back();
+          auto slim_sizes = cached.sizes();
+          auto slim_strides = cached.strides();
+
+          std::vector<executorch::aten::SizesType> et_sizes(cached.dim());
+          std::vector<executorch::aten::StridesType> et_strides(cached.dim());
+          for (size_t d = 0; d < cached.dim(); d++) {
+            et_sizes[d] =
+                static_cast<executorch::aten::SizesType>(slim_sizes[d]);
+            et_strides[d] =
+                static_cast<executorch::aten::StridesType>(slim_strides[d]);
+          }
+
+          // Use tensor_ptr_maker to create a non-owning ETensor wrapper
+          // Note: This creates a view into the SlimTensor's GPU memory
+          auto tensor_ptr = executorch::extension::from_blob(
+              cached.data_ptr(),
+              std::move(et_sizes),
+              std::move(et_strides),
+              static_cast<executorch::aten::ScalarType>(cached.dtype()));
+
+          // Assign the wrapped tensor to the output EValue
+          args[i + n_inputs]->toTensor() = *tensor_ptr;
         }
-
-        // Use tensor_ptr_maker to create a non-owning ETensor wrapper
-        // Note: This creates a view into the SlimTensor's GPU memory
-        auto tensor_ptr = executorch::extension::from_blob(
-            cached.data_ptr(),
-            std::move(et_sizes),
-            std::move(et_strides),
-            static_cast<executorch::aten::ScalarType>(cached.dtype()));
-
-        // Assign the wrapped tensor to the output EValue
-        args[i + n_inputs]->toTensor() = *tensor_ptr;
       }
     }
 
@@ -575,6 +583,14 @@ class ET_EXPERIMENTAL CudaBackend final
  private:
   mutable std::mutex skip_copy_method_mutex_;
   std::string skip_copy_method_;
+
+  // Cached output tensors for skip-copy optimization.
+  // When copy-skip is enabled, output SlimTensors are cached here to keep
+  // GPU memory alive while the caller processes the results.
+  // Maps from AOTIDelegateHandle* to its cached outputs.
+  mutable std::mutex cached_outputs_mutex_;
+  mutable std::unordered_map<AOTIDelegateHandle*, std::vector<SlimTensor>>
+      cached_outputs_;
 };
 
 } // namespace executorch::backends::cuda

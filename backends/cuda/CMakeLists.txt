@@ -98,13 +98,16 @@ install(
 )
 
 # CUDA-specific AOTI shim symbols (dynamically linked)
+# Note: common_shims.h is header-only (all functions are inline)
 set(_aoti_cuda_shim_sources
     runtime/shims/memory.cpp runtime/shims/tensor_attribute.cpp
     runtime/guard.cpp runtime/shims/cuda_guard.cpp runtime/shims/int4mm.cu
-    ${EXECUTORCH_ROOT}/backends/aoti/common_shims.cpp
 )
 
 add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
+
+# Define CUDA_AVAILABLE to use SlimTensor in common_shims.h
+target_compile_definitions(aoti_cuda_shims PRIVATE CUDA_AVAILABLE=1)
 
 # Define export macros for shared library
 if(MSVC)
