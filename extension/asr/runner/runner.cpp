@@ -120,7 +120,7 @@ Error AsrRunner::load() {
       executorch::runtime::set_option("CudaBackend", backend_options.view());
   if (opt_err != ::executorch::runtime::Error::Ok) {
     ET_LOG(
-        Warning,
+        Error,
         "Failed to set CUDA backend options: %d",
         static_cast<int>(opt_err));
   }
@@ -236,10 +236,6 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
       static_cast<size_t>(encoder_output_tensor.size(0)),
       static_cast<size_t>(encoder_output_tensor.size(1)),
       static_cast<size_t>(encoder_output_tensor.size(2)));
-  ET_LOG(
-      Info,
-      "Encoder first value: %f",
-      static_cast<float>(encoder_output_tensor.mutable_data_ptr<float>()[0]));
 
   auto encoder_output_ptr = std::make_shared<::executorch::aten::Tensor>(
       std::move(encoder_output_tensor));

@@ -37,7 +37,7 @@ modules = {
 
 
 @common.parametrize("module", modules)
-def test_multiple_broacasts_model(module: NeedsMultipleBroadcastsModel):
+def test_broadcast_args_tosa_INT_multiple(module: NeedsMultipleBroadcastsModel):
     test_data = module.test_data
     ops_not_before_pass = [
         "executorch_exir_dialects_edge__ops_aten_repeat_default",

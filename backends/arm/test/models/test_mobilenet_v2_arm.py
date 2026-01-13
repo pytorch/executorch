@@ -151,7 +151,7 @@ def test_mv2_vgf_no_quant():
     pipeline.run()
 
 
-def test_mv2_partial_quant_tosa_INT_FP():
+def test_mv2_tosa_INT_FP_partial_quant():
     pipeline = TosaPipelineINT[input_t](
         mv2,
         model_inputs,

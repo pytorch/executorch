@@ -33,8 +33,8 @@ class FuseBatchNorm2dPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def __init__(self, exported_program: ExportedProgram):
-        super().__init__()
+    def __init__(self, exported_program: ExportedProgram, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     def get_bias_name(self, weight_node: Node, bias_node: Node | None) -> str:

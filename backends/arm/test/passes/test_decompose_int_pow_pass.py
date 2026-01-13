@@ -60,7 +60,7 @@ test_data: Dict[str, TestParam] = {
 
 
 @common.parametrize("data", test_data)
-def test_decompose_int_pow(data: TestParam) -> None:
+def test_decompose_int_pow_tosa_FP(data: TestParam) -> None:
     module_with_inputs, nbr_muls = data
     module = cast(torch.nn.Module, module_with_inputs)
     pipeline = PassPipeline[input_t](
