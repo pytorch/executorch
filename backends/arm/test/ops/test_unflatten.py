@@ -29,7 +29,10 @@ class Unflatten(torch.nn.Module):
         self.sizes = sizes
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.unflatten(x, self.dim, self.sizes)
+        unflatten_op = torch.unflatten(x, self.dim, self.sizes)
+        # Because we treat a single view as a no compute operation and therefore do not partition it,
+        # we want to provide a mul op to verify that it does indeed get partitioned when bundled with another op.
+        return unflatten_op * unflatten_op
 
     test_data: dict[str, test_data_t] = {
         "rand_3d_batch3": (lambda: (Unflatten(1, (-1, 2)), (torch.rand(3, 4, 4),))),
