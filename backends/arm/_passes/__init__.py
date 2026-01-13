@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -29,6 +29,7 @@ from .decompose_adaptive_avg_pool2d_pass import DecomposeAdaptiveAvgPool2dPass  
 from .decompose_add_sub_alpha_pass import DecomposeAddSubAlphaPass  # noqa
 from .decompose_addmm_pass import DecomposeAddmmPass  # noqa
 from .decompose_any_pass import DecomposeAnyPass  # noqa
+from .decompose_as_strided_copy_pass import DecomposeAsStridedCopyPass  # noqa
 from .decompose_asin_and_acos_pass import DecomposeAsinAndAcosPass  # noqa
 from .decompose_asinh_pass import DecomposeAsinhPass  # noqa
 from .decompose_atan_pass import DecomposeAtanPass  # noqa

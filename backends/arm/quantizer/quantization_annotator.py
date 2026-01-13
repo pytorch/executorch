@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -429,6 +429,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.unflatten.int,
     torch.ops.aten.index_select.default,
     torch.ops.aten.index.Tensor,
+    torch.ops.aten.as_strided_copy.default,
     # Neg operator flips the range, but keps the magnitude the same.
     # That is why we force it to use the same qparams and avoid
     # dequant -> neg -> requant chain.
