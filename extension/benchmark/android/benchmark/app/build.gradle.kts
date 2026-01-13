@@ -8,6 +8,14 @@
 
 plugins { id("com.android.application")
   id("org.jetbrains.kotlin.android")
+  id("com.diffplug.spotless") version "6.25.0"
+}
+
+spotless {
+  kotlin {
+    target("**/*.kt")
+    ktfmt()
+  }
 }
 
 android {
