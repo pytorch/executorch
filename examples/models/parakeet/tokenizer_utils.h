@@ -6,7 +6,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include <tokenizer.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 namespace parakeet::tokenizer_utils {
 
