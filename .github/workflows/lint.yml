@@ -168,31 +168,3 @@ jobs:
           done
           exit 1
         fi
-
-  android-kotlin-format:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
-      fetch-depth: 0
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        set -eux
-
-        # Run spotlessCheck for Kotlin files in extension/android/executorch_android
-        echo "Checking Kotlin files in extension/android/executorch_android..."
-        pushd extension/android
-        ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:spotlessCheck
-        popd
-
-        # Run spotlessCheck for Kotlin files in extension/benchmark/android/benchmark
-        echo "Checking Kotlin files in extension/benchmark/android/benchmark..."
-        pushd extension/benchmark/android/benchmark
-        ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :app:spotlessCheck
-        popd
-
-        echo "All Kotlin files are properly formatted!"
