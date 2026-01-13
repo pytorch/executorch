@@ -221,6 +221,9 @@ class TosaArg:
             case ts.DType.INT4:
                 if not tosa_spec.support_extension("int4"):
                     return False
+            case ts.DType.BF16:
+                if not tosa_spec.support_extension("bf16"):
+                    return False
 
         return True
 
@@ -289,5 +292,6 @@ class TosaArg:
         if hasattr(self, "number") and self.number is not None:
             attrs.append(f"number={self.number!r}")
         if hasattr(self, "multiple_output_names"):
-            attrs.append(f"names={self.multiple_output_names!r}")
+            if len(self.multiple_output_names) > 0:
+                attrs.append(f"names={self.multiple_output_names!r}")
         return f"{self.__class__.__name__}({', '.join(attrs)})"
