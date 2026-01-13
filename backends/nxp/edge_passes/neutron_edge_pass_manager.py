@@ -3,6 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from executorch.backends.nxp.edge_passes.convert_reshaping_nodes_to_view import (
+    ConvertReshapingNodesToViewPass,
+)
 from executorch.backends.nxp.edge_passes.move_auxiliary_operator_into_separate_qdq_cluster_pass import (
     MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass,
     MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass,
@@ -21,6 +24,7 @@ class NeutronEdgePassManager(PassManager):
             MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(),
             MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(),
             RemoveUselessAsStridedCopyNodes(),
+            ConvertReshapingNodesToViewPass(),
         ]
 
         super().__init__(
