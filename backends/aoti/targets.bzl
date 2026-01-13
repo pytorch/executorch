@@ -33,26 +33,22 @@ def define_common_targets():
         ],
     )
 
-    # AOTI common shims functionality
+    # AOTI common shims functionality (header-only library)
+    # The caller determines which tensor type is used by defining CUDA_AVAILABLE.
+    # - With CUDA_AVAILABLE=1: Uses SlimTensor
+    # - Without CUDA_AVAILABLE: Uses ETensor
     runtime.cxx_library(
         name = "common_shims",
-        srcs = [
-            "common_shims.cpp",
-        ],
         headers = [
             "common_shims.h",
             "export.h",
             "utils.h",
         ],
-        # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
-        link_whole = True,
-        supports_python_dlopen = True,
-        # Constructor needed for backend registration.
-        compiler_flags = ["-Wno-global-constructors"],
         visibility = ["PUBLIC"],
-        deps = [
+        exported_deps = [
             "//executorch/runtime/core:core",
             "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/backends/aoti/slim/core:slimtensor",
         ],
     )
 
@@ -84,23 +80,5 @@ def define_common_targets():
         exported_deps = [
             ":common_shims",
             ":delegate_handle",
-        ],
-    )
-
-    # SlimTensor-based common shims (header-only library)
-    # The caller determines which tensor type is used by defining CUDA_AVAILABLE.
-    # - With CUDA_AVAILABLE=1: Uses SlimTensor
-    # - Without CUDA_AVAILABLE: Uses ETensor
-    runtime.cxx_library(
-        name = "common_shims_slim",
-        headers = [
-            "common_shims_slim.h",
-            "export.h",
-        ],
-        visibility = ["@EXECUTORCH_CLIENTS"],
-        deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/backends/aoti/slim/core:slimtensor",
         ],
     )

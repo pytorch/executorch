@@ -11,6 +11,11 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <string>
+#include <vector>
+
+#ifdef CUDA_AVAILABLE
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#endif
 
 namespace executorch {
 namespace backends {
@@ -95,6 +100,13 @@ struct AOTIDelegateHandle {
   AOTInductorModelContainerGetNumOutputsFunc get_num_outputs;
   AOTInductorModelContainerRunFunc run;
   AOTInductorModelUpdateConstantsFromBlobFunc update_constants_from_blob;
+
+#ifdef CUDA_AVAILABLE
+  // Cached output tensors for skip-copy optimization.
+  // When copy-skip is enabled, output SlimTensors are cached here to keep
+  // GPU memory alive while the caller processes the results.
+  std::vector<slim::SlimTensor> cached_outputs;
+#endif
 };
 
 } // namespace aoti

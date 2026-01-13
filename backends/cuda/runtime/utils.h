@@ -31,6 +31,7 @@
   } while (0)
 
 // CUDA error checking macro (without return, for use in void functions)
+#ifndef ET_CUDA_CHECK
 #define ET_CUDA_CHECK(EXPR)                                         \
   do {                                                              \
     const cudaError_t err = EXPR;                                   \
@@ -45,6 +46,7 @@
         cudaGetErrorString(err));                                   \
     ET_CHECK_MSG(false, "CUDA error: %s", cudaGetErrorString(err)); \
   } while (0)
+#endif
 
 // Kernel launch check macro (with return)
 #define ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR() \
