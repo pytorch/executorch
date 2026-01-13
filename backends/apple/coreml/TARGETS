@@ -8,9 +8,7 @@ oncall("executorch")
 # TODO: this is a placeholder to support internal fbcode build. We should add the coreml backend target properly.
 runtime.python_library(
     name = "coreml",
-    visibility = [
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
 )
 
 runtime.python_library(
@@ -19,9 +17,7 @@ runtime.python_library(
         "compiler/*.py",
         "logging.py",
     ]),
-    visibility = [
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/pypi/coremltools:coremltools",
         ":executorchcoreml",
@@ -36,9 +32,7 @@ runtime.python_library(
         "partition/*.py",
         "logging.py",
     ]),
-    visibility = [
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/pypi/coremltools:coremltools",
         ":backend",
@@ -55,9 +49,7 @@ runtime.python_library(
     srcs = glob([
         "quantizer/*.py",
     ]),
-    visibility = [
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
 )
 
 runtime.python_library(
@@ -66,10 +58,7 @@ runtime.python_library(
         "recipes/__init__.py",
         "recipes/coreml_recipe_provider.py"
     ],
-    visibility = [
-        "@EXECUTORCH_CLIENTS",
-        "//executorch/export/...",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/pypi/coremltools:coremltools",
         ":coreml_recipe_types",
@@ -91,10 +80,7 @@ runtime.python_library(
     srcs = [
         "recipes/coreml_recipe_types.py",
     ],
-    visibility = [
-        "@EXECUTORCH_CLIENTS",
-        "//executorch/export/...",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/export:recipe",
     ],
@@ -124,10 +110,7 @@ runtime.cxx_python_extension(
     types = [
         "executorchcoreml.pyi",
     ],
-    visibility = [
-        "//executorch/examples/apple/coreml/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/nlohmann-json:nlohmann-json",
         "fbsource//third-party/pybind11:pybind11",

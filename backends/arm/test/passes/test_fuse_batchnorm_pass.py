@@ -149,7 +149,7 @@ modules: Dict[str, ModuleWithBatchNormAttrs] = {
 
 
 @common.parametrize("module", modules)
-def test_fuse_batchnorm_tosa_FP(module: ModuleWithBatchNormAttrs) -> None:
+def test_fuse_batch_norm2d_tosa_FP(module: ModuleWithBatchNormAttrs) -> None:
     """Test various cases where the batchnorm should either be fused with a previous
     conv, or converted to a new conv."""
     nn_module = cast(torch.nn.Module, module)

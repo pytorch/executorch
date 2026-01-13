@@ -62,7 +62,7 @@ class ConvBNRelu(torch.nn.Module):
         return (torch.randn(1, 3, 8, 8),)
 
 
-def test_conv_relu_fusing_8a8w_affine():
+def test_conv_relu_fusing_8a8w_tosa_INT_affine():
     tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
     quantizer = TOSAQuantizer(tosa_spec)
     quant_config = get_symmetric_quantization_config()
@@ -80,7 +80,7 @@ def test_conv_relu_fusing_8a8w_affine():
     pipeline.run()
 
 
-def test_conv_relu_fusing_8a8w_symmetric():
+def test_conv_relu_fusing_8a8w_tosa_INT_symmetric():
     tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
     quantizer = TOSAQuantizer(tosa_spec)
     symmetric_quant_config = get_symmetric_a8w8_quantization_config()
@@ -99,7 +99,7 @@ def test_conv_relu_fusing_8a8w_symmetric():
     pipeline.run()
 
 
-def test_conv_relu_fusing_16a8w_symmetric():
+def test_conv_relu_fusing_16a8w_tosa_INT_symmetric():
     tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT+int16")
     quantizer = TOSAQuantizer(tosa_spec)
     quant_config = get_symmetric_a16w8_quantization_config()

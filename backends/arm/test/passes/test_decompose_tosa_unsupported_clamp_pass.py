@@ -23,7 +23,7 @@ class ClampInt32(torch.nn.Module):
 
 
 @common.parametrize("test_data", ClampInt32.test_data)
-def test_decompose_int32_clamp_pass(test_data: input_t):
+def test_decompose_tosa_unsupported_clamp_tosa_FP_int32(test_data: input_t):
     module = ClampInt32()
     pipeline = PassPipeline[input_t](
         module,
@@ -52,7 +52,7 @@ class ClampTensorInt32(torch.nn.Module):
 
 
 @common.parametrize("test_data", ClampTensorInt32.test_data)
-def test_decompose_int32_clamp_tensor_pass(test_data: input_t):
+def test_decompose_tosa_unsupported_clamp_tosa_FP_int32_tensor(test_data: input_t):
     module = ClampTensorInt32()
     pipeline = PassPipeline[input_t](
         module,

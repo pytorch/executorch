@@ -167,7 +167,7 @@ def test_amax_vgf_quant(test_data: Amax.input_t):
 
 @common.parametrize("test_data", Max.test_data)
 @common.SkipIfNoModelConverter
-def test_max_dim_to_amax_vgf_no_quant(test_data: Max.input_t):
+def test_max_dim_vgf_no_quant_to_amax(test_data: Max.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Max.input_t](
         Max(dim),
@@ -180,7 +180,7 @@ def test_max_dim_to_amax_vgf_no_quant(test_data: Max.input_t):
 
 @common.parametrize("test_data", Max.test_data)
 @common.SkipIfNoModelConverter
-def test_max_dim_to_amax_vgf_quant(test_data: Max.input_t):
+def test_max_dim_vgf_quant_to_amax(test_data: Max.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Max.input_t](
         Max(dim),

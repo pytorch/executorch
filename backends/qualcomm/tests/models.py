@@ -828,6 +828,17 @@ class ConvTranspose3dSingle(torch.nn.Module):
         return self.conv_transpose(x)
 
 
+class Copy(torch.nn.Module):
+    def __init__(self, x):
+        super().__init__()
+        self.x = x
+
+    def forward(self, y):
+        # +1 to workaround that copy has no quant config
+        x = torch.ops.aten.copy.default(self.x, y + 1)
+        return x + 1
+
+
 class Cos(torch.nn.Module):
     def __init__(self):
         super().__init__()
