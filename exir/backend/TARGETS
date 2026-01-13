@@ -16,11 +16,7 @@ runtime.python_library(
     srcs = [
         "backend_api.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "//executorch/test/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":backend_details",
         ":compile_spec_schema",
@@ -35,11 +31,7 @@ runtime.python_library(
     srcs = [
         "compile_spec_schema.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "//executorch/test/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
 )
 
 runtime.python_library(
@@ -47,11 +39,7 @@ runtime.python_library(
     srcs = [
         "operator_support.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "//executorch/test/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
 )
 
 runtime.python_library(
@@ -59,11 +47,7 @@ runtime.python_library(
     srcs = [
         "partitioner.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "//executorch/test/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":compile_spec_schema",
         "//caffe2:torch",
@@ -75,11 +59,7 @@ runtime.python_library(
     srcs = [
         "backend_details.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "//executorch/test/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":compile_spec_schema",
         ":partitioner",
@@ -93,11 +73,7 @@ runtime.python_library(
 # it's supposed to be only used on server side and not for production on device.
 runtime.python_library(
     name = "backend_lib",
-    visibility = [
-        "//executorch/...",
-        "//executorch/test/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":backend_api",
         ":backend_details",
@@ -111,12 +87,7 @@ runtime.python_library(
     srcs = [
         "utils.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "//executorch/exir/backend/...",
-        "//executorch/test/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/pypi/pandas:pandas",
         "//caffe2:torch",
