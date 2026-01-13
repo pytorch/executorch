@@ -66,6 +66,8 @@ struct TrainingJniCache {
   jclass tensor_class = nullptr;
   jclass evalue_class = nullptr;
   jclass hashmap_class = nullptr;
+  jclass bytebuffer_class = nullptr;
+  jclass byteorder_class = nullptr;
   jmethodID tensor_nativeNewTensor = nullptr;
   jmethodID tensor_dtypeJniCode = nullptr;
   jmethodID tensor_getRawDataBuffer = nullptr;
@@ -87,6 +89,8 @@ struct TrainingJniCache {
   jmethodID entry_getKey = nullptr;
   jmethodID entry_getValue = nullptr;
   jmethodID map_size = nullptr;
+  jmethodID bytebuffer_order = nullptr;
+  jmethodID byteorder_nativeOrder = nullptr;
 
   bool initialized = false;
 
@@ -186,6 +190,29 @@ struct TrainingJniCache {
       env->DeleteLocalRef(entry_class);
     }
 
+    // Cache ByteBuffer and ByteOrder classes and methods
+    jclass local_bytebuffer_class = env->FindClass("java/nio/ByteBuffer");
+    if (local_bytebuffer_class != nullptr) {
+      bytebuffer_class =
+          static_cast<jclass>(env->NewGlobalRef(local_bytebuffer_class));
+      env->DeleteLocalRef(local_bytebuffer_class);
+
+      bytebuffer_order = env->GetMethodID(
+          bytebuffer_class,
+          "order",
+          "(Ljava/nio/ByteOrder;)Ljava/nio/ByteBuffer;");
+    }
+
+    jclass local_byteorder_class = env->FindClass("java/nio/ByteOrder");
+    if (local_byteorder_class != nullptr) {
+      byteorder_class =
+          static_cast<jclass>(env->NewGlobalRef(local_byteorder_class));
+      env->DeleteLocalRef(local_byteorder_class);
+
+      byteorder_nativeOrder = env->GetStaticMethodID(
+          byteorder_class, "nativeOrder", "()Ljava/nio/ByteOrder;");
+    }
+
     initialized = true;
   }
 };
@@ -228,21 +255,12 @@ jobject newJTensorFromTensor(
     return nullptr;
   }
 
-  // Set byte order to native order
-  jclass byteBufferClass = env->FindClass("java/nio/ByteBuffer");
-  jmethodID orderMethod = env->GetMethodID(
-      byteBufferClass,
-      "order",
-      "(Ljava/nio/ByteOrder;)Ljava/nio/ByteBuffer;");
-  jclass byteOrderClass = env->FindClass("java/nio/ByteOrder");
-  jmethodID nativeOrderMethod = env->GetStaticMethodID(
-      byteOrderClass, "nativeOrder", "()Ljava/nio/ByteOrder;");
-  jobject nativeOrder =
-      env->CallStaticObjectMethod(byteOrderClass, nativeOrderMethod);
-  env->CallObjectMethod(jTensorBuffer, orderMethod, nativeOrder);
-
-  env->DeleteLocalRef(byteBufferClass);
-  env->DeleteLocalRef(byteOrderClass);
+  // Set byte order to native order (using cached classes/methods)
+  jobject nativeOrder = env->CallStaticObjectMethod(
+      g_training_cache.byteorder_class,
+      g_training_cache.byteorder_nativeOrder);
+  env->CallObjectMethod(
+      jTensorBuffer, g_training_cache.bytebuffer_order, nativeOrder);
   env->DeleteLocalRef(nativeOrder);
 
   // Call nativeNewTensor static method

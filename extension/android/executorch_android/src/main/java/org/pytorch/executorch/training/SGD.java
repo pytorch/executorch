@@ -112,6 +112,7 @@ public class SGD {
     }
   }
 
+  @SuppressWarnings("deprecation")
   @Override
   protected void finalize() throws Throwable {
     if (mNativeHandle != 0) {

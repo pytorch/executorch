@@ -131,6 +131,7 @@ public class TrainingModule {
     }
   }
 
+  @SuppressWarnings("deprecation")
   @Override
   protected void finalize() throws Throwable {
     if (mNativeHandle != 0) {
