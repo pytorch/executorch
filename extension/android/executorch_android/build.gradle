@@ -58,7 +58,6 @@ task copyTestRes(type: Exec) {
 }
 
 dependencies {
-    implementation 'com.facebook.fbjni:fbjni:0.7.0'
     implementation 'com.facebook.soloader:nativeloader:0.10.5'
     implementation libs.core.ktx
     testImplementation 'junit:junit:4.12'
