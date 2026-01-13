@@ -40,11 +40,6 @@ class MockTokenizer : public ::tokenizers::Tokenizer {
       (const));
   MOCK_METHOD(
       ::tokenizers::Result<std::string>,
-      id_to_piece,
-      (uint64_t),
-      (const));
-  MOCK_METHOD(
-      ::tokenizers::Result<std::string>,
       decode,
       (uint64_t, uint64_t),
       (const));
