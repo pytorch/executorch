@@ -13,7 +13,7 @@ namespace qnn {
 using executorch::runtime::Error;
 
 QnnBackend::~QnnBackend() {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   if (nullptr != handle_) {
     QNN_EXECUTORCH_LOG_INFO("Destroy Qnn backend");
@@ -34,7 +34,7 @@ void QnnBackend::BackendRegisterOpPackage(
     const flatbuffers::Vector<
         flatbuffers::Offset<qnn_delegate::QnnExecuTorchOpPackageInfo>>*
         op_packages_infos) {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   QnnExecuTorchOpPackagePlatform current_platform =
       QnnExecuTorchOpPackagePlatform::UNKNOWN;
@@ -71,7 +71,7 @@ void QnnBackend::BackendRegisterOpPackage(
 Error QnnBackend::Configure(
     const QnnExecuTorchOpPackageOptions* op_package_options) {
   // create qnn backend
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   std::vector<const QnnBackend_Config_t*> temp_backend_config;
@@ -102,7 +102,7 @@ Error QnnBackend::Configure(
 }
 
 Error QnnBackend::VerifyQNNSDKVersion() {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
 
   Qnn_ApiVersion_t qnn_version = {QNN_VERSION_INIT};
   Qnn_ErrorHandle_t error =

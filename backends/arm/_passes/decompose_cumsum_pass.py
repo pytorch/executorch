@@ -10,7 +10,7 @@ import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
-from executorch.backends.arm._passes.rewrite_conv2d_pass import RewriteConv2dPass
+from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir import ExportedProgram
@@ -42,10 +42,10 @@ class DecomposeCumsumPass(ArmPass):
     And the convolution is applied over dimension H.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {RewriteConv2dPass}
+    _passes_required_after: Set[Type[ExportPass]] = {RewriteConvPass}
 
-    def __init__(self, exported_program: ExportedProgram) -> None:
-        super().__init__()
+    def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     def call(self, graph_module):

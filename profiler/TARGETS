@@ -12,7 +12,7 @@ runtime.python_library(
         "profiler_results_cli.py",
     ],
     base_module = "executorch.profiler",
-    visibility = ["@EXECUTORCH_CLIENTS"],
+    visibility = ["PUBLIC"],
     external_deps = ["prettytable"],
 )
 

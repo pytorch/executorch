@@ -10,10 +10,7 @@ runtime.python_library(
     srcs = [
         "xnnpack_preprocess.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/backends/transforms:lib",
         "//executorch/backends/transforms:remove_getitem_op",
@@ -30,10 +27,7 @@ runtime.python_library(
     srcs = [
         "__init__.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",

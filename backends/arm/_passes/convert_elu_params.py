@@ -35,10 +35,12 @@ class ConvertELUParamsPass(ArmPass):
             is_quantized = (
                 input_node.op == "call_function" and input_node.target in DQ_OPS
             )
-            if not is_quantized:
+            if not is_quantized or not self.allowed_to_transform(node.meta):
                 continue
             with graph.inserting_after(node):
-                replace_node = create_node(graph, exir_ops.edge.aten.elu.default)
+                replace_node = create_node(
+                    graph, exir_ops.edge.aten.elu.default, from_node=node
+                )
                 old_args = list(node.args)
 
                 alpha = old_args[1] if len(old_args) > 1 else 1.0

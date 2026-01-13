@@ -33,8 +33,8 @@ class FuseEqualPlaceholdersPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def __init__(self, exported_program: ExportedProgram):
-        super().__init__()
+    def __init__(self, exported_program: ExportedProgram, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -60,7 +60,7 @@ class FuseEqualPlaceholdersPass(ArmPass):
                 is_int48,
                 str(t_cpu.dtype),
                 tuple(t_cpu.shape),
-                hashlib.sha1(data_bytes).hexdigest(),
+                hashlib.sha1(data_bytes, usedforsecurity=False).hexdigest(),
             )
             hash_buckets[key].append((node, t_cpu))
 

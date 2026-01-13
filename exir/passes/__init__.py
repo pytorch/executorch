@@ -344,6 +344,11 @@ class ToOutVarPass(PassBase):
                 self.call(get_submodule(node.args[0]))
                 self.call(get_submodule(node.args[1]))
                 continue
+            elif target == torch.ops.higher_order.scan:
+                # scan(combine_fn, init, xs, additional_inputs)
+                # combine_fn is at args[0]
+                self.call(get_submodule(node.args[0]))
+                continue
             elif getattr(target, "__module__", None) in ("builtins", "_operator"):
                 continue
             elif target in to_out_var_skiplist:

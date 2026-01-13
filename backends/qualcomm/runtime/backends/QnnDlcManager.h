@@ -10,7 +10,8 @@
 
 #include <QnnTypes.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.h>
-#include <executorch/backends/qualcomm/runtime/backends/irbackend/IrContext.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnBackendUnifiedRegistry.h>
+#include <executorch/backends/qualcomm/runtime/backends/ir/IrContext.h>
 
 #include "QnnWrapperUtils.hpp"
 namespace executorch {
@@ -35,23 +36,23 @@ class QnnDlcManager {
 
   std::unique_ptr<BackendConfigParameters> backend_params_ptr_ =
       std::make_unique<BackendConfigParameters>();
+  std::unique_ptr<QnnBackendBundle> backend_bundle_ptr_ =
+      std::make_unique<QnnBackendBundle>();
 
-  void ResetBackendParams();
-  void ResetLogger();
-  void TerminateAllBackends();
+  void Destroy();
 
-  Error SetUpDlcEnvironment(const Qnn_Version_t& coreApiVersion);
+  Error SetUpDlcEnvironment(
+      const Qnn_Version_t& coreApiVersion,
+      const std::vector<std::string>& graph_names);
 
   Error RegisterGraphsFromDLC(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnBackend* backend,
       QnnContext* context,
       QnnBackendCache* cache);
 
  private:
   static constexpr const char* library_name_ = "libQnnIr.so";
-  QnnImplementation qnn_loaded_backend_;
-  std::unique_ptr<QnnLogger> logger_;
 
   const QnnExecuTorchContextBinary& qnn_context_blob_;
   const QnnExecuTorchOptions* options_;
@@ -64,7 +65,7 @@ class QnnDlcManager {
 
   Error Create();
 
-  Error Configure();
+  Error Configure(const std::vector<std::string>& graph_names);
 };
 } // namespace qnn
 } // namespace backends

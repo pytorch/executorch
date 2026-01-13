@@ -20,6 +20,8 @@ linear_qcsnw_tiled:
         SUFFIX: o4x1
       - VALUE: 2
         SUFFIX: o4x2
+      - VALUE: 3
+        SUFFIX: o4x3
       - VALUE: 4
         SUFFIX: o4x4
   shader_variants:

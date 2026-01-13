@@ -14,6 +14,7 @@ quantize_and_pack_4w4c:
       parameter_names: [OUTPUT_STORAGE, INPUT_STORAGE]
       combos:
         - parameter_values: [texture3d, texture3d]
+        - parameter_values: [texture3d, buffer]
         - parameter_values: [buffer, texture3d]
         - parameter_values: [buffer, buffer]
     DTYPE:

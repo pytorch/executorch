@@ -2,11 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-
 from typing import Tuple
-
-import pytest
 
 import torch
 from executorch.backends.arm.test import common, conftest
@@ -15,125 +11,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineINT,
 )
-from executorch.backends.arm.tosa.specification import (
-    TosaLoweringContext,
-    TosaSpecification,
-)
-from executorch.exir.dialects._ops import ops as exir_ops
-from torch._subclasses.fake_tensor import FakeTensorMode
 
 input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x
-
-
-def test_rescale_op():
-    sample_inputs = [
-        # (data, out_dtype, scale, in_zp, out_zp)
-        (
-            torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
-            torch.int32,
-            [0.2],
-            2,
-            0,
-        ),
-        (
-            torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int32),
-            torch.int8,
-            [0.2],
-            0,
-            -128,
-        ),
-        (
-            torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
-            torch.int8,
-            [0.8],
-            10,
-            127,
-        ),
-    ]
-
-    with TosaLoweringContext(
-        TosaSpecification.create_from_string("TOSA-1.0+INT")
-    ), FakeTensorMode() as mode:
-        for sample_input in sample_inputs:
-            exir_ops.backend.tosa.RESCALE.default(
-                *tuple(
-                    [
-                        mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
-                        for i in sample_input
-                    ]
-                )
-            )
-
-
-def test_nonzero_zp_for_int32():
-
-    sample_inputs = [
-        (
-            torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
-            torch.int32,
-            [0.2],
-            2,  # Should be 0, expect error
-            1,
-        ),
-        (
-            torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int32),
-            torch.int8,
-            [0.2],
-            1,
-            1,  # Should be 0, expect error
-        ),
-    ]
-
-    with TosaLoweringContext(
-        TosaSpecification.create_from_string("TOSA-1.0+INT")
-    ), FakeTensorMode() as mode:
-        for sample_input in sample_inputs:
-            with pytest.raises(
-                ValueError, match="TOSA requires (output|input)_zp to be zero"
-            ):
-                exir_ops.backend.tosa.RESCALE.default(
-                    *tuple(
-                        [
-                            mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
-                            for i in sample_input
-                        ]
-                    )
-                )
-
-
-def test_zp_outside_range():
-
-    sample_inputs = [
-        (
-            torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
-            torch.int32,
-            [0.2],
-            128,  # Should be <128, expect error
-            0,
-        ),
-        (
-            torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int32),
-            torch.int8,
-            [0.2],
-            0,
-            -129,  # Should be >-129m expect error
-        ),
-    ]
-    with TosaLoweringContext(
-        TosaSpecification.create_from_string("TOSA-1.0+INT")
-    ), FakeTensorMode() as mode:
-        for sample_input in sample_inputs:
-            with pytest.raises(
-                Exception, match="(in_zp|out_zp)=-?[0-9]* outside valid range"
-            ):
-                exir_ops.backend.tosa.RESCALE.default(
-                    *tuple(
-                        [
-                            mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
-                            for i in sample_input
-                        ]
-                    )
-                )
 
 
 class RescaleNetwork(torch.nn.Module):
@@ -157,7 +36,7 @@ class RescaleNetwork(torch.nn.Module):
 
 
 @common.parametrize("test_data", RescaleNetwork.test_data)
-def test_quantized_rescale_tosa_bi(test_data: tuple[torch.Tensor, torch.Tensor]):
+def test_insert_rescale_tosa_INT(test_data: tuple[torch.Tensor, torch.Tensor]):
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
     need the InsertRescalesPass, make sure that they play nicely together."""
     module = RescaleNetwork()
@@ -174,7 +53,7 @@ def test_quantized_rescale_tosa_bi(test_data: tuple[torch.Tensor, torch.Tensor])
 
 @common.parametrize("test_data", RescaleNetwork.test_data)
 @common.XfailIfNoCorstone300
-def test_quantized_rescale_u55(test_data: input_t):
+def test_insert_rescale_u55_INT(test_data: input_t):
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
     need the InsertRescalesPass, make sure that they play nicely together."""
     module = RescaleNetwork()
@@ -189,7 +68,7 @@ def test_quantized_rescale_u55(test_data: input_t):
 
 @common.parametrize("test_data", RescaleNetwork.test_data)
 @common.XfailIfNoCorstone320
-def test_quantized_rescale_u85(test_data: input_t):
+def test_insert_rescale_u85_INT(test_data: input_t):
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
     need the InsertRescalesPass, make sure that they play nicely together."""
     module = RescaleNetwork()

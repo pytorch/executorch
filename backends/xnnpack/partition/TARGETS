@@ -7,10 +7,7 @@ runtime.python_library(
     srcs = [
         "xnnpack_partitioner.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":partitioner_graphs",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
@@ -28,10 +25,7 @@ runtime.python_library(
     srcs = glob([
         "graphs/*.py",
     ]),
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/exir:lib",
     ],

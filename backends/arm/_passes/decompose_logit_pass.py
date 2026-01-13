@@ -76,8 +76,15 @@ class DecomposeLogitPass(ArmPass):
         ReplaceScalarWithTensorByProfilePass,
     }
 
+    _TARGET_OPS = {
+        edge_logit,
+        aten_logit,
+    }
+
     def call_operator(self, op, args, kwargs, meta):
-        if op not in [edge_logit, aten_logit]:
+        if op not in DecomposeLogitPass._TARGET_OPS or not self.allowed_to_transform(
+            meta
+        ):
             return super().call_operator(op, args, kwargs, meta)
 
         X = args[0]

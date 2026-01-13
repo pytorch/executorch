@@ -19,7 +19,9 @@
  */
 
 #include <cstdint>
+#ifdef ET_BUNDLE_IO_ENABLED
 #include <filesystem>
+#endif // ET_BUNDLE_IO_ENABLED
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -212,7 +214,7 @@ int main(int argc, char** argv) {
 
   bool bundle_io = false;
   size_t program_data_len = 0;
-  const void* program_data;
+  const void* program_data = nullptr;
 
 #ifdef ET_BUNDLE_IO_ENABLED
   std::vector<uint8_t> model_file_data = try_load_file(FLAGS_model_path);

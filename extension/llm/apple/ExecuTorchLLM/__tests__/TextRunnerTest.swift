@@ -87,6 +87,7 @@ class TextRunnerTest: XCTestCase {
     do {
       try runner.generate(userPrompt, Config {
         $0.sequenceLength = sequenceLength
+        $0.temperature = 0
       }) { token in
         text += token
       }
@@ -100,6 +101,7 @@ class TextRunnerTest: XCTestCase {
     do {
       try runner.generate(userPrompt, Config {
         $0.sequenceLength = sequenceLength
+        $0.temperature = 0
       }) { token in
         text += token
       }

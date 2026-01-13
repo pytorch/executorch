@@ -16,19 +16,7 @@ runtime.python_library(
     # Currently serialization API should only be used in some dedicated targets,
     # to avoid ODR violation when linking with another Flatbuffers library.
     # Please ask before changing this.
-    visibility = [
-        "//executorch/bacends/...",
-        "//executorch/backends/xnnpack/test/...",
-        "//executorch/codegen/...",
-        "//executorch/devtools/bundled_program/tests/...",
-        "//executorch/examples/async_exec:emit_program_lib",
-        "//executorch/exir:lib",
-        "//executorch/extension/pybindings/test:test",
-        "//executorch/extension/pybindings/test:test-library",
-        "//executorch/profiler/...",
-        "//executorch/test/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/pypi/setuptools:setuptools",
         "//executorch/devtools/bundled_program/schema:bundled_program_schema_py",

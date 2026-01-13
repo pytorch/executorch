@@ -1,0 +1,95 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "default",
+            "displayName": "CUDA Shim Tests",
+            "binaryDir": "${sourceDir}/../../../../../cmake-out/backends/cuda/runtime/shims/tests",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../../../cmake-out"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "CUDA Shim Tests (Debug)",
+            "inherits": ["default"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "default",
+            "displayName": "Build CUDA Shim Tests",
+            "configurePreset": "default"
+        },
+        {
+            "name": "debug",
+            "displayName": "Build CUDA Shim Tests (Debug)",
+            "configurePreset": "debug"
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "default",
+            "displayName": "Configure, build, and test CUDA Shim Tests",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "default"
+                },
+                {
+                    "type": "build",
+                    "name": "default"
+                },
+                {
+                    "type": "test",
+                    "name": "default"
+                }
+            ]
+        },
+        {
+            "name": "debug",
+            "displayName": "Configure, build, and test CUDA Shim Tests (Debug)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "debug"
+                },
+                {
+                    "type": "build",
+                    "name": "debug"
+                },
+                {
+                    "type": "test",
+                    "name": "debug"
+                }
+            ]
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "default",
+            "displayName": "Run all CUDA Shim Tests",
+            "configurePreset": "default",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "Run all CUDA Shim Tests (Debug)",
+            "configurePreset": "debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        }
+    ]
+}

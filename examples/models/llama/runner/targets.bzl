@@ -28,12 +28,13 @@ def define_common_targets():
             exported_headers = [
                 "runner.h",
             ],
+            deps = [
+                "//executorch/devtools/etdump:etdump_flatcc",
+            ],
             preprocessor_flags = [
                 "-DUSE_ATEN_LIB",
             ] if aten else [],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             compiler_flags = [
                 "-Wno-missing-prototypes",
             ],
@@ -61,9 +62,7 @@ def define_common_targets():
         exported_headers = [
             "static_attention_io_manager.h",
         ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/executor:program",
         ]

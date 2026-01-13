@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,7 +9,7 @@ import logging
 import shutil
 import tempfile
 
-from collections import Counter
+from collections import Counter, defaultdict
 from pprint import pformat
 from typing import (
     Any,
@@ -95,6 +95,9 @@ from tabulate import tabulate  # type: ignore[import-untyped]
 
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
+
+from torchao.quantization.pt2e.quantizer import QuantizationSpec, SharedQuantizationSpec
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +204,6 @@ class ToExecutorch(tester.ToExecutorch):
 
 
 class RunPasses(tester.RunPasses):
-
     @no_type_check
     def __init__(
         self,
@@ -545,6 +547,192 @@ class ArmTester(Tester):
 
         return self
 
+    def _get_output_qspec_from_node(
+        self, node: torch.fx.Node
+    ) -> QuantizationSpec | None:
+        if Q_ANNOTATION_KEY not in node.meta:
+            return None
+        annotation = node.meta[Q_ANNOTATION_KEY]
+        # If annotation.output_qspec is a SharedQuantizationSpec, we need to find
+        # the actual QuantizationSpec from one of the inputs.
+        if isinstance(annotation.output_qspec, SharedQuantizationSpec):
+            # First try to find a non-shared qspec from the inputs.
+            annotation_qspec = [
+                qspec
+                for qspec in annotation.input_qspec_map.values()
+                if not isinstance(qspec, SharedQuantizationSpec)
+            ]
+            # If none of the inputs have a non-shared qspec, we need to
+            # find the source node of the shared qspec.
+            if len(annotation_qspec) == 0:
+                edge_or_node = annotation.output_qspec.edge_or_node
+                if isinstance(edge_or_node, tuple):
+                    source_node = edge_or_node[0]
+                else:
+                    source_node = edge_or_node
+                annotation_qspec = [source_node.meta[Q_ANNOTATION_KEY].output_qspec]
+            annotation_qspec = annotation_qspec[0]
+        else:
+            annotation_qspec = annotation.output_qspec
+
+        return annotation_qspec
+
+    def _get_input_qspecs_from_node(
+        self, node: torch.fx.Node
+    ) -> List[QuantizationSpec | None]:
+        if Q_ANNOTATION_KEY not in node.meta:
+            return [None]
+        annotation = node.meta[Q_ANNOTATION_KEY]
+        input_qspec_map = annotation.input_qspec_map
+        found_qspecs = []
+        if len(input_qspec_map) == 0:
+            return [None]
+        for spec in input_qspec_map.values():
+            # If spec is a SharedQuantizationSpec, we need to find
+            # the actual QuantizationSpec.
+            if isinstance(spec, SharedQuantizationSpec):
+                # First try to find a non-shared qspec from the inputs.
+                annotation_qspec = [
+                    qspec
+                    for qspec in input_qspec_map.values()
+                    if not isinstance(qspec, SharedQuantizationSpec)
+                ]
+                # If none of the inputs have a non-shared qspec, we need to
+                # find the source node of the shared qspec.
+                if len(annotation_qspec) == 0:
+                    edge_or_node = annotation.output_qspec.edge_or_node
+                    if isinstance(edge_or_node, tuple):
+                        source_node = edge_or_node[0]
+                    else:
+                        source_node = edge_or_node
+                    annotation_qspec = [source_node.meta[Q_ANNOTATION_KEY].output_qspec]
+                found_qspecs.append(annotation_qspec[0])
+            else:
+                found_qspecs.append(spec)
+
+        return found_qspecs
+
+    def _check_input_qspecs(self, graph: Graph, input_qspecs):
+        if input_qspecs is None:
+            return
+        found_qspecs = []
+        for node in graph.nodes:
+            if node.op != "placeholder":
+                continue
+            annotation_qspec = self._get_output_qspec_from_node(node)
+            found_qspecs.append(annotation_qspec)
+        found_qspecs_counter = Counter(found_qspecs)
+        for qspec in input_qspecs:
+            # check that each expected qspec is found
+            if qspec not in found_qspecs_counter:
+                raise AssertionError(
+                    f"Expected to find input quantization annotation {qspec}, but it was not found. "
+                    f"Found annotations: {found_qspecs_counter}"
+                )
+            # check that number of occurrences of each qspec matches expected
+            if found_qspecs_counter[qspec] != input_qspecs[qspec]:
+                raise AssertionError(
+                    f"Expected to find {input_qspecs[qspec]} instances of input quantization annotation {qspec}, but "
+                    f"found {found_qspecs_counter[qspec]} instances."
+                )
+
+    def _check_output_qspecs(self, graph: Graph, output_qspecs):
+        if output_qspecs is None:
+            return
+        found_qspecs = []
+        output_node = graph.output_node()
+        annotation_qspec = self._get_input_qspecs_from_node(output_node)
+        found_qspecs.extend(annotation_qspec)
+        found_qspecs_counter = Counter(found_qspecs)
+        for qspec in output_qspecs:
+            # check that each expected qspec is found
+            if qspec not in found_qspecs_counter:
+                raise AssertionError(
+                    f"Expected to find output quantization annotation {qspec}, but it was not found. "
+                    f"Found annotations: {found_qspecs_counter}"
+                )
+            # check that number of occurrences of each qspec matches expected
+            if found_qspecs_counter[qspec] != output_qspecs[qspec]:
+                raise AssertionError(
+                    f"Expected to find {output_qspecs[qspec]} instances of output quantization annotation {qspec}, but "
+                    f"found {found_qspecs_counter[qspec]} instances."
+                )
+
+    def _check_qspecs(self, graph: Graph, quantization_annotations):
+        if quantization_annotations is None:
+            return self
+
+        quantization_annotations_found: List[Tuple[str, QuantizationSpec | None]] = []
+        for node in graph.nodes:
+            if node.op != "call_function":
+                continue
+            quantization_annotations_found.append(
+                (str(node.target), self._get_output_qspec_from_node(node))
+            )
+
+        # Counter: (target, qspec) -> count
+        quantization_annotations_found_counter = Counter(quantization_annotations_found)
+        # Convert counter to Dict[target, Dict[qspec, count]]
+        quantization_annotations_found_dict: Dict[
+            str, Dict[QuantizationSpec | None, int]
+        ] = defaultdict(dict)
+        for (target, qspec), count in quantization_annotations_found_counter.items():
+            quantization_annotations_found_dict[target][qspec] = count
+
+        for target, qspecs in quantization_annotations.items():
+            # check if target is in found annotations
+            if target not in quantization_annotations_found_dict:
+                raise AssertionError(
+                    f"Expected to find quantization annotation for operator {target}, but it was not found."
+                )
+            for qspec in qspecs:
+                # check if qspec is in found annotations for target
+                if qspec not in quantization_annotations_found_dict[target]:
+                    raise AssertionError(
+                        f"Expected to find quantization annotation {qspec} for operator {target}, but it was not found. "
+                        f"Found annotations: {quantization_annotations_found_dict[target]}"
+                    )
+                # check that number of occurrences of each qspec matches expected
+                if quantization_annotations_found_dict[target][qspec] != qspecs[qspec]:
+                    raise AssertionError(
+                        f"Expected to find {qspecs[qspec]} instances of quantization annotation {qspec} for operator "
+                        f"{target}, but found {quantization_annotations_found_dict[target][qspec]} instances."
+                    )
+
+    def check_quantization_annotation(
+        self,
+        quantization_annotations: Optional[
+            Dict[str, Dict[QuantizationSpec | None, int]]
+        ] = None,
+        input_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
+        output_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
+    ):
+        """
+        Check the quantization annotations in the graph of a quantized model.
+
+        Args:
+            quantization_annotations: A dictionary mapping operator names to a dictionary of
+                QuantizationSpecs and their expected counts.
+                If None, the check is skipped.
+            input_qspecs: A dictionary of expected input QuantizationSpecs and their counts.
+                If None, the check is skipped.
+            output_qspecs: A dictionary of expected output QuantizationSpecs and their counts.
+                If None, the check is skipped.
+
+        Returns self for daisy-chaining.
+        """
+        if not self.is_quantized():
+            raise RuntimeError(
+                f"{self.check_quantization_annotation.__name__} should be called after quantization stage."
+            )
+
+        graph = self.get_graph(StageType.QUANTIZE)
+
+        self._check_input_qspecs(graph, input_qspecs)
+        self._check_output_qspecs(graph, output_qspecs)
+        self._check_qspecs(graph, quantization_annotations)
+        return self
+
     def get_graph(self, stage: StageType | None = None) -> Graph:
         if stage is None:
             stage = self.cur
@@ -567,7 +755,10 @@ class ArmTester(Tester):
         return graph
 
     def dump_operator_distribution(
-        self, path_to_dump: Optional[str] = None, print_table: bool = True
+        self,
+        path_to_dump: Optional[str] = None,
+        print_table: bool = True,
+        include_dtypes: bool = True,
     ):
         """Dump the distribution of operators in the current stage.
         In the partition stage, additional information is included such as the number of
@@ -578,37 +769,74 @@ class ArmTester(Tester):
         Returns self for daisy-chaining.
         """
         line = "#" * 10
-        to_print = f"{line} {self.cur} Operator Distribution {line}\n"
+        to_print = f"\n{line} {self.cur} Operator Distribution {line}\n"
 
-        if (
-            self.cur
-            in (
-                StageType.PARTITION,
-                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
-            )
-            and print_table
+        if self.cur in (
+            StageType.PARTITION,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
         ):
             graph_module = self.get_artifact().exported_program().graph_module
             delegation_info = get_delegation_info(graph_module)
+            op_dist = _get_tosa_operator_distribution(graph_module, include_dtypes)
             if print_table:
-                op_dist = delegation_info.get_operator_delegation_dataframe()
+                aten_op_dist = delegation_info.get_operator_delegation_dataframe()
+                to_print += "Aten operators:\n" + _format_dict(
+                    dict(aten_op_dist), print_table
+                )
+
+                if include_dtypes:
+                    op_dist_dict = {
+                        "Operator": [op_type[0] for op_type, _ in op_dist],
+                        "Dtype": [op_type[1] for op_type, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
+                else:
+                    op_dist_dict = {
+                        "Operator": [op for op, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
             else:
-                op_dist = dict(_get_operator_distribution(graph_module.graph))
-            to_print += _format_dict(op_dist, print_table)
-            to_print += "\n" + _get_tosa_operator_distribution(
-                graph_module, print_table
-            )
-            to_print += "\n"
-            to_print += delegation_info.get_summary()
+                if include_dtypes:
+                    op_dtype_dist_dict: Dict[str, Dict[str, int]] = defaultdict(dict)
+                    for op_dtype, count in op_dist:
+                        op = op_dtype[0]
+                        dtype = op_dtype[1]
+                        op_dtype_dist_dict[op].update({dtype: count})
+                    op_dist_dict = dict(op_dtype_dist_dict)
+                else:
+                    op_dist_dict = dict(op_dist)  # type: ignore[arg-type]
+            to_print += "\nTOSA operators:\n" + _format_dict(op_dist_dict, print_table)
+            to_print += "\n" + delegation_info.get_summary()
         else:
             graph = self.get_graph(self.cur)
-            op_dist = dict(_get_operator_distribution(graph))
+            if include_dtypes:
+                op_dist = _get_operator_dtype_distribution(graph)
+            else:
+                op_dist = _get_operator_distribution(graph)
             if print_table:
-                op_dist = {
-                    "Operator": list(op_dist),
-                    "Count": [op_dist[key] for key in op_dist],
-                }
-            to_print += _format_dict(op_dist, print_table) + "\n"
+                if include_dtypes:
+                    op_dist_dict = {
+                        "Operator": [op_dtype[0] for op_dtype, _ in op_dist],
+                        "Dtype": [op_dtype[1] for op_dtype, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
+                else:
+                    op_dist_dict = {
+                        "Operator": [op for op, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
+            else:
+                if include_dtypes:
+                    op_dtype_dist_dict = defaultdict(dict)
+                    for op_dtype, count in op_dist:
+                        op = op_dtype[0]
+                        dtype = op_dtype[1]
+                        op_dtype_dist_dict[op].update({dtype: count})
+                    op_dist_dict = dict(op_dtype_dist_dict)
+                else:
+                    op_dist_dict = dict(op_dist)  # type: ignore[arg-type]
+
+            to_print += _format_dict(op_dist_dict, print_table) + "\n"
 
         _dump_str(to_print, path_to_dump)
 
@@ -679,7 +907,7 @@ class ArmTester(Tester):
         artifact = self.get_artifact(stage)
         if self.cur == StageType.EXPORT:
             new_gm = ArmPassManager(
-                self.compile_spec.tosa_spec
+                self.compile_spec
             ).transform_for_annotation_pipeline(graph_module=artifact.graph_module)
         else:
             raise RuntimeError("Can only run passes on Export stage.")
@@ -751,6 +979,38 @@ class ArmTester(Tester):
             if intermediate_path.startswith(tempdir):
                 shutil.rmtree(intermediate_path, ignore_errors=True)
 
+    def check_dtype_count(self, dtype_dict: Dict[str, Dict[str, int]]):
+        if self.cur in (
+            StageType.PARTITION,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+        ):
+            graph_module = self.get_artifact().exported_program().graph_module
+            op_dist = _get_tosa_operator_distribution(graph_module, include_dtypes=True)
+            op_dist_dict: Dict[str, Dict[str, int]] = defaultdict(dict)
+            for op_dtype, count in op_dist:
+                if isinstance(op_dtype, str):
+                    raise ValueError(
+                        f"Expected {_get_tosa_operator_distribution.__name__} to return "
+                        "Tuple[Tuple[str, str], int]."
+                    )
+                else:
+                    op, dtype = op_dtype
+
+                op_dist_dict[op].update({dtype: count})
+            for op in dtype_dict.keys():
+                if op not in op_dist_dict:
+                    raise RuntimeError(f"Could not find op {op}.")
+                for dtype, count in dtype_dict[op].items():
+                    dtype_count = op_dist_dict[op].setdefault(dtype, 0)
+                    if dtype_count != count:
+                        raise RuntimeError(
+                            f"Expected {count} occurencies of {op=}, {dtype=} but found {dtype_count}."
+                        )
+
+        else:
+
+            raise NotImplementedError(f"Cannot check dtypes for stage {self.cur}")
+
 
 def _get_dtype_distribution(
     graph: Graph, tosa_spec: TosaSpecification
@@ -770,13 +1030,35 @@ def _get_dtype_distribution(
     return Counter(placeholder_dtypes), Counter(call_function_dtypes)
 
 
-def _get_operator_distribution(graph: Graph) -> dict[str, int]:
+def _get_operator_distribution(graph: Graph) -> List[Tuple[str, int]]:
     """Counts the occurences of operator names in a graph.
-    The result is a dict {'operator name':'number of nodes'}
+    The result is a sorted list [('operator name':'number of nodes')]
     """
-    return Counter(
-        [str(node.target) for node in list(graph.nodes) if node.op == "call_function"]
+    return sorted(
+        Counter(
+            [
+                str(node.target)
+                for node in list(graph.nodes)
+                if node.op == "call_function"
+            ]
+        ).items()
     )
+
+
+def _get_operator_dtype_distribution(graph: Graph) -> List[Tuple[Tuple[str, str], int]]:
+    """Counts the occurences of operator names and dtype pairs in a graph.
+    The result is a sorted list[(('operator name','dtype'),'number of nodes')]
+    """
+    target_dtype_pairs = []
+    for node in graph.nodes:
+        if node.op != "call_function":
+            continue
+        if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
+            dtype = str(node.meta["val"].dtype)
+        else:
+            dtype = "UNKNOWN"
+        target_dtype_pairs.append((str(node.target), dtype))
+    return sorted(Counter(target_dtype_pairs).items())
 
 
 def _format_export_graph_signature(signature: ExportGraphSignature) -> str:
@@ -796,14 +1078,15 @@ def _format_export_graph_signature(signature: ExportGraphSignature) -> str:
 
 
 def _get_tosa_operator_distribution(
-    graph_module: torch.fx.GraphModule, print_table=False
-) -> str:
+    graph_module: torch.fx.GraphModule, include_dtypes=False
+) -> list[Tuple[str, int]] | list[Tuple[Tuple[str, str], int]]:
     """Counts the occurences of operator names of all lowered modules containing
     a TOSA flatbuffer.
     The result is a string with the operator distribution or an error message.
     """
-    op_list = []
     id = 0
+    unknown_dtype_str = "UNKNOWN"
+    op_list = []
     while lowered_module := getattr(graph_module, f"lowered_module_{id}", None):
         compile_spec = parse_compile_spec(lowered_module.compile_specs)
         if isinstance(compile_spec, TosaCompileSpec):
@@ -811,22 +1094,42 @@ def _get_tosa_operator_distribution(
             tosa_json = dbg_tosa_fb_to_json(tosa_fb)
             for region in tosa_json["regions"]:
                 for block in region["blocks"]:
-                    op_list.extend([operator["op"] for operator in block["operators"]])
+                    for operator in block["operators"]:
+                        op = operator["op"]
+                        if include_dtypes:
+                            outputs = operator.get("outputs", [])
+                            if outputs == []:
+                                op_list.append((op, unknown_dtype_str))
+                                continue
+                            tensor_block = block.get("tensors", {})
+                            tensors_with_matching_name = [
+                                t for t in tensor_block if t["name"] == outputs[0]
+                            ]
+                            dtype = (
+                                tensors_with_matching_name[0]["type"]
+                                if len(tensors_with_matching_name) > 0
+                                else unknown_dtype_str
+                            )
+                            op_list.append((op, dtype))
+                        else:
+                            op_list.append(op)
+
         elif isinstance(compile_spec, EthosUCompileSpec):
-            return "Can not get operator distribution for Vela command stream."
+            raise NotImplementedError(
+                "Can not get operator distribution for Vela command stream."
+            )
         elif isinstance(compile_spec, VgfCompileSpec):
-            return "Can not get operator distribution for VGF."
+            raise NotImplementedError("Can not get operator distribution for VGF.")
         else:
-            return f"Unknown output format '{compile_spec.get_output_format()}'."
+            raise NotImplementedError(
+                f"Unknown output format '{compile_spec.get_output_format()}'."
+            )
         id += 1
     if id == 0:
-        return "No delegate with name 'lowered_module_0 found in graph module."
-    op_dist = dict(Counter(op_list))
-    op_dist = {
-        "Operator": list(op_dist.keys()),
-        "Count": [item[1] for item in op_dist.items()],
-    }
-    return "TOSA operators:\n" + _format_dict(dict(op_dist), print_table)
+        raise ValueError(
+            "No delegate with name 'lowered_module_0 found in graph module."
+        )
+    return sorted(Counter(op_list).items())
 
 
 def _dump_str(to_print: str, path_to_dump: Optional[str] = None):

@@ -734,7 +734,9 @@ def annotate_pad(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.reshape.default, torch.ops.aten.unflatten.int])
 def annotate_reshape(node: Node, quantization_config: QuantizationConfig) -> None:
-    annotate_single_in_single_out(node, quantization_config)
+    annotate_in_out_obs_sharing_op(node, quantization_config)
+    if not _is_annotated([node]):
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.select.int])
@@ -952,6 +954,10 @@ def annotate_elu(node: Node, quantization_config: QuantizationConfig) -> None:
 @register_annotator([torch.ops.aten.embedding.default, torch.ops.aten.gather.default])
 def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> None:
     weight = node.args[0]
+
+    # Only quantize if input is a float tensor
+    if not _is_float_tensor(weight):
+        return
 
     input_qspec_map = {}
     input_qspec_map[weight] = quantization_config.input_activation

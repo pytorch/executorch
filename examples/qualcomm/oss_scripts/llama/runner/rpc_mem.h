@@ -9,6 +9,7 @@
 #pragma once
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace example {
 /**
@@ -58,6 +59,7 @@ tensor.
   void* shared_buffer_base_ptr_;
   size_t calculated_offsets_;
   std::unordered_map<std::byte*, size_t> io_pos_map_;
+  std::unordered_set<void*> binded_tensor_addr_set_;
 };
 
 } // namespace example

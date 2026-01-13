@@ -42,11 +42,10 @@ set_up_aot() {
       -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
       -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
       -DPYTHON_EXECUTABLE=python3
-  cmake --build $PWD --target "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j$(nproc)
+  cmake --build $PWD --target "PyQnnManagerAdaptor" -j$(nproc)
   # install Python APIs to correct import path
   # The filename might vary depending on your Python and host version.
   cp -f backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
-  cp -f backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
   popd
 
   # Workaround for fbs files in exir/_serialize

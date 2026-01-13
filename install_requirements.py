@@ -23,6 +23,7 @@ TORCH_NIGHTLY_URL_BASE = "https://download.pytorch.org/whl/nightly"
 SUPPORTED_CUDA_VERSIONS = (
     (12, 6),
     (12, 8),
+    (12, 9),
     (13, 0),
 )
 
@@ -34,7 +35,8 @@ SUPPORTED_CUDA_VERSIONS = (
 # package versions.
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
-# by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
+# by picking the hash from the same date in
+# https://hud.pytorch.org/hud/pytorch/pytorch/nightly/ @lint-ignore
 #
 # NOTE: If you're changing, make the corresponding supported CUDA versions in
 # SUPPORTED_CUDA_VERSIONS above if needed.

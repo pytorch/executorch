@@ -8,10 +8,16 @@ oncall("executorch")
 runtime.python_library(
     name = "static_llama",
     srcs = [
+        "model/__init__.py",
+        "model/apply_rope.py",
+        "model/feed_forward.py",
+        "model/layernorm.py",
         "model/static_llama.py",
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/examples/models/llama:transformer_modules",
+        "fbsource//third-party/pypi/transformers:transformers",
     ],
 )
 

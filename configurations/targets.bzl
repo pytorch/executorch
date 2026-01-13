@@ -22,10 +22,7 @@ def define_common_targets():
         exported_deps = [
             "//executorch/extension/threadpool:threadpool",
         ] + get_all_cpu_backend_targets(),
-        visibility = [
-            "//executorch/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # Add a common configuration of cpu optimized operators. This adds a bit of confusion
@@ -45,8 +42,5 @@ def define_common_targets():
         functions_yaml_target = "//executorch/kernels/optimized:optimized.yaml",
         fallback_yaml_target = "//executorch/kernels/portable:functions.yaml",
         define_static_targets = True,
-        visibility = [
-            "//executorch/examples/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

@@ -5,10 +5,7 @@ oncall("executorch")
 runtime.python_library(
     name = "tester",
     srcs = native.glob(["*.py", "stages/*.py"]),
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/exir:graph_module",
     ],

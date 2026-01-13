@@ -15,7 +15,5 @@ def define_common_targets():
                 "//executorch/extension/tensor:tensor" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )

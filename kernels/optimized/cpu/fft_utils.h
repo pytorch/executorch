@@ -38,7 +38,7 @@ inline pocketfft::shape_t shape_from_tensor(const Tensor& t) {
 template <typename T>
 inline std::complex<T>* tensor_cdata(Tensor& t) {
   return reinterpret_cast<std::complex<T>*>(
-      t.data_ptr<executorch::runtime::etensor::complex<T>>());
+      t.mutable_data_ptr<executorch::runtime::etensor::complex<T>>());
 }
 
 template <typename T>

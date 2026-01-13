@@ -88,3 +88,54 @@ class CodegenFeedForward(FeedForwardBase):
         hidden_states = self.act(hidden_states)
         hidden_states = self.fc_out(hidden_states)
         return hidden_states
+
+
+@register_feed_forward("GlmForCausalLM")
+class GLMFeedForward(FeedForwardBase):
+    """FeedForward with gate_up_proj and down_proj"""
+
+    def __init__(self, args: ModelArgs):  # in MLP: intermediate_size= 4 * embed_dim
+        super().__init__()
+
+        assert args.hidden_dim is not None
+        self.dim = args.dim
+        self.hidden_dim = args.hidden_dim
+
+        self.gate_up_proj = torch.nn.Linear(args.dim, 2 * args.hidden_dim, bias=False)
+        self.down_proj = torch.nn.Linear(args.hidden_dim, args.dim, bias=False)
+        self.activation_fn = args.act_fn.get_function()
+
+    def prepare_feedfoward_conv(self):
+        self.gate_up_proj_conv = torch.nn.Conv2d(
+            self.dim, 2 * self.hidden_dim, 1, bias=False
+        )
+        self.down_proj_conv = torch.nn.Conv2d(self.hidden_dim, self.dim, 1, bias=False)
+
+        self.forward_no_conv = self.forward
+        self.forward = self.forward_feedfoward_conv
+
+        self.gate_up_proj_conv.weight.data.copy_(
+            self.gate_up_proj.weight[:, :, None, None]
+        )
+        self.down_proj_conv.weight.data.copy_(self.down_proj.weight[:, :, None, None])
+
+        del self.gate_up_proj
+        del self.down_proj
+
+    def forward_feedfoward_conv(self, x):
+        bsz, _, _ = x.size()
+        x = torch.reshape(x, (bsz, -1, 1, self.dim))
+        x = x.transpose(1, 3)  # Transpose right before and after Conv
+        up_states = self.gate_up_proj_conv(x)
+        gate, up_states = up_states.chunk(2, dim=1)
+        up_states = up_states * self.activation_fn(gate)
+        x = self.down_proj_conv(up_states)
+        x = x.transpose(1, 3)
+        x = torch.reshape(x, (bsz, -1, self.dim))
+        return x
+
+    def forward(self, x):
+        up_states = self.gate_up_proj(x)
+        gate, up_states = up_states.chunk(2, dim=-1)
+        up_states = up_states * self.activation_fn(gate)
+        return self.down_proj(up_states)

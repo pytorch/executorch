@@ -7,12 +7,13 @@
 from typing import Tuple
 
 import torch
-from torchao.quantization.pt2e import MappingType, PerBlock
+from torchao.quantization.pt2e import FakeQuantize, MappingType, PerBlock
 from torchao.quantization.pt2e._affine_quantization import (
     _get_reduction_params,
     AffineQuantizedMinMaxObserver,
     choose_qparams_affine_with_min_max,
 )
+from torchao.quantization.quant_primitives import _fake_quantize_affine
 
 
 class PerBlockParamObserver(AffineQuantizedMinMaxObserver):
@@ -89,3 +90,56 @@ class PerBlockParamObserver(AffineQuantizedMinMaxObserver):
             self.preserve_zero,
             self.zero_point_domain,
         )
+
+
+class PerBlockParamFakeQuantize(FakeQuantize):
+    def __init__(
+        self,
+        dtype: torch.dtype = torch.int8,
+        block_size: torch.Size = None,
+        quant_min: int = None,
+        quant_max: int = None,
+        eps: float = torch.finfo(torch.float32).eps,  # noqa: B008
+        **kwargs,
+    ):
+        super().__init__()
+        assert (
+            block_size is not None
+        ), "block_size must be provided for per-block quantization"
+
+        self.activation_post_process = PerBlockParamObserver(
+            dtype=dtype,
+            block_size=block_size,
+            quant_min=quant_min,
+            quant_max=quant_max,
+            eps=eps,
+            **kwargs,
+        )
+        self.dtype = dtype
+        self.block_size = block_size
+        self.quant_min = quant_min if quant_min is not None else torch.iinfo(dtype).min
+        self.quant_max = quant_max if quant_max is not None else torch.iinfo(dtype).max
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.numel() == 0:
+            return x
+
+        self.activation_post_process(x)
+        scale, zero_point = self.activation_post_process.calculate_qparams()
+
+        return _fake_quantize_affine(
+            x,
+            self.block_size,
+            scale,
+            zero_point,
+            quant_dtype=self.dtype,
+            quant_min=self.quant_min,
+            quant_max=self.quant_max,
+        )
+
+    def calculate_qparams(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.activation_post_process.calculate_qparams()
+
+    def convert(self, model, observer_node):
+        self.activation_post_process.convert(model, observer_node)

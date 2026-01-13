@@ -15,10 +15,7 @@ def define_common_targets():
             "meta_programming.h",
             "type_list.h",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",

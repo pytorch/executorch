@@ -36,13 +36,16 @@ config=""
 memory_mode=""
 pte_placement="elf"
 et_build_root="${et_root_dir}/arm_test"
-ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
+arm_scratch_dir=${script_dir}/arm-scratch
 scratch_dir_set=false
 toolchain=arm-none-eabi-gcc
 select_ops_list="aten::_softmax.out"
 qdq_fusion_op=false
 model_explorer=false
 perf_overlay=false
+visualize_tosa=false
+visualize_pte=false
+model_converter=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -61,7 +64,7 @@ function help() {
     echo "  --output=<FOLDER>                      Target build output folder Default: ${output_folder}"
     echo "  --bundleio                             Create Bundled pte using Devtools BundelIO with Input/RefOutput included"
     echo "  --etdump                               Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
-    echo "  --build_type=<TYPE>                    Build with Release, Debug, RelWithDebInfo or UndefinedSanitizer, default is ${build_type}"
+    echo "  --build_type=<TYPE>                    Build with Release, Debug, RelWithDebInfo, UndefinedSanitizer or AddressSanitizer, default is ${build_type}"
     echo "  --extra_build_flags=<FLAGS>            Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
     echo "  --build_only                           Only build, don't run"
     echo "  --toolchain=<TOOLCHAIN>                Ethos-U: Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
@@ -71,10 +74,13 @@ function help() {
     echo "  --memory_mode=<MODE>                   Ethos-U: Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
     echo "  --pte_placement=<elf|ADDR>             Ethos-U: Control if runtime has PTE baked into the elf or if its placed in memory outside of the elf, defaults to ${pte_placement}"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
-    echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
+    echo "  --scratch-dir=<FOLDER>                 Path to your Arm scrach dir if you not using default ${arm_scratch_dir}"
     echo "  --qdq_fusion_op                        Enable QDQ fusion op"
-    echo "  --model_explorer                       Enable model explorer to visualize TOSA graph."
-    echo "  --perf_overlay                         With --model_explorer, include performance data from FVP PMU trace."
+    echo "  --model_explorer                       Enable model explorer to visualize a TOSA or PTE model graph."
+    echo "  --visualize_pte                        With --model_explorer, visualize PTE flatbuffer model and delegates. Cannot be used with --visualize_tosa"
+    echo "                                            NOTE:  If PTE contains an Ethos-U delegate, the Ethos-U subgraph will be visualized if aot_arm_compiler_flags is set with the -i flag to include intermediate tosa files."
+    echo "  --visualize_tosa                       With --model_explorer, visualize TOSA flatbuffer model. Cannot be used with --visualize_pte"
+    echo "  --perf_overlay                         With --model_explorer and --visualize_tosa, include performance data from FVP PMU trace."
     exit 0
 }
 
@@ -101,10 +107,12 @@ for arg in "$@"; do
       --memory_mode=*) memory_mode="${arg#*=}";;
       --pte_placement=*) pte_placement="${arg#*=}";;
       --et_build_root=*) et_build_root="${arg#*=}";;
-      --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
+      --scratch-dir=*) arm_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
       --qdq_fusion_op) qdq_fusion_op=true;;
       --model_explorer) model_explorer=true ;;
       --perf_overlay) perf_overlay=true ;;
+      --visualize_tosa) visualize_tosa=true ;;
+      --visualize_pte) visualize_pte=true ;;
       *)
       ;;
     esac
@@ -124,20 +132,9 @@ if ! [[ ${pte_placement} == "elf" ]]; then
 fi
 
 # Default Ethos-u tool folder override with --scratch-dir=<FOLDER>
-ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
-setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
-if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
-    toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
-elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
-    toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
-else
-    echo "Error: Invalid toolchain selection, provided: ${toolchain}"
-    echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
-    exit 1;
-fi
-toolchain_cmake=$(realpath ${toolchain_cmake})
+arm_scratch_dir=$(realpath ${arm_scratch_dir})
+setup_path_script=${arm_scratch_dir}/setup_path.sh
 _setup_msg="please refer to ${script_dir}/setup.sh to properly install necessary tools."
-
 
 # Set target based variables
 if [[ ${system_config} == "" ]]
@@ -163,48 +160,6 @@ then
     config="Arm/vela.ini"
 fi
 
-function check_setup () {
-    # basic checks that setup.sh did everything needed before we get started
-
-    # check if setup_path_script was created, if so source it
-    if [[ -f ${setup_path_script} ]]; then
-        source $setup_path_script
-    else
-        echo "Could not find ${setup_path_script} file, ${_setup_msg}"
-        return 1
-    fi
-
-    # If setup_path_script was correct all these checks should now pass
-    hash ${toolchain} \
-        || { echo "Could not find ${toolchain} toolchain on PATH, ${_setup_msg}"; return 1; }
-
-    [[ -f ${toolchain_cmake} ]] \
-        || { echo "Could not find ${toolchain_cmake} file, ${_setup_msg}"; return 1; }
-
-    [[ -f ${et_root_dir}/CMakeLists.txt ]] \
-        || { echo "Executorch repo doesn't contain CMakeLists.txt file at root level"; return 1; }
-
-    return 0
-}
-
-#######
-### Main
-#######
-if ! check_setup; then
-    if [ "$scratch_dir_set" = false ] ; then
-	# check setup failed, no scratchdir given as parameter. trying to run setup.sh
-	if ${script_dir}/setup.sh; then
-	    # and recheck setup. If this fails exit.
-	    if ! check_setup; then
-		exit 1
-	    fi
-	else
-	    # setup.sh failed, it should print why
-	    exit 1
-	fi
-    fi
-fi
-
 # Build executorch libraries
 cd $et_root_dir
 devtools_flag=""
@@ -227,7 +182,66 @@ if [ "$qdq_fusion_op" = true ] ; then
     qdq_fusion_op_flag="--enable_qdq_fusion_pass"
 fi
 
-backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
+function check_setup () {
+    # basic checks that setup.sh did everything needed before we get started
+
+    # check if setup_path_script was created, if so source it
+    if [[ -f ${setup_path_script} ]]; then
+        source $setup_path_script
+    else
+        echo "Could not find ${setup_path_script} file, ${_setup_msg}"
+        return 1
+    fi
+    # If setup_path_script was correct all these checks should now pass
+    if [[ ${target} =~ "ethos-u" ]]; then
+        if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
+            toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+        elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
+            toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+        else
+            echo "Error: Invalid toolchain selection, provided: ${toolchain}"
+            echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
+            exit 1;
+        fi
+        toolchain_cmake=$(realpath ${toolchain_cmake})
+        hash ${toolchain} \
+            || { echo "Could not find ${toolchain} toolchain on PATH, ${_setup_msg}"; return 1; }
+
+        [[ -f ${toolchain_cmake} ]] \
+            || { echo "Could not find ${toolchain_cmake} file, ${_setup_msg}"; return 1; }
+
+        [[ -f ${et_root_dir}/CMakeLists.txt ]] \
+            || { echo "Executorch repo doesn't contain CMakeLists.txt file at root level"; return 1; }
+        
+
+    backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
+    elif [[ ${target} =~ "vgf" ]]; then
+        model_converter=$(which model-converter)
+        echo "${model_converter}"
+        [[ "${model_converter}" == "model-converter not found" ]] \
+            && { echo "Could not find model-converter, ${_setup_msg}"; return 1; }
+    fi
+
+    return 0
+}
+
+#######
+### Main
+#######
+if ! check_setup; then
+    if [ "$scratch_dir_set" = false ] ; then
+	# check setup failed, no scratchdir given as parameter. trying to run setup.sh
+	if ${script_dir}/setup.sh; then
+	    # and recheck setup. If this fails exit.
+	    if ! check_setup; then
+		exit 1
+	    fi
+	else
+	    # setup.sh failed, it should print why
+	    exit 1
+	fi
+    fi
+fi
 
 if [[ -z "$model_name" ]]; then
     # the test models run, and whether to delegate
@@ -341,7 +355,7 @@ for i in "${!test_model[@]}"; do
         fi
 
         set -x
-        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file_or_mem}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
+        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file_or_mem}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${arm_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
 
@@ -351,12 +365,21 @@ for i in "${!test_model[@]}"; do
     fi
 
     if [ "$model_explorer" = true ]; then
-        tosa_flatbuffer_path=$(find ${output_folder} -name "*TOSA*.tosa" | head -n 1)
         perf_flags=""
         if [ "$perf_overlay" = true ]; then
             perf_flags+="--trace ${output_folder}/pmu_trace.gz --tables ${output_folder}/output/out_debug.xml"
         fi
-        python3 ${script_dir}/visualize.py --model_path ${tosa_flatbuffer_path} ${perf_flags}
+
+        visualization_file=""
+        if [ "$visualize_tosa" = true ]; then
+            visualization_file+=" --tosa"
+        fi
+        if [ "$visualize_pte" = true ]; then
+            visualization_file+=" --pte"
+        fi
+
+        me_flags="${visualization_file} ${perf_flags}"
+        python3 ${script_dir}/visualize.py --model_dir ${output_folder} ${me_flags}
     fi
 done
 

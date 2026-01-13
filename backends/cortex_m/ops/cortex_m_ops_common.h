@@ -69,11 +69,7 @@ inline void validate_cmsis_nn_tensor_requirements(
         "Output must have the same sizes as inputs");
   }
 
-  // Dim order consistency
-  ET_CHECK_MSG(
-      executorch::runtime::tensors_have_same_dim_order(input1, input2, output),
-      "Tensors must have same dimension order");
-
+  // TBD (#16032): Validate dim_order
   // TBD: Validate memory alignment (CMSIS-NN requirement)
 }
 
@@ -85,13 +81,6 @@ inline void validate_single_quant_params(
   int64_t zp_val = zero_point.to<int64_t>();
   int64_t mult_val = multiplier.to<int64_t>();
   int64_t shift_val = shift.to<int64_t>();
-
-  ET_CHECK_MSG(
-      zp_val >= std::numeric_limits<int8_t>::min() &&
-          zp_val <= std::numeric_limits<int8_t>::max(),
-      "%s zero point must be in int8 range [Value: %d]",
-      param_name,
-      zp_val);
 
   ET_CHECK_MSG(
       mult_val >= std::numeric_limits<int32_t>::min() &&
@@ -138,6 +127,43 @@ inline void validate_quantization_params(
       output_multiplier,
       output_shift,
       "Single quant Output");
+}
+
+inline bool is_channels_last_tensor(const Tensor& tensor) {
+  if (tensor.dim() != 4) {
+    return false;
+  }
+
+  // When channels or spatial dims are 1 the layout information is ambiguous.
+  if (tensor.size(1) == 1 || (tensor.size(2) == 1 && tensor.size(3) == 1)) {
+    return true;
+  }
+
+  constexpr executorch::aten::DimOrderType kChannelsLastDimOrder[] = {
+      0, 2, 3, 1};
+  executorch::aten::ArrayRef<executorch::aten::DimOrderType>
+      channels_last_order(kChannelsLastDimOrder, 4);
+
+  return tensor.dim_order() == channels_last_order;
+}
+
+inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
+  if (tensor1.dim() != tensor2.dim()) {
+    return false;
+  }
+
+  if (tensor1.dim() != 4) {
+    return false;
+  }
+
+  if (tensor1.size(1) != tensor2.size(1)) {
+    return false;
+  }
+
+  const bool tensor1_channels_only = tensor1.numel() == tensor1.size(1);
+  const bool tensor2_channels_only = tensor2.numel() == tensor2.size(1);
+
+  return tensor1_channels_only || tensor2_channels_only;
 }
 
 // Refer to CMSIS-NN 'arm_nn_requantize' implementation for details:

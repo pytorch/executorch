@@ -22,10 +22,7 @@ def define_common_targets():
                 "interface.h",
             ],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:evalue" + aten_suffix,

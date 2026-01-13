@@ -111,26 +111,26 @@ def test_w2l_u85_INT():
 
 @common.SkipIfNoModelConverter
 @pytest.mark.slow
-def test_w2l_vgf_INT():
+def test_w2l_vgf_quant():
     pipeline = VgfPipeline[input_t](
         TestW2L.create_model(),
         TestW2L.model_example_inputs,
         aten_op=[],
         exir_op=TestW2L.all_operators,
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_w2l_vgf_FP():
+def test_w2l_vgf_no_quant():
     pipeline = VgfPipeline[input_t](
         TestW2L.create_model(),
         TestW2L.model_example_inputs,
         aten_op=[],
         exir_op=TestW2L.all_operators,
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()

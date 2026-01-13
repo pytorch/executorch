@@ -1,0 +1,1 @@
+nemo_toolkit[asr]

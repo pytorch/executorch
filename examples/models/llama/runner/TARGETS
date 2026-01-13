@@ -16,12 +16,7 @@ runtime.python_library(
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama.runner",
-    visibility = [
-        "//bento/...",
-        "//bento_kernels/...",
-        "//executorch/examples/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/examples/models/llama:export_library",
     ],

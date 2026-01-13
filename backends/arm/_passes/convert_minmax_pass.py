@@ -7,7 +7,10 @@ from typing import cast, Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    create_node,
+    get_first_fake_tensor,
+)
 from executorch.backends.arm._passes.convert_squeezes_to_view import (
     ConvertSqueezesToViewPass,
 )
@@ -37,6 +40,15 @@ class ConvertMinMaxPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ConvertSqueezesToViewPass}
+
+    _TARGET_OPS = {
+        exir_ops.edge.aten.amax.default,
+        exir_ops.edge.aten.amin.default,
+        exir_ops.edge.aten.max.dim,
+        exir_ops.edge.aten.min.dim,
+        torch.ops.aten.max.dim,
+        torch.ops.aten.min.dim,
+    }
 
     def check_argmax(self, node):
         """
@@ -85,16 +97,11 @@ class ConvertMinMaxPass(ArmPass):
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False
         for node in graph_module.graph.nodes:
-            if node.op != "call_function":
-                continue
-            if node.target not in [
-                exir_ops.edge.aten.amax.default,
-                exir_ops.edge.aten.amin.default,
-                exir_ops.edge.aten.max.dim,
-                exir_ops.edge.aten.min.dim,
-                torch.ops.aten.max.dim,
-                torch.ops.aten.min.dim,
-            ]:
+            if (
+                node.op != "call_function"
+                or node.target not in ConvertMinMaxPass._TARGET_OPS
+                or not self.allowed_to_transform(node.meta)
+            ):
                 continue
 
             self.check_argmax(
@@ -131,15 +138,21 @@ class ConvertMinMaxPass(ArmPass):
 
                 for dim in dims:
                     args = (input_node, dim, True)
-                    input_node = graph_module.graph.create_node(
-                        "call_function", op, args, node.kwargs
+                    input_node = create_node(
+                        graph=graph_module.graph,
+                        op_target=op,
+                        args=args,
+                        kwargs={},
+                        from_node=node,
                     )
 
                 if not keepdims:
-                    input_node = graph_module.graph.create_node(
-                        "call_function",
-                        squeeze_op,
-                        (input_node, dims),
+                    input_node = create_node(
+                        graph=graph_module.graph,
+                        op_target=squeeze_op,
+                        args=(input_node, dims),
+                        kwargs={},
+                        from_node=node,
                     )
 
             replace_node.replace_all_uses_with(input_node)

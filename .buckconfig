@@ -3,6 +3,7 @@
 
 [buildfile]
   name = TARGETS
+  name_v2 = TARGETS,BUCK
 
 [repositories]
   root = .

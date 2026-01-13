@@ -98,29 +98,29 @@ def test_rsub_scalar_u85_INT(test_data):
 
 @common.parametrize("test_data", rsub_test_data)
 @common.SkipIfNoModelConverter
-def test_rsub_scalar_vgf_FP(test_data: Tuple[torch.Tensor]):
+def test_rsub_scalar_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     """Test Subtraction (VGF FP)"""
     pipeline = VgfPipeline[input_t1](
         Rsub(),
         test_data(),
         Rsub.aten_op,
         Rsub.exir_op,
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=False,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", rsub_test_data)
 @common.SkipIfNoModelConverter
-def test_rsub_scalar_vgf_INT(test_data: Tuple[torch.Tensor]):
+def test_rsub_scalar_vgf_quant(test_data: Tuple[torch.Tensor]):
     """Test Subtraction (VGF INT)"""
     pipeline = VgfPipeline[input_t1](
         Rsub(),
         test_data(),
         aten_op="torch.ops.aten.sub.Tensor",
         exir_op=Rsub.exir_op,
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=False,
+        quantize=True,
     )
     pipeline.run()

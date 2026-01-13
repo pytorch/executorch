@@ -10,11 +10,6 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     ScalarsToAttributePass,
 )
-from executorch.backends.cortex_m.passes import (
-    ConvertToCortexMPass,
-    QuantizedOpFusionPass,
-    ReplaceQuantNodesPass,
-)
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
@@ -23,6 +18,13 @@ from executorch.exir.pass_manager import PassManager
 from executorch.exir.program._program import _transform
 from torch.export import ExportedProgram
 
+from .activation_fusion_pass import ActivationFusionPass
+from .clamp_hardswish_pass import ClampHardswishPass
+from .convert_to_cortex_m_pass import ConvertToCortexMPass
+from .decompose_hardswish_pass import DecomposeHardswishPass
+from .quantized_op_fusion_pass import QuantizedOpFusionPass
+from .replace_quant_nodes_pass import ReplaceQuantNodesPass
+
 
 class CortexMPassManager(PassManager):
 
@@ -30,6 +32,8 @@ class CortexMPassManager(PassManager):
         FoldAndAnnotateQParamsPass,
         ReplaceScalarWithTensorArgPass,
         ReplaceQuantNodesPass,
+        ActivationFusionPass,
+        DecomposeHardswishPass,
         QuantizedOpFusionPass,
         ConvertToCortexMPass,
     ]
@@ -37,6 +41,7 @@ class CortexMPassManager(PassManager):
     pass_list_transform_for_annotation: list[ExportPass] = [
         ScalarsToAttributePass,
         ReplaceScalarWithTensorArgPass,
+        ClampHardswishPass,
     ]
 
     def __init__(self, exported_program, passes=None):

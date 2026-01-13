@@ -19,7 +19,7 @@ def define_arm_tests():
         "ops/test_avg_pool2d.py",
         "ops/test_cat.py",
         "ops/test_conv2d.py",
-        "ops/test_linear.py", 
+        "ops/test_linear.py",
         "ops/test_mul.py",
         "ops/test_permute.py",
         "ops/test_rsqrt.py",
@@ -67,6 +67,7 @@ def define_arm_tests():
             deps = [
                 "//executorch/backends/arm/test/tester/fb:arm_tester_fb" if is_fbcode else "//executorch/backends/arm/test:arm_tester",
                 "//executorch/backends/arm/test:conftest",
+                "//executorch/backends/arm/test/misc:dw_convs_shared_weights_module",
                 "//executorch/backends/arm:ethosu",
                 "//executorch/backends/arm/tosa:compile_spec",
                 "//executorch/backends/arm/tosa:partitioner",

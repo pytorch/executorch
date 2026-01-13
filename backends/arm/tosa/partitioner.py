@@ -186,6 +186,56 @@ class TOSAPartitioner(Partitioner):
         self.additional_checks = additional_checks
         self.tosa_spec = compile_spec.tosa_spec
 
+    def _detag_boundary_nodes(
+        self, module: GraphModule, tag: str, reporter: WhyNoPartitionReporter
+    ) -> None:
+        """De-tag nodes at the partition boundary.
+
+        Remove delegation tags from quantize nodes with inputs outside the
+        partition and from dequantize nodes with outputs outside the partition.
+
+        For non Q/DQ nodes, remove the tag from the first node in the partition
+        if any input has floating-point dtype.
+
+        Args:
+            tag: The delegation tag assigned to the partition.
+            reporter: A reporter to log rejected nodes.
+            module: The GraphModule containing the partition.
+
+        """
+
+        # De-tag outermost q-nodes upwards and dq-nodes downwards.
+        # De-tag if at least one input/output is not part of the partition.
+        for node in module.graph.nodes:
+            if not is_partitioned(node, tag):
+                continue
+
+            is_q_node = node.target in Q_OPS
+            is_dq_node = node.target in DQ_OPS
+            is_boundary_q_node = is_q_node and not is_partitioned(
+                node.all_input_nodes[0], tag
+            )
+            is_boundary_dq_node = is_dq_node and any(
+                not is_partitioned(user, tag) for user in node.users
+            )
+
+            if is_boundary_q_node or is_boundary_dq_node:
+                # Remove tag from quantize node with input outside partition,
+                # or dequantize node with any output outside partition
+                del node.meta["delegation_tag"]
+            elif not is_q_node and not is_dq_node:
+                # For non Q/DQ nodes, remove tag from first node in partition if any input has fp dtype
+                for input in node.all_input_nodes:
+                    if is_partitioned(input, tag):
+                        continue
+                    if get_first_fake_tensor(input).dtype.is_floating_point:
+                        reporter.report_reject(
+                            node,
+                            f"Was first node in partition and input {input.name} had fp dtype.",
+                        )
+                        del node.meta["delegation_tag"]
+                        break
+
     def _tag_module(  # noqa
         self,
         module: GraphModule,
@@ -233,39 +283,13 @@ class TOSAPartitioner(Partitioner):
             for node in partition.nodes:
                 node.meta["delegation_tag"] = tag
 
-            # De-tag outermost q-nodes upwards and dq-nodes downwards.
-            # De-tag if at least one input/output is not part of the partition.
-            for node in module.graph.nodes:
-                if not is_partitioned(node, tag):
-                    continue
-                if node.target in Q_OPS:
-                    for input in node.all_input_nodes:
-                        if not is_partitioned(input, tag):
-                            del node.meta["delegation_tag"]
-                            break
-                    continue
-
-                if node.target in DQ_OPS:
-                    for user in node.users:
-                        if not is_partitioned(user, tag):
-                            del node.meta["delegation_tag"]
-                            break
-                    continue
-
-                if self.tosa_spec.support_float():
-                    continue
-
-                if is_partitioned(node, tag):
-                    for input in node.all_input_nodes:
-                        if is_partitioned(input, tag):
-                            continue
-                        if get_first_fake_tensor(input).dtype.is_floating_point:
-                            reporter.report_reject(
-                                node,
-                                f"Was first node in partition and input {input.name} had fp dtype.",
-                            )
-                            del node.meta["delegation_tag"]
-                            break
+            if self.tosa_spec.support_integer() and not self.tosa_spec.support_float():
+                # Detag boundary Q/DQ since we cannot handle them without float support
+                self._detag_boundary_nodes(
+                    module,
+                    tag,
+                    reporter,
+                )
 
             is_noop_partition = all(
                 is_noop_clone(node)

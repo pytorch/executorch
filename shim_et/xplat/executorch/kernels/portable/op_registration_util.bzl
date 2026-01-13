@@ -98,7 +98,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
     Args:
         name: The name of the target; e.g., "op_add"
         deps: List of deps for the target.
-        android_deps: List of fbandroid_platform_deps for the target.
+        android_deps: List of deps for Android platform.
         aten_target: If True, define a "<name>_aten" target that uses
             `:kernel_types_aten`, compatible with host PyTorch. If False, define
             a "<name>" target that uses `:kernel_types`, compatible with the
@@ -116,14 +116,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         srcs = [
             "{}.cpp".format(name),
         ],
-        visibility = [
-            "//executorch/kernels/portable/test/...",
-            "//executorch/kernels/quantized/...",
-            "//executorch/kernels/optimized/test/...",
-            "//executorch/kernels/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        fbandroid_platform_deps = android_deps,
+        visibility = ["PUBLIC"],
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
         compiler_flags = select({
@@ -142,7 +135,10 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         ) + get_compiler_optimization_flags(),
         deps = [
             "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
-        ] + deps,
+        ] + deps + select({
+            "ovr_config//os:android": android_deps,
+            "DEFAULT": [],
+        }),
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
         # it to depend on other so libraries because that way we have to
@@ -365,6 +361,26 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_bitwise_xor",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+    ),
+    op_target(
+        name = "op_bitwise_left_shift",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+    ),
+    op_target(
+        name = "op_bitwise_right_shift",
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/pattern:bitwise_op",
@@ -628,6 +644,13 @@ ATEN_OPS = (
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
+    op_target(
+            name = "op_grid_sampler_2d",
+            deps = [
+                "//executorch/kernels/portable/cpu/util:grid_sampler_2d_util",
+                "//executorch/runtime/core/exec_aten/util:tensor_util",
+            ],
+        ),
     op_target(
         name = "op_gt",
         deps = [
@@ -1366,9 +1389,6 @@ ATEN_OPS = (
 CUSTOM_OPS = (
     op_target(
         name = "op_allclose",
-    ),
-    op_target(
-        name = "op_linear_scratch_example",
     ),
 )
 

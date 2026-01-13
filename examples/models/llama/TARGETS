@@ -16,10 +16,7 @@ runtime.python_library(
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":transformer_modules",
         "//caffe2:torch",
@@ -39,10 +36,7 @@ runtime.python_library(
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
 )
 
 runtime.python_library(
@@ -52,10 +46,7 @@ runtime.python_library(
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":llama_transformer",
         "//caffe2:torch",
@@ -116,10 +107,7 @@ runtime.command_alias(
 
 runtime.python_library(
     name = "source_transformation",
-    visibility = [
-        "//executorch/examples/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     srcs = [
         "source_transformation/apply_spin_quant_r1_r2.py",
         "source_transformation/attention.py",
@@ -155,12 +143,7 @@ runtime.python_library(
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
-    visibility = [
-        "//bento/...",
-        "//bento_kernels/...",
-        "//executorch/examples/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":hf_download",
         ":source_transformation",
@@ -207,12 +190,7 @@ runtime.python_library(
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
-    visibility = [
-        "//bento/...",
-        "//bento_kernels/...",
-        "//executorch/examples/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/pypi/tqdm:tqdm",
         "fbsource//third-party/pypi/datasets:datasets",

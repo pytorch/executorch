@@ -22,7 +22,7 @@ def define_common_targets():
         ],
         define_static_target = True,
         platforms = [ANDROID],
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         deps = [
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
@@ -44,10 +44,12 @@ def define_common_targets():
                 [
                     "*.cpp",
                     "backends/*.cpp",
-                    "backends/irbackend/*.cpp",
-                    "backends/htpbackend/*.cpp",
-                ] + (["backends/htpbackend/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/htpbackend/aarch64/*.cpp"]) + (
-                    ["backends/irbackend/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/irbackend/aarch64/*.cpp"]
+                    "backends/gpu/*.cpp",
+                    "backends/htp/*.cpp",
+                    "backends/ir/*.cpp",
+                ] + (["backends/gpu/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/gpu/aarch64/*.cpp"]) + (
+                    ["backends/htp/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/htp/aarch64/*.cpp"]) + (
+                    ["backends/ir/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/ir/aarch64/*.cpp"]
                 ),
                 exclude = ["Logging.cpp"],
             ),
@@ -55,15 +57,16 @@ def define_common_targets():
                 [
                     "*.h",
                     "backends/*.h",
-                    "backends/irbackend/*.h",
-                    "backends/htpbackend/*.h",
+                    "backends/gpu/*.h",
+                    "backends/htp/*.h",
+                    "backends/ir/*.h",
                 ],
                 exclude = ["Logging.h"],
             ),
             define_static_target = True,
             link_whole = True,  # needed for executorch/examples/models/llama:main to register QnnBackend
             platforms = [ANDROID],
-            visibility = ["@EXECUTORCH_CLIENTS"],
+            visibility = ["PUBLIC"],
             resources = ({
                 "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs".format(get_qnn_library_version()),
                 } if include_aot_qnn_lib else {

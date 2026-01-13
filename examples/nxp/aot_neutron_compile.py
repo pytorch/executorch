@@ -18,13 +18,16 @@ from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpe
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
+from executorch.backends.nxp.edge_passes.remove_additional_quantize_dequantize_nodes_pass import (
+    RemoveAdditionalQDQClustersPass,
+)
 from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.backends.nxp.quantizer.utils import post_training_quantize
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
@@ -187,6 +190,14 @@ if __name__ == "__main__":  # noqa C901
         help="Visualize the lowered program. `show` launches a browser tab with the visualization. `store` stores the "
         "visualization in a json file for later inspection. See `docs/source/visualize-with-clusters.md` for details.",
     )
+    parser.add_argument(
+        "--use_channels_last_dim_order",
+        required=False,
+        default=False,
+        action="store_true",
+        help="The model (including the Neutron backend) will use the channels last dim order, which can result in faster "
+        "inference. The inputs must also be provided in the channels last dim order.",
+    )
 
     args = parser.parse_args()
 
@@ -203,6 +214,15 @@ if __name__ == "__main__":  # noqa C901
     )
     model = model.eval()
 
+    if args.use_channels_last_dim_order:
+        # Turn the model to channels last.
+        model.to(memory_format=torch.channels_last)
+
+        # The dim order of the example inputs will define the dim order of the intermediate tensors in the model.
+        example_inputs = tuple(
+            i.to(memory_format=torch.channels_last) for i in example_inputs
+        )
+
     # 2. Export the model to ATEN
     exported_program = torch.export.export(model, example_inputs, strict=True)
 
@@ -216,7 +236,7 @@ if __name__ == "__main__":  # noqa C901
             )
             calibration_inputs = example_inputs
         quantizer = NeutronQuantizer(neutron_target_spec)
-        module = post_training_quantize(module, calibration_inputs, quantizer)
+        module = calibrate_and_quantize(module, calibration_inputs, quantizer)
 
     if args.so_library is not None:
         logging.debug(f"Loading libraries: {args.so_library}")
@@ -257,6 +277,10 @@ if __name__ == "__main__":  # noqa C901
         edge_program_manager = edge_program_manager.transform(
             [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
         )
+
+    edge_program_manager = edge_program_manager.transform(
+        NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])
+    )
 
     logging.debug(f"Lowered graph:\n{edge_program_manager.exported_program().graph}")
 

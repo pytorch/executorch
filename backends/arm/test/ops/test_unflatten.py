@@ -83,25 +83,25 @@ def test_unflatten_int_u85_INT(test_data: test_data_t):
 
 @common.parametrize("test_data", Unflatten.test_data)
 @common.SkipIfNoModelConverter
-def test_unflatten_int_vgf_FP(test_data: test_data_t):
+def test_unflatten_int_vgf_no_quant(test_data: test_data_t):
     module, inputs = test_data()
     pipeline = VgfPipeline[input_t](
         module,
         inputs,
         Unflatten.aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Unflatten.test_data)
 @common.SkipIfNoModelConverter
-def test_unflatten_int_vgf_INT(test_data: test_data_t):
+def test_unflatten_int_vgf_quant(test_data: test_data_t):
     module, inputs = test_data()
     pipeline = VgfPipeline[input_t](
         module,
         inputs,
         Unflatten.aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

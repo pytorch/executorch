@@ -70,7 +70,7 @@ tests = {
 
 
 @common.parametrize("model", tests)
-def test_fuse_view_copy(model):
+def test_fuse_view_copy_transform_tosa_FP(model):
     pipeline = PassPipeline(
         model,
         model.data,

@@ -18,7 +18,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/pattern:logical_op"
         ],
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(

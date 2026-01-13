@@ -69,14 +69,6 @@ void* SharedBuffer::GetCustomMemBase(void* buf) {
   return it->second;
 }
 
-void* SharedBuffer::GetUnAlignedAddr(void* buf) {
-  auto it = restore_map_.find(buf);
-  if (it == restore_map_.end()) {
-    return nullptr;
-  }
-  return it->second;
-}
-
 size_t SharedBuffer::GetAllocatedSize(void* buf) {
   auto it = allocated_size_map_.find(buf);
   if (it == allocated_size_map_.end()) {
@@ -123,10 +115,10 @@ void* SharedBuffer::AllocMem(size_t bytes, size_t alignment) {
     QNN_EXECUTORCH_LOG_WARN("Failed to allocate the tensor by RPC memory.");
     return nullptr;
   }
-  allocated_size_map_.insert({buf, allocate_bytes});
   auto aligned_buf = reinterpret_cast<void*>(
       alignTo(alignment, reinterpret_cast<intptr_t>(buf)));
   bool status = restore_map_.insert({aligned_buf, buf}).second;
+  allocated_size_map_.insert({aligned_buf, allocate_bytes});
   if (!status) {
     QNN_EXECUTORCH_LOG_ERROR("Failed to allocate the tensor by RPC memory.");
     rpc_mem_free_(buf);
@@ -152,6 +144,15 @@ void SharedBuffer::FreeMem(void* buf) {
   } else {
     rpc_mem_free_(restore_map_[buf]);
     restore_map_.erase(buf);
+    allocated_size_map_.erase(buf);
+    // Unbind the custom memory from tensor address.
+    auto mit = custom_mem_to_tensor_addr_.find(buf);
+    if (mit != custom_mem_to_tensor_addr_.end()) {
+      for (auto it = mit->second.begin(); it != mit->second.end(); ++it) {
+        tensor_addr_to_custom_mem_.erase(*it);
+      }
+      custom_mem_to_tensor_addr_.erase(buf);
+    }
   }
 }
 
@@ -185,13 +186,17 @@ Error SharedBuffer::Load() {
 }
 
 void SharedBuffer::AddCusomMemTensorAddr(void* tensor_addr, void* custom_mem) {
-  tensor_addr_to_custom_mem_.insert({tensor_addr, custom_mem});
+  bool status =
+      tensor_addr_to_custom_mem_.insert({tensor_addr, custom_mem}).second;
+  if (!status) {
+    QNN_EXECUTORCH_LOG_WARN(
+        "Tensor address %p already associated with custom memory %p",
+        tensor_addr,
+        custom_mem);
+    return;
+  }
+  custom_mem_to_tensor_addr_[custom_mem].insert(tensor_addr);
 };
-
-void SharedBuffer::AddCusomMemTensorInfo(const CustomMemTensorInfo& info) {
-  custom_mem_tensor_info_set_.insert(info);
-  tensor_addr_to_custom_mem_.insert({info.tensor_addr, info.custom_mem});
-}
 
 Error SharedBuffer::UnLoad() {
   if (dlclose(lib_cdsp_rpc_) != 0) {

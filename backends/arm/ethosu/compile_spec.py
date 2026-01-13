@@ -4,14 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-
+from executorch.backends.arm.common.pipeline_config import (  # noqa: unused
+    ArmPassPipelineConfig,
+)
 from executorch.backends.arm.tosa import (  # type: ignore[import-not-found]
     TosaSpecification,
 )
-
-from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
-    CompileSpec,
-)
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 class EthosUCompileSpec(ArmCompileSpec):
@@ -43,7 +42,6 @@ class EthosUCompileSpec(ArmCompileSpec):
 
         """
         self.target = target
-
         # Set vela compiler flags
         if config_ini is None:
             config_ini = "Arm/vela.ini"
@@ -57,27 +55,30 @@ class EthosUCompileSpec(ArmCompileSpec):
             ]
         )
         # default system config and memory mode
-        if "ethos-u55" in self.target:
+        target_lower = self.target.lower()
+        if "ethos-u55" in target_lower:
             if system_config is None:
                 system_config = "Ethos_U55_High_End_Embedded"
             if memory_mode is None:
                 memory_mode = "Shared_Sram"
-        elif "ethos-u85" in self.target:
+        elif "ethos-u85" in target_lower:
             if system_config is None:
                 system_config = "Ethos_U85_SYS_DRAM_Mid"
             if memory_mode is None:
                 memory_mode = "Sram_Only"
         else:
-            raise RuntimeError(f"Unknown ethos target: {self.target}")
+            raise RuntimeError(f"Unknown ethos target: {target}")
 
         compiler_flags.append(f"--system-config={system_config}")
         compiler_flags.append(f"--memory-mode={memory_mode}")
 
         # Set TOSA version.
         base_tosa_version = "TOSA-1.0+INT+int16"
-        if "u55" in self.target:
+        if "u55" in target_lower:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
+        if "u85" in self.target:
+            base_tosa_version += "+cf"
         tosa_spec = TosaSpecification.create_from_string(base_tosa_version)
 
         self._set_compile_specs(tosa_spec, compiler_flags)
@@ -109,3 +110,8 @@ class EthosUCompileSpec(ArmCompileSpec):
     def get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "vela"
+
+    def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
+        # Any u55 subset passes are treated as tosa specification configs
+        # As such, they should be added to the base class default.
+        return super()._create_default_pipeline_config()

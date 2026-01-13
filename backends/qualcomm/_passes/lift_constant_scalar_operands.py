@@ -55,6 +55,7 @@ SCALAR_OPS = {
     aten.where.ScalarOther: TensorOpInfo(aten.where.self, False, True),
     aten.where.Scalar: TensorOpInfo(aten.where.self, False, True),
     aten.masked_fill.Scalar: TensorOpInfo(aten.masked_fill.Tensor, False, False),
+    aten.masked_fill_.Scalar: TensorOpInfo(aten.masked_fill.Tensor, False, False),
     aten.bitwise_xor.Scalar: TensorOpInfo(aten.bitwise_xor.Tensor, False, False),
 }
 

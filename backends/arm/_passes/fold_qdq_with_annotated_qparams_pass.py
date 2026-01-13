@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,10 +15,14 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     is_param_node,
     set_node_arg,
 )
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm._passes.remove_noop_pass import RemoveNoopPass
+from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir import ExportedProgram
 
@@ -102,8 +105,10 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         RemoveNoopPass,
     }
 
-    def __init__(self, exported_program: Optional[ExportedProgram] = None) -> None:
-        super().__init__()
+    def __init__(
+        self, exported_program: Optional[ExportedProgram] = None, *args, **kwargs
+    ) -> None:
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     def fold_and_annotate_arg(
@@ -230,15 +235,37 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 submodule.graph.erase_node(node_to_remove)
         return
 
+    @staticmethod
+    def is_foldable(node: Node) -> bool:
+        if node.op != "call_function":
+            return False
+        # Don't fold chains of quant-ops into each other.
+        if node.target in (*Q_OPS, *DQ_OPS):
+            return False
+
+        # Always fold q-dq into constant ops.
+        if node.target in (
+            exir_ops.edge.aten.full_like.default,
+            *ComputeConstantOpsAOTPass.targeted_ops,
+        ):
+            return True
+
+        # We should not fold q-dq nodes into non-quantized nodes.
+        if not (
+            ArmAnnotationInfo.CUSTOM_META_KEY in node.meta.get("custom", {})
+            and ArmAnnotationInfo(
+                node.meta["custom"][ArmAnnotationInfo.CUSTOM_META_KEY]
+            ).quantized
+        ):
+            return False
+        return True
+
     def call(self, graph_module: GraphModule) -> PassResult:  # noqa: C901
 
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
-            if n.op != "call_function":
-                continue
-            # Don't fold chains of quant-ops into each other.
-            if n.target in (*Q_OPS, *DQ_OPS):
+            if not FoldAndAnnotateQParamsPass.is_foldable(n):
                 continue
 
             # Make sure we haven't already set qparams meta information on the node
@@ -309,7 +336,7 @@ class QuantizeClampArgumentsPass(ArmPass):
         - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {FoldAndAnnotateQParamsPass}
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
@@ -321,12 +348,15 @@ class QuantizeClampArgumentsPass(ArmPass):
             }:
                 continue
 
-            # Make sure we have a quantized operator
-            user = list(n.users)[0]
-            if user.target not in Q_OPS:
+            try:
+                output_qparams = get_output_qparams(n)
+            except ValueError:
+                continue
+            if len(output_qparams) == 0:
                 continue
 
-            qargs = QuantArgs.from_operator(user.target, user.args)
+            # Qparams are stored per user index; use the first entry.
+            qargs = next(iter(output_qparams.values()))
 
             if n.target == exir_ops.edge.aten.clamp.default:
                 # Quantize the min and max arguments of clamp, if they are not None
@@ -342,5 +372,10 @@ class QuantizeClampArgumentsPass(ArmPass):
                     n.update_arg(2, quantized_max_val)
 
                 modified = True
+
+        if modified:
+            # Retrace to refresh fake tensor metadata after updating clamp min/max.
+            graph_module = super().call(graph_module).graph_module
+            graph_module.recompile()
 
         return PassResult(graph_module, modified)

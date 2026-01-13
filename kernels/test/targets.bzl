@@ -24,10 +24,7 @@ def define_common_targets():
             exported_headers=[
                 "TestUtil.h",
             ],
-            visibility = [
-                "//executorch/kernels/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_kernel else [],
             exported_deps = [
                 "//executorch/runtime/core:core",
@@ -53,10 +50,7 @@ def define_common_targets():
                 "ScalarOverflowTestMacros.h",
                 "UnaryUfuncRealHBBF16ToFloatHBF16Test.h",
             ],
-            visibility = [
-                "//executorch/kernels/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_kernel else [],
             exported_deps = [
                 ":supported_features_header",
@@ -71,7 +65,7 @@ def define_common_targets():
                 "//common/gtest:gtest",
             ] if not runtime.is_oss else [],
             xplat_exported_deps = [
-                "//xplat/folly:init_init",
+                "fbsource//xplat/folly/init:init",
                 "//third-party/googletest:gtest_main",
             ],
         )
@@ -151,10 +145,7 @@ def define_common_targets():
     runtime.filegroup(
         name = "test_srcs",
         srcs = TEST_SRCS,
-        visibility = [
-            "//executorch/kernels/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.genrule(
@@ -163,10 +154,7 @@ def define_common_targets():
         cmd = "cp $(location :test_srcs)/* $OUT",
         outs = {f: [f] for f in TEST_SRCS},
         default_outs = ["."],
-        visibility = [
-            "//executorch/kernels/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     codegen_function_header_wrapper("executorch/kernels/aten", "aten")
@@ -198,8 +186,10 @@ def define_common_targets():
     _common_op_test("op_atanh_test", ["aten", "portable"])
     _common_op_test("op_avg_pool2d_test", ["aten", "portable"])
     _common_op_test("op_bitwise_and_test", ["aten", "portable"])
+    _common_op_test("op_bitwise_left_shift_test", ["portable"])
     _common_op_test("op_bitwise_not_test", ["aten", "portable"])
     _common_op_test("op_bitwise_or_test", ["aten", "portable"])
+    _common_op_test("op_bitwise_right_shift_test", ["portable"])
     _common_op_test("op_bitwise_xor_test", ["aten", "portable"])
     _common_op_test("op_bmm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_cat_test", ["aten", "portable"])

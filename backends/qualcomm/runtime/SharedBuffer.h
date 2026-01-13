@@ -59,18 +59,9 @@ class SharedBuffer final {
   // memory handle is registered during execution
   void AddCusomMemTensorAddr(void* tensor_addr, void* custom_mem);
 
-  // memory handle can be registered before execution
-  void AddCusomMemTensorInfo(const CustomMemTensorInfo& info);
-
   size_t GetAllocatedSize(void* buf);
 
   void* GetCustomMemBase(void* buf);
-
-  void* GetUnAlignedAddr(void* buf);
-
-  const std::unordered_set<CustomMemTensorInfo>& GetCustomMemTensorInfoSet() {
-    return custom_mem_tensor_info_set_;
-  };
 
  private:
   SharedBuffer() = default;
@@ -93,7 +84,10 @@ class SharedBuffer final {
   std::unordered_map<void*, size_t> allocated_size_map_;
   // Maps for the custom memory
   std::unordered_map<void*, void*> tensor_addr_to_custom_mem_;
-  std::unordered_set<CustomMemTensorInfo> custom_mem_tensor_info_set_;
+  // After the custom memory is freed, we will ensure that no tensor addresses
+  // remain linked to this custom memory.
+  std::unordered_map<void*, std::unordered_set<void*>>
+      custom_mem_to_tensor_addr_;
   std::atomic_bool initialize_{false};
   static std::mutex init_mutex_;
 };
