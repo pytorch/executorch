@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -172,9 +172,7 @@ def test_batch_norm_conv_fusing__full_pipeline__1d(bias: bool):
     ).exported_program()
     nodes = list(edge_program.graph.nodes)
 
-    assert (
-        len(nodes) == 17
-    )  # 1D Conv currently isn't delegated, because it doesn't get quantized.
+    assert len(nodes) == 13
     assert not any(
         node.op == "call_function" and "batch_norm" in node.target.__name__
         for node in nodes

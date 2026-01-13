@@ -735,3 +735,15 @@ class UnsqueezeAddModel(torch.nn.Module):
 
     def forward(self, x, y):
         return torch.unsqueeze(x + y, self.dim)
+
+
+class SqueezeAddModel(torch.nn.Module):
+    def __init__(self, dim=None):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, y):
+        if self.dim is None:
+            return torch.squeeze(x + y)
+        else:
+            return torch.squeeze(x + y, self.dim)
