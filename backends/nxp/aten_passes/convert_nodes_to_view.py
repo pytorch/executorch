@@ -11,8 +11,21 @@ from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 
-class ConvertUnsqueezeToViewPass(PassBase):
-    """Replace 'aten.unsqueeze.default' with 'aten.view.default'.
+class ConvertNodesToViewPass(PassBase):
+    """Replaces:
+        - 'aten.squeeze.default', 'aten.squeeze.dims' and 'aten.squeeze.dim' with 'aten.view.default'.
+
+                  x                                               x
+                  │                                               │
+    ┌─────────────▼─────────────┐    replace with   ┌─────────────▼─────────────┐
+    │    aten.squeeze(x, dim)   │  ──────────────►  │  aten.view.default(x, S)  │
+    └─────────────┬─────────────┘                   └─────────────┬─────────────┘
+                  │                                               │
+                  ▼                                               ▼
+                 out                                             out
+
+
+        - 'aten.unsqueeze.default' with 'aten.view.default'.
 
                   x                                               x
                   │                                               │
@@ -22,7 +35,16 @@ class ConvertUnsqueezeToViewPass(PassBase):
                   │                                               │
                   ▼                                               ▼
                  out                                             out
+
     """
+
+    @staticmethod
+    def _is_squeeze(node_: Node) -> bool:
+        return node_.op == "call_function" and (
+            node_.target == torch.ops.aten.squeeze.dim
+            or node_.target == torch.ops.aten.squeeze.dims
+            or node_.target == torch.ops.aten.squeeze.default
+        )
 
     @staticmethod
     def _is_unsqueeze(node_: Node) -> bool:
@@ -55,11 +77,8 @@ class ConvertUnsqueezeToViewPass(PassBase):
         self.graph_module = graph_module
         made_changes = False
 
-        if not any(self._is_unsqueeze(n) for n in graph_module.graph.nodes):
-            return PassResult(graph_module, made_changes)
-
         for node in list(graph_module.graph.nodes):
-            if not self._is_unsqueeze(node):
+            if not self._is_squeeze(node) and not self._is_unsqueeze(node):
                 continue
 
             input_node = node.all_input_nodes[0]
