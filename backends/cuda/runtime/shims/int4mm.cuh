@@ -1177,13 +1177,14 @@ Tensor* _weight_int4pack_mm_cuda(
   ET_CHECK(B_innerKTiles == 2 || B_innerKTiles == 4 || B_innerKTiles == 8);
 
   // A is standard row major
-  ET_CHECK(A.dtype() == executorch::aten::ScalarType::BFloat16);
+  // SlimTensor::dtype() returns slim::c10::ScalarType, cast to int32_t for comparison
+  ET_CHECK(static_cast<int32_t>(A.dtype()) == static_cast<int32_t>(SupportedDTypes::BFLOAT16));
   // ET only supports contiguous tensors for now
   // ET_CHECK(A.is_contiguous());
   ET_CHECK(A.dim() == 2);
 
   // B has B_innerKTiles k-tiles in the innermost dimension
-  ET_CHECK(B.dtype() == executorch::aten::ScalarType::Int);
+  ET_CHECK(static_cast<int32_t>(B.dtype()) == static_cast<int32_t>(SupportedDTypes::INT32));
   // ET only supports contiguous tensors for now
   // ET_CHECK(B.is_contiguous());
   ET_CHECK(B.dim() == 4);

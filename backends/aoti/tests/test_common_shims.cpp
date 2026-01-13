@@ -9,7 +9,7 @@
 #include <gtest/gtest.h>
 #include <vector>
 
-#include <executorch/backends/aoti/common_shims_slim.h>
+#include <executorch/backends/aoti/common_shims.h>
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/aoti/slim/factory/empty.h>
