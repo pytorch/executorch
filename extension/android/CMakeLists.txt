@@ -30,11 +30,7 @@ endif()
 # The main JNI layer has been converted to pure JNI and no longer requires fbjni
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   # We need to download fbjni library from maven, and use its "prefab" library and
-  # headers, and link executorch library against that fbjni library. We don't know
-  # which NDK is used to compile fbjni, and we need to link our executorch library
-  # to the version which Android APK links against for runtime to ensure the
-  # libc++ dependencies are consistent. WARNING # Users need to use the SAME fbjni
-  # version here and in app gradle dependency for runtime compatibility!
+  # headers, and link executorch library against that fbjni library for the training module.
   if(NOT FBJNI_VERSION)
     set(FBJNI_VERSION 0.7.0)
   endif()
