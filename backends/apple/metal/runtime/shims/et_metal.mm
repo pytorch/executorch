@@ -931,6 +931,8 @@ void ETMetalStream::executeMPSGraph(MPSGraph* mpsGraph, NSDictionary* feeds, NSD
                            targetOperations:nil
                           resultsDictionary:results
                         executionDescriptor:nil];
+
+            synchronize(syncType);
         }
     });
 }
