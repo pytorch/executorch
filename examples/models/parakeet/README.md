@@ -60,7 +60,7 @@ From the executorch root directory:
 ./cmake-out/examples/models/parakeet/parakeet_runner \
   --model_path examples/models/parakeet/parakeet_tdt_exports/parakeet_tdt.pte \
   --audio_path /path/to/audio.wav \
-  --tokenizer_path examples/models/parakeet/tokenizer.model
+  --tokenizer_path examples/models/parakeet/parakeet_tdt_exports/tokenizer.model
 ```
 
 ### Runner Arguments
