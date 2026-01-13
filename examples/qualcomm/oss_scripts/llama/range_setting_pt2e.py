@@ -22,6 +22,9 @@ from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer
     PerChannelParamObserver,
 )
 
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.qualcomm.utils import make_quantizer
 
 from torchao.prototype.quantization.module_swap import (
@@ -194,12 +197,20 @@ def compute_scales(model, data, weight_bits, act_bits, num_points=1600):
     return scales_state_dict
 
 
-def make_custom_quantizer(quant_dtype, custom_annotations=(), linear_only=False):
+def make_custom_quantizer(
+    quant_dtype,
+    custom_annotations=(),
+    linear_only=False,
+    backend=QnnExecuTorchBackendType.kHtpBackend,
+    soc_model="SM8750",
+):
     quantizer = make_quantizer(
         quant_dtype=quant_dtype,
         per_channel_conv=True,
         per_channel_linear=True,
         act_observer=MinMaxObserver,
+        backend=backend,
+        soc_model=soc_model,
     )
 
     if linear_only:

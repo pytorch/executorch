@@ -372,8 +372,10 @@ def make_quantizer(
     is_qat=False,
     submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     eps=None,
+    backend=QnnExecuTorchBackendType.kHtpBackend,
+    soc_model="SM8750",
 ):
-    quantizer = QnnQuantizer()
+    quantizer = QnnQuantizer(backend=backend, soc_model=getattr(QcomChipset, soc_model))
     quantizer.add_custom_quant_annotations(custom_annotations)
     quantizer.set_default_quant_config(
         quant_dtype,
@@ -530,14 +532,19 @@ def build_executorch_binary(
         captured_model = torch.export.export(model, inputs, strict=False).module()
         if qat_training_data:
             quantizer = custom_quantizer or make_quantizer(
-                quant_dtype=quant_dtype, is_qat=True
+                quant_dtype=quant_dtype,
+                is_qat=True,
+                backend=backend,
+                soc_model=soc_model,
             )
             # qat training
             annotated_model = qat_train(
                 model, captured_model, quantizer, qat_training_data
             )
         else:
-            quantizer = custom_quantizer or make_quantizer(quant_dtype=quant_dtype)
+            quantizer = custom_quantizer or make_quantizer(
+                quant_dtype=quant_dtype, backend=backend, soc_model=soc_model
+            )
             # ptq calibration
             with torch.no_grad():
                 annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
