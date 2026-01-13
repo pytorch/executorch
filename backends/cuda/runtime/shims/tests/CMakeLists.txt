@@ -35,7 +35,7 @@ endif()
 # Find installed ExecuTorch
 find_package(executorch CONFIG REQUIRED HINTS ${CMAKE_INSTALL_PREFIX})
 
-# List of test files
+# List of SlimTensor-based test files (now the primary tests)
 set(CUDA_SHIM_TESTS
     test_aoti_torch_create_tensor_from_blob_v2
     test_aoti_torch_empty_strided
@@ -49,6 +49,7 @@ set(CUDA_SHIM_TESTS
 
 enable_testing()
 
+# Build SlimTensor-based tests
 foreach(test_name ${CUDA_SHIM_TESTS})
   add_executable(${test_name} ${test_name}.cpp)
 
@@ -57,16 +58,15 @@ foreach(test_name ${CUDA_SHIM_TESTS})
                          ${CUDAToolkit_INCLUDE_DIRS}
   )
 
+  target_compile_definitions(${test_name} PRIVATE CUDA_AVAILABLE=1)
+
   target_link_libraries(
     ${test_name}
     PRIVATE GTest::gtest
             GTest::gtest_main
             aoti_cuda_shims
-            aoti_cuda_backend
-            cuda_tensor_maker
-            cuda_platform
+            slimtensor
             executorch_core
-            extension_tensor
             CUDA::cudart
   )
 
