@@ -524,7 +524,7 @@ AOTITorchError aoti_torch_new_tensor_handle(
     Tensor** new_handle) {
   (void)orig_handle;
   (void)new_handle;
-  throw std::runtime_error("Not implemented");
+  throw std::runtime_error("Not implemented: aoti_torch_new_tensor_handle");
   return Error::Internal;
 }
 
