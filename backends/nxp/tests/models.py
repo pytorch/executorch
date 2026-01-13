@@ -788,3 +788,15 @@ class TwoPartitionPReLUModel(torch.nn.Module):
         # partition 2
         x = self.prelu(x)
         return x
+
+
+class SqueezeAddModel(torch.nn.Module):
+    def __init__(self, dim=None):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, y):
+        if self.dim is None:
+            return torch.squeeze(x + y)
+        else:
+            return torch.squeeze(x + y, self.dim)

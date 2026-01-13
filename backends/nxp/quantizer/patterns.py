@@ -972,6 +972,33 @@ class SigmoidPattern(QuantizationPattern):
         )
 
 
+class SqueezePattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.squeeze.default` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.squeeze.default]
+
+
+class SqueezeDimPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.squeeze.dim` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.squeeze.dim]
+
+
+class SqueezeDimsPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.squeeze.dims` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.squeeze.dims]
+
+
 class TanhPattern(QuantizationPattern):
     """
     Quantizer for Tanh operator.
@@ -1006,6 +1033,13 @@ class TanhInPlacePattern(QuantizationPattern):
         return get_anchors_for_fixed_quant_specs(
             fused_partition, scale=1.0 / 128.0, zero_point=0, is_qat=self.is_qat
         )
+
+
+class UnsqueezePattern(SharedSpecPattern):
+    """Quantizer for the `aten.unsqueeze.default` operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.unsqueeze.default]
 
 
 class UpsampleBilinear2DPattern(SharedSpecPattern):
