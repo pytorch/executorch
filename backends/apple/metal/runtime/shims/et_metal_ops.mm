@@ -827,10 +827,13 @@ AOTITorchError aoti_torch_mps_convolution(
       }
 
       ET_LOG(Debug, "aoti_torch_mps_convolution: mps_dtype=%d, element_size=%zu", mps_dtype, element_size);
+      // Get weight's input channel dimension from the weight tensor (not from input)
+      // For grouped convolutions, weight shape is [C_out, C_in/groups, kH, kW]
+      int64_t weight_C_in = weight_tensor->sizes()[1];  // This handles grouped convs correctly
 
       // Define tensor shapes for placeholders (needed for both cache hit and miss)
       NSArray<NSNumber*>* inputShape = @[@(N), @(C_in), @(H_in), @(W_in)];
-      NSArray<NSNumber*>* weightShape = @[@(C_out), @(C_in), @(kernel_h), @(kernel_w)];
+      NSArray<NSNumber*>* weightShape = @[@(C_out), @(weight_C_in), @(kernel_h), @(kernel_w)];
 
       // Create cache key for this convolution
       GraphCacheKey cache_key;
