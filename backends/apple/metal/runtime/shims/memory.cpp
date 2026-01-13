@@ -511,7 +511,8 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
   // Increment the reference count for this memory address only if it is owned
   // by tensor
-  memory_to_n_tensor[adjusted_data] = memory_to_n_tensor[adjusted_data] == NOT_OWN
+  memory_to_n_tensor[adjusted_data] =
+      memory_to_n_tensor[adjusted_data] == NOT_OWN
       ? NOT_OWN
       : memory_to_n_tensor[adjusted_data] + 1;
 
