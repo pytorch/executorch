@@ -45,7 +45,7 @@ DEFINE_string(
     "Path to data file (.ptd) for delegate data (optional, required for CUDA).");
 DEFINE_string(
     timestamps,
-    "none",
+    "segment",
     "Timestamp output mode: none|token|word|segment|all");
 
 using ::executorch::extension::from_blob;
