@@ -216,19 +216,17 @@ std::vector<TextWithOffsets> get_segment_offsets(
 
     if (!word.empty() && (ends_with_delimiter || is_delimiter_word)) {
       segment_words.push_back(word);
-      if (!segment_words.empty()) {
-        std::string segment;
-        for (size_t j = 0; j < segment_words.size(); j++) {
-          if (j > 0) {
-            segment += " ";
-          }
-          segment += segment_words[j];
+      std::string segment;
+      for (size_t j = 0; j < segment_words.size(); j++) {
+        if (j > 0) {
+          segment += " ";
         }
-        segment_offsets.push_back(
-            {segment,
-             word_offsets[previous_word_index].start_offset,
-             offset.end_offset});
+        segment += segment_words[j];
       }
+      segment_offsets.push_back(
+          {segment,
+           word_offsets[previous_word_index].start_offset,
+           offset.end_offset});
       segment_words.clear();
       previous_word_index = i + 1;
       continue;
