@@ -68,6 +68,9 @@ struct TrainingJniCache {
   jclass hashmap_class = nullptr;
   jclass bytebuffer_class = nullptr;
   jclass byteorder_class = nullptr;
+  jclass long_class = nullptr;
+  jclass double_class = nullptr;
+  jclass boolean_class = nullptr;
   jmethodID tensor_nativeNewTensor = nullptr;
   jmethodID tensor_dtypeJniCode = nullptr;
   jmethodID tensor_getRawDataBuffer = nullptr;
@@ -91,6 +94,9 @@ struct TrainingJniCache {
   jmethodID map_size = nullptr;
   jmethodID bytebuffer_order = nullptr;
   jmethodID byteorder_nativeOrder = nullptr;
+  jmethodID long_longValue = nullptr;
+  jmethodID double_doubleValue = nullptr;
+  jmethodID boolean_booleanValue = nullptr;
 
   bool initialized = false;
 
@@ -211,6 +217,33 @@ struct TrainingJniCache {
 
       byteorder_nativeOrder = env->GetStaticMethodID(
           byteorder_class, "nativeOrder", "()Ljava/nio/ByteOrder;");
+    }
+
+    // Cache wrapper classes for primitives (Long, Double, Boolean)
+    jclass local_long_class = env->FindClass("java/lang/Long");
+    if (local_long_class != nullptr) {
+      long_class = static_cast<jclass>(env->NewGlobalRef(local_long_class));
+      env->DeleteLocalRef(local_long_class);
+
+      long_longValue = env->GetMethodID(long_class, "longValue", "()J");
+    }
+
+    jclass local_double_class = env->FindClass("java/lang/Double");
+    if (local_double_class != nullptr) {
+      double_class = static_cast<jclass>(env->NewGlobalRef(local_double_class));
+      env->DeleteLocalRef(local_double_class);
+
+      double_doubleValue = env->GetMethodID(double_class, "doubleValue", "()D");
+    }
+
+    jclass local_boolean_class = env->FindClass("java/lang/Boolean");
+    if (local_boolean_class != nullptr) {
+      boolean_class =
+          static_cast<jclass>(env->NewGlobalRef(local_boolean_class));
+      env->DeleteLocalRef(local_boolean_class);
+
+      boolean_booleanValue =
+          env->GetMethodID(boolean_class, "booleanValue", "()Z");
     }
 
     initialized = true;
@@ -566,31 +599,24 @@ Java_org_pytorch_executorch_training_TrainingModule_nativeExecuteForwardBackward
     } else if (typeCode == kTypeCodeInt) {
       jobject mData =
           env->GetObjectField(jevalue, g_training_cache.evalue_mData);
-      jclass longClass = env->FindClass("java/lang/Long");
-      jmethodID longValue = env->GetMethodID(longClass, "longValue", "()J");
-      jlong value = env->CallLongMethod(mData, longValue);
+      jlong value =
+          env->CallLongMethod(mData, g_training_cache.long_longValue);
       evalues.emplace_back(static_cast<int64_t>(value));
       env->DeleteLocalRef(mData);
-      env->DeleteLocalRef(longClass);
     } else if (typeCode == kTypeCodeDouble) {
       jobject mData =
           env->GetObjectField(jevalue, g_training_cache.evalue_mData);
-      jclass doubleClass = env->FindClass("java/lang/Double");
-      jmethodID doubleValue =
-          env->GetMethodID(doubleClass, "doubleValue", "()D");
-      jdouble value = env->CallDoubleMethod(mData, doubleValue);
+      jdouble value =
+          env->CallDoubleMethod(mData, g_training_cache.double_doubleValue);
       evalues.emplace_back(static_cast<double>(value));
       env->DeleteLocalRef(mData);
-      env->DeleteLocalRef(doubleClass);
     } else if (typeCode == kTypeCodeBool) {
       jobject mData =
           env->GetObjectField(jevalue, g_training_cache.evalue_mData);
-      jclass boolClass = env->FindClass("java/lang/Boolean");
-      jmethodID boolValue = env->GetMethodID(boolClass, "booleanValue", "()Z");
-      jboolean value = env->CallBooleanMethod(mData, boolValue);
+      jboolean value =
+          env->CallBooleanMethod(mData, g_training_cache.boolean_booleanValue);
       evalues.emplace_back(static_cast<bool>(value));
       env->DeleteLocalRef(mData);
-      env->DeleteLocalRef(boolClass);
     }
     env->DeleteLocalRef(jevalue);
   }
