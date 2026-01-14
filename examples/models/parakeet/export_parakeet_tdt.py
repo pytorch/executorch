@@ -351,6 +351,9 @@ def export_all(model):
     )
 
     sample_rate = model.preprocessor._cfg.sample_rate
+    window_stride = float(model.preprocessor._cfg.window_stride)
+    encoder_subsampling_factor = int(getattr(model.encoder, "subsampling_factor", 8))
+
     metadata = {
         "num_rnn_layers": num_layers,
         "pred_hidden": pred_hidden,
@@ -358,6 +361,8 @@ def export_all(model):
         "vocab_size": model.tokenizer.vocab_size,
         "blank_id": model.tokenizer.vocab_size,
         "sample_rate": sample_rate,
+        "window_stride": window_stride,
+        "encoder_subsampling_factor": encoder_subsampling_factor,
     }
 
     return programs, metadata
