@@ -20,6 +20,7 @@
 #include <functional>
 #include <unordered_map>
 #include <memory>
+#include <cmath>
 
 namespace executorch {
 namespace backends {
@@ -600,7 +601,8 @@ AOTITorchError aoti_torch_mps_mm_out(
 
       @try {
         // Use stream helper to encode and synchronize correctly
-        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT);
+        // Using COMMIT_AND_WAIT to force synchronous execution for debugging
+        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT_AND_WAIT);
       } @catch (NSException *exception) {
         ET_LOG(Error, "aoti_torch_mps_mm_out: NSException caught during executeMPSGraph: %s - %s",
               [[exception name] UTF8String], [[exception reason] UTF8String]);
@@ -608,6 +610,22 @@ AOTITorchError aoti_torch_mps_mm_out(
       }
 
       ET_LOG(Debug, "aoti_torch_mps_mm_out: MPSGraph execution completed successfully");
+
+      // DEBUG: Check for NaN in matmul output at critical positions
+      float* out_data = static_cast<float*>(out_tensor->mutable_data_ptr());
+      int64_t out_numel = out_tensor->numel();
+      bool has_nan = false;
+      for (int64_t i = 0; i < out_numel; i++) {
+        if (std::isnan(out_data[i]) || std::isinf(out_data[i])) {
+          ET_LOG(Error, "aoti_torch_mps_mm_out: NaN/Inf at output[%lld] = %f", i, out_data[i]);
+          has_nan = true;
+          if (i > 10) break;  // Only log first few
+        }
+      }
+      // Check position 1930 specifically (output gate for position 10)
+      if (out_numel > 1930) {
+        ET_LOG(Info, "aoti_torch_mps_mm_out: output[1930] = %f (output gate pos 10)", out_data[1930]);
+      }
 
       [selfData release];
       [mat2Data release];
@@ -908,7 +926,8 @@ AOTITorchError aoti_torch_mps_bmm_out(
 
       // Execute the batched matrix multiplication
       @try {
-        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT);
+        // Using COMMIT_AND_WAIT for debugging
+        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT_AND_WAIT);
       } @catch (NSException *exception) {
         ET_LOG(Error, "aoti_torch_mps_bmm_out: NSException caught during executeMPSGraph: %s - %s",
               [[exception name] UTF8String], [[exception reason] UTF8String]);
@@ -1343,7 +1362,8 @@ AOTITorchError aoti_torch_mps_convolution(
 
       @try {
         // Use stream helper to encode and synchronize correctly
-        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT);
+        // Using COMMIT_AND_WAIT to force synchronous execution for debugging
+        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT_AND_WAIT);
       } @catch (NSException *exception) {
         ET_LOG(Error, "aoti_torch_mps_convolution: NSException caught during executeMPSGraph: %s - %s",
               [[exception name] UTF8String], [[exception reason] UTF8String]);

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -22,6 +23,14 @@
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
+
+// For Metal synchronization debugging
+#if defined(__APPLE__)
+#include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
+#endif
+
+// For AOTI tensor metadata cache cleanup
+#include <executorch/backends/aoti/common_shims.h>
 
 DEFINE_string(model_path, "parakeet.pte", "Path to Parakeet model (.pte).");
 DEFINE_string(audio_path, "", "Path to input audio file (.wav).");
@@ -55,6 +64,12 @@ std::vector<int64_t> greedy_decode_executorch(
     int64_t max_symbols_per_step = 10) {
   std::vector<int64_t> hypothesis;
   int64_t num_token_classes = vocab_size + 1;
+
+  // Debug counters
+  int64_t total_blank_count = 0;
+  int64_t total_iterations = 0;
+  int64_t max_consecutive_non_blank = 0;
+  int64_t current_consecutive_non_blank = 0;
 
   // Transpose encoder output from [1, enc_dim, time] to [1, time, enc_dim]
   auto enc_sizes = encoder_output.sizes();
@@ -121,6 +136,12 @@ std::vector<int64_t> greedy_decode_executorch(
     ET_LOG(Error, "decoder_predict (SOS) failed");
     return hypothesis;
   }
+
+  // Force GPU synchronization for SOS initialization
+#if defined(__APPLE__)
+  executorch::backends::metal::synchronize_metal_stream();
+#endif
+
   auto& init_outputs = decoder_init_result.get();
   auto g_init = init_outputs[0].toTensor();
   auto new_h_init = init_outputs[1].toTensor();
@@ -133,6 +154,9 @@ std::vector<int64_t> greedy_decode_executorch(
       c_data.data(),
       new_c_init.const_data_ptr<float>(),
       c_data.size() * sizeof(float));
+
+  // Clear AOTI tensor metadata cache after SOS initialization
+  executorch::backends::aoti::cleanup_tensor_metadata();
 
   auto g_proj_result = model.execute(
       "joint_project_decoder",
@@ -161,6 +185,29 @@ std::vector<int64_t> greedy_decode_executorch(
     for (int64_t d = 0; d < proj_dim; d++) {
       f_t_data[d] = f_proj_data[t * proj_dim + d];
     }
+
+    // Log encoder frame stats around critical time steps
+    if (t >= 248 && t <= 260) {
+      float f_sum = 0.0f, f_max = f_t_data[0], f_min = f_t_data[0];
+      int nan_count = 0;
+      for (size_t i = 0; i < f_t_data.size(); i++) {
+        if (std::isnan(f_t_data[i]) || std::isinf(f_t_data[i])) {
+          nan_count++;
+        }
+        f_sum += f_t_data[i];
+        f_max = std::max(f_max, f_t_data[i]);
+        f_min = std::min(f_min, f_t_data[i]);
+      }
+      ET_LOG(
+          Info,
+          "Encoder frame[t=%lld]: sum=%.4f, min=%.4f, max=%.4f, nan_inf=%d",
+          static_cast<long long>(t),
+          f_sum,
+          f_min,
+          f_max,
+          nan_count);
+    }
+
     auto f_t = from_blob(
         f_t_data.data(),
         {1, 1, static_cast<::executorch::aten::SizesType>(proj_dim)},
@@ -204,16 +251,90 @@ std::vector<int64_t> greedy_decode_executorch(
     }
     int64_t dur = DURATIONS[dur_idx];
 
+    // Update debug counters
+    total_iterations++;
+
+    // Debug logging for first 20 iterations and when issues appear
+    bool should_log = hypothesis.size() < 20 || k >= vocab_size ||
+        (hypothesis.size() >= 95 && hypothesis.size() <= 115);
+    if (should_log) {
+      ET_LOG(
+          Info,
+          "Decode[t=%lld, hyp_len=%zu]: k=%lld (blank=%lld), dur=%lld, "
+          "token_logit=%.4f, dur_logit=%.4f, symbols_on_frame=%lld",
+          static_cast<long long>(t),
+          hypothesis.size(),
+          static_cast<long long>(k),
+          static_cast<long long>(blank_id),
+          static_cast<long long>(dur),
+          max_token_logit,
+          max_dur_logit,
+          static_cast<long long>(symbols_on_frame));
+
+      // Also log the top 3 token logits to see distribution
+      std::vector<std::pair<float, int64_t>> top_logits;
+      for (int64_t i = 0; i < num_token_classes; i++) {
+        top_logits.push_back({logits_data[i], i});
+      }
+      std::sort(top_logits.begin(), top_logits.end(), std::greater<>());
+      ET_LOG(
+          Info,
+          "  Top3 tokens: [%lld]=%.3f, [%lld]=%.3f, [%lld]=%.3f, blank[%lld]=%.3f",
+          static_cast<long long>(top_logits[0].second), top_logits[0].first,
+          static_cast<long long>(top_logits[1].second), top_logits[1].first,
+          static_cast<long long>(top_logits[2].second), top_logits[2].first,
+          static_cast<long long>(blank_id), logits_data[blank_id]);
+    }
+
+    // Warn if token is out of range
+    if (k > vocab_size) {
+      ET_LOG(
+          Error,
+          "Invalid token id %lld (vocab_size=%lld) at t=%lld",
+          static_cast<long long>(k),
+          static_cast<long long>(vocab_size),
+          static_cast<long long>(t));
+    }
+
     if (k == blank_id) {
       t += std::max(dur, (int64_t)1);
       symbols_on_frame = 0;
+      total_blank_count++;
+      // Track max consecutive non-blank before reset
+      if (current_consecutive_non_blank > max_consecutive_non_blank) {
+        max_consecutive_non_blank = current_consecutive_non_blank;
+      }
+      current_consecutive_non_blank = 0;
     } else {
       hypothesis.push_back(k);
+      current_consecutive_non_blank++;
 
       // Update decoder state
       std::vector<int64_t> token_data = {k};
       auto token = from_blob(
           token_data.data(), {1, 1}, ::executorch::aten::ScalarType::Long);
+
+      // Log input state BEFORE decoder_predict for critical iterations
+      if (hypothesis.size() >= 99 && hypothesis.size() <= 102) {
+        float h_sum_before = 0.0f, c_sum_before = 0.0f;
+        int nan_before = 0;
+        for (size_t i = 0; i < h_data.size(); i++) {
+          if (std::isnan(h_data[i]) || std::isinf(h_data[i])) nan_before++;
+          h_sum_before += h_data[i];
+        }
+        for (size_t i = 0; i < c_data.size(); i++) {
+          if (std::isnan(c_data[i]) || std::isinf(c_data[i])) nan_before++;
+          c_sum_before += c_data[i];
+        }
+        ET_LOG(
+            Info,
+            "  BEFORE decoder_predict[hyp=%zu]: h_sum=%.4f, c_sum=%.4f, nan_inf=%d, token=%lld",
+            hypothesis.size(),
+            h_sum_before,
+            c_sum_before,
+            nan_before,
+            static_cast<long long>(k));
+      }
 
       auto decoder_result = model.execute(
           "decoder_predict",
@@ -222,6 +343,13 @@ std::vector<int64_t> greedy_decode_executorch(
         ET_LOG(Error, "decoder_predict failed");
         return hypothesis;
       }
+
+      // Force GPU synchronization to flush any internal MPSGraph state
+      // This is a debugging workaround for potential MPSGraph caching issues
+#if defined(__APPLE__)
+      executorch::backends::metal::synchronize_metal_stream();
+#endif
+
       auto& outputs = decoder_result.get();
       auto g = outputs[0].toTensor();
       auto new_h = outputs[1].toTensor();
@@ -236,6 +364,80 @@ std::vector<int64_t> greedy_decode_executorch(
           c_data.data(),
           new_c.const_data_ptr<float>(),
           c_data.size() * sizeof(float));
+
+      // CRASH ON NAN for lldb debugging
+      for (size_t i = 0; i < h_data.size(); i++) {
+        if (std::isnan(h_data[i]) || std::isinf(h_data[i])) {
+          ET_LOG(Error, "NaN/Inf detected in h_data[%zu] = %f at hyp=%zu",
+                 i, h_data[i], hypothesis.size());
+          __builtin_trap();  // Crash here for lldb
+        }
+      }
+      for (size_t i = 0; i < c_data.size(); i++) {
+        if (std::isnan(c_data[i]) || std::isinf(c_data[i])) {
+          ET_LOG(Error, "NaN/Inf detected in c_data[%zu] = %f at hyp=%zu",
+                 i, c_data[i], hypothesis.size());
+          // __builtin_trap();  // Crash here for lldb
+        }
+      }
+
+      // Recreate tensor wrappers to avoid AOTI caching issues with tensor identity
+      h = from_blob(
+          h_data.data(),
+          {static_cast<::executorch::aten::SizesType>(num_rnn_layers),
+           1,
+           static_cast<::executorch::aten::SizesType>(pred_hidden)},
+          ::executorch::aten::ScalarType::Float);
+      c = from_blob(
+          c_data.data(),
+          {static_cast<::executorch::aten::SizesType>(num_rnn_layers),
+           1,
+           static_cast<::executorch::aten::SizesType>(pred_hidden)},
+          ::executorch::aten::ScalarType::Float);
+
+      // Clear AOTI tensor metadata cache to prevent stale pointer issues
+      executorch::backends::aoti::cleanup_tensor_metadata();
+
+      // Check for NaN/Inf in LSTM state (first 20 tokens, around failure point, or when issues occur)
+      bool should_log_state = hypothesis.size() <= 20 || k >= vocab_size ||
+          (hypothesis.size() >= 95 && hypothesis.size() <= 115);
+      if (should_log_state) {
+        // Log Metal buffer statistics to check for buffer accumulation
+#if defined(__APPLE__)
+        executorch::backends::metal::metal_log_buffer_stats();
+#endif
+        // Log pointer addresses to detect aliasing
+        ET_LOG(
+            Info,
+            "  Buffer ptrs[hyp=%zu]: h_data=%p, c_data=%p, new_h=%p, new_c=%p",
+            hypothesis.size(),
+            static_cast<const void*>(h_data.data()),
+            static_cast<const void*>(c_data.data()),
+            static_cast<const void*>(new_h.const_data_ptr<float>()),
+            static_cast<const void*>(new_c.const_data_ptr<float>()));
+        float h_sum = 0.0f, c_sum = 0.0f;
+        int nan_count = 0;
+        for (size_t i = 0; i < h_data.size(); i++) {
+          if (std::isnan(h_data[i]) || std::isinf(h_data[i])) {
+            nan_count++;
+          }
+          h_sum += h_data[i];
+        }
+        for (size_t i = 0; i < c_data.size(); i++) {
+          if (std::isnan(c_data[i]) || std::isinf(c_data[i])) {
+            nan_count++;
+          }
+          c_sum += c_data[i];
+        }
+        // Always log since we're in should_log_state block
+        ET_LOG(
+            Info,
+            "  LSTM state[hyp=%zu]: h_sum=%.4f, c_sum=%.4f, nan_inf_count=%d",
+            hypothesis.size(),
+            h_sum,
+            c_sum,
+            nan_count);
+      }
 
       // Project decoder output
       auto proj_dec_result = model.execute(
@@ -256,6 +458,12 @@ std::vector<int64_t> greedy_decode_executorch(
       if (dur == 0) {
         symbols_on_frame++;
         if (symbols_on_frame >= max_symbols_per_step) {
+          // Log when hitting the limit - this might indicate a problem
+          ET_LOG(
+              Info,
+              "  Hit max_symbols_per_step at t=%lld, hyp_len=%zu, forcing advance",
+              static_cast<long long>(t),
+              hypothesis.size());
           t++;
           symbols_on_frame = 0;
         }
@@ -264,6 +472,22 @@ std::vector<int64_t> greedy_decode_executorch(
       }
     }
   }
+
+  // Final update for max consecutive
+  if (current_consecutive_non_blank > max_consecutive_non_blank) {
+    max_consecutive_non_blank = current_consecutive_non_blank;
+  }
+
+  // Summary statistics
+  ET_LOG(
+      Info,
+      "Decode summary: total_iterations=%lld, tokens=%zu, blanks=%lld, "
+      "max_consecutive_non_blank=%lld, encoder_len=%lld",
+      static_cast<long long>(total_iterations),
+      hypothesis.size(),
+      static_cast<long long>(total_blank_count),
+      static_cast<long long>(max_consecutive_non_blank),
+      static_cast<long long>(encoder_len));
 
   return hypothesis;
 }

@@ -380,6 +380,7 @@ int metal_copy_memory(
     bool dst_is_device);
 void metal_cleanup_resources();
 void metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer);
+void metal_log_buffer_stats();
 
 // Helper functions to access Metal objects
 MTLDevice_t get_metal_device();

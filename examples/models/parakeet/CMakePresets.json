@@ -34,7 +34,10 @@
             "displayName": "Parakeet runner (Metal)",
             "inherits": ["parakeet-base"],
             "cacheVariables": {
-                "EXECUTORCH_BUILD_METAL": "ON"
+                "EXECUTORCH_BUILD_METAL": "ON",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "EXECUTORCH_ENABLE_LOGGING": "ON",
+                "ET_MIN_LOG_LEVEL": "Info"
             },
             "condition": {
                 "lhs": "${hostSystemName}",

@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <optional>
 #include <exception>
+#include <cmath>
+#include <cstring>
 
 namespace executorch {
 namespace backends {
@@ -110,6 +112,25 @@ void metal_cleanup_resources() {
             }
             ptr_to_mtl_buffer.clear();
         }
+    }
+}
+
+// New function to log Metal buffer statistics
+extern "C" void metal_log_buffer_stats() {
+    ET_LOG(Info, "Metal buffer map size: %zu buffers", ptr_to_mtl_buffer.size());
+    // Log first few and last few buffer pointers for pattern analysis
+    if (ptr_to_mtl_buffer.size() > 0 && ptr_to_mtl_buffer.size() <= 10) {
+        for (const auto& pair : ptr_to_mtl_buffer) {
+            id<MTLBuffer> buf = pair.second;
+            ET_LOG(Info, "  Buffer: ptr=%p, mtl_length=%zu", pair.first, (size_t)[buf length]);
+        }
+    } else if (ptr_to_mtl_buffer.size() > 10) {
+        // Just log count and total size
+        size_t total_size = 0;
+        for (const auto& pair : ptr_to_mtl_buffer) {
+            total_size += (size_t)[pair.second length];
+        }
+        ET_LOG(Info, "  Total buffer size: %zu bytes", total_size);
     }
 }
 
@@ -345,9 +366,51 @@ void ETMetalKernelFunction::setArg(unsigned idx, const executorch::runtime::eten
 
     void* data_ptr = tensor.mutable_data_ptr();
     size_t totalSize = tensor.numel() * tensor.element_size();
+    int64_t numel = tensor.numel();
 
     auto it = ptr_to_mtl_buffer.find(data_ptr);
-    if (it != ptr_to_mtl_buffer.end()) {
+    bool isGpuBuffer = (it != ptr_to_mtl_buffer.end());
+
+    // DEBUG: Print critical tensor info
+    const char* bufferType = isGpuBuffer ? "GPU" : "CPU";
+    ET_LOG(Info, "setArg[%u]: %s buffer, numel=%lld, totalSize=%zu, ptr=%p", idx, bufferType, numel, totalSize, data_ptr);
+
+    // DEBUG: For float tensors with position 1930, print critical values
+    if (tensor.scalar_type() == exec_aten::ScalarType::Float && numel > 1930) {
+        float* float_data = static_cast<float*>(data_ptr);
+        ET_LOG(Info, "  setArg[%u] at [10]=%f, [650]=%f, [1290]=%f, [1930]=%f",
+               idx, float_data[10], float_data[650], float_data[1290], float_data[1930]);
+        // Check for NaN/Inf at all critical positions
+        if (std::isnan(float_data[10]) || std::isinf(float_data[10])) {
+            ET_LOG(Error, "  setArg[%u]: NaN/Inf detected at position 10!", idx);
+        }
+        if (std::isnan(float_data[1930]) || std::isinf(float_data[1930])) {
+            ET_LOG(Error, "  setArg[%u]: NaN/Inf detected at position 1930!", idx);
+        }
+    }
+    // DEBUG: For c_old tensor (numel=1280), check position 650 (layer 1 cell state)
+    if (tensor.scalar_type() == exec_aten::ScalarType::Float && numel == 1280) {
+        float* float_data = static_cast<float*>(data_ptr);
+        ET_LOG(Info, "  setArg[%u] c_old at [10]=%f, [650]=%f (layer1 pos10)",
+               idx, float_data[10], float_data[650]);
+        if (std::isnan(float_data[650]) || std::isinf(float_data[650])) {
+            ET_LOG(Error, "  setArg[%u]: c_old NaN/Inf at position 650!", idx);
+        }
+    }
+    // DEBUG: For output buffers (numel=640), check position 10 (layer 1 position after concat)
+    if (tensor.scalar_type() == exec_aten::ScalarType::Float && numel == 640) {
+        float* float_data = static_cast<float*>(data_ptr);
+        ET_LOG(Info, "  setArg[%u] buf640 at [10]=%f, [100]=%f, [639]=%f",
+               idx, float_data[10], float_data[100], float_data[639]);
+        if (std::isnan(float_data[10]) || std::isinf(float_data[10])) {
+            // Print the raw bits of the NaN to understand its source
+            uint32_t bits;
+            std::memcpy(&bits, &float_data[10], sizeof(bits));
+            ET_LOG(Error, "  setArg[%u]: buf640 NaN/Inf at position 10! raw_bits=0x%08x", idx, bits);
+        }
+    }
+
+    if (isGpuBuffer) {
         // Use existing Metal buffer
         id<MTLBuffer> mtlBuffer = it->second;
         [encoder_ setBuffer:mtlBuffer offset:0 atIndex:idx];
@@ -457,6 +520,16 @@ void ETMetalKernelFunction::dispatchSingle(uint64_t length) {
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchSingle: Dispatched with length %llu, group size %llu", length, actualGroupSize);
 
+    // DEBUG: Force synchronization after each kernel dispatch to debug NaN issue
+    ETMetalStream* stream = getCurrentMetalStream();
+    stream->synchronize(SyncType::COMMIT_AND_WAIT);
+
+    // DEBUG: For length=640 (LSTM output), check if NaN was produced
+    if (length == 640) {
+        // Check the last two buffers that were set (output buffers at index 0 and 1)
+        // We need to read from the buffers after sync
+        ET_LOG(Info, "dispatchSingle: LSTM kernel completed (length=%llu), checking outputs...", length);
+    }
 }
 
 void ETMetalKernelFunction::dispatchSingleWithGroupSize(uint64_t length, uint64_t group_size) {
@@ -933,6 +1006,9 @@ void ETMetalStream::executeMPSGraph(MPSGraph* mpsGraph, NSDictionary* feeds, NSD
                         executionDescriptor:nil];
         }
     });
+
+    // Apply the requested synchronization type
+    synchronize(syncType);
 }
 
 // =======================
