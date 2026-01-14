@@ -99,4 +99,5 @@ DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner 
 | `--model_path` | Path to Parakeet model (.pte) |
 | `--audio_path` | Path to input audio file (.wav) |
 | `--tokenizer_path` | Path to tokenizer file (default: `tokenizer.json`) |
-| `--data_path` | Path to data file (.ptd) for delegate data (required for Metal/CUDA) |
+| `--data_path` | Path to data file (.ptd) for delegate data (optional, required for Metal/CUDA) |
+| `--timestamps`     | Timestamp output mode: `none\|token\|word\|segment\|all` (default: `segment`) |
