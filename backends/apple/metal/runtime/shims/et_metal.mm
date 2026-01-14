@@ -234,7 +234,13 @@ void ETMetalShaderLibrary::compileLibrary() {
         NSString* sourceString = [NSString stringWithUTF8String:shaderSource_.c_str()];
         NSError* error = nil;
 
-        library_ = [device newLibraryWithSource:sourceString options:nil error:&error];
+        MTLCompileOptions* options = [[MTLCompileOptions alloc] init];
+        if (@available(macOS 15.0, iOS 18.0, *)) {
+            options.mathMode = MTLMathModeSafe;
+            options.mathFloatingPointFunctions = MTLMathFloatingPointFunctionsPrecise;
+        }
+
+        library_ = [device newLibraryWithSource:sourceString options:options error:&error];
         if (!library_ || error) {
             ET_LOG(Error, "ETMetalShaderLibrary: Failed to compile shader library: %s",
                    error ? [[error localizedDescription] UTF8String] : "unknown error");
