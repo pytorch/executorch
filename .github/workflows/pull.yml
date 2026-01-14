@@ -380,16 +380,11 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
 
-        # install parakeet requirements
-        pip install -r examples/models/parakeet/install_requirements.txt
-
-        # install audio processing dependencies (same as whisper)
-        conda install -y -c conda-forge "ffmpeg<8"
-        pip install datasets soundfile
-        pip install torchcodec==0.10.0.dev20251211 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
-
         # reinstall executorch
         bash ./install_executorch.sh --minimal
+
+        # install parakeet requirements AFTER executorch to get compatible torchaudio
+        pip install -r examples/models/parakeet/install_requirements.txt
         pip list
 
         # export parakeet model with portable backend (no hardware-specific backend)
@@ -419,16 +414,16 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        # install parakeet requirements
-        pip install -r examples/models/parakeet/install_requirements.txt
-
         # install audio processing dependencies (same as whisper)
         conda install -y -c conda-forge "ffmpeg<8"
         pip install datasets soundfile
         pip install torchcodec==0.10.0.dev20251211 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 
-        # reinstall executorch
+        # reinstall executorch first to get correct PyTorch version
         bash ./install_executorch.sh
+
+        # install parakeet requirements AFTER executorch to get compatible torchaudio
+        pip install -r examples/models/parakeet/install_requirements.txt
 
         echo "::group::Build ExecuTorch with LLM runner"
         cmake --workflow --preset llm-release
