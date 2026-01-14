@@ -5,33 +5,31 @@
 
 
 import logging
-from collections import defaultdict
-from typing import Any, Callable, cast, Iterator, List, Optional
+from typing import cast, List, Optional
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
-from executorch.backends.cortex_m.passes.passes_utils import (
-    is_channel_broadcast,
-    is_channels_last,
-)
 from executorch.backends.cortex_m.quantizer.node_finders import (
     GlobalNodeFinder,
     NodeFinder,
+    NodeTargetNodeFinder,
 )
-from executorch.backends.cortex_m.quantizer.operator_configs import (
-    BINARY_OP_PATTERNS,
+from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    INT8_PER_CHANNEL_CONFIG,
+    INT8_PER_CHANNEL_TRANSPOSE_CONFIG,
+    INT8_PER_TENSOR_CONFIG,
+    QuantizationSpec,
+    SOFTMAX_PER_TENSOR_CONFIG,
+)
+from executorch.backends.cortex_m.quantizer.quantizer_support import (
     CONV_OP_PATTERNS,
-    INT8_BINARY_OPS_OPERATOR_CONFIG,
-    INT8_CONV_OPERATOR_CONFIG,
-    INT8_CONV_TRANSPOSE_OPERATOR_CONFIG,
-    INT8_LINEAR_OPERATOR_CONFIG,
-    INT8_SOFTMAX_OPERATOR_CONFIG,
+    CONV_TRANSPOSE_OP_PATTERNS,
+    CORTEX_M_QUANTIZER_SUPPORT_DICT,
     SOFTMAX_OP_PATTERNS,
 )
-from executorch.backends.cortex_m.quantizer.quantization_configs import QuantizationSpec
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.quantizer import (
@@ -69,176 +67,40 @@ def mark_node_as_annotated(
 
 class CortexMQuantizer(ComposableQuantizer):
 
-    def broadcasting_filter(self, node: Optional[Node]) -> bool:
-        """
-        Filter function to exclude nodes that perform broadcasting.
-        """
-        if node is None:
-            return False
-        if [node.target] not in BINARY_OP_PATTERNS:
-            return False
-
-        if len(node.all_input_nodes) == 2:
-            t1 = get_first_fake_tensor(node.all_input_nodes[0])
-            t2 = get_first_fake_tensor(node.all_input_nodes[1])
-            return t1.shape != t2.shape and not (
-                is_channel_broadcast(t1, t2) and is_channels_last(t1)
-            )
-
-        return False
-
-    def nchw_filter(self, node: Optional[Node]) -> bool:
-        """
-        Filter function to exclude nodes that use NCHW memory format.
-        """
-        if node is None:
-            return False
-        if [node.target] not in CONV_OP_PATTERNS:
-            return False
-
-        tensor = get_first_fake_tensor(node)
-        if tensor is None:
-            return False
-
-        return not is_channels_last(tensor)
-
-    def _transpose_conv_group_filter(self, node: Optional[Node]) -> bool:
-        """
-        Negative filter function for transpose conv to REJECT:
-        1. NCHW memory format (we only support channels_last/NHWC)
-        2. Grouped convolutions (groups > 1) - not supported by CMSIS-NN
-        3. Non-zero output_padding - not supported by CMSIS-NN
-        4. Dilation != 1 - produces incorrect results with CMSIS-NN
-
-        Returns True to REJECT the node, False to ACCEPT.
-        """
-        if node is None:
-            return True  # Reject if node is None
-
-        tensor = get_first_fake_tensor(node)
-        if tensor is None:
-            return True  # Reject if no tensor found
-
-        # REJECT if using NCHW format (we need channels_last/NHWC)
-        if not is_channels_last(tensor):
-            return True  # Reject NCHW
-
-        # For aten.conv_transpose2d.input:
-        #   (input, weight, bias, stride, padding, output_padding, groups, dilation)
-        # Args: 5 = output_padding, 6 = groups, 7 = dilation
-        if len(node.args) >= 6:
-            output_padding = node.args[5]
-            if isinstance(output_padding, (list, tuple)):
-                if any(p != 0 for p in output_padding):
-                    return True
-
-        if len(node.args) >= 7:
-            groups = node.args[6]
-            if isinstance(groups, int) and groups > 1:
-                return True
-
-        if len(node.args) >= 8:
-            dilation = node.args[7]
-            if isinstance(dilation, (list, tuple)):
-                if any(d != 1 for d in dilation):
-                    return True
-
-        return False  # ACCEPT channels_last transpose conv
-
-    @staticmethod
-    def _resolve_int(value: Any) -> Optional[int]:
-        """Best-effort conversion of FX node arguments to ints."""
-        if isinstance(value, int):
-            return value
-        if hasattr(value, "item"):
-            try:
-                return int(value.item())  # type: ignore[arg-type]
-            except Exception:
-                return None
-        if hasattr(value, "meta"):
-            meta_val = value.meta.get("val")
-            return CortexMQuantizer._resolve_int(meta_val)
-        return None
-
-    def _extract_dim(self, node: Node) -> Optional[int]:
-        """Return the dim argument from a softmax node when statically known."""
-        dim_arg = None
-        if len(node.args) > 1:
-            dim_arg = node.args[1]
-        elif "dim" in node.kwargs:
-            dim_arg = node.kwargs["dim"]
-
-        if dim_arg is None:
-            return -1
-
-        return self._resolve_int(dim_arg)
-
-    def softmax_memory_format_filter(self, node: Optional[Node]) -> bool:
-        """
-        Return true given the tensor must either
-        - be contiguous (default layout) with softmax dim == last logical dim, or
-        - be channels_last with softmax dim == channel dim.
-        Any other combination is skipped so the op stays in ATen form.
-        """
-        if node is None:
-            return False
-        if [node.target] not in SOFTMAX_OP_PATTERNS:
-            return False
-
-        tensor = get_first_fake_tensor(node)
-        if tensor is None:
-            return True
-
-        dim = self._extract_dim(node)
-        if dim is None:
-            return True
-
-        rank = tensor.dim()
-        if rank == 0:
-            return True
-
-        positive_dim = dim if dim >= 0 else dim + rank
-        if positive_dim < 0 or positive_dim >= rank:
-            return True
-
-        is_channels_last = False
-        if rank == 4:
-            is_channels_last = tensor.is_contiguous(memory_format=torch.channels_last)
-
-        if is_channels_last:
-            channel_dim = 1 if rank >= 2 else rank - 1
-            if positive_dim != channel_dim:
-                return True
-        else:
-            if positive_dim != rank - 1:
-                return True
-
-        return False
-
     def __init__(self) -> None:
-        global_node_finder = GlobalNodeFinder()
+        conv_targets = set()
+        for key in CONV_OP_PATTERNS.keys():
+            conv_targets.update(key)
 
+        softmax_targets = set()
+        for key in SOFTMAX_OP_PATTERNS.keys():
+            softmax_targets.update(key)
+
+        conv_transpose_targets = set()
+        for key in CONV_TRANSPOSE_OP_PATTERNS:
+            conv_transpose_targets.update(key)
+
+        pattern_matcher = PatternMatcher(CORTEX_M_QUANTIZER_SUPPORT_DICT)
         quantizers: List[Quantizer] = [
-            OperatorConfigQuantizer(
-                INT8_BINARY_OPS_OPERATOR_CONFIG,
-                global_node_finder,
-                filter_fn=self.broadcasting_filter,
+            PatternQuantizer(
+                SOFTMAX_PER_TENSOR_CONFIG,
+                node_finder=NodeTargetNodeFinder(softmax_targets),
+                pattern_matcher=pattern_matcher,
             ),
-            OperatorConfigQuantizer(INT8_LINEAR_OPERATOR_CONFIG, global_node_finder),
-            OperatorConfigQuantizer(
-                INT8_CONV_OPERATOR_CONFIG,
-                global_node_finder,
-                filter_fn=self.nchw_filter,
+            PatternQuantizer(
+                INT8_PER_CHANNEL_TRANSPOSE_CONFIG,
+                node_finder=NodeTargetNodeFinder(conv_transpose_targets),
+                pattern_matcher=pattern_matcher,
             ),
-            OperatorConfigQuantizer(
-                INT8_CONV_TRANSPOSE_OPERATOR_CONFIG,
-                global_node_finder,
-                filter_fn=self._transpose_conv_group_filter,
+            PatternQuantizer(
+                INT8_PER_CHANNEL_CONFIG,
+                node_finder=NodeTargetNodeFinder(conv_targets),
+                pattern_matcher=pattern_matcher,
             ),
-            OperatorConfigQuantizer(
-                INT8_SOFTMAX_OPERATOR_CONFIG,
-                global_node_finder,
-                filter_fn=self.softmax_memory_format_filter,
+            PatternQuantizer(
+                INT8_PER_TENSOR_CONFIG,
+                node_finder=GlobalNodeFinder(),
+                pattern_matcher=pattern_matcher,
             ),
             SharedQspecQuantizer(),
         ]
@@ -252,91 +114,25 @@ class CortexMQuantizer(ComposableQuantizer):
         return pass_manager.transform_for_annotation(model)
 
 
-class OperatorConfigQuantizer(Quantizer):
+class PatternQuantizer(Quantizer):
     """
     Quantizes a graph according to an OperatorConfig.
 
     Args:
-        operator_config (OperatorConfig): The operator config to use for quantization.
-        filter_fn (Callable): Negative filter function. If it returns True on any node in the pattern, the pattern is
-                              skipped. Used to match for example particular targets or modules.
+        quantization_config (QuantizationConfig): The quantization config to use for annotation.
+        node_finder (NodeFinder): The node finder to use for finding nodes to match patterns.
+        pattern_matcher (PatternMatcher): The pattern matcher to use for finding patterns in the nodes.
     """
-
-    Q_PATTERN_MATCHED_KEY = "quantizer_matched"
 
     def __init__(
         self,
-        operator_config: QuantizationConfig,
+        quantization_config: QuantizationConfig,
         node_finder: NodeFinder,
-        filter_fn: Callable[[Node], bool] = lambda node: False,
+        pattern_matcher: PatternMatcher,
     ) -> None:
-        self.operator_config = operator_config
+        self.quantization_config = quantization_config
         self.node_finder = node_finder
-        self.filter_fn = filter_fn
-
-    def check_node(self, node: Optional[Node], target: str) -> bool:
-        """
-        Return true if the node is a valid match for the given target.
-        """
-        if node is None:
-            return False
-        if not node.target == target:
-            return False
-        if node.meta.get("quantizer_matched", False):
-            return False
-        if self.filter_fn(node):
-            return False
-
-        return True
-
-    def check_pattern(
-        self, node: Optional[Node], pattern: List[OpOverload]
-    ) -> Optional[List[Node]]:
-        """
-        Returns the matched nodes if the given node matches the given pattern, otherwise None.
-        """
-        match: List[Node] = []
-
-        for pattern_target in pattern:
-            if self.check_node(node, pattern_target):
-                match.append(node)
-                node = list(node.users)[0] if len(node.users) > 0 else None
-            else:
-                return None
-
-        return match
-
-    def match_patterns(
-        self, model: GraphModule, patterns: List[List[OpOverload]]
-    ) -> Iterator[List[Node]]:
-        """
-        Match all given patterns in the graph and return list of matches.
-        Each node can only be part of one match, larger patterns are prioritized.
-        Currently only linear patterns (single chain) are supported.
-
-        Q_PATTERN_MATCHED_KEY is set to True in node.meta to track which nodes have
-        already been matched.
-        """
-
-        # maps operator -> list of patterns starting with operator
-        patterns_by_first = defaultdict(list)
-        for p in sorted(patterns, key=len, reverse=True):
-            patterns_by_first[p[0]].append(p)
-
-        for node in self.node_finder.find_nodes(model):
-            if node.meta.get(OperatorConfigQuantizer.Q_PATTERN_MATCHED_KEY, False):
-                continue
-            if node.op == "placeholder" or node.op == "output":
-                node.meta["quantizer_matched"] = True
-                yield [node]
-            for pattern in patterns_by_first.get(node.target, []):
-                match_or_none = self.check_pattern(node, pattern)
-                if match_or_none is not None:
-                    for matched_node in match_or_none:
-                        matched_node.meta[
-                            OperatorConfigQuantizer.Q_PATTERN_MATCHED_KEY
-                        ] = True
-                    yield match_or_none
+        self.pattern_matcher = pattern_matcher
 
     def is_parameter(self, node: Node, model: GraphModule) -> bool:
         """Returns True if the given node is a parameter of the model."""
@@ -398,9 +194,17 @@ class OperatorConfigQuantizer(Quantizer):
             mark_node_as_annotated(node, input_qspec_map, output_qspec)
 
     def annotate(self, model: GraphModule) -> None:
-        matches = self.match_patterns(model, self.operator_config.operators)
-        for match in matches:
-            self.annotate_match(match, self.operator_config.config, model)
+        nodes = self.node_finder.find_nodes(model)
+        matches = self.pattern_matcher.find_pattern_matches(
+            nodes, self.quantization_config
+        )
+        for result in matches:
+            if result.accepted:
+                self.annotate_match(result.pattern, self.quantization_config, model)
+            else:
+                logger.debug(
+                    f"PatternQuantizer skipped annotation of pattern {[n.target for n in result.pattern]}: {result.message}"
+                )
 
     def validate(self, model: GraphModule) -> bool:
         return True
