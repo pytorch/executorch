@@ -11,6 +11,8 @@
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/factory/empty.h>
 #include <executorch/backends/aoti/slim/util/array_ref_util.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/portable_type/tensor.h>
 
 namespace executorch::backends::aoti::slim {
@@ -18,10 +20,11 @@ namespace executorch::backends::aoti::slim {
 /// Creates a SlimTensor from an ETensor (ExecuTorch portable tensor).
 ///
 /// This factory function converts an ETensor to a SlimTensor, optionally
-/// copying the data to a target device. The ETensor is assumed to always
-/// reside on CPU.
+/// copying the data to a target device. The source device can be specified
+/// to support ETensors residing on different devices (CPU, CUDA).
 ///
-/// @param etensor The source ETensor (always on CPU).
+/// @param etensor The source ETensor.
+/// @param source_device The device where the ETensor data resides.
 /// @param target_device The target device for the output SlimTensor.
 /// @return A new SlimTensor with data copied to the target device.
 ///
@@ -30,11 +33,22 @@ namespace executorch::backends::aoti::slim {
 ///
 /// Example usage:
 /// @code
-///   auto* cpu_tensor = &(args[i]->toTensor());  // ETensor from EValue
-///   SlimTensor gpu_tensor = from_etensor(*cpu_tensor, DEFAULT_CUDA_DEVICE);
+///   // CPU ETensor to GPU SlimTensor
+///   auto* cpu_tensor = &(args[i]->toTensor());
+///   SlimTensor gpu_tensor = from_etensor(*cpu_tensor, CPU_DEVICE,
+///                                        DEFAULT_CUDA_DEVICE);
+///
+///   // GPU ETensor to GPU SlimTensor (same device copy)
+///   SlimTensor gpu_tensor2 = from_etensor(*gpu_etensor, DEFAULT_CUDA_DEVICE,
+///                                         DEFAULT_CUDA_DEVICE);
+///
+///   // GPU ETensor to CPU SlimTensor
+///   SlimTensor cpu_tensor = from_etensor(*gpu_etensor, DEFAULT_CUDA_DEVICE,
+///                                        CPU_DEVICE);
 /// @endcode
 inline SlimTensor from_etensor(
     const executorch::runtime::etensor::Tensor& etensor,
+    const c10::Device& source_device = CPU_DEVICE,
     const c10::Device& target_device = CPU_DEVICE) {
   // Step 1: Extract metadata from ETensor
   const auto ndim = static_cast<size_t>(etensor.dim());
@@ -59,8 +73,8 @@ inline SlimTensor from_etensor(
   SlimTensor result = empty_strided(
       makeArrayRef(sizes_vec), makeArrayRef(strides_vec), dtype, target_device);
 
-  // Step 3: Copy data from ETensor (CPU) to SlimTensor (target device)
-  // ETensor is always on CPU, so this handles CPU→CPU or CPU→CUDA copy
+  // Step 3: Copy data from ETensor (source device) to SlimTensor (target device)
+  // Supports CPU→CPU, CPU→CUDA, CUDA→CPU, or CUDA→CUDA copy
   const void* src_data = etensor.const_data_ptr();
   void* dst_data = result.data_ptr();
   size_t nbytes = etensor.nbytes();
@@ -68,7 +82,7 @@ inline SlimTensor from_etensor(
   if (nbytes > 0) {
     // const_cast is safe here because copy_ only reads from src_data
     result.storage()->copy_(
-        dst_data, const_cast<void*>(src_data), nbytes, CPU_DEVICE);
+        dst_data, const_cast<void*>(src_data), nbytes, source_device);
   }
 
   return result;
@@ -79,14 +93,16 @@ inline SlimTensor from_etensor(
 /// Convenience overload that accepts a pointer instead of a reference.
 ///
 /// @param etensor Pointer to the source ETensor (must not be null).
+/// @param source_device The device where the ETensor data resides.
 /// @param target_device The target device for the output SlimTensor.
 /// @return A new SlimTensor with data copied to the target device.
 inline SlimTensor from_etensor(
     const executorch::runtime::etensor::Tensor* etensor,
+    const c10::Device& source_device = CPU_DEVICE,
     const c10::Device& target_device = CPU_DEVICE) {
   ET_CHECK_MSG(
       etensor != nullptr, "from_etensor: etensor pointer cannot be nullptr");
-  return from_etensor(*etensor, target_device);
+  return from_etensor(*etensor, source_device, target_device);
 }
 
 } // namespace executorch::backends::aoti::slim
