@@ -1,0 +1,4 @@
+# add this empty BUCK file to unblock landing. Without this, we get land error:
+#   "No build file at xplat/executorch/exir/dialects/edge/test/BUCK when resolving target fbsource//xplat/executorch/exir/dialects/edge/test:."
+
+oncall("executorch")
