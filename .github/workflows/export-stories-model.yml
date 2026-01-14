@@ -1,6 +1,7 @@
 name: Export Stories Model
 
 on:
+  pull_request:
   workflow_dispatch:
   schedule:
     - cron: '0 10 * * *'
