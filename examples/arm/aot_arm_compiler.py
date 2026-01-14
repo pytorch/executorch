@@ -35,11 +35,6 @@ from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
 
-from executorch.backends.arm.util.arm_model_evaluator import (
-    evaluate_model,
-    evaluator_calibration_data,
-)
-
 from executorch.backends.arm.vgf import VgfCompileSpec
 
 # To use Cortex-M backend
@@ -80,6 +75,27 @@ from ..models.model_factory import EagerModelFactory
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
+
+_arm_model_evaluator = None
+
+
+def _load_arm_model_evaluator() -> Any:
+    """Lazily import arm_model_evaluator to avoid heavy deps when not evaluating."""
+    global _arm_model_evaluator
+    if _arm_model_evaluator is not None:
+        return _arm_model_evaluator
+
+    try:
+        from executorch.backends.arm.util import arm_model_evaluator as arm_eval
+    except Exception as exc:
+        raise RuntimeError(
+            "Unable to run evaluation because arm_model_evaluator could not be imported. "
+            "You probably need to install torchvision or rerun without --evaluate. "
+            f"Original import error: {exc}"
+        )
+
+    _arm_model_evaluator = arm_eval
+    return arm_eval
 
 
 def _load_example_inputs(model_input: str | None) -> Any:  # nosec B614
@@ -394,7 +410,10 @@ def get_calibration_data(
 ):
     # Firstly, if the model is being evaluated, take the evaluators calibration function if it has one
     if evaluator_name is not None:
-        evaluator_data = evaluator_calibration_data(evaluator_name, evaluator_config)
+        arm_eval = _load_arm_model_evaluator()
+        evaluator_data = arm_eval.evaluator_calibration_data(
+            evaluator_name, evaluator_config
+        )
         if evaluator_data is not None:
             return evaluator_data
 
@@ -922,7 +941,8 @@ if __name__ == "__main__":  # noqa: C901
         print(f"PTE file saved as {output_file_name}")
 
     if args.evaluate:
-        evaluate_model(
+        arm_eval = _load_arm_model_evaluator()
+        arm_eval.evaluate_model(
             args.model_name,
             args.intermediates,
             args.target,
