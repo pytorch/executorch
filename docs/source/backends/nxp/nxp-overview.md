@@ -37,17 +37,14 @@ $ ./examples/nxp/setup.sh
 
 ## Using NXP eIQ Backend
 
-To test converting a neural network model for inference on NXP eIQ Neutron backend, you can use our example script:
-
-```shell
-# cd to the root of executorch repository
-./examples/nxp/aot_neutron_compile.sh [model (cifar10 or mobilenetv2)]
-```
+To test the eIQ Neutron Backend, both AoT flow for model preparation and Runtime for execution, refer to the [Getting started with eIQ Neutron NPU ExecuTorch backend](tutorials/nxp-basic-tutorial.md)
 
 For a quick overview how to convert a custom PyTorch model, take a look at our [example python script](https://github.com/pytorch/executorch/tree/release/1.0/examples/nxp/aot_neutron_compile.py).
 
 
 ## Runtime Integration
+
+An example runtime application using the eIQ NSYS (eIQ Neutron Simulator) is available [examples/nxp/executor_runner](https://github.com/pytorch/executorch/blob/main/examples/nxp/executor_runner/), described in the tutorial [Getting started with eIQ Neutron NPU ExecuTorch backend](tutorials/nxp-basic-tutorial.md)
 
 To learn how to run the converted model on the NXP hardware, use one of our example projects on using ExecuTorch runtime from MCUXpresso IDE example projects list.
 For more finegrained tutorial, visit [this manual page](https://mcuxpresso.nxp.com/mcuxsdk/latest/html/middleware/eiq/executorch/docs/nxp/topics/example_applications.html).
