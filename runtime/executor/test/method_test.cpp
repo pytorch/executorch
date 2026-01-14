@@ -430,6 +430,96 @@ TEST_F(MethodTest, MethodGetAttributeTest) {
   EXPECT_EQ(res->const_data_ptr<int32_t>()[0], 1);
 }
 
+TEST_F(MethodTest, InProgressInitialState) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  EXPECT_FALSE(method->in_progress());
+}
+
+TEST_F(MethodTest, InProgressDuringStepExecution) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method =
+      programs_["add_mul"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
+
+  Error err = method->step();
+  ASSERT_EQ(err, Error::Ok);
+
+  EXPECT_TRUE(method->in_progress());
+
+  while (err != Error::EndOfMethod) {
+    err = method->step();
+    ASSERT_TRUE(err == Error::Ok || err == Error::EndOfMethod);
+  }
+
+  EXPECT_FALSE(method->in_progress());
+}
+
+TEST_F(MethodTest, ExecuteFailsWhenInProgress) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method =
+      programs_["add_mul"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
+
+  Error err = method->step();
+  ASSERT_EQ(err, Error::Ok);
+  ASSERT_TRUE(method->in_progress());
+
+  err = method->execute();
+  EXPECT_EQ(err, Error::InvalidState);
+}
+
+TEST_F(MethodTest, ExecuteSucceedsAfterReset) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
+  auto input_err = method->set_input(EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
+  Error err = Error::Ok;
+  while (err != Error::EndOfMethod) {
+    err = method->step();
+    ASSERT_TRUE(err == Error::Ok || err == Error::EndOfMethod);
+  }
+
+  err = method->reset_execution();
+  ASSERT_EQ(err, Error::Ok);
+  EXPECT_FALSE(method->in_progress());
+
+  err = method->execute();
+  EXPECT_EQ(err, Error::Ok);
+}
+
+TEST_F(MethodTest, ExecuteResetsOnError) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  Error err = method->execute();
+  EXPECT_NE(err, Error::Ok);
+
+  EXPECT_FALSE(method->in_progress());
+
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
+  auto input_err = method->set_input(EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
+  err = method->execute();
+  EXPECT_EQ(err, Error::Ok);
+}
+
 /*
  * TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of
  * the portable op lib
