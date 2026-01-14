@@ -73,6 +73,9 @@ run_deit_e2e_ethos_u() {
     cmake --preset arm-baremetal -B "${et_root_dir}/cmake-out-arm"
     cmake --build "${et_root_dir}/cmake-out-arm" --target install -j"$n_proc"
 
+    # Install requirements
+    pip install -r examples/arm/image_classification_example/requirements.txt
+
     # Get and finetune model
     echo "${FUNCNAME}: Running DeiT fine-tuning script"
     python3 "${example_dir}/model_export/train_deit.py" \
