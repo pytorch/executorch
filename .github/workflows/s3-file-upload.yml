@@ -8,7 +8,8 @@ name: S3 File Upload
 #   3. Provide:
 #      - file_url: URL to download the file from (required)
 #      - bucket_name: Name of the target S3 bucket (required)
-#      - target_path: Optional path prefix (e.g., "folder/file.txt")
+#      - target_path: Optional path prefix (e.g., "folder/" or "folder/file.txt")
+#      - acl: S3 ACL (default: private)
 #
 # Usage (Repository Dispatch):
 #   curl -X POST \
@@ -19,12 +20,19 @@ name: S3 File Upload
 #          "client_payload":{
 #            "file_url":"https://example.org/path-to-resource",
 #            "bucket_name":"example-bucket",
-#            "target_path":"folder/file_name"
+#            "target_path":"folder/",
+#            "acl":"private"
 #          }}'
 #
 # AWS Prerequisites:
 #   - AWS_ROLE_ARN secret must be configured with appropriate IAM role
 #   - IAM role must have permissions to write to the target S3 bucket
+#
+# Security Features:
+#   - Download timeout: 10 minutes max
+#   - Max file size: 2GB
+#   - Filename sanitization to prevent path traversal
+#   - Default private ACL for uploaded files
 
 on:
   workflow_dispatch:
@@ -42,6 +50,15 @@ on:
         required: false
         type: string
         default: ''
+      acl:
+        description: 'S3 ACL for the uploaded file'
+        required: false
+        type: choice
+        options:
+          - 'private'
+          - 'public-read'
+          - 'bucket-owner-full-control'
+        default: 'private'
   repository_dispatch:
     types: [s3-file-upload]
 
@@ -71,11 +88,20 @@ jobs:
 
           echo "Downloading file from: $FILE_URL"
 
-          # Extract filename from URL
-          FILENAME=$(basename "$FILE_URL")
+          # Extract and sanitize filename from URL
+          FILENAME=$(basename "$FILE_URL" | sed 's/[^a-zA-Z0-9._-]/_/g')
 
-          # Download the file using curl with follow redirects and progress
-          curl -L -o "$FILENAME" "$FILE_URL"
+          # Validate filename
+          if [ -z "$FILENAME" ] || [ "$FILENAME" = "." ] || [ "$FILENAME" = ".." ]; then
+            echo "Error: Invalid filename extracted from URL"
+            exit 1
+          fi
+
+          # Download with security measures: timeout, max size, user-agent
+          curl -L -o "$FILENAME" "$FILE_URL" \
+            --max-time 600 \
+            --max-filesize 2147483648 \
+            --user-agent "GitHub-Actions-S3-Upload/1.0"
 
           # Verify file was downloaded
           if [ ! -f "$FILENAME" ]; then
@@ -106,7 +132,7 @@ jobs:
           fi
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1.7.0
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
@@ -119,6 +145,7 @@ jobs:
           BUCKET_NAME="${{ github.event.inputs.bucket_name || github.event.client_payload.bucket_name }}"
           TARGET_PATH="${{ github.event.inputs.target_path || github.event.client_payload.target_path }}"
           FILENAME="${DOWNLOADED_FILENAME}"
+          ACL="${{ github.event.inputs.acl || github.event.client_payload.acl || 'private' }}"
 
           if [ -z "$BUCKET_NAME" ]; then
             echo "Error: bucket_name is required"
@@ -126,24 +153,27 @@ jobs:
           fi
 
           # Construct S3 path
+          # If TARGET_PATH is empty, use just the filename
+          # If TARGET_PATH ends with /, treat it as a directory prefix
+          # Otherwise, use TARGET_PATH as the complete object key
           if [ -z "$TARGET_PATH" ]; then
             S3_PATH="s3://${BUCKET_NAME}/${FILENAME}"
+            PUBLIC_URL_PATH="${FILENAME}"
+          elif [[ "$TARGET_PATH" == */ ]]; then
+            S3_PATH="s3://${BUCKET_NAME}/${TARGET_PATH}${FILENAME}"
+            PUBLIC_URL_PATH="${TARGET_PATH}${FILENAME}"
           else
             S3_PATH="s3://${BUCKET_NAME}/${TARGET_PATH}"
+            PUBLIC_URL_PATH="${TARGET_PATH}"
           fi
 
-          echo "Uploading $FILENAME to $S3_PATH"
+          echo "Uploading $FILENAME to $S3_PATH with ACL: $ACL"
 
           # Upload file to S3
-          aws s3 cp "$FILENAME" "$S3_PATH" --acl public-read
+          aws s3 cp "$FILENAME" "$S3_PATH" --acl "$ACL"
 
           echo "File uploaded successfully to $S3_PATH"
 
-          # Generate and display the public URL
-          if [ -z "$TARGET_PATH" ]; then
-            PUBLIC_URL="https://${BUCKET_NAME}.s3.amazonaws.com/${FILENAME}"
-          else
-            PUBLIC_URL="https://${BUCKET_NAME}.s3.amazonaws.com/${TARGET_PATH}"
-          fi
-
-          echo "Public URL: $PUBLIC_URL"
+          # Generate and display the public URL (only meaningful for public-read)
+          PUBLIC_URL="https://${BUCKET_NAME}.s3.amazonaws.com/${PUBLIC_URL_PATH}"
+          echo "S3 URL: $PUBLIC_URL"
