@@ -128,7 +128,7 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   // memory
   memory_to_n_tensor[adjusted_data] = NOT_OWN;
 
-  ET_LOG(Debug, "aoti_torch_create_tensor_from_blob_v2: successfull");
+  ET_LOG(Debug, "aoti_torch_create_tensor_from_blob_v2: successful");
   return Error::Ok;
 }
 
@@ -212,7 +212,7 @@ AOTITorchError aoti_torch_empty_strided(
   // This tensor owns the memory it allocated, set reference count to 1
   memory_to_n_tensor[ptr] = 1;
 
-  ET_LOG(Debug, "aoti_torch_empty_strided: successfull");
+  ET_LOG(Debug, "aoti_torch_empty_strided: successful");
   return Error::Ok;
 }
 
@@ -292,7 +292,7 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
       // Remove tensor from set (this will call the destructor if it's the last
       // reference)
       tensors.erase(it);
-      ET_LOG(Debug, "aoti_torch_delete_tensor_object: successfull");
+      ET_LOG(Debug, "aoti_torch_delete_tensor_object: successful");
       return Error::Ok;
     }
   }
@@ -401,7 +401,7 @@ AOTITorchError aoti_torch_copy_(
     return Error::NotImplemented;
   }
 
-  ET_LOG(Debug, "aoti_torch_copy_: successfull");
+  ET_LOG(Debug, "aoti_torch_copy_: successful");
   return Error::Ok;
 }
 
@@ -506,17 +506,23 @@ AOTITorchError aoti_torch__reinterpret_tensor(
         dtype_to_element_size(dtype),
         adjusted_data);
 
-    metal_buffer_nocopy(adjusted_data, tensor->nbytes(), true);
+    ET_CHECK_OR_RETURN_ERROR(
+        metal_buffer_nocopy(adjusted_data, tensor->nbytes(), true),
+        Internal,
+        "metal_buffer_nocopy failed for adjusted_data=%p, nbytes=%zu",
+        adjusted_data,
+        static_cast<size_t>(tensor->nbytes()));
+
+    memory_to_n_tensor[adjusted_data] = NOT_OWN;
   }
 
   // Increment the reference count for this memory address only if it is owned
   // by tensor
-  memory_to_n_tensor[adjusted_data] =
-      memory_to_n_tensor[adjusted_data] == NOT_OWN
-      ? NOT_OWN
-      : memory_to_n_tensor[adjusted_data] + 1;
+  if (memory_to_n_tensor[data_ptr] != NOT_OWN) {
+    memory_to_n_tensor[data_ptr] += 1;
+  }
 
-  ET_LOG(Debug, "aoti_torch__reinterpret_tensor: successfull");
+  ET_LOG(Debug, "aoti_torch__reinterpret_tensor: successful");
   return Error::Ok;
 }
 
@@ -607,7 +613,7 @@ AOTITorchError aoti_torch_new_tensor_handle(
       ? NOT_OWN
       : memory_to_n_tensor[data_ptr] + 1;
 
-  ET_LOG(Debug, "aoti_torch_new_tensor_handle: successfull");
+  ET_LOG(Debug, "aoti_torch_new_tensor_handle: successful");
   return Error::Ok;
 }
 

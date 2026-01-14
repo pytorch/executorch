@@ -379,7 +379,7 @@ int metal_copy_memory(
     bool src_is_device,
     bool dst_is_device);
 void metal_cleanup_resources();
-void metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer);
+bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer);
 
 // Helper functions to access Metal objects
 MTLDevice_t get_metal_device();

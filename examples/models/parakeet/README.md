@@ -53,7 +53,7 @@ First, build ExecuTorch with the appropriate preset from the executorch root dir
 cmake --workflow --preset llm-release
 
 # For Metal (macOS)
-cmake --workflow --preset llm-debug-metal
+cmake --workflow --preset llm-release-metal
 ```
 
 Then build the parakeet runner:

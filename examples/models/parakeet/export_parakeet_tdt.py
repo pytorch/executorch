@@ -380,6 +380,14 @@ def _create_xnnpack_partitioners(programs):
     return partitioner, programs
 
 
+# This custom decomposition is the key to making Parakeet run on the Metal backend.
+# Without this, linear gets decomposed in a way that does't works for us.
+# When input/weight tensors are 2D and bias is present, this gets decomposed into addmm and
+# reinterpret_tensor_wrapper gets called on the bias, to make it look like a 2D tensor.
+# On one hand, this requires us to implement addmm in the Metal backend. But more importantly,
+# the reinterpret_tensor_wrapper call makes its way to ExecuTorch, causing a call to executorch::extension::from_blob
+# with a 0 stride. ExecuTorch doesn't support that, and raises and error.
+# This decomposition avoids that problem, and also avoids having to implement addmm.
 def _linear_bias_decomposition(input, weight, bias=None):
     """Decompose linear with bias into matmul + add."""
     # linear(input, weight) = input @ weight.T

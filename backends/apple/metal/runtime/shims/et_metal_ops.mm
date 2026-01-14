@@ -647,21 +647,10 @@ AOTITorchError aoti_torch_mps_bmm_out(
       // Validate tensor dimensions - bmm requires 3-D tensors
       if (self_tensor->dim() != 3 || mat2_tensor->dim() != 3 || out_tensor->dim() != 3) {
         ET_LOG(Error, "aoti_torch_mps_bmm_out: tensors must be 3-D. "
-               "Got self.dim=%zd (shape=[%d,%d,%d]), "
-               "mat2.dim=%zd (shape=[%d,%d,%d]), "
-               "out.dim=%zd (shape=[%d,%d,%d])",
+               "Got self.dim=%zd, mat2.dim=%zd, out.dim=%zd",
                self_tensor->dim(),
-               self_tensor->dim() > 0 ? (int)self_tensor->sizes()[0] : 0,
-               self_tensor->dim() > 1 ? (int)self_tensor->sizes()[1] : 0,
-               self_tensor->dim() > 2 ? (int)self_tensor->sizes()[2] : 0,
                mat2_tensor->dim(),
-               mat2_tensor->dim() > 0 ? (int)mat2_tensor->sizes()[0] : 0,
-               mat2_tensor->dim() > 1 ? (int)mat2_tensor->sizes()[1] : 0,
-               mat2_tensor->dim() > 2 ? (int)mat2_tensor->sizes()[2] : 0,
-               out_tensor->dim(),
-               out_tensor->dim() > 0 ? (int)out_tensor->sizes()[0] : 0,
-               out_tensor->dim() > 1 ? (int)out_tensor->sizes()[1] : 0,
-               out_tensor->dim() > 2 ? (int)out_tensor->sizes()[2] : 0);
+               out_tensor->dim());
         return Error::InvalidArgument;
       }
 
@@ -737,7 +726,7 @@ AOTITorchError aoti_torch_mps_bmm_out(
       if (self_strides[2] != 1 || self_strides[1] != K || self_strides[0] != M * K) {
         ET_LOG(Error, "aoti_torch_mps_bmm_out: self tensor must be contiguous. "
                "Only dense row-major layout supported; transposed/view tensors are unsupported. "
-               "Expected strides=[%lld,%lld,1] for shape=[%lld,%lld,%lld], got strides=[%d,%d,%d].",
+               "Expected strides=[%lld,%lld,1] for shape=[%lld,%lld,%lld], got strides=[%lld,%lld,%lld].",
                (long long)(M * K), (long long)K, (long long)B, (long long)M, (long long)K,
                self_strides[0], self_strides[1], self_strides[2]);
         return Error::InvalidArgument;
@@ -747,7 +736,7 @@ AOTITorchError aoti_torch_mps_bmm_out(
       if (mat2_strides[2] != 1 || mat2_strides[1] != N || mat2_strides[0] != K * N) {
         ET_LOG(Error, "aoti_torch_mps_bmm_out: mat2 tensor must be contiguous. "
                "Only dense row-major layout supported; transposed/view tensors are unsupported. "
-               "Expected strides=[%lld,%lld,1] for shape=[%lld,%lld,%lld], got strides=[%d,%d,%d].",
+               "Expected strides=[%lld,%lld,1] for shape=[%lld,%lld,%lld], got strides=[%lld,%lld,%lld].",
                (long long)(K * N), (long long)N, (long long)B, (long long)K, (long long)N,
                mat2_strides[0], mat2_strides[1], mat2_strides[2]);
         return Error::InvalidArgument;
@@ -757,7 +746,7 @@ AOTITorchError aoti_torch_mps_bmm_out(
       if (out_strides[2] != 1 || out_strides[1] != N || out_strides[0] != M * N) {
         ET_LOG(Error, "aoti_torch_mps_bmm_out: out tensor must be contiguous. "
                "Only dense row-major layout supported; transposed/view tensors are unsupported. "
-               "Expected strides=[%lld,%lld,1] for shape=[%lld,%lld,%lld], got strides=[%d,%d,%d].",
+               "Expected strides=[%lld,%lld,1] for shape=[%lld,%lld,%lld], got strides=[%lld,%lld,%lld].",
                (long long)(M * N), (long long)N, (long long)B, (long long)M, (long long)N,
                out_strides[0], out_strides[1], out_strides[2]);
         return Error::InvalidArgument;
@@ -769,13 +758,6 @@ AOTITorchError aoti_torch_mps_bmm_out(
         ET_LOG(Error, "aoti_torch_mps_bmm_out: Failed to get current Metal stream");
         return Error::Internal;
       }
-
-      id<MTLDevice> device = get_metal_device();
-      if (!device) {
-        ET_LOG(Error, "aoti_torch_mps_bmm_out: Failed to get Metal device");
-        return Error::Internal;
-      }
-      (void)device;  // Used for validation, consistent with other ops
 
       // Get Metal buffers for input and output tensors
       id<MTLBuffer> self_buffer = get_mtl_buffer(self_tensor, "aoti_torch_mps_bmm_out", "self");
@@ -819,7 +801,6 @@ AOTITorchError aoti_torch_mps_bmm_out(
 
       // Create cache key for this batched matrix multiplication
       // Cache key includes: op_name, shape params {B, M, K, N}, dtype, transpose_flag
-      // This allows reuse when same BMM shape/dtype is called repeatedly
       GraphCacheKey cache_key;
       cache_key.op_name = "bmm";
       cache_key.shape_params = {B, M, K, N};
