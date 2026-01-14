@@ -14,6 +14,7 @@ from executorch.examples.models.llama.attention import (
     register_attention,
 )
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
 
 
@@ -847,8 +848,8 @@ class StaticAttention(Attention):
         self.layer_id = layer_id
 
         if self.use_qk_norm:
-            self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
-            self.k_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+            self.q_norm = RMSNorm(self.head_dim, eps=config.norm_eps)
+            self.k_norm = RMSNorm(self.head_dim, eps=config.norm_eps)
         else:
             self.q_norm = torch.nn.Identity()
             self.k_norm = torch.nn.Identity()
