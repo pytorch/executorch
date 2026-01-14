@@ -4,6 +4,9 @@ on:
   schedule:
     # Run daily at 2 AM UTC
     - cron: '0 2 * * *'
+  pull_request:
+    paths:
+      - .github/workflows/nightly-model-export.yml
   workflow_dispatch:
 
 concurrency:
@@ -30,7 +33,7 @@ jobs:
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
-      ref: ${{ github.sha }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: model-${{ strategy.job-index }}-xnnpack
       upload-artifact-to-s3: true
@@ -76,7 +79,7 @@ jobs:
       runner: linux.24xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
-      ref: ${{ github.sha }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: multimodal-${{ matrix.model }}-xnnpack
       upload-artifact-to-s3: true
