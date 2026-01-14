@@ -1,0 +1,68 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs:fb_xplat_cxx_binary.bzl", "fb_xplat_cxx_binary")
+
+oncall("executorch")
+
+runtime.genrule(
+    name = "unittests_full",
+    srcs = [
+        "unittests.js",
+        "unittests_etdump_disabled.js",
+    ],
+    out = "unittests_full.js",
+    cmd = "cat $SRCS > $OUT",
+)
+
+runtime.genrule(
+    name = "unittests_full_etdump",
+    srcs = [
+        "unittests.js",
+        "unittests_etdump.js",
+    ],
+    out = "unittests_full.js",
+    cmd = "cat $SRCS > $OUT",
+)
+
+fb_xplat_cxx_binary(
+    name = "wasm.test.js",
+    linker_flags = [
+        "-lembind",
+        "-sWASM_BIGINT=1",
+        "-sASSERTIONS=2",
+        "--pre-js",
+        "$(location :unittests_full)",
+        "--embed-file",
+        "xplat/executorch/extension/wasm/test/test_models/@/",
+    ],
+    platforms = ["Default"],
+    compatible_with = ["ovr_config//runtime:wasm-emscripten"],
+    default_target_platform = "ovr_config//platform/wasm:emcc-release",
+    use_host_platform = False,
+    deps = [
+        "//xplat/executorch/extension/wasm:wasm",
+        "//xplat/executorch/kernels/portable:generated_lib",
+        ":unittests_full",
+    ],
+)
+
+fb_xplat_cxx_binary(
+    name = "wasm_etdump.test.js",
+    linker_flags = [
+        "-lembind",
+        "-sWASM_BIGINT=1",
+        "-sASSERTIONS=2",
+        "--pre-js",
+        "$(location :unittests_full_etdump)",
+        "--embed-file",
+        "xplat/executorch/extension/wasm/test/test_models/@/",
+    ],
+    platforms = ["Default"],
+    compatible_with = ["ovr_config//runtime:wasm-emscripten"],
+    default_target_platform = "ovr_config//platform/wasm:emcc-release",
+    use_host_platform = False,
+    deps = [
+        "//xplat/executorch/extension/wasm:wasm_etdump",
+        "//xplat/executorch/kernels/portable:generated_lib",
+        ":unittests_full_etdump",
+    ],
+)
