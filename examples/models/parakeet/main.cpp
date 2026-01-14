@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -44,7 +45,16 @@ namespace {
 // TDT duration values
 const std::vector<int> DURATIONS = {0, 1, 2, 3, 4};
 
-std::vector<int64_t> greedy_decode_executorch(
+// Struct to hold decode timing results
+struct DecodeTimingResult {
+  std::vector<int64_t> hypothesis;
+  long long decoder_ms;
+  long long joint_ms;
+  long long joint_project_encoder_ms;
+  long long joint_project_decoder_ms;
+};
+
+DecodeTimingResult greedy_decode_executorch(
     Module& model,
     const ::executorch::aten::Tensor& encoder_output,
     int64_t encoder_len,
@@ -55,6 +65,12 @@ std::vector<int64_t> greedy_decode_executorch(
     int64_t max_symbols_per_step = 10) {
   std::vector<int64_t> hypothesis;
   int64_t num_token_classes = vocab_size + 1;
+
+  // Timing accumulators
+  long long decoder_total_ms = 0;
+  long long joint_total_ms = 0;
+  long long joint_project_encoder_ms = 0;
+  long long joint_project_decoder_ms = 0;
 
   // Transpose encoder output from [1, enc_dim, time] to [1, time, enc_dim]
   auto enc_sizes = encoder_output.sizes();
@@ -79,14 +95,20 @@ std::vector<int64_t> greedy_decode_executorch(
       ::executorch::aten::ScalarType::Float);
 
   // Project encoder output
+  auto proj_enc_start = std::chrono::high_resolution_clock::now();
   auto proj_enc_result = model.execute(
       "joint_project_encoder",
       std::vector<::executorch::runtime::EValue>{transposed_tensor});
+  auto proj_enc_end = std::chrono::high_resolution_clock::now();
   if (!proj_enc_result.ok()) {
     ET_LOG(Error, "joint_project_encoder failed");
-    return hypothesis;
+    return DecodeTimingResult{hypothesis, 0, 0, 0, 0};
   }
   auto f_proj = proj_enc_result.get()[0].toTensor();
+  joint_project_encoder_ms +=
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          proj_enc_end - proj_enc_start)
+          .count();
 
   // Initialize LSTM state
   std::vector<float> h_data(num_rnn_layers * 1 * pred_hidden, 0.0f);
@@ -112,14 +134,20 @@ std::vector<int64_t> greedy_decode_executorch(
       {1, 1, static_cast<::executorch::aten::SizesType>(pred_hidden)},
       ::executorch::aten::ScalarType::Float);
 
+  auto proj_dec_init_start = std::chrono::high_resolution_clock::now();
   auto g_proj_result = model.execute(
       "joint_project_decoder",
       std::vector<::executorch::runtime::EValue>{sos_g});
+  auto proj_dec_init_end = std::chrono::high_resolution_clock::now();
   if (!g_proj_result.ok()) {
     ET_LOG(Error, "joint_project_decoder failed");
-    return hypothesis;
+    return DecodeTimingResult{hypothesis, 0, 0, 0, 0};
   }
   auto g_proj_tensor = g_proj_result.get()[0].toTensor();
+  joint_project_decoder_ms +=
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          proj_dec_init_end - proj_dec_init_start)
+          .count();
 
   // Copy g_proj data for reuse
   std::vector<float> g_proj_data(
@@ -150,13 +178,19 @@ std::vector<int64_t> greedy_decode_executorch(
         ::executorch::aten::ScalarType::Float);
 
     // Joint network
+    auto joint_start = std::chrono::high_resolution_clock::now();
     auto joint_result = model.execute(
         "joint", std::vector<::executorch::runtime::EValue>{f_t, g_proj});
+    auto joint_end = std::chrono::high_resolution_clock::now();
     if (!joint_result.ok()) {
       ET_LOG(Error, "joint failed at t=%lld", static_cast<long long>(t));
-      return hypothesis;
+      return DecodeTimingResult{hypothesis, decoder_total_ms, joint_total_ms, joint_project_encoder_ms, joint_project_decoder_ms};
     }
     auto full_logits = joint_result.get()[0].toTensor();
+    joint_total_ms +=
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            joint_end - joint_start)
+            .count();
 
     // Split logits into token and duration
     const float* logits_data = full_logits.const_data_ptr<float>();
@@ -193,17 +227,23 @@ std::vector<int64_t> greedy_decode_executorch(
       auto token = from_blob(
           token_data.data(), {1, 1}, ::executorch::aten::ScalarType::Long);
 
+      auto decoder_start = std::chrono::high_resolution_clock::now();
       auto decoder_result = model.execute(
           "decoder_predict",
           std::vector<::executorch::runtime::EValue>{token, h, c});
+      auto decoder_end = std::chrono::high_resolution_clock::now();
       if (!decoder_result.ok()) {
         ET_LOG(Error, "decoder_predict failed");
-        return hypothesis;
+        return DecodeTimingResult{hypothesis, decoder_total_ms, joint_total_ms, joint_project_encoder_ms, joint_project_decoder_ms};
       }
       auto& outputs = decoder_result.get();
       auto g = outputs[0].toTensor();
       auto new_h = outputs[1].toTensor();
       auto new_c = outputs[2].toTensor();
+      decoder_total_ms +=
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              decoder_end - decoder_start)
+              .count();
 
       // Update h and c
       std::memcpy(
@@ -216,18 +256,24 @@ std::vector<int64_t> greedy_decode_executorch(
           c_data.size() * sizeof(float));
 
       // Project decoder output
+      auto proj_dec_start = std::chrono::high_resolution_clock::now();
       auto proj_dec_result = model.execute(
           "joint_project_decoder",
           std::vector<::executorch::runtime::EValue>{g});
+      auto proj_dec_end = std::chrono::high_resolution_clock::now();
       if (!proj_dec_result.ok()) {
         ET_LOG(Error, "joint_project_decoder failed");
-        return hypothesis;
+        return DecodeTimingResult{hypothesis, decoder_total_ms, joint_total_ms, joint_project_encoder_ms, joint_project_decoder_ms};
       }
       auto new_g_proj = proj_dec_result.get()[0].toTensor();
       std::memcpy(
           g_proj_data.data(),
           new_g_proj.const_data_ptr<float>(),
           g_proj_data.size() * sizeof(float));
+      joint_project_decoder_ms +=
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              proj_dec_end - proj_dec_start)
+              .count();
 
       t += dur;
 
@@ -243,7 +289,12 @@ std::vector<int64_t> greedy_decode_executorch(
     }
   }
 
-  return hypothesis;
+  return DecodeTimingResult{
+      hypothesis,
+      decoder_total_ms,
+      joint_total_ms,
+      joint_project_encoder_ms,
+      joint_project_decoder_ms};
 }
 
 std::string tokens_to_text(
@@ -267,6 +318,7 @@ std::string tokens_to_text(
 } // namespace
 
 int main(int argc, char** argv) {
+  auto binary_start = std::chrono::high_resolution_clock::now();
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (FLAGS_audio_path.empty()) {
@@ -306,10 +358,12 @@ int main(int argc, char** argv) {
       audio_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
 
   ET_LOG(Info, "Running preprocessor...");
+  auto preprocessor_start = std::chrono::high_resolution_clock::now();
   auto proc_result = model->execute(
       "preprocessor",
       std::vector<::executorch::runtime::EValue>{
           audio_tensor, audio_len_tensor});
+  auto preprocessor_end = std::chrono::high_resolution_clock::now();
   if (!proc_result.ok()) {
     ET_LOG(Error, "Preprocessor forward failed.");
     return 1;
@@ -318,6 +372,10 @@ int main(int argc, char** argv) {
   auto mel = proc_outputs[0].toTensor();
   auto mel_len_tensor_out = proc_outputs[1].toTensor();
   int64_t mel_len_value = mel_len_tensor_out.const_data_ptr<int64_t>()[0];
+  auto preprocessor_duration_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          preprocessor_end - preprocessor_start)
+          .count();
 
   // Create mel_len tensor for encoder
   std::vector<int64_t> mel_len_data = {mel_len_value};
@@ -334,8 +392,10 @@ int main(int argc, char** argv) {
 
   // Run encoder
   ET_LOG(Info, "Running encoder...");
+  auto encoder_start = std::chrono::high_resolution_clock::now();
   auto enc_result = model->execute(
       "encoder", std::vector<::executorch::runtime::EValue>{mel, mel_len});
+  auto encoder_end = std::chrono::high_resolution_clock::now();
   if (!enc_result.ok()) {
     ET_LOG(Error, "Encoder forward failed.");
     return 1;
@@ -343,6 +403,10 @@ int main(int argc, char** argv) {
   auto& enc_outputs = enc_result.get();
   auto encoded = enc_outputs[0].toTensor();
   int64_t encoded_len = enc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
+  auto encoder_duration_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          encoder_end - encoder_start)
+          .count();
 
   ET_LOG(
       Info,
@@ -385,7 +449,7 @@ int main(int argc, char** argv) {
       static_cast<long long>(sample_rate));
 
   ET_LOG(Info, "Running TDT greedy decode...");
-  auto tokens = greedy_decode_executorch(
+  auto decode_result = greedy_decode_executorch(
       *model,
       encoded,
       encoded_len,
@@ -393,6 +457,7 @@ int main(int argc, char** argv) {
       vocab_size,
       num_rnn_layers,
       pred_hidden);
+  auto& tokens = decode_result.hypothesis;
 
   ET_LOG(Info, "Decoded %zu tokens", tokens.size());
 
@@ -411,6 +476,49 @@ int main(int argc, char** argv) {
   // Convert tokens to text
   std::string text = tokens_to_text(tokens, tokenizer.get());
   std::cout << "Transcription tokens: " << text << std::endl;
+
+  auto binary_end = std::chrono::high_resolution_clock::now();
+  auto binary_duration_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          binary_end - binary_start)
+          .count();
+
+  // Print timing summary with percentages
+  ET_LOG(Info, "=== Timing Summary ===");
+  ET_LOG(
+      Info,
+      "Preprocessor: %lld ms (%.1f%%)",
+      static_cast<long long>(preprocessor_duration_ms),
+      100.0 * preprocessor_duration_ms / binary_duration_ms);
+  ET_LOG(
+      Info,
+      "Encoder: %lld ms (%.1f%%)",
+      static_cast<long long>(encoder_duration_ms),
+      100.0 * encoder_duration_ms / binary_duration_ms);
+  ET_LOG(
+      Info,
+      "Decoder: %lld ms (%.1f%%)",
+      static_cast<long long>(decode_result.decoder_ms),
+      100.0 * decode_result.decoder_ms / binary_duration_ms);
+  ET_LOG(
+      Info,
+      "Joint: %lld ms (%.1f%%)",
+      static_cast<long long>(decode_result.joint_ms),
+      100.0 * decode_result.joint_ms / binary_duration_ms);
+  ET_LOG(
+      Info,
+      "Joint project encoder: %lld ms (%.1f%%)",
+      static_cast<long long>(decode_result.joint_project_encoder_ms),
+      100.0 * decode_result.joint_project_encoder_ms / binary_duration_ms);
+  ET_LOG(
+      Info,
+      "Joint project decoder: %lld ms (%.1f%%)",
+      static_cast<long long>(decode_result.joint_project_decoder_ms),
+      100.0 * decode_result.joint_project_decoder_ms / binary_duration_ms);
+  ET_LOG(
+      Info,
+      "Total wall time: %lld ms",
+      static_cast<long long>(binary_duration_ms));
 
   ET_LOG(Info, "Done!");
   return 0;

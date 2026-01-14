@@ -146,6 +146,17 @@
       }
     },
     {
+      "name": "llm-release-logging",
+      "displayName": "LLM release build with logging enabled",
+      "inherits": [
+        "llm-release"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "ET_MIN_LOG_LEVEL": "Info"
+      }
+    },
+    {
       "name": "llm-release-cuda",
       "displayName": "LLM release build with CUDA",
       "inherits": [
@@ -161,6 +172,17 @@
       }
     },
     {
+      "name": "llm-release-cuda-logging",
+      "displayName": "LLM release build with CUDA and logging enabled",
+      "inherits": [
+        "llm-release-cuda"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "ET_MIN_LOG_LEVEL": "Info"
+      }
+    },
+    {
       "name": "llm-release-metal",
       "displayName": "LLM release build with Metal",
       "inherits": [
@@ -173,6 +195,17 @@
         "lhs": "${hostSystemName}",
         "type": "equals",
         "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "llm-release-metal-logging",
+      "displayName": "LLM release build with Metal and logging enabled",
+      "inherits": [
+        "llm-release-metal"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "ET_MIN_LOG_LEVEL": "Info"
       }
     },
     {
@@ -277,6 +310,15 @@
       "jobs": 0
     },
     {
+      "name": "llm-release-logging-install",
+      "displayName": "Build and install LLM extension release artifacts with logging",
+      "configurePreset": "llm-release-logging",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
       "name": "llm-release-cuda-install",
       "displayName": "Build and install LLM extension release artifacts (CUDA)",
       "configurePreset": "llm-release-cuda",
@@ -286,9 +328,27 @@
       "jobs": 0
     },
     {
+      "name": "llm-release-cuda-logging-install",
+      "displayName": "Build and install LLM extension release artifacts (CUDA) with logging",
+      "configurePreset": "llm-release-cuda-logging",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
       "name": "llm-release-metal-install",
       "displayName": "Build and install LLM extension release artifacts (Metal)",
       "configurePreset": "llm-release-metal",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-release-metal-logging-install",
+      "displayName": "Build and install LLM extension release artifacts (Metal) with logging",
+      "configurePreset": "llm-release-metal-logging",
       "targets": [
         "install"
       ],
@@ -338,6 +398,20 @@
       ]
     },
     {
+      "name": "llm-release-logging",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with logging",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-logging"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-logging-install"
+        }
+      ]
+    },
+    {
       "name": "llm-release-cuda",
       "displayName": "Configure, build and install ExecuTorch LLM extension with CUDA enabled",
       "steps": [
@@ -352,6 +426,20 @@
       ]
     },
     {
+      "name": "llm-release-cuda-logging",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with CUDA and logging",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-cuda-logging"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-cuda-logging-install"
+        }
+      ]
+    },
+    {
       "name": "llm-release-metal",
       "displayName": "Configure, build and install ExecuTorch LLM extension with Metal enabled",
       "steps": [
@@ -362,6 +450,20 @@
         {
           "type": "build",
           "name": "llm-release-metal-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-release-metal-logging",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Metal and logging",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-metal-logging"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-metal-logging-install"
         }
       ]
     },

@@ -364,18 +364,19 @@ def export_all(model):
 
 
 def lower_to_executorch(programs, metadata=None, backend="portable"):
+    from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+        XnnpackPartitioner,
+    )
+
     partitioner = {}
+    if "preprocessor" in programs:
+        partitioner["preprocessor"] = [XnnpackPartitioner()]
 
     if backend == "xnnpack":
-        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-            XnnpackPartitioner,
-        )
 
         print("\nLowering to ExecuTorch with XNNPACK...")
         for key in programs.keys():
-            if key == "preprocessor":
-                partitioner[key] = []
-            else:
+            if key != "preprocessor":
                 partitioner[key] = [XnnpackPartitioner()]
 
     elif backend in ("cuda", "cuda-windows"):
@@ -395,9 +396,7 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
                 )
 
         for key in programs.keys():
-            if key == "preprocessor":
-                partitioner[key] = []
-            else:
+            if key != "preprocessor":
                 compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
                 if backend == "cuda-windows":
                     compile_specs.append(
@@ -405,9 +404,9 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
                     )
                 partitioner[key] = [CudaPartitioner(compile_specs)]
 
-    else:
-        print("\nLowering to ExecuTorch...")
-        partitioner = []
+    # else:
+    #     print("\nLowering to ExecuTorch...")
+    #     partitioner = []
 
     constant_methods = {}
     if metadata:
@@ -423,6 +422,7 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
         ),
         constant_methods=constant_methods if constant_methods else None,
     )
+    print(et_prog.exported_program("preprocessor").graph_module)
     return et_prog.to_executorch(
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,
