@@ -52,6 +52,7 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/backends/aoti/slim/core:storage",
+                "//executorch/backends/aoti/slim/factory:empty",
                 "//executorch/backends/aoti/slim/factory:from_etensor",
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             ],
