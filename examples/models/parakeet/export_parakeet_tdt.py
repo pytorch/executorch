@@ -7,6 +7,7 @@ import tarfile
 import tempfile
 
 import torch
+
 import torchaudio
 from executorch.exir import (
     EdgeCompileConfig,
@@ -368,48 +369,110 @@ def export_all(model):
     return programs, metadata
 
 
-def lower_to_executorch(programs, metadata=None, backend="portable"):
+def _create_xnnpack_partitioners(programs):
+    """Create XNNPACK partitioners for all programs except preprocessor."""
+    from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+        XnnpackPartitioner,
+    )
+
+    print("\nLowering to ExecuTorch with XNNPACK...")
     partitioner = {}
+    for key in programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            partitioner[key] = [XnnpackPartitioner()]
+    return partitioner, programs
 
+
+# This custom decomposition is the key to making Parakeet run on the Metal backend.
+# Without this, linear gets decomposed in a way that doesn't work for us.
+# When input/weight tensors are 2D and bias is present, this gets decomposed into addmm and
+# reinterpret_tensor_wrapper gets called on the bias, to make it look like a 2D tensor.
+# On one hand, this requires us to implement addmm in the Metal backend. But more importantly,
+# the reinterpret_tensor_wrapper call makes its way to ExecuTorch, causing a call to executorch::extension::from_blob
+# with a 0 stride. ExecuTorch doesn't support that, and raises an error.
+# This decomposition avoids that problem, and also avoids having to implement addmm.
+def _linear_bias_decomposition(input, weight, bias=None):
+    """Decompose linear with bias into matmul + add."""
+    # linear(input, weight) = input @ weight.T
+    # Use matmul instead of mm to handle batched inputs (3D+)
+    weight_t = torch.ops.aten.t.default(weight)
+    out = torch.ops.aten.matmul.default(input, weight_t)
+    if bias is not None:
+        return torch.ops.aten.add.Tensor(out, bias)
+    return out
+
+
+def _create_metal_partitioners(programs):
+    """Create Metal partitioners for all programs except preprocessor."""
+    from executorch.backends.apple.metal.metal_backend import MetalBackend
+    from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+
+    print("\nLowering to ExecuTorch with Metal...")
+
+    # Run decompositions for non-preprocessor programs
+    updated_programs = {}
+    for key, ep in programs.items():
+        # print(f"Running decompositions for {key}")
+        # print(ep.graph_module)
+        if key != "preprocessor":
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.linear.default: _linear_bias_decomposition}
+            )
+        else:
+            updated_programs[key] = ep
+
+    partitioner = {}
+    for key in updated_programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
+            partitioner[key] = [MetalPartitioner(compile_specs)]
+    return partitioner, updated_programs
+
+
+def _create_cuda_partitioners(programs, is_windows=False):
+    """Create CUDA partitioners for all programs except preprocessor."""
+    from executorch.backends.cuda.cuda_backend import CudaBackend
+    from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
+    from torch._inductor.decomposition import conv1d_to_conv2d
+
+    print(f"\nLowering to ExecuTorch with CUDA{' (Windows)' if is_windows else ''}...")
+
+    # Run decompositions for non-preprocessor programs
+    updated_programs = {}
+    for key, ep in programs.items():
+        if key != "preprocessor":
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
+            )
+        else:
+            updated_programs[key] = ep
+
+    partitioner = {}
+    for key in updated_programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
+            if is_windows:
+                compile_specs.append(CompileSpec("platform", "windows".encode("utf-8")))
+            partitioner[key] = [CudaPartitioner(compile_specs)]
+    return partitioner, updated_programs
+
+
+def lower_to_executorch(programs, metadata=None, backend="portable"):
     if backend == "xnnpack":
-        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-            XnnpackPartitioner,
-        )
-
-        print("\nLowering to ExecuTorch with XNNPACK...")
-        for key in programs.keys():
-            if key == "preprocessor":
-                partitioner[key] = []
-            else:
-                partitioner[key] = [XnnpackPartitioner()]
-
+        partitioner, programs = _create_xnnpack_partitioners(programs)
+    elif backend == "metal":
+        partitioner, programs = _create_metal_partitioners(programs)
     elif backend in ("cuda", "cuda-windows"):
-        from executorch.backends.cuda.cuda_backend import CudaBackend
-        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-        from executorch.exir.backend.compile_spec_schema import CompileSpec
-        from torch._inductor.decomposition import conv1d_to_conv2d
-
-        print(
-            f"\nLowering to ExecuTorch with CUDA{' (Windows)' if backend == 'cuda-windows' else ''}..."
+        partitioner, programs = _create_cuda_partitioners(
+            programs, is_windows=(backend == "cuda-windows")
         )
-
-        for key, ep in programs.items():
-            if key != "preprocessor":
-                programs[key] = ep.run_decompositions(
-                    {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
-                )
-
-        for key in programs.keys():
-            if key == "preprocessor":
-                partitioner[key] = []
-            else:
-                compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
-                if backend == "cuda-windows":
-                    compile_specs.append(
-                        CompileSpec("platform", "windows".encode("utf-8"))
-                    )
-                partitioner[key] = [CudaPartitioner(compile_specs)]
-
     else:
         print("\nLowering to ExecuTorch...")
         partitioner = []
@@ -447,10 +510,21 @@ def main():
         "--backend",
         type=str,
         default="portable",
-        choices=["portable", "xnnpack", "cuda", "cuda-windows"],
+        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
         help="Backend for acceleration (default: portable)",
     )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="fp32",
+        choices=["fp32", "fp16", "bf16"],
+        help="Model dtype for Metal/CUDA backends (default: fp32)",
+    )
     args = parser.parse_args()
+
+    # Validate dtype for Metal backend
+    if args.backend == "metal" and args.dtype == "fp16":
+        parser.error("Metal backend only supports fp32 and bf16, not fp16")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -459,6 +533,14 @@ def main():
 
     print("Loading model...")
     model = load_model()
+
+    # Convert model to specified dtype for Metal/CUDA backends
+    if args.dtype == "bf16":
+        print("Converting model to bfloat16...")
+        model = model.to(torch.bfloat16)
+    elif args.dtype == "fp16":
+        print("Converting model to float16...")
+        model = model.to(torch.float16)
 
     print("\nExporting components...")
     programs, metadata = export_all(model)

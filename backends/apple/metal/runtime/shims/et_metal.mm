@@ -113,6 +113,24 @@ void metal_cleanup_resources() {
     }
 }
 
+bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer) {
+    id<MTLDevice> device = get_metal_device();
+    id<MTLBuffer> subBuffer = [device newBufferWithBytesNoCopy:ptr
+                                                        length:nbytes
+                                                        options:MTLResourceCPUCacheModeWriteCombined | MTLResourceStorageModeShared
+                                                    deallocator:nil];
+    if (!subBuffer) {
+        ET_LOG(Error, "metal_buffer_nocopy: Failed to create no-copy buffer (ptr=%p, nbytes=%zu)", ptr, nbytes);
+        return false;
+    }
+
+    if (map_ptr_to_buffer) {
+        ptr_to_mtl_buffer[ptr] = subBuffer;  // Map contents to buffer
+    }
+
+    return true;
+}
+
 bool metal_is_device_pointer(void* ptr) {
     return ptr_to_mtl_buffer.find(ptr) != ptr_to_mtl_buffer.end();
 }
