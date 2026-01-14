@@ -234,8 +234,8 @@ void ETMetalShaderLibrary::compileLibrary() {
         NSString* sourceString = [NSString stringWithUTF8String:shaderSource_.c_str()];
         NSError* error = nil;
 
-        MTLCompileOptions* options = [[MTLCompileOptions alloc] init];
-        if (@available(macOS 15.0, iOS 18.0, *)) {
+        MTLCompileOptions* options = [[MTLCompileOptions new] autorelease];
+        if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
             options.mathMode = MTLMathModeSafe;
             options.mathFloatingPointFunctions = MTLMathFloatingPointFunctionsPrecise;
         }
