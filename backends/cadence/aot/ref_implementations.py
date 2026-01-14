@@ -506,7 +506,9 @@ def quantized_linear_variant(
                     raise ValueError("out_shift must be a scalar")
 
                 if out_shift.dtype != torch.int32:
-                    raise ValueError("out_shift must be an int32")
+                    raise ValueError(
+                        f"out_shift must be an int32. Got {out_shift.dtype} instead"
+                    )
 
                 _out_shift = int(out_shift.item())
                 _out_multiplier = int(out_multiplier[0].item())
