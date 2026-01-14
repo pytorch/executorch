@@ -1,0 +1,101 @@
+name: nightly-model-export
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  export-models-xnnpack:
+    name: export-models-xnnpack
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      matrix:
+        config: [
+          llama3.2-1b|xnnpack|--quantize,
+          gemma3-1b|xnnpack|--quantize,
+        ]
+      fail-fast: false
+    with:
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.sha }}
+      timeout: 90
+      upload-artifact: model-${{ strategy.job-index }}-xnnpack
+      upload-artifact-to-s3: true
+      script: |
+        set -eux
+        IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"
+        echo "Model: $MODEL"
+        echo "Recipe: $RECIPE"
+        echo "Quantize: $QUANTIZE"
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+        echo "::endgroup::"
+
+        echo "::group::Setup Huggingface"
+        pip install -U "huggingface_hub[cli]<1.0" accelerate
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        echo "::endgroup::"
+
+        echo "::group::Export MODEL: $MODEL RECIPE: $RECIPE QUANTIZE: $QUANTIZE"
+        python .ci/scripts/test_huggingface_optimum_model.py --model "$MODEL" --recipe "$RECIPE" $QUANTIZE --model_dir "${RUNNER_ARTIFACT_DIR}"
+        echo "::endgroup::"
+
+  export-multimodal-models:
+    name: export-multimodal-models
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ["gemma3-4b"]
+    with:
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: linux.24xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.sha }}
+      timeout: 90
+      upload-artifact: multimodal-${{ matrix.model }}-xnnpack
+      upload-artifact-to-s3: true
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+        echo "::endgroup::"
+
+        echo "::group::Setup Huggingface"
+        pip install -U "huggingface_hub[cli]<1.0" accelerate
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        echo "::endgroup::"
+
+        echo "::group::Export ${{ matrix.model }}"
+        python .ci/scripts/test_huggingface_optimum_model.py --model ${{ matrix.model }} --quantize --recipe xnnpack --model_dir "${RUNNER_ARTIFACT_DIR}"
+        echo "::endgroup::"
