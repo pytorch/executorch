@@ -113,6 +113,7 @@ _zephyr_utils_run_simple_commands () {
       return 1
     fi
 
+    echo "Setup: conda:${CONDA_PREFIX:-}    or venv:${VIRTUAL_ENV:-}"
     echo "Running: ${cmd}"
     if ! eval "${cmd}"; then
       return 1
