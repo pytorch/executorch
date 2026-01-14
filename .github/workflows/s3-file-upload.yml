@@ -1,0 +1,123 @@
+name: S3 File Upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_url:
+        description: 'URL to download the file from'
+        required: true
+        type: string
+      bucket_name:
+        description: 'Name of the target S3 bucket'
+        required: true
+        type: string
+      target_path:
+        description: 'Optional path prefix inside the bucket'
+        required: false
+        type: string
+        default: ''
+  repository_dispatch:
+    types: [s3-file-upload]
+
+jobs:
+  upload-file-to-s3:
+    name: upload-file-to-s3
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download file from URL
+        shell: bash
+        run: |
+          set -eux
+
+          FILE_URL="${{ github.event.inputs.file_url || github.event.client_payload.file_url }}"
+
+          if [ -z "$FILE_URL" ]; then
+            echo "Error: file_url is required"
+            exit 1
+          fi
+
+          echo "Downloading file from: $FILE_URL"
+
+          # Extract filename from URL
+          FILENAME=$(basename "$FILE_URL")
+
+          # Download the file using curl with follow redirects and progress
+          curl -L -o "$FILENAME" "$FILE_URL"
+
+          # Verify file was downloaded
+          if [ ! -f "$FILENAME" ]; then
+            echo "Error: Failed to download file"
+            exit 1
+          fi
+
+          FILE_SIZE=$(stat -c%s "$FILENAME" 2>/dev/null || \
+            stat -f%z "$FILENAME" 2>/dev/null || echo "unknown")
+          echo "Downloaded file: $FILENAME (size: $FILE_SIZE bytes)"
+
+          # Save filename for next step
+          echo "DOWNLOADED_FILENAME=$FILENAME" >> $GITHUB_ENV
+
+      - name: Install AWS CLI
+        shell: bash
+        run: |
+          set -eux
+
+          # Check if aws cli is already installed
+          if command -v aws &> /dev/null; then
+            echo "AWS CLI is already installed"
+            aws --version
+          else
+            echo "Installing AWS CLI"
+            pip install awscli==1.32.18
+            aws --version
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Upload file to S3
+        shell: bash
+        run: |
+          set -eux
+
+          BUCKET_NAME="${{ github.event.inputs.bucket_name || github.event.client_payload.bucket_name }}"
+          TARGET_PATH="${{ github.event.inputs.target_path || github.event.client_payload.target_path }}"
+          FILENAME="${DOWNLOADED_FILENAME}"
+
+          if [ -z "$BUCKET_NAME" ]; then
+            echo "Error: bucket_name is required"
+            exit 1
+          fi
+
+          # Construct S3 path
+          if [ -z "$TARGET_PATH" ]; then
+            S3_PATH="s3://${BUCKET_NAME}/${FILENAME}"
+          else
+            S3_PATH="s3://${BUCKET_NAME}/${TARGET_PATH}"
+          fi
+
+          echo "Uploading $FILENAME to $S3_PATH"
+
+          # Upload file to S3
+          aws s3 cp "$FILENAME" "$S3_PATH" --acl public-read
+
+          echo "File uploaded successfully to $S3_PATH"
+
+          # Generate and display the public URL
+          if [ -z "$TARGET_PATH" ]; then
+            PUBLIC_URL="https://${BUCKET_NAME}.s3.amazonaws.com/${FILENAME}"
+          else
+            PUBLIC_URL="https://${BUCKET_NAME}.s3.amazonaws.com/${TARGET_PATH}"
+          fi
+
+          echo "Public URL: $PUBLIC_URL"
