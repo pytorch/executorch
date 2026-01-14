@@ -422,6 +422,9 @@ jobs:
         # install executorch and parakeet requirements
         bash ./install_executorch.sh
         pip install -r examples/models/parakeet/install_requirements.txt
+
+        # Reinstall torchvision to match torch version (nemo_toolkit may install incompatible version)
+        pip install --force-reinstall torchvision --extra-index-url https://download.pytorch.org/whl/nightly/cpu
         pip list
 
         echo "::group::Build ExecuTorch with LLM runner"
