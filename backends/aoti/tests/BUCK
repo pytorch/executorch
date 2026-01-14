@@ -1,8 +1,9 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
 
 oncall("executorch")
 
-cpp_unittest(
+fbcode_target(_kind = cpp_unittest,
     name = "test_common_shims",
     srcs = [
         "test_common_shims.cpp",
