@@ -1,0 +1,77 @@
+name: Export Stories Model
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 10 * * *'
+
+jobs:
+  export-stories-model:
+    name: export-stories-model
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install executorch
+        run: |
+          pip install executorch
+
+      - name: Download model and tokenizer
+        run: |
+          temp_pt="$(mktemp).pt"
+          temp_params="$(mktemp).json"
+
+          wget -O "$temp_pt" "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt"
+          wget "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model"
+          echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > "$temp_params"
+
+          echo "TEMP_PT=$temp_pt" >> $GITHUB_ENV
+          echo "TEMP_PARAMS=$temp_params" >> $GITHUB_ENV
+
+      - name: Export model to PTE
+        run: |
+          python -m executorch.extension.llm.export.export_llm \
+            base.checkpoint="$TEMP_PT" \
+            base.params="$TEMP_PARAMS" \
+            backend.xnnpack.enabled=True \
+            model.use_kv_cache=True \
+            export.output_name=stories110M.pte
+
+      - name: Cleanup temp files
+        run: |
+          rm "$TEMP_PT" "$TEMP_PARAMS"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stories110M-pte
+          path: |
+            stories110M.pte
+            tokenizer.model
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: arn:aws:iam::308535385114:role/gha_executorch_upload-frameworks-android
+          aws-region: us-east-1
+
+      - name: Upload to S3
+        run: |
+          pip install awscli==1.32.18
+
+          shasum -a 256 stories110M.pte > stories110M.pte.sha256sums
+          shasum -a 256 tokenizer.model > tokenizer.model.sha256sums
+
+          VERSION="snapshot-$(date +"%Y%m%d")"
+
+          aws s3 cp stories110M.pte s3://ossci-android/executorch/stories/${VERSION}/stories110M.pte --acl public-read
+          aws s3 cp stories110M.pte.sha256sums s3://ossci-android/executorch/stories/${VERSION}/stories110M.pte.sha256sums --acl public-read
+          aws s3 cp tokenizer.model s3://ossci-android/executorch/stories/${VERSION}/tokenizer.model --acl public-read
+          aws s3 cp tokenizer.model.sha256sums s3://ossci-android/executorch/stories/${VERSION}/tokenizer.model.sha256sums --acl public-read
