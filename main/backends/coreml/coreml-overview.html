@@ -1201,7 +1201,7 @@ document.write(`
 <hr class="docutils" />
 <section id="runtime-integration">
 <h2>Runtime integration<a class="headerlink" href="#runtime-integration" title="Link to this heading">#</a></h2>
-<p>To run the model on device, use the standard ExecuTorch runtime APIs. See <a class="reference internal" href="#getting-started.md#running-on-device"><span class="xref myst">Running on Device</span></a> for more information, including building the iOS frameworks.</p>
+<p>To run the model on device, use the standard ExecuTorch runtime APIs. See <a class="reference internal" href="../../getting-started.html#running-on-device"><span class="std std-ref">Running on Device</span></a> for more information, including building the iOS frameworks.</p>
 <p>When building from source, pass <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_COREML=ON</span></code> when configuring the CMake build to compile the Core ML backend.</p>
 <p>Due to the use of static initializers for registration, it may be necessary to use whole-archive to link against the <code class="docutils literal notranslate"><span class="pre">coremldelegate</span></code> target. This can typically be done by passing <code class="docutils literal notranslate"><span class="pre">&quot;$&lt;LINK_LIBRARY:WHOLE_ARCHIVE,coremldelegate&gt;&quot;</span></code> to <code class="docutils literal notranslate"><span class="pre">target_link_libraries</span></code>.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span># CMakeLists.txt
