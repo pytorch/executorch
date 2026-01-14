@@ -125,6 +125,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_NXP_NEUTRON "Build the NXP eIQ Neutron backend"  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" BOOL OFF
 )
 define_overridable_option(
