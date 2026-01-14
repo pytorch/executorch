@@ -306,8 +306,6 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
-      upload-artifact: multimodal-${{ matrix.model }}-xnnpack
-      upload-artifact-to-s3: true
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -325,7 +323,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Test ${{ matrix.model }}"
-        python .ci/scripts/test_huggingface_optimum_model.py --model ${{ matrix.model }} --quantize --recipe xnnpack --model_dir "${RUNNER_ARTIFACT_DIR}"
+        python .ci/scripts/test_huggingface_optimum_model.py --model ${{ matrix.model }} --quantize --recipe xnnpack
         echo "::endgroup::"
 
   test-moshi-linux:
