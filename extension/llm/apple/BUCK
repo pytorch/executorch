@@ -1,0 +1,172 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "non_fbcode_target")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "IOS")
+load("@fbsource//tools/build_defs/apple:autoglob.bzl", "EXPORT_UNLESS_INTERNAL")
+load("@fbsource//tools/build_defs/apple:fb_apple_library.bzl", "fb_apple_library")
+load("@fbsource//xplat/executorch/build/fb:clients.bzl", "EXECUTORCH_CLIENTS")
+load("@fbsource//tools/build_defs/apple:fb_apple_resource.bzl", "fb_apple_resource")
+load("@fbsource//tools/build_defs:manifold.bzl", "manifold_get")
+
+oncall("executorch")
+
+non_fbcode_target(_kind = fb_apple_library,
+    name = "ExecuTorchLLM",
+    autoglob_mode = EXPORT_UNLESS_INTERNAL,
+    extension_api_only = True,
+    frameworks = [
+        "Foundation",
+    ],
+    sdks = IOS,
+    visibility = EXECUTORCH_CLIENTS,
+    test_labels = ["long_running"],
+    test_deps = [
+        ":ExecuTorchLLMTestResource",
+        "//xplat/executorch/backends/xnnpack:xnnpack_backendApple",
+        "//xplat/executorch/configurations:optimized_native_cpu_opsApple",
+        "//xplat/executorch/extension/apple:ExecuTorch",
+        "//xplat/executorch/extension/llm/custom_ops:custom_opsApple",
+        "//xplat/executorch/kernels/quantized:generated_libApple",
+    ],
+    deps = [
+        "//xplat/executorch/extension/llm/runner:runner_libApple",
+        "//xplat/pytorch/tokenizers:regex_lookaheadApple",
+    ],
+)
+
+fb_apple_resource(
+    name = "ExecuTorchLLMTestResource",
+    files = [
+        ":gemma3",
+        ":gemma3_tokenizer",
+        ":llama3_2-1B",
+        ":llama_tokenizer",
+        ":llava",
+        ":llava_tokenizer",
+        ":phi4-mini",
+        ":phi_tokenizer",
+        ":voxtral",
+        ":voxtral_input_features",
+        ":voxtral_preprocessor",
+        ":voxtral_tokenizer_tekken",
+        "ExecuTorchLLM/__tests__/resources/IMG_0005.jpg",
+    ],
+)
+
+manifold_get(
+    name = "gemma3",
+    out = "gemma3.pte",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/gemma3/HQQ/model.pte",
+    bucket_name = "executorch",
+    sha1 = "9bc5c849bcf327cac66f7964bb610507cfadfe0e",
+    timeout_msec = 3600000,
+)
+
+manifold_get(
+    name = "gemma3_tokenizer",
+    out = "gemma3_tokenizer.model",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/gemma3/tokenizer.model",
+    bucket_name = "executorch",
+    sha1 = "8a8e05deb279bd5bdca094fb7ececabe732a9534",
+    timeout_msec = 1000000,
+)
+
+manifold_get(
+    name = "llama3_2-1B",
+    out = "llama3_2-1B.pte",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/llama/test/llama3_2-1B.pte",
+    bucket_name = "executorch",
+    sha1 = "f2a26151bed2f4467dba6bf0c208d4c01c24abf9",
+    timeout_msec = 3600000,
+)
+
+manifold_get(
+    name = "llama_tokenizer",
+    out = "llama_tokenizer.model",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/llama/test/tokenizer.model",
+    bucket_name = "executorch",
+    sha1 = "1585623c0cb9ab7da823dcd68c6ecdf3a9b5e3ee",
+    timeout_msec = 1000000,
+)
+
+manifold_get(
+    name = "llava",
+    out = "llava.pte",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/llava/20250919/llava.pte",
+    bucket_name = "executorch",
+    sha1 = "10eb28d7f01943fdc079f4cd45bcf7fbf92ede6d",
+    timeout_msec = 3600000,
+)
+
+manifold_get(
+    name = "llava_tokenizer",
+    out = "llava_tokenizer.bin",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/llava/20250919/tokenizer.bin",
+    bucket_name = "executorch",
+    sha1 = "96cabb79529e2009fb77de8d1132fef0d7b16331",
+    timeout_msec = 1000000,
+)
+
+manifold_get(
+    name = "phi4-mini",
+    out = "phi4-mini.pte",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/phi4-mini/model.pte",
+    bucket_name = "executorch",
+    sha1 = "a69d75afeb268460cfe44907013c15339057469f",
+    timeout_msec = 3600000,
+)
+
+manifold_get(
+    name = "phi_tokenizer",
+    out = "phi_tokenizer.json",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/phi4-mini/tokenizer.json",
+    bucket_name = "executorch",
+    sha1 = "6a8430002246340b4239b32f2d50111cadce728a",
+    timeout_msec = 1000000,
+)
+
+manifold_get(
+    name = "voxtral",
+    out = "voxtral.pte",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/voxtral/voxtral.pte",
+    bucket_name = "executorch",
+    sha1 = "b41ef9734b4d7751dbf10132dd67df46ccf63d0f",
+    timeout_msec = 3600000,
+)
+
+manifold_get(
+    name = "voxtral_input_features",
+    out = "voxtral_input_features.bin",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/voxtral/input_features.bin",
+    bucket_name = "executorch",
+    sha1 = "babde331f5d5e53bff6ab2d748229c7af58a52f2",
+    timeout_msec = 1000000,
+)
+
+manifold_get(
+    name = "voxtral_preprocessor",
+    out = "voxtral_preprocessor.pte",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/voxtral/voxtral_preprocessor.pte",
+    bucket_name = "executorch",
+    sha1 = "fa1feed7b64de5f760dfdfdd6342058f15e4a1c9",
+    timeout_msec = 3600000,
+)
+
+manifold_get(
+    name = "voxtral_tokenizer_tekken",
+    out = "voxtral_tokenizer_tekken.json",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/voxtral/tekken.json",
+    bucket_name = "executorch",
+    sha1 = "21a380f5ea34718786110478e093bbe573d6e713",
+    timeout_msec = 1000000,
+)
