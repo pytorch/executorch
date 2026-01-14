@@ -414,19 +414,15 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
-
-        # reinstall executorch
-        bash ./install_executorch.sh --minimal
-
-        # install parakeet requirements AFTER executorch to get compatible torchaudio
-        pip install -r examples/models/parakeet/install_requirements.txt
-        pip list
-
         # install audio processing dependencies (same as whisper)
         conda install -y -c conda-forge "ffmpeg<8"
         pip install datasets soundfile
         pip install torchcodec==0.10.0.dev20251211 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+
+        # install executorch and parakeet requirements
+        bash ./install_executorch.sh
+        pip install -r examples/models/parakeet/install_requirements.txt
+        pip list
 
         echo "::group::Build ExecuTorch with LLM runner"
         cmake --workflow --preset llm-release
