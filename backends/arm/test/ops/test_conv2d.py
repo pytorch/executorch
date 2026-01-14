@@ -475,7 +475,7 @@ def test_convolution_2d_u55_INT(test_data):
 
 
 @common.parametrize("test_data", test_data_INT)
-def test_convolution_2d_u55_a8w4(test_data):
+def test_convolution_2d_u55_INT_a8w4(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -504,7 +504,7 @@ def test_convolution_u85_INT(test_data):
 
 
 @common.parametrize("test_data", test_data_INT)
-def test_convolution_2d_u85_a8w4(test_data):
+def test_convolution_2d_u85_INT_a8w4(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineINT[input_t](
         model,

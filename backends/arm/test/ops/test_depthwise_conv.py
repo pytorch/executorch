@@ -300,7 +300,7 @@ def test_convolution_2d_u55_INT_depthwise(test_data):
 
 @common.XfailIfNoCorstone300
 @common.parametrize("test_data", test_data_conv2d_INT)
-def test_convolution_2d_u55_a8w4_depthwise(test_data):
+def test_convolution_2d_u55_INT_a8w4_depthwise(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -330,7 +330,7 @@ def test_convolution_1d_u55_INT_depthwise(test_data):
 
 @common.XfailIfNoCorstone300
 @common.parametrize("test_data", test_data_conv1d_INT)
-def test_convolution_1d_u55_a8w4_depthwise(test_data):
+def test_convolution_1d_u55_INT_a8w4_depthwise(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -360,7 +360,7 @@ def test_convolution_2d_u85_INT_depthwise(test_data):
 
 @common.XfailIfNoCorstone320
 @common.parametrize("test_data", test_data_conv2d_INT)
-def test_convolution_2d_u85_a8w4_depthwise(test_data):
+def test_convolution_2d_u85_INT_a8w4_depthwise(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineINT[input_t](
         model,
@@ -390,7 +390,7 @@ def test_convolution_1d_u85_INT_depthwise(test_data):
 
 @common.XfailIfNoCorstone320
 @common.parametrize("test_data", test_data_conv1d_INT)
-def test_convolution_1d_u85_a8w4_depthwise(test_data):
+def test_convolution_1d_u85_INT_a8w4_depthwise(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineINT[input_t](
         model,
