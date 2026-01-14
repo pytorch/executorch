@@ -9,7 +9,6 @@
 #pragma once
 
 #include <cuda_runtime.h>
-#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <cstdint>

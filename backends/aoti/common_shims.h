@@ -56,6 +56,15 @@ inline std::unordered_map<Tensor*, std::vector<int64_t>>& tensor_to_strides() {
   return instance;
 }
 } // namespace internal
+
+// Cleanup function to free cached tensor metadata (ETensor path only)
+inline void cleanup_tensor_metadata() {
+  internal::tensor_to_sizes().clear();
+  internal::tensor_to_strides().clear();
+}
+#else
+// No-op for CUDA path since SlimTensor doesn't use caching
+inline void cleanup_tensor_metadata() {}
 #endif
 
 // ============================================================
