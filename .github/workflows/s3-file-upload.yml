@@ -1,5 +1,31 @@
 name: S3 File Upload
 
+# This workflow downloads a file from a given URL and uploads it to an S3 bucket.
+#
+# Usage (Manual Trigger):
+#   1. Go to Actions tab -> S3 File Upload workflow
+#   2. Click "Run workflow"
+#   3. Provide:
+#      - file_url: URL to download the file from (required)
+#      - bucket_name: Name of the target S3 bucket (required)
+#      - target_path: Optional path prefix (e.g., "folder/file.txt")
+#
+# Usage (Repository Dispatch):
+#   curl -X POST \
+#     -H "Accept: application/vnd.github.v3+json" \
+#     -H "Authorization: token $GITHUB_TOKEN" \
+#     https://api.github.com/repos/pytorch/executorch/dispatches \
+#     -d '{"event_type":"s3-file-upload",
+#          "client_payload":{
+#            "file_url":"https://example.org/path-to-resource",
+#            "bucket_name":"example-bucket",
+#            "target_path":"folder/file_name"
+#          }}'
+#
+# AWS Prerequisites:
+#   - AWS_ROLE_ARN secret must be configured with appropriate IAM role
+#   - IAM role must have permissions to write to the target S3 bucket
+
 on:
   workflow_dispatch:
     inputs:
