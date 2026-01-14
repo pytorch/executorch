@@ -1,0 +1,33 @@
+load("@fbsource//tools/build_defs:fb_xplat_cxx_binary.bzl", "fb_xplat_cxx_binary")
+load(
+    "@fbsource//tools/build_defs:platform_defs.bzl",
+    "ANDROID",
+)
+load(
+    "@fbsource//xplat/caffe2:pt_defs.bzl",
+    "get_pt_ops_deps",
+)
+
+# As fb_xplat_cxx_test (using target.bzl) fails to compile for
+# android-arm64.
+fb_xplat_cxx_binary(
+    name = "dynamic_quant_utils_test",
+    srcs = ["runtime/test_runtime_utils.cpp"],
+    platforms = (ANDROID,),
+    deps = [
+        "//xplat/caffe2:aten_cpu",
+        "//xplat/executorch/extension/aten_util:aten_bridge",
+        "//xplat/executorch/test/utils:utils",
+        "//xplat/executorch/backends/xnnpack:dynamic_quant_utils",
+        "//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+        "//xplat/executorch/runtime/core/exec_aten/util:scalar_type_util",
+        # Need get_pt_ops_deps because at::zeros/quantize_per_tensor
+        # fail in dispatcher as this ops are no registered otherwise.
+    ] + get_pt_ops_deps(
+        name = "pt_ops_full",
+        train = True,
+        deps = [
+            "//xplat/caffe2:torch_mobile_ops_full_dev",
+        ],
+    ),
+)
