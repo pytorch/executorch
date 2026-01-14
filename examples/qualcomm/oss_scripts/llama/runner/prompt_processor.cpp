@@ -130,7 +130,7 @@ void PromptProcessor<T>::init_io(
 
     // [I] kv_cache
     // Prepare the vector of EValue for kv cache to evict token
-    cache_inputs_.reserve(2 * metadata_.num_layers * metadata_.num_heads);
+    cache_inputs_.reserve(2 * metadata_.num_layers);
     size_t index = idx; // bypass input_tokens, atten_mask, input_pos
     for (int cache_group = 0; cache_group < 2; ++cache_group) {
       std::vector<std::unique_ptr<TensorImpl>>& cache =

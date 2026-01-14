@@ -84,7 +84,7 @@ def compile_attention_sink_evictor(
         and os.path.exists(attention_sink_evictor_pte_path)
         and is_attention_sink_config_equal(attention_sink_evictor_pte_path, args)
     ):
-        logging.info("Attention sink evictor already compiled, skipping...")
+        logging.info("Attention sink evictor is already compiled, skipping...")
         return
     attention_sink_evictor = HybridAttentionSinkEvictor(
         control_args=args, config=decoder_model_config
@@ -533,7 +533,7 @@ def _build_parser():
 
     parser.add_argument(
         "--max_seq_len",
-        help="The maximum length sequence to evaluate.",
+        help="The maximum length of sequence to evaluate.",
         default=512,
         type=int,
     )
@@ -578,7 +578,7 @@ def _build_parser():
         default=None,
         type=str,
         help="Use the attention sink feature to have fluent multi-round conversations. Specify the settings as '<sink_size>,<batch_eviction_size>', for example, '4,32'."
-        "This setting is for compilation. Once you compile with a chosen <sink_size> and <batch_eviction_size>, they cannot be changed at runtime. If you need to update them, you can recompile only the attention sink module along with attention.py.",
+        "This setting is for compilation. Once you compile with a chosen <sink_size> and <batch_eviction_size>, they cannot be changed at runtime. If you need to update them, you can recompile the attention sink module along with llama.py.",
     )
 
     parser.add_argument("-v", "--verbose", action="store_true")
