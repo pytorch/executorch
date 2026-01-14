@@ -78,8 +78,12 @@ class DecomposeVarPass(ArmPass):
         dim = get_node_arg(args, key=list, default_value=list(range(len(shape))))
 
         if op == torch.ops.aten.var.dim:
-            keepdim = get_node_arg(args, bool, False)
-            correction = get_node_arg(args, int, 1)
+            keepdim = False
+            correction = 1
+            if len(args) > 2:
+                correction = int(get_node_arg(args, 2, True))
+            if len(args) > 3:
+                keepdim = get_node_arg(args, 3, False)
         else:
             correction = get_node_arg(kwargs, "correction", 1)
             keepdim = get_node_arg(kwargs, "keepdim", False)
