@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <executorch/backends/aoti/slim/core/storage.h>
+#include <executorch/backends/aoti/slim/factory/empty.h>
 #include <executorch/backends/aoti/slim/factory/from_etensor.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -19,8 +20,10 @@
 
 namespace executorch::backends::aoti::slim {
 
+using executorch::runtime::Error;
 using executorch::runtime::etensor::ScalarType;
 using executorch::runtime::testing::TensorFactory;
+using executorch::runtime::TensorShapeDynamism;
 
 // =============================================================================
 // Test Device Helpers
@@ -106,8 +109,8 @@ TEST_P(FromETensorParamTest, BasicConversion) {
   std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
   auto etensor = tf.make({2, 3}, data);
 
-  // Convert to SlimTensor on target device
-  SlimTensor result = from_etensor(etensor, device());
+  // Convert to SlimTensor on target device (source is CPU)
+  SlimTensor result = from_etensor(etensor, CPU_DEVICE, device());
 
   // Verify metadata
   EXPECT_EQ(result.dim(), 2u);
@@ -130,8 +133,8 @@ TEST_P(FromETensorParamTest, PreservesStrides) {
   std::vector<int32_t> strides = {1, 2}; // Column-major for 2x3 tensor
   auto etensor = tf.make({2, 3}, data, strides);
 
-  // Convert to SlimTensor
-  SlimTensor result = from_etensor(etensor, device());
+  // Convert to SlimTensor (source is CPU)
+  SlimTensor result = from_etensor(etensor, CPU_DEVICE, device());
 
   // Verify strides are preserved
   EXPECT_EQ(result.stride(0), 1);
@@ -144,7 +147,7 @@ TEST_P(FromETensorParamTest, Float32Dtype) {
   std::vector<float> data = {1.5f, 2.5f, 3.5f, 4.5f};
   auto etensor = tf.make({2, 2}, data);
 
-  SlimTensor result = from_etensor(etensor, device());
+  SlimTensor result = from_etensor(etensor, CPU_DEVICE, device());
 
   EXPECT_EQ(result.dtype(), c10::ScalarType::Float);
   EXPECT_EQ(result.itemsize(), sizeof(float));
@@ -156,7 +159,7 @@ TEST_P(FromETensorParamTest, Int64Dtype) {
   std::vector<int64_t> data = {10, 20, 30, 40, 50, 60};
   auto etensor = tf.make({2, 3}, data);
 
-  SlimTensor result = from_etensor(etensor, device());
+  SlimTensor result = from_etensor(etensor, CPU_DEVICE, device());
 
   EXPECT_EQ(result.dtype(), c10::ScalarType::Long);
   EXPECT_EQ(result.itemsize(), sizeof(int64_t));
@@ -168,7 +171,7 @@ TEST_P(FromETensorParamTest, Int32Dtype) {
   std::vector<int32_t> data = {100, 200, 300, 400};
   auto etensor = tf.make({4}, data);
 
-  SlimTensor result = from_etensor(etensor, device());
+  SlimTensor result = from_etensor(etensor, CPU_DEVICE, device());
 
   EXPECT_EQ(result.dtype(), c10::ScalarType::Int);
   EXPECT_EQ(result.itemsize(), sizeof(int32_t));
@@ -180,7 +183,7 @@ TEST_P(FromETensorParamTest, Int16Dtype) {
   std::vector<int16_t> data = {-1, 0, 1, 2, 3, 4};
   auto etensor = tf.make({2, 3}, data);
 
-  SlimTensor result = from_etensor(etensor, device());
+  SlimTensor result = from_etensor(etensor, CPU_DEVICE, device());
 
   EXPECT_EQ(result.dtype(), c10::ScalarType::Short);
   EXPECT_EQ(result.itemsize(), sizeof(int16_t));
@@ -192,7 +195,7 @@ TEST_P(FromETensorParamTest, Int8Dtype) {
   std::vector<int8_t> data = {-128, -1, 0, 1, 127};
   auto etensor = tf.make({5}, data);
 
-  SlimTensor result = from_etensor(etensor, device());
+  SlimTensor result = from_etensor(etensor, CPU_DEVICE, device());
 
   EXPECT_EQ(result.dtype(), c10::ScalarType::Char);
   EXPECT_EQ(result.itemsize(), sizeof(int8_t));
@@ -205,7 +208,7 @@ TEST_P(FromETensorParamTest, BoolDtype) {
   std::vector<uint8_t> data = {1, 0, 1, 0, 1, 1};
   auto etensor = tf.make({2, 3}, data);
 
-  SlimTensor result = from_etensor(etensor, device());
+  SlimTensor result = from_etensor(etensor, CPU_DEVICE, device());
 
   EXPECT_EQ(result.dtype(), c10::ScalarType::Bool);
   EXPECT_EQ(result.numel(), 6u);
@@ -225,7 +228,7 @@ TEST_P(FromETensorParamTest, LargeTensor) {
   }
   auto etensor = tf.make({32, 32}, data);
 
-  SlimTensor result = from_etensor(etensor, device());
+  SlimTensor result = from_etensor(etensor, CPU_DEVICE, device());
 
   EXPECT_EQ(result.numel(), kSize);
   EXPECT_EQ(result.size(0), 32);
@@ -239,7 +242,7 @@ TEST_P(FromETensorParamTest, OneDimensional) {
   std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
   auto etensor = tf.make({5}, data);
 
-  SlimTensor result = from_etensor(etensor, device());
+  SlimTensor result = from_etensor(etensor, CPU_DEVICE, device());
 
   EXPECT_EQ(result.dim(), 1u);
   EXPECT_EQ(result.size(0), 5);
@@ -257,7 +260,7 @@ TEST_P(FromETensorParamTest, ThreeDimensional) {
   }
   auto etensor = tf.make({2, 3, 4}, data);
 
-  SlimTensor result = from_etensor(etensor, device());
+  SlimTensor result = from_etensor(etensor, CPU_DEVICE, device());
 
   EXPECT_EQ(result.dim(), 3u);
   EXPECT_EQ(result.size(0), 2);
@@ -273,8 +276,8 @@ TEST_P(FromETensorParamTest, PointerOverload) {
   std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f};
   auto etensor = tf.make({2, 2}, data);
 
-  // Use pointer overload
-  SlimTensor result = from_etensor(&etensor, device());
+  // Use pointer overload (source is CPU)
+  SlimTensor result = from_etensor(&etensor, CPU_DEVICE, device());
 
   EXPECT_EQ(result.dim(), 2u);
   EXPECT_EQ(result.numel(), 4u);
