@@ -102,7 +102,6 @@ install(
 set(_aoti_cuda_shim_sources
     runtime/shims/memory.cpp runtime/shims/tensor_attribute.cpp
     runtime/guard.cpp runtime/shims/cuda_guard.cpp runtime/shims/int4mm.cu
-    ${EXECUTORCH_ROOT}/backends/aoti/common_shims.cpp
 )
 
 add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
