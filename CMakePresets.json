@@ -172,6 +172,17 @@
       }
     },
     {
+      "name": "llm-release-cuda-logging",
+      "displayName": "LLM release build with CUDA and logging enabled",
+      "inherits": [
+        "llm-release-cuda"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "ET_MIN_LOG_LEVEL": "Info"
+      }
+    },
+    {
       "name": "llm-release-metal",
       "displayName": "LLM release build with Metal",
       "inherits": [
@@ -187,6 +198,17 @@
       }
     },
     {
+      "name": "llm-release-metal-logging",
+      "displayName": "LLM release build with Metal and logging enabled",
+      "inherits": [
+        "llm-release-metal"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "ET_MIN_LOG_LEVEL": "Info"
+      }
+    },
+    {
       "name": "llm-debug",
       "displayName": "LLM debug build",
       "inherits": [
@@ -194,7 +216,9 @@
       ],
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out"
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "ET_MIN_LOG_LEVEL": "Debug"
       }
     },
     {
@@ -204,7 +228,9 @@
         "llm-debug"
       ],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_CUDA": "ON"
+        "EXECUTORCH_BUILD_CUDA": "ON",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "ET_MIN_LOG_LEVEL": "Debug"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -219,7 +245,9 @@
         "llm-debug"
       ],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_METAL": "ON"
+        "EXECUTORCH_BUILD_METAL": "ON",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "ET_MIN_LOG_LEVEL": "Debug"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -315,6 +343,24 @@
       "jobs": 0
     },
     {
+      "name": "llm-release-cuda-logging-install",
+      "displayName": "Build and install LLM extension release artifacts (CUDA with logging)",
+      "configurePreset": "llm-release-cuda-logging",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-release-metal-logging-install",
+      "displayName": "Build and install LLM extension release artifacts (Metal with logging)",
+      "configurePreset": "llm-release-metal-logging",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
       "name": "llm-debug-install",
       "displayName": "Build and install LLM extension debug artifacts",
       "configurePreset": "llm-debug",
@@ -396,6 +442,34 @@
         {
           "type": "build",
           "name": "llm-release-logging-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-release-cuda-logging",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with CUDA and logging enabled",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-cuda-logging"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-cuda-logging-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-release-metal-logging",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Metal and logging enabled",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-metal-logging"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-metal-logging-install"
         }
       ]
     },
