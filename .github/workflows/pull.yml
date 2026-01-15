@@ -1110,7 +1110,12 @@ jobs:
         conda activate
 
         echo "::group::Run CoreML Backward Compatibility Test"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_coreml_bc.sh
+        # Copy script to temp location since it will checkout old commits
+        # which would overwrite the script itself
+        TEMP_SCRIPT=$(mktemp)
+        cp .ci/scripts/test_coreml_bc.sh "${TEMP_SCRIPT}"
+        bash "${TEMP_SCRIPT}" "$(pwd)"
+        rm -f "${TEMP_SCRIPT}"
         echo "::endgroup::"
 
   nxp-build-test:

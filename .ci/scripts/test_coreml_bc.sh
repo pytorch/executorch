@@ -14,8 +14,11 @@
 
 set -exu
 
+# Get the repository root directory (passed as argument or use current directory)
+REPO_ROOT="${1:-$(pwd)}"
+
 # shellcheck source=/dev/null
-source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+source "${REPO_ROOT}/.ci/scripts/utils.sh"
 
 # Create a conda environment with Python 3.10 for compatibility with old ET versions
 # ET 1.0.0 only supports Python >=3.10,<3.13
