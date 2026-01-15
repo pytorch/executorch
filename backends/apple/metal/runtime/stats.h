@@ -36,7 +36,7 @@ std::unordered_map<std::string, std::pair<double, int64_t>>
 get_metal_backend_init_per_method_stats();
 
 // Reset all timing stats
-void reset_metal_backend_execute_stats();
+void reset_metal_backend_stats();
 
 // Print all timing stats to stdout
 void print_metal_backend_stats();

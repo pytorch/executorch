@@ -76,7 +76,7 @@ int64_t get_metal_backend_init_call_count() {
   return g_init_call_count;
 }
 
-void reset_metal_backend_execute_stats() {
+void reset_metal_backend_stats() {
   std::lock_guard<std::mutex> lock(g_stats_mutex);
   g_execute_total_ms = 0.0;
   g_execute_call_count = 0;
