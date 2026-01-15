@@ -33,7 +33,7 @@
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
-#ifdef EXECUTORCH_BUILD_METAL
+#ifdef ET_BUILD_METAL
 #include <executorch/backends/apple/metal/runtime/stats.h>
 #endif
 
@@ -431,9 +431,9 @@ int main(int argc, char** argv) {
             << std::endl;
   std::cout << "Tokens decoded: " << decoded_tokens.size() << std::endl;
 
-#ifdef EXECUTORCH_BUILD_METAL
+#ifdef ET_BUILD_METAL
   executorch::backends::metal::print_metal_backend_stats();
-#endif // EXECUTORCH_BUILD_METAL
+#endif // ET_BUILD_METAL
 
   std::cout << "==============================\n" << std::endl;
 

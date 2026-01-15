@@ -69,6 +69,9 @@ target_link_libraries(
 
 target_compile_options(metal_backend PUBLIC -fexceptions -frtti -fPIC)
 
+# Define C++ preprocessor macro for Metal backend availability
+target_compile_definitions(metal_backend PUBLIC ET_BUILD_METAL)
+
 target_link_options(metal_backend PUBLIC -Wl,-export_dynamic)
 
 # Find PyTorch's OpenMP library specifically for libtorch-less AOTI
