@@ -1,9 +1,10 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("papaya_oncall")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "model_loading_lib",
     srcs = [
         "model_loading_lib.py",
@@ -20,7 +21,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "training_lib",
     srcs = [
         "training_lib.py",
@@ -36,7 +37,7 @@ runtime.python_library(
     ],
 )
 
-python_binary(
+fbcode_target(_kind = python_binary,
     name = "runner",
     srcs = [
         "runner.py",
@@ -53,7 +54,7 @@ python_binary(
     ],
 )
 
-python_binary(
+fbcode_target(_kind = python_binary,
     name = "model_exporter",
     srcs = [
         "model_exporter.py",
