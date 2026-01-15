@@ -37,6 +37,13 @@ namespace executorch::backends::metal {
 static double g_execute_total_ms = 0.0;
 static int64_t g_execute_call_count = 0;
 
+// Per-method timing statistics
+struct MethodStats {
+  double total_ms = 0.0;
+  int64_t call_count = 0;
+};
+static std::unordered_map<std::string, MethodStats> g_method_stats;
+
 // Accessor functions for timing statistics
 double get_metal_backend_execute_total_ms() {
   return g_execute_total_ms;
@@ -49,6 +56,16 @@ int64_t get_metal_backend_execute_call_count() {
 void reset_metal_backend_execute_stats() {
   g_execute_total_ms = 0.0;
   g_execute_call_count = 0;
+  g_method_stats.clear();
+}
+
+std::unordered_map<std::string, std::pair<double, int64_t>>
+get_metal_backend_per_method_stats() {
+  std::unordered_map<std::string, std::pair<double, int64_t>> result;
+  for (const auto& entry : g_method_stats) {
+    result[entry.first] = {entry.second.total_ms, entry.second.call_count};
+  }
+  return result;
 }
 
 #define LOAD_SYMBOL(handle, member, name, so_handle)                        \
@@ -536,10 +553,19 @@ class ET_EXPERIMENTAL MetalBackend final
 
     // Accumulate timing statistics
     auto execute_end = std::chrono::high_resolution_clock::now();
-    g_execute_total_ms +=
+    double elapsed_ms =
         std::chrono::duration<double, std::milli>(execute_end - execute_start)
             .count();
+    g_execute_total_ms += elapsed_ms;
     g_execute_call_count++;
+
+    // Track per-method timing
+    const char* method_name = context.get_method_name();
+    if (method_name != nullptr) {
+      auto& stats = g_method_stats[method_name];
+      stats.total_ms += elapsed_ms;
+      stats.call_count++;
+    }
 
     return Error::Ok;
   }

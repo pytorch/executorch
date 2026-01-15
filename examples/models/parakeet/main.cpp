@@ -658,6 +658,25 @@ int main(int argc, char** argv) {
   }
   std::cout << std::endl;
 
+  // Per-method breakdown
+  auto per_method_stats =
+      executorch::backends::metal::get_metal_backend_per_method_stats();
+  if (!per_method_stats.empty()) {
+    std::cout << "\nPer-method breakdown:" << std::endl;
+    for (const auto& entry : per_method_stats) {
+      const std::string& method_name = entry.first;
+      double method_total_ms = entry.second.first;
+      int64_t method_call_count = entry.second.second;
+      std::cout << "  " << method_name << ": " << method_total_ms << " ms ("
+                << method_call_count << " calls)";
+      if (method_call_count > 0) {
+        std::cout << " (avg: " << method_total_ms / method_call_count
+                  << " ms/call)";
+      }
+      std::cout << std::endl;
+    }
+  }
+
   std::cout << "==============================\n" << std::endl;
 
   if (!timestamp_mode.enabled()) {
