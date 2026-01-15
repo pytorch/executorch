@@ -73,7 +73,7 @@ void print_metal_backend_stats() {
     }
   }
 
-  std::cout << "\n--------------------------------------------" << std::endl;
+  std::cout << "--------------------------------------------\n" << std::endl;
 }
 
 } // namespace metal
