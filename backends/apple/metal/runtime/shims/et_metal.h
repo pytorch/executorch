@@ -367,6 +367,9 @@ void synchronize_metal_stream_with_type(int sync_type);
 double get_metal_backend_execute_total_ms();
 int64_t get_metal_backend_execute_call_count();
 void reset_metal_backend_execute_stats();
+// Returns map of method_name -> (total_ms, call_count)
+std::unordered_map<std::string, std::pair<double, int64_t>>
+get_metal_backend_per_method_stats();
 
 // =======================
 // Metal helper functions (C interface)
