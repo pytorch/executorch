@@ -7,6 +7,7 @@
  */
 
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/encoder.h>
+#include <cstring>
 #include <fstream>
 
 using executorch::aten::Tensor;
@@ -18,12 +19,8 @@ using executorch::runtime::Result;
 
 namespace example {
 
-EncoderRunner::EncoderRunner(const std::string& model_path)
-    : image_seq_len_(0) {
-  module_ = std::make_unique<Module>(
-      model_path, Module::LoadMode::MmapUseMlockIgnoreErrors);
-  ET_LOG(Info, "Creating encoder module: model_path=%s", model_path.c_str());
-}
+EncoderRunner::EncoderRunner(executorch::extension::Module* module)
+    : module_(module) {}
 
 bool EncoderRunner::is_method_loaded() const {
   return module_->is_method_loaded(kEncoderForwardName);
@@ -47,15 +44,7 @@ Error EncoderRunner::load() {
     return method_meta.error();
   }
 
-  // vision embedding output shape: [1, seq_len, dim]
-  image_seq_len_ = method_meta->output_tensor_meta(0)->sizes()[1];
-  ET_LOG(Info, "Encoder loaded successfully, image_seq_len=%d", image_seq_len_);
-
   return Error::Ok;
-}
-
-int32_t EncoderRunner::get_image_seq_len() const {
-  return image_seq_len_;
 }
 
 Result<Tensor> EncoderRunner::encode(TensorPtr& image_tensor) {
@@ -75,56 +64,6 @@ Result<Tensor> EncoderRunner::encode(TensorPtr& image_tensor) {
   ET_LOG(Info, "Encoder execution completed, got image hidden states");
 
   return image_hidden_states;
-}
-
-Result<Tensor> EncoderRunner::encode_from_file(
-    const std::string& image_file_path) {
-  ET_CHECK_MSG(is_method_loaded(), "Encoder method not loaded");
-
-  // Get input tensor metadata
-  Result<MethodMeta> method_meta = module_->method_meta(kEncoderForwardName);
-  auto sizes_span = method_meta->input_tensor_meta(0)->sizes();
-
-  // Calculate total number of elements
-  int64_t num_elem = 1;
-  for (const auto& size : sizes_span) {
-    num_elem *= size;
-  }
-
-  // Read image data from file
-  ET_LOG(
-      Info,
-      "Reading image from file: %s, num_elements=%ld",
-      image_file_path.c_str(),
-      num_elem);
-  std::ifstream file(image_file_path, std::ios::binary | std::ios::ate);
-  ET_CHECK_MSG(
-      file.is_open(), "Failed to open image file: %s", image_file_path.c_str());
-
-  // To prevent users from passing images that have not been
-  // resized to match the encoder input size.
-  std::streamsize file_size = file.tellg();
-  std::streamsize expected_size = num_elem * sizeof(float);
-  ET_CHECK_MSG(
-      file_size == expected_size,
-      "Image file size mismatch: expected %ld bytes but got %ld bytes (file: %s)",
-      expected_size,
-      file_size,
-      image_file_path.c_str());
-
-  file.seekg(0, std::ios::beg);
-  std::vector<float> buffer(num_elem);
-  file.read(reinterpret_cast<char*>(buffer.data()), expected_size);
-  file.close();
-
-  // Create tensor from buffer
-  TensorPtr tensor = executorch::extension::from_blob(
-      buffer.data(),
-      std::vector<int32_t>(sizes_span.begin(), sizes_span.end()),
-      executorch::aten::ScalarType::Float);
-
-  // Encode the tensor
-  return encode(tensor);
 }
 
 } // namespace example

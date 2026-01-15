@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/embedding_runner.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/tok_embedding_runner.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 using executorch::aten::Tensor;
@@ -17,9 +17,9 @@ using executorch::runtime::Result;
 
 namespace example {
 
-EmbeddingRunner::EmbeddingRunner(Module* module) : module_(module) {}
+TokenEmbeddingRunner::TokenEmbeddingRunner(Module* module) : module_(module) {}
 
-Result<Tensor> EmbeddingRunner::step(
+Result<Tensor> TokenEmbeddingRunner::step(
     const std::string& method_name,
     std::vector<EValue>& inputs) {
   // Execute embedding module
@@ -35,7 +35,7 @@ Result<Tensor> EmbeddingRunner::step(
   return outputs_res.get()[0].toTensor();
 }
 
-Error EmbeddingRunner::set_outputs(
+Error TokenEmbeddingRunner::set_outputs(
     const std::string& method_name,
     std::vector<executorch::aten::Tensor> output_values) {
   for (size_t i = 0; i < output_values.size(); ++i) {
@@ -45,7 +45,7 @@ Error EmbeddingRunner::set_outputs(
   return Error::Ok;
 }
 
-Error EmbeddingRunner::load(const std::vector<std::string>& method_names) {
+Error TokenEmbeddingRunner::load(const std::vector<std::string>& method_names) {
   if (is_method_loaded(method_names)) {
     return Error::Ok;
   }
@@ -55,7 +55,7 @@ Error EmbeddingRunner::load(const std::vector<std::string>& method_names) {
   return Error::Ok;
 }
 
-bool EmbeddingRunner::is_method_loaded(
+bool TokenEmbeddingRunner::is_method_loaded(
     const std::vector<std::string>& method_names) {
   bool method_loaded = true;
   for (const std::string& method_name : method_names) {
@@ -64,7 +64,7 @@ bool EmbeddingRunner::is_method_loaded(
   return method_loaded;
 }
 
-bool EmbeddingRunner::is_loaded() const {
+bool TokenEmbeddingRunner::is_loaded() const {
   return module_ != nullptr && module_->is_loaded();
 }
 

@@ -36,9 +36,9 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     SQNR_EVAL,
     TASKS_EVAL,
     TEXT_DECODER,
-    TEXT_EMBEDDING,
-    TEXT_EMBEDDING_GRAPH_NAMES,
     TEXT_ENCODER,
+    TOK_EMBEDDING,
+    TOK_EMBEDDING_GRAPH_NAMES,
     VISION_ENCODER,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_runtime_evaluator import (
@@ -98,66 +98,78 @@ def compile(
     os.makedirs(args.artifact, exist_ok=True)
     multi_modal_mgr = MultiModalManager(control_args=args, config=decoder_model_config)
 
-    # perform ptq
-    multi_modal_mgr.quantize(
-        calibration_data=calibration_data,
-        tokenizer=tokenizer,
+    skip_quantize = {}
+    is_multimodal = any(
+        [
+            hasattr(decoder_model_config, VISION_ENCODER),
+            hasattr(decoder_model_config, AUDIO_ENCODER),
+        ]
     )
 
-    # Prepare dataset
+    # Prepare compile spec
     compile_specs = {
         AUDIO_ENCODER: None,
         TEXT_ENCODER: None,
         VISION_ENCODER: None,
-        TEXT_EMBEDDING: None,
+        TOK_EMBEDDING: None,
         TEXT_DECODER: None,
     }
-    is_modality = False
-    # compile spec for multimodality encoder
     for modality in compile_specs:
-        if not hasattr(decoder_model_config, modality):
-            continue
-
-        backend_options = generate_htp_compiler_spec(
-            use_fp16=False,
-        )
-        encoder_compile_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=get_soc_to_chipset_map()[args.model],
-            backend_options=backend_options,
-        )
-        compile_specs[modality] = encoder_compile_specs
-        is_modality = True
-
-    # text embedding compilation spec: default we use quantization version, since embedding is huge
-    if is_modality:
-        backend_options = generate_htp_compiler_spec(
-            use_fp16=False,
-            # x86 emulator does not support weight sharing
-            use_weight_sharing=not args.enable_x86_64,
-        )
-        compile_specs[TEXT_EMBEDDING] = [
-            generate_qnn_executorch_compiler_spec(
+        if is_multimodal and modality in {AUDIO_ENCODER, TEXT_ENCODER, VISION_ENCODER}:
+            # Encoder quantization is enabled only when the input contains a single image in each conversation.
+            # In multi‑image scenarios, we skip encoder quantization by default to preserve modality feature quality,
+            # because the encoder is quite sensitive and quantization can make it harder for the model to distinguish
+            # between images within the same conversation.
+            to_skip = len(args.image_path) > 1
+            backend_options = generate_htp_compiler_spec(
+                use_fp16=to_skip,
+            )
+            encoder_compile_specs = generate_qnn_executorch_compiler_spec(
                 soc_model=get_soc_to_chipset_map()[args.model],
                 backend_options=backend_options,
-                shared_buffer=not args.enable_x86_64,  # x86 emulator does not support shared buffer
+                # x86 emulator does not support shared buffer
+                shared_buffer=not args.enable_x86_64,
             )
-        ] * len(TEXT_EMBEDDING_GRAPH_NAMES)
+            skip_quantize[modality] = to_skip
+            compile_specs[modality] = encoder_compile_specs
+        elif is_multimodal and modality == TOK_EMBEDDING:
+            backend_options = generate_htp_compiler_spec(
+                use_fp16=False,
+                # x86 emulator does not support weight sharing
+                use_weight_sharing=not args.enable_x86_64,
+            )
+            compile_specs[modality] = [
+                generate_qnn_executorch_compiler_spec(
+                    soc_model=get_soc_to_chipset_map()[args.model],
+                    backend_options=backend_options,
+                    # x86 emulator does not support shared buffer
+                    shared_buffer=not args.enable_x86_64,
+                )
+            ] * len(TOK_EMBEDDING_GRAPH_NAMES)
+        elif modality == TEXT_DECODER:
+            # compile spec for text decoder
+            backend_options = generate_htp_compiler_spec(
+                use_fp16=False,
+                use_multi_contexts=decoder_model_config.num_sharding > 1,
+                # x86 emulator does not support weight sharing
+                use_weight_sharing=not args.enable_x86_64,
+            )
+            compile_specs[modality] = [
+                generate_qnn_executorch_compiler_spec(
+                    soc_model=get_soc_to_chipset_map()[args.model],
+                    backend_options=backend_options,
+                    # x86 emulator does not support shared buffer
+                    shared_buffer=not args.enable_x86_64,
+                    use_mha2sha=True,
+                )
+            ] * len(DECODER_GRAPH_NAMES)
 
-    # compile spec for text decoder
-    backend_options = generate_htp_compiler_spec(
-        use_fp16=False,
-        use_multi_contexts=decoder_model_config.num_sharding > 1,
-        # x86 emulator does not support weight sharing
-        use_weight_sharing=not args.enable_x86_64,
+    # perform ptq
+    multi_modal_mgr.quantize(
+        calibration_data=calibration_data,
+        skip_quantize=skip_quantize,
+        tokenizer=tokenizer,
     )
-    compile_specs[TEXT_DECODER] = [
-        generate_qnn_executorch_compiler_spec(
-            soc_model=get_soc_to_chipset_map()[args.model],
-            backend_options=backend_options,
-            shared_buffer=not args.enable_x86_64,
-            use_mha2sha=True,
-        )
-    ] * len(DECODER_GRAPH_NAMES)
 
     # perform compilation
     multi_modal_mgr.compile(compile_specs=compile_specs, pte_filenames=pte_filenames)
@@ -171,14 +183,18 @@ def inference(
     chat_template,
     text_decoder_pte_path: str,
     encoder_pte_path: str,
-    text_embedding_pte_path: str,
+    tok_embedding_pte_path: str,
     attention_sink_evictor_pte_path: str,
+    calibration_data,
 ):
 
     assert args.model_mode in EVAL_MODE, f"Unknown model_mode: {args.model_mode}."
 
-    is_modality = hasattr(decoder_model_config, VISION_ENCODER) or hasattr(
-        decoder_model_config, AUDIO_ENCODER
+    is_multimodal = any(
+        [
+            hasattr(decoder_model_config, VISION_ENCODER),
+            hasattr(decoder_model_config, AUDIO_ENCODER),
+        ]
     )
     pte_paths = {TEXT_DECODER: text_decoder_pte_path}
     eval_results = {
@@ -195,17 +211,17 @@ def inference(
             }
         )
 
-    if is_modality:
+    if is_multimodal:
         eval_results.update(
             {
                 "encoder_pte_size": os.path.getsize(encoder_pte_path),
-                "text_embedding_pte_size": os.path.getsize(text_embedding_pte_path),
+                "tok_embedding_pte_size": os.path.getsize(tok_embedding_pte_path),
             }
         )
         pte_paths.update(
             {
                 VISION_ENCODER: encoder_pte_path,
-                TEXT_EMBEDDING: text_embedding_pte_path,
+                TOK_EMBEDDING: tok_embedding_pte_path,
             }
         )
 
@@ -214,7 +230,8 @@ def inference(
             args=args,
             pte_paths=pte_paths,
             runtime_tokenizer_path=runtime_tokenizer_path,
-            is_modality=is_modality,
+            is_multimodal=is_multimodal,
+            modality_inputs=calibration_data,
         )
         output_prompt = prompt_evaluator.run(prompt=args.prompt)
         eval_results.update(
@@ -227,7 +244,7 @@ def inference(
             logging.info(f"Device Inference Results[{idx}]:\n{output}")
 
     if SQNR_EVAL in args.eval_methods:
-        assert not is_modality, "Modality Model does not support SQNR_EVAL."
+        assert not is_multimodal, "Modality Model does not support SQNR_EVAL."
         tokenizer_wrapper = TokenizerWrapper(
             args,
             decoder_model_config,
@@ -250,7 +267,7 @@ def inference(
             pte_paths=pte_paths,
             tokenizer=tokenizer,
             runtime_tokenizer_path=runtime_tokenizer_path,
-            is_modality=is_modality,
+            is_multimodal=is_multimodal,
         )
         sqnr, golden_logits, _ = sqnr_evaluator.run(prompt=prompt)
         logging.info(f"SQNR Eval Score between FP32 nn.Module and QNN: {sqnr}")
@@ -275,7 +292,7 @@ def inference(
                 pte_paths=pte_paths,
                 tokenizer=tokenizer,
                 runtime_tokenizer_path=runtime_tokenizer_path,
-                is_modality=is_modality,
+                is_multimodal=is_multimodal,
             )
             qdq_sqnr, cpu_qdq_logits, _ = qdq_sqnr_evaluator.run(prompt=prompt)
             eval_results["qdq_sqnr"] = qdq_sqnr
@@ -289,14 +306,14 @@ def inference(
             )
 
     if TASKS_EVAL in args.eval_methods:
-        assert not is_modality, "Modality Model does not support TASKS_EVAL."
+        assert not is_multimodal, "Multimodal does not support TASKS_EVAL."
         # Generate the eval wrapper
         ppl_evaluator = TaskEval(
             args=args,
             pte_paths=pte_paths,
             tokenizer=tokenizer,
             runtime_tokenizer_path=runtime_tokenizer_path,
-            is_modality=is_modality,
+            is_multimodal=is_multimodal,
         )
         ppl_eval_result = ppl_evaluator.run()
         eval_results["inference_speed"] = ppl_evaluator.inference_speed
@@ -465,8 +482,9 @@ def _build_parser():
     parser.add_argument(
         "--image_path",
         help="Path to the image file for multimodal language models (MLLM). If not specified, the default image from encoder/encoder_config.py will be used. The image should be preprocessed and saved in raw binary format.",
-        default=None,
+        default=[],
         type=str,
+        nargs="+",
     )
 
     parser.add_argument(
@@ -558,7 +576,7 @@ def export_llama(args) -> None:
         AUDIO_ENCODER: f"{AUDIO_ENCODER}_qnn",
         TEXT_ENCODER: f"{TEXT_ENCODER}_qnn",
         VISION_ENCODER: f"{VISION_ENCODER}_qnn",
-        TEXT_EMBEDDING: f"{TEXT_EMBEDDING}_qnn",
+        TOK_EMBEDDING: f"{TOK_EMBEDDING}_qnn",
     }
     # Prepare tokenizer
     tokenizer_wrapper = TokenizerWrapper(
@@ -579,7 +597,7 @@ def export_llama(args) -> None:
     text_decoder_pte_path = f"{args.artifact}/{pte_filenames[TEXT_DECODER]}.pte"
     attention_sink_evictor_pte_path = f"{args.artifact}/{ATTENTION_SINK_EVICTOR}.pte"
     encoder_pte_path = f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
-    text_embedding_pte_path = f"{args.artifact}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+    tok_embedding_pte_path = f"{args.artifact}/{pte_filenames[TOK_EMBEDDING]}.pte"
 
     # TODO: Implement attention sink support for multimodal models (vision/audio).
     assert (
@@ -591,25 +609,14 @@ def export_llama(args) -> None:
         "Multimodal models currently do not support attention sink feature."
     )
 
-    # TODO: Implement multi-turn conversation support for multimodal models (vision/audio).
-    assert (
-        not (
-            hasattr(decoder_model_config, VISION_ENCODER)
-            or hasattr(decoder_model_config, AUDIO_ENCODER)
-        )
-    ) or (len(args.prompt) <= 1), (
-        "Multimodal models currently do not support multi-turn. "
-        "Please set `--prompt` to 1 or switch to a unimodal (text-only) decoder."
-    )
-
     if args.pre_gen_pte:
         text_decoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[TEXT_DECODER]}.pte"
         attention_sink_evictor_pte_path = (
             f"{args.pre_gen_pte}/{ATTENTION_SINK_EVICTOR}.pte"
         )
         encoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
-        text_embedding_pte_path = (
-            f"{args.pre_gen_pte}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+        tok_embedding_pte_path = (
+            f"{args.pre_gen_pte}/{pte_filenames[TOK_EMBEDDING]}.pte"
         )
 
         if args.use_attention_sink:
@@ -627,8 +634,9 @@ def export_llama(args) -> None:
             chat_template,
             text_decoder_pte_path,
             encoder_pte_path,
-            text_embedding_pte_path,
+            tok_embedding_pte_path,
             attention_sink_evictor_pte_path,
+            calibration_data,
         )
         print(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
         return
@@ -650,16 +658,36 @@ def export_llama(args) -> None:
 
     if args.compile_only:
         if args.ip and args.port != -1:
-            pte_path = f"{args.artifact}/{pte_filename}.pte"
-            pte_size = os.path.getsize(pte_path)
-            with Client((args.ip, args.port)) as conn:
-                conn.send(
-                    json.dumps(
-                        {
-                            "pte_size": pte_size,
-                        }
-                    )
+            # Prepare validation results for CI system
+            text_decoder_pte_path = f"{args.artifact}/{pte_filename}.pte"
+            text_decoder_pte_path = os.path.getsize(text_decoder_pte_path)
+            validation_results = {
+                "pte_size": text_decoder_pte_path,
+            }
+            if any(
+                [
+                    hasattr(decoder_model_config, VISION_ENCODER),
+                    hasattr(decoder_model_config, AUDIO_ENCODER),
+                ]
+            ):
+                encoder_pte_path = (
+                    f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
                 )
+                tok_embedding_pte_path = (
+                    f"{args.artifact}/{pte_filenames[TOK_EMBEDDING]}.pte"
+                )
+                validation_results.update(
+                    {
+                        "encoder_pte_size": os.path.getsize(encoder_pte_path),
+                        "tok_embedding_pte_size": os.path.getsize(
+                            tok_embedding_pte_path
+                        ),
+                    }
+                )
+
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps(validation_results))
+
         print(f"Finish compile_only and save to {args.artifact}")
         return
 
@@ -671,8 +699,9 @@ def export_llama(args) -> None:
         chat_template,
         text_decoder_pte_path,
         encoder_pte_path,
-        text_embedding_pte_path,
+        tok_embedding_pte_path,
         attention_sink_evictor_pte_path,
+        calibration_data,
     )
 
 

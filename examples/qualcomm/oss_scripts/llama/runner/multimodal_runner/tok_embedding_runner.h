@@ -18,12 +18,12 @@
 namespace example {
 
 /**
- * @class EmbeddingRunner
+ * @class TokenEmbeddingRunner
  * @brief Class for running embedding module, similar to DecoderRunner
  */
-class EmbeddingRunner {
+class TokenEmbeddingRunner {
  public:
-  EmbeddingRunner(executorch::extension::Module* module);
+  TokenEmbeddingRunner(executorch::extension::Module* module);
 
   /**
    * Run embedding module with inputs to generate embeddings.

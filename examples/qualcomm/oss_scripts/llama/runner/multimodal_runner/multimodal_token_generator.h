@@ -7,7 +7,7 @@
  */
 
 #pragma once
-#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/embedding_processor.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/tok_embedding_processor.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/token_generator.h>
 
 namespace example {
@@ -34,7 +34,7 @@ class MultimodalTokenGenerator : public example::TokenGenerator<T> {
   // Constructor with embedding generator support
   MultimodalTokenGenerator(
       tokenizers::Tokenizer* tokenizer,
-      EmbeddingProcessor* embedding_runner,
+      TokenEmbeddingProcessor* tok_embedding_runner,
       DecoderRunner* decoder_runner,
       KVManager<T>* kv_manager,
       const std::string& method_name,
@@ -86,7 +86,7 @@ class MultimodalTokenGenerator : public example::TokenGenerator<T> {
   using TokenGenerator<T>::v_cache_out_;
 
   // Additional members specific to multimodal
-  EmbeddingProcessor* embedding_runner_;
+  TokenEmbeddingProcessor* tok_embedding_runner_;
 
   /**
    * @brief Fill in I/O buffers with prompt token and position.
