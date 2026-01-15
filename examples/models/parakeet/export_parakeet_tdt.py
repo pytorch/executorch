@@ -139,10 +139,10 @@ def greedy_decode_executorch(
         durations = [0, 1, 2, 3, 4]
 
     hypothesis = []
-    num_token_classes = vocab_size + 1
 
     # Load methods - note: encoder projection is now done in encoder method
     # decoder_step combines decoder_predict + joint_project_decoder
+    # joint now performs argmax on GPU and returns (token_id, duration_idx)
     decoder_step_method = program.load_method("decoder_step")
     joint_method = program.load_method("joint")
 
@@ -163,14 +163,10 @@ def greedy_decode_executorch(
     while t < encoder_len:
         f_t = f_proj[:, t : t + 1, :].contiguous()
 
+        # Joint now returns (token_id, duration_idx) directly from GPU argmax
         joint_out = joint_method.execute([f_t, g_proj])
-
-        full_logits = joint_out[0].squeeze()
-        token_logits = full_logits[:num_token_classes]
-        duration_logits = full_logits[num_token_classes:]
-
-        k = token_logits.argmax().item()
-        dur_idx = duration_logits.argmax().item()
+        k = joint_out[0].item()
+        dur_idx = joint_out[1].item()
         dur = durations[dur_idx]
 
         if k == blank_id:
@@ -306,13 +302,26 @@ def extract_tokenizer(output_dir: str) -> str | None:
     return output_path
 
 
-class JointAfterProjection(torch.nn.Module):
-    def __init__(self, joint):
+class JointWithArgmax(torch.nn.Module):
+    """Joint network that performs argmax on GPU and returns token/duration indices.
+
+    This eliminates 12MB of CPU-GPU data transfer per utterance and moves
+    argmax computation from CPU to GPU.
+    """
+    def __init__(self, joint, num_token_classes):
         super().__init__()
         self.joint = joint
+        self.num_token_classes = num_token_classes
 
     def forward(self, f, g):
-        return self.joint.joint_after_projection(f, g)
+        # Get full logits: [B, T, U, V+D] where V is vocab+blank, D is num_durations
+        logits = self.joint.joint_after_projection(f, g).squeeze()
+
+        # Split into token and duration logits, argmax on GPU
+        token_id = logits[:self.num_token_classes].argmax()
+        duration_idx = logits[self.num_token_classes:].argmax()
+
+        return token_id, duration_idx
 
 
 class JointProjectEncoder(torch.nn.Module):
@@ -400,11 +409,12 @@ def export_all(model):
     )
 
     joint_hidden = model.joint.joint_hidden
+    num_token_classes = model.tokenizer.vocab_size + 1  # +1 for blank
 
     f_proj = torch.randn(1, 1, joint_hidden)
     g_proj = torch.randn(1, 1, joint_hidden)
     programs["joint"] = export(
-        JointAfterProjection(model.joint),
+        JointWithArgmax(model.joint, num_token_classes),
         (f_proj, g_proj),
         dynamic_shapes={"f": {}, "g": {}},
         strict=False,
