@@ -27,6 +27,8 @@ import torch
 import torch.nn as nn
 import torch.utils._pytree as pytree
 
+from typing import Optional
+
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.examples.apple.coreml.llama.utils import (
@@ -98,10 +100,39 @@ def remove_graph_break_(edge_manager):
     edge_manager.exported_program().graph_module.graph.eliminate_dead_code()
 
 
-def load_model(checkpoint_path: str, params_path: str, max_context_len: int):
-    """Load the model from checkpoint with static_mha attention type."""
+def load_model(
+    checkpoint_path: str,
+    params_path: str,
+    max_context_len: int,
+    adapter_checkpoint_path: Optional[str] = None,
+    adapter_config_path: Optional[str] = None,
+):
+    """Load the model from checkpoint with static_mha attention type.
+
+    Args:
+        checkpoint_path: Path to model checkpoint (.pth)
+        params_path: Path to params.json
+        max_context_len: Maximum context length
+        adapter_checkpoint_path: Optional path to LoRA adapter weights (adapter_model.safetensors)
+        adapter_config_path: Optional path to adapter config (adapter_config.json)
+    """
     with open(params_path, "r") as f:
         params = json.loads(f.read())
+
+    assert (adapter_config_path is None and adapter_checkpoint_path is None) or (adapter_config_path is not None and adapter_checkpoint_path is not None)
+
+    # Load adapter config if provided
+    adapter_config = None
+    if adapter_config_path is not None:
+        with open(adapter_config_path, "r") as f:
+            adapter_config = json.loads(f.read())
+        print(f"Loaded adapter config: rank={adapter_config.get('r')}, alpha={adapter_config.get('lora_alpha')}")
+        print(f"Target modules: {adapter_config.get('target_modules')}")
+
+        # Merge adapter config into params
+        params["r"] = adapter_config.get("r")
+        params["lora_alpha"] = adapter_config.get("lora_alpha")
+        params["target_modules"] = adapter_config.get("target_modules")
 
     # TODO: to support lookahead decoding, the static model outputs
     # full logits, but if we are not using lookahead decoding, we can have a
@@ -124,8 +155,23 @@ def load_model(checkpoint_path: str, params_path: str, max_context_len: int):
     if "model" in checkpoint:
         checkpoint = checkpoint["model"]
 
+    # Load and merge adapter weights if provided
+    if adapter_checkpoint_path is not None:
+        from safetensors.torch import load_file
+        from executorch.examples.models.llama.convert_weights import unsloth_to_meta
+
+        adapter_weights = load_file(adapter_checkpoint_path)
+        # Convert adapter weight keys to Meta format
+        adapter_weights = unsloth_to_meta(adapter_weights)
+        print(f"Loaded {len(adapter_weights)} adapter weights")
+
+        # Merge adapter weights into checkpoint
+        checkpoint.update(adapter_weights)
+
     # Rename attention weight keys for static attention
+    # This handles both base weights and LoRA weights
     for i in range(len(model.layers)):
+        # Base weights
         if f"layers.{i}.attention.wq.weight" in checkpoint:
             checkpoint[f"layers.{i}.attention.wqs.0.weight"] = checkpoint.pop(
                 f"layers.{i}.attention.wq.weight"
@@ -138,6 +184,21 @@ def load_model(checkpoint_path: str, params_path: str, max_context_len: int):
             checkpoint[f"layers.{i}.attention.wvs.0.weight"] = checkpoint.pop(
                 f"layers.{i}.attention.wv.weight"
             )
+
+        # LoRA weights (lora_a and lora_b)
+        for lora_suffix in ["lora_a.weight", "lora_b.weight"]:
+            if f"layers.{i}.attention.wq.{lora_suffix}" in checkpoint:
+                checkpoint[f"layers.{i}.attention.wqs.0.{lora_suffix}"] = checkpoint.pop(
+                    f"layers.{i}.attention.wq.{lora_suffix}"
+                )
+            if f"layers.{i}.attention.wk.{lora_suffix}" in checkpoint:
+                checkpoint[f"layers.{i}.attention.wks.0.{lora_suffix}"] = checkpoint.pop(
+                    f"layers.{i}.attention.wk.{lora_suffix}"
+                )
+            if f"layers.{i}.attention.wv.{lora_suffix}" in checkpoint:
+                checkpoint[f"layers.{i}.attention.wvs.0.{lora_suffix}"] = checkpoint.pop(
+                    f"layers.{i}.attention.wv.{lora_suffix}"
+                )
 
     missing, unexpected = model.load_state_dict(
         checkpoint,
@@ -263,6 +324,20 @@ def main():
         help="Output filename for the .pte model",
     )
 
+    # LoRA adapter options
+    parser.add_argument(
+        "--adapter_checkpoint",
+        type=str,
+        default=None,
+        help="Path to LoRA adapter weights (adapter_model.safetensors)",
+    )
+    parser.add_argument(
+        "--adapter_config",
+        type=str,
+        default=None,
+        help="Path to adapter config (adapter_config.json)",
+    )
+
     # Model configuration
     parser.add_argument(
         "--max_context_len",
@@ -341,10 +416,14 @@ def main():
 
     # Load model
     print(f"\nLoading model from {args.checkpoint}...")
+    if args.adapter_checkpoint:
+        print(f"Loading LoRA adapter from {args.adapter_checkpoint}...")
     model, model_args = load_model(
         args.checkpoint,
         args.params,
         args.max_context_len,
+        args.adapter_checkpoint,
+        args.adapter_config,
     )
     print(f"Model loaded: {model_args.n_layers} layers, {model_args.dim} dim")
 
