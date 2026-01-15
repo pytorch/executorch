@@ -1,7 +1,8 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 # @noautodeps
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "node_visitor",
     srcs = ["node_visitor.py"],
     deps = [
@@ -11,12 +12,12 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "operator_validation_utils",
     srcs = ["operator_validation_utils.py"],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "ops",
     srcs = glob(["op_*.py", "ops_*.py"]),
     deps = [
@@ -30,7 +31,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "lib",
     srcs = ["__init__.py"],
     deps = [
