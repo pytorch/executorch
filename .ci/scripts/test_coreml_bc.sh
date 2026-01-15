@@ -17,9 +17,13 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
-  PYTHON_EXECUTABLE=python3
-fi
+# Create a conda environment with Python 3.10 for compatibility with old ET versions
+# ET 1.0.0 only supports Python >=3.10,<3.13
+CONDA_ENV_NAME="coreml_bc_test_env"
+conda create -y -n "${CONDA_ENV_NAME}" python=3.10
+conda activate "${CONDA_ENV_NAME}"
+
+PYTHON_EXECUTABLE=python
 
 # The old hash to use for generating the pte file
 # This should be a known stable release or commit that produces valid CoreML pte files
