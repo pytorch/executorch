@@ -1,0 +1,46 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <unordered_map>
+#include <utility>
+
+namespace executorch {
+namespace backends {
+namespace metal {
+
+// =======================
+// Metal backend timing statistics
+// =======================
+
+// Execute timing
+double get_metal_backend_execute_total_ms();
+int64_t get_metal_backend_execute_call_count();
+// Returns map of method_name -> (total_ms, call_count)
+std::unordered_map<std::string, std::pair<double, int64_t>>
+get_metal_backend_per_method_stats();
+
+// Init timing
+double get_metal_backend_init_total_ms();
+int64_t get_metal_backend_init_call_count();
+// Returns map of method_name -> (total_ms, call_count) for init
+std::unordered_map<std::string, std::pair<double, int64_t>>
+get_metal_backend_init_per_method_stats();
+
+// Reset all timing stats
+void reset_metal_backend_execute_stats();
+
+// Print all timing stats to stdout
+void print_metal_backend_stats();
+
+} // namespace metal
+} // namespace backends
+} // namespace executorch

@@ -30,6 +30,7 @@
 #include <executorch/backends/apple/metal/runtime/shims/shim_mps.h>
 #include <executorch/backends/apple/metal/runtime/shims/tensor_attribute.h>
 #include <executorch/backends/apple/metal/runtime/shims/utils.h>
+#include <executorch/backends/apple/metal/runtime/stats.h>
 
 namespace executorch::backends::metal {
 

@@ -36,6 +36,7 @@ find_package_torch()
 
 set(_aoti_metal_sources
     runtime/metal_backend.cpp
+    runtime/stats.cpp
     runtime/shims/memory.cpp
     runtime/shims/et_metal.mm
     runtime/shims/et_metal_ops.mm
