@@ -7,8 +7,8 @@ from typing import Callable
 
 import torch
 
-from executorch.backends.nxp.aten_passes.convert_unsqueeze_to_view import (
-    ConvertUnsqueezeToViewPass,
+from executorch.backends.nxp.aten_passes.convert_nodes_to_view import (
+    ConvertNodesToViewPass,
 )
 from executorch.backends.nxp.aten_passes.decompose_split_to_slices_pass import (
     DecomposeSplitToSlicesPass,
@@ -56,7 +56,7 @@ class NeutronAtenPassManager(PassManager):
             RemoveNodesWithKnownOutputs(),
             FuseLinearAndAddPass(),
             MoveActivationBeforeConcat(neutron_target_spec),
-            ConvertUnsqueezeToViewPass(),
+            ConvertNodesToViewPass(),
         ]
 
         super().__init__(passes)
