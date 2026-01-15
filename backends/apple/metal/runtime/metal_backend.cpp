@@ -17,6 +17,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -50,25 +51,33 @@ struct MethodStats {
 static std::unordered_map<std::string, MethodStats> g_method_stats;
 static std::unordered_map<std::string, MethodStats> g_init_method_stats;
 
+// Mutex to protect timing statistics from concurrent access
+static std::mutex g_stats_mutex;
+
 // Accessor functions for execute timing statistics
 double get_metal_backend_execute_total_ms() {
+  std::lock_guard<std::mutex> lock(g_stats_mutex);
   return g_execute_total_ms;
 }
 
 int64_t get_metal_backend_execute_call_count() {
+  std::lock_guard<std::mutex> lock(g_stats_mutex);
   return g_execute_call_count;
 }
 
 // Accessor functions for init timing statistics
 double get_metal_backend_init_total_ms() {
+  std::lock_guard<std::mutex> lock(g_stats_mutex);
   return g_init_total_ms;
 }
 
 int64_t get_metal_backend_init_call_count() {
+  std::lock_guard<std::mutex> lock(g_stats_mutex);
   return g_init_call_count;
 }
 
 void reset_metal_backend_execute_stats() {
+  std::lock_guard<std::mutex> lock(g_stats_mutex);
   g_execute_total_ms = 0.0;
   g_execute_call_count = 0;
   g_init_total_ms = 0.0;
@@ -79,6 +88,7 @@ void reset_metal_backend_execute_stats() {
 
 std::unordered_map<std::string, std::pair<double, int64_t>>
 get_metal_backend_per_method_stats() {
+  std::lock_guard<std::mutex> lock(g_stats_mutex);
   std::unordered_map<std::string, std::pair<double, int64_t>> result;
   for (const auto& entry : g_method_stats) {
     result[entry.first] = {entry.second.total_ms, entry.second.call_count};
@@ -88,6 +98,7 @@ get_metal_backend_per_method_stats() {
 
 std::unordered_map<std::string, std::pair<double, int64_t>>
 get_metal_backend_init_per_method_stats() {
+  std::lock_guard<std::mutex> lock(g_stats_mutex);
   std::unordered_map<std::string, std::pair<double, int64_t>> result;
   for (const auto& entry : g_init_method_stats) {
     result[entry.first] = {entry.second.total_ms, entry.second.call_count};
@@ -331,14 +342,18 @@ class ET_EXPERIMENTAL MetalBackend final
     double elapsed_ms =
         std::chrono::duration<double, std::milli>(init_end - init_start)
             .count();
-    g_init_total_ms += elapsed_ms;
-    g_init_call_count++;
 
-    // Track per-method init timing
-    if (!method_name.empty()) {
-      auto& stats = g_init_method_stats[method_name];
-      stats.total_ms += elapsed_ms;
-      stats.call_count++;
+    {
+      std::lock_guard<std::mutex> lock(g_stats_mutex);
+      g_init_total_ms += elapsed_ms;
+      g_init_call_count++;
+
+      // Track per-method init timing
+      if (!method_name.empty()) {
+        auto& stats = g_init_method_stats[method_name];
+        stats.total_ms += elapsed_ms;
+        stats.call_count++;
+      }
     }
 
     return (DelegateHandle*)handle; // Return the handle post-processing
@@ -600,15 +615,19 @@ class ET_EXPERIMENTAL MetalBackend final
     double elapsed_ms =
         std::chrono::duration<double, std::milli>(execute_end - execute_start)
             .count();
-    g_execute_total_ms += elapsed_ms;
-    g_execute_call_count++;
 
-    // Track per-method timing
-    const char* method_name = context.get_method_name();
-    if (method_name != nullptr) {
-      auto& stats = g_method_stats[method_name];
-      stats.total_ms += elapsed_ms;
-      stats.call_count++;
+    {
+      std::lock_guard<std::mutex> lock(g_stats_mutex);
+      g_execute_total_ms += elapsed_ms;
+      g_execute_call_count++;
+
+      // Track per-method timing
+      const char* method_name = context.get_method_name();
+      if (method_name != nullptr) {
+        auto& stats = g_method_stats[method_name];
+        stats.total_ms += elapsed_ms;
+        stats.call_count++;
+      }
     }
 
     return Error::Ok;
