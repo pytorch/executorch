@@ -7,6 +7,7 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -32,6 +33,7 @@
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
+#include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 
 DEFINE_string(model_path, "parakeet.pte", "Path to Parakeet model (.pte).");
 DEFINE_string(audio_path, "", "Path to input audio file (.wav).");
@@ -415,6 +417,32 @@ int main(int argc, char** argv) {
   std::string text = parakeet::tokenizer_utils::decode_token_sequence(
       decoded_tokens, *tokenizer);
   std::cout << "Transcribed text: " << text << std::endl;
+
+  // Print performance statistics
+  std::cout << "\n=== Performance Statistics ===" << std::endl;
+
+  // Calculate audio duration in seconds
+  double audio_duration_sec =
+      static_cast<double>(audio_data.size()) / static_cast<double>(sample_rate);
+
+  std::cout << "\nAudio duration: " << audio_duration_sec << " seconds"
+            << std::endl;
+  std::cout << "Tokens decoded: " << decoded_tokens.size() << std::endl;
+
+  // Metal backend statistics
+  std::cout << "\n--- Metal Backend ---" << std::endl;
+  double metal_total_ms =
+      executorch::backends::metal::get_metal_backend_execute_total_ms();
+  int64_t metal_call_count =
+      executorch::backends::metal::get_metal_backend_execute_call_count();
+  std::cout << "Metal execute() total: " << metal_total_ms << " ms ("
+            << metal_call_count << " calls)";
+  if (metal_call_count > 0) {
+    std::cout << " (avg: " << metal_total_ms / metal_call_count << " ms/call)";
+  }
+  std::cout << std::endl;
+
+  std::cout << "==============================\n" << std::endl;
 
   if (!timestamp_mode.enabled()) {
     return 0;

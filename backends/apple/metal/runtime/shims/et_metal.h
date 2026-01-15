@@ -362,6 +362,13 @@ void synchronize_metal_stream();
 void synchronize_metal_stream_with_type(int sync_type);
 
 // =======================
+// Metal backend timing statistics
+// =======================
+double get_metal_backend_execute_total_ms();
+int64_t get_metal_backend_execute_call_count();
+void reset_metal_backend_execute_stats();
+
+// =======================
 // Metal helper functions (C interface)
 // =======================
 #ifdef __cplusplus
