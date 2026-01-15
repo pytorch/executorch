@@ -33,6 +33,7 @@
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
+#include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 
 DEFINE_string(model_path, "parakeet.pte", "Path to Parakeet model (.pte).");
 DEFINE_string(audio_path, "", "Path to input audio file (.wav).");
@@ -643,6 +644,20 @@ int main(int argc, char** argv) {
     real_time_factor = (total_inference_ms / 1000.0) / audio_duration_sec;
   }
   std::cout << "Real-time factor: " << real_time_factor << "x" << std::endl;
+
+  // Metal backend statistics
+  std::cout << "\n--- Metal Backend ---" << std::endl;
+  double metal_total_ms =
+      executorch::backends::metal::get_metal_backend_execute_total_ms();
+  int64_t metal_call_count =
+      executorch::backends::metal::get_metal_backend_execute_call_count();
+  std::cout << "Metal execute() total: " << metal_total_ms << " ms ("
+            << metal_call_count << " calls)";
+  if (metal_call_count > 0) {
+    std::cout << " (avg: " << metal_total_ms / metal_call_count << " ms/call)";
+  }
+  std::cout << std::endl;
+
   std::cout << "==============================\n" << std::endl;
 
   if (!timestamp_mode.enabled()) {

@@ -12,6 +12,7 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <unistd.h>
+#include <chrono>
 #include <cstdio>
 
 #include <filesystem>
@@ -31,6 +32,24 @@
 #include <executorch/backends/apple/metal/runtime/shims/utils.h>
 
 namespace executorch::backends::metal {
+
+// Timing statistics for execute() calls
+static double g_execute_total_ms = 0.0;
+static int64_t g_execute_call_count = 0;
+
+// Accessor functions for timing statistics
+double get_metal_backend_execute_total_ms() {
+  return g_execute_total_ms;
+}
+
+int64_t get_metal_backend_execute_call_count() {
+  return g_execute_call_count;
+}
+
+void reset_metal_backend_execute_stats() {
+  g_execute_total_ms = 0.0;
+  g_execute_call_count = 0;
+}
 
 #define LOAD_SYMBOL(handle, member, name, so_handle)                        \
   do {                                                                      \
@@ -269,6 +288,7 @@ class ET_EXPERIMENTAL MetalBackend final
       BackendExecutionContext& context,
       DelegateHandle* handle_,
       Span<EValue*> args) const override {
+    auto execute_start = std::chrono::high_resolution_clock::now();
     ET_LOG(Debug, "MetalBackend execute");
 
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
@@ -513,6 +533,13 @@ class ET_EXPERIMENTAL MetalBackend final
     }
 
     ET_LOG(Debug, "MetalBackend execution completed successfully");
+
+    // Accumulate timing statistics
+    auto execute_end = std::chrono::high_resolution_clock::now();
+    g_execute_total_ms +=
+        std::chrono::duration<double, std::milli>(execute_end - execute_start)
+            .count();
+    g_execute_call_count++;
 
     return Error::Ok;
   }
