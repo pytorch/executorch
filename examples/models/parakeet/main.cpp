@@ -647,27 +647,61 @@ int main(int argc, char** argv) {
 
   // Metal backend statistics
   std::cout << "\n--- Metal Backend ---" << std::endl;
+
+  // Init stats
+  double metal_init_total_ms =
+      executorch::backends::metal::get_metal_backend_init_total_ms();
+  int64_t metal_init_call_count =
+      executorch::backends::metal::get_metal_backend_init_call_count();
+  std::cout << "Metal init() total: " << metal_init_total_ms << " ms ("
+            << metal_init_call_count << " calls)";
+  if (metal_init_call_count > 0) {
+    std::cout << " (avg: " << metal_init_total_ms / metal_init_call_count
+              << " ms/call)";
+  }
+  std::cout << std::endl;
+
+  // Per-method init breakdown
+  auto init_per_method_stats =
+      executorch::backends::metal::get_metal_backend_init_per_method_stats();
+  if (!init_per_method_stats.empty()) {
+    std::cout << "  Per-method init breakdown:" << std::endl;
+    for (const auto& entry : init_per_method_stats) {
+      const std::string& method_name = entry.first;
+      double method_total_ms = entry.second.first;
+      int64_t method_call_count = entry.second.second;
+      std::cout << "    " << method_name << ": " << method_total_ms << " ms ("
+                << method_call_count << " calls)";
+      if (method_call_count > 0) {
+        std::cout << " (avg: " << method_total_ms / method_call_count
+                  << " ms/call)";
+      }
+      std::cout << std::endl;
+    }
+  }
+
+  // Execute stats
   double metal_total_ms =
       executorch::backends::metal::get_metal_backend_execute_total_ms();
   int64_t metal_call_count =
       executorch::backends::metal::get_metal_backend_execute_call_count();
-  std::cout << "Metal execute() total: " << metal_total_ms << " ms ("
+  std::cout << "\nMetal execute() total: " << metal_total_ms << " ms ("
             << metal_call_count << " calls)";
   if (metal_call_count > 0) {
     std::cout << " (avg: " << metal_total_ms / metal_call_count << " ms/call)";
   }
   std::cout << std::endl;
 
-  // Per-method breakdown
+  // Per-method execute breakdown
   auto per_method_stats =
       executorch::backends::metal::get_metal_backend_per_method_stats();
   if (!per_method_stats.empty()) {
-    std::cout << "\nPer-method breakdown:" << std::endl;
+    std::cout << "  Per-method execute breakdown:" << std::endl;
     for (const auto& entry : per_method_stats) {
       const std::string& method_name = entry.first;
       double method_total_ms = entry.second.first;
       int64_t method_call_count = entry.second.second;
-      std::cout << "  " << method_name << ": " << method_total_ms << " ms ("
+      std::cout << "    " << method_name << ": " << method_total_ms << " ms ("
                 << method_call_count << " calls)";
       if (method_call_count > 0) {
         std::cout << " (avg: " << method_total_ms / method_call_count
