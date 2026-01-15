@@ -108,7 +108,10 @@ To make the implementation process smooth, we have also provided an example scri
     During inference, there might be gaps between QNN and CPU final outputs. This leaves developers unsure about the root cause of accuracy drop. By using this debugger, users can gain better insight into which operation is causing the accuracy drop. Please note that the accuracy drop here refers to comparing QNN with CPU outputs, not the ground truth.
     
 2. Who is this tool for?
-   This tool is mainly for developers aiming to align QNN with CPU accuracy. Users will be able to identify which layer in the model is causing the accuracy drop, helping them either circumvent the issue by replacing the layer with other operations or contact authors in Qualcomm AI Engine Direct to resolve the accuracy issue. Please refer to the last section under [README.md](../README.md) for authors to contact when encountering any issues.
+   This tool is mainly for developers aiming to align QNN with CPU accuracy. Users will be able to identify which operation(s) in the model is causing the accuracy drop, helping them either circumvent the issue by: 
+   1. Changing the quant specs for particular operation(s). 
+   2. Replacing the operation(s) with other operation(s)
+   3. Contact authors in Qualcomm AI Engine Direct to resolve the accuracy issue. Please refer to the last section under [README.md](../README.md) for authors to contact when encountering any issues.
 
 
 ## Design Flow
@@ -119,8 +122,8 @@ flowchart TB;
     edge_program --> qnn_lower["QNN with Per-Layer Dump"];
     qnn_lower --> qnn_inference[QNN Inference];
     qnn_inference --> debug
-    edge_program --> cpu_lower["Edge CPU with Per-Layer Dump"];
-    cpu_lower --> cpu_inference["CPU Inference"];
+    edge_program --> IntermediateOutputCapturer;
+    IntermediateOutputCapturer --> cpu_inference["CPU Inference"];
     cpu_inference --> debug["Debug"];
     debug --> output["Output Results"]
 ```
@@ -172,6 +175,8 @@ adb = SimpleADB(
     shared_buffer=args.shared_buffer,
     dump_intermediate_outputs=args.dump_intermediate_outputs, # Add this flag
 )
+adb.push(inputs=single_set_of_input)
+adb.execute()
 ```
 
 ### 6: Pull and process the results.
@@ -185,7 +190,7 @@ def validate_intermediate_tensor():
         etdump_path=f"{args.artifact}/etdump.etdp",
         debug_buffer_path=f"{args.artifact}/debug_output.bin",
     )
-    qnn_intermediate_debugger.intermediate_output_module(*(inputs[0]))
+    qnn_intermediate_debugger.capture_golden(single_set_of_input)
     qnn_intermediate_debugger.generate_results(
         title="debug_graph",
         path=".",
@@ -244,8 +249,9 @@ To execute the model:
 python examples/qualcomm/util_scripts/qnn_intermediate_debugger_demo.py -b build-android -m ${SOC_MODEL} --device ${SERIAL_NUM} --dataset ${PATH_TO_DATASET} --dump_intermediate_outputs
 ```
 
-### Limitation
+### Limitations
 1. The current debugger only supports performing one execution. Multiple executions may cause unknown behavior and are not recommended.
 2. Please ignore this if you are using `qnn_executor_runner`. If you have decided to write your own runner, please follow the [tutorial](https://pytorch.org/executorch/stable/etdump.html) on how to implement etdump into your own runner.
 3. The current debugger does not support graph with partitions. (WIP)
 4. The current debugger does not support LLM models. (WIP)
+5. Graph with multimethod. (WIP)

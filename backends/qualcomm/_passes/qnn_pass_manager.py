@@ -52,6 +52,7 @@ from executorch.backends.qualcomm._passes import (
     RemoveRedundancy,
     ReplaceArangeArgs,
     ReplaceInfValues,
+    ResolveDebugHandle,
     TagQuantIO,
 )
 from executorch.backends.qualcomm._passes.utils import (
@@ -105,6 +106,7 @@ def get_capture_program_passes():
         (Remove0DTensor, True),
         (RemoveRedundancy, True),
         (TagQuantIO, False),
+        # ResolveDebugHandle will be added to last, check sorting below
     ]
 
     passes = OrderedDict()
@@ -162,7 +164,6 @@ class QnnPassManager(PassManager):
         for p in passes_job:
             self.add_pass(p)
         self.solve_constraints()
-
         sorted_passes = self.passes
         self.passes = []
         for p in sorted_passes:
@@ -173,6 +174,7 @@ class QnnPassManager(PassManager):
             if "edge_program" in kwargs:
                 kwargs["edge_program"] = exported_program
             self.add_pass(p(**kwargs))
+        self.add_pass(ResolveDebugHandle())
         return self.passes
 
     def transform_for_to_edge_pipeline(

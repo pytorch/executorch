@@ -2201,6 +2201,7 @@ class TopKandIndex(torch.nn.Module):
         self.idx_source = torch.rand(10, 3)
 
     def forward(self, x):
+        x = torch.nn.functional.relu(x)
         a, b = torch.topk(x, 3)
         return a + self.idx_source[b]
 

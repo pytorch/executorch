@@ -341,8 +341,9 @@ class TestQNN(unittest.TestCase):
                 inspector = Inspector(
                     etdump_path=etdump_path, debug_buffer_path=debug_output_path
                 )
+
                 node_tensor_map = qnn_intermediate_debugger._match_tensors(
-                    inspector=inspector, keep_qnn_layout=False
+                    inspector=inspector
                 )
                 self.assertEqual(
                     len(node_tensor_map),
@@ -352,7 +353,7 @@ class TestQNN(unittest.TestCase):
                 # Compare accuracy for each layer
                 for _, value in node_tensor_map.items():
                     self._assert_outputs_equal(
-                        value[0].to(torch.float32), value[1].to(torch.float32)
+                        (value[0].to(torch.float32),), (value[1].to(torch.float32),)
                     )
                 for event_block in inspector.event_blocks:
                     if event_block.name == "Execute":
@@ -552,15 +553,18 @@ class TestQNN(unittest.TestCase):
             assert len(lowered_module_nodes) == 1, "Length not correct"
 
             lowered_module_node = lowered_module_nodes[0]
-            lower_module = getattr(
+            lowered_module = getattr(
                 delegated_program.exported_program().graph_module,
                 lowered_module_node.name,
             )
-            edge_module = lower_module.original_module.module()
+            edge_module = lowered_module.original_module.module()
 
             qnn_intermediate_debugger = QNNIntermediateDebugger()
-            qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
-            qnn_intermediate_debugger.intermediate_output_module(*sample_inputs)
+            qnn_intermediate_debugger._set_edge_module(
+                edge_module=edge_module,
+                debug_handle_map=lowered_module.meta["debug_handle_map"],
+            )
+            qnn_intermediate_debugger.capture_golden(sample_input=sample_inputs)
 
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
