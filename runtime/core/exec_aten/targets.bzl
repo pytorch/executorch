@@ -15,10 +15,7 @@ def define_common_targets():
             name = "lib" + aten_suffix,
             exported_headers = ["exec_aten.h"],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = ["//executorch/runtime/core:tensor_shape_dynamism"] + ([] if aten_mode else ["//executorch/runtime/core/portable_type:portable_type"]),
             exported_external_deps = ["libtorch"] if aten_mode else [],
         )

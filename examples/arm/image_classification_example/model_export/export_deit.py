@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -116,9 +116,12 @@ if __name__ == "__main__":
         args.model_path,
         num_labels=37,
         ignore_mismatched_sizes=True,
+        revision="b3428f18dcc7b543470d07f14b4a4157815d1880",
     ).eval()
     image_preprocessor = AutoImageProcessor.from_pretrained(
-        "facebook/deit-tiny-patch16-224", use_fast=True
+        "facebook/deit-tiny-patch16-224",
+        use_fast=True,
+        revision="b3428f18dcc7b543470d07f14b4a4157815d1880",
     )
 
     compile_spec = EthosUCompileSpec(
@@ -130,7 +133,9 @@ if __name__ == "__main__":
     operator_config = get_symmetric_quantization_config()
     quantizer.set_global(operator_config)
 
-    ds = load_dataset("timm/oxford-iiit-pet")
+    ds = load_dataset(
+        "timm/oxford-iiit-pet", revision="089695c834a7deb60505b7cc506672db1c31a6aa"
+    )
 
     split = ds["train"].train_test_split(test_size=0.1, seed=42)
     dataset = DatasetDict(
