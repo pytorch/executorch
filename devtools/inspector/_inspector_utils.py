@@ -789,84 +789,122 @@ def map_runtime_aot_intermediate_outputs(
             if nodes[node_id].source == NodeSource.RUNTIME
         ]
 
-        # Map only if both AOT and runtime data are present.
-        if len(aot_list) != 0 and len(runtime_list) != 0:
-            # The size of runtime_list should be 1 because all AOT debug_handles are tuples with one element.
-            # Additionally, runtime debug handles have already undergone pre-processing to merge overlapping debug_hanldes.
-            # As a result, there shouldn't be any 1-to-n or n-to-n (AOT to runtime) mappings.
-            if len(runtime_list) != 1:
-                raise ValueError(
-                    f"Expected only one runtime debug handle, but found {len(runtime_list)}: {runtime_list}"
-                )
+        if len(aot_list) == 0 or len(runtime_list) == 0:
+            # Skip this mapping if there are no AOT or runtime data.
+            continue
 
-            runtime_debug_handle, runtime_intermediate_output, num_outputs = (
-                runtime_list[0]
+
+        # The size of runtime_list should be 1 because all AOT debug_handles are tuples with one element.
+        # Additionally, runtime debug handles have already undergone pre-processing to merge overlapping debug_hanldes.
+        # As a result, there shouldn't be any 1-to-n or n-to-n (AOT to runtime) mappings.
+        if len(runtime_list) != 1:
+            raise ValueError(
+                f"Expected only one runtime debug handle, but found {len(runtime_list)}: {runtime_list}"
             )
-            # iterate through each of the output from runtime,
-            # get the corresponding debug handle
-            # and map it to the aot debug handle
-            # and create a dictionary that maps aot debug handle + aot output to
-            # runtime debug handle + runtime output
-            # Note this works only for delegate case for now.
-            for i in range(num_outputs):
 
-                negative_index = -1 * (i + 1)
-                aot_mapped_runtime_intermediate_output = runtime_intermediate_output
-                # Combine aot debug handles into a single key
-                aot_combined_debug_handle, aot_intermediate_output = (
-                    _combine_aot_overlapped_intermediate_outputs(
-                        aot_list, runtime_list[0], negative_index
-                    )
+        runtime_debug_handle, runtime_intermediate_output, num_outputs = (
+            runtime_list[0]
+        )
+        # iterate through each of the output from runtime,
+        # get the corresponding debug handle
+        # and map it to the aot debug handle
+        # and create a dictionary that maps aot debug handle + aot output to
+        # runtime debug handle + runtime output
+        # Note this works only for delegate case for now.
+        for i in range(num_outputs):
+
+            negative_index = -1 * (i + 1)
+            aot_mapped_runtime_intermediate_output = runtime_intermediate_output
+            # Combine aot debug handles into a single key
+            aot_combined_debug_handle, aot_intermediate_output = (
+                _combine_aot_overlapped_intermediate_outputs(
+                    aot_list, runtime_list[0], negative_index
                 )
+            )
 
-                if aot_combined_debug_handle == (-1,):
-                    # Skip this mapping if the aot combined debug handle and runtime debug handle do not exact match.
-                    continue
+            if aot_combined_debug_handle == (-1,):
+                # Skip this mapping if the aot combined debug handle and runtime debug handle do not exact match.
+                continue
 
-                if isinstance(aot_intermediate_output, Sequence):
-                    if not isinstance(runtime_intermediate_output, Sequence):
-                        raise TypeError(
-                            "runtime intermediate output should be a sequence when aot intermediate output is a sequence"
-                        )
-                    last_element = runtime_intermediate_output[negative_index]
-                    # TODO: this (last_element = list) is never really the case because runtime never returns output as a list
-                    # for delegate case.
-                    if isinstance(last_element, list) and all(
-                        isinstance(t, torch.Tensor) for t in last_element
-                    ):
-                        # If the last element is a list of tensors (delegate case)
-                        aot_mapped_runtime_intermediate_output = last_element
-                    elif isinstance(last_element, torch.Tensor):
-                        # If the last element is a tensor, as is always the case for runtime.
-                        # However, now we have a strange condition where aot_intermediate_output is a list of tensors
-                        # while runtime_intermediate_output is a single tensor. So we should never really come here.
-                        # TODO: fix this
-                        aot_mapped_runtime_intermediate_output = (
-                            runtime_intermediate_output
-                        )
-                    else:
-                        raise ValueError(
-                            "The last element of runtime argument list must be a tensor or a list of tensors when aot intermediate output is a sequence"
-                        )
-                    # List can't be used as a key, so convert to tuple
-                    aot_intermediate_output = tuple(aot_intermediate_output)
-                    aot_mapped_runtime_intermediate_output = tuple(
-                        aot_mapped_runtime_intermediate_output
+            if isinstance(aot_intermediate_output, Sequence):
+                if not isinstance(runtime_intermediate_output, Sequence):
+                    raise TypeError(
+                        "runtime intermediate output should be a sequence when aot intermediate output is a sequence"
                     )
-
-                elif isinstance(runtime_intermediate_output, Sequence):
-                    # delegate runtime call and AOT intermediate is not a sequence, just take the last element from runtime list
+                last_element = runtime_intermediate_output[negative_index]
+                # TODO: this (last_element = list) is never really the case because runtime never returns output as a list
+                # for delegate case.
+                if isinstance(last_element, list) and all(
+                    isinstance(t, torch.Tensor) for t in last_element
+                ):
+                    # If the last element is a list of tensors (delegate case)
+                    aot_mapped_runtime_intermediate_output = last_element
+                elif isinstance(last_element, torch.Tensor):
+                    # If the last element is a tensor, as is always the case for runtime.
+                    # However, now we have a strange condition where aot_intermediate_output is a list of tensors
+                    # while runtime_intermediate_output is a single tensor. So we should never really come here.
+                    # TODO: fix this
                     aot_mapped_runtime_intermediate_output = (
-                        runtime_intermediate_output[negative_index]
+                        runtime_intermediate_output
                     )
-
-                # Create a mapping between runtime and aot
-                aot_runtime_mapping[
-                    (aot_combined_debug_handle, aot_intermediate_output)
-                ] = (
-                    runtime_debug_handle,
-                    aot_mapped_runtime_intermediate_output,
+                else:
+                    raise ValueError(
+                        "The last element of runtime argument list must be a tensor or a list of tensors when aot intermediate output is a sequence"
+                    )
+                # List can't be used as a key, so convert to tuple
+                aot_intermediate_output = tuple(aot_intermediate_output)
+                aot_mapped_runtime_intermediate_output = tuple(
+                    aot_mapped_runtime_intermediate_output
                 )
+
+            elif isinstance(runtime_intermediate_output, Sequence):
+                # Use the last element of the runtime output as fallback if no match is found
+                aot_mapped_runtime_intermediate_output = runtime_intermediate_output[negative_index]
+
+                # delegate runtime call and AOT intermediate is not a sequence.
+                # For multi-output operations (like native_layer_norm.out, native_dropout.out),
+                # the runtime captures all outputs but AOT only captures the primary output.
+                # We need to find the runtime output that matches the AOT output shape and dtype.
+                if (
+                    num_outputs == 1
+                    and len(runtime_intermediate_output) > 1
+                    and isinstance(aot_intermediate_output, torch.Tensor)
+                ):
+                    # Find all runtime outputs that match the AOT shape
+                    matching_indices = []
+                    for idx, runtime_out in enumerate(runtime_intermediate_output):
+                        if isinstance(runtime_out, torch.Tensor):
+                            if runtime_out.shape == aot_intermediate_output.shape:
+                                matching_indices.append(idx)
+
+                    if len(matching_indices) == 1:
+                        # Exactly one shape match - use it (native multi-output case like layer_norm)
+                        aot_mapped_runtime_intermediate_output = (
+                            runtime_intermediate_output[matching_indices[0]]
+                        )
+                    elif len(matching_indices) > 1:
+                        # Multiple shape matches - try to distinguish by dtype
+                        # For native_dropout, output is float and mask is bool; prefer matching dtype
+                        dtype_matching_indices = []
+                        for idx in matching_indices:
+                            runtime_out = runtime_intermediate_output[idx]
+                            if isinstance(runtime_out, torch.Tensor):
+                                if runtime_out.dtype == aot_intermediate_output.dtype:
+                                    dtype_matching_indices.append(idx)
+
+                        if len(dtype_matching_indices) == 1:
+                            # Exactly one dtype match - use it (e.g., dropout case where mask is bool)
+                            aot_mapped_runtime_intermediate_output = (
+                                runtime_intermediate_output[dtype_matching_indices[0]]
+                            )
+
+            # Create a mapping between runtime and aot
+            aot_runtime_mapping[
+                (aot_combined_debug_handle, aot_intermediate_output)
+            ] = (
+                runtime_debug_handle,
+                aot_mapped_runtime_intermediate_output,
+            )
 
     return aot_runtime_mapping
 
