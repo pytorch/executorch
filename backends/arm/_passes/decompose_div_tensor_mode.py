@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -78,7 +78,7 @@ class DecomposeDivTensorModePass(ArmPass):
             zero = super().call_operator(
                 opset["full"],
                 args=((1,) * len(meta["val"].size()), 0.0),
-                kwargs={"dtype": torch.float32},
+                kwargs={"dtype": torch.float32, "device": meta["val"].device},
                 meta=meta,
                 updated=True,
             )
