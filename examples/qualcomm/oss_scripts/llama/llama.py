@@ -97,17 +97,12 @@ def compile(
     pte_filenames: Dict[str, str],
     tokenizer,
     calibration_data,
+    is_multimodal,
 ):
     os.makedirs(args.artifact, exist_ok=True)
     multi_modal_mgr = MultiModalManager(control_args=args, config=decoder_model_config)
 
     skip_quantize = {}
-    is_multimodal = any(
-        [
-            hasattr(decoder_model_config, VISION_ENCODER),
-            hasattr(decoder_model_config, AUDIO_ENCODER),
-        ]
-    )
 
     # Prepare ptq option and compile spec
     compile_specs = {
@@ -187,20 +182,15 @@ def inference(
     tokenizer,
     chat_template,
     text_decoder_pte_path: str,
-    encoder_pte_path: str,
+    encoder_pte_paths: Dict[str, str],
     tok_embedding_pte_path: str,
     attention_sink_evictor_pte_path: str,
     calibration_data,
+    is_multimodal,
 ):
 
     assert args.model_mode in EVAL_MODE, f"Unknown model_mode: {args.model_mode}."
 
-    is_multimodal = any(
-        [
-            hasattr(decoder_model_config, VISION_ENCODER),
-            hasattr(decoder_model_config, AUDIO_ENCODER),
-        ]
-    )
     pte_paths = {TEXT_DECODER: text_decoder_pte_path}
     eval_results = {
         "pte_size": os.path.getsize(text_decoder_pte_path),
@@ -219,16 +209,21 @@ def inference(
     if is_multimodal:
         eval_results.update(
             {
-                "encoder_pte_size": os.path.getsize(encoder_pte_path),
                 "tok_embedding_pte_size": os.path.getsize(tok_embedding_pte_path),
             }
         )
         pte_paths.update(
             {
-                VISION_ENCODER: encoder_pte_path,
                 TOK_EMBEDDING: tok_embedding_pte_path,
             }
         )
+        for modality, encoder_pte_path in encoder_pte_paths.items():
+            eval_results.update(
+                {f"{modality}_pte_size": os.path.getsize(encoder_pte_path)}
+            )
+            pte_paths.update(
+                {modality: encoder_pte_path},
+            )
 
     if PROMPT_EVAL in args.eval_methods:
         prompt_evaluator = DefaultEval(
@@ -485,6 +480,14 @@ def _build_parser():
     )
 
     parser.add_argument(
+        "--audio_path",
+        help="Path to the audio file for multimodal language models (MLLM). If not specified, the default audio from encoder/encoder_config.py will be used. The audio should be preprocessed and saved in raw binary format.",
+        default=[],
+        type=str,
+        nargs="+",
+    )
+
+    parser.add_argument(
         "--image_path",
         help="Path to the image file for multimodal language models (MLLM). If not specified, the default image from encoder/encoder_config.py will be used. The image should be preprocessed and saved in raw binary format.",
         default=[],
@@ -616,28 +619,39 @@ def export_llama(args) -> None:
     )
     text_decoder_pte_path = f"{args.artifact}/{pte_filenames[TEXT_DECODER]}.pte"
     attention_sink_evictor_pte_path = f"{args.artifact}/{ATTENTION_SINK_EVICTOR}.pte"
-    encoder_pte_path = f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
     tok_embedding_pte_path = f"{args.artifact}/{pte_filenames[TOK_EMBEDDING]}.pte"
+    encoder_pte_paths = {}
+    for modality in [AUDIO_ENCODER, VISION_ENCODER]:
+        if hasattr(decoder_model_config, modality):
+            encoder_pte_paths[modality] = (
+                f"{args.artifact}/{pte_filenames[modality]}.pte"
+            )
 
+    is_multimodal = any(
+        [
+            hasattr(decoder_model_config, VISION_ENCODER),
+            hasattr(decoder_model_config, AUDIO_ENCODER),
+        ]
+    )
     # TODO: Implement attention sink support for multimodal models (vision/audio).
     assert (
-        not (
-            hasattr(decoder_model_config, VISION_ENCODER)
-            or hasattr(decoder_model_config, AUDIO_ENCODER)
-        )
-    ) or args.use_attention_sink is None, (
-        "Multimodal models currently do not support attention sink feature."
-    )
+        is_multimodal or args.use_attention_sink is None
+    ), "Multimodal models currently do not support attention sink feature."
 
     if args.pre_gen_pte:
         text_decoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[TEXT_DECODER]}.pte"
         attention_sink_evictor_pte_path = (
             f"{args.pre_gen_pte}/{ATTENTION_SINK_EVICTOR}.pte"
         )
-        encoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
         tok_embedding_pte_path = (
             f"{args.pre_gen_pte}/{pte_filenames[TOK_EMBEDDING]}.pte"
         )
+        encoder_pte_paths = {}
+        for modality in [AUDIO_ENCODER, VISION_ENCODER]:
+            if hasattr(decoder_model_config, modality):
+                encoder_pte_paths[modality] = (
+                    f"{args.pre_gen_pte}/{pte_filenames[modality]}.pte"
+                )
 
         if args.use_attention_sink:
             compile_attention_sink_evictor(
@@ -653,10 +667,11 @@ def export_llama(args) -> None:
             tokenizer,
             chat_template,
             text_decoder_pte_path,
-            encoder_pte_path,
+            encoder_pte_paths,
             tok_embedding_pte_path,
             attention_sink_evictor_pte_path,
             calibration_data,
+            is_multimodal,
         )
         print(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
         return
@@ -667,6 +682,7 @@ def export_llama(args) -> None:
         pte_filenames,
         tokenizer,
         calibration_data,
+        is_multimodal,
     )
     if args.use_attention_sink:
         compile_attention_sink_evictor(
@@ -684,26 +700,21 @@ def export_llama(args) -> None:
             validation_results = {
                 "pte_size": text_decoder_pte_path,
             }
-            if any(
-                [
-                    hasattr(decoder_model_config, VISION_ENCODER),
-                    hasattr(decoder_model_config, AUDIO_ENCODER),
-                ]
-            ):
-                encoder_pte_path = (
-                    f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
-                )
+            if is_multimodal:
                 tok_embedding_pte_path = (
                     f"{args.artifact}/{pte_filenames[TOK_EMBEDDING]}.pte"
                 )
                 validation_results.update(
                     {
-                        "encoder_pte_size": os.path.getsize(encoder_pte_path),
                         "tok_embedding_pte_size": os.path.getsize(
                             tok_embedding_pte_path
                         ),
                     }
                 )
+                for modality, encoder_pte_path in encoder_pte_paths.items():
+                    validation_results.update(
+                        {f"{modality}_pte_size": os.path.getsize(encoder_pte_path)}
+                    )
 
             with Client((args.ip, args.port)) as conn:
                 conn.send(json.dumps(validation_results))
@@ -718,10 +729,11 @@ def export_llama(args) -> None:
         tokenizer,
         chat_template,
         text_decoder_pte_path,
-        encoder_pte_path,
+        encoder_pte_paths,
         tok_embedding_pte_path,
         attention_sink_evictor_pte_path,
         calibration_data,
+        is_multimodal,
     )
 
 

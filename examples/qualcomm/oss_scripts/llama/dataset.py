@@ -5,8 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import io
+import os
 from typing import Callable, Dict, List, Optional
 
+import requests
+
+import torch
 from executorch.examples.qualcomm.oss_scripts.llama import LLMModelConfig
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
@@ -15,12 +20,13 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     TOK_EMBEDDING,
     VISION_ENCODER,
 )
-
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config import (
+    AudioModalityConfig,
     MultiModalityConfig,
     VisionModalityConfig,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.tokenizer import TokenizerWrapper
+from huggingface_hub import hf_hub_download
 from transformers import AutoProcessor
 from transformers.image_utils import load_image
 
@@ -39,6 +45,56 @@ class DatasetBuilder:
 
         self.artifact = control_args.artifact
         self.repo_id = config.repo_id
+
+    def _build_audio_dataset(
+        self, config: AudioModalityConfig, prompt: str, files_path: List[str]
+    ):
+        """
+        This will process audio using the HuggingFace processor and save
+        the processed audio for runtime evaluation.
+
+        Args:
+            config (AudioModalityConfig): containing audio URL
+            prompt (str): Text prompt to be processed alongside the audio
+
+        Returns:
+            tuple of audio feature tensors
+        """
+        try:
+            import soundfile
+        except ImportError:
+            raise ImportError(
+                "Please install the `soundfile` package via `pip install soundfile` for audio data loading"
+            )
+
+        dataset = []
+        processor = AutoProcessor.from_pretrained(self.repo_id)
+        for audio_path in files_path:
+            if isinstance(audio_path, str) and audio_path.startswith(
+                ("http://", "https://")
+            ):
+                resp = requests.get(audio_path, timeout=60)
+                resp.raise_for_status()
+                data = io.BytesIO(resp.content)
+                wav, sr = soundfile.read(data, always_2d=False)
+            else:
+                if not os.path.exists(audio_path):
+                    try:
+                        audio_path = hf_hub_download(
+                            repo_id=self.config.repo_id, filename=audio_path
+                        )
+                    except Exception:
+                        raise FileNotFoundError(
+                            f"Audio file {audio_path} not found locally or in HuggingFace repository {self.config.repo_id}."
+                        )
+                wav, sr = soundfile.read(audio_path, always_2d=False)
+            wav = torch.from_numpy(wav).float().unsqueeze(0)  # [1, T]
+
+            # Process audio with text prompt using HuggingFace processor
+            input_features = processor(prompt, wav, return_tensors="pt").input_features
+            dataset.append((input_features,))
+
+        return dataset
 
     def _build_vision_dataset(
         self, config: VisionModalityConfig, prompt: str, files_path: List[str]
@@ -90,14 +146,13 @@ class DatasetBuilder:
         prompt: str,
         files_path: List[str],
     ) -> Optional[tuple]:
-        if issubclass(config, VisionModalityConfig):
+        if issubclass(config, AudioModalityConfig):
+            return self._build_audio_dataset(config, prompt, files_path)
+        elif issubclass(config, VisionModalityConfig):
             return self._build_vision_dataset(config, prompt, files_path)
         else:
-            # Audio and text encoder dataset building are not yet implemented
-            # TODO: Add support for AudioModalityConfig and TextModalityConfig
             raise NotImplementedError(
                 f"Dataset building for {config} is not yet supported. "
-                f"Currently only VisionModalityConfig is implemented."
             )
 
     def prepare_calibration_dataset(

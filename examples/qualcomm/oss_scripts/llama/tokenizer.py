@@ -13,6 +13,7 @@ from typing import Callable, List
 
 from executorch.examples.qualcomm.oss_scripts.llama import LLMModelConfig
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
+    AUDIO_ENCODER,
     VISION_ENCODER,
 )
 from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
@@ -37,8 +38,12 @@ VLM_SPECIAL_TOKENS = {
         "fake_wrap_end": "</img>",
     },
 }
-# TODO: add special tokens Audio-Language Model
-ALM_SPECIAL_TOKENS = {}
+# Special tokens for Audio-Language Model
+ALM_SPECIAL_TOKENS = {
+    "granite_speech_3_3-2b": {
+        AUDIO_TOKEN: "<|audio|>",
+    }
+}
 
 
 class TokenizerWrapper:
@@ -124,7 +129,7 @@ class TokenizerWrapper:
 
         return runtime_tokenizer_path, tokenizer, chat_template
 
-    def prepare_messages(self, prompts: List[str]):
+    def prepare_messages(self, prompts: List[str]):  # noqa: C901
         """
         Validate and normalize a multi-turn prompt sequence, then prepare it into
         a message list.
@@ -177,6 +182,30 @@ class TokenizerWrapper:
 
         messages = []
 
+        audio_paths = self.control_args.audio_path
+        if hasattr(self.config, AUDIO_ENCODER):
+            # Load image from user-specified path (URL or local file)
+            # fall back to the default image URL if no image is provided.
+            if not audio_paths:
+                audio_paths = [getattr(self.config, AUDIO_ENCODER).audio_url]
+                warnings.warn(
+                    f"No audio path/URL provided, using default audio URL from huggingface: {audio_paths}",
+                    UserWarning,
+                    stacklevel=1,
+                )
+            num_audios = len(audio_paths)
+            total_audio_tokens = sum(prompt.count(AUDIO_TOKEN) for prompt in prompts)
+            if total_audio_tokens == 0:
+                prompts[0] = (AUDIO_TOKEN * num_audios) + prompts[0]
+            elif total_audio_tokens != num_audios:
+                raise ValueError(
+                    f"Number of <audio> tokens ({total_audio_tokens}) does not match "
+                    f"number of audios ({num_audios}). Please check your prompts and audio paths."
+                    "Please check your prompts and audio paths.\n\n"
+                    f"=== Prompt ===\n{prompts}\n"
+                    f"=== Audio paths ===\n{audio_paths}"
+                )
+
         image_paths = self.control_args.image_path
         if hasattr(self.config, VISION_ENCODER):
             # Load image from user-specified path (URL or local file)
@@ -190,7 +219,6 @@ class TokenizerWrapper:
                 )
 
             num_images = len(image_paths)
-
             total_image_tokens = sum(prompt.count(IMG_TOKEN) for prompt in prompts)
 
             if total_image_tokens == 0:
@@ -204,9 +232,14 @@ class TokenizerWrapper:
                     f"=== Image paths ===\n{image_paths}"
                 )
 
+        audio_idx = 0
         img_idx = 0
         for i, prompt in enumerate(prompts):
             message = {"id": i, "text": prompt, "files_path": []}
+            if AUDIO_TOKEN in prompt:
+                num_audio = prompt.count(AUDIO_TOKEN)
+                message["files_path"] = audio_paths[audio_idx : audio_idx + num_audio]
+                audio_idx += num_audio
             if IMG_TOKEN in prompt:
                 num_img = prompt.count(IMG_TOKEN)
                 message["files_path"] = image_paths[img_idx : img_idx + num_img]
@@ -244,7 +277,19 @@ class TokenizerWrapper:
                 f"No special tokens defined for model {self.decoder_model}"
             )
 
-        if self.decoder_model in VLM_SPECIAL_TOKENS:
+        if self.decoder_model in ALM_SPECIAL_TOKENS:
+            specials = ALM_SPECIAL_TOKENS[self.decoder_model]
+            audio_seq_len = getattr(self.config, AUDIO_ENCODER, None).audio_seq_len
+
+            # Build the expanded audio prompt
+            audio_prompt = f"{specials[AUDIO_TOKEN] * audio_seq_len}"
+            # Replace audio token with expanded version
+            expanded = prompt.replace(specials[AUDIO_TOKEN], audio_prompt)
+
+            if self.verbose:
+                logging.info(f"Prompt after expanding audio token: {expanded}")
+            return expanded
+        elif self.decoder_model in VLM_SPECIAL_TOKENS:
             specials = VLM_SPECIAL_TOKENS[self.decoder_model]
 
             image_seq_len = getattr(self.config, VISION_ENCODER, None).img_seq_len
@@ -262,10 +307,10 @@ class TokenizerWrapper:
                 logging.info(f"Prompt after expanding image token: {expanded}")
 
             return expanded
-
-        elif self.decoder_model in ALM_SPECIAL_TOKENS:
+        else:
             raise NotImplementedError(
-                "Audio-language model expanded tokens still under development"
+                f"Expanded tokens are not supported by the current multimodal {self.decoder_model}. "
+                "Please add a compatible encoder."
             )
 
     def _split_prompt(self, prompt: str):
@@ -322,7 +367,15 @@ class TokenizerWrapper:
                         {"type": "text", "text": content},
                     )
         elif self.decoder_model in ALM_SPECIAL_TOKENS:
-            message["content"] = prompt
+            contents = self._split_prompt(prompt)
+            message["content"] = ""
+            for content in contents:
+                if content == AUDIO_TOKEN:
+                    message["content"] += ALM_SPECIAL_TOKENS[self.decoder_model][
+                        AUDIO_TOKEN
+                    ]
+                else:
+                    message["content"] += content
 
         messages.append(message)
         if system_prompt:

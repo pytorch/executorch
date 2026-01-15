@@ -414,6 +414,13 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_conv1d_batch_norm(self):
+        modules = [Conv1dBn(), Conv1dBn(bias=False)]  # noqa: F405
+        sample_input = (torch.randn([1, 2048, 858]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d(self):
         modules = [Conv2dSequential(), Conv2dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
@@ -2804,6 +2811,14 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_conv1d(self):
         modules = [Conv1dSequential(), Conv1dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_conv1d_batch_norm(self):
+        modules = [Conv1dBn(), Conv1dBn(bias=False)]  # noqa: F405
+        sample_input = (torch.randn([1, 2048, 858]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
@@ -7240,12 +7255,29 @@ class TestExampleMultimodalityScript(TestQNN):
         decoder_pte_size: float
 
     @dataclass(frozen=True)
+    class ALMSpecs(MLLMSpecs):
+        audio_path: str
+        golden_audio_feature: str
+
+    @dataclass(frozen=True)
     class VLMSpecs(MLLMSpecs):
         image_path: str
         golden_image_feature: str
 
     # TODO: refactor to support different backends
     def setUp(self):
+        self.alm_specs = {
+            "granite_speech_3_3-2b": TestExampleMultimodalityScript.ALMSpecs(
+                max_seq_len=512,
+                sm8650_token_rate=5,
+                sm8750_token_rate=8,
+                encoder_pte_size=900_000_000,  # 900MB
+                tok_embedding_pte_size=240_000_000,  # 240MB
+                decoder_pte_size=3_000_000_000,  # 3GB
+                audio_path="https://huggingface.co/ibm-granite/granite-speech-3.3-2b/resolve/main/10226_10111_000000.wav?download=true",  # Audio content: after his nap,...
+                golden_audio_feature="after his nap,",
+            ),
+        }
         self.vlm_specs = {
             "smolvlm_500m_instruct": TestExampleMultimodalityScript.VLMSpecs(
                 max_seq_len=128,
@@ -7268,6 +7300,96 @@ class TestExampleMultimodalityScript(TestQNN):
                 golden_image_feature="cats",
             ),
         }
+
+    def test_static_asr(self):
+        if not self.required_envs([self.model_name]):
+            self.skipTest("missing required envs")
+
+        if self.enable_x86_64:
+            # Running on host is extremely slow for large models, so we skip this check to avoid timeouts.
+            # Please verify the output on the actual device instead.
+            self.skipTest(
+                "Skipping the check for the static ASR model on x86 due to long execution time."
+            )
+
+        alm_specs: TestExampleMultimodalityScript.ALMSpecs = self.alm_specs[
+            self.model_name
+        ]
+        prompt = "can you transcribe the speech into a written format?"
+        audio_path = alm_specs.audio_path
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--soc_model",
+            self.soc_model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            prompt,
+            "--audio_path",
+            audio_path,
+            "--temperature",
+            "0",
+            "--decoder_model",
+            f"{self.model_name}",
+            "--model_mode",
+            "kv",
+            "--max_seq_len",
+            f"{alm_specs.max_seq_len}",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.compile_only:
+                    model_out = msg["result"][0]
+                    self.assertTrue(
+                        alm_specs.golden_audio_feature in model_out.lower(),
+                        f"Expected Output contains feature: '{alm_specs.golden_audio_feature}'  Actual Output: '{model_out}'",
+                    )
+                    print(f"Audio Path: {audio_path}")
+                    print(f"Query: {prompt}")
+                    print(f"Answer: {model_out}")
+
+                encoder_pte_size = msg["audio_encoder_pte_size"]
+                tok_embedding_pte_size = msg["tok_embedding_pte_size"]
+                decoder_pte_size = msg["pte_size"]
+                self.assertLessEqual(encoder_pte_size, alm_specs.encoder_pte_size)
+                self.assertLessEqual(
+                    tok_embedding_pte_size, alm_specs.tok_embedding_pte_size
+                )
+                self.assertLessEqual(decoder_pte_size, alm_specs.decoder_pte_size)
+                print(f"Encoder PTE Size: {encoder_pte_size} bytes")
+                print(f"Token Embedding PTE Size: {tok_embedding_pte_size} bytes")
+                print(f"Text Decoder PTE Size: {decoder_pte_size} bytes")
+
+                attr_name = f"{self.soc_model.lower()}_token_rate"
+                if not self.compile_only and hasattr(alm_specs, attr_name):
+                    device_inference_speed = msg["inference_speed"]
+                    expected_inference_speed = getattr(alm_specs, attr_name)
+                    print(f"Prompt Evaluation: {device_inference_speed} tokens/second")
+                    self.assertGreaterEqual(
+                        device_inference_speed, expected_inference_speed
+                    )
 
     def test_static_vlm(self):
         if not self.required_envs([self.model_name]):
@@ -7333,7 +7455,7 @@ class TestExampleMultimodalityScript(TestQNN):
                     print(f"Query: {prompt}")
                     print(f"Answer: {model_out}")
                 if not self.enable_x86_64:
-                    encoder_pte_size = msg["encoder_pte_size"]
+                    encoder_pte_size = msg["vision_encoder_pte_size"]
                     tok_embedding_pte_size = msg["tok_embedding_pte_size"]
                     decoder_pte_size = msg["pte_size"]
                     self.assertLessEqual(encoder_pte_size, vlm_specs.encoder_pte_size)
