@@ -204,8 +204,26 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
     if (self) {
         _mlModel = mlModel;
         _asset = asset;
-        _orderedInputNames = [orderedInputNames copy];
-        _orderedOutputNames = [orderedOutputNames copy];
+        
+        // Use provided ordered names, or derive from model description as fallback
+        if (orderedInputNames != nil) {
+            _orderedInputNames = [orderedInputNames copy];
+        } else {
+            // Derive input names from the model's description in sorted order for determinism
+            NSArray<NSString *> *inputKeys = mlModel.modelDescription.inputDescriptionsByName.allKeys;
+            NSArray<NSString *> *sortedInputKeys = [inputKeys sortedArrayUsingSelector:@selector(compare:)];
+            _orderedInputNames = [NSMutableOrderedSet orderedSetWithArray:sortedInputKeys];
+        }
+        
+        if (orderedOutputNames != nil) {
+            _orderedOutputNames = [orderedOutputNames copy];
+        } else {
+            // Derive output names from the model's description in sorted order for determinism
+            NSArray<NSString *> *outputKeys = mlModel.modelDescription.outputDescriptionsByName.allKeys;
+            NSArray<NSString *> *sortedOutputKeys = [outputKeys sortedArrayUsingSelector:@selector(compare:)];
+            _orderedOutputNames = [NSMutableOrderedSet orderedSetWithArray:sortedOutputKeys];
+        }
+        
         _cache = [[NSCache alloc] init];
         _inputConstraintsByName = get_multi_array_input_constraints_by_name(mlModel.modelDescription);
         _outputConstraintsByName = get_multi_array_output_constraints_by_name(mlModel.modelDescription);
@@ -234,6 +252,15 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
         BOOL lCopyData = copyData;
         NSString *argName = [nameEnumerator nextObject];
         MLMultiArrayConstraint *constraint = argConstraintsByName[argName];
+        
+        if (constraint == nil) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "No constraint found for arg '%@'. Model may have mismatched input/output names.",
+                                          argName);
+            return nil;
+        }
+        
         const auto& layout = arg.layout();
         auto dataType = to_ml_multiarray_data_type(layout.dataType());
         MLMultiArray *multiArrayArg = nil;

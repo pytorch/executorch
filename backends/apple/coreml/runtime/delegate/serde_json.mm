@@ -33,6 +33,8 @@ struct ModelMetadataKeys {
     constexpr static std::string_view kIdentifierKey = "identifier";
     constexpr static std::string_view kInputNamesKey = "inputNames";
     constexpr static std::string_view kOutputNamesKey = "outputNames";
+    constexpr static std::string_view kMethodsKey = "methods";
+    constexpr static std::string_view kDefaultMethodKey = "defaultMethod";
 };
 }
 
@@ -105,12 +107,45 @@ struct Converter<executorchcoreml::Asset> {
 };
 
 template <>
+struct Converter<executorchcoreml::MethodMetadata> {
+    static id to_json(const executorchcoreml::MethodMetadata& method_metadata) {
+        return @{
+            to_string(ModelMetadataKeys::kInputNamesKey) : to_json_value(method_metadata.input_names),
+            to_string(ModelMetadataKeys::kOutputNamesKey) : to_json_value(method_metadata.output_names)
+        };
+    }
+    
+    static void from_json(id json, executorchcoreml::MethodMetadata& method_metadata) {
+        NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
+        if (!json_dict) {
+            return;
+        }
+        
+        from_json_value(json_dict[to_string(ModelMetadataKeys::kInputNamesKey)], method_metadata.input_names);
+        from_json_value(json_dict[to_string(ModelMetadataKeys::kOutputNamesKey)], method_metadata.output_names);
+    }
+};
+
+template <>
 struct Converter<executorchcoreml::ModelMetadata> {
     static id to_json(const executorchcoreml::ModelMetadata& metadata) {
+        // For multifunction models with methods, serialize the new format
+        if (!metadata.methods.empty()) {
+            NSMutableDictionary *methods_dict = [NSMutableDictionary dictionary];
+            for (const auto& [method_name, method_metadata] : metadata.methods) {
+                methods_dict[to_json_value(method_name)] = Converter<executorchcoreml::MethodMetadata>::to_json(method_metadata);
+            }
+            return @{
+                to_string(ModelMetadataKeys::kIdentifierKey) : to_json_value(metadata.identifier),
+                to_string(ModelMetadataKeys::kMethodsKey) : methods_dict,
+                to_string(ModelMetadataKeys::kDefaultMethodKey) : to_json_value(metadata.default_method)
+            };
+        }
+        // For single-method models, serialize the old format for backwards compatibility
         return @{
             to_string(ModelMetadataKeys::kIdentifierKey) : to_json_value(metadata.identifier),
             to_string(ModelMetadataKeys::kInputNamesKey) : to_json_value(metadata.input_names),
-            to_string(ModelMetadataKeys::kOutputNamesKey) :to_json_value(metadata.output_names)
+            to_string(ModelMetadataKeys::kOutputNamesKey) : to_json_value(metadata.output_names)
         };
     }
     
@@ -121,8 +156,24 @@ struct Converter<executorchcoreml::ModelMetadata> {
         }
         
         from_json_value(json_dict[to_string(ModelMetadataKeys::kIdentifierKey)], metadata.identifier);
-        from_json_value(json_dict[to_string(ModelMetadataKeys::kInputNamesKey)], metadata.input_names);
-        from_json_value(json_dict[to_string(ModelMetadataKeys::kOutputNamesKey)], metadata.output_names);
+        
+        // Check if this is a multifunction model (has "methods" key)
+        NSDictionary *methods_dict = SAFE_CAST(json_dict[to_string(ModelMetadataKeys::kMethodsKey)], NSDictionary);
+        if (methods_dict) {
+            // New multifunction format
+            from_json_value(json_dict[to_string(ModelMetadataKeys::kDefaultMethodKey)], metadata.default_method);
+            for (NSString *method_name in methods_dict) {
+                executorchcoreml::MethodMetadata method_metadata;
+                Converter<executorchcoreml::MethodMetadata>::from_json(methods_dict[method_name], method_metadata);
+                std::string method_name_str;
+                from_json_value(method_name, method_name_str);
+                metadata.methods[method_name_str] = std::move(method_metadata);
+            }
+        } else {
+            // Old single-method format
+            from_json_value(json_dict[to_string(ModelMetadataKeys::kInputNamesKey)], metadata.input_names);
+            from_json_value(json_dict[to_string(ModelMetadataKeys::kOutputNamesKey)], metadata.output_names);
+        }
     }
 };
 

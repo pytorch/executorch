@@ -72,9 +72,12 @@ public:
     ///
     /// @param processed The AOT blob.
     /// @param specs The specs at the time of compilation.
+    /// @param method_name The method name for multifunction model support (optional, may be nullptr).
     /// @retval An opaque handle to the initialized blob or `nullptr` if the
     /// initialization failed.
-    virtual Handle* init(Buffer processed, const std::unordered_map<std::string, Buffer>& specs) const noexcept = 0;
+    virtual Handle* init(Buffer processed,
+                         const std::unordered_map<std::string, Buffer>& specs,
+                         const char* method_name = nullptr) const noexcept = 0;
 
     /// Must execute the CoreML model with the specified handle.
     ///
