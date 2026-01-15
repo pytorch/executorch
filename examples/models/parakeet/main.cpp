@@ -107,7 +107,7 @@ TimestampOutputMode parse_timestamp_output_mode(const std::string& raw_arg) {
 
 std::vector<Token> greedy_decode_executorch(
     Module& model,
-    const ::executorch::aten::Tensor& encoder_output,
+    const ::executorch::aten::Tensor& f_proj,
     int64_t encoder_len,
     int64_t blank_id,
     int64_t vocab_size,
@@ -117,37 +117,11 @@ std::vector<Token> greedy_decode_executorch(
   std::vector<Token> hypothesis;
   int64_t num_token_classes = vocab_size + 1;
 
-  // Transpose encoder output from [1, enc_dim, time] to [1, time, enc_dim]
-  auto enc_sizes = encoder_output.sizes();
-  int64_t batch = enc_sizes[0];
-  int64_t enc_dim = enc_sizes[1];
-  int64_t time_steps = enc_sizes[2];
-
-  // Create transposed tensor
-  std::vector<float> transposed_data(batch * time_steps * enc_dim);
-  const float* src = encoder_output.const_data_ptr<float>();
-  for (int64_t t = 0; t < time_steps; t++) {
-    for (int64_t d = 0; d < enc_dim; d++) {
-      transposed_data[t * enc_dim + d] = src[d * time_steps + t];
-    }
-  }
-
-  auto transposed_tensor = from_blob(
-      transposed_data.data(),
-      {static_cast<::executorch::aten::SizesType>(batch),
-       static_cast<::executorch::aten::SizesType>(time_steps),
-       static_cast<::executorch::aten::SizesType>(enc_dim)},
-      ::executorch::aten::ScalarType::Float);
-
-  // Project encoder output
-  auto proj_enc_result = model.execute(
-      "joint_project_encoder",
-      std::vector<::executorch::runtime::EValue>{transposed_tensor});
-  if (!proj_enc_result.ok()) {
-    ET_LOG(Error, "joint_project_encoder failed");
-    return hypothesis;
-  }
-  auto f_proj = proj_enc_result.get()[0].toTensor();
+  // f_proj is already transposed and projected by the encoder
+  // Shape: [1, time_steps, joint_hidden]
+  auto f_proj_sizes = f_proj.sizes();
+  int64_t time_steps = f_proj_sizes[1];
+  int64_t proj_dim = f_proj_sizes[2];
 
   // Initialize LSTM state
   std::vector<float> h_data(num_rnn_layers * 1 * pred_hidden, 0.0f);
@@ -167,23 +141,20 @@ std::vector<Token> greedy_decode_executorch(
       ::executorch::aten::ScalarType::Float);
 
   // Prime the prediction network state with SOS (= blank_id) to match NeMo TDT
-  // greedy label-looping decoding behavior:
-  // - SOS is defined as blank:
-  // https://github.com/NVIDIA-NeMo/NeMo/blob/bf583c980b70cecc184fa8a083a9c3ddb87f905e/nemo/collections/asr/parts/submodules/transducer_decoding/tdt_label_looping.py#L250
-  // - Predictor priming with SOS:
-  // https://github.com/NVIDIA-NeMo/NeMo/blob/bf583c980b70cecc184fa8a083a9c3ddb87f905e/nemo/collections/asr/parts/submodules/transducer_decoding/tdt_label_looping.py#L363-L368
+  // greedy label-looping decoding behavior.
+  // decoder_step combines decoder_predict + joint_project_decoder
   std::vector<int64_t> sos_token_data = {blank_id};
   auto sos_token = from_blob(
       sos_token_data.data(), {1, 1}, ::executorch::aten::ScalarType::Long);
   auto decoder_init_result = model.execute(
-      "decoder_predict",
+      "decoder_step",
       std::vector<::executorch::runtime::EValue>{sos_token, h, c});
   if (!decoder_init_result.ok()) {
-    ET_LOG(Error, "decoder_predict (SOS) failed");
+    ET_LOG(Error, "decoder_step (SOS) failed");
     return hypothesis;
   }
   auto& init_outputs = decoder_init_result.get();
-  auto g_init = init_outputs[0].toTensor();
+  auto g_proj_init = init_outputs[0].toTensor();  // Now returns g_proj directly
   auto new_h_init = init_outputs[1].toTensor();
   auto new_c_init = init_outputs[2].toTensor();
   std::memcpy(
@@ -195,19 +166,10 @@ std::vector<Token> greedy_decode_executorch(
       new_c_init.const_data_ptr<float>(),
       c_data.size() * sizeof(float));
 
-  auto g_proj_result = model.execute(
-      "joint_project_decoder",
-      std::vector<::executorch::runtime::EValue>{g_init});
-  if (!g_proj_result.ok()) {
-    ET_LOG(Error, "joint_project_decoder failed");
-    return hypothesis;
-  }
-  auto g_proj_tensor = g_proj_result.get()[0].toTensor();
-
   // Copy g_proj data for reuse
   std::vector<float> g_proj_data(
-      g_proj_tensor.const_data_ptr<float>(),
-      g_proj_tensor.const_data_ptr<float>() + g_proj_tensor.numel());
+      g_proj_init.const_data_ptr<float>(),
+      g_proj_init.const_data_ptr<float>() + g_proj_init.numel());
 
   int64_t t = 0;
   int64_t symbols_on_frame = 0;
@@ -215,12 +177,11 @@ std::vector<Token> greedy_decode_executorch(
   // Scan over encoder output
   while (t < encoder_len) {
     // Get encoder frame at time t: f_proj[:, t:t+1, :]
-    const float* f_proj_data = f_proj.const_data_ptr<float>();
-    int64_t proj_dim = f_proj.sizes()[2];
+    const float* f_proj_ptr = f_proj.const_data_ptr<float>();
 
     std::vector<float> f_t_data(1 * 1 * proj_dim);
     for (int64_t d = 0; d < proj_dim; d++) {
-      f_t_data[d] = f_proj_data[t * proj_dim + d];
+      f_t_data[d] = f_proj_ptr[t * proj_dim + d];
     }
     auto f_t = from_blob(
         f_t_data.data(),
@@ -271,24 +232,24 @@ std::vector<Token> greedy_decode_executorch(
     } else {
       hypothesis.push_back({static_cast<TokenId>(k), t, dur});
 
-      // Update decoder state
+      // Update decoder state using decoder_step (combines decoder + projection)
       std::vector<int64_t> token_data = {k};
       auto token = from_blob(
           token_data.data(), {1, 1}, ::executorch::aten::ScalarType::Long);
 
       auto decoder_result = model.execute(
-          "decoder_predict",
+          "decoder_step",
           std::vector<::executorch::runtime::EValue>{token, h, c});
       if (!decoder_result.ok()) {
-        ET_LOG(Error, "decoder_predict failed");
+        ET_LOG(Error, "decoder_step failed");
         return hypothesis;
       }
       auto& outputs = decoder_result.get();
-      auto g = outputs[0].toTensor();
+      auto new_g_proj = outputs[0].toTensor();  // Now returns g_proj directly
       auto new_h = outputs[1].toTensor();
       auto new_c = outputs[2].toTensor();
 
-      // Update h and c
+      // Update h, c, and g_proj
       std::memcpy(
           h_data.data(),
           new_h.const_data_ptr<float>(),
@@ -297,16 +258,6 @@ std::vector<Token> greedy_decode_executorch(
           c_data.data(),
           new_c.const_data_ptr<float>(),
           c_data.size() * sizeof(float));
-
-      // Project decoder output
-      auto proj_dec_result = model.execute(
-          "joint_project_decoder",
-          std::vector<::executorch::runtime::EValue>{g});
-      if (!proj_dec_result.ok()) {
-        ET_LOG(Error, "joint_project_decoder failed");
-        return hypothesis;
-      }
-      auto new_g_proj = proj_dec_result.get()[0].toTensor();
       std::memcpy(
           g_proj_data.data(),
           new_g_proj.const_data_ptr<float>(),
@@ -405,7 +356,7 @@ int main(int argc, char** argv) {
       static_cast<long>(mel.sizes()[2]),
       static_cast<long long>(mel_len_value));
 
-  // Run encoder
+  // Run encoder (now returns f_proj directly - already transposed and projected)
   ET_LOG(Info, "Running encoder...");
   auto enc_result = model->execute(
       "encoder", std::vector<::executorch::runtime::EValue>{mel, mel_len});
@@ -414,15 +365,15 @@ int main(int argc, char** argv) {
     return 1;
   }
   auto& enc_outputs = enc_result.get();
-  auto encoded = enc_outputs[0].toTensor();
+  auto f_proj = enc_outputs[0].toTensor();  // [B, T, joint_hidden]
   int64_t encoded_len = enc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
 
   ET_LOG(
       Info,
-      "Encoder output shape: [%ld, %ld, %ld], len=%ld",
-      static_cast<long>(encoded.sizes()[0]),
-      static_cast<long>(encoded.sizes()[1]),
-      static_cast<long>(encoded.sizes()[2]),
+      "Encoder output (f_proj) shape: [%ld, %ld, %ld], len=%ld",
+      static_cast<long>(f_proj.sizes()[0]),
+      static_cast<long>(f_proj.sizes()[1]),
+      static_cast<long>(f_proj.sizes()[2]),
       static_cast<long>(encoded_len));
 
   // Query model metadata from constant_methods
@@ -469,7 +420,7 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Running TDT greedy decode...");
   auto decoded_tokens = greedy_decode_executorch(
       *model,
-      encoded,
+      f_proj,  // Now passing f_proj directly (already transposed and projected)
       encoded_len,
       blank_id,
       vocab_size,

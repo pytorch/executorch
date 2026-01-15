@@ -58,37 +58,104 @@ class DecoderPredict(torch.nn.Module):
         return g, new_state[0], new_state[1]
 
 
+class EncoderWithProjection(torch.nn.Module):
+    """Combines encoder + transpose + joint.project_encoder.
+
+    This eliminates one CPU-GPU round trip by doing the projection
+    on GPU immediately after encoding, before returning to CPU.
+    """
+
+    def __init__(self, encoder, joint):
+        super().__init__()
+        self.encoder = encoder
+        self.project_encoder = joint.project_encoder
+
+    def forward(
+        self, audio_signal: torch.Tensor, length: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Run encoder: [B, feat_in, T_mel] -> [B, enc_dim, T_enc]
+        encoded, enc_len = self.encoder(audio_signal=audio_signal, length=length)
+        # Transpose: [B, enc_dim, T_enc] -> [B, T_enc, enc_dim]
+        encoded_t = encoded.transpose(1, 2)
+        # Project: [B, T_enc, enc_dim] -> [B, T_enc, joint_hidden]
+        f_proj = self.project_encoder(encoded_t)
+        return f_proj, enc_len
+
+
+class DecoderStep(torch.nn.Module):
+    """Combines decoder.predict + joint.project_prednet.
+
+    This eliminates one CPU-GPU round trip per token emission by doing
+    the projection on GPU immediately after the RNN step.
+    """
+
+    def __init__(self, decoder, joint):
+        super().__init__()
+        self.decoder = decoder
+        self.project_prednet = joint.project_prednet
+        self.pred_hidden = decoder.pred_hidden
+        self.pred_rnn_layers = getattr(decoder, "pred_rnn_layers", 2)
+
+    def forward(
+        self, token: torch.Tensor, h: torch.Tensor, c: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # Run decoder RNN step
+        g, new_state = self.decoder.predict(y=token, state=[h, c], add_sos=False)
+        # Project decoder output: [B, 1, pred_hidden] -> [B, 1, joint_hidden]
+        g_proj = self.project_prednet(g)
+        return g_proj, new_state[0], new_state[1]
+
+
 def greedy_decode_executorch(
-    encoder_output: torch.Tensor,
+    f_proj: torch.Tensor,
     encoder_len: int,
     program,
     blank_id: int,
     vocab_size: int,
     num_rnn_layers: int = 2,
     pred_hidden: int = 640,
+    joint_hidden: int = 640,
     max_symbols_per_step: int = 10,
     durations: list[int] | None = None,
 ) -> list[int]:
+    """Greedy TDT decoding using ExecuTorch methods.
+
+    Args:
+        f_proj: Projected encoder output [B, T, joint_hidden] (already transposed and projected)
+        encoder_len: Number of valid encoder frames
+        program: ExecuTorch program with loaded methods
+        blank_id: Token ID for blank
+        vocab_size: Vocabulary size (excluding blank)
+        num_rnn_layers: Number of RNN layers in decoder
+        pred_hidden: Hidden size of decoder RNN
+        joint_hidden: Hidden size of joint network
+        max_symbols_per_step: Maximum symbols per frame
+        durations: Duration values for TDT
+
+    Returns:
+        List of decoded token IDs
+    """
     if durations is None:
         durations = [0, 1, 2, 3, 4]
 
     hypothesis = []
     num_token_classes = vocab_size + 1
 
-    encoder_output = encoder_output.transpose(1, 2)
-
-    proj_enc_method = program.load_method("joint_project_encoder")
-    f_proj = proj_enc_method.execute([encoder_output.contiguous()])[0]
-
-    decoder_predict_method = program.load_method("decoder_predict")
-    proj_dec_method = program.load_method("joint_project_decoder")
+    # Load methods - note: encoder projection is now done in encoder method
+    # decoder_step combines decoder_predict + joint_project_decoder
+    decoder_step_method = program.load_method("decoder_step")
     joint_method = program.load_method("joint")
 
+    # Initialize decoder state
     h = torch.zeros(num_rnn_layers, 1, pred_hidden)
     c = torch.zeros(num_rnn_layers, 1, pred_hidden)
 
-    sos_g = torch.zeros(1, 1, pred_hidden)
-    g_proj = proj_dec_method.execute([sos_g])[0]
+    # Prime decoder with SOS (blank_id) to match NeMo TDT behavior
+    sos_token = torch.tensor([[blank_id]], dtype=torch.long)
+    sos_result = decoder_step_method.execute([sos_token, h, c])
+    g_proj = sos_result[0]
+    h = sos_result[1]
+    c = sos_result[2]
 
     t = 0
     symbols_on_frame = 0
@@ -112,13 +179,13 @@ def greedy_decode_executorch(
         else:
             hypothesis.append(k)
 
+            # Use combined decoder_step (decoder_predict + projection)
             token = torch.tensor([[k]], dtype=torch.long)
-            result = decoder_predict_method.execute([token, h, c])
-            g = result[0]
+            result = decoder_step_method.execute([token, h, c])
+            g_proj = result[0]  # Now returns g_proj directly
             h = result[1]
             c = result[2]
 
-            g_proj = proj_dec_method.execute([g])[0]
             t += dur
 
             if dur == 0:
@@ -150,21 +217,23 @@ def transcribe_executorch(audio_path: str, model, et_buffer) -> str:
         mel = proc_result[0]
         mel_len = proc_result[1].item()
 
+        # Encoder now returns f_proj directly (already transposed and projected)
         encoder_method = program.load_method("encoder")
         mel_len_tensor = torch.tensor([mel_len], dtype=torch.int64)
         enc_result = encoder_method.execute([mel, mel_len_tensor])
-        encoded = enc_result[0]
+        f_proj = enc_result[0]  # [B, T, joint_hidden]
         encoded_len = enc_result[1].item()
 
         vocab_size = model.tokenizer.vocab_size
         tokens = greedy_decode_executorch(
-            encoded,
+            f_proj,  # Pass f_proj directly instead of encoded
             encoded_len,
             program,
             blank_id=vocab_size,
             vocab_size=vocab_size,
             num_rnn_layers=model.decoder.pred_rnn_layers,
             pred_hidden=model.decoder.pred_hidden,
+            joint_hidden=model.joint.joint_hidden,
         )
 
         return model.tokenizer.ids_to_text(tokens)
@@ -299,26 +368,32 @@ def export_all(model):
     )
     torch.cuda.is_available = old_cuda_is_available
 
+    # Encoder with projection: combines encoder + transpose + joint.project_encoder
+    # This eliminates one CPU-GPU round trip
     feat_in = getattr(model.encoder, "_feat_in", 128)
     audio_signal = torch.randn(1, feat_in, 100)
     length = torch.tensor([100], dtype=torch.int64)
+    encoder_with_proj = EncoderWithProjection(model.encoder, model.joint)
+    encoder_with_proj.eval()
     programs["encoder"] = export(
-        model.encoder,
+        encoder_with_proj,
         (),
         kwargs={"audio_signal": audio_signal, "length": length},
         dynamic_shapes={"audio_signal": {2: Dim.AUTO}, "length": {}},
         strict=False,
     )
 
-    decoder_predict = DecoderPredict(model.decoder)
-    decoder_predict.eval()
-    token = torch.tensor([[0]], dtype=torch.long)
+    # Decoder step: combines decoder.predict + joint.project_prednet
+    # This eliminates one CPU-GPU round trip per token emission
     num_layers = model.decoder.pred_rnn_layers
     pred_hidden = model.decoder.pred_hidden
+    decoder_step = DecoderStep(model.decoder, model.joint)
+    decoder_step.eval()
+    token = torch.tensor([[0]], dtype=torch.long)
     h = torch.zeros(num_layers, 1, pred_hidden)
     c = torch.zeros(num_layers, 1, pred_hidden)
-    programs["decoder_predict"] = export(
-        decoder_predict,
+    programs["decoder_step"] = export(
+        decoder_step,
         (token, h, c),
         dynamic_shapes={"token": {}, "h": {}, "c": {}},
         strict=False,
@@ -335,21 +410,8 @@ def export_all(model):
         strict=False,
     )
 
-    enc_output_dim = getattr(model.encoder, "_feat_out", 1024)
-
-    programs["joint_project_encoder"] = export(
-        JointProjectEncoder(model.joint),
-        (torch.randn(1, 25, enc_output_dim),),
-        dynamic_shapes={"f": {1: Dim("enc_time", min=1, max=60000)}},
-        strict=False,
-    )
-
-    programs["joint_project_decoder"] = export(
-        JointProjectDecoder(model.joint),
-        (torch.randn(1, 1, pred_hidden),),
-        dynamic_shapes={"g": {}},
-        strict=False,
-    )
+    # Note: joint_project_decoder is no longer needed as a separate method
+    # since decoder_step now includes the projection, and SOS init also uses decoder_step
 
     sample_rate = model.preprocessor._cfg.sample_rate
     window_stride = float(model.preprocessor._cfg.window_stride)
