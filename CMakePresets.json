@@ -167,7 +167,9 @@
         "llm-release"
       ],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_METAL": "ON"
+        "EXECUTORCH_BUILD_METAL": "ON",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "EXECUTORCH_LOG_LEVEL": "Info"
       },
       "condition": {
         "lhs": "${hostSystemName}",

@@ -7,6 +7,7 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -32,6 +33,7 @@
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
+#include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 
 DEFINE_string(model_path, "parakeet.pte", "Path to Parakeet model (.pte).");
 DEFINE_string(audio_path, "", "Path to input audio file (.wav).");
@@ -72,6 +74,24 @@ struct TimestampOutputMode {
   }
 };
 
+// Statistics for decode operations
+struct DecodeStats {
+  double joint_project_encoder_ms = 0.0;
+  double decoder_predict_init_ms = 0.0;
+  double joint_project_decoder_init_ms = 0.0;
+  double joint_total_ms = 0.0;
+  double decoder_predict_total_ms = 0.0;
+  double joint_project_decoder_total_ms = 0.0;
+  int64_t joint_calls = 0;
+  int64_t decoder_predict_calls = 0;
+  int64_t joint_project_decoder_calls = 0;
+};
+
+struct DecodeResult {
+  std::vector<Token> tokens;
+  DecodeStats stats;
+};
+
 std::string to_lower_ascii(std::string s) {
   for (char& ch : s) {
     ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
@@ -105,7 +125,7 @@ TimestampOutputMode parse_timestamp_output_mode(const std::string& raw_arg) {
       "'. Expected: token, word, segment, all.");
 }
 
-std::vector<Token> greedy_decode_executorch(
+DecodeResult greedy_decode_executorch(
     Module& model,
     const ::executorch::aten::Tensor& encoder_output,
     int64_t encoder_len,
@@ -114,7 +134,9 @@ std::vector<Token> greedy_decode_executorch(
     int64_t num_rnn_layers = 2,
     int64_t pred_hidden = 640,
     int64_t max_symbols_per_step = 10) {
-  std::vector<Token> hypothesis;
+  DecodeResult result;
+  std::vector<Token>& hypothesis = result.tokens;
+  DecodeStats& stats = result.stats;
   int64_t num_token_classes = vocab_size + 1;
 
   // Transpose encoder output from [1, enc_dim, time] to [1, time, enc_dim]
@@ -140,13 +162,18 @@ std::vector<Token> greedy_decode_executorch(
       ::executorch::aten::ScalarType::Float);
 
   // Project encoder output
+  auto proj_enc_start = std::chrono::high_resolution_clock::now();
   auto proj_enc_result = model.execute(
       "joint_project_encoder",
       std::vector<::executorch::runtime::EValue>{transposed_tensor});
   if (!proj_enc_result.ok()) {
     ET_LOG(Error, "joint_project_encoder failed");
-    return hypothesis;
+    return result;
   }
+  auto proj_enc_end = std::chrono::high_resolution_clock::now();
+  stats.joint_project_encoder_ms = std::chrono::duration<double, std::milli>(
+                                       proj_enc_end - proj_enc_start)
+                                       .count();
   auto f_proj = proj_enc_result.get()[0].toTensor();
 
   // Initialize LSTM state
@@ -175,13 +202,18 @@ std::vector<Token> greedy_decode_executorch(
   std::vector<int64_t> sos_token_data = {blank_id};
   auto sos_token = from_blob(
       sos_token_data.data(), {1, 1}, ::executorch::aten::ScalarType::Long);
+  auto decoder_init_start = std::chrono::high_resolution_clock::now();
   auto decoder_init_result = model.execute(
       "decoder_predict",
       std::vector<::executorch::runtime::EValue>{sos_token, h, c});
   if (!decoder_init_result.ok()) {
     ET_LOG(Error, "decoder_predict (SOS) failed");
-    return hypothesis;
+    return result;
   }
+  auto decoder_init_end = std::chrono::high_resolution_clock::now();
+  stats.decoder_predict_init_ms = std::chrono::duration<double, std::milli>(
+                                      decoder_init_end - decoder_init_start)
+                                      .count();
   auto& init_outputs = decoder_init_result.get();
   auto g_init = init_outputs[0].toTensor();
   auto new_h_init = init_outputs[1].toTensor();
@@ -195,13 +227,19 @@ std::vector<Token> greedy_decode_executorch(
       new_c_init.const_data_ptr<float>(),
       c_data.size() * sizeof(float));
 
+  auto g_proj_init_start = std::chrono::high_resolution_clock::now();
   auto g_proj_result = model.execute(
       "joint_project_decoder",
       std::vector<::executorch::runtime::EValue>{g_init});
   if (!g_proj_result.ok()) {
     ET_LOG(Error, "joint_project_decoder failed");
-    return hypothesis;
+    return result;
   }
+  auto g_proj_init_end = std::chrono::high_resolution_clock::now();
+  stats.joint_project_decoder_init_ms =
+      std::chrono::duration<double, std::milli>(
+          g_proj_init_end - g_proj_init_start)
+          .count();
   auto g_proj_tensor = g_proj_result.get()[0].toTensor();
 
   // Copy g_proj data for reuse
@@ -233,12 +271,18 @@ std::vector<Token> greedy_decode_executorch(
         ::executorch::aten::ScalarType::Float);
 
     // Joint network
+    auto joint_start = std::chrono::high_resolution_clock::now();
     auto joint_result = model.execute(
         "joint", std::vector<::executorch::runtime::EValue>{f_t, g_proj});
     if (!joint_result.ok()) {
       ET_LOG(Error, "joint failed at t=%lld", static_cast<long long>(t));
-      return hypothesis;
+      return result;
     }
+    auto joint_end = std::chrono::high_resolution_clock::now();
+    stats.joint_total_ms +=
+        std::chrono::duration<double, std::milli>(joint_end - joint_start)
+            .count();
+    stats.joint_calls++;
     auto full_logits = joint_result.get()[0].toTensor();
 
     // Split logits into token and duration
@@ -276,13 +320,19 @@ std::vector<Token> greedy_decode_executorch(
       auto token = from_blob(
           token_data.data(), {1, 1}, ::executorch::aten::ScalarType::Long);
 
+      auto decoder_start = std::chrono::high_resolution_clock::now();
       auto decoder_result = model.execute(
           "decoder_predict",
           std::vector<::executorch::runtime::EValue>{token, h, c});
       if (!decoder_result.ok()) {
         ET_LOG(Error, "decoder_predict failed");
-        return hypothesis;
+        return result;
       }
+      auto decoder_end = std::chrono::high_resolution_clock::now();
+      stats.decoder_predict_total_ms +=
+          std::chrono::duration<double, std::milli>(decoder_end - decoder_start)
+              .count();
+      stats.decoder_predict_calls++;
       auto& outputs = decoder_result.get();
       auto g = outputs[0].toTensor();
       auto new_h = outputs[1].toTensor();
@@ -299,13 +349,19 @@ std::vector<Token> greedy_decode_executorch(
           c_data.size() * sizeof(float));
 
       // Project decoder output
+      auto proj_dec_start = std::chrono::high_resolution_clock::now();
       auto proj_dec_result = model.execute(
           "joint_project_decoder",
           std::vector<::executorch::runtime::EValue>{g});
       if (!proj_dec_result.ok()) {
         ET_LOG(Error, "joint_project_decoder failed");
-        return hypothesis;
+        return result;
       }
+      auto proj_dec_end = std::chrono::high_resolution_clock::now();
+      stats.joint_project_decoder_total_ms +=
+          std::chrono::duration<double, std::milli>(proj_dec_end - proj_dec_start)
+              .count();
+      stats.joint_project_decoder_calls++;
       auto new_g_proj = proj_dec_result.get()[0].toTensor();
       std::memcpy(
           g_proj_data.data(),
@@ -326,7 +382,7 @@ std::vector<Token> greedy_decode_executorch(
     }
   }
 
-  return hypothesis;
+  return result;
 }
 
 } // namespace
@@ -379,6 +435,7 @@ int main(int argc, char** argv) {
       audio_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
 
   ET_LOG(Info, "Running preprocessor...");
+  auto preproc_start = std::chrono::high_resolution_clock::now();
   auto proc_result = model->execute(
       "preprocessor",
       std::vector<::executorch::runtime::EValue>{
@@ -387,6 +444,10 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Preprocessor forward failed.");
     return 1;
   }
+  auto preproc_end = std::chrono::high_resolution_clock::now();
+  double preproc_ms = std::chrono::duration<double, std::milli>(
+                          preproc_end - preproc_start)
+                          .count();
   auto& proc_outputs = proc_result.get();
   auto mel = proc_outputs[0].toTensor();
   auto mel_len_tensor_out = proc_outputs[1].toTensor();
@@ -407,12 +468,17 @@ int main(int argc, char** argv) {
 
   // Run encoder
   ET_LOG(Info, "Running encoder...");
+  auto encoder_start = std::chrono::high_resolution_clock::now();
   auto enc_result = model->execute(
       "encoder", std::vector<::executorch::runtime::EValue>{mel, mel_len});
   if (!enc_result.ok()) {
     ET_LOG(Error, "Encoder forward failed.");
     return 1;
   }
+  auto encoder_end = std::chrono::high_resolution_clock::now();
+  double encoder_ms =
+      std::chrono::duration<double, std::milli>(encoder_end - encoder_start)
+          .count();
   auto& enc_outputs = enc_result.get();
   auto encoded = enc_outputs[0].toTensor();
   int64_t encoded_len = enc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
@@ -467,7 +533,8 @@ int main(int argc, char** argv) {
       encoder_subsampling_factor);
 
   ET_LOG(Info, "Running TDT greedy decode...");
-  auto decoded_tokens = greedy_decode_executorch(
+  auto decode_start = std::chrono::high_resolution_clock::now();
+  auto decode_result = greedy_decode_executorch(
       *model,
       encoded,
       encoded_len,
@@ -475,6 +542,13 @@ int main(int argc, char** argv) {
       vocab_size,
       num_rnn_layers,
       pred_hidden);
+  auto decode_end = std::chrono::high_resolution_clock::now();
+  double decode_total_ms =
+      std::chrono::duration<double, std::milli>(decode_end - decode_start)
+          .count();
+
+  const auto& decoded_tokens = decode_result.tokens;
+  const auto& decode_stats = decode_result.stats;
 
   ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
 
@@ -494,6 +568,150 @@ int main(int argc, char** argv) {
   std::string text = parakeet::tokenizer_utils::decode_token_sequence(
       decoded_tokens, *tokenizer);
   std::cout << "Transcribed text: " << text << std::endl;
+
+  // Print performance statistics
+  std::cout << "\n=== Performance Statistics ===" << std::endl;
+
+  // Calculate audio duration in seconds
+  double audio_duration_sec =
+      static_cast<double>(audio_data.size()) / static_cast<double>(sample_rate);
+
+  std::cout << "\nAudio duration: " << audio_duration_sec << " seconds"
+            << std::endl;
+  std::cout << "Tokens decoded: " << decoded_tokens.size() << std::endl;
+
+  std::cout << "\n--- Encoding Phase ---" << std::endl;
+  std::cout << "Preprocessor: " << preproc_ms << " ms" << std::endl;
+  std::cout << "Encoder: " << encoder_ms << " ms" << std::endl;
+  double encoding_total_ms = preproc_ms + encoder_ms;
+  std::cout << "Encoding total: " << encoding_total_ms << " ms" << std::endl;
+
+  std::cout << "\n--- Decoding Phase ---" << std::endl;
+  std::cout << "joint_project_encoder (1 call): "
+            << decode_stats.joint_project_encoder_ms << " ms" << std::endl;
+  std::cout << "decoder_predict init (1 call): "
+            << decode_stats.decoder_predict_init_ms << " ms" << std::endl;
+  std::cout << "joint_project_decoder init (1 call): "
+            << decode_stats.joint_project_decoder_init_ms << " ms" << std::endl;
+
+  std::cout << "\njoint (" << decode_stats.joint_calls
+            << " calls): " << decode_stats.joint_total_ms << " ms";
+  if (decode_stats.joint_calls > 0) {
+    std::cout << " (avg: "
+              << decode_stats.joint_total_ms / decode_stats.joint_calls
+              << " ms/call)";
+  }
+  std::cout << std::endl;
+
+  std::cout << "decoder_predict (" << decode_stats.decoder_predict_calls
+            << " calls): " << decode_stats.decoder_predict_total_ms << " ms";
+  if (decode_stats.decoder_predict_calls > 0) {
+    std::cout << " (avg: "
+              << decode_stats.decoder_predict_total_ms /
+                     decode_stats.decoder_predict_calls
+              << " ms/call)";
+  }
+  std::cout << std::endl;
+
+  std::cout << "joint_project_decoder ("
+            << decode_stats.joint_project_decoder_calls
+            << " calls): " << decode_stats.joint_project_decoder_total_ms
+            << " ms";
+  if (decode_stats.joint_project_decoder_calls > 0) {
+    std::cout << " (avg: "
+              << decode_stats.joint_project_decoder_total_ms /
+                     decode_stats.joint_project_decoder_calls
+              << " ms/call)";
+  }
+  std::cout << std::endl;
+
+  std::cout << "\nDecoding total: " << decode_total_ms << " ms" << std::endl;
+
+  std::cout << "\n--- Summary ---" << std::endl;
+  double total_inference_ms = encoding_total_ms + decode_total_ms;
+  std::cout << "Total inference time: " << total_inference_ms << " ms"
+            << std::endl;
+
+  double tokens_per_second = 0.0;
+  if (decode_total_ms > 0 && !decoded_tokens.empty()) {
+    tokens_per_second =
+        static_cast<double>(decoded_tokens.size()) / (decode_total_ms / 1000.0);
+  }
+  std::cout << "Tokens/second (decode): " << tokens_per_second << std::endl;
+
+  double real_time_factor = 0.0;
+  if (audio_duration_sec > 0) {
+    real_time_factor = (total_inference_ms / 1000.0) / audio_duration_sec;
+  }
+  std::cout << "Real-time factor: " << real_time_factor << "x" << std::endl;
+
+  // Metal backend statistics
+  std::cout << "\n--- Metal Backend ---" << std::endl;
+
+  // Init stats
+  double metal_init_total_ms =
+      executorch::backends::metal::get_metal_backend_init_total_ms();
+  int64_t metal_init_call_count =
+      executorch::backends::metal::get_metal_backend_init_call_count();
+  std::cout << "Metal init() total: " << metal_init_total_ms << " ms ("
+            << metal_init_call_count << " calls)";
+  if (metal_init_call_count > 0) {
+    std::cout << " (avg: " << metal_init_total_ms / metal_init_call_count
+              << " ms/call)";
+  }
+  std::cout << std::endl;
+
+  // Per-method init breakdown
+  auto init_per_method_stats =
+      executorch::backends::metal::get_metal_backend_init_per_method_stats();
+  if (!init_per_method_stats.empty()) {
+    std::cout << "  Per-method init breakdown:" << std::endl;
+    for (const auto& entry : init_per_method_stats) {
+      const std::string& method_name = entry.first;
+      double method_total_ms = entry.second.first;
+      int64_t method_call_count = entry.second.second;
+      std::cout << "    " << method_name << ": " << method_total_ms << " ms ("
+                << method_call_count << " calls)";
+      if (method_call_count > 0) {
+        std::cout << " (avg: " << method_total_ms / method_call_count
+                  << " ms/call)";
+      }
+      std::cout << std::endl;
+    }
+  }
+
+  // Execute stats
+  double metal_total_ms =
+      executorch::backends::metal::get_metal_backend_execute_total_ms();
+  int64_t metal_call_count =
+      executorch::backends::metal::get_metal_backend_execute_call_count();
+  std::cout << "\nMetal execute() total: " << metal_total_ms << " ms ("
+            << metal_call_count << " calls)";
+  if (metal_call_count > 0) {
+    std::cout << " (avg: " << metal_total_ms / metal_call_count << " ms/call)";
+  }
+  std::cout << std::endl;
+
+  // Per-method execute breakdown
+  auto per_method_stats =
+      executorch::backends::metal::get_metal_backend_per_method_stats();
+  if (!per_method_stats.empty()) {
+    std::cout << "  Per-method execute breakdown:" << std::endl;
+    for (const auto& entry : per_method_stats) {
+      const std::string& method_name = entry.first;
+      double method_total_ms = entry.second.first;
+      int64_t method_call_count = entry.second.second;
+      std::cout << "    " << method_name << ": " << method_total_ms << " ms ("
+                << method_call_count << " calls)";
+      if (method_call_count > 0) {
+        std::cout << " (avg: " << method_total_ms / method_call_count
+                  << " ms/call)";
+      }
+      std::cout << std::endl;
+    }
+  }
+
+  std::cout << "==============================\n" << std::endl;
 
   if (!timestamp_mode.enabled()) {
     return 0;

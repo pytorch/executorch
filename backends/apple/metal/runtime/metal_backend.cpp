@@ -12,6 +12,7 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <unistd.h>
+#include <chrono>
 #include <cstdio>
 
 #include <filesystem>
@@ -31,6 +32,67 @@
 #include <executorch/backends/apple/metal/runtime/shims/utils.h>
 
 namespace executorch::backends::metal {
+
+// Timing statistics for execute() calls
+static double g_execute_total_ms = 0.0;
+static int64_t g_execute_call_count = 0;
+
+// Timing statistics for init() calls
+static double g_init_total_ms = 0.0;
+static int64_t g_init_call_count = 0;
+
+// Per-method timing statistics (for both init and execute)
+struct MethodStats {
+  double total_ms = 0.0;
+  int64_t call_count = 0;
+};
+static std::unordered_map<std::string, MethodStats> g_method_stats;
+static std::unordered_map<std::string, MethodStats> g_init_method_stats;
+
+// Accessor functions for execute timing statistics
+double get_metal_backend_execute_total_ms() {
+  return g_execute_total_ms;
+}
+
+int64_t get_metal_backend_execute_call_count() {
+  return g_execute_call_count;
+}
+
+// Accessor functions for init timing statistics
+double get_metal_backend_init_total_ms() {
+  return g_init_total_ms;
+}
+
+int64_t get_metal_backend_init_call_count() {
+  return g_init_call_count;
+}
+
+void reset_metal_backend_execute_stats() {
+  g_execute_total_ms = 0.0;
+  g_execute_call_count = 0;
+  g_init_total_ms = 0.0;
+  g_init_call_count = 0;
+  g_method_stats.clear();
+  g_init_method_stats.clear();
+}
+
+std::unordered_map<std::string, std::pair<double, int64_t>>
+get_metal_backend_per_method_stats() {
+  std::unordered_map<std::string, std::pair<double, int64_t>> result;
+  for (const auto& entry : g_method_stats) {
+    result[entry.first] = {entry.second.total_ms, entry.second.call_count};
+  }
+  return result;
+}
+
+std::unordered_map<std::string, std::pair<double, int64_t>>
+get_metal_backend_init_per_method_stats() {
+  std::unordered_map<std::string, std::pair<double, int64_t>> result;
+  for (const auto& entry : g_init_method_stats) {
+    result[entry.first] = {entry.second.total_ms, entry.second.call_count};
+  }
+  return result;
+}
 
 #define LOAD_SYMBOL(handle, member, name, so_handle)                        \
   do {                                                                      \
@@ -137,6 +199,7 @@ class ET_EXPERIMENTAL MetalBackend final
       FreeableBuffer* processed, // This will be a empty buffer
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
+    auto init_start = std::chrono::high_resolution_clock::now();
     ET_LOG(Info, "MetalBackend::init - Starting initialization");
 
     std::string method_name;
@@ -261,6 +324,22 @@ class ET_EXPERIMENTAL MetalBackend final
     }
 
     ET_LOG(Info, "MetalBackend::init - Initialization completed successfully");
+
+    // Accumulate init timing statistics
+    auto init_end = std::chrono::high_resolution_clock::now();
+    double elapsed_ms =
+        std::chrono::duration<double, std::milli>(init_end - init_start)
+            .count();
+    g_init_total_ms += elapsed_ms;
+    g_init_call_count++;
+
+    // Track per-method init timing
+    if (!method_name.empty()) {
+      auto& stats = g_init_method_stats[method_name];
+      stats.total_ms += elapsed_ms;
+      stats.call_count++;
+    }
+
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -269,6 +348,7 @@ class ET_EXPERIMENTAL MetalBackend final
       BackendExecutionContext& context,
       DelegateHandle* handle_,
       Span<EValue*> args) const override {
+    auto execute_start = std::chrono::high_resolution_clock::now();
     ET_LOG(Debug, "MetalBackend execute");
 
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
@@ -513,6 +593,22 @@ class ET_EXPERIMENTAL MetalBackend final
     }
 
     ET_LOG(Debug, "MetalBackend execution completed successfully");
+
+    // Accumulate timing statistics
+    auto execute_end = std::chrono::high_resolution_clock::now();
+    double elapsed_ms =
+        std::chrono::duration<double, std::milli>(execute_end - execute_start)
+            .count();
+    g_execute_total_ms += elapsed_ms;
+    g_execute_call_count++;
+
+    // Track per-method timing
+    const char* method_name = context.get_method_name();
+    if (method_name != nullptr) {
+      auto& stats = g_method_stats[method_name];
+      stats.total_ms += elapsed_ms;
+      stats.call_count++;
+    }
 
     return Error::Ok;
   }
