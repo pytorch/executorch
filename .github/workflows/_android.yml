@@ -52,6 +52,20 @@ jobs:
   run-emulator:
     needs: build-llm-demo
     # NB: Use metal install for KVM support to run the emulator faster
+    run: |
+      cat /etc/os-release
+      sudo dnf install -y \
+      libX11-xcb \
+      libxcb \
+      pulseaudio-libs \
+      nss \
+      libXcomposite \
+      libXcursor \
+      libXi \
+      libXtst \
+      alsa-lib \
+      mesa-libGL \
+      mesa-dri-drivers
     runs-on: linux.24xl.spr-metal
     env:
       ANDROID_NDK_VERSION: r28c
