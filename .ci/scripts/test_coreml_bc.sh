@@ -21,9 +21,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 # ET 1.0.0 only supports Python >=3.10,<3.13
 CONDA_ENV_NAME="coreml_bc_test_env"
 conda create -y -n "${CONDA_ENV_NAME}" python=3.10
-conda activate "${CONDA_ENV_NAME}"
 
-PYTHON_EXECUTABLE=python
+# Use conda run to execute commands in the new environment
+CONDA_RUN="conda run --no-capture-output -n ${CONDA_ENV_NAME}"
 
 # The old hash to use for generating the pte file
 # This should be a known stable release or commit that produces valid CoreML pte files
@@ -64,13 +64,13 @@ git submodule sync --recursive
 git submodule update --init --recursive
 
 # Install requirements and executorch
-pip install --upgrade pip
-"${PYTHON_EXECUTABLE}" install_requirements.py
+${CONDA_RUN} pip install --upgrade pip
+${CONDA_RUN} python install_requirements.py
 
 # Step 3: Export model
 echo "=== Step 3: Exporting model with old ET version ==="
 # Export a simple model using CoreML backend
-"${PYTHON_EXECUTABLE}" -c "
+${CONDA_RUN} python -c "
 import torch
 from executorch.exir import to_edge_transform_and_lower
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
@@ -124,12 +124,12 @@ git submodule update --init --recursive
 
 # Step 5: Install current version
 echo "=== Step 5: Installing current ET version ==="
-pip install --upgrade pip
-"${PYTHON_EXECUTABLE}" install_requirements.py
+${CONDA_RUN} pip install --upgrade pip
+${CONDA_RUN} python install_requirements.py
 
 # Step 6: Run the old pte file
 echo "=== Step 6: Running old pte with current runtime ==="
-"${PYTHON_EXECUTABLE}" -c "
+${CONDA_RUN} python -c "
 import torch
 from executorch.runtime import Runtime
 
