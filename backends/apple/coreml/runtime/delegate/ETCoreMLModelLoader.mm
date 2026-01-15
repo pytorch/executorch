@@ -26,20 +26,6 @@ namespace {
         
         return result;
     }
-
-    ETCoreMLModel * _Nullable get_model_from_asset(ETCoreMLAsset *asset,
-                                                   MLModelConfiguration *configuration,
-                                                   const executorchcoreml::ModelMetadata& metadata,
-                                                   NSError * __autoreleasing *error) {
-        NSOrderedSet<NSString *> *orderedInputNames = ::get_ordered_set(metadata.input_names);
-        NSOrderedSet<NSString *> *orderedOutputNames = ::get_ordered_set(metadata.output_names);
-        ETCoreMLModel *model = [[ETCoreMLModel alloc] initWithAsset:asset
-                                                      configuration:configuration
-                                                  orderedInputNames:orderedInputNames
-                                                 orderedOutputNames:orderedOutputNames
-                                                              error:error];
-        return model;
-    }
 } // namespace
 
 @implementation ETCoreMLModelLoader
@@ -48,15 +34,22 @@ namespace {
                                           configuration:(MLModelConfiguration *)configuration
                                                metadata:(const executorchcoreml::ModelMetadata&)metadata
                                                 error:(NSError * __autoreleasing *)error {
-    NSError *localError = nil;
-    ETCoreMLModel *model = (compiledAsset != nil) ? get_model_from_asset(compiledAsset, configuration, metadata, &localError) : nil;
-    if (model) {
-        return model;
+    if (compiledAsset == nil) {
+        return nil;
     }
-    if (error) {
-        *error = localError;
-    }
-    return nil;
+    
+    // Use the metadata's ordered input/output names.
+    // For multifunction models, the caller should load the per-method metadata
+    // which contains the correct input/output names for that method.
+    NSOrderedSet<NSString *> *orderedInputNames = ::get_ordered_set(metadata.input_names);
+    NSOrderedSet<NSString *> *orderedOutputNames = ::get_ordered_set(metadata.output_names);
+    
+    ETCoreMLModel *model = [[ETCoreMLModel alloc] initWithAsset:compiledAsset
+                                                  configuration:configuration
+                                              orderedInputNames:orderedInputNames
+                                             orderedOutputNames:orderedOutputNames
+                                                          error:error];
+    return model;
 }
                                         
 

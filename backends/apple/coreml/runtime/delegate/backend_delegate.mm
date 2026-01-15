@@ -33,10 +33,11 @@ MLComputeUnits get_compute_units(const Buffer& buffer) {
 }
 
 MLModelConfiguration *get_model_configuration(const std::unordered_map<std::string, Buffer>& specs) {
-    std::string key_name(ETCoreMLStrings.computeUnitsKeyName.UTF8String);
+    std::string compute_units_key(ETCoreMLStrings.computeUnitsKeyName.UTF8String);
     MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
+    
     for (const auto& [key, buffer] : specs) {
-        if (key == key_name) {
+        if (key == compute_units_key) {
             configuration.computeUnits = get_compute_units(buffer);
             break;
         }
@@ -75,6 +76,11 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
 - (BOOL)loadAndReturnError:(NSError * _Nullable __autoreleasing *)error;
 
 - (void)loadAsynchronously;
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                               error:(NSError* __autoreleasing*)error;
 
 - (ModelHandle*)loadModelFromAOTData:(NSData*)data
                        configuration:(MLModelConfiguration*)configuration
@@ -161,12 +167,23 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
 - (ModelHandle*)loadModelFromAOTData:(NSData*)data
                        configuration:(MLModelConfiguration*)configuration
                                error:(NSError* __autoreleasing*)error {
+    return [self loadModelFromAOTData:data
+                        configuration:configuration
+                           methodName:nil
+                                error:error];
+}
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                               error:(NSError* __autoreleasing*)error {
     if (![self loadAndReturnError:error]) {
         return nil;
     }
     
     auto handle = [self.impl loadModelFromAOTData:data
                                     configuration:configuration
+                                       methodName:methodName
                                             error:error];
     if ((handle != NULL) && self.config.should_prewarm_model) {
         [self.impl prewarmModelWithHandle:handle error:nil];
@@ -250,14 +267,24 @@ public:
     BackendDelegateImpl(BackendDelegateImpl const&) = delete;
     BackendDelegateImpl& operator=(BackendDelegateImpl const&) = delete;
     
-    Handle *init(Buffer processed,const std::unordered_map<std::string, Buffer>& specs) const noexcept override {
+Handle *init(Buffer processed,
+                   const std::unordered_map<std::string, Buffer>& specs,
+                   const char* method_name = nullptr) const noexcept override {
         NSError *localError = nil;
         MLModelConfiguration *configuration = get_model_configuration(specs);
+        
+        NSString *methodNameStr = method_name ? @(method_name) : nil;
+        
+        // Note: For multifunction CoreML models, functionName is set in
+        // ETCoreMLModelManager::loadModelFromAOTData based on metadata.is_multifunction().
+        // Legacy single-function models require functionName to remain nil.
+        
         NSData *data = [NSData dataWithBytesNoCopy:const_cast<void *>(processed.data())
                                             length:processed.size()
                                       freeWhenDone:NO];
         ModelHandle *modelHandle = [model_manager_ loadModelFromAOTData:data
                                                           configuration:configuration
+                                                             methodName:methodNameStr
                                                                   error:&localError];
         if (localError != nil) {
             ETCoreMLLogError(localError, "Model init failed");
