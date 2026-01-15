@@ -6071,6 +6071,9 @@ class TestExampleLLMScript(TestQNN):
             "gemma-2b": TestExampleLLMScript.LlmSpecs(
                 SM8650=32, SM8750=36, ppl=35, pte_size=2_700_000_000
             ),  # 2.7 GB
+            "gemma2-2b": TestExampleLLMScript.LlmSpecs(
+                SM8650=32, SM8750=36, ppl=14, pte_size=2_860_000_000
+            ),  # 2.86 GB
             "gemma3-1b": TestExampleLLMScript.LlmSpecs(
                 SM8650=70, SM8750=100, ppl=23, pte_size=1_200_000_000
             ),  # 1.2 GB
