@@ -1,4 +1,45 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # add this empty BUCK file to unblock landing. Without this, we get land error:
 #   "No build file at xplat/executorch/exir/BUCK when resolving target fbsource//xplat/executorch/exir:."
 
-oncall("executorch")
+
+# !!!! fbcode/executorch/exir/emit/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+
+fbcode_target(_kind = runtime.python_library,
+    name = "lib",
+    srcs = [
+        "__init__.py",
+    ],
+    deps = [
+        ":emit",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "emit",
+    srcs = [
+        "_emit_program.py",
+        "_emitter.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/typing-extensions:typing-extensions",
+        "//caffe2:torch",
+        "//executorch/exir:delegate",
+        "//executorch/exir:error",
+        "//executorch/exir:memory",
+        "//executorch/exir:print_program",
+        "//executorch/exir:schema",
+        "//executorch/exir:tensor",
+        "//executorch/exir:types",
+        "//executorch/exir:version",
+        "//executorch/exir/dialects/backend:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/exir/operator:convert",
+        "//executorch/exir/passes:prim_ops_py_registry",
+        "//executorch/extension/pytree:pylib",
+    ],
+)

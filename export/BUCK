@@ -1,8 +1,9 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "recipe",
     srcs = [
         "recipe.py",
@@ -16,7 +17,7 @@ runtime.python_library(
     ]
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "export",
     srcs = [
         "export.py",
@@ -31,7 +32,7 @@ runtime.python_library(
 )
 
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "stages",
     srcs = [
         "stages.py",
@@ -49,7 +50,7 @@ runtime.python_library(
 )
 
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "lib",
     srcs = [
         "__init__.py",
@@ -65,7 +66,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "recipe_registry",
     srcs = [
         "recipe_registry.py",
@@ -78,7 +79,7 @@ runtime.python_library(
 )
 
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "recipe_provider",
     srcs = [
         "recipe_provider.py",
@@ -88,14 +89,14 @@ runtime.python_library(
     ]
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "types",
     srcs = [
         "types.py",
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "target_recipes",
     srcs = [
         "target_recipes.py",
@@ -110,7 +111,7 @@ runtime.python_library(
     ]
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "export_utils",
     srcs = ["utils.py"],
     deps = [
