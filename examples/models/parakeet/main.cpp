@@ -110,7 +110,6 @@ std::vector<Token> greedy_decode_executorch(
     const ::executorch::aten::Tensor& f_proj,
     int64_t encoder_len,
     int64_t blank_id,
-    int64_t vocab_size,
     int64_t num_rnn_layers = 2,
     int64_t pred_hidden = 640,
     int64_t max_symbols_per_step = 10) {
@@ -396,13 +395,7 @@ int main(int argc, char** argv) {
 
   ET_LOG(Info, "Running TDT greedy decode...");
   auto decoded_tokens = greedy_decode_executorch(
-      *model,
-      f_proj,
-      encoded_len,
-      blank_id,
-      vocab_size,
-      num_rnn_layers,
-      pred_hidden);
+      *model, f_proj, encoded_len, blank_id, num_rnn_layers, pred_hidden);
 
   ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
 

@@ -44,20 +44,6 @@ def greedy_decode_eager(
     return hypotheses[0].y_sequence
 
 
-class DecoderPredict(torch.nn.Module):
-    def __init__(self, decoder):
-        super().__init__()
-        self.decoder = decoder
-        self.pred_hidden = decoder.pred_hidden
-        self.pred_rnn_layers = getattr(decoder, "pred_rnn_layers", 2)
-
-    def forward(
-        self, token: torch.Tensor, h: torch.Tensor, c: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        g, new_state = self.decoder.predict(y=token, state=[h, c], add_sos=False)
-        return g, new_state[0], new_state[1]
-
-
 class EncoderWithProjection(torch.nn.Module):
     """Encoder that outputs projected features ready for the joint network."""
 
@@ -103,10 +89,8 @@ def greedy_decode_executorch(
     encoder_len: int,
     program,
     blank_id: int,
-    vocab_size: int,
     num_rnn_layers: int = 2,
     pred_hidden: int = 640,
-    joint_hidden: int = 640,
     max_symbols_per_step: int = 10,
     durations: list[int] | None = None,
 ) -> list[int]:
@@ -117,10 +101,8 @@ def greedy_decode_executorch(
         encoder_len: Number of valid encoder frames
         program: ExecuTorch program with loaded methods
         blank_id: Token ID for blank
-        vocab_size: Vocabulary size (excluding blank)
         num_rnn_layers: Number of RNN layers in decoder
         pred_hidden: Hidden size of decoder RNN
-        joint_hidden: Hidden size of joint network
         max_symbols_per_step: Maximum symbols per frame
         durations: Duration values for TDT
 
@@ -212,10 +194,8 @@ def transcribe_executorch(audio_path: str, model, et_buffer) -> str:
             encoded_len,
             program,
             blank_id=vocab_size,
-            vocab_size=vocab_size,
             num_rnn_layers=model.decoder.pred_rnn_layers,
             pred_hidden=model.decoder.pred_hidden,
-            joint_hidden=model.joint.joint_hidden,
         )
 
         return model.tokenizer.ids_to_text(tokens)
@@ -301,24 +281,6 @@ class JointWithArgmax(torch.nn.Module):
         token_id = logits[: self.num_token_classes].argmax()
         duration_idx = logits[self.num_token_classes :].argmax()
         return token_id, duration_idx
-
-
-class JointProjectEncoder(torch.nn.Module):
-    def __init__(self, joint):
-        super().__init__()
-        self.joint = joint
-
-    def forward(self, f):
-        return self.joint.project_encoder(f)
-
-
-class JointProjectDecoder(torch.nn.Module):
-    def __init__(self, joint):
-        super().__init__()
-        self.joint = joint
-
-    def forward(self, g):
-        return self.joint.project_prednet(g)
 
 
 class PreprocessorWrapper(torch.nn.Module):
