@@ -15,20 +15,20 @@ import org.junit.runner.RunWith
 /** Unit tests for [ExecuTorchRuntime]. */
 @RunWith(AndroidJUnit4::class)
 class RuntimeInstrumentationTest {
-  @Test
-  fun testRuntimeApi() {
-    val ops = ExecuTorchRuntime.getRegisteredOps()
-    val backends = ExecuTorchRuntime.getRegisteredBackends()
+    @Test
+    fun testRuntimeApi() {
+        val ops = ExecuTorchRuntime.getRegisteredOps()
+        val backends = ExecuTorchRuntime.getRegisteredBackends()
 
-    Assert.assertNotNull(ops)
-    Assert.assertNotNull(backends)
+        Assert.assertNotNull(ops)
+        Assert.assertNotNull(backends)
 
-    for (op in ops) {
-      Assert.assertNotNull(op)
+        for (op in ops) {
+            Assert.assertNotNull(op)
+        }
+
+        for (backend in backends) {
+            Assert.assertNotNull(backend)
+        }
     }
-
-    for (backend in backends) {
-      Assert.assertNotNull(backend)
-    }
-  }
 }
