@@ -1,9 +1,10 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "example_quantizer",
     srcs = [
         "example_quantizer.py",
@@ -15,7 +16,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "example_backend",
     srcs = [
         "example_backend.py",
@@ -27,7 +28,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "example_partitioner",
     srcs = [
         "example_partitioner.py",
@@ -43,7 +44,7 @@ runtime.python_library(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_example_delegate",
     srcs = [
         "test_example_delegate.py",
