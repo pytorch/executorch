@@ -1,10 +1,11 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
 # TODO(T157145817): Update other flatbuffer serializers to use flatc like
 # _flatbuffer.py does, and remove this.
-runtime.cxx_python_extension(
+fbcode_target(_kind = runtime.cxx_python_extension,
     name = "_bindings",
     srcs = [
         "bindings.cpp",
@@ -23,7 +24,7 @@ runtime.cxx_python_extension(
 
 # Use runtime.python_library instead of the one defined in python_library.bzl,
 # so we can have access to EXECUTORCH_CLIENTS list.
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "lib",
     srcs = [
         "__init__.py",
