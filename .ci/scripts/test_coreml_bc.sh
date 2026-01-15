@@ -50,6 +50,8 @@ cleanup() {
     cd "${WORKING_DIR}"
     git checkout "${CURRENT_HEAD}" --quiet || true
     rm -f "${PTE_FILE}"
+    # Remove the conda environment
+    conda env remove -n "${CONDA_ENV_NAME}" -y || true
 }
 trap cleanup EXIT
 
@@ -63,9 +65,9 @@ echo "=== Step 2: Installing old ET version ==="
 git submodule sync --recursive
 git submodule update --init --recursive
 
-# Install requirements and executorch
+# Install executorch
 ${CONDA_RUN} pip install --upgrade pip
-${CONDA_RUN} python install_requirements.py
+${CONDA_RUN} python install_executorch.py
 
 # Step 3: Export model
 echo "=== Step 3: Exporting model with old ET version ==="
@@ -125,7 +127,7 @@ git submodule update --init --recursive
 # Step 5: Install current version
 echo "=== Step 5: Installing current ET version ==="
 ${CONDA_RUN} pip install --upgrade pip
-${CONDA_RUN} python install_requirements.py
+${CONDA_RUN} python install_executorch.py
 
 # Step 6: Run the old pte file
 echo "=== Step 6: Running old pte with current runtime ==="
