@@ -7,7 +7,6 @@
  */
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -420,22 +419,9 @@ int main(int argc, char** argv) {
       decoded_tokens, *tokenizer);
   std::cout << "Transcribed text: " << text << std::endl;
 
-  // Print performance statistics
-  std::cout << "\n=== Performance Statistics ===" << std::endl;
-
-  // Calculate audio duration in seconds
-  double audio_duration_sec =
-      static_cast<double>(audio_data.size()) / static_cast<double>(sample_rate);
-
-  std::cout << "\nAudio duration: " << audio_duration_sec << " seconds"
-            << std::endl;
-  std::cout << "Tokens decoded: " << decoded_tokens.size() << std::endl;
-
 #ifdef ET_BUILD_METAL
   executorch::backends::metal::print_metal_backend_stats();
 #endif // ET_BUILD_METAL
-
-  std::cout << "==============================\n" << std::endl;
 
   if (!timestamp_mode.enabled()) {
     return 0;

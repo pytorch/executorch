@@ -14,7 +14,7 @@ namespace backends {
 namespace metal {
 
 void print_metal_backend_stats() {
-  std::cout << "\n--- Metal Backend ---" << std::endl;
+  std::cout << "\n--- Metal Backend Performance Statistics ---" << std::endl;
 
   // Init stats
   double metal_init_total_ms = get_metal_backend_init_total_ms();
@@ -72,6 +72,8 @@ void print_metal_backend_stats() {
       std::cout << std::endl;
     }
   }
+
+  std::cout << "\n--------------------------------------------" << std::endl;
 }
 
 } // namespace metal
