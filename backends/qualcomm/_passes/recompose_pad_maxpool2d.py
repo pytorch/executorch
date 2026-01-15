@@ -50,7 +50,7 @@ class RecomposePadMaxPool2d(ExportPass):
         self.max_pool2d = exir_ops.edge.aten.max_pool2d_with_indices.default
         self.pad_op = exir_ops.edge.aten.constant_pad_nd.default
 
-    def call(self, graph_module: torch.fx.GraphModule):
+    def call(self, graph_module: torch.fx.GraphModule):  # noqa C901
         graph = graph_module.graph
         for node in graph.nodes:
             num_args = len(node.args)
