@@ -115,7 +115,6 @@ std::vector<Token> greedy_decode_executorch(
     int64_t pred_hidden = 640,
     int64_t max_symbols_per_step = 10) {
   std::vector<Token> hypothesis;
-  int64_t num_token_classes = vocab_size + 1;
 
   // f_proj is already transposed and projected by the encoder
   // Shape: [1, time_steps, joint_hidden]
@@ -193,37 +192,18 @@ std::vector<Token> greedy_decode_executorch(
         {1, 1, static_cast<::executorch::aten::SizesType>(proj_dim)},
         ::executorch::aten::ScalarType::Float);
 
-    // Joint network
+    // Joint network - returns (token_id, duration_idx) from GPU argmax
     auto joint_result = model.execute(
         "joint", std::vector<::executorch::runtime::EValue>{f_t, g_proj});
     if (!joint_result.ok()) {
       ET_LOG(Error, "joint failed at t=%lld", static_cast<long long>(t));
       return hypothesis;
     }
-    auto full_logits = joint_result.get()[0].toTensor();
 
-    // Split logits into token and duration
-    const float* logits_data = full_logits.const_data_ptr<float>();
-
-    // Find argmax for token logits
-    int64_t k = 0;
-    float max_token_logit = logits_data[0];
-    for (int64_t i = 1; i < num_token_classes; i++) {
-      if (logits_data[i] > max_token_logit) {
-        max_token_logit = logits_data[i];
-        k = i;
-      }
-    }
-
-    // Find argmax for duration logits
-    int64_t dur_idx = 0;
-    float max_dur_logit = logits_data[num_token_classes];
-    for (size_t i = 1; i < DURATIONS.size(); i++) {
-      if (logits_data[num_token_classes + i] > max_dur_logit) {
-        max_dur_logit = logits_data[num_token_classes + i];
-        dur_idx = i;
-      }
-    }
+    // Get token and duration indices directly (argmax done on GPU)
+    int64_t k = joint_result.get()[0].toTensor().const_data_ptr<int64_t>()[0];
+    int64_t dur_idx =
+        joint_result.get()[1].toTensor().const_data_ptr<int64_t>()[0];
     int64_t dur = DURATIONS[dur_idx];
 
     if (k == blank_id) {
