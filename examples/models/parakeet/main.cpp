@@ -116,7 +116,6 @@ std::vector<Token> greedy_decode_executorch(
     int64_t max_symbols_per_step = 10) {
   std::vector<Token> hypothesis;
 
-  // f_proj is already transposed and projected by the encoder
   // Shape: [1, time_steps, joint_hidden]
   auto f_proj_sizes = f_proj.sizes();
   int64_t time_steps = f_proj_sizes[1];
@@ -139,9 +138,11 @@ std::vector<Token> greedy_decode_executorch(
        static_cast<::executorch::aten::SizesType>(pred_hidden)},
       ::executorch::aten::ScalarType::Float);
 
-  // Prime the prediction network state with SOS (= blank_id) to match NeMo TDT
-  // greedy label-looping decoding behavior.
-  // decoder_step combines decoder_predict + joint_project_decoder
+  // Prime the decoder with SOS (= blank_id) to match NeMo TDT label-looping:
+  // - SOS is defined as blank:
+  //   https://github.com/NVIDIA/NeMo/blob/main/nemo/collections/asr/parts/submodules/rnnt_greedy_decoding.py#L1063
+  // - Predictor priming with SOS:
+  //   https://github.com/NVIDIA/NeMo/blob/main/nemo/collections/asr/parts/submodules/rnnt_greedy_decoding.py#L1122-L1127
   std::vector<int64_t> sos_token_data = {blank_id};
   auto sos_token = from_blob(
       sos_token_data.data(), {1, 1}, ::executorch::aten::ScalarType::Long);
@@ -153,7 +154,7 @@ std::vector<Token> greedy_decode_executorch(
     return hypothesis;
   }
   auto& init_outputs = decoder_init_result.get();
-  auto g_proj_init = init_outputs[0].toTensor();  // Now returns g_proj directly
+  auto g_proj_init = init_outputs[0].toTensor();
   auto new_h_init = init_outputs[1].toTensor();
   auto new_c_init = init_outputs[2].toTensor();
   std::memcpy(
@@ -192,7 +193,6 @@ std::vector<Token> greedy_decode_executorch(
         {1, 1, static_cast<::executorch::aten::SizesType>(proj_dim)},
         ::executorch::aten::ScalarType::Float);
 
-    // Joint network - returns (token_id, duration_idx) from GPU argmax
     auto joint_result = model.execute(
         "joint", std::vector<::executorch::runtime::EValue>{f_t, g_proj});
     if (!joint_result.ok()) {
@@ -200,7 +200,6 @@ std::vector<Token> greedy_decode_executorch(
       return hypothesis;
     }
 
-    // Get token and duration indices directly (argmax done on GPU)
     int64_t k = joint_result.get()[0].toTensor().const_data_ptr<int64_t>()[0];
     int64_t dur_idx =
         joint_result.get()[1].toTensor().const_data_ptr<int64_t>()[0];
@@ -212,7 +211,6 @@ std::vector<Token> greedy_decode_executorch(
     } else {
       hypothesis.push_back({static_cast<TokenId>(k), t, dur});
 
-      // Update decoder state using decoder_step (combines decoder + projection)
       std::vector<int64_t> token_data = {k};
       auto token = from_blob(
           token_data.data(), {1, 1}, ::executorch::aten::ScalarType::Long);
@@ -225,7 +223,7 @@ std::vector<Token> greedy_decode_executorch(
         return hypothesis;
       }
       auto& outputs = decoder_result.get();
-      auto new_g_proj = outputs[0].toTensor();  // Now returns g_proj directly
+      auto new_g_proj = outputs[0].toTensor();
       auto new_h = outputs[1].toTensor();
       auto new_c = outputs[2].toTensor();
 
@@ -336,7 +334,6 @@ int main(int argc, char** argv) {
       static_cast<long>(mel.sizes()[2]),
       static_cast<long long>(mel_len_value));
 
-  // Run encoder (now returns f_proj directly - already transposed and projected)
   ET_LOG(Info, "Running encoder...");
   auto enc_result = model->execute(
       "encoder", std::vector<::executorch::runtime::EValue>{mel, mel_len});
@@ -345,7 +342,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   auto& enc_outputs = enc_result.get();
-  auto f_proj = enc_outputs[0].toTensor();  // [B, T, joint_hidden]
+  auto f_proj = enc_outputs[0].toTensor(); // [B, T, joint_hidden]
   int64_t encoded_len = enc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
 
   ET_LOG(
@@ -400,7 +397,7 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Running TDT greedy decode...");
   auto decoded_tokens = greedy_decode_executorch(
       *model,
-      f_proj,  // Now passing f_proj directly (already transposed and projected)
+      f_proj,
       encoded_len,
       blank_id,
       vocab_size,

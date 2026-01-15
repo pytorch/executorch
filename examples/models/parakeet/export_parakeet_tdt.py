@@ -59,11 +59,7 @@ class DecoderPredict(torch.nn.Module):
 
 
 class EncoderWithProjection(torch.nn.Module):
-    """Combines encoder + transpose + joint.project_encoder.
-
-    This eliminates one CPU-GPU round trip by doing the projection
-    on GPU immediately after encoding, before returning to CPU.
-    """
+    """Encoder that outputs projected features ready for the joint network."""
 
     def __init__(self, encoder, joint):
         super().__init__()
@@ -83,11 +79,7 @@ class EncoderWithProjection(torch.nn.Module):
 
 
 class DecoderStep(torch.nn.Module):
-    """Combines decoder.predict + joint.project_prednet.
-
-    This eliminates one CPU-GPU round trip per token emission by doing
-    the projection on GPU immediately after the RNN step.
-    """
+    """Single decoder RNN step that outputs projected features for the joint network."""
 
     def __init__(self, decoder, joint):
         super().__init__()
@@ -140,9 +132,6 @@ def greedy_decode_executorch(
 
     hypothesis = []
 
-    # Load methods - note: encoder projection is now done in encoder method
-    # decoder_step combines decoder_predict + joint_project_decoder
-    # joint now performs argmax on GPU and returns (token_id, duration_idx)
     decoder_step_method = program.load_method("decoder_step")
     joint_method = program.load_method("joint")
 
@@ -163,7 +152,6 @@ def greedy_decode_executorch(
     while t < encoder_len:
         f_t = f_proj[:, t : t + 1, :].contiguous()
 
-        # Joint now returns (token_id, duration_idx) directly from GPU argmax
         joint_out = joint_method.execute([f_t, g_proj])
         k = joint_out[0].item()
         dur_idx = joint_out[1].item()
@@ -175,10 +163,9 @@ def greedy_decode_executorch(
         else:
             hypothesis.append(k)
 
-            # Use combined decoder_step (decoder_predict + projection)
             token = torch.tensor([[k]], dtype=torch.long)
             result = decoder_step_method.execute([token, h, c])
-            g_proj = result[0]  # Now returns g_proj directly
+            g_proj = result[0]
             h = result[1]
             c = result[2]
 
@@ -213,16 +200,15 @@ def transcribe_executorch(audio_path: str, model, et_buffer) -> str:
         mel = proc_result[0]
         mel_len = proc_result[1].item()
 
-        # Encoder now returns f_proj directly (already transposed and projected)
         encoder_method = program.load_method("encoder")
         mel_len_tensor = torch.tensor([mel_len], dtype=torch.int64)
         enc_result = encoder_method.execute([mel, mel_len_tensor])
-        f_proj = enc_result[0]  # [B, T, joint_hidden]
+        f_proj = enc_result[0]
         encoded_len = enc_result[1].item()
 
         vocab_size = model.tokenizer.vocab_size
         tokens = greedy_decode_executorch(
-            f_proj,  # Pass f_proj directly instead of encoded
+            f_proj,
             encoded_len,
             program,
             blank_id=vocab_size,
@@ -303,24 +289,17 @@ def extract_tokenizer(output_dir: str) -> str | None:
 
 
 class JointWithArgmax(torch.nn.Module):
-    """Joint network that performs argmax on GPU and returns token/duration indices.
+    """Joint network that returns token and duration indices directly."""
 
-    This eliminates 12MB of CPU-GPU data transfer per utterance and moves
-    argmax computation from CPU to GPU.
-    """
     def __init__(self, joint, num_token_classes):
         super().__init__()
         self.joint = joint
         self.num_token_classes = num_token_classes
 
     def forward(self, f, g):
-        # Get full logits: [B, T, U, V+D] where V is vocab+blank, D is num_durations
         logits = self.joint.joint_after_projection(f, g).squeeze()
-
-        # Split into token and duration logits, argmax on GPU
-        token_id = logits[:self.num_token_classes].argmax()
-        duration_idx = logits[self.num_token_classes:].argmax()
-
+        token_id = logits[: self.num_token_classes].argmax()
+        duration_idx = logits[self.num_token_classes :].argmax()
         return token_id, duration_idx
 
 
@@ -377,8 +356,6 @@ def export_all(model):
     )
     torch.cuda.is_available = old_cuda_is_available
 
-    # Encoder with projection: combines encoder + transpose + joint.project_encoder
-    # This eliminates one CPU-GPU round trip
     feat_in = getattr(model.encoder, "_feat_in", 128)
     audio_signal = torch.randn(1, feat_in, 100)
     length = torch.tensor([100], dtype=torch.int64)
@@ -392,8 +369,6 @@ def export_all(model):
         strict=False,
     )
 
-    # Decoder step: combines decoder.predict + joint.project_prednet
-    # This eliminates one CPU-GPU round trip per token emission
     num_layers = model.decoder.pred_rnn_layers
     pred_hidden = model.decoder.pred_hidden
     decoder_step = DecoderStep(model.decoder, model.joint)
@@ -419,9 +394,6 @@ def export_all(model):
         dynamic_shapes={"f": {}, "g": {}},
         strict=False,
     )
-
-    # Note: joint_project_decoder is no longer needed as a separate method
-    # since decoder_step now includes the projection, and SOS init also uses decoder_step
 
     sample_rate = model.preprocessor._cfg.sample_rate
     window_stride = float(model.preprocessor._cfg.window_stride)
