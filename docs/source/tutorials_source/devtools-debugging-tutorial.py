@@ -22,7 +22,7 @@ Using the ExecuTorch Developer Tools to Debug a Model
 #
 # 1. Generate the artifacts consumed by the Developer Tools (`ETRecord <../etrecord.html>`__, `ETDump <../etdump.html>`__).
 # 2. Run the model and compare final outputs between eager model and runtime.
-# 3. If discrepancies exist, use the Inspector's ``calculate_numeric_gap`` method to identify operator-level issues.
+# 3. If discrepancies exist, use the Inspector's `calculate_numeric_gap <../model-inspector.html#calculate-numeric-gap>`__ method to identify operator-level issues.
 #
 # We provide two pipelines:
 #
@@ -213,11 +213,12 @@ from unittest.mock import patch
 #
 # .. code-block:: text
 #
-#    |    | aot_ops                              | runtime_ops         | gap                      |
-#    |----|--------------------------------------|---------------------|--------------------------|
-#    | 0  | [conv2d]                             | [DELEGATE_CALL]     | [3.25e-15]               |
-#    | 4  | [transpose, linear, unflatten, ...]  | [DELEGATE_CALL, ...]| [0.00010033142876115867] |
-#    | 59 | [transpose_66, linear_44, ...]       | [DELEGATE_CALL, ...]| [0.02629170972698486]    |
+#    |    | aot_ops                                                         | aot_intermediate_output                            | runtime_ops                                        | runtime_intermediate_output                        | gap                        |
+#    |----|----------------------------------------------------------------|----------------------------------------------------|----------------------------------------------------|----------------------------------------------------| ---------------------------|
+#    | 0  | [conv2d]                                                        | [[[tensor([-0.0130,  0.0075, -0.0334, -0.0122,...  | [DELEGATE_CALL]                                    | [[[tensor([-0.0130,  0.0075, -0.0334, -0.0122,...  | [3.2530690555343034e-15]   |
+#    | 1  | [permute, cat, add, dropout]                                    | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0...  | [DELEGATE_CALL]                                    | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0...  | [3.2488685838924244e-15]   |
+#    | 4  | [transpose, linear, unflatten, unsqueeze, tran...]              | [[[tensor(0.0045), tensor(-0.0084), tensor(0.0...  | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(0.0045), tensor(-0.0084), tensor(0.00...  | [0.00010033142876115867]   |
+#    | 59 | [transpose_66, linear_44, unflatten_11, unsque...]              | [[[tensor(-0.3346), tensor(0.1540), tensor(-0....  | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(-0.3346), tensor(0.1540), tensor(-0.0...  | [0.02629170972698486]      |
 #
 
 ######################################################################
@@ -246,13 +247,19 @@ from unittest.mock import patch
 # .. code-block:: text
 #
 #    Top 5 operators with largest numerical discrepancies:
-#                                                  aot_ops           gap
-#    59  [transpose_66, linear_44, unflatten_11, ...]  [0.02629170972698486]
-#    24  [transpose_24, linear_16, unflatten_4, ...]   [0.010045093258604096]
-#    29  [transpose_30, linear_20, unflatten_5, ...]   [0.008497326594593926]
+#                                                  aot_ops                            aot_intermediate_output                                        runtime_ops                        runtime_intermediate_output                     gap
+#    59  [transpose_66, linear_44, unflatten_11, unsque...  [[[tensor(-0.3346), tensor(0.1540), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.3346), tensor(0.1540), tensor(-0.0...   [0.02629170972698486]
+#    24  [transpose_24, linear_16, unflatten_4, unsquee...  [[[tensor(0.0344), tensor(-0.0583), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0344), tensor(-0.0583), tensor(-0.0...  [0.010045093258604096]
+#    29  [transpose_30, linear_20, unflatten_5, unsquee...  [[[tensor(0.0457), tensor(0.0266), tensor(-0.0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0457), tensor(0.0266), tensor(-0.05...  [0.008497326594593926]
+#    34  [transpose_36, linear_24, unflatten_6, unsquee...  [[[tensor(-0.1336), tensor(-0.0154), tensor(-0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.1336), tensor(-0.0154), tensor(-0....  [0.007672668965640913]
+#    19  [transpose_18, linear_12, unflatten_3, unsquee...  [[[tensor(-0.0801), tensor(0.0458), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.0801), tensor(0.0458), tensor(-0.0...  [0.007446783635888463]
 #
 #    Operators with MSE > 0.0001:
-#    (12 operators found with gaps above threshold)
+#                                                  aot_ops                            aot_intermediate_output                                        runtime_ops                        runtime_intermediate_output                       gap
+#    4   [transpose, linear, unflatten, unsqueeze, tran...  [[[tensor(0.0045), tensor(-0.0084), tensor(0.0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0045), tensor(-0.0084), tensor(0.00...  [0.00010033142876115867]
+#    9   [transpose_6, linear_4, unflatten_1, unsqueeze...  [[[tensor(0.0113), tensor(-0.0737), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0113), tensor(-0.0737), tensor(-0.0...   [0.0005611182577030275]
+#    14  [transpose_12, linear_8, unflatten_2, unsqueez...  [[[tensor(-0.0476), tensor(-0.0941), tensor(-0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.0476), tensor(-0.0941), tensor(-0....    [0.004658652508649068]
+#    ...
 #
 # In this example, we can see that the attention layers (transpose + linear + unflatten patterns)
 # show the largest numerical discrepancies, which is expected behavior for delegated operators
@@ -341,33 +348,43 @@ with open(bundled_program_path, "wb") as f:
 # Step 3: Run with CMake Example Runner
 # -------------------------------------
 #
-# Build and run the example runner with debug output enabled::
+# Build and run the example runner with output verification and debug output enabled::
 #
 #       cd executorch
 #       ./examples/devtools/build_example_runner.sh
-#       cmake-out/examples/devtools/example_runner --bundled_program_path="bundled_program.bp"
+#       cmake-out/examples/devtools/example_runner \
+#           --bundled_program_path="bundled_program.bp" \
+#           --output_verification=true \
+#           --dump_intermediate_outputs=true
 #
-# Since the BundledProgram includes expected outputs from the eager model,
-# the example runner will automatically compare runtime outputs against
-# the reference outputs and report whether they match. This gives you
-# immediate feedback on numerical accuracy.
+# The key flags are:
 #
-# Example output:
+# - ``--output_verification=true``: Compare runtime outputs against the expected
+#   outputs stored in the BundledProgram (uses rtol=1e-3, atol=1e-5)
+# - ``--dump_intermediate_outputs=true``: Capture intermediate outputs for
+#   operator-level debugging
+# - ``--debug_buffer_size=<bytes>``: Size of debug buffer (default: 256KB, increase
+#   for larger models)
+#
+# Example output on success:
 #
 # .. code-block:: text
 #
-#    I 00:00:00.123456 executorch:example_runner.cpp:123] Method forward: output 0 matches reference.
+#    I 00:00:00.123456 executorch:example_runner.cpp:135] Model file bundled_program.bp is loaded.
+#    I 00:00:00.123456 executorch:example_runner.cpp:145] Running method forward
+#    I 00:00:00.234567 executorch:example_runner.cpp:250] Model executed successfully.
+#    I 00:00:00.234567 executorch:example_runner.cpp:287] Model verified successfully.
 #
-# If outputs don't match, you'll see:
+# If verification fails (outputs don't match within tolerance), you'll see an error:
 #
 # .. code-block:: text
 #
-#    W 00:00:00.123456 executorch:example_runner.cpp:123] Method forward: output 0 MISMATCH with reference!
+#    E 00:00:00.234567 executorch:example_runner.cpp:287] Bundle verification failed with status 0x10
 #
 # This will also generate:
 #
-# - ``etdump.etdp``: The ETDump file containing execution trace
-# - ``debug_output.bin``: The debug buffer containing intermediate outputs
+# - ``etdump.etdp``: The ETDump file containing execution trace (default path, configurable via ``--etdump_path``)
+# - ``debug_output.bin``: The debug buffer containing intermediate outputs (default path, configurable via ``--debug_output_path``)
 
 ######################################################################
 # Step 4: Analyze Results in Python
