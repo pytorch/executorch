@@ -94,6 +94,8 @@ class CortexMQuantizer(ComposableQuantizer):
         Negative filter function for transpose conv to REJECT:
         1. NCHW memory format (we only support channels_last/NHWC)
         2. Grouped convolutions (groups > 1) - not supported by CMSIS-NN
+        3. Non-zero output_padding - not supported by CMSIS-NN
+        4. Dilation != 1 - produces incorrect results with CMSIS-NN
 
         Returns True to REJECT the node, False to ACCEPT.
         """
@@ -107,6 +109,26 @@ class CortexMQuantizer(ComposableQuantizer):
         # REJECT if using NCHW format (we need channels_last/NHWC)
         if not is_channels_last(tensor):
             return True  # Reject NCHW
+
+        # For aten.conv_transpose2d.input:
+        #   (input, weight, bias, stride, padding, output_padding, groups, dilation)
+        # Args: 5 = output_padding, 6 = groups, 7 = dilation
+        if len(node.args) >= 6:
+            output_padding = node.args[5]
+            if isinstance(output_padding, (list, tuple)):
+                if any(p != 0 for p in output_padding):
+                    return True
+
+        if len(node.args) >= 7:
+            groups = node.args[6]
+            if isinstance(groups, int) and groups > 1:
+                return True
+
+        if len(node.args) >= 8:
+            dilation = node.args[7]
+            if isinstance(dilation, (list, tuple)):
+                if any(d != 1 for d in dilation):
+                    return True
 
         return False  # ACCEPT channels_last transpose conv
 

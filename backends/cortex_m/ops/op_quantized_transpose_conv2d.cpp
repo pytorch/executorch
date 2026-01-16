@@ -26,10 +26,6 @@ bool validate_transpose_conv2d_arguments(
     const Tensor& weight,
     const torch::executor::optional<Tensor>& bias,
     const Tensor& output,
-    const IntArrayRef& stride,
-    const IntArrayRef& padding,
-    const IntArrayRef& output_padding,
-    const IntArrayRef& dilation,
     const Tensor& requantize_multipliers,
     const Tensor& requantize_shifts) {
   if (input.dim() != kConvTransposeDim || weight.dim() != kConvTransposeDim ||
@@ -39,25 +35,16 @@ bool validate_transpose_conv2d_arguments(
     return false;
   }
 
-  // Check for channels_last dim_order (NHWC: 0, 2, 3, 1)
-  // Skip check if channels == 1, as dim_order is ambiguous in that case
-  constexpr executorch::aten::DimOrderType kChannelsLastDimOrder[] = {
-      0, 2, 3, 1};
-  executorch::aten::ArrayRef<executorch::aten::DimOrderType>
-      channels_last_order(kChannelsLastDimOrder, 4);
-
-  if (input.size(1) > 1 && input.dim_order() != channels_last_order) {
+  if (!is_channels_last_tensor(input)) {
     ET_LOG(
-        Error,
-        "quantized_transpose_conv2d_out: input must have channels_last dim_order (NHWC)");
+        Error, "quantized_transpose_conv2d_out: input must be channels_last");
     context.fail(Error::InvalidArgument);
     return false;
   }
 
-  if (output.size(1) > 1 && output.dim_order() != channels_last_order) {
+  if (!is_channels_last_tensor(output)) {
     ET_LOG(
-        Error,
-        "quantized_transpose_conv2d_out: output must have channels_last dim_order (NHWC)");
+        Error, "quantized_transpose_conv2d_out: output must be channels_last");
     context.fail(Error::InvalidArgument);
     return false;
   }
@@ -81,48 +68,6 @@ bool validate_transpose_conv2d_arguments(
         Error,
         "quantized_transpose_conv2d_out: bias must be int32 if provided");
     context.fail(Error::InvalidArgument);
-    return false;
-  }
-
-  if (stride.size() != 2 || padding.size() != 2 || output_padding.size() != 2 ||
-      dilation.size() != 2) {
-    ET_LOG(
-        Error,
-        "quantized_transpose_conv2d_out: stride, padding, output_padding, and dilation must have length 2");
-    context.fail(Error::InvalidArgument);
-    return false;
-  }
-
-  // Reject non-zero output_padding - CMSIS-NN does not support this parameter
-  if (output_padding[0] != 0 || output_padding[1] != 0) {
-    ET_LOG(
-        Error,
-        "quantized_transpose_conv2d_out: output_padding is not supported by CMSIS-NN. "
-        "Only output_padding=(0,0) is allowed. Got output_padding=(%lld,%lld)",
-        static_cast<long long>(output_padding[0]),
-        static_cast<long long>(output_padding[1]));
-    context.fail(Error::NotSupported);
-    return false;
-  }
-
-  // Reject dilation != (1,1) - CMSIS-NN produces different results than PyTorch
-  if (dilation[0] != 1 || dilation[1] != 1) {
-    ET_LOG(
-        Error,
-        "quantized_transpose_conv2d_out: dilation != (1,1) produces incorrect results with CMSIS-NN. "
-        "Only dilation=(1,1) is supported. Got dilation=(%lld,%lld)",
-        static_cast<long long>(dilation[0]),
-        static_cast<long long>(dilation[1]));
-    context.fail(Error::NotSupported);
-    return false;
-  }
-
-  // Reject grouped convolutions - CMSIS-NN does not support groups > 1
-  if (input.size(1) != weight.size(3)) {
-    ET_LOG(
-        Error,
-        "quantized_transpose_conv2d_out: grouped convolutions not supported");
-    context.fail(Error::NotSupported);
     return false;
   }
 
@@ -163,10 +108,6 @@ Tensor& quantized_transpose_conv2d_out(
           weight,
           bias,
           out,
-          stride,
-          padding,
-          output_padding,
-          dilation,
           requantize_multipliers,
           requantize_shifts)) {
     return out;

@@ -224,6 +224,14 @@ xfails_dialect = {
     # Grouped convolutions not supported by CMSIS-NN - rejected during quantization
     "conv_transpose2d_groups_2": "Grouped transpose conv not supported by CMSIS-NN",
     "conv_transpose2d_depthwise": "Depthwise transpose conv not supported by CMSIS-NN",
+    # output_padding not supported by CMSIS-NN - rejected during quantization
+    "conv_transpose2d_output_padding_1": "output_padding not supported by CMSIS-NN",
+    "conv_transpose2d_output_padding_asym": "output_padding not supported by CMSIS-NN",
+    # dilation != 1 not supported by CMSIS-NN - rejected during quantization
+    "conv_transpose2d_dilation_2": "dilation != 1 not supported by CMSIS-NN",
+    # Combinations of unsupported features
+    "conv_transpose2d_complex": "Uses output_padding which is not supported by CMSIS-NN",
+    "conv_transpose2d_all_params": "Combines output_padding and dilation - both unsupported",
 }
 
 
@@ -237,18 +245,10 @@ def test_dialect_conv_transpose2d(test_case):
     )
 
 
-xfails_implementation = {
-    # NUMERICAL MISMATCH: CMSIS-NN implementation differs from PyTorch
-    "conv_transpose2d_output_padding_1": "CMSIS-NN does not support output_padding parameter (fundamental library limitation)",
-    "conv_transpose2d_output_padding_asym": "CMSIS-NN does not support output_padding parameter (fundamental library limitation)",
-    "conv_transpose2d_dilation_2": "CMSIS-NN dilation for transpose conv produces incorrect results (algorithmic incompatibility)",
-    # GROUPED CONVOLUTION: Not supported by CMSIS-NN
-    "conv_transpose2d_groups_2": "Grouped transpose conv not supported by CMSIS-NN",
-    "conv_transpose2d_depthwise": "Depthwise transpose conv not supported by CMSIS-NN",
-    # COMBINATION: Multiple unsupported features
-    "conv_transpose2d_complex": "Uses output_padding=1 which is not supported by CMSIS-NN",
-    "conv_transpose2d_all_params": "Combines output_padding and dilation - both unsupported",
-}
+# Implementation xfails: empty because unsupported configurations are now
+# rejected at AOT time by the quantizer filter, so they fall back to portable
+# ops and work correctly. Only xfails_dialect needs to track these.
+xfails_implementation = {}
 
 
 @parametrize("test_case", test_cases, xfails=xfails_implementation)
