@@ -36,6 +36,7 @@ def define_common_targets():
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [
+            "//executorch/runtime/core/portable_type:portable_type",
             "//executorch/runtime/platform:platform",
         ],
     )
