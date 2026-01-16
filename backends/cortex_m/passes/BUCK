@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -8,7 +9,7 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name="replace_quant_nodes_pass",
     srcs=[
         "replace_quant_nodes_pass.py",
@@ -24,7 +25,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name="passes_utils",
     srcs=[
         "passes_utils.py",

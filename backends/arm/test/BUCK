@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 # Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -9,7 +10,7 @@ load(":targets.bzl", "define_arm_tests")
 
 oncall("executorch")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "conftest",
     srcs = ["conftest.py"],
     deps = [
@@ -19,7 +20,7 @@ runtime.python_library(
     ]
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "runner_utils",
     srcs = ["runner_utils.py"],
     deps = [
@@ -34,7 +35,7 @@ runtime.python_library(
     ]
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "common",
     srcs = ["common.py"],
     deps = [
@@ -44,7 +45,7 @@ runtime.python_library(
     ]
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "arm_tester_serialize",
     srcs = ["tester/serialize.py"],
     deps = [
@@ -53,7 +54,7 @@ runtime.python_library(
     ]
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "arm_tester_lib",
     srcs = glob(["tester/*.py"], exclude = ["tester/serialize.py"]),
     deps = [
@@ -71,7 +72,7 @@ runtime.python_library(
 )
 
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "arm_tester",
     deps = [
         "//executorch/backends/arm/test:arm_tester_lib",
@@ -79,4 +80,4 @@ runtime.python_library(
     ]
 )
 
-define_arm_tests()
+fbcode_target(_kind = define_arm_tests,)
