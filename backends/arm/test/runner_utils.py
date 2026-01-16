@@ -11,13 +11,13 @@ import re
 import shutil
 import subprocess  # nosec B404 - invoked only for trusted toolchain binaries
 import tempfile
-
-import executorch.backends.arm.test as arm_test_package
-import executorch.backends.arm.tosa.schemas as tosa_schemas_package
 from pathlib import Path
 
 from types import NoneType
 from typing import Any, cast, Dict, List, Optional, Tuple
+
+import executorch.backends.arm.test as arm_test_package
+import executorch.backends.arm.tosa.schemas as tosa_schemas_package
 
 import numpy as np
 import torch
@@ -605,16 +605,16 @@ def _run_flatc(args: List[str]) -> None:
             )
     else:
         # Expect the `flatc` tool to be on the system path or set as an env var.
-        flatc_path = os.getenv("FLATC_EXECUTABLE")
-        if not flatc_path:
-            flatc_path = shutil.which("flatc")
-        if not flatc_path:
+        flatc_executable: str | None = os.getenv("FLATC_EXECUTABLE")
+        if not flatc_executable:
+            flatc_executable = shutil.which("flatc")
+        if not flatc_executable:
             raise RuntimeError(
                 "flatc not found. Either add it to PATH, set FLATC_EXECUTABLE env var, "
                 "or ensure the flatbuffers-flatc resource is available."
             )
         subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
-            [flatc_path] + args, check=True
+            [flatc_executable] + args, check=True
         )
 
 
