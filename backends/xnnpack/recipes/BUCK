@@ -1,8 +1,9 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "xnnpack_recipes",
     srcs = [
         "__init__.py",
@@ -15,7 +16,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "xnnpack_recipe_provider",
     srcs = [
         "xnnpack_recipe_provider.py",
@@ -31,7 +32,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "xnnpack_recipe_types",
     srcs = [
         "xnnpack_recipe_types.py",
