@@ -50,7 +50,7 @@ jobs:
             # Get commits between viable/strict and main (up to 20)
             # Use ASCII unit separator (0x1f) to avoid issues with special chars in names
             COMMITS=$(gh api "repos/pytorch/executorch/compare/${VIABLE_SHA}...${MAIN_SHA}" \
-              --jq '.commits | reverse | .[0:20] | .[] | "\(.sha)\u001f\(.commit.message | split("\n")[0] | .[0:50])"' 2>/dev/null || echo "")
+              --jq '.commits | reverse | .[:20] | .[] | "\(.sha)\u001f\(.commit.message | split("\n")[0] | .[:50])"' 2>/dev/null || echo "")
 
             if [ -n "$COMMITS" ]; then
               echo "| Commit | Title | Failed Job |" >> $GITHUB_STEP_SUMMARY
@@ -64,7 +64,7 @@ jobs:
 
                 # Get workflow runs for this commit (use unit separator)
                 failed_run=$(gh api "repos/pytorch/executorch/actions/runs?head_sha=${sha}&per_page=100" \
-                  --jq '.workflow_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "\(.id)\u001f\(.name)"' 2>/dev/null | head -1)
+                  --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)\u001f\(.name)"' 2>/dev/null | head -1)
 
                 if [ -n "$failed_run" ]; then
                   IFS=$'\x1f' read -r run_id workflow_name <<< "$failed_run"
@@ -73,7 +73,7 @@ jobs:
 
                   # Get failed job name
                   failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs?per_page=100" \
-                    --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | .name' 2>/dev/null | head -1 | tr '|' '-')
+                    --jq '.jobs[] | select(.conclusion == "failure") | .name' 2>/dev/null | head -1 | tr '|' '-')
 
                   echo "| ${short_sha} | ${title} | ${workflow_name} / ${failed_job:-unknown} |" >> $GITHUB_STEP_SUMMARY
                   found_failures=true
@@ -91,7 +91,7 @@ jobs:
 
             # Filter by branch=main and use unit separator
             gh api "repos/pytorch/executorch/actions/runs?branch=main&per_page=20" \
-              --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)\u001f\(.head_sha | .[0:7])\u001f\(.display_title | .[0:50])\u001f\(.name)"' 2>/dev/null | \
+              --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)\u001f\(.head_sha | .[:7])\u001f\(.display_title | .[:50])\u001f\(.name)"' 2>/dev/null | \
             while IFS=$'\x1f' read -r run_id sha title workflow; do
               # Sanitize for markdown table
               title=$(echo "$title" | tr '|' '-')
@@ -107,8 +107,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Summary by job (main branch, last 24h)" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          # Filter by main branch and created in last 24 hours
-          yesterday=$(date -u -d '24 hours ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -v-24H '+%Y-%m-%dT%H:%M:%SZ')
+          # Filter by main branch and created in last 24 hours (GNU date syntax for Ubuntu runner)
+          yesterday=$(date -u -d '24 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
           gh api "repos/pytorch/executorch/actions/runs?branch=main&created=>${yesterday}&per_page=100" \
             --jq '.workflow_runs[] | select(.conclusion == "failure") | .name' 2>/dev/null \
             | sort | uniq -c | sort -rn | head -10 >> $GITHUB_STEP_SUMMARY || echo "Failed to fetch data" >> $GITHUB_STEP_SUMMARY
