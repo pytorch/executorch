@@ -95,10 +95,21 @@ jobs:
         cd zephyr_scratch
         export ZEPHYR_PROJ_ROOT=$(realpath $(pwd))
 
-        # TODO @Bujji: Should see if this can be moved into the docker image itself
-        wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/zephyr-sdk-0.17.4_linux-x86_64.tar.xz
-        tar -xf zephyr-sdk-0.17.4_linux-x86_64.tar.xz
-        rm -f zephyr-sdk-0.17.4_linux-x86_64.tar.xz*
+        echo "---- Zephyr SDK ----"
+        # Use ZephyrSDK if on the disk (e.g. setup in the docker)
+        # Check for a zephyr-sdk-0.17.4 directory and make a symlink if found in parent directories
+        if sdk_dir=$(find ../../.. -maxdepth 4 -type d -name 'zephyr-sdk-0.17.4' -print -quit) && [ -n "${sdk_dir}" ]; then
+          echo "---- Found pre downloaded Zephyr SDK in ${sdk_dir} ----"
+          ln -s "${sdk_dir}" .
+        fi
+
+        # Download and setup Zephyr SDK 0.17.4 if not already present
+        if [ ! -d "zephyr-sdk-0.17.4" ]; then
+          echo "---- Downloading Zephyr SDK ----"
+          wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/zephyr-sdk-0.17.4_linux-x86_64.tar.xz
+          tar -xf zephyr-sdk-0.17.4_linux-x86_64.tar.xz
+          rm -f zephyr-sdk-0.17.4_linux-x86_64.tar.xz*
+        fi
 
         ./zephyr-sdk-0.17.4/setup.sh -c -t arm-zephyr-eabi
         export ZEPHYR_SDK_INSTALL_DIR=$(realpath ./zephyr-sdk-0.17.4)
