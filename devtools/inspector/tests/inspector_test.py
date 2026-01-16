@@ -804,8 +804,6 @@ class TestInspector(unittest.TestCase):
         and lowered to XNNPACK, the intermediate outputs during runtime closely
         match the expected AOT outputs, with gaps remaining within a small range.
         """
-        from torch import nn as nn
-
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackPartitioner,
         )
@@ -813,6 +811,7 @@ class TestInspector(unittest.TestCase):
             get_xnnpack_edge_compile_config,
         )
         from executorch.runtime import Method, Program, Runtime, Verification
+        from torch import nn as nn
 
         class SingleBlockTransformer(nn.Module):
             def __init__(
@@ -836,7 +835,7 @@ class TestInspector(unittest.TestCase):
                     nhead=nhead,
                     dim_feedforward=dim_feedforward,
                     dropout=dropout,
-                    batch_first=True,   # input: (B, T, C)
+                    batch_first=True,  # input: (B, T, C)
                     activation="gelu",
                     norm_first=True,
                 )
@@ -844,7 +843,9 @@ class TestInspector(unittest.TestCase):
                 self.ln = nn.LayerNorm(d_model)
                 self.head = nn.Linear(d_model, vocab_size, bias=False)
 
-            def forward(self, input_ids: torch.Tensor, attn_mask: torch.Tensor | None = None):
+            def forward(
+                self, input_ids: torch.Tensor, attn_mask: torch.Tensor | None = None
+            ):
                 """
                 input_ids: (B, T) LongTensor
                 attn_mask (optional): (B, T) where 1/True = keep, 0/False = pad
@@ -860,14 +861,21 @@ class TestInspector(unittest.TestCase):
                 if attn_mask is not None:
                     src_key_padding_mask = ~attn_mask.to(torch.bool)
 
-                x = self.block(x, src_key_padding_mask=src_key_padding_mask)  # (B, T, d_model)
+                x = self.block(
+                    x, src_key_padding_mask=src_key_padding_mask
+                )  # (B, T, d_model)
                 x = self.ln(x)
                 logits = self.head(x)  # (B, T, vocab_size)
                 return logits
 
         vocab_size = 5000
-        model = SingleBlockTransformer(vocab_size=vocab_size, d_model=256, nhead=8, max_len=128)
-        model_inputs = (torch.randint(0, vocab_size, (1, 32)), torch.ones(1, 32, dtype=torch.bool))
+        model = SingleBlockTransformer(
+            vocab_size=vocab_size, d_model=256, nhead=8, max_len=128
+        )
+        model_inputs = (
+            torch.randint(0, vocab_size, (1, 32)),
+            torch.ones(1, 32, dtype=torch.bool),
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             # Export and lower model to XNNPACK delegate

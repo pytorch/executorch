@@ -8,8 +8,6 @@
 """
 Using the ExecuTorch Developer Tools to Debug a Model
 ========================
-
-**Author:** `ExecuTorch Team <https://github.com/pytorch/executorch>`__
 """
 
 ######################################################################
@@ -63,16 +61,13 @@ import os
 import tempfile
 
 import torch
-from torchvision import models
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 
-from executorch.exir import (
-    ExecutorchProgramManager,
-    to_edge_transform_and_lower,
-)
+from executorch.exir import ExecutorchProgramManager, to_edge_transform_and_lower
 from torch.export import export, ExportedProgram
+from torchvision import models
 
 # Create Vision Transformer model
 vit = models.vision_transformer.vit_b_16(weights="IMAGENET1K_V1")
@@ -176,9 +171,9 @@ from unittest.mock import patch
 #
 #    # Check if outputs are close enough
 #    if torch.allclose(eager_output, runtime_output, rtol=1e-3, atol=1e-5):
-#        print("✓ Outputs match within tolerance!")
+#        print("Outputs match within tolerance!")
 #    else:
-#        print("✗ Outputs differ - proceeding with operator-level analysis...")
+#        print("Outputs differ - proceeding with operator-level analysis...")
 #
 
 ######################################################################
@@ -269,74 +264,38 @@ from unittest.mock import patch
 #
 # This pipeline is useful when you want to test your model with the native
 # C++ runtime or on platforms where Python bindings are not available.
+# We continue using the same ViT model from Pipeline 1.
 
 ######################################################################
 # Step 1: Export Model and Generate ETRecord
 # ------------------------------------------
 #
-# Same as Pipeline 1 - export the model with ETRecord generation enabled.
-
-import copy
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-from executorch.devtools import generate_etrecord
-
-from executorch.exir import (
-    EdgeCompileConfig,
-    EdgeProgramManager,
-    ExecutorchProgramManager,
-    to_edge,
-)
-from torch.export import export, ExportedProgram
-
-
-# Generate Model
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 6, 5)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
-
-    def forward(self, x):
-        x = F.max_pool2d(F.relu(self.conv1(x)), (2, 2))
-        x = F.max_pool2d(F.relu(self.conv2(x)), 2)
-        x = torch.flatten(x, 1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-
-cmake_model = Net()
-
-aten_model: ExportedProgram = export(
-    cmake_model, (torch.randn(1, 1, 32, 32),), strict=True
-)
-
-edge_program_manager: EdgeProgramManager = to_edge(
-    aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True)
-)
-edge_program_manager_copy = copy.deepcopy(edge_program_manager)
-et_program_manager: ExecutorchProgramManager = edge_program_manager.to_executorch()
-
-
-# Generate ETRecord
-etrecord_path = "etrecord.bin"
-generate_etrecord(etrecord_path, edge_program_manager_copy, et_program_manager)
-
-######################################################################
+# Same as Pipeline 1 - we reuse the model and export artifacts we already created.
+# The key artifacts needed for the CMake pipeline are:
 #
-# .. warning::
-#    Users should do a deepcopy of the output of ``to_edge()`` and pass in the
-#    deepcopy to the ``generate_etrecord`` API. This is needed because the
-#    subsequent call, ``to_executorch()``, does an in-place mutation and will
-#    lose debug data in the process.
+# - ``model.pte``: The ExecuTorch program file
+# - ``etrecord.bin``: The ETRecord with representative inputs
+#
+# These were already generated in Pipeline 1's Step 1. If you're only using
+# the CMake pipeline, use the same export code:
+#
+# .. code-block:: python
+#
+#    # Export and lower model (same as Pipeline 1)
+#    aten_model = export(model, model_inputs, strict=True)
+#    edge_program_manager = to_edge_transform_and_lower(
+#        aten_model,
+#        partitioner=[XnnpackPartitioner()],
+#        compile_config=get_xnnpack_edge_compile_config(),
+#        generate_etrecord=True,
+#    )
+#    et_program_manager = edge_program_manager.to_executorch()
+#
+#    # Save artifacts
+#    et_program_manager.save(pte_path)
+#    etrecord = et_program_manager.get_etrecord()
+#    etrecord.update_representative_inputs(model_inputs)
+#    etrecord.save(etrecord_path)
 #
 
 ######################################################################
@@ -344,9 +303,9 @@ generate_etrecord(etrecord_path, edge_program_manager_copy, et_program_manager)
 # -----------------------------
 #
 # For the CMake pipeline, we create a ``BundledProgram`` that packages the model
-# with sample inputs and expected outputs for testing.
+# with sample inputs and expected outputs for testing. We reuse the
+# ``et_program_manager`` from Step 1.
 
-import torch
 from executorch.devtools import BundledProgram
 
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
@@ -354,40 +313,28 @@ from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 
-from executorch.exir import to_edge
-from torch.export import export
-
-# Step 1: ExecuTorch Program Export
+# Construct Method Test Suites using the same model and inputs from Pipeline 1
 m_name = "forward"
-method_graphs = {
-    m_name: export(cmake_model, (torch.randn(1, 1, 32, 32),), strict=True)
-}
-
-# Step 2: Construct Method Test Suites
-inputs = [[torch.randn(1, 1, 32, 32)] for _ in range(2)]
+inputs = [model_inputs for _ in range(2)]
 
 method_test_suites = [
     MethodTestSuite(
         method_name=m_name,
         test_cases=[
-            MethodTestCase(
-                inputs=inp, expected_outputs=getattr(cmake_model, m_name)(*inp)
-            )
-            for inp in inputs
+            MethodTestCase(inputs=inp, expected_outputs=model(*inp)) for inp in inputs
         ],
     )
 ]
 
-# Step 3: Generate BundledProgram
-executorch_program = to_edge(method_graphs).to_executorch()
-bundled_program = BundledProgram(executorch_program, method_test_suites)
+# Generate BundledProgram using the existing et_program_manager
+bundled_program = BundledProgram(et_program_manager, method_test_suites)
 
-# Step 4: Serialize BundledProgram to flatbuffer.
+# Serialize BundledProgram to flatbuffer
 serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(
     bundled_program
 )
-save_path = "bundled_program.bp"
-with open(save_path, "wb") as f:
+bundled_program_path = os.path.join(temp_dir, "bundled_program.bp")
+with open(bundled_program_path, "wb") as f:
     f.write(serialized_bundled_program)
 
 ######################################################################
@@ -400,7 +347,24 @@ with open(save_path, "wb") as f:
 #       ./examples/devtools/build_example_runner.sh
 #       cmake-out/examples/devtools/example_runner --bundled_program_path="bundled_program.bp"
 #
-# This will generate:
+# Since the BundledProgram includes expected outputs from the eager model,
+# the example runner will automatically compare runtime outputs against
+# the reference outputs and report whether they match. This gives you
+# immediate feedback on numerical accuracy.
+#
+# Example output:
+#
+# .. code-block:: text
+#
+#    I 00:00:00.123456 executorch:example_runner.cpp:123] Method forward: output 0 matches reference.
+#
+# If outputs don't match, you'll see:
+#
+# .. code-block:: text
+#
+#    W 00:00:00.123456 executorch:example_runner.cpp:123] Method forward: output 0 MISMATCH with reference!
+#
+# This will also generate:
 #
 # - ``etdump.etdp``: The ETDump file containing execution trace
 # - ``debug_output.bin``: The debug buffer containing intermediate outputs
