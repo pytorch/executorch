@@ -1,8 +1,59 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain xplat-only targets.
 
 load(":targets.bzl", "define_common_targets")
 
-oncall("executorch")
 
-define_common_targets()
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/examples/qualcomm/oss_scripts/whisper/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+
+fbcode_target(_kind = runtime.python_library,
+    name = "whisper_model_lib",
+    srcs = [
+        "whisper_model.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "whisper_lib",
+    srcs = ["whisper.py"],
+    deps = [
+        ":whisper_model_lib",
+        "//caffe2:torch",
+        "//executorch/backends/qualcomm/_passes:passes",
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/backends/qualcomm/quantizer:quantizer",
+        "//executorch/backends/qualcomm/serialization:serialization",
+        "//executorch/backends/qualcomm/utils:utils",
+        "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/examples/qualcomm:utils",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/passes:memory_planning_pass",
+        "fbsource//third-party/pypi/datasets:datasets",
+        "fbsource//third-party/pypi/librosa:librosa",
+        "fbsource//third-party/pypi/soundfile:soundfile",
+        "fbsource//third-party/pypi/torchmetrics:torchmetrics",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
+fbcode_target(_kind = python_binary,
+    name = "whisper",
+    main_module = "executorch.examples.qualcomm.oss_scripts.whisper.whisper",
+    deps = [
+        ":whisper_lib",
+    ],
+)
