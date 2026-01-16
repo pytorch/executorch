@@ -145,6 +145,47 @@ AOTITorchError aoti_torch_new_tensor_handle(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch__reinterpret_tensor(
+    Tensor* self,
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int64_t storage_offset,
+    Tensor** ret_new_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr,
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor: self is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor: ret_new_tensor is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ndim >= 0,
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor: ndim must be non-negative, got %lld",
+      static_cast<long long>(ndim));
+
+  ET_CHECK_OR_RETURN_ERROR(
+      !(sizes_ptr == nullptr && ndim > 0),
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor: sizes_ptr is null but ndim > 0");
+
+  IntArrayRef sizes(sizes_ptr, static_cast<size_t>(ndim));
+  IntArrayRef strides(strides_ptr, static_cast<size_t>(ndim));
+
+  // Create a new tensor view using as_strided. This creates a tensor that
+  // shares the same underlying storage but with different sizes, strides,
+  // and storage offset. SlimTensor::as_strided() handles this via copy
+  // constructor which shares the SharedPtr<Storage>.
+  *ret_new_tensor =
+      new Tensor(self->as_strided(sizes, strides, storage_offset));
+
+  return Error::Ok;
+}
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
