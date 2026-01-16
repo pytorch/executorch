@@ -20,12 +20,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Checkout executorch
-        uses: actions/checkout@v4
-        with:
-          repository: pytorch/executorch
-          submodules: recursive
-
       - name: Install executorch
         run: |
           pip install torchvision executorch
