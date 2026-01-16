@@ -59,6 +59,7 @@ from executorch.backends.arm._passes import (
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
     DecomposeIndexSelectToGatherPass,
+    DecomposeIndexTensorToGatherPass,
     DecomposeIntPowPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -303,6 +304,9 @@ class ArmPassManager(PassManager):
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
                 DecomposeStridedSliceCopyPass(),
+                DecomposeSliceScatterPass(),
+                AccumulateIndexPutPass(),
+                DecomposeIndexTensorToGatherPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
@@ -325,8 +329,6 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post scalar-removal)
         self.add_passes(
             [
-                DecomposeSliceScatterPass(),
-                AccumulateIndexPutPass(),
                 RewriteIndexPutPass(),
                 RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),

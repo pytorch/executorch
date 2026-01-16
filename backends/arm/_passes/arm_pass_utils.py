@@ -17,6 +17,7 @@ from executorch.backends.arm.common.type import ensure_type
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.pass_base import NodeMetadata
 
 from torch._export.utils import (
     get_buffer,
@@ -195,6 +196,14 @@ def insert_q_dq_pair(
     # node's first use
     q.args = (anchor,) + q_params
     return dq
+
+
+def meta_without_qparams(meta: NodeMetadata) -> NodeMetadata:
+    """Return a copy of NodeMetadata with input/output qparams cleared."""
+    plain_meta_dict = dict(meta.data)
+    plain_meta_dict["input_qparams"] = {}
+    plain_meta_dict["output_qparams"] = {}
+    return NodeMetadata(plain_meta_dict)
 
 
 def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
