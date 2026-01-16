@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load(
@@ -8,7 +9,7 @@ load(
 oncall("executorch")
 
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "aten_passes",
     srcs = glob([
         "aten_passes/*.py",
@@ -19,7 +20,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "edge_passes",
     srcs = glob([
         "edge_passes/*.py",
@@ -32,7 +33,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "_passes",
     srcs = glob([
         "_passes/*.py",
@@ -44,7 +45,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "quantizer",
     srcs = [
         "quantizer/neutron_quantizer.py",
@@ -58,7 +59,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "neutron_sdk",
     srcs = glob(["backend/**/*.py"]),
     deps = [
@@ -66,7 +67,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "neutron_backend",
     srcs = [
         "nxp_backend.py",
