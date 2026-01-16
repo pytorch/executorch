@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/cuda/runtime/guard.h>
+#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/platform/log.h>
 #include <unordered_map>
 
