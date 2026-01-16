@@ -793,7 +793,6 @@ def map_runtime_aot_intermediate_outputs(
             # Skip this mapping if there are no AOT or runtime data.
             continue
 
-
         # The size of runtime_list should be 1 because all AOT debug_handles are tuples with one element.
         # Additionally, runtime debug handles have already undergone pre-processing to merge overlapping debug_hanldes.
         # As a result, there shouldn't be any 1-to-n or n-to-n (AOT to runtime) mappings.
@@ -802,9 +801,7 @@ def map_runtime_aot_intermediate_outputs(
                 f"Expected only one runtime debug handle, but found {len(runtime_list)}: {runtime_list}"
             )
 
-        runtime_debug_handle, runtime_intermediate_output, num_outputs = (
-            runtime_list[0]
-        )
+        runtime_debug_handle, runtime_intermediate_output, num_outputs = runtime_list[0]
         # iterate through each of the output from runtime,
         # get the corresponding debug handle
         # and map it to the aot debug handle
@@ -844,9 +841,7 @@ def map_runtime_aot_intermediate_outputs(
                     # However, now we have a strange condition where aot_intermediate_output is a list of tensors
                     # while runtime_intermediate_output is a single tensor. So we should never really come here.
                     # TODO: fix this
-                    aot_mapped_runtime_intermediate_output = (
-                        runtime_intermediate_output
-                    )
+                    aot_mapped_runtime_intermediate_output = runtime_intermediate_output
                 else:
                     raise ValueError(
                         "The last element of runtime argument list must be a tensor or a list of tensors when aot intermediate output is a sequence"
@@ -859,7 +854,9 @@ def map_runtime_aot_intermediate_outputs(
 
             elif isinstance(runtime_intermediate_output, Sequence):
                 # Use the last element of the runtime output as fallback if no match is found
-                aot_mapped_runtime_intermediate_output = runtime_intermediate_output[negative_index]
+                aot_mapped_runtime_intermediate_output = runtime_intermediate_output[
+                    negative_index
+                ]
 
                 # delegate runtime call and AOT intermediate is not a sequence.
                 # For multi-output operations (like native_layer_norm.out, native_dropout.out),
