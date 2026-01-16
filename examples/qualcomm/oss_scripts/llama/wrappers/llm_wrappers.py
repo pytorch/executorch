@@ -1,17 +1,16 @@
-from __future__ import annotations
-
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 import argparse
 import inspect
 import json
-import logging
-import math
-import time
+
 import types
 
-from dataclasses import dataclass
-from enum import Enum
-from functools import partial, wraps
-from typing import Any, Dict, List, Tuple
+from functools import partial
+from typing import Any, Dict, List
 
 import torch
 
@@ -33,8 +32,6 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.backends.qualcomm.utils.utils import (
     convert_linear_to_conv2d,
-    get_sdk_build_id,
-    is_qnn_sdk_version_less_than,
     to_edge_transform_and_lower_to_qnn,
     update_spill_fill_size,
 )
@@ -72,6 +69,15 @@ from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
 from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
     StaticLLMQuantRecipe,
 )
+from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component import (
+    Component,
+    get_model_specific_kwargs,
+    log_info,
+    Mode,
+    process_model_args,
+    Processor,
+    Request,
+)
 from executorch.examples.qualcomm.utils import make_quantizer
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
@@ -82,84 +88,10 @@ from executorch.extension.llm.export.builder import DType
 from torchao.prototype.spinquant import apply_spinquant
 from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from transformers import AutoConfig, AutoModel
-
-
-def log_info(func):
-    class TimeIt:
-        def __init__(self, event):
-            self.event = event
-
-        def __enter__(self):
-            self.start = time.time()
-            return self
-
-        def __exit__(self, type, value, traceback):
-            self.time = time.time() - self.start
-            logging.info(f"{self.event}{self.time}s")
-
-    @wraps(func)
-    def wrapper(cls, *args, **kwargs):
-        func_name = f"{cls.__class__.__name__}::{func.__name__}"
-        logging.info(f"calling {func_name}")
-        with TimeIt(f"{func_name} completed in "):
-            func(cls, *args, **kwargs)
-
-    return wrapper
-
-
-def next_power_of_two(n):
-    return 1 if n == 0 else 2 ** math.ceil(math.log2(n))
-
-
-class Processor:
-    _next_handler = None
-
-    def set_next(self, processor) -> Processor:
-        self._next_handler = processor
-        return processor
-
-    def process(self, request: Any):
-        if self._next_handler:
-            return self._next_handler.process(request)
-
-
-@dataclass
-class Request:
-    @dataclass
-    class CalibrationData:
-        datasets: List[Tuple[torch.Tensor]] = None
-        intermediate_outputs: List[Tuple[torch.Tensor]] = None
-        qdq_intermediate_outputs: List[Tuple[torch.Tensor]] = None
-
-    @dataclass
-    class Data:
-        compile_spec: List[CompileSpec] = None
-        pte_filename: str = None
-        custom_annotation: Any = ()
-        calibration_data: Request.CalibrationData = None
-        tokenizer: callable = None
-
-    method_name: str
-    method_data: Dict[str, Data]
-
-
-class Component(Processor):
-    def process(self, request: Request) -> Request:
-        getattr(self, request.method_name)(request)
-        super().process(request)
-
-    def compile(self, request: Request):
-        return
-
-    def quantize(self, request: Request):
-        return
+from transformers import AutoModel
 
 
 class TextDecoder(Component):
-    class Mode(Enum):
-        PREFILL = 1
-        DECODE = 2
 
     def __init__(
         self,
@@ -173,7 +105,6 @@ class TextDecoder(Component):
         self.mode = mode
         self.passes_job = get_capture_program_passes()
         self.dep_table = get_passes_dependency_for_capture_program()
-        self.meta = None
         self.quant_recipe: StaticLLMQuantRecipe = (
             self.config.quant_recipe(True) if self.config.quant_recipe else None
         )
@@ -188,8 +119,20 @@ class TextDecoder(Component):
             get_passes_dependency_for_capture_program() if apply_embedding else None
         )
 
+        # load static llama model args
+        params_path = (
+            config.params_path if control_args.params is None else control_args.params
+        )
+        with open(params_path) as f:
+            self.model_args = process_model_args(
+                control_args, ModelArgs(**json.load(f)), self.quant_recipe, config, mode
+            )
+
+        # prepare instance
+        self.tok_embedding, self.decoder = self._prepare_model()
+
         # check if sharding required
-        if self.config.num_sharding > 1:
+        if self.decoder and self.config.num_sharding > 1:
             SplitGraph, setting = model_sharding.get_split_graph_pass(
                 self.meta["get_n_layers"],
                 shares=self.config.num_sharding,
@@ -198,43 +141,9 @@ class TextDecoder(Component):
             self.dep_table[SplitGraph] = [FoldQDQ]
             self.dep_table[TagQuantIO] = [SplitGraph]
 
-        # load static llama model args
-        params_path = (
-            config.params_path if control_args.params is None else control_args.params
-        )
-        with open(params_path) as f:
-            self.model_args = self._process_model_args(ModelArgs(**json.load(f)))
-
-        # prepare instance
-        self.tok_embedding = None
-        self.decoder = None
-        if (instance := self._prepare_model()) is not None:
-            self.tok_embedding, self.decoder = instance
-
-    def _process_model_args(self, model_args: ModelArgs):
-        # TODO: support batch inputs if necessary
-        model_args.max_batch_size = 1
-        model_args.max_seq_len = self.control_args.max_seq_len
-        model_args.use_kv_cache = (
-            self.control_args.max_seq_len != self.control_args.prefill_ar_len
-        )
-        model_args.enable_r3 = self.config.r3
-        model_args.kv_io_bit_width = self.quant_recipe.get_kv_io_bit_width()
-        if self.config.masked_softmax:
-            if is_qnn_sdk_version_less_than("2.35"):
-                logging.warning(
-                    f"Masked softmax is supported after QNN SDK 2.35. Given sdk version {get_sdk_build_id()}"
-                    " is lower the target version. Disabling the feature."
-                )
-                model_args.enable_masked_softmax = False
-            else:
-                model_args.enable_masked_softmax = True
-
-        return model_args
-
     def _prepare_model(self):  # noqa: C901
         if (instance := self._get_model_instance()) is None:
-            return None
+            return None, None
         tok_embedding, decoder = instance
 
         # load parameters for HF models
@@ -352,67 +261,9 @@ class TextDecoder(Component):
 
         return tok_embedding, decoder.eval()
 
-    def _get_model_specific_kwargs(self):
-        """
-        Retrieve model-specific config required for Static LLaMA.
-
-        This method handles architecture-specific requirements for both Vision-Language Models (VLMs)
-        and Language-only Models (LLMs), extracting necessary config from HuggingFace configs.
-
-        """
-        kwargs = {}
-
-        # Vision-Language Model (VLM)
-        # For multimodal models, we need the special token ID that represents image placeholders
-        # in the input sequence. This token is used to mark positions where image embeddings
-        # should be inserted during inference.
-        if hasattr(self.config, VISION_ENCODER):
-            hf_config = AutoConfig.from_pretrained(self.config.repo_id)
-            kwargs["modality_placeholder_token_id"] = hf_config.image_token_id
-
-        # TODO: Support Audio modality
-        elif hasattr(self.config, AUDIO_ENCODER):
-            raise NotImplementedError(
-                "Audio encoder modality is not currently supported. "
-                "Please provide a valid modality_placeholder_token_id in kwargs."
-            )
-
-        # Language-only Model (LLM) configuration
-        # Handle architecture-specific parameters for models that require special configurations
-        # beyond the general Static LLaMA architecture
-        else:
-            match self.control_args.decoder_model:
-                case "gemma3-1b":
-                    # Gemma3 requires additional configuration parameters:
-                    # - layer_types: Specifies the type of each layer (e.g., casual vs. sliding window attention)
-                    # - rope_local_base_freq: Base frequency for local RoPE
-                    # - sliding_window: Size of the sliding attention window for efficient long-context processing
-                    from transformers import Gemma3Config
-
-                    hf_config = Gemma3Config.from_pretrained(self.config.repo_id)
-                    kwargs["layer_types"] = hf_config.text_config.layer_types
-                    kwargs["rope_local_base_freq"] = (
-                        hf_config.text_config.rope_local_base_freq
-                    )
-                    kwargs["sliding_window"] = hf_config.sliding_window
-
-        return kwargs
-
     def _get_model_instance(self) -> LlamaModel:
-        if self.mode == self.Mode.DECODE:
-            ar_len = (
-                # To get better performance, we round up to the nearest power of 2.
-                next_power_of_two(
-                    (self.control_args.window + self.control_args.gcap)
-                    * (self.control_args.ngram - 1)
-                )
-                if self.control_args.model_mode == "lookahead"
-                else 1
-            )
-        else:
-            if self.control_args.model_mode == "kv":
-                return None
-            ar_len = self.control_args.prefill_ar_len
+        if self.mode == Mode.PREFILL and self.control_args.model_mode == "kv":
+            return None
         use_i64_token = self.control_args.embedding_quantize is not None
 
         # get embedding model
@@ -424,18 +275,13 @@ class TextDecoder(Component):
             tok_embedding = TextEmbedding(
                 auto_model.get_input_embeddings(),
                 self.model_args.max_batch_size,
-                ar_len,
+                self.model_args.ar_len,
                 self.model_args.vocab_size,
                 self.model_args.dim,
                 use_i64_token,
             )
 
         # get decoder model
-        self.model_args.max_batch_size = 1
-        self.model_args.max_seq_len = self.control_args.max_seq_len
-        self.model_args.use_kv_cache = True
-        self.model_args.enable_r3 = self.config.r3
-        self.model_args.kv_io_bit_width = self.quant_recipe.get_kv_io_bit_width()
         if self.control_args.decoder_model in {"gemma-2b", "gemma3-1b"}:
             # For gemma, we have preprocessed the weight of rmsnorm
             self.model_args.norm_type = "rmsnorm"
@@ -444,11 +290,11 @@ class TextDecoder(Component):
             self.control_args.decoder_model, LlamaModel
         )(
             self.model_args,
-            ar_len=ar_len,
+            ar_len=self.model_args.ar_len,
             output_new_cache_only=True,
             output_cache=True,
             use_i64_token=use_i64_token,
-            **self._get_model_specific_kwargs(),
+            **get_model_specific_kwargs(self.control_args, self.config),
         )
         # get example input
         self.meta = decoder.get_metadata()
@@ -467,6 +313,15 @@ class TextDecoder(Component):
                 decoder.ar_len,
                 decoder.vocab_size,
             ),
+        }
+        # shape of k caches and v caches
+        self.kv_cache_shape = {
+            # single head, kv input
+            (self.meta["get_head_dim"], self.meta["get_max_context_len"]),
+            (self.meta["get_max_context_len"], self.meta["get_head_dim"]),
+            # single head, kv output
+            (self.meta["get_head_dim"], self.meta["get_ar_len"]),
+            (self.meta["get_ar_len"], self.meta["get_head_dim"]),
         }
 
         if self.apply_embedding:
@@ -490,22 +345,29 @@ class TextDecoder(Component):
                             self.meta["get_logits_zero_point"] = output_node.args[2]
                             break
 
-    def _tag_ios(self, node, fixed_point_type):
-        # shape of k caches and v caches
-        kv_cache_shape = {
-            # single head, kv input
-            (self.meta["get_head_dim"], self.meta["get_max_seq_len"]),
-            (self.meta["get_max_seq_len"], self.meta["get_head_dim"]),
-            # single head, kv output
-            (self.meta["get_head_dim"], self.meta["get_ar_len"]),
-            (self.meta["get_ar_len"], self.meta["get_head_dim"]),
-        }
+    def _save_output_kv_quant_attrs(self):
+        output_indices = 0
+        for node in self.decoder.graph.nodes:
+            if node.op == "output":
+                for output_node in node.args[0]:
+                    source_node = output_node.args[0].args[0]
+                    if source_node.meta["val"].size()[-2:] in self.kv_cache_shape:
+                        # [QCOM_SCALE, QCOM_ZERO_POINT, QCOM_QUANT_MIN, QCOM_QUANT_MAX, QCOM_DTYPE]
+                        self.meta[f"get_output_kv_{output_indices}_quant_attr"] = [
+                            output_node.args[1],
+                            output_node.args[2],
+                            output_node.args[3],
+                            output_node.args[4],
+                            str(output_node.args[5]),
+                        ]
+                        output_indices += 1
 
+    def _tag_ios(self, node, fixed_point_type):
         atten_mask_shape = {
             (
                 self.meta["get_max_batch_size"],
                 self.meta["get_ar_len"],
-                self.meta["get_max_seq_len"],
+                self.meta["get_max_context_len"],
             ),
         }
 
@@ -521,7 +383,7 @@ class TextDecoder(Component):
         if node.op == "placeholder":
             if (
                 len(users := list(node.users)) == 1
-                and users[0].meta["val"].size()[-2:] in kv_cache_shape
+                and users[0].meta["val"].size()[-2:] in self.kv_cache_shape
             ):
                 quant_io_type = fixed_point_type["kv_type"]
             elif node.meta["val"].size() in self.io_shape:
@@ -530,7 +392,7 @@ class TextDecoder(Component):
                 quant_io_type = fixed_point_type["io_type"]
 
         if is_graph_output(node):
-            if node.meta["val"].size()[-2:] in kv_cache_shape:
+            if node.meta["val"].size()[-2:] in self.kv_cache_shape:
                 quant_io_type = fixed_point_type["kv_type"]
             elif node.meta["val"].size() in self.io_shape:
                 quant_io_type = fixed_point_type["io_type"]
@@ -587,7 +449,7 @@ class TextDecoder(Component):
                 module=model,
                 tokenizer=tokenizer,
                 ar_len=self.meta["get_ar_len"],
-                max_seq_len=self.meta["get_max_seq_len"],
+                max_seq_len=self.meta["get_max_context_len"],
                 tasks=self.control_args.tasks,
                 tasks_limit=self.control_args.limit,
                 num_fewshot=self.control_args.num_fewshot,
@@ -600,8 +462,7 @@ class TextDecoder(Component):
         lookahead_config = (
             (self.control_args.window, self.control_args.ngram, self.control_args.gcap)
             if (
-                self.mode == self.Mode.DECODE
-                and self.control_args.model_mode == "lookahead"
+                self.mode == Mode.DECODE and self.control_args.model_mode == "lookahead"
             )
             else None
         )
@@ -618,7 +479,7 @@ class TextDecoder(Component):
                 ),
                 tokenizer=tokenizer,
                 ar_len=self.meta["get_ar_len"],
-                max_seq_len=self.meta["get_max_seq_len"],
+                max_seq_len=self.meta["get_max_context_len"],
                 prompt=prompt,
                 use_i64_token=self.control_args.embedding_quantize is not None,
                 event_name=f"{event}_prompt",
@@ -722,7 +583,7 @@ class TextDecoder(Component):
                 )
 
         # propagate kv cache quantization attributes for prefill model
-        if self.mode == self.Mode.DECODE:
+        if self.mode == Mode.DECODE:
             kv_quant_attrs, output_indices = {}, 0
             for node in self.decoder.graph.nodes:
                 if node.op == "output":
@@ -740,6 +601,9 @@ class TextDecoder(Component):
 
         # save logit's quantization attributes to meta
         self._save_logits_quant_attrs()
+
+        # save output KV cache's quantization attributes to meta for attention sink
+        self._save_output_kv_quant_attrs()
 
         # setup quantized IO
         self.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
@@ -766,13 +630,13 @@ class HybridTextDecoder(Component):
         self.decode = TextDecoder(
             control_args,
             config,
-            TextDecoder.Mode.DECODE,
+            Mode.DECODE,
             apply_embedding=apply_embedding,
         )
         self.prefill = TextDecoder(
             control_args,
             config,
-            TextDecoder.Mode.PREFILL,
+            Mode.PREFILL,
             apply_embedding=apply_embedding,
         )
         self.control_args = control_args

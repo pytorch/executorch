@@ -110,6 +110,7 @@ class LlamaStories110MQuantRecipe(StaticLLMQuantRecipe):
                 QuantDtype.use_8a4w,
                 False,
                 act_observer=MinMaxObserver,
+                act_symmetric=True,
                 granularity=QuantGranularity.PER_CHANNEL,
             )
             .add_regex(
@@ -424,6 +425,7 @@ class Phi4MiniQuantRecipe(StaticLLMQuantRecipe):
                 QuantDtype.use_8a4w,
                 False,
                 act_observer=MinMaxObserver,
+                act_symmetric=True,
                 granularity=QuantGranularity.PER_CHANNEL,
             )
             .add_regex(
