@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -15,7 +16,7 @@ load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_li
 
 oncall("odai_jarvis")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "utils",
     srcs = [
         "utils.py",
@@ -30,7 +31,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "compiler",
     srcs = [
         "compiler.py",
@@ -52,7 +53,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "export_example",
     srcs = [
         "export_example.py",
@@ -74,7 +75,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "pass_utils",
     srcs = [
         "pass_utils.py",
@@ -89,7 +90,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "passes",
     srcs = [
         "passes.py",
@@ -110,7 +111,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "ops_registrations",
     srcs = [
         "ops_registrations.py",
@@ -122,7 +123,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "ref_implementations",
     srcs = [
         "ref_implementations.py",
@@ -135,9 +136,9 @@ runtime.python_library(
     ],
 )
 
-export_file(name = "functions.yaml")
+fbcode_target(_kind = export_file,name = "functions.yaml")
 
-executorch_generated_lib(
+fbcode_target(_kind = executorch_generated_lib,
     name = "cadence_aot_lib",
     custom_ops_yaml_target = "//executorch/kernels/portable:custom_ops.yaml",
     functions_yaml_target = ":functions.yaml",
@@ -162,7 +163,7 @@ executorch_generated_lib(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_pass_filter",
     srcs = [
         "tests/test_pass_filter.py",
@@ -174,7 +175,7 @@ python_unittest(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "compiler_utils",
     srcs = [
         "compiler_utils.py",
@@ -186,7 +187,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "graph_builder",
     srcs = [
         "graph_builder.py",
@@ -198,7 +199,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "program_builder",
     srcs = [
         "program_builder.py",
@@ -213,7 +214,7 @@ runtime.python_library(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_program_builder",
     srcs = [
         "tests/test_program_builder.py",
@@ -226,7 +227,7 @@ python_unittest(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "fuse_ops",
     srcs = [
         "fuse_ops.py",
@@ -246,7 +247,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "simplify_ops",
     srcs = [
         "simplify_ops.py",
@@ -261,7 +262,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "remove_ops",
     srcs = [
         "remove_ops.py",
@@ -280,7 +281,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "reorder_ops",
     srcs = [
         "reorder_ops.py",
@@ -298,7 +299,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "replace_ops",
     srcs = [
         "replace_ops.py",
@@ -319,7 +320,7 @@ runtime.python_library(
         "//executorch/exir/passes:spec_prop_pass",
     ],
 )
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "decompose_ops",
     srcs = [
         "decompose_ops.py",
@@ -336,7 +337,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "type_dispatch",
     srcs = [
         "type_dispatch.py",
@@ -349,7 +350,7 @@ runtime.python_library(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_type_dispatch_passes",
     srcs = [
         "tests/test_type_dispatch_passes.py",
@@ -368,7 +369,7 @@ python_unittest(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "typing_stubs",
     srcs = [
         "typing_stubs.py",
@@ -379,7 +380,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "compiler_funcs",
     srcs = [
         "compiler_funcs.py",
@@ -392,7 +393,7 @@ runtime.python_library(
 )
 
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_graph_builder",
     srcs = [
         "tests/test_graph_builder.py",
@@ -409,7 +410,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_replace_ops_passes",
     srcs = [
         "tests/test_replace_ops_passes.py",
@@ -430,7 +431,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_decompose_ops_passes",
     srcs = [
         "tests/test_decompose_ops_passes.py",
@@ -451,7 +452,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_fusion_ops_passes",
     srcs = [
         "tests/test_fusion_ops_passes.py",
@@ -472,7 +473,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_remove_ops_passes",
     srcs = [
         "tests/test_remove_ops_passes.py",
@@ -494,7 +495,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_simplify_ops_passes",
     srcs = [
         "tests/test_simplify_ops_passes.py",
@@ -513,7 +514,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_reorder_ops_passes",
     srcs = [
         "tests/test_reorder_ops_passes.py",
@@ -533,7 +534,7 @@ python_unittest(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "memory_planning_algo",
     srcs = [
         "memory_planning_algo.py",
@@ -549,7 +550,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "memory_planning",
     srcs = [
         "memory_planning.py",
@@ -567,7 +568,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "memory_constraints",
     srcs = [
         "memory_constraints.py",
@@ -582,7 +583,7 @@ runtime.python_library(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_memory_passes",
     srcs = [
         "tests/test_memory_passes.py",
@@ -604,7 +605,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_idma_ops",
     srcs = [
         "tests/test_idma_ops.py",
@@ -619,7 +620,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_ref_implementations",
     srcs = [
         "tests/test_ref_implementations.py",
@@ -633,7 +634,7 @@ python_unittest(
     ]
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_quantizer_ops",
     srcs = [
         "tests/test_quantizer_ops.py",
