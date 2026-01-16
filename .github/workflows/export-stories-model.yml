@@ -46,10 +46,6 @@ jobs:
 
           python export_dl3.py
 
-      - name: Cleanup temp files
-        run: |
-          rm "$TEMP_PT" "$TEMP_PARAMS"
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
