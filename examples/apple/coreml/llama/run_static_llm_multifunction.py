@@ -81,35 +81,37 @@ class Tokenizer:
 def create_pte_wrapper(
     decode_method,
     prefill_method,
-    prefill_mgr: "StaticAttentionIOManager",
-    decode_mgr: "StaticAttentionIOManager",
+    mgr: "StaticAttentionIOManager",
     prefill_seq_len: int,
-    prefill_cache_len: int,
-    decode_cache_len: int,
+    prefill_mask: Dict[str, torch.Tensor],
 ):
     """
     Create a wrapper function that adapts PTE execution to the interface
     expected by StaticAttentionIOManager.
 
     This multifunction version selects between prefill and decode methods
-    based on the input sequence length. It also uses the appropriate
-    StaticAttentionIOManager for each method since they have different
-    cache lengths.
+    based on the input sequence length. Both methods use the SAME cache_len,
+    so the cache buffer is shared directly without any slicing or copying.
 
     The wrapper:
     - Takes (tokens, options_dict) like the eager model
     - Selects prefill or decode method based on token count
-    - Adapts the options to use the correct manager's cache structure
+    - Uses the same cache buffer for both methods (no slicing needed)
     - Flattens inputs using pytree
     - Executes the appropriate PTE method
     - Reconstructs outputs to match eager model format: (logits, {"out_cache_state": (k_dict, v_dict)})
+
+    Args:
+        decode_method: The PTE method for decode (seqlen=1)
+        prefill_method: The PTE method for prefill (seqlen=input_len)
+        mgr: StaticAttentionIOManager with caches sized for shared cache_len
+        prefill_seq_len: The sequence length for prefill
+        prefill_mask: Pre-computed mask tensor for prefill method
     """
 
-    # Get cache keys from the prefill manager (same structure as decode)
-    k_cache_keys = list(prefill_mgr.k_caches.keys())
-    v_cache_keys = list(prefill_mgr.v_caches.keys())
+    k_cache_keys = list(mgr.k_caches.keys())
+    v_cache_keys = list(mgr.v_caches.keys())
 
-    # Timing accumulators
     timing_stats = {
         "flatten_time": 0.0,
         "execute_time": 0.0,
@@ -126,90 +128,69 @@ def create_pte_wrapper(
 
         timing_stats["call_count"] += 1
 
-        # TIME: Detection logic
         t0 = time_module.perf_counter()
 
-        # Detect actual sequence length BEFORE padding.
-        # StaticAttentionIOManager._run_once pads tokens with zeros on the right:
-        #   tokens = F.pad(tokens, (0, self.input_len - n_tokens))
-        # So for decode (1 actual token), positions 1+ are all zeros.
-        # For prefill (32 actual tokens), positions have real token values.
+        # Detect actual sequence length.
+        # StaticAttentionIOManager._run_once pads tokens with zeros on the right.
+        # For decode (1 actual token), positions 1+ are all zeros.
         padded_seq_len = tokens.shape[1]
         if padded_seq_len > 1 and (tokens[0, 1:] == 0).all():
-            # Single token padded to prefill_seq_len - this is decode
             actual_seq_len = 1
         else:
             actual_seq_len = padded_seq_len
 
-        # Select method and manager based on actual (pre-padding) sequence length
-        if actual_seq_len == prefill_seq_len:
-            method = prefill_method
-            mgr = prefill_mgr
-            # Use tokens and freqs as-is for prefill
-            adapted_tokens = tokens
-            adapted_freqs_cos = options["freqs_cos_override"]
-            adapted_freqs_sin = options["freqs_sin_override"]
-            # Use cache state as-is (prefill manager's cache size matches prefill method)
-            adapted_cache_state = options["in_cache_state"]
-        else:
-            method = decode_method
-            mgr = decode_mgr
-            # For decode, use tokens and freqs as-is (decode_mgr passes correct shapes)
-            # Note: decode_mgr.input_len=1, so tokens are NOT padded, just (1, 1)
-            adapted_tokens = tokens
-            adapted_freqs_cos = options["freqs_cos_override"]
-            adapted_freqs_sin = options["freqs_sin_override"]
-            # Use cache state as-is (decode_mgr's cache size matches decode method)
-            adapted_cache_state = options["in_cache_state"]
+        is_prefill = actual_seq_len == prefill_seq_len
 
         t1 = time_module.perf_counter()
         timing_stats["detection_time"] += t1 - t0
 
-        # TIME: Build options
         t0 = time_module.perf_counter()
 
-        # Build options with the correct mask and freqs for this method
+        # Get the input cache state from options
+        in_k_caches, in_v_caches = options["in_cache_state"]
+
+        # Both prefill and decode use the same cache_len, so no slicing needed!
+        # Just select the appropriate method and mask.
+        if is_prefill:
+            method = prefill_method
+            adapted_mask = prefill_mask
+        else:
+            method = decode_method
+            adapted_mask = mgr.masks
+
         adapted_options = {
-            "masks": mgr.masks,  # Use correct manager's mask (has right shape)
-            "freqs_cos_override": adapted_freqs_cos,
-            "freqs_sin_override": adapted_freqs_sin,
-            "in_cache_state": adapted_cache_state,
+            "masks": adapted_mask,
+            "freqs_cos_override": options["freqs_cos_override"],
+            "freqs_sin_override": options["freqs_sin_override"],
+            "in_cache_state": (in_k_caches, in_v_caches),  # Same cache for both!
         }
 
-        # Pass through last_valid_token_pos if present (needed for generate_full_logits=False)
         if "last_valid_token_pos" in options:
             adapted_options["last_valid_token_pos"] = options["last_valid_token_pos"]
 
-        # Build the same input structure as during export
-        inputs = (adapted_tokens, adapted_options)
+        inputs = (tokens, adapted_options)
 
         t1 = time_module.perf_counter()
         timing_stats["options_build_time"] += t1 - t0
 
-        # TIME: Flatten using pytree (same order as torch.export)
         t0 = time_module.perf_counter()
         flat_inputs, _ = pytree.tree_flatten(inputs)
         t1 = time_module.perf_counter()
         timing_stats["flatten_time"] += t1 - t0
 
-        # TIME: Execute PTE model
         t0 = time_module.perf_counter()
         outputs = method.execute(flat_inputs)
         t1 = time_module.perf_counter()
         timing_stats["execute_time"] += t1 - t0
 
-        # TIME: Reconstruct outputs
         t0 = time_module.perf_counter()
 
-        # First output is logits
         logits = outputs[0]
 
-        # Remaining outputs are k_cache updates then v_cache updates
         num_layers = len(k_cache_keys)
         k_updates = outputs[1 : 1 + num_layers]
         v_updates = outputs[1 + num_layers : 1 + 2 * num_layers]
 
-        # Reconstruct the output cache state dicts
         k_cache_dict = dict(zip(k_cache_keys, k_updates))
         v_cache_dict = dict(zip(v_cache_keys, v_updates))
 
@@ -365,43 +346,45 @@ def main():
     print(f"Model config: {model_args.n_layers} layers, dim={model_args.dim}")
     print(f"Max context length: {args.max_context_len}, Input length: {args.input_len}")
 
-    # Calculate cache lengths for each method
-    # The export script uses: cache_len = max_context_len - input_len
-    # So for multifunction models:
-    # - prefill: input_len=64, cache_len=960 (total=1024)
-    # - decode: input_len=1, cache_len=1023 (total=1024)
+    # Both prefill and decode use the same cache_len (decode's cache size).
+    # This allows them to share the same cache buffer without any copying.
+    # The export script exports both methods with cache_len = max_context_len - 1.
     prefill_input_len = args.input_len  # e.g., 64
-    prefill_cache_len = args.max_context_len - args.input_len  # e.g., 960
     decode_input_len = 1
-    decode_cache_len = args.max_context_len - decode_input_len  # e.g., 1023
+    shared_cache_len = args.max_context_len - decode_input_len  # e.g., 1023
 
-    print(f"Prefill: input_len={prefill_input_len}, cache_len={prefill_cache_len}")
-    print(f"Decode: input_len={decode_input_len}, cache_len={decode_cache_len}")
+    print(f"Prefill: input_len={prefill_input_len}, cache_len={shared_cache_len}")
+    print(f"Decode: input_len={decode_input_len}, cache_len={shared_cache_len}")
 
-    # Create StaticAttentionIOManager for prefill
-    # This manager handles the main prefill/decode loop state
+    # Create decode manager (input_len=1) - used for decode phase
+    mgr = StaticAttentionIOManager(
+        model_args,
+        input_len=decode_input_len,
+        cache_lens=shared_cache_len,
+        batch_size=1,
+        dtype=torch.float16,
+        style="smart_mask",
+        mask_val=float("-inf"),
+    )
+
+    # Create prefill manager (input_len=64) with the SAME cache_len.
+    # Since both use the same cache_len, we can share the cache buffer directly.
     prefill_mgr = StaticAttentionIOManager(
         model_args,
         input_len=prefill_input_len,
-        cache_lens=prefill_cache_len,
+        cache_lens=shared_cache_len,  # Same cache_len as decode!
         batch_size=1,
         dtype=torch.float16,
         style="smart_mask",
         mask_val=float("-inf"),
     )
 
-    # Create a separate decode manager with correct cache length for mask shapes
-    # This is needed because decode method expects mask shape (1, 1, 1024)
-    # which requires cache_len=1023 when input_len=1
-    decode_mgr = StaticAttentionIOManager(
-        model_args,
-        input_len=decode_input_len,
-        cache_lens=decode_cache_len,
-        batch_size=1,
-        dtype=torch.float16,
-        style="smart_mask",
-        mask_val=float("-inf"),
-    )
+    # Share cache buffers: point prefill_mgr's caches to mgr's caches.
+    # No copying needed since both managers use the same cache_len!
+    prefill_mgr.k_caches = mgr.k_caches
+    prefill_mgr.v_caches = mgr.v_caches
+
+    prefill_mask = prefill_mgr.masks
 
     # Load PTE model with multifunction support
     print(f"Loading multifunction model from {args.model}...")
@@ -452,11 +435,9 @@ def main():
     model_fn = create_pte_wrapper(
         decode_method,
         prefill_method,
-        prefill_mgr,
-        decode_mgr,
+        mgr,
         prefill_input_len,
-        prefill_cache_len,
-        decode_cache_len,
+        prefill_mask,
     )
 
     # Encode prompt
@@ -465,15 +446,18 @@ def main():
     print(f"Prompt tokens: {len(prompt_tokens)}")
     print("-" * 50)
 
-    # Reset manager (use prefill_mgr as the main state manager)
+    # Reset both managers
+    mgr.reset()
     prefill_mgr.reset()
-    decode_mgr.reset()
 
-    # Prefill using StaticAttentionIOManager.prefill
+    # Prefill using prefill_mgr which has the correct input_len and mask shapes
     # This will call model_fn with seq_len=input_len, which selects the prefill method
     print("Prefilling (using 'prefill' method)...", end=" ", flush=True)
     start_time = time.time()
+
+    # Use prefill_mgr for prefill since it has the correct input_len=64 and mask shapes
     logits = prefill_mgr.prefill(model_fn, prompt_tokens)
+
     prefill_time = time.time() - start_time
     print(f"done in {prefill_time:.2f}s")
 
@@ -485,28 +469,19 @@ def main():
     else:
         first_token = next_token(logits[:, -1, :], args.temperature, args.top_p)
 
-    # After prefill, copy the cache state from prefill_mgr to decode_mgr
-    # This is necessary because decode_mgr has larger caches (1023 vs 960)
-    # and we'll be using decode_mgr.decode() for generation
-    for key in prefill_mgr.k_caches:
-        src_k = prefill_mgr.k_caches[key]
-        src_v = prefill_mgr.v_caches[key]
-        # Copy to decode_mgr's larger cache
-        decode_mgr.k_caches[key][:, :, :prefill_cache_len, :] = src_k
-        decode_mgr.v_caches[key][:, :, :prefill_cache_len, :] = src_v
+    # No cache copying needed! prefill_mgr and mgr share the same cache buffers
+    # because both use the same cache_len (shared_cache_len).
 
-    # Sync the position counter
-    decode_mgr.pos = prefill_mgr.pos
+    # Sync position from prefill manager to decode manager
+    mgr.pos = prefill_mgr.pos
 
-    # Update decode_mgr's masks to reflect current position
-    # The mask needs to unmask the positions that have been filled by prefill
-    for mask in decode_mgr._masks.values():
+    # Update decode manager's masks to reflect current position after prefill
+    for mask in mgr._masks.values():
         mask.reset()
-        mask.unmask(prefill_mgr.pos)
+        mask.unmask(mgr.pos)
 
-    # Decode using decode_mgr.decode() which will call model_fn
-    # The wrapper will detect seq_len=1 (after we unpad) and route to decode method
-    # Since we're using decode_mgr, the cache shapes will match
+    # Decode using mgr.decode() which will call model_fn
+    # The wrapper will detect seq_len=1 and route to decode method
     print(f"\n{args.prompt}", end="", flush=True)
     print(tokenizer.decode_token(first_token), end="", flush=True)
 
@@ -517,7 +492,7 @@ def main():
         print(
             f"\n[Using lookahead decoding: ngram={args.ngram_size}, window={args.window_size}, verifications={args.n_verifications}]"
         )
-        generated_tokens = decode_mgr.lookahead_decode(
+        generated_tokens = mgr.lookahead_decode(
             model_fn,
             first_token,
             n=args.max_new_tokens - 1,  # -1 because first_token counts
@@ -529,7 +504,7 @@ def main():
     else:
         # Use standard autoregressive decoding (uses 'forward' method)
         print("\n[Using 'forward' (decode) method for generation]")
-        generated_tokens = decode_mgr.decode(
+        generated_tokens = mgr.decode(
             model_fn,
             first_token,
             n=args.max_new_tokens - 1,  # -1 because first_token counts
