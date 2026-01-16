@@ -598,6 +598,48 @@ class Conv2dCat(torch.nn.Module):
         return z
 
 
+class Conv2dDownUpSample(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+        self.conv_transpose = torch.nn.ConvTranspose2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+
+    def forward(self, x):
+        return self.conv_transpose(self.conv(x))
+
+
+class Conv2dFlip(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=False,
+        )
+        self.dims = [1, 3]
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.flip(x, self.dims)
+
+
 class Conv2dMaxPool2d(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -660,46 +702,14 @@ class Conv2dSingle(torch.nn.Module):
         return self.conv(x)
 
 
-class Conv2dDownUpSample(torch.nn.Module):
-    def __init__(self, bias=True):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(
-            in_channels=16,
-            out_channels=16,
-            kernel_size=3,
-            stride=2,
-            padding=1,
-            bias=bias,
-        )
-        self.conv_transpose = torch.nn.ConvTranspose2d(
-            in_channels=16,
-            out_channels=16,
-            kernel_size=3,
-            stride=2,
-            padding=1,
-            bias=bias,
-        )
-
-    def forward(self, x):
-        return self.conv_transpose(self.conv(x))
-
-
-class Conv2dFlip(torch.nn.Module):
+class Conv2dStack(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = torch.nn.Conv2d(
-            in_channels=16,
-            out_channels=16,
-            kernel_size=3,
-            stride=2,
-            padding=1,
-            bias=False,
-        )
-        self.dims = [1, 3]
+        self.conv1 = torch.nn.Conv2d(3, 3, 3)
 
-    def forward(self, x):
-        x = self.conv(x)
-        return torch.flip(x, self.dims)
+    def forward(self, x, y, z):
+        x1 = self.conv1(x)
+        return torch.stack((x1, y, z))
 
 
 class Conv2dSliceCopy(torch.nn.Module):
@@ -742,6 +752,16 @@ class Conv2dTopK(torch.nn.Module):
         x = self.conv(x)
         topk_values, topk_indices = torch.topk(x, 5, dim=1)
         return topk_values
+
+
+class Conv2dUnbind(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 3, 3)
+
+    def forward(self, x):
+        x1 = self.conv1(x)
+        return torch.unbind(x1, dim=1)
 
 
 class Conv3dSequential(torch.nn.Module):
