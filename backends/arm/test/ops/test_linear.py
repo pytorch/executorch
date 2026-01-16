@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,6 +11,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
+    get_symmetric_a8w4_quantization_config,
     TOSAQuantizer,
 )
 from executorch.backends.arm.test import common, conftest
@@ -162,6 +163,35 @@ def test_linear_tosa_INT(test_data: torch.Tensor):
         exir_op=[],
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+def test_linear_tosa_INT_a8w4(test_data: torch.Tensor):
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+    pipeline = TosaPipelineINT[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op,
+        tosa_extensions=["int4"],
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.add_stage_after(
+        "to_edge_transform_and_lower",
+        pipeline.tester.check_dtype_count,
+        {
+            "CONST": {"INT4": 2},
+            "CONV2D": {"INT32": 1},
+            "RESCALE": {"INT8": 1},
+        },
     )
     pipeline.run()
 
