@@ -86,3 +86,21 @@ def define_common_targets():
             ":delegate_handle",
         ],
     )
+
+    # SlimTensor-based common shims library
+    # Uses SlimTensor for all tensor operations
+    runtime.cxx_library(
+        name = "common_shims_slim",
+        srcs = [
+            "common_shims_slim.cpp",
+        ],
+        headers = [
+            "common_shims_slim.h",
+            "export.h",
+        ],
+        visibility = ["@EXECUTORCH_CLIENTS"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/backends/aoti/slim/core:slimtensor",
+        ],
+    )
