@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -92,9 +92,11 @@ class DecomposeGroupNormPass(ArmPass):
             if isinstance(meta["val"], tuple):
                 shape = meta["val"][0].size()
                 dtype = meta["val"][0].dtype
+                device = meta["val"][0].device
             else:
                 shape = meta["val"].size()
                 dtype = meta["val"].dtype
+                device = meta["val"].device
             match len(args):
                 # MI profile always provides all the args: x, weight, bias, N, C, HxW, group, eps
                 case 8:
@@ -156,7 +158,7 @@ class DecomposeGroupNormPass(ArmPass):
                     graph_module.graph,
                     full_op,
                     args=(epsilon_reshaped_shape, eps),
-                    kwargs={"dtype": dtype},
+                    kwargs={"dtype": dtype, "device": device},
                     from_node=node,
                 )
                 add0 = create_node(
