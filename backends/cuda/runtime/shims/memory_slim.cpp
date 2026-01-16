@@ -206,6 +206,35 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking) {
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_item_bool(Tensor* tensor, bool* ret_value) {
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_item_bool: tensor is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_value != nullptr,
+      InvalidArgument,
+      "aoti_torch_item_bool: ret_value is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor->numel() == 1,
+      InvalidArgument,
+      "aoti_torch_item_bool: tensor must have exactly 1 element, got %zu",
+      tensor->numel());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor->dtype() == ScalarType::Bool,
+      InvalidArgument,
+      "aoti_torch_item_bool: tensor dtype must be Bool");
+
+  // SlimTensor::item<T>() handles both CPU and CUDA tensors.
+  // For CUDA tensors, it copies the value to CPU automatically.
+  *ret_value = tensor->item<bool>();
+
+  return Error::Ok;
+}
+
 AOTITorchError aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst) {
   ET_CHECK_OR_RETURN_ERROR(
       src != nullptr,
