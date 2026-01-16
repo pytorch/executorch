@@ -1,8 +1,9 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "canonical_partitioner_lib",
     srcs = [
         "duplicate_dequant_node_pass.py",
@@ -17,7 +18,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "duplicate_constant_node_pass",
     srcs = [
         "duplicate_constant_node_pass.py",
@@ -29,7 +30,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "config_partitioner_lib",
     srcs = [
         "config_partitioner.py",
@@ -41,7 +42,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "group_partitioner_lib",
     srcs = [
         "group_partitioner.py",
