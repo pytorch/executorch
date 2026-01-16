@@ -290,6 +290,93 @@ void runGetDimTest(slim_c10::DeviceType device_type) {
 }
 
 // ============================================================================
+// Storage & Device Property Tests
+// ============================================================================
+
+void runGetStorageOffsetTest(slim_c10::DeviceType device_type) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = calculateContiguousStrides(sizes);
+  slim_c10::Device device(device_type, 0);
+
+  Tensor* tensor = new Tensor(slim::empty_strided(
+      slim::makeArrayRef(sizes),
+      slim::makeArrayRef(strides),
+      slim_c10::ScalarType::Float,
+      device));
+
+  int64_t ret_storage_offset = -1;
+  AOTITorchError error =
+      aoti_torch_get_storage_offset(tensor, &ret_storage_offset);
+
+  EXPECT_EQ(error, Error::Ok);
+  // Default storage offset for newly created tensor is 0
+  EXPECT_EQ(ret_storage_offset, 0);
+
+  delete tensor;
+}
+
+void runGetStorageSizeTest(slim_c10::DeviceType device_type) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = calculateContiguousStrides(sizes);
+  slim_c10::Device device(device_type, 0);
+
+  Tensor* tensor = new Tensor(slim::empty_strided(
+      slim::makeArrayRef(sizes),
+      slim::makeArrayRef(strides),
+      slim_c10::ScalarType::Float,
+      device));
+
+  int64_t ret_size = -1;
+  AOTITorchError error = aoti_torch_get_storage_size(tensor, &ret_size);
+
+  EXPECT_EQ(error, Error::Ok);
+  // 2 * 3 * sizeof(float) = 6 * 4 = 24 bytes
+  EXPECT_EQ(ret_size, 24);
+
+  delete tensor;
+}
+
+void runGetDeviceTypeTest(slim_c10::DeviceType device_type) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = calculateContiguousStrides(sizes);
+  slim_c10::Device device(device_type, 0);
+
+  Tensor* tensor = new Tensor(slim::empty_strided(
+      slim::makeArrayRef(sizes),
+      slim::makeArrayRef(strides),
+      slim_c10::ScalarType::Float,
+      device));
+
+  int32_t ret_device_type = -1;
+  AOTITorchError error = aoti_torch_get_device_type(tensor, &ret_device_type);
+
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_EQ(ret_device_type, static_cast<int32_t>(device_type));
+
+  delete tensor;
+}
+
+void runGetDeviceIndexTest(slim_c10::DeviceType device_type) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = calculateContiguousStrides(sizes);
+  slim_c10::Device device(device_type, 0);
+
+  Tensor* tensor = new Tensor(slim::empty_strided(
+      slim::makeArrayRef(sizes),
+      slim::makeArrayRef(strides),
+      slim_c10::ScalarType::Float,
+      device));
+
+  int32_t ret_device_index = -1;
+  AOTITorchError error = aoti_torch_get_device_index(tensor, &ret_device_index);
+
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_EQ(ret_device_index, 0);
+
+  delete tensor;
+}
+
+// ============================================================================
 // CPU Tests
 // ============================================================================
 
@@ -311,6 +398,22 @@ TEST_F(CommonShimsSlimTest, GetDtype_CPU) {
 
 TEST_F(CommonShimsSlimTest, GetDim_CPU) {
   runGetDimTest(slim_c10::DeviceType::CPU);
+}
+
+TEST_F(CommonShimsSlimTest, GetStorageOffset_CPU) {
+  runGetStorageOffsetTest(slim_c10::DeviceType::CPU);
+}
+
+TEST_F(CommonShimsSlimTest, GetStorageSize_CPU) {
+  runGetStorageSizeTest(slim_c10::DeviceType::CPU);
+}
+
+TEST_F(CommonShimsSlimTest, GetDeviceType_CPU) {
+  runGetDeviceTypeTest(slim_c10::DeviceType::CPU);
+}
+
+TEST_F(CommonShimsSlimTest, GetDeviceIndex_CPU) {
+  runGetDeviceIndexTest(slim_c10::DeviceType::CPU);
 }
 
 // ============================================================================
@@ -351,6 +454,34 @@ TEST_F(CommonShimsSlimTest, GetDim_CUDA) {
     GTEST_SKIP() << "CUDA not available";
   }
   runGetDimTest(slim_c10::DeviceType::CUDA);
+}
+
+TEST_F(CommonShimsSlimTest, GetStorageOffset_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+  runGetStorageOffsetTest(slim_c10::DeviceType::CUDA);
+}
+
+TEST_F(CommonShimsSlimTest, GetStorageSize_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+  runGetStorageSizeTest(slim_c10::DeviceType::CUDA);
+}
+
+TEST_F(CommonShimsSlimTest, GetDeviceType_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+  runGetDeviceTypeTest(slim_c10::DeviceType::CUDA);
+}
+
+TEST_F(CommonShimsSlimTest, GetDeviceIndex_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+  runGetDeviceIndexTest(slim_c10::DeviceType::CUDA);
 }
 #endif
 
