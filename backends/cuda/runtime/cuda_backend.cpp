@@ -19,7 +19,18 @@
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
+
+// Include SlimTensor headers for CUDA backend
+#include <executorch/backends/aoti/slim/c10/core/Device.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/backends/aoti/slim/core/storage.h>
+#include <executorch/backends/aoti/slim/factory/empty.h>
+#include <executorch/backends/aoti/slim/factory/from_blob.h>
+#include <executorch/backends/aoti/slim/factory/from_etensor.h>
+#include <executorch/backends/aoti/slim/util/array_ref_util.h>
+#include <executorch/extension/tensor/tensor_ptr_maker.h>
 
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
@@ -52,10 +63,19 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
+// SlimTensor type aliases
+using slim::c10::Device;
+using slim::c10::DeviceType;
+using slim::CPU_DEVICE;
+using slim::DEFAULT_CUDA_DEVICE;
+using slim::DeviceTraits;
+using slim::from_etensor;
+using slim::SlimTensor;
+
 namespace {
 constexpr char kSkipCopyOutputToCpuForMethod[] =
     "skip_copy_output_to_cpu_for_method";
-}
+} // anonymous namespace
 
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
@@ -285,87 +305,76 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         args.size())
 
-    // NOTE: ExecuTorch tensors are always on CPU/host memory
-    // We need to create GPU copies for CUDA kernel execution
-    std::vector<AOTITensorHandle> gpu_inputs(
-        n_inputs); // GPU copies for kernel execution
-    std::vector<AOTITensorHandle> gpu_outputs(
-        n_outputs); // GPU tensors for kernel output
+    // NOTE: ExecuTorch tensors maybe on CPU or GPU due to the skip-copy optimization
+    // We need to create GPU copies for CUDA kernel execution using SlimTensor
+    std::vector<SlimTensor> gpu_input_tensors(n_inputs);
+    std::vector<SlimTensor*> gpu_inputs(n_inputs);
+    std::vector<SlimTensor> gpu_output_tensors(n_outputs);
+    std::vector<SlimTensor*> gpu_outputs(n_outputs);
 
-    // Process input tensors: ExecuTorch provides CPU tensors, create GPU
-    // copies
+    // Process input tensors: convert ETensor (CPU) to SlimTensor (GPU)
     for (size_t i = 0; i < n_inputs; i++) {
-      // Get tensor dimensions and properties from ExecuTorch CPU tensor
-      auto cpu_tensor = &(args[i]->toTensor());
-      auto sizes = cpu_tensor->sizes();
-      auto scalar_type = cpu_tensor->scalar_type();
+      auto* cpu_tensor = &(args[i]->toTensor());
 
-      // Create GPU tensor with same shape
-      std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
+      // Check if input data is already on GPU (skip-copy optimization for inputs)
+      // This can happen when the caller has pre-staged data on GPU
+      cudaPointerAttributes attributes{};
+      const void* data_ptr = cpu_tensor->const_data_ptr();
+      if (data_ptr != nullptr) {
+        cudaError_t err = cudaPointerGetAttributes(&attributes, data_ptr);
+        if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
+          // Data is already on GPU - wrap it directly without copy
+          auto sizes = cpu_tensor->sizes();
+          auto strides = cpu_tensor->strides();
+          std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
+          std::vector<int64_t> strides_vec(strides.begin(), strides.end());
 
-      AOTITensorHandle gpu_input_handle;
-      Error create_err = aoti_torch_empty_strided(
-          sizes_vec.size(),
-          sizes_vec.data(),
-          nullptr, // use default strides
-          static_cast<int32_t>(scalar_type),
-          1, // device_type = cuda
-          0, // device_index = 0
-          &gpu_input_handle);
+          gpu_input_tensors[i] = slim::from_blob(
+              const_cast<void*>(data_ptr),
+              slim::makeArrayRef(sizes_vec),
+              slim::makeArrayRef(strides_vec),
+              static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
+              DEFAULT_CUDA_DEVICE,
+              0 // storage_offset
+          );
+          gpu_inputs[i] = &gpu_input_tensors[i];
+          continue;
+        }
+      }
 
-      ET_CHECK_OR_RETURN_ERROR(
-          create_err == Error::Ok,
-          Internal,
-          "Failed to create GPU tensor for input %d",
-          i);
-
-      gpu_inputs[i] = gpu_input_handle;
-
-      // Copy data from CPU to GPU
-      ET_CHECK_OR_RETURN_ERROR(
-          aoti_torch_copy_(gpu_inputs[i], cpu_tensor, 0) == Error::Ok,
-          Internal,
-          "Failed to copy input %d from CPU to GPU",
-          i);
+      // Data is on CPU - use from_etensor to copy to GPU
+      gpu_input_tensors[i] =
+          from_etensor(*cpu_tensor, CPU_DEVICE, DEFAULT_CUDA_DEVICE);
+      gpu_inputs[i] = &gpu_input_tensors[i];
     }
-    // Process output tensors: create GPU counterparts for ExecuTorch CPU
-    // tensors
+
+    // Process output tensors: create GPU SlimTensors for kernel output
     for (size_t i = 0; i < n_outputs; i++) {
-      // Get output tensor dimensions from ExecuTorch CPU tensor
-      auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
+      auto* cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       auto sizes = cpu_output_tensor->sizes();
+      auto strides = cpu_output_tensor->strides();
       auto scalar_type = cpu_output_tensor->scalar_type();
 
-      // Create GPU tensor with same shape for kernel output
       std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
+      std::vector<int64_t> strides_vec(strides.begin(), strides.end());
 
-      AOTITensorHandle gpu_output_handle;
-      Error create_err = aoti_torch_empty_strided(
-          sizes_vec.size(),
-          sizes_vec.data(),
-          nullptr, // use default strides
-          static_cast<int32_t>(scalar_type),
-          1, // device_type = cuda
-          0, // device_index = 0
-          &gpu_output_handle);
-
-      ET_CHECK_OR_RETURN_ERROR(
-          create_err == Error::Ok,
-          Internal,
-          "Failed to create GPU tensor for output %d",
-          i);
-
-      gpu_outputs[i] = gpu_output_handle;
+      gpu_output_tensors[i] = slim::empty_strided(
+          slim::makeArrayRef(sizes_vec),
+          slim::makeArrayRef(strides_vec),
+          static_cast<slim::c10::ScalarType>(scalar_type),
+          DEFAULT_CUDA_DEVICE);
+      gpu_outputs[i] = &gpu_output_tensors[i];
     }
-    // Run AOTI container with GPU tensors
+
+    // Run AOTI container with GPU SlimTensors
     AOTIRuntimeError error = handle->run(
         handle->container_handle,
-        gpu_inputs.data(), // Use GPU input tensors
+        reinterpret_cast<Tensor**>(gpu_inputs.data()),
         n_inputs,
-        gpu_outputs.data(), // Use GPU output tensors
+        reinterpret_cast<Tensor**>(gpu_outputs.data()),
         n_outputs,
-        handle->cuda_stream, // Pass the actual CUDA stream
-        nullptr); // proxy_executor_handle can remain nullptr
+        handle->cuda_stream,
+        nullptr);
 
     ET_CHECK_OR_RETURN_ERROR(
         error == Error::Ok,
@@ -376,22 +385,53 @@ class ET_EXPERIMENTAL CudaBackend final
     const bool copy_outputs = !should_skip_copy_for_method(handle->method_name);
 
     if (copy_outputs) {
-      // Copy GPU output results back to CPU output tensors
+      // Copy GPU SlimTensor results back to CPU ETensors
       for (size_t i = 0; i < n_outputs; i++) {
-        auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
-        // For DYNAMIC_BOUND tensors we try to resize
+        auto* cpu_output_tensor = &(args[i + n_inputs]->toTensor());
         ET_CHECK_OK_OR_RETURN_ERROR(
-            resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
-            "Error resizing tensor at output index %d",
-            i);
-        ET_CHECK_OK_OR_RETURN_ERROR(
-            aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
-            "Failed to copy GPU output %d back to CPU",
+            copy_slimtensor_to_etensor(gpu_outputs[i], cpu_output_tensor),
+            "Failed to copy GPU output %zu back to CPU ETensor",
             i);
       }
     } else {
-      for (size_t i = 0; i < n_outputs; i++) {
-        args[i + n_inputs]->toTensor() = *gpu_outputs[i];
+      // Skip-copy optimization: wrap GPU data as ETensor using from_blob
+      // The caller is responsible for handling GPU data directly
+      {
+        std::lock_guard<std::mutex> guard(cached_outputs_mutex_);
+        auto& cached_outputs = cached_outputs_[handle];
+
+        // Clear cached outputs for previous round
+        cached_outputs.clear();
+        for (size_t i = 0; i < n_outputs; i++) {
+          // Move output SlimTensors to cached_outputs for lifetime management
+          cached_outputs.push_back(std::move(gpu_output_tensors[i]));
+
+          // Create an ETensor wrapper pointing to the GPU data
+          // The data stays on GPU and the caller handles it
+          SlimTensor& cached = cached_outputs.back();
+          auto slim_sizes = cached.sizes();
+          auto slim_strides = cached.strides();
+
+          std::vector<executorch::aten::SizesType> et_sizes(cached.dim());
+          std::vector<executorch::aten::StridesType> et_strides(cached.dim());
+          for (size_t d = 0; d < cached.dim(); d++) {
+            et_sizes[d] =
+                static_cast<executorch::aten::SizesType>(slim_sizes[d]);
+            et_strides[d] =
+                static_cast<executorch::aten::StridesType>(slim_strides[d]);
+          }
+
+          // Use tensor_ptr_maker to create a non-owning ETensor wrapper
+          // Note: This creates a view into the SlimTensor's GPU memory
+          auto tensor_ptr = executorch::extension::from_blob(
+              cached.data_ptr(),
+              std::move(et_sizes),
+              std::move(et_strides),
+              static_cast<executorch::aten::ScalarType>(cached.dtype()));
+
+          // Assign the wrapped tensor to the output EValue
+          args[i + n_inputs]->toTensor() = *tensor_ptr;
+        }
       }
     }
 
@@ -424,9 +464,12 @@ class ET_EXPERIMENTAL CudaBackend final
     // AOTInductorModelContainerDelete(handle->container_handle);
 
     // Now close the shared library
-    auto err = Error::Ok;
     if (handle->so_handle != nullptr) {
-      err = close_library(handle->so_handle);
+      Error err = close_library(handle->so_handle);
+      ET_CHECK_OR_LOG_ERROR(
+          err == Error::Ok,
+          "Failed to close shared library for %s",
+          handle->so_path.c_str());
     }
 
     // Remove the temporary shared library file
@@ -441,12 +484,19 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     delete handle;
-    clear_all_tensors();
   }
 
  private:
   mutable std::mutex skip_copy_method_mutex_;
   std::string skip_copy_method_;
+
+  // Cached output tensors for skip-copy optimization.
+  // When copy-skip is enabled, output SlimTensors are cached here to keep
+  // GPU memory alive while the caller processes the results.
+  // Maps from AOTIDelegateHandle* to its cached outputs.
+  mutable std::mutex cached_outputs_mutex_;
+  mutable std::unordered_map<AOTIDelegateHandle*, std::vector<SlimTensor>>
+      cached_outputs_;
 };
 
 } // namespace executorch::backends::cuda

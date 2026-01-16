@@ -9,7 +9,7 @@
 #pragma once
 
 #include <executorch/backends/aoti/export.h>
-#include <executorch/backends/aoti/slim/core/SlimTensor.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/runtime/core/error.h>
 #include <cstdint>
 

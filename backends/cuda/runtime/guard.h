@@ -9,7 +9,6 @@
 #pragma once
 
 #include <cuda_runtime.h>
-#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <cstdint>
@@ -19,8 +18,8 @@ namespace executorch::backends::cuda {
 using executorch::runtime::Error;
 using executorch::runtime::Result;
 
-// Type alias for device index
-using DeviceIndex = int32_t;
+// Signed device index type matching DeviceIndex in slim tensor library
+using DeviceIndex = int8_t;
 
 /**
  * Set the current CUDA stream for the specified device.
