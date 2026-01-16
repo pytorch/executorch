@@ -56,6 +56,48 @@ AOTITorchError aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim) {
   return Error::Ok;
 }
 
+// ============================================================
+// Storage & Device Property Getters - Implementations
+// ============================================================
+
+AOTITorchError aoti_torch_get_storage_offset(
+    Tensor* tensor,
+    int64_t* ret_storage_offset) {
+  if (tensor == nullptr || ret_storage_offset == nullptr) {
+    return Error::InvalidArgument;
+  }
+  *ret_storage_offset = tensor->storage_offset();
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_get_storage_size(Tensor* tensor, int64_t* ret_size) {
+  if (tensor == nullptr || ret_size == nullptr) {
+    return Error::InvalidArgument;
+  }
+  *ret_size = static_cast<int64_t>(tensor->storage()->nbytes());
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_get_device_type(
+    Tensor* tensor,
+    int32_t* ret_device_type) {
+  if (tensor == nullptr || ret_device_type == nullptr) {
+    return Error::InvalidArgument;
+  }
+  *ret_device_type = static_cast<int32_t>(tensor->device_type());
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_get_device_index(
+    Tensor* tensor,
+    int32_t* ret_device_index) {
+  if (tensor == nullptr || ret_device_index == nullptr) {
+    return Error::InvalidArgument;
+  }
+  *ret_device_index = static_cast<int32_t>(tensor->device_index());
+  return Error::Ok;
+}
+
 } // namespace aoti
 } // namespace backends
 } // namespace executorch
