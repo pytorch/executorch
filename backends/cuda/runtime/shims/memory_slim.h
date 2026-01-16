@@ -128,6 +128,21 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
     int64_t storage_offset,
     Tensor** ret_new_tensor);
 
+/**
+ * Copies data from source tensor to destination tensor.
+ *
+ * Handles all device combinations (CPU-CPU, CPU-CUDA, CUDA-CPU, CUDA-CUDA)
+ * and supports tensors with different strides. The destination tensor must
+ * already be allocated with sufficient storage.
+ *
+ * @param self Destination tensor (must not be null)
+ * @param src Source tensor to copy from (must not be null)
+ * @param non_blocking If true, the copy may be asynchronous (currently ignored)
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
