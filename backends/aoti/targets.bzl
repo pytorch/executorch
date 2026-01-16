@@ -87,20 +87,20 @@ def define_common_targets():
         ],
     )
 
-    # SlimTensor-based common shims (header-only library)
-    # The caller determines which tensor type is used by defining CUDA_AVAILABLE.
-    # - With CUDA_AVAILABLE=1: Uses SlimTensor
-    # - Without CUDA_AVAILABLE: Uses ETensor
+    # SlimTensor-based common shims library
+    # Uses SlimTensor for all tensor operations
     runtime.cxx_library(
         name = "common_shims_slim",
+        srcs = [
+            "common_shims_slim.cpp",
+        ],
         headers = [
             "common_shims_slim.h",
             "export.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
-        deps = [
+        exported_deps = [
             "//executorch/runtime/core:core",
-            "//executorch/runtime/core/exec_aten:lib",
             "//executorch/backends/aoti/slim/core:slimtensor",
         ],
     )
