@@ -40,7 +40,8 @@ void reg_count(const App& app) {
   uint32_t NITER;
 
   auto bench = [&](uint32_t ngrp, uint32_t nreg) {
-    StagingBuffer buffer(context(), vkapi::kFloat, 1);
+    StagingBuffer buffer(
+        context(), vkapi::kFloat, 1, vkapi::CopyDirection::DEVICE_TO_HOST);
     vkapi::PipelineBarrier pipeline_barrier{};
 
     auto shader_name = "reg_count_" + std::to_string(nreg);
@@ -164,7 +165,8 @@ void warp_size(const App& app, const bool verbose = false) {
   uint32_t NITER;
 
   auto bench = [&](uint32_t nthread) {
-    StagingBuffer out_buf(context(), vkapi::kInt, app.nthread_logic);
+    StagingBuffer out_buf(
+        context(), vkapi::kInt, app.nthread_logic, vkapi::CopyDirection::DEVICE_TO_HOST);
     vkapi::PipelineBarrier pipeline_barrier{};
 
     auto shader_name = "warp_size_physical";
@@ -224,7 +226,8 @@ void warp_size(const App& app, const bool verbose = false) {
   // doesn't depend on kernel timing, so the extra wait time doesn't lead to
   // inaccuracy.
   auto bench_sm = [&](uint32_t nthread) {
-    StagingBuffer out_buf(context(), vkapi::kInt, app.nthread_logic);
+    StagingBuffer out_buf(
+        context(), vkapi::kInt, app.nthread_logic, vkapi::CopyDirection::DEVICE_TO_HOST);
     vkapi::PipelineBarrier pipeline_barrier{};
 
     auto shader_name = "warp_size_scheduler";
