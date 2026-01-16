@@ -31,3 +31,16 @@ def define_common_targets():
             ],
             **backend_kwargs
         )
+
+        runtime.cxx_test(
+            name = "test_from_blob" + backend_suffix,
+            srcs = [
+                "test_from_blob.cpp",
+            ],
+            deps = [
+                "//executorch/backends/aoti/slim/core:storage",
+                "//executorch/backends/aoti/slim/factory:from_blob",
+                "//executorch/backends/aoti/slim/factory:empty",
+            ],
+            **backend_kwargs
+        )
