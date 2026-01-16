@@ -6,10 +6,8 @@
 import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from torch.fx import GraphModule, Node
 from torch.nn import Parameter
-
 
 QUANTIZE_OPERATORS = [
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
@@ -125,3 +123,100 @@ def previous_non_qdq_node(node: Node, input_index: int = 0) -> Node | None:
             current_node = current_node.args[0]
         else:
             return current_node
+
+
+Scale = list[float] | float
+ZeroPoint = list[int] | int
+
+
+def get_quantization_parameters_for(node: Node) -> tuple[Scale, ZeroPoint] | None:
+    if "quantize" not in node.target.__name__ or len(node.args) < 3:
+        return None
+
+    return node.args[1], node.args[2]  # Scale and zero_point
+
+
+def get_non_qdq_users(node: Node) -> list[Node]:
+    """Return a list of nodes which consume the output of `node`, but Quantize/Dequantize nodes from QDQ clusters are
+     ignored. Meaning, the list of nodes [<user_1>, ..., <user_N>] from the illustration below is returned.
+
+    If the graph does not follow the QDQ pattern, an empty list is returned.
+
+                │
+            ┌───▼────┐
+            │ `node` │
+            └───┬────┘
+           ┌────▼─────┐
+           │ Quantize │
+           └────┬─────┘
+                ├─────── ... ──────┐
+          ┌─────▼──────┐     ┌─────▼──────┐
+          │ Dequantize │ ... │ Dequantize │
+          └─────┬──────┘     └─────┬──────┘
+           ┌────▼─────┐       ┌────▼─────┐
+           │ <user_1> │  ...  │ <user_N> │
+           └────┬─────┘       └────┬─────┘
+
+    """
+
+    quant_nodes = list(node.users)
+    if len(quant_nodes) != 1 or quant_nodes[0].target not in [
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    ]:
+        return []
+
+    dequant_nodes = list(quant_nodes[0].users)
+    if any(
+        dequant_node.target
+        not in [
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        ]
+        for dequant_node in dequant_nodes
+    ):
+        return []
+
+    res = []
+    for dequant_node in dequant_nodes:
+        res.extend(list(dequant_node.users))
+
+    return res
+
+
+def is_channels_last_dim_order(dim_order: list[int]) -> bool:
+    if len(dim_order) < 3:
+        return False
+
+    return list(dim_order) == [0] + list(range(2, len(dim_order))) + [1]
+
+
+def get_non_qdq_parent(node: Node, input_index: int = 0) -> Node | None:
+    """Return the node which produces the input of `node` on a given index, but Quantize/Dequantize nodes from QDQ
+     clusters are ignored. Meaning, the node `parent` from the illustration below is returned.
+
+    If the graph does not follow the QDQ pattern, `None` is returned.
+
+                │
+           ┌────▼─────┐
+           │ `parent` │
+           └────┬─────┘
+           ┌────▼─────┐
+           │ Quantize │
+           └────┬─────┘
+          ┌─────▼──────┐
+          │ Dequantize │
+          └─────┬──────┘
+            ┌───▼────┐
+            │ `node` │
+            └───┬────┘
+
+    """
+
+    if not _is_dequantize(dequant_node := node.args[input_index]):
+        return None
+
+    if not _is_quantize(quant_node := dequant_node.args[0]):
+        return None
+
+    return quant_node.args[0]

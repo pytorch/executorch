@@ -149,51 +149,51 @@ def test_remainder_scalar_u85_INT(test_data):
 
 @common.parametrize("test_data", Remainder.test_cases_tensor)
 @common.SkipIfNoModelConverter
-def test_remainder_tensor_vgf_FP(test_data):
+def test_remainder_tensor_vgf_no_quant(test_data):
     data = test_data()
     pipeline = VgfPipeline[Remainder.input_t](
         Remainder(),
         data,
         Remainder.aten_op_tensor,
         Remainder.exir_op_tensor,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Remainder.test_cases_scalar)
 @common.SkipIfNoModelConverter
-def test_remainder_scalar_vgf_FP(test_data):
+def test_remainder_scalar_vgf_no_quant(test_data):
     data = test_data()
     pipeline = VgfPipeline[Remainder.input_t](
         Remainder(),
         data,
         Remainder.aten_op_scalar,
         Remainder.exir_op_scalar,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Remainder.test_cases_tensor)
 @common.SkipIfNoModelConverter
-def test_remainder_tensor_vgf_INT(test_data):
+def test_remainder_tensor_vgf_quant(test_data):
     pipeline = VgfPipeline[Remainder.input_t](
         Remainder(),
         test_data(),
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Remainder.test_cases_scalar)
 @common.SkipIfNoModelConverter
-def test_remainder_scalar_vgf_INT(test_data):
+def test_remainder_scalar_vgf_quant(test_data):
     pipeline = VgfPipeline[Remainder.input_t](
         Remainder(),
         test_data(),
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

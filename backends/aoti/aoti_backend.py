@@ -9,7 +9,7 @@ import os
 import typing
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
 import torch
 from executorch.backends.aoti.passes.replace_view_copy_with_view import (
@@ -70,9 +70,14 @@ class AotiBackend(ABC):
 
     @classmethod
     @abstractmethod
-    def get_custom_passes(cls) -> List[typing.Any]:
+    def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
         """Return the list of custom passes to apply after ReplaceViewCopyWithViewPass and before decomposition."""
         pass
+
+    @classmethod
+    def get_extra_aoti_compile_context_manager(cls):
+        """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager."""
+        return contextlib.nullcontext()
 
     @classmethod
     @contextlib.contextmanager
@@ -91,39 +96,24 @@ class AotiBackend(ABC):
         )
 
         def generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels(
-            self,
-            kernel: str,
-            args: list[str],
-            device: str,
-            *,
-            debug_args: Optional[list[str]] = None,
-            debug_handle: Optional[int] = None,
-        ):
+            self, kernel: str, *args: Any, **kwargs: Any
+        ) -> None:
             if kernel not in supported_kernels:
                 missing_fallback_kernels.add(kernel)
 
-            original_generate_c_shim_extern_kernel_call(
-                self,
-                kernel,
-                args,
-                device,
-                debug_args=debug_args,
-                debug_handle=debug_handle,
+            return original_generate_c_shim_extern_kernel_call(
+                self, kernel, *args, **kwargs
             )
 
         def generate_fallback_kernel_with_runtime_lookup_aot_and_collect_unsupported_kernels(
-            self,
-            op_overload,
-            raw_args,
-            output_args,
-            raw_outputs,
-        ):
+            self, op_overload: Any, *args: Any, **kwargs: Any
+        ) -> None:
             kernel_name = getattr(op_overload, "_name", str(op_overload))
             if kernel_name not in supported_kernels:
                 missing_fallback_kernels.add(kernel_name)
 
-            original_generate_fallback_kernel_with_runtime_lookup_aot(
-                self, op_overload, raw_args, output_args, raw_outputs
+            return original_generate_fallback_kernel_with_runtime_lookup_aot(
+                self, op_overload, *args, **kwargs
             )
 
         CppWrapperCpu.generate_c_shim_extern_kernel_call = (
@@ -164,9 +154,12 @@ class AotiBackend(ABC):
         ReplaceViewCopyWithViewPass()(device_edge_program.graph_module)
 
         # Apply custom backend-specific passes
-        custom_passes = cls.get_custom_passes()
+        custom_passes = cls.get_custom_passes(compile_specs)
         for custom_pass in custom_passes:
-            custom_pass(device_edge_program.graph_module)
+            if getattr(custom_pass, "requires_exported_program", False):
+                custom_pass(device_edge_program)
+            else:
+                custom_pass(device_edge_program.graph_module)
 
         # Run decompositions if any
         if decomposition_table:
@@ -189,7 +182,7 @@ class AotiBackend(ABC):
         # Compile with fallback kernel collection
         with cls.collect_unsupported_fallback_kernels(
             missing_fallback_kernels
-        ), torch.no_grad():
+        ), torch.no_grad(), cls.get_extra_aoti_compile_context_manager():
             paths = torch._inductor.aot_compile(
                 edge_program_module, tuple(user_input_placeholders), options=options
             )

@@ -10,6 +10,7 @@
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 #import <Foundation/Foundation.h>
+#include <simd/simd.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
@@ -110,6 +111,24 @@ void metal_cleanup_resources() {
             ptr_to_mtl_buffer.clear();
         }
     }
+}
+
+bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer) {
+    id<MTLDevice> device = get_metal_device();
+    id<MTLBuffer> subBuffer = [device newBufferWithBytesNoCopy:ptr
+                                                        length:nbytes
+                                                        options:MTLResourceCPUCacheModeWriteCombined | MTLResourceStorageModeShared
+                                                    deallocator:nil];
+    if (!subBuffer) {
+        ET_LOG(Error, "metal_buffer_nocopy: Failed to create no-copy buffer (ptr=%p, nbytes=%zu)", ptr, nbytes);
+        return false;
+    }
+
+    if (map_ptr_to_buffer) {
+        ptr_to_mtl_buffer[ptr] = subBuffer;  // Map contents to buffer
+    }
+
+    return true;
 }
 
 bool metal_is_device_pointer(void* ptr) {
@@ -215,7 +234,13 @@ void ETMetalShaderLibrary::compileLibrary() {
         NSString* sourceString = [NSString stringWithUTF8String:shaderSource_.c_str()];
         NSError* error = nil;
 
-        library_ = [device newLibraryWithSource:sourceString options:nil error:&error];
+        MTLCompileOptions* options = [[MTLCompileOptions new] autorelease];
+        if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+            options.mathMode = MTLMathModeSafe;
+            options.mathFloatingPointFunctions = MTLMathFloatingPointFunctionsPrecise;
+        }
+
+        library_ = [device newLibraryWithSource:sourceString options:options error:&error];
         if (!library_ || error) {
             ET_LOG(Error, "ETMetalShaderLibrary: Failed to compile shader library: %s",
                    error ? [[error localizedDescription] UTF8String] : "unknown error");
@@ -377,6 +402,58 @@ void ETMetalKernelFunction::setArg(unsigned idx, int64_t val) {
     ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set int64_t value %lld at index %u", val, idx);
 }
 
+void ETMetalKernelFunction::setArg(unsigned idx, uint32_t val) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:&val length:sizeof(uint32_t) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set uint32_t value %u at index %u", val, idx);
+}
+
+void ETMetalKernelFunction::setArg(unsigned idx, float val) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:&val length:sizeof(float) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set float value %f at index %u", val, idx);
+}
+
+void ETMetalKernelFunction::setArg(unsigned idx, bool val) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:&val length:sizeof(bool) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set bool value %s at index %u", val ? "true" : "false", idx);
+}
+
+void ETMetalKernelFunction::setArg(unsigned idx, const void* data, size_t size) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:data length:size atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set bytes at index %u (size: %zu)", idx, size);
+}
+
+void ETMetalKernelFunction::setArgUint3(unsigned idx, uint32_t x, uint32_t y, uint32_t z) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArgUint3: No active encoder");
+        return;
+    }
+
+    // Use SIMD library's uint3 type which matches Metal shader's uint3 layout
+    simd_uint3 val = {x, y, z};
+    [encoder_ setBytes:&val length:sizeof(simd_uint3) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArgUint3: Set uint3{%u, %u, %u} at index %u", x, y, z, idx);
+}
+
 void ETMetalKernelFunction::dispatchSingle(uint64_t length) {
     if (!encoder_) {
         ET_LOG(Error, "ETMetalKernelFunction::dispatchSingle: No active encoder");
@@ -500,6 +577,40 @@ void ETMetalKernelFunction::dispatchArrayWithGroupSize(const uint64_t* length, s
            length_size, size.width, size.height, size.depth,
            threadGroupSize.width, threadGroupSize.height, threadGroupSize.depth);
 
+}
+
+void ETMetalKernelFunction::dispatchThreadgroups(uint64_t gridX, uint64_t gridY, uint64_t gridZ,
+                                                  uint64_t threadsX, uint64_t threadsY, uint64_t threadsZ) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::dispatchThreadgroups: No active encoder");
+        return;
+    }
+
+    if (!cps_) {
+        ET_LOG(Error, "ETMetalKernelFunction::dispatchThreadgroups: No compute pipeline state");
+        return;
+    }
+
+    // Calculate total threads per threadgroup
+    uint64_t totalThreads = threadsX * threadsY * threadsZ;
+
+    const auto maxThreadsPerGroup = static_cast<uint64_t>([cps_ maxTotalThreadsPerThreadgroup]);
+
+    // Validate total thread count
+    if (totalThreads > maxThreadsPerGroup) {
+        ET_LOG(Error, "ETMetalKernelFunction::dispatchThreadgroups: Requested %llu total threads per threadgroup exceeds device maximum of %llu",
+               (unsigned long long)totalThreads, (unsigned long long)maxThreadsPerGroup);
+        return;
+    }
+
+    MTLSize threadgroupsPerGrid = MTLSizeMake(gridX, gridY, gridZ);
+    MTLSize threadsPerThreadgroup = MTLSizeMake(threadsX, threadsY, threadsZ);
+
+    [encoder_ dispatchThreadgroups:threadgroupsPerGrid threadsPerThreadgroup:threadsPerThreadgroup];
+
+    ET_LOG(Debug, "ETMetalKernelFunction::dispatchThreadgroups: Dispatched grid [%llu, %llu, %llu] with threadgroup [%llu, %llu, %llu]",
+           (unsigned long long)gridX, (unsigned long long)gridY, (unsigned long long)gridZ,
+           (unsigned long long)threadsX, (unsigned long long)threadsY, (unsigned long long)threadsZ);
 }
 
 void ETMetalKernelFunction::runCommandBlock(std::function<void(void)> f) {

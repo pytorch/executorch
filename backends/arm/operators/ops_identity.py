@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,6 +18,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
 
@@ -42,6 +43,24 @@ def identity_operator_factory(identity_target: str):
         ) -> None:
             validate_num_inputs(self.target, inputs, 1)
             validate_same_dtype(self.target, [inputs[0], output], ts)
+            supported_dtypes = [
+                ts.DType.BOOL,
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+            ]
+            if output.tosa_spec.support_float():
+                supported_dtypes += [ts.DType.FP32]
+            if self.tosa_spec.support_extension("int16"):
+                supported_dtypes += [ts.DType.INT48]
+            if self.tosa_spec.support_extension("int4"):
+                supported_dtypes += [ts.DType.INT4]
+            validate_valid_dtype(
+                self.target,
+                [inputs[0], output],
+                supported_dtypes,
+                output.tosa_spec,
+            )
 
             # Simply add an identityOp
             attr = ts.TosaSerializerAttribute()

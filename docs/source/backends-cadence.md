@@ -10,6 +10,8 @@ In this tutorial we will walk you through the process of getting setup to build 
 
 In addition to the chip, the HiFi4 Neural Network Library ([nnlib](https://github.com/foss-xtensa/nnlib-hifi4)) offers an optimized set of library functions commonly used in NN processing that we utilize in this example to demonstrate how common operations can be accelerated.
 
+For an overview of the Cadence ExecuTorch integration with performance benchmarks, see the blog post: [Running Optimized PyTorch Models on Cadence DSPs with ExecuTorch](https://community.cadence.com/cadence_blogs_8/b/ip/posts/running-optimized-pytorch-models-on-cadence-dsps-with-executorch).
+
 On top of being able to run on the Xtensa HiFi4 DSP, another goal of this tutorial is to demonstrate how portable ExecuTorch is and its ability to run on a low-power embedded device such as the Xtensa HiFi4 DSP. This workflow does not require any delegates, it uses custom operators and compiler passes to enhance the model and make it more suitable to running on Xtensa HiFi4 DSPs. A custom [quantizer](https://pytorch.org/tutorials/prototype/quantization_in_pytorch_2_0_export_tutorial.html) is used to represent activations and weights as `uint8` instead of `float`, and call appropriate operators. Finally, custom kernels optimized with Xtensa intrinsics provide runtime acceleration.
 
 ::::{grid} 2

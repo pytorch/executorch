@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -33,8 +33,8 @@ class FuseEqualPlaceholdersPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def __init__(self, exported_program: ExportedProgram):
-        super().__init__()
+    def __init__(self, exported_program: ExportedProgram, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -53,14 +53,14 @@ class FuseEqualPlaceholdersPass(ArmPass):
 
             # ensure we don't merge any special case int48_t tensors with int32_t tensors
             # since int48_t tensors needs to be instantiated separately.
-            is_int48 = node.meta.get(TosaSpecialDtype.meta_key(), None)
+            is_special_dtype = node.meta.get(TosaSpecialDtype.meta_key(), None)
             t_cpu = tensor.detach().cpu().contiguous()
             data_bytes = t_cpu.numpy().tobytes()
             key = (
-                is_int48,
+                is_special_dtype,
                 str(t_cpu.dtype),
                 tuple(t_cpu.shape),
-                hashlib.sha1(data_bytes).hexdigest(),
+                hashlib.sha1(data_bytes, usedforsecurity=False).hexdigest(),
             )
             hash_buckets[key].append((node, t_cpu))
 

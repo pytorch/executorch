@@ -9,17 +9,21 @@ from abc import ABC
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
-from typing import Callable, Dict, Type
+from typing import Callable, Dict, Optional, Type
 
 from executorch.examples.models.codegen import (
     convert_weights as convert_codegen_weights,
 )
 from executorch.examples.models.gemma import convert_weights as convert_gemma_weights
+from executorch.examples.models.gemma2 import convert_weights as convert_gemma2_weights
 from executorch.examples.models.gemma3 import convert_weights as convert_gemma3_weights
 
 from executorch.examples.models.glm import convert_weights as convert_glm_weights
 from executorch.examples.models.granite import (
     convert_weights as convert_granite_weights,
+)
+from executorch.examples.models.internvl3 import (
+    convert_weights as convert_internvl3_weights,
 )
 from executorch.examples.models.phi_4_mini import (
     convert_weights as convert_phi_4_mini_weights,
@@ -34,20 +38,34 @@ from executorch.examples.models.smollm2 import (
 from executorch.examples.models.smollm3 import (
     convert_weights as convert_smollm3_weights,
 )
+from executorch.examples.models.smolvlm import (
+    convert_weights as convert_smolvlm_weights,
+)
 
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     DECODER_MODEL_VERSION,
+    VISION_ENCODER,
+)
+
+from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config import (
+    InternVL3Encoder,
+    LateFusionModalityConfig,
+    SmolVLMEncoder,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
+    LlamaModel,
+    LlamaModelWithoutEmbedding,
     MultiScopeAwareLlamaModel,
 )
 
 from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
     CodegenQuantRecipe,
+    Gemma2QuantRecipe,
     Gemma3QuantRecipe,
     Gemma_2BQuantRecipe,
     GLM_1_5B_InstructQuantRecipe,
     Granite_3_3_2B_InstructQuantRecipe,
+    InternVL3_1B_QuantRecipe,
     Llama3_1BQuantRecipe,
     Llama3_3BQuantRecipe,
     LlamaStories110MQuantRecipe,
@@ -59,6 +77,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     Qwen3_1_7BQuantRecipe,
     Smollm2QuantRecipe,
     Smollm3QuantRecipe,
+    SmolVLMQuantRecipe,
     StaticLLMQuantRecipe,
 )
 from tabulate import tabulate
@@ -67,8 +86,11 @@ from tabulate import tabulate
 BASE_DIR = os.path.dirname(__file__)
 
 
-LLM_VARIANT_ARCHS = {
+LLM_VARIANT_ARCHS: Dict[str, LlamaModel] = {
     "gemma3-1b": MultiScopeAwareLlamaModel,
+    "smolvlm_500m_instruct": LlamaModelWithoutEmbedding,
+    "internvl3_1b": LlamaModelWithoutEmbedding,
+    "gemma2-2b": MultiScopeAwareLlamaModel,
 }
 
 
@@ -159,9 +181,16 @@ class LLMModelConfig(ABC):
 SUPPORTED_LLM_MODELS: Dict[str, LLMModelConfig] = {}
 
 
-def register_llm_model(name: str):
+def register_llm_model(
+    name: str,
+    vision_encoder: Optional[LateFusionModalityConfig] = None,
+):
     def decorator(cls: Type[LLMModelConfig]):
         cls.decoder_model_version = DECODER_MODEL_VERSION[name]
+        if vision_encoder is not None and issubclass(
+            vision_encoder, LateFusionModalityConfig
+        ):
+            setattr(cls, VISION_ENCODER, vision_encoder)
         SUPPORTED_LLM_MODELS[name.lower()] = cls()
         return cls()
 
@@ -275,6 +304,26 @@ class Gemma_2B(LLMModelConfig):
     r2 = False
     r3 = False
     quant_recipe = Gemma_2BQuantRecipe
+
+
+@register_llm_model("gemma2-2b")
+@dataclass(init=False, frozen=True)
+class Gemma2(LLMModelConfig):
+    repo_id: str = "google/gemma-2-2b-it"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/gemma2/config/2b_config.json"
+    )
+    convert_weights = convert_gemma2_weights
+    transform_weight = False
+    instruct_model = True
+
+    num_sharding = 4
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = Gemma2QuantRecipe
 
 
 @register_llm_model("gemma3-1b")
@@ -445,7 +494,7 @@ class Smollm2_135M(LLMModelConfig):
     seq_mse_candidates = 0
     r1 = False
     r2 = False
-    r3 = False
+    r3 = True
     quant_recipe = Smollm2QuantRecipe
 
 
@@ -464,3 +513,47 @@ class Smollm3_3B(LLMModelConfig):
     r2 = False
     r3 = False
     quant_recipe = Smollm3QuantRecipe
+
+
+@register_llm_model(
+    "internvl3_1b",
+    vision_encoder=InternVL3Encoder,
+)
+@dataclass(init=False, frozen=True)
+class InternVL3_1B(LLMModelConfig):
+    repo_id: str = "OpenGVLab/InternVL3-1B-hf"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/internvl3/1b_config.json"
+    )
+    convert_weights = convert_internvl3_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 1
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = InternVL3_1B_QuantRecipe
+
+
+@register_llm_model(
+    "smolvlm_500m_instruct",
+    vision_encoder=SmolVLMEncoder,
+)
+@dataclass(init=False, frozen=True)
+class SmolVLM_500M(LLMModelConfig):
+    repo_id: str = "HuggingFaceTB/SmolVLM-500M-Instruct"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/smolvlm/500M_config.json"
+    )
+    convert_weights = convert_smolvlm_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 1
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = SmolVLMQuantRecipe

@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,7 +18,7 @@ from executorch.backends.nxp.aten_passes.split_group_convolution import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.backends.nxp.quantizer.utils import post_training_quantize
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_random_calibration_inputs,
     neutron_target_spec,
@@ -38,14 +38,15 @@ from torch.fx import GraphModule
 
 
 def _quantize_and_lower_module(
-    module: GraphModule, input_shape: tuple[int, ...], target="imxrt700"
+    module: GraphModule, input_shape: tuple[int, ...], is_qat: bool, target="imxrt700"
 ) -> EdgeProgramManager:
     calibration_inputs = get_random_calibration_inputs(to_model_input_spec(input_shape))
 
-    exir_program_aten__module_quant = post_training_quantize(
+    exir_program_aten__module_quant = calibrate_and_quantize(
         module,
         calibration_inputs,
         NeutronQuantizer(neutron_target_spec),
+        is_qat=is_qat,
     )
 
     edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
@@ -70,12 +71,17 @@ class TestSplitGroupConvolution(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ["group = 2", [1, 16, 10, 10], 2],
-            ["group = 3", [1, 24, 10, 10], 3],
-            ["group = 8", [1, 8, 10, 10], 8],
+            ["QAT; group = 2", [1, 16, 10, 10], 2, True],
+            ["PTQ; group = 2", [1, 16, 10, 10], 2, False],
+            ["QAT; group = 3", [1, 24, 10, 10], 3, True],
+            ["PTQ; group = 3", [1, 24, 10, 10], 3, False],
+            ["QAT; group = 8", [1, 8, 10, 10], 8, True],
+            ["PTQ; group = 8", [1, 8, 10, 10], 8, False],
         ]
     )
-    def test_split_group_convolution__2d(self, _, input_shape: list[int], group: int):
+    def test_split_group_convolution__2d(
+        self, _, input_shape: list[int], group: int, is_qat: bool
+    ):
         example_input = (torch.ones(input_shape),)
 
         module = Conv2dModule(
@@ -116,7 +122,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
 
         # Make sure the graph can be correctly quantized and lowered to edge.
         ep = _quantize_and_lower_module(
-            modified_module, tuple(input_shape)
+            modified_module, tuple(input_shape), is_qat=is_qat
         ).exported_program()
         nodes = list(ep.graph.nodes)
         assert nodes[-5].name == "lowered_module_0"
@@ -127,12 +133,17 @@ class TestSplitGroupConvolution(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ["group = 2", [1, 16, 10], 2],
-            ["group = 3", [1, 24, 10], 3],
-            ["group = 6", [1, 24, 10], 6],
+            ["QAT; group = 2", [1, 16, 10], 2, True],
+            ["PTQ; group = 2", [1, 16, 10], 2, False],
+            ["QAT; group = 3", [1, 24, 10], 3, True],
+            ["PTQ; group = 3", [1, 24, 10], 3, False],
+            ["QAT; group = 6", [1, 24, 10], 6, True],
+            ["PTQ; group = 6", [1, 24, 10], 6, False],
         ]
     )
-    def test_split_group_convolution__1d(self, _, input_shape: list[int], group: int):
+    def test_split_group_convolution__1d(
+        self, _, input_shape: list[int], group: int, is_qat: bool
+    ):
         example_input = (torch.ones(input_shape),)
 
         module = Conv1dModule(
@@ -173,7 +184,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
 
         # Make sure the graph can be correctly quantized and lowered to edge.
         ep = _quantize_and_lower_module(
-            modified_module, tuple(input_shape)
+            modified_module, tuple(input_shape), is_qat=is_qat
         ).exported_program()
         nodes = list(ep.graph.nodes)
         assert nodes[-5].name == "lowered_module_0"
@@ -219,7 +230,8 @@ class TestSplitGroupConvolution(unittest.TestCase):
         out2 = modified_module(input_data).detach().numpy()
         assert np.allclose(out1, out2)
 
-    def test_split_group_convolution__applied_by_default(self):
+    @parameterized.expand([("QAT", True), ("PTQ", False)])
+    def test_split_group_convolution__applied_by_default(self, _, is_qat: bool):
         input_shape = [1, 16, 10, 10]
         group = 2
         example_input = (torch.ones(input_shape),)
@@ -234,7 +246,15 @@ class TestSplitGroupConvolution(unittest.TestCase):
         graph_module = torch.export.export(module, example_input).module()
         original_module = deepcopy(graph_module)
 
-        modified_module = NeutronAtenPassManager(neutron_target_spec)(
+        neutron_pass_manager = NeutronAtenPassManager(neutron_target_spec)
+        # The pass is removed for testing purposes, keeping the `split` operators and improving clarity
+        neutron_pass_manager.passes = [
+            a_pass
+            for a_pass in neutron_pass_manager.passes
+            if a_pass.__name__ != "DecomposeSplitToSlicesPass"
+        ]
+
+        modified_module = neutron_pass_manager(
             graph_module
         ).graph_module  # Default passes.
 
@@ -261,7 +281,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
 
         # Make sure the graph can be correctly quantized and lowered to edge.
         ep = _quantize_and_lower_module(
-            modified_module, tuple(input_shape)
+            modified_module, tuple(input_shape), is_qat=is_qat
         ).exported_program()
         nodes = list(ep.graph.nodes)
         assert nodes[-5].name == "lowered_module_0"

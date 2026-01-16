@@ -11,6 +11,7 @@ from .annotate_unbind import AnnotateUnbind
 from .canonicalize_conv import CanonicalizeConv
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
+from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_any import DecomposeAny
 from .decompose_binary_alpha import DecomposeBinaryAlpha
@@ -21,10 +22,12 @@ from .decompose_expm1 import DecomposeExpM1
 from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
+from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
 from .decompose_threshold import DecomposeThreshold
+from .decompose_triu import DecomposeTriu
 from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
@@ -37,6 +40,7 @@ from .insert_requantize import InsertRequantize
 from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
 from .layout_transform import LayoutTransform
 from .lift_constant_scalar_operands import LiftConstantScalarOperands
+from .recompose_pad_maxpool2d import RecomposePadMaxPool2d
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
 from .recompose_rms_norm import RecomposeRmsNorm
 from .reduce_dynamic_range import ReduceDynamicRange
@@ -55,6 +59,7 @@ __all__ = [
     CanonicalizeConv,
     ConvertBmmToMatmul,
     ConvertLinearToConv2d,
+    ConvertMhaToSha,
     ConvertSquareToPow,
     DecomposeAny,
     DecomposeBinaryAlpha,
@@ -65,10 +70,12 @@ __all__ = [
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
+    DecomposeMaxPool3d,
     DecomposeMinMaxDim,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeThreshold,
+    DecomposeTriu,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
@@ -81,6 +88,7 @@ __all__ = [
     InsertRequantize,
     LayoutTransform,
     LiftConstantScalarOperands,
+    RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
     ReduceDynamicRange,

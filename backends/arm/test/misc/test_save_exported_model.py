@@ -26,7 +26,7 @@ class SimpleModule(torch.nn.Module):
         return self.linear(x)
 
 
-def test_save_load_exported_int_model():
+def test_save_load_exported_int_model_tosa_INT():
     module = SimpleModule().eval()
     example_inputs = module.example_inputs
     exported_module = torch.export.export(module, example_inputs)
@@ -48,7 +48,9 @@ def test_save_load_exported_int_model():
     torch.export.save(quantized_exported_module, file_path)
 
     # Verify that we can load the model back
-    loaded_model = torch.export.load(file_path)
+    loaded_model = torch.export.load(
+        file_path
+    )  # nosec B614 - loads trusted test artifact
     for original_node, loaded_node in zip(
         quantized_exported_module.graph.nodes, loaded_model.graph.nodes
     ):

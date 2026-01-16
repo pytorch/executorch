@@ -49,7 +49,7 @@ Make sure you have the toolchain configured correctly. Refer to this [setup](htt
 
 ```bash
 which arm-none-eabi-gcc
-# Should return: executorch/examples/arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/arm-none-eabi-gcc
+# Should return: executorch/examples/arm/arm-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/arm-none-eabi-gcc
 ```
 
 ## Build Pico2 Firmware with ExecuTorch
@@ -67,7 +67,7 @@ python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte
 
 ```bash
 # In the dir examples/raspberry_pi/pico2
-build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte # This creates executorch_pico.uf2, a firmware image for Pico2
+./build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte # This creates executorch_pico.uf2, a firmware image for Pico2
 ```
 
 ### Flash Firmware

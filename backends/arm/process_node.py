@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,10 +12,9 @@ import torch
 import torch.fx
 import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
-from executorch.backends.arm.tosa.mapping import TosaArg, TosaSpecialDtype
+from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.backends.arm.tosa.utils import tosa_shape
-from executorch.exir.graph_module import get_cond_while_submodules
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -117,21 +116,10 @@ def process_inputs_to_parameters(
         )
     parameter_values = parameter_data.detach().numpy()
 
-    if tosa_arg.dtype == torch.float32:
-        if not tosa_spec.support_float():
-            raise ValueError(f"{tosa_spec} doesn't support float operations")
-
-    # Handle special case for INT48 tensors
-    special_type = node.meta.get(TosaSpecialDtype.meta_key(), None)
-    if isinstance(special_type, TosaSpecialDtype):
-        tosa_dtype = special_type.get_tosa_dtype()
-    else:
-        tosa_dtype = tosa_arg.dtype
-
     parameter_values = np.transpose(parameter_values, tosa_arg.dim_order)
 
     tosa_graph.addConst(
-        parameter_values.shape, tosa_dtype, parameter_values, name=tosa_arg.name
+        parameter_values.shape, tosa_arg.dtype, parameter_values, name=tosa_arg.name
     )
 
 
@@ -183,9 +171,10 @@ def process_inputs_to_lifted_tensor_constants(
         ) from e
     tensor = get_lifted_tensor_constant(edge_program, node)
     tensor_data = tensor.detach().numpy()  # type: ignore[union-attr]
+    tensor_values = np.transpose(tensor_data, tosa_arg.dim_order)
 
     tosa_graph.addConst(
-        tensor_data.shape, tosa_arg.dtype, tensor_data, name=tosa_arg.name
+        tensor_values.shape, tosa_arg.dtype, tensor_values, name=tosa_arg.name
     )
 
 
@@ -195,46 +184,7 @@ def _is_submodule_input(
     """Determines whether 'node' is an input to a submodule of 'containing_graph_module'."""
     if node.op != "placeholder":
         return False
-
-    for _, _, submodule_node in get_cond_while_submodules(containing_graph_module):
-        args = cast(list[torch.fx.Node], submodule_node.args[-1])
-        for arg in args:
-            if isinstance(arg.target, str):
-                # If argument is a buffer or similar, we can match exactly.
-                if arg.target == node.name:
-                    return True
-            # If argument target has a name, the submodule input is operator name + number to avoid duplication.
-            # For example: cond input namespace::my_op -> submodule input my_op_1
-            if (name_fn := (getattr(arg.target, "name", None))) is not None:
-                op_name = name_fn().split(":")[-1]
-                if op_name in node.name:
-                    return True
-    return False
-
-
-def _submodule_has_user_input(
-    containing_graph_module: torch.fx.GraphModule, edge_program: ExportedProgram
-):
-    # If argument is a user input, there is no such guarantee. We need to to a heuristic match.
-    for _, _, control_flow_node in get_cond_while_submodules(containing_graph_module):
-        match control_flow_node.target:
-            case torch.ops.higher_order.cond:
-                args = control_flow_node.args[-1]
-            case torch.ops.higher_order.while_loop:
-                args = cast(list, control_flow_node.args[-2]) + cast(
-                    list, control_flow_node.args[-1]
-                )
-            case _:
-                raise RuntimeError(
-                    f"Unexpected control flow target: {control_flow_node.target}"
-                )
-        args = cast(list[torch.fx.Node], args)
-        for arg in args:
-            if (
-                isinstance(arg.target, str)
-                and arg.target in edge_program.graph_signature.user_inputs
-            ):
-                return True
+    return node.meta.get("is_input", False)
 
 
 def process_placeholder(
@@ -268,11 +218,6 @@ def process_placeholder(
         raise NotImplementedError(
             "Placeholder is of type 'lifted custom object' which is not supported."
         )
-    elif containing_graph_module and _submodule_has_user_input(
-        containing_graph_module, edge_program
-    ):
-        # If we are in a submodule and it has user input, process as regular input.
-        process_inputs(node, tosa_graph, tosa_spec)
     else:
         raise RuntimeError(f"Placeholder '{node.name}' is of unknown type.")
 

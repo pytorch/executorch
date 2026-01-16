@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,13 +18,16 @@ from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpe
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
+from executorch.backends.nxp.edge_passes.remove_additional_quantize_dequantize_nodes_pass import (
+    RemoveAdditionalQDQClustersPass,
+)
 from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.backends.nxp.quantizer.utils import post_training_quantize
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
@@ -36,9 +39,18 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.extension.export_util import save_pte_program
+from torch.ao.quantization import (
+    move_exported_model_to_eval,
+    move_exported_model_to_train,
+)
 from torch.export import export
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
-from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
+from .experimental.cifar_net.cifar_net import (
+    CifarNet,
+    test_cifarnet_model,
+    train_cifarnet_model,
+)
 from .models.mobilenet_v2 import MobilenetV2
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -147,6 +159,13 @@ if __name__ == "__main__":  # noqa C901
         help="Produce a quantized model",
     )
     parser.add_argument(
+        "--use_qat",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Use QAT mode for quantization (performs two QAT training epochs)",
+    )
+    parser.add_argument(
         "-s",
         "--so_library",
         required=False,
@@ -187,6 +206,14 @@ if __name__ == "__main__":  # noqa C901
         help="Visualize the lowered program. `show` launches a browser tab with the visualization. `store` stores the "
         "visualization in a json file for later inspection. See `docs/source/visualize-with-clusters.md` for details.",
     )
+    parser.add_argument(
+        "--use_channels_last_dim_order",
+        required=False,
+        default=False,
+        action="store_true",
+        help="The model (including the Neutron backend) will use the channels last dim order, which can result in faster "
+        "inference. The inputs must also be provided in the channels last dim order.",
+    )
 
     args = parser.parse_args()
 
@@ -203,6 +230,15 @@ if __name__ == "__main__":  # noqa C901
     )
     model = model.eval()
 
+    if args.use_channels_last_dim_order:
+        # Turn the model to channels last.
+        model.to(memory_format=torch.channels_last)
+
+        # The dim order of the example inputs will define the dim order of the intermediate tensors in the model.
+        example_inputs = tuple(
+            i.to(memory_format=torch.channels_last) for i in example_inputs
+        )
+
     # 2. Export the model to ATEN
     exported_program = torch.export.export(model, example_inputs, strict=True)
 
@@ -210,13 +246,27 @@ if __name__ == "__main__":  # noqa C901
 
     # 3. Quantize if required
     if args.quantize:
-        if calibration_inputs is None:
-            logging.warning(
-                "No calibration inputs available, using the example inputs instead"
-            )
-            calibration_inputs = example_inputs
-        quantizer = NeutronQuantizer(neutron_target_spec)
-        module = post_training_quantize(module, calibration_inputs, quantizer)
+        quantizer = NeutronQuantizer(neutron_target_spec, is_qat=args.use_qat)
+        if args.use_qat:
+            match args.model_name:
+                case "cifar10":
+                    print("Starting two epochs of QAT training with CifarNet model...")
+                    module = prepare_qat_pt2e(module, quantizer)
+                    module = move_exported_model_to_train(module)
+                    module = train_cifarnet_model(module, num_epochs=2)
+                    module = move_exported_model_to_eval(module)
+                    module = convert_pt2e(module)
+                case _:
+                    raise ValueError(
+                        f"QAT training is not supported for model '{args.model_name}'"
+                    )
+        else:
+            if calibration_inputs is None:
+                logging.warning(
+                    "No calibration inputs available, using the example inputs instead"
+                )
+                calibration_inputs = example_inputs
+            module = calibrate_and_quantize(module, calibration_inputs, quantizer)
 
     if args.so_library is not None:
         logging.debug(f"Loading libraries: {args.so_library}")
@@ -257,6 +307,10 @@ if __name__ == "__main__":  # noqa C901
         edge_program_manager = edge_program_manager.transform(
             [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
         )
+
+    edge_program_manager = edge_program_manager.transform(
+        NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])
+    )
 
     logging.debug(f"Lowered graph:\n{edge_program_manager.exported_program().graph}")
 

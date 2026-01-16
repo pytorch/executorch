@@ -127,7 +127,7 @@ class TransformerBlock(nn.Module):
         return TransformerBlock(args, attention)
 
     def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
-        h, attn_options_update = self.attention.forward(
+        h, attn_options_update = self.attention(
             self.attention_norm(x), freqs_cos, freqs_sin, **attn_options
         )
         if not isinstance(self.attention, AttentionSkip):
@@ -272,6 +272,13 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
                     norm_eps=model_args.norm_eps,
                 )
             )
+        elif (
+            model_args.layer_types
+            and model_args.layer_types[layer_id] == "skip_attention"
+        ):
+            attention = AttentionSkip()
+            transformer_block = TransformerBlock(model_args, attention)
+            layers.append(transformer_block)
         else:
             attention = cls(
                 model_args, layer_id, rope, **model_args.attention_kwargs

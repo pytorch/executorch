@@ -40,8 +40,8 @@ class MatchArgRanksPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def __init__(self, exported_program: ExportedProgram) -> None:
-        super().__init__()
+    def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     targeted_ops = [
@@ -63,6 +63,8 @@ class MatchArgRanksPass(ArmPass):
         exir_ops.edge.aten.bitwise_and.Tensor,
         exir_ops.edge.aten.bitwise_xor.Tensor,
         exir_ops.edge.aten.bitwise_or.Tensor,
+        exir_ops.edge.aten.maximum.default,
+        exir_ops.edge.aten.minimum.default,
     ]
 
     def _match_op_rank(self, graph_module, node, arg, max_rank):

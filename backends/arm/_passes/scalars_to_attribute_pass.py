@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -49,13 +49,14 @@ class ScalarsToAttributePass(ArmPass):
                     shape = get_first_fake_tensor(arg).shape
                     biggest_rank = max(biggest_rank, len(shape))
 
+            output_fake_tensor = get_first_fake_tensor(n)
             new_args: list[Node | int] = []
             for arg in n.args:
                 if isinstance(arg, Node):
                     new_args.append(arg)
                     continue
                 if isinstance(arg, int) and not torch.is_floating_point(
-                    get_first_fake_tensor(n)
+                    output_fake_tensor
                 ):
                     new_args.append(arg)
                     continue
@@ -64,7 +65,8 @@ class ScalarsToAttributePass(ArmPass):
                 get_new_attr_name = get_new_attr_name_with_prefix(prefix)
                 tensor_constant_name = get_new_attr_name(graph_module)
                 float_tensor = torch.tensor(
-                    float(cast(Union[int, float], arg))
+                    float(cast(Union[int, float], arg)),
+                    device=output_fake_tensor.device,
                 ).reshape((1,) * biggest_rank)
                 graph_module.register_buffer(tensor_constant_name, float_tensor)
                 fake_mode = n.meta["val"].fake_mode

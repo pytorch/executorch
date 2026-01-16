@@ -1,6 +1,9 @@
 # Summary
 
 ## Overview
+
+**Video Tutorial:** [Build Along: Run LLMs Locally on Qualcomm Hardware Using ExecuTorch](https://www.youtube.com/watch?v=41PKDlGM3oU)
+
 This file provides you the instructions to run LLM Decoder model with different parameters via Qualcomm HTP backend. We currently support the following models:
 <!-- numbered list will be automatically generated -->
  1. LLAMA2 Stories 110M
@@ -8,6 +11,7 @@ This file provides you the instructions to run LLM Decoder model with different 
  1. LLAMA3.2 3B
  1. Codegen2 1B
  1. Gemma 2B
+ 1. Gemma2 2B
  1. Gemma3 1B
  1. GLM 1.5B
  1. Granite3.3 2B
@@ -16,7 +20,7 @@ This file provides you the instructions to run LLM Decoder model with different 
  1. QWEN3 0.6B / 1.7B
  1. SmolLM2 135M
  1. SmolLM3 3B
- 
+
 
 We offer the following modes to execute the model:
 
@@ -32,6 +36,40 @@ We offer the following modes to execute the model:
 </figure>
 
 - Lookahead Mode: Lookahead Mode introduces [lookahead decoding](https://arxiv.org/abs/2402.02057) and uses AR-N model to process prompt to enhance token generation speed. While decoding multiple tokens in a single step is infeasible, an LLM can generate multiple guess tokens in parallel. These guess tokens may fit into future parts of the generated sequence. The lookahead decoder generates and verifies these guess tokens, integrating them into the sequence if suitable. In some cases, it can obtain more than one token in a single step. Result is lossless.
+
+## Hardware Support
+
+We’ve validated this flow on the **Samsung Galaxy S23**, **Samsung Galaxy S24**, **Samsung Galaxy S25**, and **OnePlus 12**.  
+Support on other hardware depends on the **HTP architecture (HtpArch)** and the feature set available on that version.
+
+### HTP Minimum Version Requirements
+
+- **LPBQ (16a4w block-wise quantization)** requires **V69 or newer**
+- **Weight sharing** between prefill and decode requires **V73 or newer**
+- **16-bit activations + 16-bit weights for matmul** (e.g., 16-bit KV cache) requires **V73 or newer**
+
+### Quantization Guidance for Older Devices
+
+For older HTP versions, you may need to adjust the quantization strategy. Recommended starting points:
+
+- Use **16a4w** as the baseline
+- Optionally apply **SpinQuant**
+- Use **16a8w selectively on some layers** to further improve accuracy (mixed-precision quantization)
+
+### Memory Limit Errors (4 GB HTP Limit)
+
+If you encounter errors like the following, it typically means the model’s requested memory exceeds the **4 GB per-context limit** on HTP.  
+To resolve this, try **increasing the sharding number** (`num_sharding`) to reduce per-shard memory usage:
+
+```
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Failed to find available PD for contextId 1 on deviceId 0 coreId 0 with context size estimate 4025634048
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> context create from binary failed on contextId 1
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Fail to create context from binary with err 1002
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Size Calculation encounter error! Doing Hard reset of reserved mem to 0.
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Failed to create context from binary with err 0x3ea
+[ERROR] [Qnn ExecuTorch]: Can't create context from binary
+```
+
 
 ## Instructions
 ### Note
@@ -99,6 +137,11 @@ Default example using hybrid mode
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma-2b --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
 ```
 
+#### Gemma2 2B
+Default example using hybrid mode
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma2-2b --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
+```
 
 #### Gemma3 1B
 Default example using hybrid mode
@@ -161,20 +204,12 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 ```
 
 ### KV Cache update mechanism
-We have two distinct mechanisms for updating the key-value (KV) cache, which can be selected at runtime. Shift Pointer and Smart Mask.
-
-#### Shift Pointer mechanism
-
-<figure>
-    <img src="assets/ShiftPointer.png" alt="Shift Pointer mechanism"> <figcaption>
-    The figure illustrates the process of updating the key and value caches during each inference step. In key cache update process, we initially allocate memory for each layer with <code>num_head</code> size of <code>(head_dim + 1) * (seq_len - 1)</code>. After a single inference, the new key cache is copied from the key output pointer <code>k_out</code> and appended to the key cache. Subsequently, the buffer start pointer of the key cache <code>k_in</code> moves to the next token, making the previous position of the buffer start pointer unused. This process is repeated for each subsequent inference step.
-    For the value cache update process, we first allocate a contiguous memory of size <code>(num_head + 1) * head_dim * (seq_len - 1)</code> for each layer, with the last head reserved for I/O shifting, After the first inference, the cache is updated by simply shifting the pointers of all heads to the next token position, making only the previous <code>head_dim * 1</code> section of the buffer start pointer <code>v_in</code> of the first head unused. This process is repeated for each subsequent inference step.</figcaption>
-</figure>
+We use Smart Mask mechanisms for updating the key-value (KV) cache.
 
 #### Smart Mask mechanism:
 <figure>
     <img src="assets/SmartMask.png" alt="Smart Mask mechanism">
-    <figcaption>The Smart Mask mechanism streamlines the process of updating tokens in the cache. Unlike the Shift Pointer mechanism, which requires moving the buffer start pointer <code>k_in</code>/<code>v_in</code> of the cache, the Smart Mask mechanism updates only the new token at the specified position. This approach eliminates the need to adjust the buffer start pointer. This mechanism is beneficial for shared buffers but requires CPU memory copying. </figcaption>
+    <figcaption>The figure illustrates how key and value caches are updated during each inference step. The Smart Mask mechanism simplifies updating tokens in the cache by modifying only the new token at the designated position. This approach is useful for shared buffers, though it does require copying data in CPU memory to update the kv cache. </figcaption>
 </figure>
 
 #### Analysis KV Cache Update Mechanism for each Layer each inference
@@ -190,13 +225,6 @@ We have two distinct mechanisms for updating the key-value (KV) cache, which can
     <th style="text-align:center;">V</th>
     <th style="text-align:center;">K</th>
     <th style="text-align:center;">V</th>
-  </tr>
-  <tr>
-    <td style="text-align:center;">Shift Pointer</td>
-    <td style="text-align:center;">num_head * head_dim</td>
-    <td style="text-align:center;">1</td>
-    <td style="text-align:center;">num_head * (head_dim + 1) * seq_len</td>
-    <td style="text-align:center;">(num_head + 1) * head_dim * (seq_len - 1)</td>
   </tr>
   <tr>
     <td style="text-align:center;">Smart Mask</td>
@@ -219,14 +247,6 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -m ${SOC_MO
 On the other hand, if you already have a pre-compiled .pte model, you can perform inference by providing the flag `--pre_gen_pte` and specifying the folder that contains the .pte model. Taking LLAMA3.2 as an example:
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "what is 1+1" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
-```
-
-#### KV Cache Updater
-
-You can select the KV Cache update mechanism at runtime by setting the `KV_UPDATER` variable to either "shift_pointer" or "smart_mask". By default, it is set to "smart_mask".
-`KV_UPDATER` = "shift_pointer"
-```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "what is 1+1" --kv_updator ${KV_UPDATER}
 ```
 
 #### Lookahead Decoding Mode

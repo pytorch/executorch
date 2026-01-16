@@ -16,6 +16,8 @@
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
@@ -107,7 +109,22 @@ Error AsrRunner::load() {
 
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kDecoderMethodName));
   decoder_method_loaded_ = true;
-
+#ifdef CUDA_AVAILABLE
+  executorch::runtime::BackendOptions<1> backend_options;
+  // For decoder still copy output from GPU to CPU for sampling.
+  // TODO: change sampler to use a CUDA kernel to sample and then skip copying
+  // decoder output as well
+  ET_CHECK_OK_OR_RETURN_ERROR(backend_options.set_option(
+      "skip_copy_output_to_cpu_for_method", kEncoderMethodName));
+  const auto opt_err =
+      executorch::runtime::set_option("CudaBackend", backend_options.view());
+  if (opt_err != ::executorch::runtime::Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to set CUDA backend options: %d",
+        static_cast<int>(opt_err));
+  }
+#endif
   ET_CHECK_OK_OR_RETURN_ERROR(load_tokenizer());
   auto eos_ids = get_eos_ids(tokenizer_.get(), module_.get());
   if (!eos_ids.empty()) {
@@ -219,10 +236,6 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
       static_cast<size_t>(encoder_output_tensor.size(0)),
       static_cast<size_t>(encoder_output_tensor.size(1)),
       static_cast<size_t>(encoder_output_tensor.size(2)));
-  ET_LOG(
-      Info,
-      "Encoder first value: %f",
-      static_cast<float>(encoder_output_tensor.mutable_data_ptr<float>()[0]));
 
   auto encoder_output_ptr = std::make_shared<::executorch::aten::Tensor>(
       std::move(encoder_output_tensor));

@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -36,6 +36,7 @@ class TosaSpecialDtype(Enum):
     """Special TOSA dtypes not natively expressed in PyTorch."""
 
     INT48 = ts.DType.INT48
+    INT4 = ts.DType.INT4
 
     def get_tosa_dtype(self) -> ts.DType:
         """Return the underlying ``ts.DType`` enumerant.
@@ -55,6 +56,24 @@ class TosaSpecialDtype(Enum):
 
         """
         return "tosa_special_dtype"
+
+    def max(self):
+        match self:
+            case self.INT4:
+                return 7
+            case self.INT48:
+                return 2**47 - 1
+            case _:
+                raise ValueError(f"Unrecognized TosaSpecialDtype {self}.")
+
+    def min(self):
+        match self:
+            case self.INT4:
+                return -7
+            case self.INT48:
+                return -(2**47)
+            case _:
+                raise ValueError(f"Unrecognized TosaSpecialDtype {self}.")
 
 
 def map_dtype(data_type: torch.dtype, tosa_spec: TosaSpecification) -> Any:
@@ -180,6 +199,11 @@ class TosaArg:
         else:
             self.multiple_output_names = []
 
+        if not self.__validate():
+            raise ValueError(
+                f"{self.tosa_spec} doesn't support tensor {self.__repr__()}"
+            )
+
     def __process_list(self, argument):
         """Capture a sequence argument as ``special``.
 
@@ -197,6 +221,17 @@ class TosaArg:
 
         """
         self.number: float | int = argument
+
+    def __validate(self) -> bool:
+        match getattr(self, "dtype", None):
+            case ts.DType.FP32:
+                if not self.tosa_spec.support_float():
+                    return False
+            case ts.DType.INT4:
+                if not self.tosa_spec.support_extension("int4"):
+                    return False
+
+        return True
 
     def __init__(
         self, argument: Any, tosa_spec: Optional[TosaSpecification] = None
@@ -269,6 +304,6 @@ class TosaArg:
             attrs.append(f"number={self.number!r}")
         if hasattr(self, "tosa_spec") and self.tosa_spec is not None:
             attrs.append(f"tosa_spec={self.tosa_spec!r}")
-        if hasattr(self, "names"):
+        if hasattr(self, "multiple_output_names"):
             attrs.append(f"names={self.multiple_output_names!r}")
         return f"{self.__class__.__name__}({', '.join(attrs)})"

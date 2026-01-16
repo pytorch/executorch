@@ -7,10 +7,7 @@ runtime.python_library(
     srcs = [
         "__init__.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/export:recipe_registry",
         ":qnn_recipe_provider",
@@ -23,13 +20,11 @@ runtime.python_library(
     srcs = [
         "qnn_recipe_provider.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//caffe2:torch",
         "//executorch/export:lib",
+        "//executorch/runtime:runtime",  # @manual
         "//executorch/backends/qualcomm/partition:partition",
         "//executorch/backends/qualcomm/serialization:serialization",
         "//executorch/backends/qualcomm/utils:utils",
@@ -43,10 +38,7 @@ runtime.python_library(
     srcs = [
         "qnn_recipe_types.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/export:lib",
     ],
