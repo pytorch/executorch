@@ -312,37 +312,39 @@ from unittest.mock import patch
 # For the CMake pipeline, we create a ``BundledProgram`` that packages the model
 # with sample inputs and expected outputs for testing. We reuse the
 # ``et_program_manager`` from Step 1.
-
-from executorch.devtools import BundledProgram
-
-from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.devtools.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
-)
-
-# Construct Method Test Suites using the same model and inputs from Pipeline 1
-m_name = "forward"
-inputs = [model_inputs for _ in range(2)]
-
-method_test_suites = [
-    MethodTestSuite(
-        method_name=m_name,
-        test_cases=[
-            MethodTestCase(inputs=inp, expected_outputs=model(*inp)) for inp in inputs
-        ],
-    )
-]
-
-# Generate BundledProgram using the existing et_program_manager
-bundled_program = BundledProgram(et_program_manager, method_test_suites)
-
-# Serialize BundledProgram to flatbuffer
-serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(
-    bundled_program
-)
-bundled_program_path = os.path.join(temp_dir, "bundled_program.bp")
-with open(bundled_program_path, "wb") as f:
-    f.write(serialized_bundled_program)
+#
+# .. code-block:: python
+#
+#    from executorch.devtools import BundledProgram
+#    from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+#    from executorch.devtools.bundled_program.serialize import (
+#        serialize_from_bundled_program_to_flatbuffer,
+#    )
+#
+#    # Construct Method Test Suites using the same model and inputs from Pipeline 1
+#    m_name = "forward"
+#    inputs = [model_inputs for _ in range(2)]
+#
+#    method_test_suites = [
+#        MethodTestSuite(
+#            method_name=m_name,
+#            test_cases=[
+#                MethodTestCase(inputs=inp, expected_outputs=model(*inp)) for inp in inputs
+#            ],
+#        )
+#    ]
+#
+#    # Generate BundledProgram using the existing et_program_manager
+#    bundled_program = BundledProgram(et_program_manager, method_test_suites)
+#
+#    # Serialize BundledProgram to flatbuffer
+#    serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(
+#        bundled_program
+#    )
+#    bundled_program_path = os.path.join(temp_dir, "bundled_program.bp")
+#    with open(bundled_program_path, "wb") as f:
+#        f.write(serialized_bundled_program)
+#
 
 ######################################################################
 # Step 3: Run with CMake Example Runner
