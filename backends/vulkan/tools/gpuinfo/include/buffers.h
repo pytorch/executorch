@@ -36,7 +36,10 @@ void buf_cacheline_size(const App& app) {
 
   auto bench = [&](int stride) {
     StagingBuffer in_buf(
-        context(), vkapi::kFloat, BUF_SIZE, vkapi::CopyDirection::HOST_TO_DEVICE);
+        context(),
+        vkapi::kFloat,
+        BUF_SIZE,
+        vkapi::CopyDirection::HOST_TO_DEVICE);
     StagingBuffer out_buf(
         context(), vkapi::kFloat, 1, vkapi::CopyDirection::DEVICE_TO_HOST);
     vkapi::PipelineBarrier pipeline_barrier{};
@@ -135,9 +138,15 @@ void _bandwidth(
     const uint32_t workgroup_width = local_x * NITER * NUNROLL;
 
     StagingBuffer in_buf(
-        context(), vkapi::kFloat, range / sizeof(float), vkapi::CopyDirection::HOST_TO_DEVICE);
+        context(),
+        vkapi::kFloat,
+        range / sizeof(float),
+        vkapi::CopyDirection::HOST_TO_DEVICE);
     StagingBuffer out_buf(
-        context(), vkapi::kFloat, VEC_WIDTH * app.nthread_logic, vkapi::CopyDirection::DEVICE_TO_HOST);
+        context(),
+        vkapi::kFloat,
+        VEC_WIDTH * app.nthread_logic,
+        vkapi::CopyDirection::DEVICE_TO_HOST);
     vkapi::PipelineBarrier pipeline_barrier{};
 
     auto shader_name = "buf_bandwidth_" + memtype_lower;

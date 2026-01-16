@@ -166,7 +166,10 @@ void warp_size(const App& app, const bool verbose = false) {
 
   auto bench = [&](uint32_t nthread) {
     StagingBuffer out_buf(
-        context(), vkapi::kInt, app.nthread_logic, vkapi::CopyDirection::DEVICE_TO_HOST);
+        context(),
+        vkapi::kInt,
+        app.nthread_logic,
+        vkapi::CopyDirection::DEVICE_TO_HOST);
     vkapi::PipelineBarrier pipeline_barrier{};
 
     auto shader_name = "warp_size_physical";
@@ -227,7 +230,10 @@ void warp_size(const App& app, const bool verbose = false) {
   // inaccuracy.
   auto bench_sm = [&](uint32_t nthread) {
     StagingBuffer out_buf(
-        context(), vkapi::kInt, app.nthread_logic, vkapi::CopyDirection::DEVICE_TO_HOST);
+        context(),
+        vkapi::kInt,
+        app.nthread_logic,
+        vkapi::CopyDirection::DEVICE_TO_HOST);
     vkapi::PipelineBarrier pipeline_barrier{};
 
     auto shader_name = "warp_size_scheduler";

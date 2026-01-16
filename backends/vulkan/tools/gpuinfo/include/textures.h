@@ -62,7 +62,10 @@ void tex_cacheline_concurr(const App& app) {
           api::vTensor(api::context(), sizes_nchw, vkapi::kFloat);
 
       StagingBuffer out_buf(
-          context(), vkapi::kFloat, TEXEL_WIDTH, vkapi::CopyDirection::DEVICE_TO_HOST);
+          context(),
+          vkapi::kFloat,
+          TEXEL_WIDTH,
+          vkapi::CopyDirection::DEVICE_TO_HOST);
 
       vkapi::PipelineBarrier pipeline_barrier{};
 
@@ -175,7 +178,10 @@ void tex_bandwidth(const App& app) {
       const uint32_t workgroup_width = local_x * NITER * NUNROLL;
 
       StagingBuffer out_buf(
-          context(), vkapi::kFloat, VEC_WIDTH * app.nthread_logic, vkapi::CopyDirection::DEVICE_TO_HOST);
+          context(),
+          vkapi::kFloat,
+          VEC_WIDTH * app.nthread_logic,
+          vkapi::CopyDirection::DEVICE_TO_HOST);
       vkapi::PipelineBarrier pipeline_barrier{};
 
       auto time = benchmark_on_gpu(shader_name, 10, [&]() {
