@@ -1,9 +1,10 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
 oncall("executorch")
 
-runtime.python_test(
+fbcode_target(_kind = runtime.python_test,
     name = "executorch_export",
     srcs = [
         "test_executorch_export.py",
@@ -16,7 +17,7 @@ runtime.python_test(
     ]
 )
 
-runtime.python_test(
+fbcode_target(_kind = runtime.python_test,
     name = "test_executorch_export",
     srcs = [
         "test_recipe_provider.py",
@@ -33,7 +34,7 @@ runtime.python_test(
     ]
 )
 
-runtime.python_test(
+fbcode_target(_kind = runtime.python_test,
     name = "test_target_recipes",
     srcs = [
         "test_target_recipes.py",
