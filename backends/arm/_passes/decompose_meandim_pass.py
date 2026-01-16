@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -167,7 +167,11 @@ class DecomposeMeanDimPass(ArmPass):
 
         sum = super().call_operator(sum_op, (input_node, dims, True), {}, meta, True)
         full = super().call_operator(
-            full_op, ([1] * len(output_shape), 1 / N), {"dtype": dtype}, meta, True
+            full_op,
+            ([1] * len(output_shape), 1 / N),
+            {"dtype": dtype, "device": input_node.data.device},
+            meta,
+            True,
         )
         if (quant_ops := get_quantization(input_node.node.target)) is not None:
             # Insert Q and DQ nodes after full op.
