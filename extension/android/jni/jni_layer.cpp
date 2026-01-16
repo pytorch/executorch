@@ -43,6 +43,7 @@
 #include <fbjni/fbjni.h>
 
 using namespace executorch::extension;
+using namespace executorch::jni_helper;
 using namespace torch::executor;
 
 namespace executorch::extension {
@@ -543,10 +544,10 @@ void register_natives_for_llm() {}
 extern void register_natives_for_runtime();
 
 #ifdef EXECUTORCH_BUILD_EXTENSION_TRAINING
-extern void register_natives_for_training();
+extern void register_natives_for_training(JNIEnv* env);
 #else
 // No op if we don't build training JNI
-void register_natives_for_training() {}
+void register_natives_for_training(JNIEnv* /* env */) {}
 #endif
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
@@ -554,6 +555,6 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     executorch::extension::ExecuTorchJni::registerNatives();
     register_natives_for_llm();
     register_natives_for_runtime();
-    register_natives_for_training();
+    register_natives_for_training(facebook::jni::Environment::current());
   });
 }
