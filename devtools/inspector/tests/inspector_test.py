@@ -795,7 +795,167 @@ class TestInspector(unittest.TestCase):
             # For (1,): max(|[4.0, 5.0, 6.0] - [3.0, 6.0, 5.0]|) = max([1.0, 1.0, 1.0]) = 1.0
             self.assertEqual(df.iloc[1]["gap"][0], 1.0)
 
-    @unittest.skip("ci config values are not propagated")
+    def test_transformer_block_xnnpack_numeric_gap_within_tolerance(self):
+        """
+        Test that the numeric gap between AOT and runtime intermediate outputs
+        for a ViT model lowered to XNNPACK delegate is within acceptable tolerance.
+
+        This test verifies that when a Vision Transformer (ViT) model is exported
+        and lowered to XNNPACK, the intermediate outputs during runtime closely
+        match the expected AOT outputs, with gaps remaining within a small range.
+        """
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+        from executorch.backends.xnnpack.utils.configs import (
+            get_xnnpack_edge_compile_config,
+        )
+        from executorch.runtime import Method, Program, Runtime, Verification
+        from torch import nn as nn
+
+        class SingleBlockTransformer(nn.Module):
+            def __init__(
+                self,
+                vocab_size: int,
+                d_model: int = 256,
+                nhead: int = 8,
+                dim_feedforward: int = 1024,
+                max_len: int = 512,
+                dropout: float = 0.1,
+            ):
+                super().__init__()
+                self.d_model = d_model
+
+                self.tok_emb = nn.Embedding(vocab_size, d_model)
+                self.pos_emb = nn.Embedding(max_len, d_model)
+
+                # Single transformer encoder block
+                self.block = nn.TransformerEncoderLayer(
+                    d_model=d_model,
+                    nhead=nhead,
+                    dim_feedforward=dim_feedforward,
+                    dropout=dropout,
+                    batch_first=True,  # input: (B, T, C)
+                    activation="gelu",
+                    norm_first=True,
+                )
+
+                self.ln = nn.LayerNorm(d_model)
+                self.head = nn.Linear(d_model, vocab_size, bias=False)
+
+            def forward(
+                self, input_ids: torch.Tensor, attn_mask: torch.Tensor | None = None
+            ):
+                """
+                input_ids: (B, T) LongTensor
+                attn_mask (optional): (B, T) where 1/True = keep, 0/False = pad
+                """
+                B, T = input_ids.shape
+                pos = torch.arange(T, device=input_ids.device).unsqueeze(0).expand(B, T)
+
+                x = self.tok_emb(input_ids) + self.pos_emb(pos)  # (B, T, d_model)
+
+                # Convert padding mask to TransformerEncoderLayer's expected format:
+                # src_key_padding_mask: (B, T) with True = PAD (masked out)
+                src_key_padding_mask = None
+                if attn_mask is not None:
+                    src_key_padding_mask = ~attn_mask.to(torch.bool)
+
+                x = self.block(
+                    x, src_key_padding_mask=src_key_padding_mask
+                )  # (B, T, d_model)
+                x = self.ln(x)
+                logits = self.head(x)  # (B, T, vocab_size)
+                return logits
+
+        vocab_size = 5000
+        model = SingleBlockTransformer(
+            vocab_size=vocab_size, d_model=256, nhead=8, max_len=128
+        )
+        model_inputs = (
+            torch.randint(0, vocab_size, (1, 32)),
+            torch.ones(1, 32, dtype=torch.bool),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Export and lower model to XNNPACK delegate
+            aten_model: ExportedProgram = export(model, model_inputs, strict=True)
+            edge_program_manager = to_edge_transform_and_lower(
+                aten_model,
+                partitioner=[XnnpackPartitioner()],
+                compile_config=get_xnnpack_edge_compile_config(),
+                generate_etrecord=True,
+            )
+
+            et_program_manager: ExecutorchProgramManager = (
+                edge_program_manager.to_executorch()
+            )
+
+            pte_path = os.path.join(temp_dir, "model.pte")
+            et_program_manager.save(pte_path)
+
+            # Dump ETRecord containing debug info for export progress
+            etrecord = et_program_manager.get_etrecord()
+
+            # Set the input for numerical discrepancy detection
+            etrecord.update_representative_inputs(model_inputs)
+            etrecord_path = os.path.join(temp_dir, "etrecord.bin")
+            etrecord.save(etrecord_path)
+
+            # Load and run PTE through Runtime API
+            et_runtime: Runtime = Runtime.get()
+            program: Program = et_runtime.load_program(
+                pte_path,
+                verification=Verification.Minimal,
+                enable_etdump=True,
+                debug_buffer_size=1024 * 1024 * 1024,  # 1GB
+            )
+
+            forward: Method = program.load_method("forward")
+            forward.execute(model_inputs)
+
+            # Dump ETDump recording execution data
+            etdump_path = os.path.join(temp_dir, "etdump.etdp")
+            debug_buffer_path = os.path.join(temp_dir, "debug_buffer.bin")
+            program.write_etdump_result_to_file(etdump_path, debug_buffer_path)
+
+            # Create Inspector and calculate numeric gap
+            try:
+                inspector = Inspector(
+                    etdump_path=etdump_path,
+                    etrecord=etrecord_path,
+                    debug_buffer_path=debug_buffer_path,
+                )
+            except FileNotFoundError as e:
+                new_message = f"{e} You likely need to run the test with --config executorch.event_tracer_enabled=true"
+                raise RuntimeError(new_message) from e
+
+            df: pd.DataFrame = inspector.calculate_numeric_gap("MSE")
+
+            # Verify we got results
+            self.assertIsNotNone(df)
+            self.assertGreater(len(df), 0)
+
+            # Define tolerance threshold for numeric gap
+            TOLERANCE = 1e-1
+
+            # Check that each gap value is within acceptable tolerance
+            for idx, row in df.iterrows():
+                gap_value = row["gap"]
+                # Handle case where gap might be a list
+                if isinstance(gap_value, list):
+                    gap_value = gap_value[0] if gap_value else 0.0
+
+                runtime_ops = row["runtime_ops"]
+                aot_ops = row["aot_ops"]
+
+                self.assertLessEqual(
+                    gap_value,
+                    TOLERANCE,
+                    f"Gap at index {idx} ( aot_ops: {aot_ops}, runtime_ops: {runtime_ops}) is {gap_value}, "
+                    f"which exceeds tolerance {TOLERANCE}",
+                )
+
     def test_intermediate_tensor_comparison_with_torch_export(self):
         """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower."""
 
