@@ -42,17 +42,46 @@ jobs:
           echo "| Commit | Title | Failed Job |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|------------|" >> $GITHUB_STEP_SUMMARY
 
-          # Get failed workflow runs and their failed jobs
-          gh api repos/pytorch/executorch/actions/runs?per_page=50 \
-            --jq '.workflow_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "\(.id)|\(.head_sha | .[0:7])|\(.display_title | gsub("\\|"; "-") | .[0:50])|\(.name)"' 2>/dev/null | \
-          while IFS='|' read -r run_id sha title workflow; do
-            # Get failed or cancelled jobs for this run
-            failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs?per_page=100" \
-              --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | .name' 2>/dev/null | head -1)
-            if [ -n "$failed_job" ]; then
-              echo "| ${sha} | ${title} | ${workflow} / ${failed_job} |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
+          # Get commits between viable/strict and main using GitHub API
+          VIABLE_SHA=$(gh api repos/pytorch/executorch/git/ref/heads/viable/strict --jq '.object.sha' 2>/dev/null || echo "")
+          MAIN_SHA=$(gh api repos/pytorch/executorch/git/ref/heads/main --jq '.object.sha' 2>/dev/null || echo "")
+
+          if [ -n "$VIABLE_SHA" ] && [ -n "$MAIN_SHA" ]; then
+            # Get commits between viable/strict and main (up to 20)
+            COMMITS=$(gh api "repos/pytorch/executorch/compare/${VIABLE_SHA}...${MAIN_SHA}" \
+              --jq '.commits | reverse | .[0:20] | .[] | "\(.sha)|\(.commit.message | split("\n")[0] | gsub("\\|"; "-") | .[0:50])"' 2>/dev/null || echo "")
+
+            while IFS='|' read -r sha title; do
+              [ -z "$sha" ] && continue
+              short_sha="${sha:0:7}"
+
+              # Get workflow runs for this commit
+              failed_run=$(gh api "repos/pytorch/executorch/actions/runs?head_sha=${sha}&per_page=100" \
+                --jq '.workflow_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "\(.id)|\(.name)"' 2>/dev/null | head -1)
+
+              if [ -n "$failed_run" ]; then
+                run_id=$(echo "$failed_run" | cut -d'|' -f1)
+                workflow_name=$(echo "$failed_run" | cut -d'|' -f2)
+
+                # Get failed job name
+                failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs?per_page=100" \
+                  --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | .name' 2>/dev/null | head -1)
+
+                echo "| ${short_sha} | ${title} | ${workflow_name} / ${failed_job:-unknown} |" >> $GITHUB_STEP_SUMMARY
+              fi
+            done <<< "$COMMITS"
+          else
+            # Fallback: just show recent failed runs globally
+            gh api repos/pytorch/executorch/actions/runs?per_page=20 \
+              --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)|\(.head_sha | .[0:7])|\(.display_title | gsub("\\|"; "-") | .[0:50])|\(.name)"' 2>/dev/null | \
+            while IFS='|' read -r run_id sha title workflow; do
+              failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs?per_page=100" \
+                --jq '.jobs[] | select(.conclusion == "failure") | .name' 2>/dev/null | head -1)
+              if [ -n "$failed_job" ]; then
+                echo "| ${sha} | ${title} | ${workflow} / ${failed_job} |" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Summary by job" >> $GITHUB_STEP_SUMMARY
