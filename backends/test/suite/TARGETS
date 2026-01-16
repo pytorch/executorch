@@ -1,3 +1,0 @@
-load(":targets.bzl", "define_common_targets")
-
-define_common_targets(is_fbcode = True)
