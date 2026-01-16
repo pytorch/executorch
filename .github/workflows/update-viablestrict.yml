@@ -44,11 +44,11 @@ jobs:
 
           # Get failed workflow runs and their failed jobs
           gh api repos/pytorch/executorch/actions/runs?per_page=50 \
-            --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)|\(.head_sha | .[0:7])|\(.display_title | gsub("\\|"; "-") | .[0:50])|\(.name)"' 2>/dev/null | \
+            --jq '.workflow_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "\(.id)|\(.head_sha | .[0:7])|\(.display_title | gsub("\\|"; "-") | .[0:50])|\(.name)"' 2>/dev/null | \
           while IFS='|' read -r run_id sha title workflow; do
-            # Get failed jobs for this run
-            failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs" \
-              --jq '.jobs[] | select(.conclusion == "failure") | .name' 2>/dev/null | head -1)
+            # Get failed or cancelled jobs for this run
+            failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs?per_page=100" \
+              --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | .name' 2>/dev/null | head -1)
             if [ -n "$failed_job" ]; then
               echo "| ${sha} | ${title} | ${workflow} / ${failed_job} |" >> $GITHUB_STEP_SUMMARY
             fi
