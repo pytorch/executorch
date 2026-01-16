@@ -653,7 +653,7 @@ class EthosU55PipelineINT(EthosUPipelineINTBase, Generic[T]):
 
        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
        if not using use_edge_to_transform_and_lower.
-       run_on_fvp: Set to true to test the pte fileon a fvp simulator.
+       run_on_fvp: Set to true to test the pte file on a fvp simulator.
        use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
     """
