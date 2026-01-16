@@ -16,6 +16,7 @@ jobs:
     environment: ${{ (github.event_name == 'schedule') && 'update-viable-strict' || '' }}
     steps:
       - name: Update viable/strict
+        id: update
         uses: pytorch/test-infra/.github/actions/update-viablestrict@main
         with:
           repository: pytorch/executorch
@@ -25,3 +26,41 @@ jobs:
           clickhouse-url: ${{ secrets.CLICKHOUSE_URL }}
           clickhouse-username: ${{ secrets.CLICKHOUSE_VIABLESTRICT_USERNAME }}
           clickhouse-password: ${{ secrets.CLICKHOUSE_VIABLESTRICT_PASSWORD }}
+
+      - name: Summarize CI failures
+        if: steps.update.outputs.latest_viable_sha == 'None'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "## ❌ No green commit found" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "viable/strict branch was not updated because no commit passed all required checks." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Failures by commit (recent)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | Title | Failed Job |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|------------|" >> $GITHUB_STEP_SUMMARY
+
+          # Get failed workflow runs and their failed jobs
+          gh api repos/pytorch/executorch/actions/runs?per_page=50 \
+            --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)|\(.head_sha | .[0:7])|\(.display_title | gsub("\\|"; "-") | .[0:50])|\(.name)"' 2>/dev/null | \
+          while IFS='|' read -r run_id sha title workflow; do
+            # Get failed jobs for this run
+            failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs" \
+              --jq '.jobs[] | select(.conclusion == "failure") | .name' 2>/dev/null | head -1)
+            if [ -n "$failed_job" ]; then
+              echo "| ${sha} | ${title} | ${workflow} / ${failed_job} |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Summary by job" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          gh api repos/pytorch/executorch/actions/runs?per_page=100 \
+            --jq '.workflow_runs[] | select(.conclusion == "failure") | .name' 2>/dev/null \
+            | sort | uniq -c | sort -rn | head -10 >> $GITHUB_STEP_SUMMARY || echo "Failed to fetch data" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          echo "::error::No green commit found - viable/strict was not updated"
+          exit 1
