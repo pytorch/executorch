@@ -7,7 +7,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "storage",
         headers = [
-            "Storage.h",
+            "storage.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [
@@ -25,8 +25,8 @@ def define_common_targets():
     runtime.cxx_library(
         name = "slimtensor",
         headers = [
-            "SlimTensor.h",
-            "SlimTensorView-incl.h",
+            "slim_tensor.h",
+            "slim_tensor_view_incl.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [

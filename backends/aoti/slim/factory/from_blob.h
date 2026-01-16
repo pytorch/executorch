@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include <executorch/backends/aoti/slim/core/SlimTensor.h>
-#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
-#include <executorch/backends/aoti/slim/util/SizeUtil.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/backends/aoti/slim/util/array_ref_util.h>
+#include <executorch/backends/aoti/slim/util/size_util.h>
 
 namespace executorch::backends::aoti::slim {
 

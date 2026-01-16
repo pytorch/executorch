@@ -9,7 +9,7 @@
 #pragma once
 
 #include <executorch/backends/aoti/slim/c10/core/WrapDimMinimal.h>
-#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
+#include <executorch/backends/aoti/slim/util/array_ref_util.h>
 
 namespace executorch::backends::aoti::slim {
 
