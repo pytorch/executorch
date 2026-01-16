@@ -13,8 +13,6 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <cstdint>
-#include <cstring>
-#include <vector>
 
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>

@@ -74,14 +74,12 @@ runtime.cxx_library(
         "shims/cuda_guard.cpp",
         "shims/int4mm.cu",
         "shims/memory.cpp",
-        "shims/tensor_attribute.cpp",
     ],
     headers = [
         "shims/cuda_guard.h",
         "shims/int4mm.cuh",
         "shims/int4mm.h",
         "shims/memory.h",
-        "shims/tensor_attribute.h",
     ],
     # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
     link_whole = True,
@@ -92,7 +90,7 @@ runtime.cxx_library(
     visibility = ["PUBLIC"],
     deps = [
         ":tensor_maker",
-        "//executorch/backends/aoti:common_shims",
+        "//executorch/backends/aoti:common_shims_slim",
         "//executorch/backends/aoti/slim/core:slimtensor",
         "//executorch/backends/aoti/slim/factory:empty",
         "//executorch/backends/aoti/slim/factory:from_blob",
