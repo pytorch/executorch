@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
@@ -85,6 +86,121 @@ inline std::vector<int64_t> compute_contiguous_strides(IntArrayRef sizes) {
     }
   }
   return strides;
+}
+
+/// Infers the final concrete shape by filling in at most one '-1' dimension.
+/// @param shape The proposed shape, may contain one -1 for inference.
+/// @param numel The total number of elements in the tensor.
+/// @return Vector with the final shape (no -1 entries).
+inline std::vector<int64_t> infer_size(IntArrayRef shape, int64_t numel) {
+  int64_t new_size = 1;
+  int64_t infer_dim = -1;
+  std::vector<int64_t> result_shape;
+  result_shape.reserve(shape.size());
+
+  for (size_t dim = 0; dim < shape.size(); dim++) {
+    if (shape[dim] == -1) {
+      ET_CHECK_MSG(infer_dim == -1, "only one dimension can be inferred");
+      infer_dim = static_cast<int64_t>(dim);
+      result_shape.push_back(-1); // placeholder
+    } else {
+      ET_CHECK_MSG(
+          shape[dim] >= 0,
+          "invalid shape dimension %ld",
+          static_cast<long>(shape[dim]));
+      new_size *= shape[dim];
+      result_shape.push_back(shape[dim]);
+    }
+  }
+
+  if (infer_dim != -1) {
+    ET_CHECK_MSG(
+        new_size != 0,
+        "cannot reshape tensor of 0 elements into shape with -1");
+    ET_CHECK_MSG(
+        numel % new_size == 0,
+        "shape is invalid for input size %ld",
+        static_cast<long>(numel));
+    result_shape[static_cast<size_t>(infer_dim)] = numel / new_size;
+  } else {
+    ET_CHECK_MSG(
+        numel == new_size,
+        "shape is invalid for input of size %ld",
+        static_cast<long>(numel));
+  }
+  return result_shape;
+}
+
+/// Determines if a reshape is possible as a view without copying.
+/// If so, returns the new strides; otherwise returns an empty optional.
+/// @param old_sizes Current tensor sizes.
+/// @param old_strides Current tensor strides.
+/// @param new_sizes Target tensor sizes.
+/// @return Strides for the view, or nullopt if copy is required.
+inline std::optional<std::vector<int64_t>> compute_stride(
+    IntArrayRef old_sizes,
+    IntArrayRef old_strides,
+    IntArrayRef new_sizes) {
+  if (old_sizes.empty()) {
+    return std::vector<int64_t>(new_sizes.size(), 1);
+  }
+
+  // Handle numel == 0 case
+  size_t numel = static_cast<size_t>(compute_numel(old_sizes));
+  if (numel == 0 && old_sizes == new_sizes) {
+    return toVec(old_strides);
+  }
+
+  int64_t new_sizes_len = static_cast<int64_t>(new_sizes.size());
+  std::vector<int64_t> new_strides(new_sizes_len);
+  if (numel == 0) {
+    for (int64_t view_d = new_sizes_len - 1; view_d >= 0; view_d--) {
+      if (view_d == new_sizes_len - 1) {
+        new_strides[view_d] = 1;
+      } else {
+        new_strides[view_d] = std::max<int64_t>(new_sizes[view_d + 1], 1) *
+            new_strides[view_d + 1];
+      }
+    }
+    return new_strides;
+  }
+
+  int64_t view_d = new_sizes_len - 1;
+  int64_t chunk_base_stride = old_strides.back();
+  int64_t tensor_numel = 1;
+  int64_t view_numel = 1;
+
+  for (int64_t tensor_d = static_cast<int64_t>(old_sizes.size()) - 1;
+       tensor_d >= 0;
+       tensor_d--) {
+    tensor_numel *= old_sizes[tensor_d];
+
+    bool is_chunk_end = (tensor_d == 0) ||
+        (old_sizes[tensor_d - 1] != 1 &&
+         old_strides[tensor_d - 1] != tensor_numel * chunk_base_stride);
+
+    if (is_chunk_end) {
+      while (view_d >= 0 &&
+             (view_numel < tensor_numel || new_sizes[view_d] == 1)) {
+        new_strides[view_d] = view_numel * chunk_base_stride;
+        view_numel *= new_sizes[view_d];
+        view_d--;
+      }
+      if (view_numel != tensor_numel) {
+        return std::nullopt; // Not viewable
+      }
+      if (tensor_d > 0) {
+        chunk_base_stride = old_strides[tensor_d - 1];
+        tensor_numel = 1;
+        view_numel = 1;
+      }
+    }
+  }
+
+  if (view_d != -1) {
+    return std::nullopt; // Not viewable
+  }
+  return new_strides;
 }
 
 } // namespace executorch::backends::aoti::slim
