@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -76,7 +76,11 @@ class DecomposeAddSubAlphaPass(ArmPass):
         lhs, rhs = args
 
         alpha_full = super().call_operator(
-            full_op, ((1,), float(alpha)), {}, meta, updated=True
+            full_op,
+            ((1,), float(alpha)),
+            {"device": meta["val"].device},
+            meta,
+            updated=True,
         )
         scaled_rhs = super().call_operator(
             mul_op,
