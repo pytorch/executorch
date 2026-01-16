@@ -269,7 +269,6 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 You can specify custom image for VLM models using the `--image_path` flag:
 
 - **HTTP/HTTPS URLs**: Direct links to images on the web
-  - Example: `https://example.com/my-image.jpg`
 - **Local file paths**: Absolute or relative paths to image files on your system
   - Example: `/path/to/your/image.jpg` or `./images/my_image.png`
 
