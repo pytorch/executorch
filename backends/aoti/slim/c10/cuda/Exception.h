@@ -19,12 +19,14 @@
 
 /// Checks a CUDA expression and aborts on error.
 /// @param EXPR The CUDA expression to check.
+#ifndef ET_CUDA_CHECK
 #define ET_CUDA_CHECK(EXPR)                                                 \
   do {                                                                      \
     const cudaError_t __err = EXPR;                                         \
     ET_CHECK_MSG(                                                           \
         __err == cudaSuccess, "CUDA error: %s", cudaGetErrorString(__err)); \
   } while (0)
+#endif
 
 /// Checks a CUDA expression and logs a warning on error (non-fatal).
 /// @param EXPR The CUDA expression to check.
