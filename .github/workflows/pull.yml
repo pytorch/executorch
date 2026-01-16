@@ -1087,6 +1087,37 @@ jobs:
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
 
+  test-coreml-bc-macos:
+    name: test-coreml-bc-macos (${{ matrix.runner }})
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        runner: [macos-m1-stable, macos-m2-stable]
+      fail-fast: false
+    with:
+      runner: ${{ matrix.runner }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 180
+      script: |
+        set -eux
+
+        # Set up Python environment
+        eval "$(conda shell.bash hook)"
+        conda activate
+
+        echo "::group::Run CoreML Backward Compatibility Test"
+        # Copy script to temp location since it will checkout old commits
+        # which would overwrite the script itself
+        TEMP_SCRIPT=$(mktemp)
+        cp .ci/scripts/test_coreml_bc.sh "${TEMP_SCRIPT}"
+        bash "${TEMP_SCRIPT}" "$(pwd)"
+        rm -f "${TEMP_SCRIPT}"
+        echo "::endgroup::"
+
   nxp-build-test:
     name: nxp-build-test
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
