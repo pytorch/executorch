@@ -102,6 +102,9 @@ class ModelArgs:
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
     )
+    local_rope_theta: Optional[float] = (
+        None  # For sliding window attention. e.g., gemma3-1b
+    )
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     rope_scale_factor: int = 8

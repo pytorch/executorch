@@ -280,7 +280,7 @@ def main(args):
             output = torch.from_numpy(output).reshape(output_shape)
             outputs.append(output)
 
-    adb.pull(output_path=args.artifact, callback=post_process)
+    adb.pull(host_output_path=args.artifact, callback=post_process)
 
     # MIoU analysis
     miou = 0

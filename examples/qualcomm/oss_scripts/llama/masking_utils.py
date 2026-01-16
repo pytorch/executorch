@@ -194,7 +194,7 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
 
 
         After 2nd update (e.g., pos=5, n_updates=5, sliding_window=3):
-            Sliding window shifts again, masking older positions and activate new postion.
+            Sliding window shifts again, masking older positions and activate new position.
 
             0 ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○ ○
             1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○

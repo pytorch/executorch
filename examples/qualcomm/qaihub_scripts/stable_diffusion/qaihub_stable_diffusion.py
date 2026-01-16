@@ -336,7 +336,7 @@ def inference(args, compiler_specs, pte_files):
                 np.fromfile(f, dtype=np.float32).reshape(1, 512, 512, 3)
             )
 
-    adb.pull(output_path=args.artifact, callback=post_process_vae)
+    adb.pull(host_output_path=args.artifact, callback=post_process_vae)
 
     if args.fix_latents:
         broadcast_ut_result(output_image, seed)
