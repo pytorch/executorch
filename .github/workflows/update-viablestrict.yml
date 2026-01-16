@@ -48,29 +48,32 @@ jobs:
 
           if [ -n "$VIABLE_SHA" ] && [ -n "$MAIN_SHA" ]; then
             # Get commits between viable/strict and main (up to 20)
-            # Use tab delimiter to avoid issues with pipe in names
+            # Use ASCII unit separator (0x1f) to avoid issues with special chars in names
             COMMITS=$(gh api "repos/pytorch/executorch/compare/${VIABLE_SHA}...${MAIN_SHA}" \
-              --jq '.commits | reverse | .[0:20] | .[] | "\(.sha)\t\(.commit.message | split("\n")[0] | gsub("[\\t\\|]"; " ") | .[0:50])"' 2>/dev/null || echo "")
+              --jq '.commits | reverse | .[0:20] | .[] | "\(.sha)\u001f\(.commit.message | split("\n")[0] | .[0:50])"' 2>/dev/null || echo "")
 
             if [ -n "$COMMITS" ]; then
               echo "| Commit | Title | Failed Job |" >> $GITHUB_STEP_SUMMARY
               echo "|--------|-------|------------|" >> $GITHUB_STEP_SUMMARY
 
-              while IFS=$'\t' read -r sha title; do
+              while IFS=$'\x1f' read -r sha title; do
                 [ -z "$sha" ] && continue
                 short_sha="${sha:0:7}"
+                # Sanitize title for markdown table
+                title=$(echo "$title" | tr '|' '-')
 
-                # Get workflow runs for this commit (use tab delimiter)
+                # Get workflow runs for this commit (use unit separator)
                 failed_run=$(gh api "repos/pytorch/executorch/actions/runs?head_sha=${sha}&per_page=100" \
-                  --jq '.workflow_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "\(.id)\t\(.name | gsub("[\\t\\|]"; " "))"' 2>/dev/null | head -1)
+                  --jq '.workflow_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "\(.id)\u001f\(.name)"' 2>/dev/null | head -1)
 
                 if [ -n "$failed_run" ]; then
-                  run_id=$(echo "$failed_run" | cut -f1)
-                  workflow_name=$(echo "$failed_run" | cut -f2)
+                  IFS=$'\x1f' read -r run_id workflow_name <<< "$failed_run"
+                  # Sanitize workflow name for markdown table
+                  workflow_name=$(echo "$workflow_name" | tr '|' '-')
 
-                  # Get failed job name (sanitize pipe and tab characters)
+                  # Get failed job name
                   failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs?per_page=100" \
-                    --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | .name | gsub("[\\t\\|]"; " ")' 2>/dev/null | head -1)
+                    --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | .name' 2>/dev/null | head -1 | tr '|' '-')
 
                   echo "| ${short_sha} | ${title} | ${workflow_name} / ${failed_job:-unknown} |" >> $GITHUB_STEP_SUMMARY
                   found_failures=true
@@ -86,12 +89,15 @@ jobs:
             echo "| Commit | Title | Failed Job |" >> $GITHUB_STEP_SUMMARY
             echo "|--------|-------|------------|" >> $GITHUB_STEP_SUMMARY
 
-            # Filter by branch=main and use tab delimiter
+            # Filter by branch=main and use unit separator
             gh api "repos/pytorch/executorch/actions/runs?branch=main&per_page=20" \
-              --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)\t\(.head_sha | .[0:7])\t\(.display_title | gsub("[\\t\\|]"; " ") | .[0:50])\t\(.name | gsub("[\\t\\|]"; " "))"' 2>/dev/null | \
-            while IFS=$'\t' read -r run_id sha title workflow; do
+              --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)\u001f\(.head_sha | .[0:7])\u001f\(.display_title | .[0:50])\u001f\(.name)"' 2>/dev/null | \
+            while IFS=$'\x1f' read -r run_id sha title workflow; do
+              # Sanitize for markdown table
+              title=$(echo "$title" | tr '|' '-')
+              workflow=$(echo "$workflow" | tr '|' '-')
               failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs?per_page=100" \
-                --jq '.jobs[] | select(.conclusion == "failure") | .name | gsub("[\\t\\|]"; " ")' 2>/dev/null | head -1)
+                --jq '.jobs[] | select(.conclusion == "failure") | .name' 2>/dev/null | head -1 | tr '|' '-')
               if [ -n "$failed_job" ]; then
                 echo "| ${sha} | ${title} | ${workflow} / ${failed_job} |" >> $GITHUB_STEP_SUMMARY
               fi
