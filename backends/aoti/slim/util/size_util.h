@@ -12,7 +12,7 @@
 #include <optional>
 #include <vector>
 
-#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
+#include <executorch/backends/aoti/slim/util/array_ref_util.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch::backends::aoti::slim {
