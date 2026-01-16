@@ -220,14 +220,6 @@ if(APPLE)
     target_link_libraries(coremldelegate PRIVATE libprotobuf-lite)
   endif()
 
-  # Add nlohmann_json include directory (header-only library) Define
-  # JSON_NOEXCEPTION since coremldelegate is compiled with -fno-exceptions
-  target_include_directories(
-    coremldelegate
-    PRIVATE ${PROJECT_SOURCE_DIR}/third-party/json/single_include
-  )
-  target_compile_definitions(coremldelegate PRIVATE JSON_NOEXCEPTION)
-
   target_link_libraries(
     coremldelegate
     PUBLIC coreml_util coreml_inmemoryfs

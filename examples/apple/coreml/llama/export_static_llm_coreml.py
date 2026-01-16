@@ -170,7 +170,9 @@ def load_model(
     return model, args
 
 
-def _create_example_inputs(model_args, input_len, max_context_len, float_dtype):
+def _create_example_inputs(
+    model_args, input_len, max_context_len, float_dtype, cache_len=None
+):
     """
     Create example inputs for a given input length.
 
@@ -179,12 +181,14 @@ def _create_example_inputs(model_args, input_len, max_context_len, float_dtype):
         input_len: Sequence length for this forward pass
         max_context_len: Maximum context length
         float_dtype: Float dtype (torch.float16 or torch.float32)
+        cache_len: Optional cache length override. If None, uses max_context_len - input_len.
 
     Returns:
         Tuple of (example_inputs, cache_len) where example_inputs is the tuple
         expected by the model's forward method.
     """
-    cache_len = max_context_len - input_len
+    if cache_len is None:
+        cache_len = max_context_len - input_len
 
     mgr = StaticAttentionIOManager(
         model_args,
@@ -504,17 +508,32 @@ def main():
 
     if args.multifunction:
         # Multifunction mode: separate prefill and decode graphs with weight sharing
+        # Both methods use the same cache_len (decode's cache size) so they can share
+        # the same cache buffer at runtime without any copying.
         decode_input_len = 1
         prefill_input_len = args.input_len  # default 32
+        shared_cache_len = (
+            args.max_context_len - decode_input_len
+        )  # Use decode's cache size for both
+
+        print(f"\nShared cache length for prefill/decode: {shared_cache_len}")
 
         print(f"\nCreating example inputs for decode (seqlen={decode_input_len})...")
         decode_inputs, decode_cache_len = _create_example_inputs(
-            model_args, decode_input_len, args.max_context_len, float_dtype
+            model_args,
+            decode_input_len,
+            args.max_context_len,
+            float_dtype,
+            cache_len=shared_cache_len,
         )
 
         print(f"Creating example inputs for prefill (seqlen={prefill_input_len})...")
         prefill_inputs, prefill_cache_len = _create_example_inputs(
-            model_args, prefill_input_len, args.max_context_len, float_dtype
+            model_args,
+            prefill_input_len,
+            args.max_context_len,
+            float_dtype,
+            cache_len=shared_cache_len,
         )
 
         # Test eager execution for both
