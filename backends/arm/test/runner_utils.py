@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import importlib.resources as _resources
 import json
 import logging
 import os
@@ -11,6 +12,8 @@ import shutil
 import subprocess  # nosec B404 - invoked only for trusted toolchain binaries
 import tempfile
 
+import executorch.backends.arm.test as arm_test_package
+import executorch.backends.arm.tosa.schemas as tosa_schemas_package
 from pathlib import Path
 
 from types import NoneType
@@ -583,6 +586,38 @@ def _run_cmd(cmd: List[str], check=True) -> subprocess.CompletedProcess[bytes]:
         )
 
 
+# Name of an optional resource containing the `flatc` executable.
+_FLATC_RESOURCE_NAME: str = "flatbuffers-flatc"
+
+
+def _run_flatc(args: List[str]) -> None:
+    """Runs the `flatc` command with the provided args.
+
+    If a resource matching _FLATC_RESOURCE_NAME exists, uses that executable.
+    Otherwise, expects the `flatc` tool to be available on the system path.
+    """
+    flatc_resource = _resources.files(arm_test_package).joinpath(_FLATC_RESOURCE_NAME)
+    if flatc_resource.is_file():
+        # Use the provided flatc binary from resources.
+        with _resources.as_file(flatc_resource) as flatc_path:
+            subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
+                [str(flatc_path)] + args, check=True
+            )
+    else:
+        # Expect the `flatc` tool to be on the system path or set as an env var.
+        flatc_path = os.getenv("FLATC_EXECUTABLE")
+        if not flatc_path:
+            flatc_path = shutil.which("flatc")
+        if not flatc_path:
+            raise RuntimeError(
+                "flatc not found. Either add it to PATH, set FLATC_EXECUTABLE env var, "
+                "or ensure the flatbuffers-flatc resource is available."
+            )
+        subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
+            [flatc_path] + args, check=True
+        )
+
+
 def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     """
     This function is used to dump the TOSA flatbuffer to a human readable
@@ -603,16 +638,14 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
             f"Unsupported version in TOSA flatbuffer: version={major}.{minor}.{patch}"
         )
 
-    arm_backend_path = os.path.realpath(os.path.dirname(__file__) + "/..")
-    tosa_schema_file = os.path.join(
-        arm_backend_path, f"tosa/schemas/tosa_{major}.{minor}.fbs"
-    )
-    assert os.path.exists(
-        tosa_schema_file
-    ), f"tosa_schema_file: {tosa_schema_file} does not exist"
-    assert shutil.which("flatc") is not None
-    cmd_flatc = [
-        "flatc",
+    # Write schema file to temp directory using importlib.resources
+    tosa_schema_file = os.path.join(tmp, f"tosa_{major}.{minor}.fbs")
+    with open(tosa_schema_file, "wb") as schema_file:
+        schema_file.write(
+            _resources.read_binary(tosa_schemas_package, f"tosa_{major}.{minor}.fbs")
+        )
+
+    flatc_args = [
         "--json",
         "--strict-json",
         "-o",
@@ -623,7 +656,7 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
         "--",
         tosa_input_file,
     ]
-    _run_cmd(cmd_flatc)
+    _run_flatc(flatc_args)
     with open(os.path.join(tmp, "output.json"), "r") as f:
         json_out = json.load(f)
 
