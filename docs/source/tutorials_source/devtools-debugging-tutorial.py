@@ -33,11 +33,6 @@ Using the ExecuTorch Developer Tools to Debug a Model
 # To run this tutorial, you'll first need to
 # `Set up your ExecuTorch environment <../getting-started-setup.html>`__.
 #
-# You'll also need to build the ExecuTorch runtime with event tracer enabled::
-#
-#       cd executorch
-#       cmake -DEXECUTORCH_ENABLE_EVENT_TRACER=ON ...
-#
 
 ######################################################################
 # Generate ETRecord with Representative Inputs
@@ -48,76 +43,115 @@ Using the ExecuTorch Developer Tools to Debug a Model
 # to the eager model. For debugging, we also need to store representative
 # inputs that will be used to calculate reference outputs.
 #
-# We use ``to_edge_transform_and_lower`` with ``generate_etrecord=True`` to
-# automatically capture the ETRecord during the lowering process.
-#
-# In this tutorial, we use a Vision Transformer (ViT) model delegated to
-# XNNPACK to demonstrate debugging a real-world delegated model.
+# In this tutorial, an example model (shown below) is used to demonstrate.
 
-import os
-import tempfile
+import copy
 
 import torch
-from torchvision import models
+import torch.nn as nn
+import torch.nn.functional as F
 
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
-from executorch.devtools import Inspector
+from executorch.devtools import generate_etrecord
 
 from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
     ExecutorchProgramManager,
-    to_edge_transform_and_lower,
+    to_edge,
 )
 from torch.export import export, ExportedProgram
 
 
-# Create a temporary directory for artifacts
-temp_dir = tempfile.mkdtemp()
+# Generate Model
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+        self.conv1 = nn.Conv2d(1, 6, 5)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
 
-# Create Vision Transformer model
-vit = models.vision_transformer.vit_b_16(weights="IMAGENET1K_V1")
-model = vit.eval()
-model_inputs = (torch.randn(1, 3, 224, 224),)
+    def forward(self, x):
+        x = F.max_pool2d(F.relu(self.conv1(x)), (2, 2))
+        x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+        x = torch.flatten(x, 1)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
 
-# Export the model
-aten_model: ExportedProgram = export(model, model_inputs, strict=True)
 
-# Lower to edge with XNNPACK delegation and generate ETRecord
-edge_program_manager = to_edge_transform_and_lower(
-    aten_model,
-    partitioner=[XnnpackPartitioner()],
-    compile_config=get_xnnpack_edge_compile_config(),
-    generate_etrecord=True,
+model = Net()
+
+aten_model: ExportedProgram = export(model, (torch.randn(1, 1, 32, 32),), strict=True)
+
+edge_program_manager: EdgeProgramManager = to_edge(
+    aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True)
 )
-
+edge_program_manager_copy = copy.deepcopy(edge_program_manager)
 et_program_manager: ExecutorchProgramManager = edge_program_manager.to_executorch()
 
-# Get the ETRecord
-etrecord = et_program_manager.get_etrecord()
 
-# Set the input for numerical discrepancy detection
-etrecord.update_representative_inputs(model_inputs)
-
-# Save to target location
-etrecord_path = os.path.join(temp_dir, "etrecord.bin")
-etrecord.save(etrecord_path)
-
-# Save the PTE file
-pte_path = os.path.join(temp_dir, "model.pte")
-et_program_manager.save(pte_path)
-
-# sphinx_gallery_start_ignore
-from unittest.mock import patch
-
-# sphinx_gallery_end_ignore
+# Generate ETRecord
+etrecord_path = "etrecord.bin"
+generate_etrecord(etrecord_path, edge_program_manager_copy, et_program_manager)
 
 ######################################################################
 #
-# .. note::
-#    The ``update_representative_inputs`` method is crucial for debugging.
-#    It stores the inputs that will be used to compute reference outputs
-#    from the eager model, which are then compared against the runtime outputs.
+# .. warning::
+#    Users should do a deepcopy of the output of ``to_edge()`` and pass in the
+#    deepcopy to the ``generate_etrecord`` API. This is needed because the
+#    subsequent call, ``to_executorch()``, does an in-place mutation and will
+#    lose debug data in the process.
 #
+
+######################################################################
+# Generate BundledProgram
+# -----------------------
+#
+# Next step is to generate a ``BundledProgram``. ``BundledProgram`` packages
+# the model with sample inputs and expected outputs for testing and debugging.
+
+import torch
+from executorch.devtools import BundledProgram
+
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
+
+from executorch.exir import to_edge
+from torch.export import export
+
+# Step 1: ExecuTorch Program Export
+m_name = "forward"
+method_graphs = {m_name: export(model, (torch.randn(1, 1, 32, 32),), strict=True)}
+
+# Step 2: Construct Method Test Suites
+inputs = [[torch.randn(1, 1, 32, 32)] for _ in range(2)]
+
+method_test_suites = [
+    MethodTestSuite(
+        method_name=m_name,
+        test_cases=[
+            MethodTestCase(inputs=inp, expected_outputs=getattr(model, m_name)(*inp))
+            for inp in inputs
+        ],
+    )
+]
+
+# Step 3: Generate BundledProgram
+executorch_program = to_edge(method_graphs).to_executorch()
+bundled_program = BundledProgram(executorch_program, method_test_suites)
+
+# Step 4: Serialize BundledProgram to flatbuffer.
+serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(
+    bundled_program
+)
+save_path = "bundled_program.bp"
+with open(save_path, "wb") as f:
+    f.write(serialized_bundled_program)
 
 ######################################################################
 # Generate ETDump with Debug Buffer
@@ -127,32 +161,15 @@ from unittest.mock import patch
 # stores intermediate outputs from the runtime execution, which are essential
 # for numerical discrepancy analysis.
 #
-# When loading the program, we enable ETDump generation and allocate a debug
-# buffer to capture intermediate tensors.
-
-from executorch.runtime import Method, Program, Runtime, Verification
-
-# Generate ETDump and the debug data buffer
-et_runtime: Runtime = Runtime.get()
-program: Program = et_runtime.load_program(
-    pte_path,
-    verification=Verification.Minimal,
-    enable_etdump=True,
-    debug_buffer_size=1024 * 1024 * 1024,  # 1GB buffer for intermediate outputs
-)
-
-forward: Method = program.load_method("forward")
-forward.execute(model_inputs)
-
-etdump_path = os.path.join(temp_dir, "etdump.etdp")
-debug_buffer_path = os.path.join(temp_dir, "debug_buffer.bin")
-program.write_etdump_result_to_file(etdump_path, debug_buffer_path)
-
-######################################################################
+# Use CMake (follow `these instructions <../runtime-build-and-cross-compilation.html#configure-the-cmake-build>`__ to set up cmake) to execute the Bundled Program with debug output enabled::
 #
-# .. warning::
+#       cd executorch
+#       ./examples/devtools/build_example_runner.sh
+#       cmake-out/examples/devtools/example_runner --bundled_program_path="bundled_program.bp" --debug_output_path="debug_output.bin"
+#
+# .. note::
 #    The debug buffer size should be large enough to hold all intermediate
-#    outputs. For large models like ViT, a 1GB buffer is recommended.
+#    outputs. For large models, allocate sufficient buffer space.
 #    If the buffer is too small, some intermediate outputs may be truncated.
 #
 
@@ -163,14 +180,25 @@ program.write_etdump_result_to_file(etdump_path, debug_buffer_path)
 # Create the ``Inspector`` by passing in the artifact paths, including
 # the debug buffer path. The Inspector will use these to correlate
 # runtime results with the original model and compute numerical gaps.
+#
+# Recall: An ``ETRecord`` is not required. If an ``ETRecord`` is not provided,
+# the Inspector will show runtime results without operator correlation.
+
+from executorch.devtools import Inspector
 
 # sphinx_gallery_start_ignore
+from unittest.mock import patch
+
 inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_value=None)
 inspector_patch_print.start()
-inspector_patch_calculate = patch.object(
-    Inspector, "calculate_numeric_gap", return_value=None
-)
-inspector_patch_calculate.start()
+# sphinx_gallery_end_ignore
+etrecord_path = "etrecord.bin"
+etdump_path = "etdump.etdp"
+debug_buffer_path = "debug_output.bin"
+
+# sphinx_gallery_start_ignore
+inspector_patch = patch.object(Inspector, "__init__", return_value=None)
+inspector_patch.start()
 # sphinx_gallery_end_ignore
 
 inspector = Inspector(
@@ -178,6 +206,10 @@ inspector = Inspector(
     etrecord=etrecord_path,
     debug_buffer_path=debug_buffer_path,
 )
+
+# sphinx_gallery_start_ignore
+inspector_patch.stop()
+# sphinx_gallery_end_ignore
 
 ######################################################################
 # Calculating Numerical Discrepancies
@@ -191,19 +223,17 @@ inspector = Inspector(
 # The method supports several metrics:
 #
 # - ``MSE``: Mean Squared Error
-# - ``MAE``: Mean Absolute Error
 # - ``SNR``: Signal-to-Noise Ratio
-# - ``COSINE``: Cosine Similarity
-
-import pandas as pd
-
-pd.set_option("display.width", 100000)
-pd.set_option("display.max_columns", None)
-
-# Calculate numerical gap using Mean Squared Error
-df: pd.DataFrame = inspector.calculate_numeric_gap("MSE")
-
-######################################################################
+#
+# .. code-block:: python
+#
+#    import pandas as pd
+#
+#    pd.set_option("display.width", 100000)
+#    pd.set_option("display.max_columns", None)
+#
+#    # Calculate numerical gap using Mean Squared Error
+#    df = inspector.calculate_numeric_gap("MSE")
 #
 # The returned DataFrame contains columns for each operator including:
 #
@@ -229,42 +259,48 @@ df: pd.DataFrame = inspector.calculate_numeric_gap("MSE")
 #
 # Once you have the numerical gaps, you can identify operators with
 # significant discrepancies and investigate further.
-
-# Find operators with the largest discrepancies
-if df is not None:
-    # Sort by MSE to find the most problematic operators
-    df_sorted = df.sort_values(by="mse", ascending=False)
-
-    print("Top 5 operators with largest numerical discrepancies:")
-    print(df_sorted.head(5))
-
-    # Filter for operators with MSE above a threshold
-    threshold = 1e-4
-    problematic_ops = df[df["mse"] > threshold]
-    print(f"\nOperators with MSE > {threshold}:")
-    print(problematic_ops)
+#
+# .. code-block:: python
+#
+#    # Find operators with the largest discrepancies
+#    if df is not None:
+#        # Sort by MSE to find the most problematic operators
+#        df_sorted = df.sort_values(by="mse", ascending=False)
+#
+#        print("Top 5 operators with largest numerical discrepancies:")
+#        print(df_sorted.head(5))
+#
+#        # Filter for operators with MSE above a threshold
+#        threshold = 1e-4
+#        problematic_ops = df[df["mse"] > threshold]
+#        print(f"\nOperators with MSE > {threshold}:")
+#        print(problematic_ops)
+#
 
 ######################################################################
 # Debugging Specific Operators
 # ----------------------------
 #
 # For detailed debugging, you can examine the intermediate outputs
-# of specific operators.
-
-for event_block in inspector.event_blocks:
-    for event in event_block.events:
-        # Access debug data (intermediate outputs) for each event
-        if event.debug_data is not None:
-            print(f"Operator: {event.name}")
-            print(f"  Debug data shape: {event.debug_data.shape}")
-            print(f"  Debug data dtype: {event.debug_data.dtype}")
-
-            # If ETRecord was provided, you can also see stack traces
-            if event.stack_traces:
-                print(f"  Stack trace: {event.stack_traces}")
-
-            if event.module_hierarchy:
-                print(f"  Module hierarchy: {event.module_hierarchy}")
+# of specific operators using the EventBlock and Event classes.
+#
+# .. code-block:: python
+#
+#    for event_block in inspector.event_blocks:
+#        for event in event_block.events:
+#            # Access debug data (intermediate outputs) for each event
+#            if event.debug_data is not None:
+#                print(f"Operator: {event.name}")
+#                print(f"  Debug data shape: {event.debug_data.shape}")
+#                print(f"  Debug data dtype: {event.debug_data.dtype}")
+#
+#                # If ETRecord was provided, you can also see stack traces
+#                if event.stack_traces:
+#                    print(f"  Stack trace: {event.stack_traces}")
+#
+#                if event.module_hierarchy:
+#                    print(f"  Module hierarchy: {event.module_hierarchy}")
+#
 
 ######################################################################
 # Comparing with Reference Outputs
@@ -272,27 +308,30 @@ for event_block in inspector.event_blocks:
 #
 # You can also use the ``compare_results`` utility to perform quality
 # analysis between runtime outputs and reference outputs.
-
-from executorch.devtools.inspector import compare_results
-
-# Get runtime outputs and compare with eager model outputs
-for event_block in inspector.event_blocks:
-    if event_block.name == "Execute":
-        # Get runtime output
-        runtime_output = event_block.run_output
-
-        # Compute reference output from eager model
-        with torch.no_grad():
-            ref_output = model(*model_inputs)
-
-        if runtime_output is not None:
-            # Compare results (set plot=True to generate visualizations)
-            comparison = compare_results(
-                runtime_output,
-                [ref_output],
-                plot=False,  # Set to True in a notebook environment
-            )
-            print("Comparison results:", comparison)
+#
+# .. code-block:: python
+#
+#    from executorch.devtools.inspector import compare_results
+#
+#    # Get runtime outputs and compare with eager model outputs
+#    for event_block in inspector.event_blocks:
+#        if event_block.name == "Execute":
+#            # Get runtime output
+#            runtime_output = event_block.run_output
+#
+#            # Compute reference output from eager model
+#            with torch.no_grad():
+#                ref_output = model(*model_inputs)
+#
+#            if runtime_output is not None:
+#                # Compare results (set plot=True to generate visualizations)
+#                comparison = compare_results(
+#                    runtime_output,
+#                    [ref_output],
+#                    plot=False,
+#                )
+#                print("Comparison results:", comparison)
+#
 
 ######################################################################
 # Best Practices for Debugging
@@ -321,7 +360,7 @@ for event_block in inspector.event_blocks:
 # In this tutorial, we learned how to use the ExecuTorch Developer Tools
 # to debug numerical discrepancies in models. The key steps are:
 #
-# 1. Generate ETRecord with representative inputs using ``update_representative_inputs``
+# 1. Generate ETRecord during model export
 # 2. Execute the model with a debug buffer to capture intermediate outputs
 # 3. Use the Inspector's ``calculate_numeric_gap`` method to identify discrepancies
 # 4. Analyze and debug specific operators using the DataFrame and event APIs
