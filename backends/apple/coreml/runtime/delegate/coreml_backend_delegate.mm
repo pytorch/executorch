@@ -25,6 +25,8 @@
 #import <unordered_map>
 #import <vector>
 
+#import <Foundation/Foundation.h>
+
 #ifdef ET_EVENT_TRACER_ENABLED
 #import <model_event_logger_impl.h>
 #endif
@@ -49,6 +51,63 @@ using executorch::aten::SizesType;
 using executorch::runtime::Span;
 using executorch::aten::Tensor;
 using executorch::runtime::kTensorDimensionLimit;
+
+/// Checks if the processed bytes represent a JSON reference to NamedDataStore.
+/// The JSON format is: {"version": 1, "key": "...", "method": "..."}
+///
+/// @param data Pointer to the processed bytes.
+/// @param size Size of the processed bytes.
+/// @return true if the bytes appear to be a JSON reference, false otherwise.
+bool isNamedDataReference(const void* data, size_t size) {
+    // Quick check: JSON starts with '{' and should be small (< 512 bytes)
+    if (size < 2 || size > 512 || static_cast<const char*>(data)[0] != '{') {
+        return false;
+    }
+    
+    // Try to parse as JSON using Foundation
+    NSData *jsonData = [NSData dataWithBytesNoCopy:const_cast<void*>(data)
+                                            length:size
+                                      freeWhenDone:NO];
+    NSError *error = nil;
+    id jsonObject = [NSJSONSerialization JSONObjectWithData:jsonData
+                                                    options:0
+                                                      error:&error];
+    if (error != nil || ![jsonObject isKindOfClass:[NSDictionary class]]) {
+        return false;
+    }
+    
+    NSDictionary *dict = (NSDictionary *)jsonObject;
+    // Check for required fields: "version" and "key"
+    return dict[@"version"] != nil && [dict[@"key"] isKindOfClass:[NSString class]];
+}
+
+/// Parses the JSON reference and extracts the NamedDataStore key.
+/// Expected format: {"version": 1, "key": "...", "method": "..."}
+///
+/// @param data Pointer to the JSON bytes.
+/// @param size Size of the JSON bytes.
+/// @return The extracted key, or empty string if parsing fails.
+std::string parseNamedDataKey(const void* data, size_t size) {
+    NSData *jsonData = [NSData dataWithBytesNoCopy:const_cast<void*>(data)
+                                            length:size
+                                      freeWhenDone:NO];
+    NSError *error = nil;
+    id jsonObject = [NSJSONSerialization JSONObjectWithData:jsonData
+                                                    options:0
+                                                      error:&error];
+    if (error != nil || ![jsonObject isKindOfClass:[NSDictionary class]]) {
+        ET_LOG(Error, "Failed to parse JSON reference");
+        return "";
+    }
+    
+    NSDictionary *dict = (NSDictionary *)jsonObject;
+    NSString *key = dict[@"key"];
+    if ([key isKindOfClass:[NSString class]]) {
+        return std::string([key UTF8String]);
+    }
+    
+    return "";
+}
 
 std::optional<MultiArray::DataType> get_data_type(ScalarType scalar_type) {
     switch (scalar_type) {
@@ -186,9 +245,54 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
         specs_map.emplace(spec.key, std::move(buffer));
     }
 
-    auto buffer = Buffer(processed->data(), processed->size());
+    Buffer buffer(nullptr, 0);  // Will be set below
+    
+    // Check if processed bytes is a JSON reference to NamedDataStore
+    if (isNamedDataReference(processed->data(), processed->size())) {
+        // Parse the key from the JSON reference
+        std::string key = parseNamedDataKey(processed->data(), processed->size());
+        ET_CHECK_OR_RETURN_ERROR(!key.empty(),
+                                 InvalidProgram,
+                                 "%s: Failed to parse NamedDataStore key from JSON reference.",
+                                 ETCoreMLStrings.delegateIdentifier.UTF8String);
+        
+        ET_LOG(Debug, "%s: Loading model from NamedDataStore with key: %s",
+               ETCoreMLStrings.delegateIdentifier.UTF8String, key.c_str());
+        
+        // Get the NamedDataMap from context
+        const auto* named_data_map = context.get_named_data_map();
+        ET_CHECK_OR_RETURN_ERROR(named_data_map != nullptr,
+                                 InvalidProgram,
+                                 "%s: NamedDataMap is null but processed bytes is a JSON reference.",
+                                 ETCoreMLStrings.delegateIdentifier.UTF8String);
+        
+        // Load the model data from NamedDataMap
+        auto result = named_data_map->get_data(key.c_str());
+        ET_CHECK_OR_RETURN_ERROR(result.ok(),
+                                 InvalidProgram,
+                                 "%s: Failed to load model data from NamedDataStore with key: %s",
+                                 ETCoreMLStrings.delegateIdentifier.UTF8String, key.c_str());
+        
+        // Move the result into the incoming FreeableBuffer so its lifetime matches `processed`
+        processed->~FreeableBuffer();
+        new (processed) FreeableBuffer(std::move(result.get()));
+        buffer = Buffer(processed->data(), processed->size());
+        
+        ET_LOG(Debug, "%s: Loaded %zu bytes from NamedDataStore",
+               ETCoreMLStrings.delegateIdentifier.UTF8String, processed->size());
+    } else {
+        // Legacy path: use processed bytes directly
+        buffer = Buffer(processed->data(), processed->size());
+    }
+
+    // Get method name for multifunction model support
+    const char* method_name = context.get_method_name();
+    if (method_name != nullptr) {
+        ET_LOG(Debug, "%s: Method name: %s", ETCoreMLStrings.delegateIdentifier.UTF8String, method_name);
+    }
+
     std::error_code error;
-    auto handle = impl_->init(std::move(buffer), specs_map);
+    auto handle = impl_->init(std::move(buffer), specs_map, method_name);
     ET_CHECK_OR_RETURN_ERROR(handle != nullptr,
                              InvalidProgram,
                              "%s: Failed to init the model.", ETCoreMLStrings.delegateIdentifier.UTF8String);
