@@ -22,6 +22,7 @@ from executorch.backends.cadence.aot.memory_planning import (
     print_memory_planning_info,
 )
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
+from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceDefaultQuantizer,
     CadenceQuantizer,
@@ -157,7 +158,9 @@ def apply_pre_edge_transform_passes(
     # Get patterns and apply fusion of dq -> op -> q to qop
     # pyre-ignore[16]: no attribute
     patterns = [q.pattern for q in quantizer.quantizers]
-    fused_program = _transform(converted_program, QuantFusion(patterns))
+    fused_program = _transform(
+        converted_program, QuantFusion(patterns), SpecPropPass()
+    )
 
     return fused_program
 
