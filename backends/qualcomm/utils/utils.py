@@ -31,6 +31,7 @@ from executorch.backends.qualcomm.partition.qnn_partitioner import (
 from executorch.backends.qualcomm.serialization.qc_schema import (
     _soc_info_table,
     HtpArch,
+    LpaiHardwareVersion,
     QcomChipset,
     QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
@@ -40,6 +41,9 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchHtpPrecision,
     QnnExecuTorchLogLevel,
+    QnnExecuTorchLpaiBackendOptions,
+    QnnExecuTorchLpaiClientPerf,
+    QnnExecuTorchLpaiCoreAffinity,
     QnnExecuTorchOpPackageOptions,
     QnnExecuTorchOptions,
     QnnExecuTorchProfileLevel,
@@ -957,7 +961,7 @@ def generate_gpu_compiler_spec(
     Returns:
         QnnExecuTorchGpuBackendOptions: backend options for QNN GPU.
     """
-    # TODO: enable performance hint mechanism in runtime and make this as an option
+    # TODO: enable power config mechanism in runtime and make this as an option
     gpu_options = QnnExecuTorchGpuBackendOptions()
     gpu_options.precision = precision
     gpu_options.use_memory_optimizations = use_memory_optimizations
@@ -1011,6 +1015,68 @@ def generate_htp_compiler_spec(
     return QnnExecuTorchBackendOptions(
         backend_type=QnnExecuTorchBackendType.kHtpBackend,
         htp_options=htp_options,
+    )
+
+
+def generate_lpai_compiler_spec(
+    fps: int = 1,
+    ftrt_ratio: int = 10,
+    client_perf_type: QnnExecuTorchLpaiClientPerf = QnnExecuTorchLpaiClientPerf.kRealTime,
+    affinity: QnnExecuTorchLpaiCoreAffinity = QnnExecuTorchLpaiCoreAffinity.kSoft,
+    core_selection: int = 0,
+) -> QnnExecuTorchBackendOptions:
+    """
+    Helper function generating backend options for QNN LPAI
+
+    Args:
+        fps:
+            Specifies how frequently inference must be completed.
+            This sets the overall time budget for each frame, including pre-processing,
+            inference, and post-processing.
+        ftrt_ratio:
+            Determines the hardware configuration to meet the latency requirement for inference.
+            Setting ftrt_ratio = 50 applies a multiplication factor of 5.0 to the base clock frequency,
+            helping the eNPU meet the tighter latency constraint.
+        client_perf_type:
+            kRealtime - Indicates that the model is intended for real-time use cases,
+                where a specific performance threshold must be met.
+                If the required performance cannot be achieved, the finalize function will return an error.
+            kNonRealTime - Refers to models without strict performance requirements.
+                In these cases, LPAI will make a best-effort attempt to accommodate the workload,
+                and finalize will not fail due to performance limitations.
+        affinity:
+            kSoft - Default affinity. Scheduler will assign jobs to requested cores when feasible
+            kHard - Scheduler will honour affinity requested by the client
+        core_selection:
+            A bit mask for core selection. Each bit corresponds to a core, set the bit to use the core
+            Note that all zeros and all ones mean any core can be used for the eAI instance
+
+        Example for 2 cores:
+        +--------+--------+---------------+-------------------------------------------------------------------------+
+        | bit 1  | bit 0  | affinity      |                 scheduler behavior                                      |
+        +--------+--------+---------------+-------------------------------------------------------------------------+
+        | 0      |      0 |      any      | Default affinity, scheduler will pick any core based on load            |
+        | 1      |      1 |      any      | Same as default affinity                                                |
+        | 0      |      1 |      hard     | All jobs will only be sent to core 0                                    |
+        | 1      |      0 |      hard     | All jobs will only be sent to core 1                                    |
+        | 0      |      1 |      soft     | Scheduler will attempt to send jobs to core 0                           |
+        | 1      |      0 |      soft     | Scheduler will attempt to send jobs to core 1                           |
+        +--------+--------+---------------+-------+-----------------------------------------------------------------+
+
+    Returns:
+        QnnExecuTorchBackendOptions: backend options for QNN LPAI.
+    """
+    # TODO: enable power config mechanism in runtime and make this as an option
+    lpai_options = QnnExecuTorchLpaiBackendOptions()
+    lpai_options.fps = fps
+    lpai_options.ftrt_ratio = ftrt_ratio
+    lpai_options.client_perf_type = client_perf_type
+    lpai_options.affinity = affinity
+    lpai_options.core_selection = core_selection
+
+    return QnnExecuTorchBackendOptions(
+        backend_type=QnnExecuTorchBackendType.kLpaiBackend,
+        lpai_options=lpai_options,
     )
 
 
@@ -1126,7 +1192,7 @@ def generate_qnn_executorch_compiler_spec(
     ]
 
 
-def get_soc_to_arch_map():
+def get_soc_to_htp_arch_map():
     return {
         "SA8295": HtpArch.V68,
         "SM8350": HtpArch.V68,
@@ -1147,6 +1213,14 @@ def get_soc_to_arch_map():
         "SW6100": HtpArch.V81,
         "QCM6490": HtpArch.V68,
         "SM8845": HtpArch.V81,
+    }
+
+
+def get_soc_to_lpai_hw_ver_map():
+    return {
+        "SM8750": LpaiHardwareVersion.V5,
+        "SM8850": LpaiHardwareVersion.V6,
+        "SAR2230P": LpaiHardwareVersion.V6,
     }
 
 

@@ -9,7 +9,7 @@ Please refer to executorch/backends/qualcomm/serialization/schema.fbs for the sc
 """
 
 from dataclasses import dataclass, field
-from enum import IntEnum, unique
+from enum import auto, IntEnum, unique
 from typing import List, Optional
 
 
@@ -34,6 +34,25 @@ class HtpArch(IntEnum):
 class HtpInfo:
     htp_arch: HtpArch = HtpArch.NONE
     vtcm_size_in_mb: int = 0
+
+
+@unique
+class LpaiHardwareVersion(IntEnum):
+    NONE = 0
+    V1 = auto()
+    V2 = auto()
+    V3 = auto()
+    V4 = auto()
+    V5 = auto()
+    V5_1 = 0x10005
+    V6 = 6
+    V7 = auto()
+
+
+@dataclass
+class LpaiInfo:
+    lpai_hardware_version: LpaiHardwareVersion = LpaiHardwareVersion.NONE
+    # TODO: see if we need to expose num_cores of adsp
 
 
 @unique
@@ -64,6 +83,7 @@ class QcomChipset(IntEnum):
 class SocInfo:
     soc_model: QcomChipset = QcomChipset.UNKNOWN_SM
     htp_info: HtpInfo = field(default_factory=HtpInfo)
+    lpai_info: Optional[LpaiInfo] = None
 
 
 _soc_info_table = {
@@ -74,15 +94,21 @@ _soc_info_table = {
     QcomChipset.SM8550: SocInfo(QcomChipset.SM8550, HtpInfo(HtpArch.V73, 8)),
     QcomChipset.SA8255: SocInfo(QcomChipset.SA8255, HtpInfo(HtpArch.V73, 8)),
     QcomChipset.SM8650: SocInfo(QcomChipset.SM8650, HtpInfo(HtpArch.V75, 8)),
-    QcomChipset.SM8750: SocInfo(QcomChipset.SM8750, HtpInfo(HtpArch.V79, 8)),
-    QcomChipset.SM8850: SocInfo(QcomChipset.SM8850, HtpInfo(HtpArch.V81, 8)),
+    QcomChipset.SM8750: SocInfo(
+        QcomChipset.SM8750, HtpInfo(HtpArch.V79, 8), LpaiInfo(LpaiHardwareVersion.V5)
+    ),
+    QcomChipset.SM8850: SocInfo(
+        QcomChipset.SM8850, HtpInfo(HtpArch.V81, 8), LpaiInfo(LpaiHardwareVersion.V6)
+    ),
     QcomChipset.SSG2115P: SocInfo(QcomChipset.SSG2115P, HtpInfo(HtpArch.V73, 2)),
     QcomChipset.SSG2125P: SocInfo(QcomChipset.SSG2125P, HtpInfo(HtpArch.V73, 2)),
     QcomChipset.SXR1230P: SocInfo(QcomChipset.SXR1230P, HtpInfo(HtpArch.V73, 2)),
     QcomChipset.SXR2230P: SocInfo(QcomChipset.SXR2230P, HtpInfo(HtpArch.V69, 8)),
     QcomChipset.SXR2330P: SocInfo(QcomChipset.SXR2330P, HtpInfo(HtpArch.V79, 8)),
     QcomChipset.QCS9100: SocInfo(QcomChipset.QCS9100, HtpInfo(HtpArch.V73, 8)),
-    QcomChipset.SAR2230P: SocInfo(QcomChipset.SAR2230P, HtpInfo(HtpArch.V81, 4)),
+    QcomChipset.SAR2230P: SocInfo(
+        QcomChipset.SAR2230P, HtpInfo(HtpArch.V81, 4), LpaiInfo(LpaiHardwareVersion.V6)
+    ),
     QcomChipset.SW6100: SocInfo(QcomChipset.SW6100, HtpInfo(HtpArch.V81, 4)),
     QcomChipset.QCM6490: SocInfo(QcomChipset.QCM6490, HtpInfo(HtpArch.V68, 2)),
     QcomChipset.SM8845: SocInfo(QcomChipset.SM8845, HtpInfo(HtpArch.V81, 8)),
@@ -148,7 +174,7 @@ class QnnExecuTorchBackendType(IntEnum):
     kUndefinedBackend = 0
     kGpuBackend = 1
     kHtpBackend = 2
-    kDspBackend = 3
+    kLpaiBackend = 3
 
 
 @dataclass
@@ -164,6 +190,31 @@ class QnnExecuTorchHtpBackendOptions:
     use_fold_relu: bool = True
     use_multi_contexts: bool = False
     use_weight_sharing: bool = False
+
+
+@unique
+class QnnExecuTorchLpaiClientPerf(IntEnum):
+    kUndefined = 0
+    kRealTime = 1
+    kNonRealTime = 2
+
+
+@unique
+class QnnExecuTorchLpaiCoreAffinity(IntEnum):
+    kUndefined = 0
+    kSoft = 1
+    kHard = 2
+
+
+@dataclass
+class QnnExecuTorchLpaiBackendOptions:
+    fps: int = 1
+    ftrt_ratio: int = 10
+    client_perf_type: QnnExecuTorchLpaiClientPerf = (
+        QnnExecuTorchLpaiClientPerf.kRealTime
+    )
+    affinity: QnnExecuTorchLpaiCoreAffinity = QnnExecuTorchLpaiCoreAffinity.kSoft
+    core_selection: int = 0
 
 
 @unique
@@ -189,6 +240,7 @@ class QnnExecuTorchBackendOptions:
     backend_type: QnnExecuTorchBackendType
     htp_options: Optional[QnnExecuTorchHtpBackendOptions] = None
     gpu_options: Optional[QnnExecuTorchGpuBackendOptions] = None
+    lpai_options: Optional[QnnExecuTorchLpaiBackendOptions] = None
 
 
 @unique
