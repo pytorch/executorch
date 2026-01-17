@@ -1,8 +1,132 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain xplat-only targets.
 
 load(":targets.bzl", "define_common_targets")
 
-oncall("executorch")
 
-define_common_targets()
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/examples/qualcomm/oss_scripts/llama/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+
+fbcode_target(_kind = runtime.python_library,
+    name = "static_llama",
+    srcs = [
+        "model/__init__.py",
+        "model/apply_rope.py",
+        "model/feed_forward.py",
+        "model/layernorm.py",
+        "model/static_llama.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:transformer_modules",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "decoder_utils",
+    srcs = [
+        "decoder_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:eval_library",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "masking_utils",
+    srcs = [
+        "masking_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "decoder_constants",
+    srcs = [
+        "decoder_constants.py",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "llama_lib",
+    srcs = ["__init__.py", "llama.py"],
+    deps = [
+        ":decoder_constants",
+        ":decoder_utils",
+        ":masking_utils",
+        "//executorch/examples/models/llama:source_transformation",
+        "//caffe2:torch",
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/backends/qualcomm/quantizer:quantizer",
+        "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/devtools:lib",
+        "//executorch/examples/models:models",
+        "//executorch/examples/models/llama:hf_download",
+        "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
+        "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
+        "//executorch/examples/qualcomm:utils",
+        "//executorch/extension/export_util:export_util",
+        "//executorch/extension/llm/export:export_lib",
+        "//executorch/extension/pybindings:aten_lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "range_setting_pt2e",
+    srcs = [
+        "range_setting_pt2e.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = python_binary,
+    name = "llama",
+    main_function = "executorch.examples.qualcomm.oss_scripts.llama.llama.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+    ],
+    deps = [
+        ":llama_lib",
+    ],
+)
+
+fbcode_target(_kind = python_binary,
+    name = "eval_llama_qnn",
+    srcs = ["eval_llama_qnn.py"],
+    main_function = "executorch.examples.qualcomm.oss_scripts.llama.eval_llama_qnn.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+    ],
+    deps = [
+        ":llama_lib",
+        "//executorch/examples/models/llama:eval_library",
+        "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
+        "fbsource//third-party/pypi/lm-eval:lm-eval",
+    ],
+    keep_gpu_sections = True,
+)
+
+fbcode_target(_kind = runtime.command_alias,
+    name = "llama_qnn",
+    env = {
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
+        # Place holder to pass the QNN_SDK_ROOT check in executorch/examples/qualcomm/utils.py
+        "QNN_SDK_ROOT": "",
+    },
+    exe = ":llama",
+)

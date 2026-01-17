@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
@@ -8,7 +9,7 @@ load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_l
 
 oncall("executorch")
 
-python_binary(
+fbcode_target(_kind = python_binary,
     name = "export_example",
     srcs = ["scripts/export_example.py"],
     main_function = ".scripts.export_example.main",
@@ -24,7 +25,7 @@ python_binary(
     ],
 )
 
-runtime.command_alias(
+fbcode_target(_kind = runtime.command_alias,
     name = "export_example_qnn",
     env = {
         "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
@@ -33,7 +34,7 @@ runtime.command_alias(
     exe = ":export_example",
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "utils",
     srcs = ["utils.py"],
     deps = [
