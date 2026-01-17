@@ -268,9 +268,11 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 
 You can specify custom image for VLM models using the `--image_path` flag:
 
+Take a example image of Statue-of-Liberty in New York Bay
 - **HTTP/HTTPS URLs**: Direct links to images on the web
+  - Example: `https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg`
 - **Local file paths**: Absolute or relative paths to image files on your system
-  - Example: `/path/to/your/image.jpg` or `./images/my_image.png`
+  - Example: [`./examples/qualcomm/oss_scripts/llama/assets/samples/images/Statue-of-Liberty-Island-New-York-Bay.png`](assets/samples/images/Statue-of-Liberty-Island-New-York-Bay.png)
 
 **Default behavior:**
 If `--image_path` is not specified, the system will automatically use the default image URL defined in the model's configuration file (`encoder/encoder_config.py`).
