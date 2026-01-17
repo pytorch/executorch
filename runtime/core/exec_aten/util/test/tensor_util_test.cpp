@@ -65,15 +65,15 @@ TEST_F(TensorUtilTest, SameShapesDifferentDtypes) {
   ET_CHECK_SAME_SHAPE3(a, b, c);
 
   // Not the same dtypes. Check both positions.
-  ET_EXPECT_DEATH(ET_CHECK_SAME_DTYPE2(a, b), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_DTYPE2(b, a), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE2(a, b), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE2(b, a), "");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_DTYPE2(a, b), "Tensors do not match");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_DTYPE2(b, a), "Tensors do not match");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE2(a, b), "Tensors do not match");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE2(b, a), "Tensors do not match");
 
   // Test with a mismatching tensor in all positions, where the other two agree.
-  ET_EXPECT_DEATH(ET_CHECK_SAME_DTYPE3(a, b, b), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_DTYPE3(b, a, b), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_DTYPE3(b, b, a), "");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_DTYPE3(a, b, b), "Tensors do not match");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_DTYPE3(b, a, b), "Tensors do not match");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_DTYPE3(b, b, a), "Tensors do not match");
   ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE3(a, b, b), "");
   ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE3(b, a, b), "");
   ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE3(b, b, a), "");
@@ -88,13 +88,13 @@ TEST_F(TensorUtilTest, DifferentShapesSameDtypes) {
   Tensor b2 = tf_int_.ones({2, 2});
 
   // The different tensors are not the same shape. Check both positions.
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE2(a, b), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE2(b, a), "");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE2(a, b), "Tensors do not match");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE2(b, a), "Tensors do not match");
 
   // Test with the different tensor in all positions.
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE3(a, b, b2), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE3(b, a, b2), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE3(b, b2, a), "");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE3(a, b, b2), "Tensors do not match");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE3(b, a, b2), "Tensors do not match");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE3(b, b2, a), "Tensors do not match");
 
   // They are the same dtypes.
   ET_CHECK_SAME_DTYPE2(a, b);
@@ -104,11 +104,14 @@ TEST_F(TensorUtilTest, DifferentShapesSameDtypes) {
   ET_CHECK_SAME_DTYPE3(b, b2, a);
 
   // But not the same shape-and-dtype.
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE2(a, b), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE2(b, a), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE3(a, b, b2), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE3(b, a, b2), "");
-  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE3(b, b2, a), "");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE2(a, b), "Tensors do not match");
+  ET_EXPECT_DEATH(ET_CHECK_SAME_SHAPE_AND_DTYPE2(b, a), "Tensors do not match");
+  ET_EXPECT_DEATH(
+      ET_CHECK_SAME_SHAPE_AND_DTYPE3(a, b, b2), "Tensors do not match");
+  ET_EXPECT_DEATH(
+      ET_CHECK_SAME_SHAPE_AND_DTYPE3(b, a, b2), "Tensors do not match");
+  ET_EXPECT_DEATH(
+      ET_CHECK_SAME_SHAPE_AND_DTYPE3(b, b2, a), "Tensors do not match");
 }
 
 TEST_F(TensorUtilTest, ZeroDimensionalTensor) {
@@ -163,9 +166,15 @@ TEST_F(TensorUtilTest, GetLeadingDimsInputOutOfBoundDies) {
   Tensor t = tf_int_.ones({2, 3, 4});
 
   // dim needs to be in the range [0, t.dim()]
-  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, -2), "");
-  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, -1), "");
-  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, 4), "");
+  ET_EXPECT_DEATH(
+      executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, -2),
+      "Ending dimension.*should be in the range");
+  ET_EXPECT_DEATH(
+      executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, -1),
+      "Ending dimension.*should be in the range");
+  ET_EXPECT_DEATH(
+      executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, 4),
+      "Ending dimension.*should be in the range");
 }
 
 TEST_F(TensorUtilTest, GetTrailingDimsSmokeTest) {
@@ -187,9 +196,15 @@ TEST_F(TensorUtilTest, GetTrailingDimsInputOutOfBoundDies) {
   Tensor t = tf_int_.ones({2, 3, 4});
 
   // dim needs to be in the range [-1, t.dim() - 1)
-  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, -2), "");
-  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, 3), "");
-  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, 4), "");
+  ET_EXPECT_DEATH(
+      executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, -2),
+      "Starting dimension.*should be in the range");
+  ET_EXPECT_DEATH(
+      executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, 3),
+      "Starting dimension.*should be in the range");
+  ET_EXPECT_DEATH(
+      executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, 4),
+      "Starting dimension.*should be in the range");
 }
 
 TEST_F(TensorUtilTest, ContiguousCheckSupported) {
