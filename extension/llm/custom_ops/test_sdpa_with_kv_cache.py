@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from executorch.extension.llm.custom_ops import custom_ops  # noqa
+from executorch.extension.pybindings.portable_lib import _unsafe_reset_threadpool
 
 
 def is_fbcode():
@@ -437,6 +438,10 @@ class SDPATestCommon(unittest.TestCase):
         self.head_dim = 128
         self.max_seq_len = 2048
         self.setup_caches()
+        # This setting is needed to make this test not flaky due to OMP
+        # error of "OMP: Error #131: Thread identifier invalid"
+        # See also test_quantized_sdpa.py for the same workaround
+        _unsafe_reset_threadpool(3)
 
     def _scale_tensor(self, tensor, min_value, max_value, scale=True):
         normalized_tensor = (tensor - tensor.min()) / (tensor.max() - tensor.min())

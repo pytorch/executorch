@@ -14,6 +14,10 @@ from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 # Check CUDA availability once at module level
 CUDA_AVAILABLE = torch.cuda.is_available()
 
+# Check if CUDA device has compatible compute capability for Triton kernels
+# Minimum CC 9.0 (Hopper) required for current PyTorch/Triton build
+CUDA_CC_COMPATIBLE = CUDA_AVAILABLE and torch.cuda.get_device_capability()[0] >= 9
+
 
 class TestUpdateCrossAttnCache(unittest.TestCase):
     def test_update_cross_attn_cache(self):
@@ -207,7 +211,9 @@ class TestUpdateCrossAttnCache(unittest.TestCase):
             cache, value, msg="Cache not fully updated when S == S_max"
         )
 
-    @unittest.skipUnless(CUDA_AVAILABLE, "CUDA not available")
+    @unittest.skipUnless(
+        CUDA_CC_COMPATIBLE, "Requires CUDA with compute capability >= 9.0"
+    )
     def test_alias_and_update_cross_attn_cache_with_cond_triton(self):
         """Test combining alias and update_cross_attn_cache ops with torch.cond,
         lowered to Triton on CUDA. True branch uses alias, false branch uses
