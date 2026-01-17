@@ -61,6 +61,7 @@ set(_cortex_m_kernels__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_depthwise_conv2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_transpose_conv2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_minimum.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_maximum.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_softmax.cpp

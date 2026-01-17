@@ -20,6 +20,7 @@ from executorch.backends.cortex_m.quantizer.operator_configs import (
     CONV_OP_PATTERNS,
     INT8_BINARY_OPS_OPERATOR_CONFIG,
     INT8_CONV_OPERATOR_CONFIG,
+    INT8_CONV_TRANSPOSE_OPERATOR_CONFIG,
     INT8_LINEAR_OPERATOR_CONFIG,
     INT8_SOFTMAX_OPERATOR_CONFIG,
     SOFTMAX_OP_PATTERNS,
@@ -87,6 +88,27 @@ class CortexMQuantizer(ComposableQuantizer):
             return False
 
         return not is_channels_last(tensor)
+
+    def _transpose_conv_group_filter(self, node: Optional[Node]) -> bool:
+        """
+        Negative filter function for transpose conv to REJECT:
+        1. NCHW memory format (we only support channels_last/NHWC)
+        2. Grouped convolutions (groups > 1) - not supported by CMSIS-NN
+
+        Returns True to REJECT the node, False to ACCEPT.
+        """
+        if node is None:
+            return True  # Reject if node is None
+
+        tensor = get_first_fake_tensor(node)
+        if tensor is None:
+            return True  # Reject if no tensor found
+
+        # REJECT if using NCHW format (we need channels_last/NHWC)
+        if not is_channels_last(tensor):
+            return True  # Reject NCHW
+
+        return False  # ACCEPT channels_last transpose conv
 
     @staticmethod
     def _resolve_int(value: Any) -> Optional[int]:
@@ -166,6 +188,10 @@ class CortexMQuantizer(ComposableQuantizer):
             OperatorConfigQuantizer(INT8_LINEAR_OPERATOR_CONFIG),
             OperatorConfigQuantizer(
                 INT8_CONV_OPERATOR_CONFIG, filter_fn=self.nchw_filter
+            ),
+            OperatorConfigQuantizer(
+                INT8_CONV_TRANSPOSE_OPERATOR_CONFIG,
+                filter_fn=self._transpose_conv_group_filter,
             ),
             OperatorConfigQuantizer(
                 INT8_SOFTMAX_OPERATOR_CONFIG,

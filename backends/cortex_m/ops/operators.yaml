@@ -71,6 +71,12 @@
     - arg_meta: null
       kernel_name: cortex_m::quantized_depthwise_conv2d_out
 
+- func: cortex_m::quantized_transpose_conv2d.out(Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, int[] output_padding, int[] dilation, int input_offset, int output_offset, Tensor requantize_multipliers, Tensor requantize_shifts, int activation_min, int activation_max, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cortex_m::quantized_transpose_conv2d_out
+
 - func: cortex_m::quantized_avg_pool2d.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, Scalar zero_point, Scalar multiplier, Scalar shift, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
   kernels:
