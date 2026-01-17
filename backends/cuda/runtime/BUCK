@@ -1,9 +1,10 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
+load("@fbcode//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
 
 oncall("executorch")
 
-runtime.cxx_library(
+fbcode_target(_kind = runtime.cxx_library,
     name = "cuda_platform",
     srcs = [
         "platform/platform.cpp",
@@ -27,7 +28,7 @@ runtime.cxx_library(
     ],
 )
 
-runtime.cxx_library(
+fbcode_target(_kind = runtime.cxx_library,
     name = "tensor_maker",
     srcs = [
         "tensor/tensor_maker.cpp",
@@ -46,7 +47,7 @@ runtime.cxx_library(
     ],
 )
 
-runtime.cxx_library(
+fbcode_target(_kind = runtime.cxx_library,
     name = "runtime_shims",
     srcs = [
         "guard.cpp",
@@ -87,7 +88,7 @@ runtime.cxx_library(
     ],
 )
 
-runtime.cxx_library(
+fbcode_target(_kind = runtime.cxx_library,
     name = "cuda_backend",
     srcs = [
         "cuda_backend.cpp",
