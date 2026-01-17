@@ -1,8 +1,90 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain xplat-only targets.
 
 load(":targets.bzl", "define_common_targets")
 
-oncall("executorch")
 
-define_common_targets()
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/extension/llm/custom_ops/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_sdpa_with_kv_cache",
+    srcs = [
+        "test_sdpa_with_kv_cache.py",
+    ],
+    preload_deps = [
+        ":custom_ops_aot_lib_mkl_noomp",
+        ":custom_ops_aot_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_update_cache",
+    srcs = [
+        "test_update_cache.py",
+    ],
+    preload_deps = [
+        ":custom_ops_aot_lib",
+        ":custom_ops_aot_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_preprocess_custom_ops",
+    srcs = [
+        "test_preprocess_custom_ops.py",
+    ],
+    preload_deps = [
+        ":preprocess_custom_ops_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_quantized_sdpa",
+    srcs = [
+        "test_quantized_sdpa.py",
+    ],
+    preload_deps = [
+        ":custom_ops_aot_lib_mkl_noomp",
+        ":custom_ops_aot_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_update_cross_attn_cache",
+    srcs = [
+        "test_update_cross_attn_cache.py",
+    ],
+    preload_deps = [
+        ":custom_ops_aot_lib",
+        ":custom_ops_aot_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
