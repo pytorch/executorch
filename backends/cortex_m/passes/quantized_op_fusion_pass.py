@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -184,7 +184,7 @@ class QuantizedOpFusionPass(ExportPass):
         return exir_ops.edge.cortex_m.softmax.default, new_args
 
     def _get_minimum_replacement(self, args, meta):
-        if args[0].data.dtype != torch.int8:
+        if args[0].data.dtype not in (torch.int8, torch.int32):
             return exir_ops.edge.aten.minimum.default, args
 
         return exir_ops.edge.cortex_m.minimum.default, args

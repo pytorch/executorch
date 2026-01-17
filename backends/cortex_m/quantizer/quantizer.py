@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -449,7 +449,7 @@ class SharedQspecQuantizer(Quantizer):
             if node.target not in self.targets:
                 raise NotImplementedError(
                     (
-                        f"{SharedQspecQuantizer.__name__} found unannoted node '{node.name}' in neighbour_nodes "
+                        f"{SharedQspecQuantizer.__name__} found unannotated node '{node.name}' in neighbour_nodes "
                         "which is not in the supported target list. This might be the case either because:\n"
                         "1) The op should have shared qspec but is not in the target list. "
                         "In this case, try modifying the list using the targets field in the initializer.\n"
