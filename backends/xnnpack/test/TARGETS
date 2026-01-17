@@ -28,6 +28,28 @@ runtime.python_test(
 )
 
 runtime.python_test(
+    name = "test_xnnpack_fragments",
+    srcs = glob([
+        "fragments/*.py",
+    ]) + [
+        "test_xnnpack_utils.py",
+    ],
+    deps = [
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/exir/passes:constant_prop_pass",
+        "//pytorch/ao:torchao",  # @manual
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+runtime.python_test(
     name = "test_xnnpack_ops",
     srcs = glob([
         "ops/*.py",
