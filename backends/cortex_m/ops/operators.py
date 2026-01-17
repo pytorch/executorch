@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -494,6 +494,7 @@ def transpose_impl(input: torch.Tensor, perm) -> torch.Tensor:
 lib.define(
     "quantized_conv2d("
     "Tensor input, "
+    "Tensor scratch, "
     "Tensor weight, "
     "Tensor? bias, "
     "int[] stride, "
@@ -512,6 +513,7 @@ lib.define(
 lib.define(
     "quantized_conv2d.out("
     "Tensor input, "
+    "Tensor scratch, "
     "Tensor weight, "
     "Tensor? bias, "
     "int[] stride, "
@@ -588,6 +590,7 @@ def _compute_depthwise_conv2d_output_shape(
 @register_fake("cortex_m::quantized_conv2d")
 def quantized_conv2d_meta(
     input: torch.Tensor,
+    scratch: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor | None,
     stride: Sequence[int],
@@ -617,6 +620,7 @@ def quantized_conv2d_meta(
 @impl(lib, "quantized_conv2d", "CompositeExplicitAutograd")
 def quantized_conv2d_impl(
     input: torch.Tensor,
+    scratch: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor | None,
     stride: Sequence[int],
@@ -683,6 +687,7 @@ def quantized_conv2d_impl(
 lib.define(
     "quantized_depthwise_conv2d("
     "Tensor input, "
+    "Tensor scratch, "
     "Tensor weight, "
     "Tensor? bias, "
     "int[] stride, "
@@ -702,6 +707,7 @@ lib.define(
 lib.define(
     "quantized_depthwise_conv2d.out("
     "Tensor input, "
+    "Tensor scratch, "
     "Tensor weight, "
     "Tensor? bias, "
     "int[] stride, "
@@ -722,6 +728,7 @@ lib.define(
 @register_fake("cortex_m::quantized_depthwise_conv2d")
 def quantized_depthwise_conv2d_meta(
     input: torch.Tensor,
+    scratch: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor | None,
     stride: Sequence[int],
@@ -752,6 +759,7 @@ def quantized_depthwise_conv2d_meta(
 @impl(lib, "quantized_depthwise_conv2d", "CompositeExplicitAutograd")
 def quantized_depthwise_conv2d_impl(
     input: torch.Tensor,
+    scratch: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor | None,
     stride: Sequence[int],
