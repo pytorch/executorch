@@ -358,6 +358,116 @@ jobs:
         # run python unittest
         python -m unittest examples.models.moshi.mimi.test_mimi
 
+  test-parakeet-linux:
+    name: test-parakeet-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        # reinstall executorch
+        bash ./install_executorch.sh --minimal
+
+        # install parakeet requirements AFTER executorch to get compatible torchaudio
+        pip install -r examples/models/parakeet/install_requirements.txt
+        pip list
+
+        # export parakeet model with portable backend (no hardware-specific backend)
+        python -m examples.models.parakeet.export_parakeet_tdt --output-dir /tmp/parakeet_export
+
+        # verify the .pte file was created
+        ls -la /tmp/parakeet_export/
+        test -f /tmp/parakeet_export/parakeet_tdt.pte
+
+  test-parakeet-transcription-linux:
+    name: test-parakeet-transcription-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.4xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -eux
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # install audio processing dependencies (same as whisper)
+        conda install -y -c conda-forge "ffmpeg<8"
+        pip install datasets soundfile
+        pip install torchcodec==0.10.0.dev20251211 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+
+        # install executorch and parakeet requirements
+        bash ./install_executorch.sh
+        pip install -r examples/models/parakeet/install_requirements.txt
+
+        # Reinstall torchvision to match torch version (nemo_toolkit may install incompatible version)
+        pip install --force-reinstall torchvision --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+        pip list
+
+        echo "::group::Build ExecuTorch with LLM runner"
+        cmake --workflow --preset llm-release
+        echo "::endgroup::"
+
+        echo "::group::Build Parakeet runner (CPU)"
+        cd examples/models/parakeet && cmake --workflow --preset parakeet-cpu
+        cd ../../..
+        echo "::endgroup::"
+
+        echo "::group::Export Parakeet model"
+        python -m examples.models.parakeet.export_parakeet_tdt --output-dir /tmp/parakeet_export
+        ls -la /tmp/parakeet_export/
+        echo "::endgroup::"
+
+        echo "::group::Download test audio"
+        python -c "
+        from datasets import load_dataset
+        import soundfile as sf
+        sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio']
+        sf.write('/tmp/test_audio.wav', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])
+        print('Audio file created: /tmp/test_audio.wav')
+        "
+        echo "::endgroup::"
+
+        echo "::group::Run Parakeet transcription"
+        EXPECTED_OUTPUT="Mr. Quilter is the apostle of the middle classes"
+        OUTPUT=$(./cmake-out/examples/models/parakeet/parakeet_runner \
+          --model_path /tmp/parakeet_export/parakeet_tdt.pte \
+          --audio_path /tmp/test_audio.wav \
+          --tokenizer_path /tmp/parakeet_export/tokenizer.model \
+          --timestamps segment 2>&1)
+        echo "$OUTPUT"
+
+        if ! echo "$OUTPUT" | grep -iq "$EXPECTED_OUTPUT"; then
+          echo "Expected output '$EXPECTED_OUTPUT' not found in transcription"
+          exit 1
+        else
+          echo "Success: '$EXPECTED_OUTPUT' found in transcription output"
+        fi
+        echo "::endgroup::"
+
   test-quantized-aot-lib-linux:
     name: test-quantized-aot-lib-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main

@@ -7,8 +7,6 @@ import tarfile
 import tempfile
 
 import torch
-
-import torchaudio
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -20,6 +18,7 @@ from torch.export import Dim, export
 
 def load_audio(audio_path: str, sample_rate: int = 16000) -> torch.Tensor:
     """Load audio file and resample to target sample rate."""
+    import torchaudio
 
     waveform, sr = torchaudio.load(audio_path)
 
