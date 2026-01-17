@@ -28,7 +28,7 @@ class NeutronConverterManager:
 
     def __init__(
         self,
-        neutron_converter_flavor: str = "SDK_25_09",
+        neutron_converter_flavor: str = "SDK_25_12",
     ):
 
         neutron_converter_modules = [
