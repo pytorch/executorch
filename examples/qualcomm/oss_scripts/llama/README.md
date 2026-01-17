@@ -4,7 +4,8 @@
 
 **Video Tutorial:** [Build Along: Run LLMs Locally on Qualcomm Hardware Using ExecuTorch](https://www.youtube.com/watch?v=41PKDlGM3oU)
 
-This file provides you the instructions to run LLM Decoder model with different parameters via Qualcomm HTP backend. We currently support the following models:
+This file provides you the instructions to run LLM Decoder model and VLM model with different parameters via Qualcomm HTP backend. We currently support the following models:
+- LLM
 <!-- numbered list will be automatically generated -->
  1. LLAMA2 Stories 110M
  1. LLAMA3.2 1B
@@ -20,7 +21,10 @@ This file provides you the instructions to run LLM Decoder model with different 
  1. QWEN3 0.6B / 1.7B
  1. SmolLM2 135M
  1. SmolLM3 3B
-
+- VLM
+<!-- numbered list will be automatically generated -->
+ 1. SmolVLM 500M
+ 1. InternVL3 1B
 
 We offer the following modes to execute the model:
 
@@ -162,7 +166,7 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 ```
 
 #### Phi4-mini-instruct
-Default example using kv mode.
+Default example using hybrid mode.
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model phi_4_mini --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
 ```
@@ -174,9 +178,9 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 ```
 
 #### QWEN2.5 1.5B
-Default example using kv mode
+Default example using hybrid mode
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --decoder_model qwen2_5-1_5b --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
 ```
 
 #### QWEN3 0.6B
@@ -198,10 +202,148 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 ```
 
 #### SmolLM3
-Default example using kv mode.
+Default example using hybrid mode.
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smollm3-3b --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
 ```
+
+## Multimodal Support
+
+### Overview
+
+Multimodal models extend LLM by processing multiple input modalities (vision, audio, text) simultaneously. This framework provides a unified architecture for multimodal via Qualcomm HTP backend.
+
+**Current Support Status:**
+- **Vision-Language Models (VLM)**: Fully supported
+- **Audio-Language Models (ALM)**: Coming soon
+
+### Multimodal Architecture
+
+For general multimodal processing pipeline please refer [Multimodal Architecture](../../../../extension/llm/runner/README.md#multimodalrunner-architecture)
+
+
+### Processing Pipeline
+
+Multimodal inference follows these key stages:
+
+1. **Modality-Specific Encoding**
+   - **Vision**: Images are processed through a vision encoder to generate visual embeddings
+   - **Audio**: Audio waveforms are processed through an audio encoder *(future support)*
+   - **Text**: Text prompts are tokenized and embedded
+
+2. **Embedding Fusion**
+   - All modality embeddings are projected to a common embedding dimension
+   - Embeddings are concatenated or fused according to the model's template
+   - Special tokens are inserted to mark modality boundaries
+
+3. **Unified Language Generation**
+   - The fused embeddings are fed into the language model decoder
+   - The decoder generates text autoregressively using the same execution modes as LLM models (KV Cache, Hybrid, Lookahead)
+
+---
+
+## Vision-Language Model (VLM) Support
+
+Vision-Language Models (VLMs) combine computer vision and natural language processing to understand and generate text based on visual inputs. VLMs in this framework consist of:
+
+- **[Vision Encoder](model/vision_encoder.py)**: Processes images into visual embeddings (e.g., SigLIP for SmolVLM)
+  - **Projection Layer** (included in vision encoder): Aligns visual embeddings with the language model's embedding space
+- **[Language Decoder](model/static_llama.py)**: Reuse static llama to generates text based on fused visual and text embeddings
+
+### Instructions
+
+#### SmolVLM 500M
+Default example using hybrid mode.
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smolvlm_500m_instruct --model_mode hybrid --prefill_ar_len 16 --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg"
+```
+
+#### InternVL 1B
+Default example using hybrid mode.
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model internvl3_1b --model_mode hybrid --prefill_ar_len 32 --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "http://images.cocodataset.org/val2017/000000039769.jpg"
+```
+
+### Specifying Custom Image
+
+You can specify custom image for VLM models using the `--image_path` flag:
+
+Take a example image of Statue-of-Liberty in New York Bay
+- **HTTP/HTTPS URLs**: Direct links to images on the web
+  - Example: `https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg`
+- **Local file paths**: Absolute or relative paths to image files on your system
+  - Example: [`./examples/qualcomm/oss_scripts/llama/assets/samples/images/Statue-of-Liberty-Island-New-York-Bay.png`](assets/samples/images/Statue-of-Liberty-Island-New-York-Bay.png)
+
+**Default behavior:**
+If `--image_path` is not specified, the system will automatically use the default image URL defined in the model's configuration file (`encoder/encoder_config.py`).
+
+#### Image Preprocessing
+
+Each VLM model has specific preprocessing requirements defined in its configuration:
+
+```python
+# In encoder/encoder_config.py
+@dataclass(init=False, frozen=True)
+class SmolVLMEncoder(VisionModalityConfig):
+    encoder_class = Idefics3VisionEncoder
+    img_seq_len = 64
+    img_resized_h = 512
+    img_resized_w = 512
+    img_url = "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg"  # Default image
+    quant_recipe = SmolVLM_Encoder_QuantRecipe
+```
+
+- **img_resized_h / img_resized_w**: Target resolution for the vision encoder
+- **img_seq_len**: Number of visual tokens generated by the encoder
+
+The image is automatically:
+1. Loaded from the specified URL or file path
+2. Resized to the model's expected resolution and preprocessed by HuggingFace [processors](https://huggingface.co/docs/transformers/main/processors)
+
+### Using Pre-Generated PTE Files
+
+If you have already compiled a VLM model, you can run inference with pre-generated PTE files:
+
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smolvlm_500m_instruct --model_mode kv --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
+```
+
+### VLM Processing Details
+
+The VLM inference pipeline consists of:
+
+1. **Vision Encoding Phase**
+   - Input image is preprocessed (resize, normalize)
+   - Vision encoder generates visual embeddings: `[batch, img_seq_len, hidden_dim]`
+   - Visual embeddings are projected to match the language model dimension by the modality projector
+
+2. **Text Tokenization Phase**
+   - User prompt is tokenized into text tokens
+   - Text tokens are embedded: `[batch, text_seq_len, hidden_dim]`
+
+3. **Embedding Fusion Phase**
+   - Visual and text embeddings are concatenated according to the model's template
+   - Special tokens (e.g., `<image>`, `<|fake_token_around_image|>`, `<fake_token_around_image>`) mark modality boundaries (see [tokenizer.py](tokenizer.py))
+   
+   ```python
+   # Special tokens for Vision-Language Model
+   VLM_SPECIAL_TOKENS = {
+       "smolvlm_500m_instruct": {
+           "image_token": "<image>",
+           "global_img": "<global-img>",
+           "fake_wrap_start": "<fake_token_around_image>",
+           "fake_wrap_end": "<fake_token_around_image>",
+       },
+       ...
+   }
+   ```
+   - Final fused sequence: `[batch, img_seq_len + text_seq_len, hidden_dim]`
+
+4. **Language Generation Phase**
+   - Fused embeddings are fed into the language decoder
+   - Autoregressive generation produces output tokens
+   - KV cache is updated for efficient subsequent token generation
+
 
 ### KV Cache update mechanism
 We use Smart Mask mechanisms for updating the key-value (KV) cache.
