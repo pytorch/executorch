@@ -123,6 +123,8 @@ class MultimodalRunnerTest: XCTestCase {
         MultimodalInput(String(format: chatTemplate, userPrompt)),
       ], Config {
         $0.sequenceLength = sequenceLength
+        $0.maximumNewTokens = 128
+        $0.temperature = 0
       }) { token in
         text += token
         if token == "<end_of_turn>" {
@@ -143,6 +145,8 @@ class MultimodalRunnerTest: XCTestCase {
         MultimodalInput(String(format: chatTemplate, userPrompt)),
       ], Config {
         $0.sequenceLength = sequenceLength
+        $0.maximumNewTokens = 128
+        $0.temperature = 0
       }) { token in
         text += token
         if token == "<end_of_turn>" {
@@ -237,7 +241,7 @@ class MultimodalRunnerTest: XCTestCase {
         )),
         MultimodalInput(String(format: chatTemplate, userPrompt)),
       ], Config {
-        $0.maximumNewTokens = 256
+        $0.maximumNewTokens = 128
         $0.temperature = 0
       }) { token in
         text += token
