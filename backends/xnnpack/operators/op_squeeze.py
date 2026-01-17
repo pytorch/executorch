@@ -36,8 +36,9 @@ class SqueezeVisitor(NodeVisitor):
         debug_handle: int,
     ) -> None:
 
+        dim = cast(int, node.args[1])
         check_or_raise(
-            cast(int, node.args[1]) == -1,
+            dim == -1 or dim == len(node.args[0].meta["val"].shape) - 1,
             "XNNPACK currently only supports squeezing in last dimension",
         )
 
@@ -98,8 +99,9 @@ class UnsqueezeVisitor(NodeVisitor):
         debug_handle: int,
     ) -> None:
 
+        dim = cast(int, node.args[1])
         check_or_raise(
-            cast(int, node.args[1]) == -1,
+            dim == -1 or dim == len(node.args[0].meta["val"].shape),
             "XNNPACK currently only supports unsqueezing in last dimension",
         )
 
