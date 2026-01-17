@@ -12,14 +12,13 @@ from types import NoneType
 from typing import cast, List, Optional, Union
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
-
 import torch
-
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
     VkStorageType,
 )
 from executorch.backends.vulkan.utils import (
+    get_vk_datatype,
     is_constant,
     is_get_attr_node,
     is_mutable_buffer_node,
@@ -29,7 +28,6 @@ from executorch.backends.vulkan.utils import (
 )
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.utils import DelegateMappingBuilder
-
 from executorch.exir.tensor import TensorSpec
 from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 from torch.export import ExportedProgram
@@ -70,27 +68,6 @@ class VkGraphBuilder:
 
         # For logging
         self.seen_ops = set()
-
-    @staticmethod
-    def get_vk_datatype(torch_dtype: torch.dtype) -> vk_graph_schema.VkDataType:
-        if torch_dtype == torch.bool:
-            return vk_graph_schema.VkDataType.BOOL
-        elif torch_dtype == torch.uint8:
-            return vk_graph_schema.VkDataType.UINT8
-        elif torch_dtype == torch.int8:
-            return vk_graph_schema.VkDataType.INT8
-        elif torch_dtype == torch.int32:
-            return vk_graph_schema.VkDataType.INT32
-        elif torch_dtype == torch.int64:
-            return vk_graph_schema.VkDataType.INT64
-        elif torch_dtype == torch.float16:
-            return vk_graph_schema.VkDataType.FLOAT16
-        elif torch_dtype == torch.float32:
-            return vk_graph_schema.VkDataType.FLOAT32
-        elif torch_dtype == torch.float64:
-            return vk_graph_schema.VkDataType.FLOAT64
-        else:
-            raise AssertionError(f"Invalid dtype for vulkan_preprocess ({torch_dtype})")
 
     def get_constant(self, node: Node) -> Optional[torch.Tensor]:
         """
@@ -275,8 +252,8 @@ class VkGraphBuilder:
             effective_dtype if constant_id >= 0 else self.get_staging_dtype(spec.dtype)
         )
 
-        datatype = self.get_vk_datatype(effective_dtype)
-        staging_datatype = self.get_vk_datatype(staging_dtype)
+        datatype = get_vk_datatype(effective_dtype)
+        staging_datatype = get_vk_datatype(staging_dtype)
 
         new_id = len(self.values)
         self.values.append(
