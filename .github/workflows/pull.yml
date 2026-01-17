@@ -298,7 +298,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: ["gemma3-4b"]  # llava gives segfault so not covering.
+        model: ["gemma3-4b", "gemma3-1b"]  # llava gives segfault so not covering.
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.24xlarge
@@ -306,6 +306,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: multimodal-${{ matrix.model }}
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -323,8 +324,47 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Test ${{ matrix.model }}"
-        python .ci/scripts/test_huggingface_optimum_model.py --model ${{ matrix.model }} --quantize --recipe xnnpack
+        export MODEL_DIR="${RUNNER_TEMP}/model_output"
+        mkdir -p "${MODEL_DIR}"
+        python .ci/scripts/test_huggingface_optimum_model.py --model ${{ matrix.model }} --quantize --recipe xnnpack --model_dir "${MODEL_DIR}"
         echo "::endgroup::"
+
+        echo "::group::Prepare artifacts for upload"
+        mkdir -p artifacts-to-be-uploaded
+        cp -r "${MODEL_DIR}"/* artifacts-to-be-uploaded/
+        echo "::endgroup::"
+
+  upload-multimodal-to-s3:
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    needs: test-multimodal-linux
+    runs-on: linux.2xlarge
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ["gemma3-4b", "gemma3-1b"]
+    steps:
+      - name: Download the artifacts from GitHub
+        uses: actions/download-artifact@v4
+        with:
+          name: multimodal-${{ matrix.model }}
+          path: ${{ runner.temp }}/artifacts/
+
+      - name: Verify the artifacts
+        shell: bash
+        working-directory: ${{ runner.temp }}/artifacts/
+        run: |
+          set -eux
+          ls -lah ./
+
+      - name: Upload the artifacts to S3
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifact/multimodal-${{ matrix.model }}
+          retention-days: 14
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/artifacts/
 
   test-moshi-linux:
     name: test-moshi-linux
