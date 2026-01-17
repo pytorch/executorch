@@ -1,4 +1,521 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # add this empty BUCK file to unblock landing. Without this, we get land error:
 #   "No build file at xplat/executorch/exir/tests/BUCK when resolving target fbsource//xplat/executorch/exir/tests:."
 
-oncall("executorch")
+
+# !!!! fbcode/executorch/exir/tests/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbcode_macros//build_defs:cpp_library.bzl", "cpp_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+
+fbcode_target(_kind = runtime.python_library,
+    name = "lib",
+    srcs = [
+        "common.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:schema",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "models",
+    srcs = [
+        "models.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "control_flow_models",
+    srcs = [
+        "control_flow_models.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "dynamic_shape_models",
+    srcs = [
+        "dynamic_shape_models.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "transformer",
+    srcs = [
+        "transformer.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "asr_joiner",
+    srcs = [
+        "asr_joiner.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "tracer",
+    srcs = [
+        "test_tracer.py",
+    ],
+    # Static listing does not support tests generated in runtime.
+    supports_static_listing = False,
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        ":lib",
+        ":models",
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/exir:lib",
+        "//executorch/exir:tracer",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "serde",
+    srcs = [
+        "test_serde.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend/test:backend_with_compiler_demo",
+        "//executorch/exir/backend/test:op_partitioner_demo",
+        "//executorch/exir/serde:serialize",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "joint_graph",
+    srcs = [
+        "test_joint_graph.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "error",
+    srcs = [
+        "test_error.py",
+    ],
+    deps = [
+        "//executorch/exir:error",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "tensor",
+    srcs = [
+        "test_tensor.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:schema",
+        "//executorch/exir:tensor",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "reinplace_pass",
+    srcs = [
+        "test_reinplace_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+fbcode_target(_kind = cpp_library,
+    name = "test_lib",
+    srcs = [
+        "test_lib.cpp",
+    ],
+    supports_python_dlopen = True,
+    deps = [
+        "//caffe2:ATen-cpu",
+        "//caffe2:torch-cpp-cpu",  # @manual
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "op_convert",
+    srcs = [
+        "test_op_convert.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        ":test_lib",  # @manual
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/operator:convert",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "memory_planning",
+    srcs = [
+        "test_memory_planning.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+    ],
+    # Static listing does not support tests generated with parameterized
+    supports_static_listing = False,
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory_planning",
+        "//executorch/exir:pass_base",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:sym_shape_eval_pass",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "passes",
+    srcs = [
+        "test_passes.py",
+    ],
+    preload_deps = [":test_lib"],
+    deps = [
+        ":control_flow_models",
+        ":lib",
+        ":models",
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/exir:graph_module",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir:memory_planning",
+        "//executorch/exir:pass_base",
+        "//executorch/exir:schema",
+        "//executorch/exir:tensor",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/exir/emit:lib",
+        "//executorch/exir/passes:constant_prop_pass",
+        "//executorch/exir/passes:debug_handle_generator_pass",
+        "//executorch/exir/passes:insert_write_back_for_buffers_pass",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:memory_format_ops_pass",
+        "//executorch/exir/passes:normalize_view_copy_base_pass",
+        "//executorch/exir/passes:remove_graph_asserts_pass",
+        "//executorch/exir/passes:remove_mixed_type_operators",
+        "//executorch/exir/passes:replace_edge_with_backend_pass",
+        "//executorch/exir/passes:replace_view_copy_with_view_pass",
+        "//executorch/exir/passes:scalar_to_tensor_pass",
+        "//executorch/exir/passes:spec_prop_pass",
+        "//executorch/exir/passes:sym_to_tensor_pass",
+        "//executorch/exir/program:program",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer_utils",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "pass_infra",
+    srcs = [
+        "test_pass_infra.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:pass_registry",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "common",
+    srcs = [
+        "test_common.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:common",
+        "//executorch/exir:print_program",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "verification",
+    srcs = [
+        "test_verification.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:schema",
+        "//executorch/exir/passes:const_prop_pass",
+        "//executorch/exir/verification:interpreter",
+        "//executorch/exir/verification:verifier",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "delegate",
+    srcs = [
+        "test_delegate.py",
+    ],
+    deps = [
+        ":lib",
+        ":models",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/exir:schema",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "quant_fusion_pass",
+    srcs = [
+        "test_quant_fusion_pass.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
+    deps = [
+        ":lib",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/passes:quant_fusion_pass",
+        "//pytorch/ao:torchao",
+        "//executorch/exir/passes:constant_prop_pass",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "quantization",
+    srcs = [
+        "test_quantization.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/passes:quant_fusion_pass",
+        "//executorch/exir/passes:spec_prop_pass",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//pytorch/vision:torchvision",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "capture",
+    srcs = [
+        "test_capture.py",
+    ],
+    # Static listing does not support tests generated in runtime.
+    supports_static_listing = False,
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        ":models",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "dynamic_shape_propagation",
+    srcs = [
+        "test_dynamic_shape_propagation.py",
+    ],
+    deps = [
+        ":models",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "arg_validator",
+    srcs = [
+        "test_arg_validator.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/exir/verification:verifier",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "dim_order_utils",
+    srcs = [
+        "test_dim_order_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:dim_order_utils",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_memory_format_ops_pass_aten",
+    srcs = [
+        "test_memory_format_ops_pass_aten.py",
+    ],
+    deps = [
+        ":test_memory_format_ops_pass_utils",
+        "//caffe2:torch",
+        "//executorch/extension/pybindings:aten_lib",  # @manual
+        "//pytorch/vision:torchvision",  # @manual
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_memory_format_ops_pass",
+    srcs = [
+        "test_memory_format_ops_pass.py",
+    ],
+    deps = [
+        ":test_memory_format_ops_pass_utils",
+        "//caffe2:torch",
+        "//executorch/exir:dim_order_utils",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//pytorch/vision:torchvision",  # @manual
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "test_memory_format_ops_pass_utils",
+    srcs = [
+        "test_memory_format_ops_pass_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/exir:dim_order_utils",
+        "//executorch/exir:lib",
+        "//executorch/exir/capture:config",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "print_program",
+    srcs = [
+        "test_print_program.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:print_program",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_remove_unused_parameters_pass",
+    srcs = [
+        "test_remove_unused_parameters_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack:xnnpack_delegate",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/passes:lib",
+        "//executorch/runtime:runtime",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_remove_view_copy",
+    srcs = [
+        "test_remove_view_copy.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_prune_empty_tensors",
+    srcs = [
+        "test_prune_empty_tensors_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "warnings",
+    srcs = [
+        "test_warnings.py",
+    ],
+    deps = [
+        "//executorch/exir:_warnings",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "quantize_io_pass",
+    srcs = [
+        "test_quantize_io_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/passes:quantize_io_pass",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+    ],
+)
