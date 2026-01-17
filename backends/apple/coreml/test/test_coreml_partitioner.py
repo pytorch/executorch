@@ -5,6 +5,8 @@
 import copy
 import sys
 import unittest
+import io
+import logging
 
 import coremltools as ct
 
@@ -16,6 +18,7 @@ import torchvision
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.exir.backend.utils import format_delegated_graph
+from executorch.exir import to_edge, to_edge_transform_and_lower
 
 
 @torch.library.custom_op("unsupported::linear", mutates_args=())
@@ -346,3 +349,78 @@ if __name__ == "__main__":
     test_runner.test_lower_full_graph()
     # test_runner.test_symint_arg()
     test_runner.test_take_over_constant_data_false()
+
+        def test_deprecation_warning_for_to_backend_workflow(self):
+        """
+        Test that the deprecated to_edge + to_backend workflow shows a deprecation
+        warning.
+        """
+        class SimpleModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(10, 5)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        model = SimpleModel()
+        x = torch.randn(1, 10)
+
+        exported_model = torch.export.export(model, (x,))
+
+        # Capture log output to check for deprecation warning
+        log_capture_string = io.StringIO()
+        ch = logging.StreamHandler(log_capture_string)
+        ch.setLevel(logging.WARNING)
+
+        logger = logging.getLogger(
+            "executorch.backends.apple.coreml.partition.coreml_partitioner"
+        )
+        logger.addHandler(ch)
+        logger.setLevel(logging.WARNING)
+
+        edge = to_edge(exported_model)
+        partitioner = CoreMLPartitioner()
+
+        edge.to_backend(partitioner)
+
+        log_contents = log_capture_string.getvalue()
+        self.assertIn("DEPRECATION WARNING", log_contents)
+        self.assertIn("to_edge() + to_backend()", log_contents)
+        self.assertIn("to_edge_transform_and_lower()", log_contents)
+
+                def test_no_warning_for_to_edge_transform_and_lower_workflow(self):
+        """
+        Test that the recommended to_edge_transform_and_lower workflow does NOT
+        show a deprecation warning.
+        """
+        class SimpleModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(10, 5)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        model = SimpleModel()
+        x = torch.randn(1, 10)
+
+        exported_model = torch.export.export(model, (x,))
+
+        # Capture log output to check for deprecation warning
+        log_capture_string = io.StringIO()
+        ch = logging.StreamHandler(log_capture_string)
+        ch.setLevel(logging.WARNING)
+
+        logger = logging.getLogger(
+            "executorch.backends.apple.coreml.partition.coreml_partitioner"
+        )
+        logger.addHandler(ch)
+        logger.setLevel(logging.WARNING)
+
+        partitioner = CoreMLPartitioner()
+
+        to_edge_transform_and_lower(exported_model, partitioner=[partitioner])
+
+        log_contents = log_capture_string.getvalue()
+        self.assertNotIn("DEPRECATION WARNING", log_contents)

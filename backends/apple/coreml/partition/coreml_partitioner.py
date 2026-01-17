@@ -3,6 +3,7 @@
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 import logging
+import inspect
 from typing import Callable, List, Optional, Tuple
 
 import coremltools as ct
@@ -222,10 +223,38 @@ class CoreMLPartitioner(Partitioner):
                 self.take_over_mutable_buffer
             ), "When lower_full_graph=True, you must set take_over_mutable_buffer=True"
 
+
+            def _check_if_called_from_to_backend(self) -> bool:
+                        """
+        Check if the partition method is being called from the deprecated
+        to_backend workflow.
+        
+        Returns True if called from deprecated direct to_backend, False if called
+        from to_edge_transform_and_lower.
+        """
+        stack = inspect.stack()
+        
+        for frame_info in stack:
+            if frame_info.function == "to_edge_transform_and_lower":
+                return False
+        
+        for frame_info in stack:
+            if frame_info.function == "to_backend":
+                filename = frame_info.filename
+                if "program/_program.py" in filename:
+                    return True
+        return False
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
         logger.info("CoreMLPartitioner::partition")
+                # Check if we're being called from the deprecated to_backend workflow
+                if self._check_if_called_from_to_backend():
+                    logger.warning("Using the old `to_edge()` flow with CoreML may result in performance regression. "
+                "The recommended flow is to use `to_edge_transform_and_lower()` with the CoreML partitioner. "
+                "See the documentation for more details: "
+                "https://github.com/pytorch/executorch/blob/main/docs/source/backends/coreml/coreml-overview.md#using-the-core-ml-backend"
+            )
         partition_tags = {}
 
         capability_partitioner = CapabilityBasedPartitioner(
