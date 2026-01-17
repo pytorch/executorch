@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -319,4 +320,23 @@ def get_vulkan_quantizer(pt2e_quantize: str):
         raise ValueError(f"Unsupported Vulkan quantizer specification {pt2e_quantize}")
 
     quantizer = VulkanQuantizer().set_global(config)
+    return quantizer
+
+
+def get_tosa_quantizer(version: str, pt2e_quantize: str):
+    from executorch.backends.arm.quantizer.arm_quantizer import (
+        get_symmetric_quantization_config,
+        TOSAQuantizer,
+    )
+    from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+
+    compile_spec = TosaCompileSpec(version)
+
+    quantizer = TOSAQuantizer(compile_spec)
+
+    if pt2e_quantize == "tosa_8a8w":
+        quantizer.set_global(get_symmetric_quantization_config())
+    else:
+        raise ValueError(f"Unsupported quantizer specification {pt2e_quantize}")
+
     return quantizer
