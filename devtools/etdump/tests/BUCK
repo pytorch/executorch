@@ -1,11 +1,12 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-define_common_targets()
+fbcode_target(_kind = define_common_targets,)
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "serialize_test",
     srcs = [
         "serialize_test.py",
