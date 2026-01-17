@@ -13,6 +13,7 @@ from executorch.examples.models.llama.attention import (
     ForwardOptions,
     register_attention,
 )
+from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
 
@@ -784,22 +785,43 @@ class StaticAttention(Attention):
         # Possibly disable in future, depending on bug fixes in Core ML runtime
         self.decompose_sdpa_in_mha: bool = kwargs.get("decompose_sdpa_in_mha", False)
 
+        # LoRA configuration
+        self.target_modules = config.target_modules
+        self.lora_rank = config.r
+        self.lora_alpha = config.lora_alpha
+        if self.target_modules:
+            assert self.lora_rank is not None and self.lora_alpha is not None
+
+        def _make_linear(in_dim: int, out_dim: int, bias: bool, lora_target: str) -> nn.Module:
+            """Create a linear layer with optional LoRA support."""
+            if self.target_modules is not None and lora_target in self.target_modules:
+                # assert self.lora_rank is not None and self.lora_alpha is not None
+                return LoRALinear(
+                    in_dim=in_dim,
+                    out_dim=out_dim,
+                    rank=self.lora_rank,
+                    alpha=self.lora_alpha,
+                    dropout=0.0,
+                    use_bias=bias,
+                )
+            return nn.Linear(in_dim, out_dim, bias=bias)
+
         if self.split_mha:
             self.wqs = nn.ModuleList(
                 [
-                    nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
+                    _make_linear(self.dim, self.head_dim, self.attention_qkv_bias, "q_proj")
                     for _ in range(self.n_heads)
                 ]
             )
             self.wks = nn.ModuleList(
                 [
-                    nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
+                    _make_linear(self.dim, self.head_dim, self.attention_qkv_bias, "k_proj")
                     for _ in range(self.n_kv_heads)
                 ]
             )
             self.wvs = nn.ModuleList(
                 [
-                    nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
+                    _make_linear(self.dim, self.head_dim, self.attention_qkv_bias, "v_proj")
                     for _ in range(self.n_kv_heads)
                 ]
             )
@@ -813,28 +835,31 @@ class StaticAttention(Attention):
         else:
             self.wqs = nn.ModuleList(
                 [
-                    nn.Linear(
+                    _make_linear(
                         self.dim,
                         self.head_dim * self.n_heads,
-                        bias=self.attention_qkv_bias,
+                        self.attention_qkv_bias,
+                        "q_proj",
                     )
                 ]
             )
             self.wks = nn.ModuleList(
                 [
-                    nn.Linear(
+                    _make_linear(
                         self.dim,
                         self.head_dim * self.n_kv_heads,
-                        bias=self.attention_qkv_bias,
+                        self.attention_qkv_bias,
+                        "k_proj",
                     )
                 ]
             )
             self.wvs = nn.ModuleList(
                 [
-                    nn.Linear(
+                    _make_linear(
                         self.dim,
                         self.head_dim * self.n_kv_heads,
-                        bias=self.attention_qkv_bias,
+                        self.attention_qkv_bias,
+                        "v_proj",
                     )
                 ]
             )
@@ -842,7 +867,7 @@ class StaticAttention(Attention):
             self.k_caches = nn.ModuleList([StaticKCache(layer_id, 0)])
             self.v_caches = nn.ModuleList([StaticVCache(layer_id, 0)])
 
-        self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+        self.wo = _make_linear(self.n_heads * self.head_dim, self.dim, False, "o_proj")
         self.rope = _Rope(rope.params)
         self.layer_id = layer_id
 

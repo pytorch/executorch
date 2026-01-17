@@ -95,6 +95,12 @@ def main():
         help="Path to exported .pte model",
     )
     parser.add_argument(
+        "--method",
+        type=str,
+        default="forward",
+        help="Method name to run (default: 'forward', use 'base' or 'lora' for multimethod models)",
+    )
+    parser.add_argument(
         "-p",
         "--params",
         required=True,
@@ -208,7 +214,8 @@ def main():
     print(f"Loading model from {args.model}...")
     runtime = Runtime.get()
     program = runtime.load_program(args.model)
-    method = program.load_method("forward")
+    print(f"Loading method '{args.method}'...")
+    method = program.load_method(args.method)
 
     metadata = method.metadata
     print(
