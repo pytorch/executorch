@@ -50,6 +50,23 @@ __attribute__((objc_subclassing_restricted))
                        configuration:(MLModelConfiguration*)configuration
                                error:(NSError* __autoreleasing*)error;
 
+/// Loads the model from the AOT  data with an optional method name for cache differentiation.
+///
+/// The data is the AOT blob stored in the executorch Program. The method first parses the model
+/// metadata stored in the blob and extracts the identifier. If a methodName is provided, it is
+/// appended to the identifier to create separate cache entries for different ExecuTorch methods
+/// that may share the same underlying partition but have different input shapes.
+///
+/// @param data The AOT blob data.
+/// @param configuration The model configuration that will be used to load the model.
+/// @param methodName Optional method name (e.g., "forward", "prefill") for cache key differentiation.
+/// @param error   On failure, error is filled with the failure information.
+/// @retval An opaque handle that points to the loaded model.
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                               error:(NSError* __autoreleasing*)error;
+
 /// Executes the loaded model.
 ///
 /// @param handle The handle to the loaded model.
