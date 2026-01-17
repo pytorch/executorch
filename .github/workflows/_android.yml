@@ -86,6 +86,22 @@ jobs:
           # avoid permission issue
           sudo chown -R "${USER}" /opt/android
 
+      - name: Install Android Emulator dependencies
+        run: |
+          cat /etc/os-release
+          sudo dnf install -y \
+            libX11-xcb \
+            libxcb \
+            pulseaudio-libs \
+            nss \
+            libXcomposite \
+            libXcursor \
+            libXi \
+            libXtst \
+            alsa-lib \
+            mesa-libGL \
+            mesa-dri-drivers
+
       - name: Download Artifacts
         shell: bash
         run: |
