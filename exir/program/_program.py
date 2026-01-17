@@ -42,6 +42,7 @@ from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     base_post_op_replace_passes,
     base_pre_op_replace_passes,
+    convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     EdgeToBackendOpsPass,
     MemoryFormatOpsPass,
@@ -71,6 +72,9 @@ from executorch.exir.passes.replace_view_copy_with_view_pass import (
 )
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.weights_to_outputs_pass import weights_to_outputs_pass
+from executorch.exir.passes.convert_constant_dim_order_pass import (
+    convert_constant_dim_order_pass,
+)
 from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.schema import Program
 from executorch.exir.tracer import _default_decomposition_table
@@ -910,8 +914,13 @@ def _generate_edge_program(
             )
         ],
     )
+
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
+
+    # Normalize constant tensor dim order on the unlifted graph
+    edge_program = convert_constant_dim_order_pass(edge_program)
+
     edge_program = _transform(edge_program, *post_op_replace_passes)
 
     return edge_program
