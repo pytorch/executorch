@@ -102,6 +102,9 @@ class ModelArgs:
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
     )
+    local_rope_theta: Optional[float] = (
+        None  # For sliding window attention. e.g., gemma3-1b
+    )
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     rope_scale_factor: int = 8
@@ -133,6 +136,9 @@ class ModelArgs:
     layer_types: Optional[list] = None
     model_architecture: Optional[str] = (
         None  # Architecture of model. For HF models, please refer to the HF model.config.architectures. This is used in QNN backend only for now.
+    )
+    sliding_window: Optional[int] = (
+        None  # sliding window size for sliding window attention
     )
     # gemma2 attn and output soft capping
     final_logit_softcapping: Optional[float] = None
