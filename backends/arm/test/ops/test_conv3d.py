@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,6 +10,7 @@ import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
+    get_symmetric_a8w4_quantization_config,
     TOSAQuantizer,
 )
 from executorch.backends.arm.test import common, conftest
@@ -430,6 +431,15 @@ test_data_INT16 = {
 }
 
 
+def _get_dtype_count(model: torch.nn.Module):
+    nbr_convs: int = model.nbr_convs  # noqa
+    return {
+        "CONST": {"INT4": nbr_convs * 2},
+        "CONV3D": {"INT32": nbr_convs},
+        "RESCALE": {"INT8": nbr_convs},
+    }
+
+
 def get_symmetric_a16w8_conv3d_quantizer(per_channel_quantization: bool = False):
     tosa_version = conftest.get_option("tosa_version")
     tosa_profiles = {
@@ -470,6 +480,28 @@ def test_convolution_3d_tosa_INT(test_data):
         exir_op,
         per_channel_quantization=per_channel_quantization,
         qtol=1,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+def test_convolution_3d_tosa_INT_a8w4(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_extensions=["int4"],
+        qtol=1,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.add_stage_after(
+        "to_edge_transform_and_lower",
+        pipeline.tester.check_dtype_count,
+        _get_dtype_count(model),
     )
     pipeline.run()
 
@@ -544,6 +576,22 @@ def test_convolution_3d_u55_INT(test_data):
 
 
 @common.parametrize("test_data", test_data_INT)
+@pytest.mark.skip(reason="Ethos-U55 does not support CONV3D yet.")
+def test_convolution_3d_u55_INT_a8w4(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
 @pytest.mark.skip(reason="Ethos-U85 does not support CONV3D yet.")
 def test_convolution_3d_u85_INT(test_data):
     model, per_channel_quantization = test_data()
@@ -553,6 +601,22 @@ def test_convolution_3d_u85_INT(test_data):
         aten_op,
         exir_op,
         per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@pytest.mark.skip(reason="Ethos-U85 does not support CONV3D yet.")
+def test_convolution_3d_u85_INT_a8w4(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 
