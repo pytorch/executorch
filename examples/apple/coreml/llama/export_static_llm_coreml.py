@@ -98,18 +98,19 @@ def remove_graph_break_(edge_manager):
     edge_manager.exported_program().graph_module.graph.eliminate_dead_code()
 
 
-def load_model(checkpoint_path: str, params_path: str, max_context_len: int):
+def load_model(
+    checkpoint_path: str,
+    params_path: str,
+    max_context_len: int,
+    generate_full_logits: bool = True,
+):
     """Load the model from checkpoint with static_mha attention type."""
     with open(params_path, "r") as f:
         params = json.loads(f.read())
 
-    # TODO: to support lookahead decoding, the static model outputs
-    # full logits, but if we are not using lookahead decoding, we can have a
-    # more efficient model by setting generate_full_logits=False and supplying the last
-    # valid token
     args = ModelArgs(
         max_context_len=max_context_len,
-        generate_full_logits=True,
+        generate_full_logits=generate_full_logits,
         **params,
     )
     args.attention_type = "static_mha"
@@ -320,14 +321,38 @@ def main():
         help="Disable graph breaks between transformer blocks",
     )
 
+    # Output options
+    parser.add_argument(
+        "--no_generate_full_logits",
+        action="store_true",
+        help="Only generate logits for the last token position (more efficient, but no lookahead support).",
+    )
+
+    # Compute options
+    parser.add_argument(
+        "--cpu_only",
+        action="store_true",
+        help="Use CPU only (no ANE). Useful for CI testing where ANE is not accessible.",
+    )
+
     args = parser.parse_args()
 
     # Compute cache length
+
+    generate_full_logits = not args.no_generate_full_logits
 
     print("Quantization and datatype:")
     print(f"\tEmbedding quantize: {args.embedding_quantize}")
     print(f"\tLinear quantize: {args.linear_quantize}")
     print(f"\tDtype: {args.dtype}")
+
+    print("\nOutput configuration:")
+    print(f"\tGenerate full logits: {generate_full_logits}")
+    if not generate_full_logits:
+        print("\t(Lookahead decoding will NOT be supported)")
+
+    print("\nCompute configuration:")
+    print(f"\tCPU only: {args.cpu_only}")
 
     cache_len = args.max_context_len - args.input_len
     print("\nGeneration configuration:")
@@ -345,6 +370,7 @@ def main():
         args.checkpoint,
         args.params,
         args.max_context_len,
+        generate_full_logits,
     )
     print(f"Model loaded: {model_args.n_layers} layers, {model_args.dim} dim")
 
@@ -453,13 +479,16 @@ def main():
 
     # Setup CoreML partitioner
     print("\nSetting up CoreML partitioner...")
+    compute_unit = (
+        ct.ComputeUnit.CPU_ONLY if args.cpu_only else ct.ComputeUnit.CPU_AND_NE
+    )
     compile_specs = CoreMLBackend.generate_compile_specs(
         minimum_deployment_target=ct.target.iOS18,
         compute_precision={
             torch.float16: ct.precision.FLOAT16,
             torch.float32: ct.precision.FLOAT32,
         }[float_dtype],
-        compute_unit=ct.ComputeUnit.CPU_AND_NE,
+        compute_unit=compute_unit,
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,
     )
     partitioner = CoreMLPartitioner(

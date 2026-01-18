@@ -936,12 +936,20 @@ if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
   list(APPEND _executorch_extensions extension_training)
 endif()
-
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
   list(APPEND _executorch_extensions extension_llm_runner)
 endif()
 
+# Static LLM CoreML runner for Apple platforms
+if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+   AND EXECUTORCH_BUILD_COREML
+   AND APPLE
+)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/apple/coreml/llama/runner
+  )
+endif()
 if(EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/asr/runner)
   list(APPEND _executorch_extensions extension_asr_runner)
