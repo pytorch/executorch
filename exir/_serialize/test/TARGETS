@@ -25,6 +25,16 @@ python_unittest(
 )
 
 python_unittest(
+    name = "test_flatbuffer_program",
+    srcs = [
+        "test_flatbuffer_program.py",
+    ],
+    deps = [
+        "//executorch/exir/_serialize:lib",
+    ],
+)
+
+python_unittest(
     name = "test_cord",
     srcs = [
         "test_cord.py",
