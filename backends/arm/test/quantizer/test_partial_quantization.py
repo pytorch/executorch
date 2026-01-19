@@ -58,7 +58,7 @@ def _run_quantization_pipeline(
     module: torch.nn.Module,
     global_config: QuantizationConfig | None = None,
     module_type_configs: (
-        Iterable[tuple[type[torch.nn.Module], QuantizationConfig]] | None
+        Iterable[tuple[type[torch.nn.Module], QuantizationConfig | None]] | None
     ) = None,
     module_name_configs: Iterable[tuple[str, QuantizationConfig]] | None = None,
 ) -> torch.fx.Graph:
