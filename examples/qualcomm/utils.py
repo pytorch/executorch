@@ -91,6 +91,7 @@ class SimpleADB:
         backend=QnnExecuTorchBackendType.kHtpBackend,
         expected_input_shape=None,
         expected_output_shape=None,
+        debug_buffer_size=1000000,
     ):
         self.qnn_sdk = qnn_sdk
         self.build_path = build_path
@@ -113,6 +114,7 @@ class SimpleADB:
         self.expected_input_shape = expected_input_shape
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
+        self.debug_buffer_size = debug_buffer_size
 
     def _adb(self, cmd, output_callback: Optional[Callable[[str], None]] = None):
         if not self.host_id:
@@ -222,6 +224,7 @@ class SimpleADB:
                             if self.dump_intermediate_outputs
                             else ""
                         ),
+                        f"--debug_buffer_size {self.debug_buffer_size}",
                         f"--method_index {method_index}",
                     ]
                 )

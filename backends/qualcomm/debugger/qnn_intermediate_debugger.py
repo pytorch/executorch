@@ -68,6 +68,7 @@ class QNNIntermediateDebugger:
 
     def __init__(self):
         self.intermediate_outputs = {}
+        self.debug_buffer_size = 0
 
     def set_edge_module(self, edge_module: torch.fx.graph_module.GraphModule):
         self.orig_edge = copy.deepcopy(edge_module)
@@ -182,9 +183,15 @@ class QNNIntermediateDebugger:
                 with graph.inserting_after(node):
                     scale = None
                     zero_point = None
+                    buffer_size = node.meta["val"].numel()
                     if QCOM_QUANT_ATTRS in node.meta:
                         scale = node.meta[QCOM_QUANT_ATTRS][QCOM_SCALE]
                         zero_point = node.meta[QCOM_QUANT_ATTRS][QCOM_ZERO_POINT]
+                        # set max to 16bit for simplicity
+                        buffer_size *= 2
+                    else:
+                         # fp32
+                        buffer_size *= 4
 
                     revert_order = QCOM_AXIS_ORDER in node.meta
 
@@ -193,6 +200,7 @@ class QNNIntermediateDebugger:
                         # Ex: topk -> intermediate_module -> get_item
                         src_node = node.args[0].args[0]
                         qnn_tensor_name = src_node.meta[QCOM_TENSOR_NAME][index]
+                        self.debug_buffer_size += buffer_size
                     elif any(user.target == operator.getitem for user in node.users):
                         # For cases like topK, qnn_tensor_name is stored in get_item instead of source_node itself.
                         assert all(
@@ -204,6 +212,7 @@ class QNNIntermediateDebugger:
                             len(node.meta[QCOM_TENSOR_NAME]) == 1
                         ), "Expecting a single qnn_tensor name but get more than 1."
                         qnn_tensor_name = node.meta[QCOM_TENSOR_NAME][0]
+                        self.debug_buffer_size += buffer_size
                     else:
                         # Unused
                         qnn_tensor_name = node.name

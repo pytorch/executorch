@@ -113,6 +113,7 @@ def export_svg(
 
         return template
 
+    torch.set_printoptions(threshold=5)
     pydot_graph = pydot.Dot(graph_type="graph")
     node_map = {}
 
