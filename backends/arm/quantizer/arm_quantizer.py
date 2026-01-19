@@ -452,7 +452,7 @@ class TOSAQuantizer(Quantizer):
         for node in model.graph.nodes:
             node.meta[DISALLOW_TFA_META_KEY] = self.global_config is None
 
-        # Next, override using to module type config to take precendence over global config
+        # Next, override using to module type config to take precedence over global config
         for module_type, config in self.module_type_config.items():
             mod_type_filter = _get_module_type_filter(module_type)
             for node in _for_each_filtered_node(model, mod_type_filter):
