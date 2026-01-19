@@ -135,7 +135,7 @@ def test_disallow_tfa_for_skipped_module():
 
 def test_disallow_tfa_for_two_skipped_modules():
     """Ensure a softmax and linear skipped for quantization are not decomposed
-    and have their disallow_tfa` set.
+    and have their `disallow_tfa` set.
     """
 
     graph_after_quant_stage = _run_quantization_pipeline(
