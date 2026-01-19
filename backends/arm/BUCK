@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 # Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -6,7 +7,7 @@
 # @noautodeps
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "constants",
     srcs = [
         "constants.py",
@@ -15,7 +16,7 @@ runtime.python_library(
         "//executorch/exir/dialects:lib",
     ],
 )
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "common",
     srcs = glob(["common/*.py"]),
     deps = [
@@ -25,7 +26,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "arm_compile_spec",
     srcs = [
         "common/arm_compile_spec.py",
@@ -42,7 +43,7 @@ runtime.python_library(
         "//executorch/backends/arm/_passes:passes",
     ],
 )
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "ethosu",
     srcs = [
         "ethosu/__init__.py",
@@ -58,7 +59,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "vgf",
     srcs = [
         "vgf/__init__.py",
@@ -74,7 +75,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "process_node",
     srcs = ["process_node.py"],
     deps = [
@@ -85,7 +86,7 @@ runtime.python_library(
         "//executorch/exir:lib",
     ],
 )
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "arm_vela",
     srcs = [
         "arm_vela.py",
@@ -94,7 +95,7 @@ runtime.python_library(
         "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
     ],
 )
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "arm_model_evaluator",
     srcs = [
         "util/arm_model_evaluator.py",
@@ -103,7 +104,7 @@ runtime.python_library(
         "//caffe2:torch",
     ]
 )
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "_factory",
     srcs = [
         "util/_factory.py"

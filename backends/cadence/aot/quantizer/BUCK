@@ -1,8 +1,9 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("odai_jarvis")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "utils",
     srcs = [
         "utils.py",
@@ -13,7 +14,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "patterns",
     srcs = [
         "patterns.py",
@@ -25,7 +26,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "quantizer",
     srcs = [
         "quantizer.py",
@@ -38,7 +39,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "fusion_pass",
     srcs = [
         "fusion_pass.py",
