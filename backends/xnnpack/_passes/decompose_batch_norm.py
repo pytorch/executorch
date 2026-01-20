@@ -45,7 +45,10 @@ class DecomposeBatchNorm(XNNPACKPass):
         Determine whether the given batch norm node can be decomposed by this pass.
         """
 
-        if node.op != "call_function" or node.target not in DecomposeBatchNorm.BATCH_NORM_OPS:
+        if (
+            node.op != "call_function"
+            or node.target not in DecomposeBatchNorm.BATCH_NORM_OPS
+        ):
             return False
 
         input_meta = node.args[0].meta["val"]
@@ -54,7 +57,10 @@ class DecomposeBatchNorm(XNNPACKPass):
         # handle BatchNorm3d. Validate the input dimension. We'll take NC, NCL, or NCHW.
         if input_meta.dim() not in (2, 3, 4):
             if why:
-                why(node, f"Unsupported input rank {input_meta.dim()} for XNN batch norm operator.")
+                why(
+                    node,
+                    f"Unsupported input rank {input_meta.dim()} for XNN batch norm operator.",
+                )
             return False
 
         # The batch norm node returns a tuple of output and other stuff we don't care about.
@@ -69,20 +75,29 @@ class DecomposeBatchNorm(XNNPACKPass):
         # Channel dimension and non-input args must be statically known.
         if not isinstance(input_meta.shape[1], int):
             if why:
-                why(node, f"Channel dimension must be statically known, but was {input_meta.shape[1]}.")
+                why(
+                    node,
+                    f"Channel dimension must be statically known, but was {input_meta.shape[1]}.",
+                )
             return False
 
-        if node.args[1] is not None and not is_param_node(exported_program, node.args[1]):
+        if node.args[1] is not None and not is_param_node(
+            exported_program, node.args[1]
+        ):
             if why:
                 why(node, "Batch norm affine weight must be static.")
             return False
 
-        if node.args[2] is not None and not is_param_node(exported_program, node.args[2]):
+        if node.args[2] is not None and not is_param_node(
+            exported_program, node.args[2]
+        ):
             if why:
                 why(node, "Batch norm affine bias must be static.")
             return False
 
-        if not is_param_node(exported_program, node.args[3]) or not is_param_node(exported_program, node.args[4]):
+        if not is_param_node(exported_program, node.args[3]) or not is_param_node(
+            exported_program, node.args[4]
+        ):
             if why:
                 why(node, "Batch norm running mean and variance must be static.")
             return False
@@ -92,7 +107,10 @@ class DecomposeBatchNorm(XNNPACKPass):
                 why(node, "Batch norm epsilon must be static.")
             return False
 
-        if node.target == exir_ops.edge.aten.native_batch_norm.default and node.args[5] is not False:
+        if (
+            node.target == exir_ops.edge.aten.native_batch_norm.default
+            and node.args[5] is not False
+        ):
             if why:
                 why(node, "Training batch norm is not supported.")
             return False
@@ -102,10 +120,10 @@ class DecomposeBatchNorm(XNNPACKPass):
     @staticmethod
     def compute_w_and_b(
         eps: float,
-        running_mean: torch.Tensor, # [C]
+        running_mean: torch.Tensor,  # [C]
         running_var: torch.Tensor,  # [C]
-        gamma: torch.Tensor,        # [C], learned weight
-        beta: torch.Tensor,         # [C], learned bias
+        gamma: torch.Tensor,  # [C], learned weight
+        beta: torch.Tensor,  # [C], learned bias
     ) -> (torch.Tensor, torch.Tensor):
         """
         Compute equivalent per-channel weight and bias to match the batch norm
@@ -160,7 +178,9 @@ class DecomposeBatchNorm(XNNPACKPass):
         # So we just need to unsqueeze the [in_c] to to [in_c, 1, 1, [1]].
         input_meta = bn_node.args[0].meta["val"]
         channel_count = input_meta.shape[1]
-        spatial_dims = max(input_meta.dim() - 2, 1)  # Min of 1 since 1d can be NC or NCL.
+        spatial_dims = max(
+            input_meta.dim() - 2, 1
+        )  # Min of 1 since 1d can be NC or NCL.
         new_weight_shape = [weight.shape[0], 1] + [1] * spatial_dims
         weight = weight.reshape(new_weight_shape)
 
@@ -191,16 +211,17 @@ class DecomposeBatchNorm(XNNPACKPass):
             conv_node = graph_module.graph.call_function(
                 exir_ops.edge.aten.convolution.default,
                 args=(
-                    bn_node.args[0],    # Input
-                    weight_node,        # Weight
-                    bias_node,          # Bias
-                    [1] * spatial_dims, # Stride
-                    [0] * spatial_dims, # Padding
-                    [1] * spatial_dims, # Dilation
-                    False,              # Transposed
-                    [0] * spatial_dims, # Output_padding
-                    channel_count,      # Groups (depthwise, so groups=in_channels)
-                ))
+                    bn_node.args[0],  # Input
+                    weight_node,  # Weight
+                    bias_node,  # Bias
+                    [1] * spatial_dims,  # Stride
+                    [0] * spatial_dims,  # Padding
+                    [1] * spatial_dims,  # Dilation
+                    False,  # Transposed
+                    [0] * spatial_dims,  # Output_padding
+                    channel_count,  # Groups (depthwise, so groups=in_channels)
+                ),
+            )
 
             # Find the getitem user nodes and replace them with the conv node.
             # The decomp checks above enforce that the node is only used by getitem[0].
@@ -212,24 +233,29 @@ class DecomposeBatchNorm(XNNPACKPass):
             graph_module.graph.erase_node(bn_node)
             return conv_node
 
-
-    def decompose_node(self, node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> None:
+    def decompose_node(
+        self, node: torch.fx.Node, graph_module: torch.fx.GraphModule
+    ) -> None:
         input_meta = node.args[0].meta["val"]
 
         # These should be checked by the partitioner and calling node,
         # so we should never fail these checks.
         check_or_raise(
-            node.op == "call_function" and node.target in DecomposeBatchNorm.BATCH_NORM_OPS,
-            f"Invalid batch norm operator {node.op}.")
+            node.op == "call_function"
+            and node.target in DecomposeBatchNorm.BATCH_NORM_OPS,
+            f"Invalid batch norm operator {node.op}.",
+        )
 
         check_or_raise(
             input_meta.dim() in (2, 3, 4),
-            f"Unsupported input rank {input_meta.dim()} for XNN batch norm operator.")
+            f"Unsupported input rank {input_meta.dim()} for XNN batch norm operator.",
+        )
 
         channel_count = input_meta.shape[1]
         check_or_raise(
             isinstance(channel_count, int),
-            f"Channel dimension must be statically known, but was {channel_count}.")
+            f"Channel dimension must be statically known, but was {channel_count}.",
+        )
 
         # Create the convolution node.
         conv_node = self.replace_bn_node_with_conv(node, graph_module)
@@ -240,14 +266,15 @@ class DecomposeBatchNorm(XNNPACKPass):
                 # Insert unsqueeze node before.
                 unsqueeze_node = graph_module.graph.call_function(
                     exir_ops.edge.aten.unsqueeze_copy.default,
-                    args=(conv_node.args[0], 2))
+                    args=(conv_node.args[0], 2),
+                )
                 conv_node.args = (unsqueeze_node, *conv_node.args[1:])
 
             with graph_module.graph.inserting_after(conv_node):
                 # Insert squeeze node after.
                 squeeze_node = graph_module.graph.call_function(
-                    exir_ops.edge.aten.squeeze_copy.dim,
-                    args=(conv_node, 2))
+                    exir_ops.edge.aten.squeeze_copy.dim, args=(conv_node, 2)
+                )
                 conv_node.replace_all_uses_with(squeeze_node)
                 # This gets overwritten by replace_all_uses_with. Maybe there's
                 # a better solution?

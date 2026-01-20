@@ -147,7 +147,13 @@ class TestDecomposeBatchNorm(unittest.TestCase):
         )
         self._validate_decomposition(tester.get_artifact(), torch.float32, 3, 2)
 
-    def _validate_decomposition(self, edge_manager: EdgeProgramManager, dtype: torch.dtype, num_channels: int, spatial_dims: int):
+    def _validate_decomposition(
+        self,
+        edge_manager: EdgeProgramManager,
+        dtype: torch.dtype,
+        num_channels: int,
+        spatial_dims: int,
+    ):
         # Verify that the graph contains a 1x1 depthwise convolution and that
         # the transformed parameter dtypes match the original.
 
@@ -159,7 +165,17 @@ class TestDecomposeBatchNorm(unittest.TestCase):
         self.assertEqual(conv_node.meta["val"].dtype, dtype)
 
         self.assertEqual(len(conv_node.args), 9)
-        _, w_node, b_node, stride, padding, dilation, transposed, output_padding, groups = conv_node.args
+        (
+            _,
+            w_node,
+            b_node,
+            stride,
+            padding,
+            dilation,
+            transposed,
+            output_padding,
+            groups,
+        ) = conv_node.args
 
         # Check the convolution parameters. It should be 1x1 depthwise convolution.
         self.assertEqual(stride, [1] * spatial_dims)

@@ -50,7 +50,12 @@ class TestBatchNorm(unittest.TestCase):
     class BatchNorm2d(torch.nn.Module):
         """BatchNorm2d with NCHW input (batch, channels, height, width)."""
 
-        def __init__(self, num_features: int, dtype: torch.dtype = torch.float, affine: bool = True):
+        def __init__(
+            self,
+            num_features: int,
+            dtype: torch.dtype = torch.float,
+            affine: bool = True,
+        ):
             super().__init__()
             self.num_features = num_features
             self.dtype = dtype
@@ -170,7 +175,11 @@ class TestBatchNorm(unittest.TestCase):
             return self.bn(x)
 
         def get_inputs(self):
-            return (torch.randn(2, self.num_features, 4, 4).to(memory_format=torch.channels_last),)
+            return (
+                torch.randn(2, self.num_features, 4, 4).to(
+                    memory_format=torch.channels_last
+                ),
+            )
 
     def test_fp32_batch_norm_nchw_channels_last(self):
         """Test BatchNorm2d with channels_last memory format input is lowered to XNNPACK."""
@@ -221,7 +230,9 @@ class TestBatchNorm(unittest.TestCase):
         def __init__(self, in_channels: int, out_channels: int):
             super().__init__()
             self.in_channels = in_channels
-            self.conv = torch.nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+            self.conv = torch.nn.Conv2d(
+                in_channels, out_channels, kernel_size=3, padding=1
+            )
             self.relu = torch.nn.ReLU()
             self.bn = randomize_bn(out_channels)
 
@@ -265,7 +276,9 @@ class TestBatchNorm(unittest.TestCase):
         def __init__(self, in_channels: int, out_channels: int):
             super().__init__()
             self.in_channels = in_channels
-            self.conv = torch.nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+            self.conv = torch.nn.Conv2d(
+                in_channels, out_channels, kernel_size=3, padding=1
+            )
             self.bn = randomize_bn(out_channels)
 
         def forward(self, x):
@@ -306,7 +319,9 @@ class TestBatchNorm(unittest.TestCase):
         def __init__(self, in_channels: int, out_channels: int):
             super().__init__()
             self.in_channels = in_channels
-            self.conv = torch.nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+            self.conv = torch.nn.Conv2d(
+                in_channels, out_channels, kernel_size=3, padding=1
+            )
             self.bn = randomize_bn(out_channels)
 
         def forward(self, x):
@@ -315,7 +330,11 @@ class TestBatchNorm(unittest.TestCase):
             return x
 
         def get_inputs(self):
-            return (torch.randn(2, self.in_channels, 8, 8).to(memory_format=torch.channels_last),)
+            return (
+                torch.randn(2, self.in_channels, 8, 8).to(
+                    memory_format=torch.channels_last
+                ),
+            )
 
     def test_fp32_conv2d_batch_norm_fused_channels_last(self):
         """

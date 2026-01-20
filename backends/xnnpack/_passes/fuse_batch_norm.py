@@ -93,12 +93,12 @@ class FuseBatchNormPass(XNNPACKPass):
             return False
 
         if input_node.target not in (
-            exir_ops.edge.aten.convolution.default, exir_ops.edge.aten.linear.default
+            exir_ops.edge.aten.convolution.default,
+            exir_ops.edge.aten.linear.default,
         ):
             if why:
                 why("Input node must be a convolution or linear op.")
             return False
-
 
         is_conv = input_node.target == exir_ops.edge.aten.convolution.default
 
