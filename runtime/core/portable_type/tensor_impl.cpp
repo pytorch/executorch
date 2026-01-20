@@ -12,6 +12,7 @@
 #include <cstdint>
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -66,7 +67,11 @@ TensorImpl::TensorImpl(
 }
 
 size_t TensorImpl::nbytes() const {
-  return numel_ * elementSize(type_);
+  size_t result;
+  bool overflow =
+      c10::mul_overflows(static_cast<size_t>(numel_), elementSize(type_), &result);
+  ET_CHECK_MSG(!overflow, "nbytes overflowed");
+  return result;
 }
 
 // Return the size of one element of the tensor
