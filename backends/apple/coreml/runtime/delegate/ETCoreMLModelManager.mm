@@ -211,39 +211,6 @@ std::optional<ModelMetadata> get_model_metadata(const inmemoryfs::InMemoryFileSy
     return std::nullopt;
 }
 
-std::optional<ModelMetadata> get_model_metadata_for_method(const inmemoryfs::InMemoryFileSystem *inMemoryFS,
-                                                           NSString *methodName) {
-    // Load the metadata.json file
-    auto metadata_opt = get_model_metadata(inMemoryFS);
-    if (!metadata_opt.has_value()) {
-        return std::nullopt;
-    }
-    
-    ModelMetadata& metadata = metadata_opt.value();
-    
-    // If this is a multifunction model and a method name is provided,
-    // populate the top-level input_names/output_names from the method's metadata
-    if (metadata.is_multifunction() && methodName != nil && methodName.length > 0) {
-        std::string method_name_str = [methodName UTF8String];
-        const MethodMetadata* method_metadata = metadata.get_method_metadata(method_name_str);
-        if (method_metadata != nullptr) {
-            metadata.input_names = method_metadata->input_names;
-            metadata.output_names = method_metadata->output_names;
-        } else {
-            // Method not found - fall back to default method if available
-            if (!metadata.default_method.empty()) {
-                const MethodMetadata* default_metadata = metadata.get_method_metadata(metadata.default_method);
-                if (default_metadata != nullptr) {
-                    metadata.input_names = default_metadata->input_names;
-                    metadata.output_names = default_metadata->output_names;
-                }
-            }
-        }
-    }
-    
-    return metadata;
-}
-
 NSOrderedSet<NSString *> *get_ordered_set(const std::vector<std::string>& values) {
     NSMutableOrderedSet<NSString *> *result = [NSMutableOrderedSet orderedSetWithCapacity:values.size()];
     for (const auto& value : values) {
@@ -358,29 +325,6 @@ std::string to_string(MLComputeUnits compute_units) {
 void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     identifier.append("_");
     identifier.append(to_string(compute_units));
-}
-
-void add_function_name(std::string& identifier, MLModelConfiguration *configuration) {
-    // NOTE: For multifunction CoreML models, we intentionally do NOT include the
-    // function name in the cache key. The multifunction model should be compiled
-    // only once since it contains ALL functions. The functionName setting on
-    // MLModelConfiguration determines which function is invoked at runtime when
-    // creating the MLModel from the cached compiled files.
-    //
-    // Previously this added "_func_{name}" to the identifier, which caused
-    // redundant compilations (once per function). Now we compile once and reuse.
-    (void)identifier;
-    (void)configuration;
-}
-
-void add_method_name(std::string& identifier, NSString *methodName) {
-    // NOTE: For multifunction CoreML models, we intentionally do NOT include the
-    // method name in the cache key. The multifunction model should be compiled
-    // only once and shared across all methods/functions. The functionName setting
-    // on MLModelConfiguration determines which function is invoked at runtime,
-    // but the compiled model is the same for all functions.
-    (void)identifier;
-    (void)methodName;
 }
 
 #if ET_EVENT_TRACER_ENABLED
@@ -687,9 +631,8 @@ NSString *raw_model_identifier(NSString *identifier) {
         return nil;
     }
     
-    // For multifunction models, try to load method-specific metadata first.
-    // This ensures we get the correct input/output names for this method.
-    std::optional<ModelMetadata> metadata = ::get_model_metadata_for_method(inMemoryFS.get(), methodName);
+    // Load the metadata from the in-memory filesystem.
+    std::optional<ModelMetadata> metadata = ::get_model_metadata(inMemoryFS.get());
     if (!metadata) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedMetadata,
@@ -699,11 +642,31 @@ NSString *raw_model_identifier(NSString *identifier) {
     
     auto metadataValue = metadata.value();
     
+    // Check if this is a multifunction model with a specific method requested
+    BOOL isMultifunctionWithMethod = metadataValue.is_multifunction() && methodName != nil && methodName.length > 0;
+    
+    // For multifunction models, populate the top-level input_names/output_names
+    // from the method's metadata. This ensures we get the correct names for this method.
+    if (isMultifunctionWithMethod) {
+        std::string method_name_str = [methodName UTF8String];
+        const MethodMetadata* method_metadata = metadataValue.get_method_metadata(method_name_str);
+        if (method_metadata != nullptr) {
+            metadataValue.input_names = method_metadata->input_names;
+            metadataValue.output_names = method_metadata->output_names;
+        } else {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "Method '%@' not found in multifunction model metadata.",
+                                          methodName);
+            return nil;
+        }
+    }
+    
     // For multifunction CoreML models (ML Programs with multiple functions),
     // we need to set functionName to select the correct function within the model.
     // However, legacy single-function models require functionName to be nil.
     // The metadata's "methods" field indicates if this is a multifunction model.
-    if (metadataValue.is_multifunction() && methodName != nil) {
+    if (isMultifunctionWithMethod) {
 #if defined(__IPHONE_18_0) || defined(__MAC_15_0) || defined(__TVOS_18_0) || defined(__WATCHOS_11_0)
         if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
             configuration.functionName = methodName;
@@ -721,9 +684,12 @@ NSString *raw_model_identifier(NSString *identifier) {
 #endif
     }
     
+    // NOTE: For multifunction CoreML models, we intentionally do NOT include the
+    // function name or method name in the cache key. The multifunction model should be compiled
+    // only once since it contains ALL functions. The functionName setting on
+    // MLModelConfiguration determines which function is invoked at runtime when
+    // creating the MLModel from the cached compiled files.
     add_compute_unit(metadataValue.identifier, configuration.computeUnits);
-    add_function_name(metadataValue.identifier, configuration);
-    add_method_name(metadataValue.identifier, methodName);
     NSString *identifier = @(metadataValue.identifier.c_str());
     // If there are multiple calls to load the same model, we only want to compile it once.
     __block id<ETCoreMLModelExecutor> executor = nil;

@@ -46,7 +46,24 @@ struct ModelMetadata {
     inline ModelMetadata() noexcept { }
 
     /// Returns `true` if the metadata is valid otherwise `false`.
-    inline bool is_valid() const noexcept { return !identifier.empty() && (!output_names.empty() || !methods.empty()); }
+    inline bool is_valid() const noexcept {
+        if (identifier.empty()) {
+            return false;
+        }
+
+        if (is_multifunction()) {
+            // For multifunction models, every method must have outputs
+            for (const auto& [name, method]: methods) {
+                if (method.output_names.empty()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // For single-method models, check output_names directly
+        return !output_names.empty();
+    }
 
     /// Returns `true` if this is multifunction metadata (has methods).
     inline bool is_multifunction() const noexcept { return !methods.empty(); }

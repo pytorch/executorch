@@ -200,29 +200,26 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
         return nil;
     }
     
+    if (orderedInputNames == nil) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "orderedInputNames must not be nil");
+        return nil;
+    }
+    
+    if (orderedOutputNames == nil) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "orderedOutputNames must not be nil");
+        return nil;
+    }
+    
     self = [super init];
     if (self) {
         _mlModel = mlModel;
         _asset = asset;
-        
-        // Use provided ordered names, or derive from model description as fallback
-        if (orderedInputNames != nil) {
-            _orderedInputNames = [orderedInputNames copy];
-        } else {
-            // Derive input names from the model's description in sorted order for determinism
-            NSArray<NSString *> *inputKeys = mlModel.modelDescription.inputDescriptionsByName.allKeys;
-            NSArray<NSString *> *sortedInputKeys = [inputKeys sortedArrayUsingSelector:@selector(compare:)];
-            _orderedInputNames = [NSMutableOrderedSet orderedSetWithArray:sortedInputKeys];
-        }
-        
-        if (orderedOutputNames != nil) {
-            _orderedOutputNames = [orderedOutputNames copy];
-        } else {
-            // Derive output names from the model's description in sorted order for determinism
-            NSArray<NSString *> *outputKeys = mlModel.modelDescription.outputDescriptionsByName.allKeys;
-            NSArray<NSString *> *sortedOutputKeys = [outputKeys sortedArrayUsingSelector:@selector(compare:)];
-            _orderedOutputNames = [NSMutableOrderedSet orderedSetWithArray:sortedOutputKeys];
-        }
+        _orderedInputNames = [orderedInputNames copy];
+        _orderedOutputNames = [orderedOutputNames copy];
         
         _cache = [[NSCache alloc] init];
         _inputConstraintsByName = get_multi_array_input_constraints_by_name(mlModel.modelDescription);

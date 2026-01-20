@@ -44,12 +44,21 @@ namespace {
     NSOrderedSet<NSString *> *orderedInputNames = ::get_ordered_set(metadata.input_names);
     NSOrderedSet<NSString *> *orderedOutputNames = ::get_ordered_set(metadata.output_names);
     
+    NSError *localError = nil;
     ETCoreMLModel *model = [[ETCoreMLModel alloc] initWithAsset:compiledAsset
                                                   configuration:configuration
                                               orderedInputNames:orderedInputNames
                                              orderedOutputNames:orderedOutputNames
-                                                          error:error];
-    return model;
+                                                          error:&localError];
+    if (model) {
+        return model;
+    }
+    
+    if (error) {
+        *error = localError;
+    }
+    
+    return nil;
 }
                                         
 

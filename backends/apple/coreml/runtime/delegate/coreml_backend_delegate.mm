@@ -52,37 +52,8 @@ using executorch::runtime::Span;
 using executorch::aten::Tensor;
 using executorch::runtime::kTensorDimensionLimit;
 
-/// Checks if the processed bytes represent a JSON reference to NamedDataStore.
-/// The JSON format is: {"version": 1, "key": "...", "method": "..."}
-///
-/// @param data Pointer to the processed bytes.
-/// @param size Size of the processed bytes.
-/// @return true if the bytes appear to be a JSON reference, false otherwise.
-bool isNamedDataReference(const void* data, size_t size) {
-    // Quick check: JSON starts with '{' and should be small (< 512 bytes)
-    if (size < 2 || size > 512 || static_cast<const char*>(data)[0] != '{') {
-        return false;
-    }
-    
-    // Try to parse as JSON using Foundation
-    NSData *jsonData = [NSData dataWithBytesNoCopy:const_cast<void*>(data)
-                                            length:size
-                                      freeWhenDone:NO];
-    NSError *error = nil;
-    id jsonObject = [NSJSONSerialization JSONObjectWithData:jsonData
-                                                    options:0
-                                                      error:&error];
-    if (error != nil || ![jsonObject isKindOfClass:[NSDictionary class]]) {
-        return false;
-    }
-    
-    NSDictionary *dict = (NSDictionary *)jsonObject;
-    // Check for required fields: "version" and "key"
-    return dict[@"version"] != nil && [dict[@"key"] isKindOfClass:[NSString class]];
-}
-
 /// Parses the JSON reference and extracts the NamedDataStore key.
-/// Expected format: {"version": 1, "key": "...", "method": "..."}
+/// Expected format: {"key": "..."}
 ///
 /// @param data Pointer to the JSON bytes.
 /// @param size Size of the JSON bytes.
@@ -247,8 +218,18 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
 
     Buffer buffer(nullptr, 0);  // Will be set below
     
-    // Check if processed bytes is a JSON reference to NamedDataStore
-    if (isNamedDataReference(processed->data(), processed->size())) {
+    // Check if this is a multifunction model using NamedDataStore for weight sharing.
+    // When MULTIMETHOD_WEIGHT_SHARING_STRATEGY is POSITIONAL, the processed bytes
+    // contain a JSON reference to the model data in NamedDataStore.
+    bool useNamedDataStore = false;
+    std::string weightSharingKey(ETCoreMLStrings.multimethodWeightSharingStrategyKeyName.UTF8String);
+    auto it = specs_map.find(weightSharingKey);
+    if (it != specs_map.end()) {
+        std::string value(reinterpret_cast<const char*>(it->second.data()), it->second.size());
+        useNamedDataStore = (value == "POSITIONAL");
+    }
+    
+    if (useNamedDataStore) {
         // Parse the key from the JSON reference
         std::string key = parseNamedDataKey(processed->data(), processed->size());
         ET_CHECK_OR_RETURN_ERROR(!key.empty(),
@@ -263,7 +244,7 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
         const auto* named_data_map = context.get_named_data_map();
         ET_CHECK_OR_RETURN_ERROR(named_data_map != nullptr,
                                  InvalidProgram,
-                                 "%s: NamedDataMap is null but processed bytes is a JSON reference.",
+                                 "%s: NamedDataMap is null but multimethod_weight_sharing_strategy is POSITIONAL.",
                                  ETCoreMLStrings.delegateIdentifier.UTF8String);
         
         // Load the model data from NamedDataMap

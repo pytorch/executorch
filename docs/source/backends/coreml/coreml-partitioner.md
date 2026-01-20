@@ -112,3 +112,51 @@ delegated_program = executorch.exir.to_edge_transform_and_lower(
 )
 et_prog = delegated_program.to_executorch()
 ```
+
+### Multifunction Models
+
+Core ML supports multifunction ML Programs, which allow a single model to contain multiple functions that share weights. This is particularly useful for Large Language Models (LLMs) that use different execution paths for prefill (processing the initial prompt) and decode (generating tokens one at a time) phases. By sharing weights between functions, the model size remains manageable while allowing optimized execution paths for each phase.
+
+#### Requirements
+
+- iOS >= 18.0, macOS >= 15.0
+- Xcode >= 16.0
+
+#### Exporting Multifunction Models
+
+To export a multifunction model, use `coremltools` to create an ML Program with multiple functions. The functions share the same weights but can have different input/output signatures:
+
+```python
+import coremltools as ct
+from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
+# Export the prefill model
+prefill_ep = torch.export.export(model, prefill_inputs)
+prefill_program = to_edge_transform_and_lower(
+    prefill_ep,
+    partitioner=[CoreMLPartitioner()],
+)
+
+# Export the decode model
+decode_ep = torch.export.export(model, decode_inputs)
+decode_program = to_edge_transform_and_lower(
+    decode_ep,
+    partitioner=[CoreMLPartitioner()],
+)
+
+# Combine into a multifunction model using coremltools
+# See coremltools documentation for details on creating multifunction ML Programs
+```
+
+For a complete example of exporting and running a multifunction CoreML model, see the [multifunction test](https://github.com/pytorch/executorch/blob/main/backends/apple/coreml/test/test_coreml_multifunction.py).
+
+#### Runtime Behavior
+
+At runtime, the ExecuTorch Core ML delegate automatically:
+
+1. Detects multifunction models based on metadata
+2. Uses `MLModelConfiguration.functionName` (iOS 18+) to select the appropriate function
+3. Shares weights between functions via NamedDataStore to minimize memory usage
+
+Each function in a multifunction model is treated as a separate method in ExecuTorch. When executing, specify the method name to run the corresponding function.
