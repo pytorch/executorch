@@ -30,11 +30,10 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_SCALE,
     QCOM_SCALE_OFFSET,
     QCOM_SCALES,
-    QCOM_TENSOR_NAME,
     QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
-
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .utils import (
@@ -377,6 +376,11 @@ class NodeVisitor:
         wrapper_idx: int = 0,
     ):
         tensor_name = f"{node.name}_{wrapper_idx}"
+
+        # Only append special namings when enable tensor dump, since longer name results bigger .pte
+        if (handle_id := node.meta.get(DEBUG_HANDLE_KEY)) and self.enable_tensor_dump:
+            tensor_name = f"{tensor_name}_debugID_{str(handle_id)}"
+
         # The `input_{id}` is utilized for sorting at runtime. Due to multiple passes in qnn_preprocess,
         # the input order between QNN and the original graph’s forward function may differ.
         # The `mutbuf_{id}` is utilized for mapping I/O of mutable buffer at runtime.
@@ -397,12 +401,6 @@ class NodeVisitor:
         elif is_graph_output(node):
             tensor_name = f"output_{tensor_name}"
 
-        # Save this for intermediate debugger
-        # Needs idx since node like topk has 2 outputs
-        if QCOM_TENSOR_NAME in node.meta:
-            node.meta[QCOM_TENSOR_NAME][wrapper_idx] = tensor_name
-        else:
-            node.meta[QCOM_TENSOR_NAME] = {wrapper_idx: tensor_name}
         return tensor_name
 
     def define_custom_tensor_wrapper(
@@ -465,7 +463,6 @@ class NodeVisitor:
 
         if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
             return cached
-
         tensor_name = self.get_tensor_name(tensor_source_node, wrapper_idx)
         dims = torch.Size([1]) if len(tensor.size()) == 0 else tensor.size()
         dynamic_dims, nominal_dims = self.get_dynamic_dimension(dims)

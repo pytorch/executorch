@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <regex>
 #include <string>
 #include <unordered_map>
 
@@ -389,6 +390,11 @@ Error QnnManager::Execute(
   if (IsTensorDump()) {
     // TODO: Need to handle the graph which is partitioned.
     // Maybe we could use graph name.
+
+    // Parsing out the debug handle id
+    std::regex re("_debugID_(\\d+)");
+    std::smatch match;
+    uint32_t debug_handle_id;
     for (std::size_t out_idx = 0; out_idx < output_tensor_structs.size();
          ++out_idx) {
       const Qnn_Tensor_t& output_tensor = output_tensor_structs[out_idx];
@@ -403,13 +409,36 @@ Error QnnManager::Execute(
           qnn_dtype_to_scalar_type_[QNN_TENSOR_VER_PTR(output_tensor)
                                         ->dataType]);
 
-      executorch::runtime::event_tracer_log_output_delegate<
-          executorch::aten::Tensor>(
-          event_tracer,
-          QNN_TENSOR_VER_PTR(output_tensor)->name,
-          /*delegate_debug_id=*/
-          static_cast<executorch::runtime::DebugHandle>(-1),
-          *dump_tensor);
+      std::string qnn_tensor_name =
+          std::string(QNN_TENSOR_VER_PTR(output_tensor)->name);
+      if (std::regex_search(qnn_tensor_name, match, re)) {
+        debug_handle_id = static_cast<uint32_t>(std::stoul(match[1].str()));
+
+        QNN_EXECUTORCH_LOG_INFO(
+            "Found the debug_handle id %d from qnn_tensor_name: %s",
+            debug_handle_id,
+            QNN_TENSOR_VER_PTR(output_tensor)->name);
+        executorch::runtime::event_tracer_log_output_delegate<
+            executorch::aten::Tensor>(
+            event_tracer,
+            /*name*/
+            nullptr,
+            /*delegate_debug_id=*/
+            static_cast<executorch::runtime::DebugHandle>(debug_handle_id),
+            *dump_tensor);
+      } else {
+        QNN_EXECUTORCH_LOG_INFO(
+            "Unable to find the debug_handle id from qnn_tensor_name: %s. Use qnn_tensor_name as key instead.",
+            QNN_TENSOR_VER_PTR(output_tensor)->name);
+        executorch::runtime::event_tracer_log_output_delegate<
+            executorch::aten::Tensor>(
+            event_tracer,
+            /*name*/
+            QNN_TENSOR_VER_PTR(output_tensor)->name,
+            /*delegate_debug_id=*/
+            static_cast<executorch::runtime::DebugHandle>(-1),
+            *dump_tensor);
+      }
     }
   }
 

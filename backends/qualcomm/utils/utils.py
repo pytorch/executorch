@@ -392,6 +392,21 @@ def to_edge_transform_and_lower_to_qnn(
             return value
         return {graph_name: value for graph_name in graph_names}
 
+    # Ensure if user is using intermediate debugger, user only lower 1 method.
+    # This restriction is caused by conflict handle_id among graphs.
+    # This could be resolved with generating random debug_id(e.g., uuid).
+    for compiler_spec in (
+        compiler_specs.values()
+        if isinstance(compiler_specs, Dict)
+        else [compiler_specs]
+    ):
+        option = generate_qnn_executorch_option(compiler_spec)
+        obj_options = flatbuffer_to_option(option)
+        if obj_options.dump_intermediate_outputs and isinstance(module, Dict):
+            assert (
+                len(module) == 1
+            ), "Intermediate Tensor Dump does not support multi-methods."
+
     if not isinstance(module, dict):
         module = {"forward": module}
 

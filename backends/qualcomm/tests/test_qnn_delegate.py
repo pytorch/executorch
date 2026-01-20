@@ -4618,6 +4618,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         )
 
     def test_qnn_backend_dump_intermediate_outputs_topk(self):
+        torch.manual_seed(8)
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
@@ -4631,7 +4632,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             sample_input,
             expected_partitions=1,
             expected_intermediate_events=7,
-            expected_compared_events=5,
+            expected_compared_events=6,
         )
 
     def test_qnn_backend_dump_intermediate_outputs_simple_model(self):
@@ -5222,6 +5223,7 @@ class TestQNNQuantizedUtils(TestQNN):
         )
 
     def test_qnn_backend_dump_intermediate_outputs_topk(self):
+        torch.manual_seed(8)
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
@@ -5235,8 +5237,8 @@ class TestQNNQuantizedUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=8,
-            expected_compared_events=5,
+            expected_intermediate_events=9,
+            expected_compared_events=6,
         )
 
     def test_qnn_backend_dynamic_shape(self):
