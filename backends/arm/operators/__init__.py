@@ -62,6 +62,7 @@ from . import (  # noqa
     op_tosa_matmul,
     op_tosa_rescale,
     op_tosa_resize,
+    op_tosa_scatter,
     op_tosa_table,
     op_tosa_transpose,
     op_view,

@@ -56,6 +56,7 @@ _CUSTOM_EDGE_OPS = [
     "matmul.default",
     "upsample_bilinear2d.vec",
     "upsample_nearest2d.vec",
+    "index_put.default",
 ]
 _ALL_EDGE_OPS = _SAMPLE_INPUT.keys() | _CUSTOM_EDGE_OPS
 

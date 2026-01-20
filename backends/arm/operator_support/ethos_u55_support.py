@@ -208,6 +208,7 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
         exir_ops.edge.aten.index.Tensor,  # GATHER
         exir_ops.edge.aten.index_select.default,  # GATHER
+        exir_ops.edge.aten.index_put.default,  # SCATTER
         exir_ops.edge.aten.scatter.src,
         exir_ops.edge.aten.scatter.value,
         exir_ops.edge.aten.select_scatter.default,

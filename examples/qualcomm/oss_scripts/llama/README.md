@@ -11,6 +11,7 @@ This file provides you the instructions to run LLM Decoder model with different 
  1. LLAMA3.2 3B
  1. Codegen2 1B
  1. Gemma 2B
+ 1. Gemma2 2B
  1. Gemma3 1B
  1. GLM 1.5B
  1. Granite3.3 2B
@@ -136,6 +137,11 @@ Default example using hybrid mode
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma-2b --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
 ```
 
+#### Gemma2 2B
+Default example using hybrid mode
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma2-2b --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
+```
 
 #### Gemma3 1B
 Default example using hybrid mode

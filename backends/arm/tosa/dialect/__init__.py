@@ -11,6 +11,7 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     matmul,
     rescale,
     resize,
+    scatter,
     table,
     transpose,
 )
