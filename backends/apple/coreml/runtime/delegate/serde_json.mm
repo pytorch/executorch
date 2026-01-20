@@ -187,8 +187,8 @@ void from_json_string(const std::string& json_string, Asset& asset) {
     Converter<Asset>::from_json(json, asset);
 }
 
-std::string to_json_string(const ModelMetadata& metdata) {
-    id json = Converter<ModelMetadata>::to_json(metdata);
+std::string to_json_string(const ModelMetadata& metadata) {
+    id json = Converter<ModelMetadata>::to_json(metadata);
     return to_json_string(json);
 }
 

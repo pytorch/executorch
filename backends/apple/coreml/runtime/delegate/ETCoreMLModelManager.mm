@@ -666,6 +666,10 @@ NSString *raw_model_identifier(NSString *identifier) {
     // we need to set functionName to select the correct function within the model.
     // However, legacy single-function models require functionName to be nil.
     // The metadata's "methods" field indicates if this is a multifunction model.
+    //
+    // Note: We validate that the method name exists in metadata above, but we assume
+    // the CoreML model (.mlpackage) contains a function with this name. If the metadata
+    // is out of sync with the model, MLModel loading will fail with an error from CoreML.
     if (isMultifunctionWithMethod) {
 #if defined(__IPHONE_18_0) || defined(__MAC_15_0) || defined(__TVOS_18_0) || defined(__WATCHOS_11_0)
         if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {

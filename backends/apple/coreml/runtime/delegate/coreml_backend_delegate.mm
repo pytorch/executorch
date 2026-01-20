@@ -68,7 +68,8 @@ std::string parseNamedDataKey(const void* data, size_t size) {
                                                     options:0
                                                       error:&error];
     if (error != nil || ![jsonObject isKindOfClass:[NSDictionary class]]) {
-        ET_LOG(Error, "Failed to parse JSON reference");
+        ET_LOG(Error, "Failed to parse JSON reference: %s",
+               error ? error.localizedDescription.UTF8String : "not a dictionary");
         return "";
     }
     
