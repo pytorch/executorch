@@ -5,10 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-from typing import Any, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    VkDataType,
     VkMemoryLayout,
     VkStorageType,
 )
@@ -40,6 +41,17 @@ _Q_OPS = {
     "quantize_per_channel.default",
     "quantize_per_token.default",
     "quantize_affine.default",
+}
+
+_VULKAN_DTYPES: Dict[torch.dtype, VkDataType] = {
+    torch.bool: VkDataType.BOOL,
+    torch.uint8: VkDataType.UINT8,
+    torch.int8: VkDataType.INT8,
+    torch.int32: VkDataType.INT32,
+    torch.int64: VkDataType.INT64,
+    torch.float16: VkDataType.FLOAT16,
+    torch.float32: VkDataType.FLOAT32,
+    torch.float64: VkDataType.FLOAT64,
 }
 
 ##
@@ -235,6 +247,73 @@ def num_tensors_in_node(node: torch.fx.Node) -> int:
             return len(node.meta["val"])
 
     return 0
+
+
+def get_vk_datatype(torch_dtype: torch.dtype) -> VkDataType:
+    """
+    Returns Vulkan dtype corresponding to torch dtype
+    """
+    if torch_dtype not in _VULKAN_DTYPES:
+        raise AssertionError(f"Invalid dtype for vulkan_preprocess ({torch_dtype})")
+
+    return _VULKAN_DTYPES[torch_dtype]
+
+
+def output_dtypes_are_supported(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the output of the given tensor node has dtype that
+    is supported by the Vulkan backend.
+    """
+    if not is_tensor_node(node):
+        return True
+
+    # The val metadata must exist after previous check
+    node_val = node.meta.get("val", None)
+    assert node_val is not None
+
+    # Get all the tensor dtypes in the node
+    tensor_dtypes = []
+    if isinstance(node_val, FakeTensor):
+        tensor_dtypes = [node_val.dtype]
+    elif isinstance(node_val, list) or isinstance(node_val, tuple):
+        tensor_dtypes = [x.dtype for x in node_val]
+
+    # Verify that all the tensor_dtypes are in vk_torch_dtypes
+    return all(dtype in _VULKAN_DTYPES for dtype in tensor_dtypes)
+
+
+def input_dtypes_are_supported(node: torch.fx.Node) -> bool:
+    """
+    Returns true if all the inputs to the given tensor node have dtype that
+    is supported by the Vulkan backend.
+    """
+    if not is_tensor_node(node):
+        return True
+
+    # Iterate over all the args of the node
+    for arg_node in node.args:
+        # The arg could be a single node, or a list (e.g., first arg of cat)
+        if isinstance(arg_node, torch.fx.Node):
+            if not output_dtypes_are_supported(arg_node):
+                return False
+        elif isinstance(arg_node, (list, tuple)):
+            if not all(output_dtypes_are_supported(x) for x in arg_node):
+                return False
+
+    return True
+
+
+def io_dtypes_are_supported(node: torch.fx.Node) -> bool:
+    """
+    Returns true if all the inputs and outputs of the given tensor node have
+    dtype that is supported by the Vulkan backend.
+    """
+    if not output_dtypes_are_supported(node):
+        return False
+    if not input_dtypes_are_supported(node):
+        return False
+
+    return True
 
 
 def tensor_node_is_bool(node: torch.fx.Node) -> bool:
