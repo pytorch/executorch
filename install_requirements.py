@@ -14,9 +14,9 @@ from install_utils import determine_torch_url, is_intel_mac_os, python_is_compat
 
 from torch_pin import NIGHTLY_VERSION, TORCH_VERSION
 
-# The pip repository that hosts nightly torch packages.
+# The pip repository that hosts torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
-TORCH_NIGHTLY_URL_BASE = "https://download.pytorch.org/whl/nightly"
+TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
 
 # Supported CUDA versions - modify this to add/remove supported versions
 # Format: tuple of (major, minor) version numbers
@@ -53,18 +53,14 @@ def install_requirements(use_pytorch_nightly):
         sys.exit(1)
 
     # Determine the appropriate PyTorch URL based on CUDA delegate status
-    torch_url = determine_torch_url(TORCH_NIGHTLY_URL_BASE, SUPPORTED_CUDA_VERSIONS)
+    torch_url = determine_torch_url(TORCH_URL_BASE, SUPPORTED_CUDA_VERSIONS)
 
     # pip packages needed by exir.
     TORCH_PACKAGE = [
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        (
-            f"torch=={TORCH_VERSION}.{NIGHTLY_VERSION}"
-            if use_pytorch_nightly
-            else "torch"
-        ),
+        ("torch==2.10.0" if use_pytorch_nightly else "torch"),
     ]
 
     # Install the requirements for core ExecuTorch package.
@@ -123,20 +119,12 @@ def install_requirements(use_pytorch_nightly):
 
 def install_optional_example_requirements(use_pytorch_nightly):
     # Determine the appropriate PyTorch URL based on CUDA delegate status
-    torch_url = determine_torch_url(TORCH_NIGHTLY_URL_BASE, SUPPORTED_CUDA_VERSIONS)
+    torch_url = determine_torch_url(TORCH_URL_BASE, SUPPORTED_CUDA_VERSIONS)
 
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
-        (
-            f"torchvision==0.25.0.{NIGHTLY_VERSION}"
-            if use_pytorch_nightly
-            else "torchvision"
-        ),
-        (
-            f"torchaudio==2.10.0.{NIGHTLY_VERSION}"
-            if use_pytorch_nightly
-            else "torchaudio"
-        ),
+        ("torchvision==0.25.0" if use_pytorch_nightly else "torchvision"),
+        ("torchaudio==2.10.0" if use_pytorch_nightly else "torchaudio"),
     ]
     # Then install domain libraries
     subprocess.run(
