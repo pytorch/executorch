@@ -13,6 +13,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include <executorch/runtime/platform/log.h>
+
 namespace executorch {
 namespace backends {
 namespace metal {
@@ -67,7 +69,12 @@ get_metal_backend_init_per_method_stats() {
   return {};
 }
 inline void reset_metal_backend_stats() {}
-inline void print_metal_backend_stats() {}
+inline void print_metal_backend_stats() {
+  ET_LOG(
+      Info,
+      "Metal backend stats collection is disabled. "
+      "Set EXECUTORCH_METAL_COLLECT_STATS=ON to collect stats.");
+}
 
 #endif // EXECUTORCH_METAL_COLLECT_STATS
 
