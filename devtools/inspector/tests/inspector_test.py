@@ -795,9 +795,12 @@ class TestInspector(unittest.TestCase):
             # For (1,): max(|[4.0, 5.0, 6.0] - [3.0, 6.0, 5.0]|) = max([1.0, 1.0, 1.0]) = 1.0
             self.assertEqual(df.iloc[1]["gap"][0], 1.0)
 
-    @unittest.skip("ci config values are not propagated")
     def test_intermediate_tensor_comparison_with_torch_export(self):
-        """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower."""
+        """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower.
+
+        Note: This test requires event tracer to be enabled. Run with:
+            --config executorch.event_tracer_enabled=true
+        """
 
         class SimpleTestModel(torch.nn.Module):
             """A simple test model for demonstration purposes."""
@@ -885,16 +888,18 @@ class TestInspector(unittest.TestCase):
                 etdump_path, debug_buffer_path
             )
 
-            # Step 6: Use Inspector API to compare intermediate outputs
-            try:
-                inspector = Inspector(
-                    etdump_path=etdump_path,
-                    etrecord=etrecord_path,
-                    debug_buffer_path=debug_buffer_path,
+            # Check if event tracer actually captured data (requires build-time config)
+            if not os.path.exists(etdump_path):
+                self.skipTest(
+                    "Event tracer not enabled. Run with --config executorch.event_tracer_enabled=true"
                 )
-            except FileNotFoundError as e:
-                new_message = f"{e} You likely need to run the test with --config executorch.event_tracer_enabled=true"
-                raise RuntimeError(new_message) from e
+
+            # Step 6: Use Inspector API to compare intermediate outputs
+            inspector = Inspector(
+                etdump_path=etdump_path,
+                etrecord=etrecord_path,
+                debug_buffer_path=debug_buffer_path,
+            )
             self.assertIsNotNone(inspector)
 
             # Calculate numerical gap using SNR metric
