@@ -442,6 +442,13 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    strategy:
+      matrix:
+        include:
+          - test_arm_ootb: run_ootb_tests_ethos_u
+          - test_arm_ootb: run_ootb_tests_tosa
+          - test_arm_ootb: run_deit_e2e_ethos_u
+      fail-fast: false
     with:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
@@ -465,7 +472,8 @@ jobs:
         pip install notebook
 
         # Run OOTB tests
-        backends/arm/test/test_arm_ootb.sh
+        OOTB_TEST=${{ matrix.test_arm_ootb }}
+        backends/arm/test/test_arm_ootb.sh $OOTB_TEST
 
   test-coreml-delegate:
     name: test-coreml-delegate
