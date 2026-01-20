@@ -51,6 +51,7 @@ from executorch.examples.qualcomm.oss_scripts.llama import (
 )
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
+    DECODE_QDQ_FILENAME,
     DECODER_GRAPH_NAMES,
     TEXT_DECODER,
     TEXT_EMBEDDING,
@@ -769,8 +770,17 @@ class TextDecoder(Component):
                 tok_embedding=self.tok_embedding,
                 intermediate_outputs=image_embedding,
             )
-
             self.decoder = convert_pt2e(self.decoder)
+
+            # Saving Decode QDQ Model EP for SQNR evaluation
+            if self.mode == self.Mode.DECODE:
+                qdq_ep = torch.export.export(
+                    self.decoder, self.export_input, strict=True
+                )
+                qdq_ep_path = f"{self.control_args.artifact}/{DECODE_QDQ_FILENAME}"
+                torch.export.save(qdq_ep, qdq_ep_path)
+                logging.info(f"QDQ EP saved to {qdq_ep_path}")
+
             if self.apply_embedding:
                 self.tok_embedding = convert_pt2e(self.tok_embedding)
 

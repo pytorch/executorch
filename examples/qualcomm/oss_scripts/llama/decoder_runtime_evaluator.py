@@ -389,7 +389,7 @@ class SqnrEval(EvalBase):
         self.inference_speed = output_performance_holder[0]
 
         sqnr = compute_error(golden_logits, output_logits_holder[0])
-        return sqnr.item()
+        return sqnr.item(), golden_logits, output_logits_holder[0]
 
 
 class TaskEval(EvalBase):

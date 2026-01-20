@@ -28,6 +28,7 @@ from executorch.examples.qualcomm.oss_scripts.llama import (
 from executorch.examples.qualcomm.oss_scripts.llama.dataset import DatasetBuilder
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
+    DECODE_QDQ_FILENAME,
     DECODER_GRAPH_NAMES,
     EVAL_MODE,
     PROMPT_EVAL,
@@ -51,24 +52,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.wrappers import (
     next_power_of_two,
 )
 from executorch.examples.qualcomm.utils import setup_common_args_and_variables
-
-
-
-try:
-    from lm_eval.evaluator import simple_evaluate
-except ImportError:
-    raise ImportError(
-        "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
-    )
-
-from executorch.examples.qualcomm.utils import setup_common_args_and_variables
-from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
-from executorch.extension.llm.custom_ops import model_sharding
-from executorch.extension.llm.export.builder import DType
-from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
-from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
+from torchao.quantization.utils import compute_error
 
 
 sys.setrecursionlimit(4096)
@@ -244,14 +228,40 @@ def inference(
             tokenizer=tokenizer,
             runtime_tokenizer_path=runtime_tokenizer_path,
         )
-        sqnr = sqnr_evaluator.run(prompt=prompt)
-        logging.info(f"SQNR Eval Score: {sqnr}")
+        sqnr, golden_logits, _ = sqnr_evaluator.run(prompt=prompt)
+        logging.info(f"SQNR Eval Score between FP32 nn.Module and QNN: {sqnr}")
         eval_results.update(
             {
                 "sqnr": sqnr,
                 "inference_speed": sqnr_evaluator.inference_speed,
             }
         )
+
+        qdq_ep_path = (
+            f"{args.pre_gen_pte}/{DECODE_QDQ_FILENAME}"
+            if args.pre_gen_pte
+            else f"{args.artifact}/{DECODE_QDQ_FILENAME}"
+        )
+        if os.path.exists(qdq_ep_path):
+            qdq_ep = torch.export.load(qdq_ep_path)
+            qdq_sqnr_evaluator = SqnrEval(
+                source_model=qdq_ep.module(),
+                example_input=source_model.get_example_inputs(),
+                args=args,
+                pte_path=pte_path,
+                tokenizer=tokenizer,
+                runtime_tokenizer_path=runtime_tokenizer_path,
+            )
+            qdq_sqnr, cpu_qdq_logits, _ = qdq_sqnr_evaluator.run(prompt=prompt)
+            eval_results["qdq_sqnr"] = qdq_sqnr
+            logging.info(f"SQNR Eval Score between CPU QDQ and QNN: {qdq_sqnr}")
+            logging.info(
+                f"SQNR Eval Score between FP32 nn.Module and CPU QDQ: {compute_error(golden_logits, cpu_qdq_logits).item()}"
+            )
+        else:
+            logging.info(
+                f"Couldn't find saved qdq_ep under {qdq_ep_path}, skip eval sqnr for CPU QDQ."
+            )
 
     if TASKS_EVAL in args.eval_methods:
         # Generate the eval wrapper
