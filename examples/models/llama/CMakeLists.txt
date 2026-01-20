@@ -216,7 +216,11 @@ if(ANDROID)
 endif()
 
 add_executable(llama_main ${_srcs})
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+
+# Only strip symbols for Release and MinSizeRel builds.
+if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL
+                                          "MinSizeRel"
+)
   target_link_options_gc_sections(llama_main)
   if(NOT APPLE)
     target_link_options(llama_main PRIVATE "LINKER:-s")
