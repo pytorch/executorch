@@ -17,22 +17,20 @@ std::vector<TokenWithTextInfo> get_tokens_with_text_info(
   tokens_with_text.reserve(tokens.size());
 
   for (const auto& token : tokens) {
-    auto piece_result = tokenizer.id_to_piece(token.id);
-    if (!piece_result.ok()) {
-      throw std::runtime_error(
-          "id_to_piece failed for token=" + std::to_string(token.id));
-    }
-
     auto text_result = tokenizer.decode(tokenizer.bos_tok(), token.id);
     if (!text_result.ok()) {
       throw std::runtime_error(
           "decode failed for token=" + std::to_string(token.id));
     }
 
+    // Use decoded text for both piece and text since id_to_piece is not available
+    // in the current tokenizer interface
+    const std::string decoded_text = text_result.get();
+    
     tokens_with_text.push_back(
         {token.id,
-         piece_result.get(),
-         text_result.get(),
+         decoded_text, // using decoded text as piece
+         decoded_text,
          token.start_offset,
          token.start_offset + token.duration});
   }

@@ -55,11 +55,12 @@ std::unordered_set<std::string> derive_supported_punctuation(
 
   const int32_t vocab_size = tokenizer.vocab_size();
   for (int32_t id = 0; id < vocab_size; id++) {
-    const auto piece_result = tokenizer.id_to_piece(static_cast<TokenId>(id));
-    if (!piece_result.ok()) {
+    // Use decode to get token text since id_to_piece is not available
+    const auto text_result = tokenizer.decode(tokenizer.bos_tok(), static_cast<TokenId>(id));
+    if (!text_result.ok()) {
       continue;
     }
-    const std::string& piece = piece_result.get();
+    const std::string& piece = text_result.get();
     if (is_special_token(piece)) {
       continue;
     }
