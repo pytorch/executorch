@@ -393,7 +393,7 @@ class TOSAQuantizer(Quantizer):
         return self
 
     def set_module_type(
-        self, module_type: Callable, quantization_config: QuantizationConfig
+        self, module_type: Callable, quantization_config: Optional[QuantizationConfig]
     ) -> TOSAQuantizer:
         """Set quantization_config for submodules with a given module type.
 
