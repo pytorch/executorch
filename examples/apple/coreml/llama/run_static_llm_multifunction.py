@@ -24,7 +24,6 @@ import json
 import time
 from typing import Any, Dict, List, Tuple
 
-import sentencepiece as spm
 import torch
 import torch.utils._pytree as pytree
 
@@ -32,50 +31,14 @@ from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.runner.generation import next_token
 from executorch.examples.models.llama.static_attention import StaticAttentionIOManager
 from executorch.runtime import Runtime
+from pytorch_tokenizers import get_tokenizer
 
 
-class Tokenizer:
-    """Wrapper to support both SentencePiece and Tiktoken tokenizers."""
-
-    def __init__(self, model_path: str):
-        try:
-            print("Trying to load sentencepiece")
-            sp = spm.SentencePieceProcessor()
-            sp.load(model_path)
-            self.tokenizer = sp
-            self._is_sentencepiece = True
-        except Exception:
-            print("Trying to load tiktoken")
-            from executorch.examples.models.llama.tokenizer import tiktoken
-
-            self.tokenizer = tiktoken.Tokenizer(model_path)
-            self._is_sentencepiece = False
-
-    def encode(self, text: str, bos: bool = True, eos: bool = False) -> List[int]:
-        if self._is_sentencepiece:
-            bos_string = "<s>" if bos else ""
-            eos_string = "</s>" if eos else ""
-            return self.tokenizer.encode(f"{bos_string}{text}{eos_string}")
-        return self.tokenizer.encode(text, bos=bos, eos=eos)
-
-    def decode(self, tokens: List[int]) -> str:
-        if self._is_sentencepiece:
-            return self.tokenizer.decode(tokens)
-        return self.tokenizer.decode(tokens)
-
-    def decode_token(self, token: int) -> str:
-        if self._is_sentencepiece:
-            return self.tokenizer.decode([token])
-        try:
-            return self.tokenizer.decode_token(token)
-        except UnicodeDecodeError:
-            return f"<{token}>"
-
-    @property
-    def stop_tokens(self) -> List[int]:
-        if self._is_sentencepiece:
-            return [self.tokenizer.eos_id()]
-        return self.tokenizer.stop_tokens
+def get_stop_tokens(tokenizer) -> List[int]:
+    """Get stop tokens from tokenizer, falling back to eos_id if not available."""
+    if hasattr(tokenizer, "stop_tokens"):
+        return tokenizer.stop_tokens
+    return [tokenizer.eos_id]
 
 
 def create_pte_wrapper(
@@ -266,6 +229,12 @@ def main():
         help="Path to tokenizer model",
     )
     parser.add_argument(
+        "--tokenizer_config",
+        type=str,
+        default=None,
+        help="Path to tokenizer config (required for HuggingFace tokenizers)",
+    )
+    parser.add_argument(
         "--prompt",
         type=str,
         default="Once upon a time,",
@@ -328,7 +297,8 @@ def main():
     args = parser.parse_args()
 
     # Load tokenizer
-    tokenizer = Tokenizer(args.tokenizer)
+    tokenizer = get_tokenizer(args.tokenizer, args.tokenizer_config)
+    stop_tokens = get_stop_tokens(tokenizer)
 
     # Load model params
     with open(args.params, "r") as f:
@@ -499,7 +469,7 @@ def main():
             ngram_size=args.ngram_size,
             window_size=args.window_size,
             n_verifications=args.n_verifications,
-            stop_tokens=tokenizer.stop_tokens,
+            stop_tokens=stop_tokens,
         )
     else:
         # Use standard autoregressive decoding (uses 'forward' method)
@@ -508,12 +478,12 @@ def main():
             model_fn,
             first_token,
             n=args.max_new_tokens - 1,  # -1 because first_token counts
-            stop_tokens=tokenizer.stop_tokens,
+            stop_tokens=stop_tokens,
         )
 
     # Print generated tokens (skip first as it's the init_token we already printed)
     for token in generated_tokens[1:]:
-        if token in tokenizer.stop_tokens:
+        if token in stop_tokens:
             break
         print(tokenizer.decode_token(token), end="", flush=True)
 
