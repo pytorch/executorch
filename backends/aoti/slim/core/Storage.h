@@ -8,12 +8,13 @@
 
 #pragma once
 
-#include <cstdint>
 #include <cstring>
 
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
+#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
 #include <executorch/backends/aoti/slim/util/SharedPtr.h>
+#include <executorch/backends/aoti/slim/util/SizeUtil.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch::backends::aoti::slim {
@@ -241,5 +242,21 @@ class MaybeOwningStorage {
 /// Storage is a shared pointer to MaybeOwningStorage.
 /// Multiple tensors can share the same underlying storage.
 using Storage = SharedPtr<MaybeOwningStorage>;
+
+/// Creates a new owning storage with the given parameters.
+/// @param sizes The sizes of each dimension.
+/// @param strides The strides of each dimension.
+/// @param dtype The scalar type of tensor elements.
+/// @param device The target device (must be CPU).
+/// @return A shared pointer to the newly allocated storage.
+inline Storage new_storage(
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    c10::ScalarType dtype,
+    const c10::Device& device = CPU_DEVICE) {
+  size_t nbytes =
+      compute_storage_nbytes(sizes, strides, c10::elementSize(dtype), 0);
+  return Storage(new MaybeOwningStorage(device, nbytes));
+}
 
 } // namespace executorch::backends::aoti::slim
