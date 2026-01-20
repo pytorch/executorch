@@ -22,6 +22,7 @@
 
 #include <array>
 #import <memory>
+#import <optional>
 #import <unordered_map>
 #import <vector>
 
@@ -216,7 +217,9 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
         specs_map.emplace(spec.key, std::move(buffer));
     }
 
-    Buffer buffer(nullptr, 0);  // Will be set below
+    // This will hold the NamedDataStore data if needed, keeping it alive until scope exit
+    std::optional<FreeableBuffer> namedDataStoreBuffer;
+    Buffer buffer(nullptr, 0);
     
     // Check if this is a multifunction model using NamedDataStore for weight sharing.
     // When MULTIMETHOD_WEIGHT_SHARING_STRATEGY is POSITIONAL, the processed bytes
@@ -254,13 +257,12 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
                                  "%s: Failed to load model data from NamedDataStore with key: %s",
                                  ETCoreMLStrings.delegateIdentifier.UTF8String, key.c_str());
         
-        // Move the result into the incoming FreeableBuffer so its lifetime matches `processed`
-        processed->~FreeableBuffer();
-        new (processed) FreeableBuffer(std::move(result.get()));
-        buffer = Buffer(processed->data(), processed->size());
+        // Move the result into namedDataStoreBuffer to keep it alive until scope exit
+        namedDataStoreBuffer.emplace(std::move(result.get()));
+        buffer = Buffer(namedDataStoreBuffer->data(), namedDataStoreBuffer->size());
         
         ET_LOG(Debug, "%s: Loaded %zu bytes from NamedDataStore",
-               ETCoreMLStrings.delegateIdentifier.UTF8String, processed->size());
+               ETCoreMLStrings.delegateIdentifier.UTF8String, namedDataStoreBuffer->size());
     } else {
         // Legacy path: use processed bytes directly
         buffer = Buffer(processed->data(), processed->size());
@@ -277,6 +279,8 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
     ET_CHECK_OR_RETURN_ERROR(handle != nullptr,
                              InvalidProgram,
                              "%s: Failed to init the model.", ETCoreMLStrings.delegateIdentifier.UTF8String);
+    
+    // namedDataStoreBuffer (if used) will be freed automatically when it goes out of scope
     processed->Free();
     return handle;
 }

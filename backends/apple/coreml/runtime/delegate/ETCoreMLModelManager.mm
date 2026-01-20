@@ -289,9 +289,9 @@ ETCoreMLModel * _Nullable get_model_from_asset(ETCoreMLAsset *asset,
                                                NSError * __autoreleasing *error) {
     // Always use the metadata's ordered input/output names for consistency.
     // The pytree flatten order during export determines the correct input order,
-    // and metadata captures this order.
-    // For multifunction models, all functions share the same input/output names
-    // (they differ only in shapes, which are handled by multiArrayConstraint).
+    // and metadata captures this order. For multifunction models, the caller
+    // populates metadata.input_names/output_names from the specific method's
+    // metadata before calling this function.
     NSOrderedSet<NSString *> *orderedInputNames = ::get_ordered_set(metadata.input_names);
     NSOrderedSet<NSString *> *orderedOutputNames = ::get_ordered_set(metadata.output_names);
     ETCoreMLModel *model = [[ETCoreMLModel alloc] initWithAsset:asset
