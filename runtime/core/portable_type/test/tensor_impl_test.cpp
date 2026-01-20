@@ -434,14 +434,27 @@ TEST_F(TensorImplTest, TestResizingTensorToZeroAndBack) {
       nullptr,
       nullptr,
       TensorShapeDynamism::DYNAMIC_BOUND);
-TEST_F(TensorImplTest, TestNumelOverflow) {
-  // Create a tensor with sizes that would cause overflow when computing numel.
-  // SizesType is int32_t, so each dimension can be at most ~2^31.
-  // Using 3 dimensions: 2^21 * 2^21 * 2^21 = 2^63 which overflows ssize_t.
+
+  float data[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  t.set_data(data);
+  EXPECT_GT(t.numel(), 0);
+  EXPECT_EQ(t.data(), data);
+
+  SizesType zero_sizes[2] = {0, 0};
+  t.set_sizes_contiguous({zero_sizes, 2});
+  EXPECT_EQ(t.numel(), 0);
+  EXPECT_EQ(t.data(), data);
+
+  SizesType new_sizes[2] = {3, 2};
+  t.set_sizes_contiguous({new_sizes, 2});
+  EXPECT_GT(t.numel(), 0);
+  EXPECT_EQ(t.data(), data);
+}
+
+TEST_F(TensorImplTest, TestNbytesOverflow) {
   SizesType sizes[3] = {
       static_cast<SizesType>(1 << 21),
       static_cast<SizesType>(1 << 21),
       static_cast<SizesType>(1 << 21)};
-  // This should die during construction because numel overflows
   ET_EXPECT_DEATH(TensorImpl t(ScalarType::Float, 3, sizes), "");
 }
