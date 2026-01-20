@@ -39,7 +39,9 @@ ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
         "Size must be non-negative, got %zd at dimension %zd",
         static_cast<ssize_t>(sizes[i]),
         i);
-    numel *= sizes[i];
+    bool overflow =
+        c10::mul_overflows(numel, static_cast<ssize_t>(sizes[i]), &numel);
+    ET_CHECK_MSG(!overflow, "numel overflowed");
   }
   return numel;
 }

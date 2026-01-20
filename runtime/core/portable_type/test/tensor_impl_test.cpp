@@ -452,17 +452,8 @@ TEST_F(TensorImplTest, TestResizingTensorToZeroAndBack) {
 }
 
 TEST_F(TensorImplTest, TestNbytesOverflow) {
-  // Create a tensor with sizes that would cause overflow when computing nbytes.
-  // SIZE_MAX / sizeof(float) will give us a numel that, when multiplied by
-  // sizeof(float), would overflow size_t.
   constexpr size_t max_safe_numel = SIZE_MAX / sizeof(float);
-  // Use sizes that when multiplied together exceed max_safe_numel
-  // For a 2D tensor, we need size[0] * size[1] > max_safe_numel
-  SizesType sizes[2] = {
-      static_cast<SizesType>(max_safe_numel / 2 + 1),
-      static_cast<SizesType>(3)};
-  TensorImpl t(ScalarType::Float, 2, sizes);
-
-  // Calling nbytes() should trigger an overflow check and die
+  SizesType sizes[1] = {static_cast<SizesType>(max_safe_numel + 1)};
+  TensorImpl t(ScalarType::Float, 1, sizes);
   ET_EXPECT_DEATH(t.nbytes(), "");
 }
