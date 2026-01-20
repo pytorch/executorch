@@ -6,7 +6,6 @@ import androidx.test.InstrumentationRegistry
 object TestFileUtils {
 
   fun getTestFilePath(fileName: String): String {
-    return InstrumentationRegistry.getInstrumentation().targetContext.externalCacheDir.toString() +
-        fileName
+    return InstrumentationRegistry.getInstrumentation().targetContext.cacheDir.toString() + fileName
   }
 }

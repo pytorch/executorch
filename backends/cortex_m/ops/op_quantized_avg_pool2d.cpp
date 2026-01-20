@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -19,12 +19,12 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 Tensor& quantized_avg_pool2d_out(
     KernelRuntimeContext& context,
     const Tensor& input,
-    const IntArrayRef kernel_size,
-    const IntArrayRef stride,
-    const IntArrayRef padding,
-    const Scalar& zero_point,
-    const Scalar& multiplier,
-    const Scalar& shift,
+    const Int64ArrayRef kernel_size,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const int64_t zero_point,
+    const int64_t multiplier,
+    const int64_t shift,
     Tensor& out) {
   if (input.dim() != 4 || out.dim() != 4) {
     ET_LOG(Error, "quantized_avg_pool2d_out: tensors must be 4-D");
