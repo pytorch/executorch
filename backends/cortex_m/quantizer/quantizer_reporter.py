@@ -31,31 +31,66 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
 )
 from tabulate import tabulate
 from torch.fx import GraphModule, Node
-from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.pt2e.quantizer import (
+    DerivedQuantizationSpec,
+    QuantizationSpec,
+    QuantizationSpecBase,
+    Quantizer,
+    SharedQuantizationSpec,
+)
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 logger = logging.getLogger(__name__)
 
 # Look-up dicts used to get human readable names for supported quantization configs and specs
-SUPPORTED_QCONFIGS = {
+SUPPORTED_QCONFIGS: dict[any, str] = {
     INT8_PER_CHANNEL_CONFIG: f"{quantization_configs_module}.INT8_PER_CHANNEL_QCONFIG",
     INT8_PER_TENSOR_CONFIG: f"{quantization_configs_module}.INT8_PER_TENSOR_QCONFIG",
 }
 
 
-SUPPORTED_QSPECS = {
+SUPPORTED_QSPECS: dict[QuantizationSpecBase | None, str] = {
     INT8_ACTIVATION_PER_TENSOR_QSPEC: "INT8_ACTIVATION_PER_TENSOR_QSPEC",
     INT8_ACTIVATION_PER_CHANNEL_QSPEC: "INT8_ACTIVATION_PER_CHANNEL_QSPEC",
     INT8_WEIGHT_PER_TENSOR_QSPEC: "INT8_WEIGHT_PER_TENSOR_QSPEC",
     INT8_WEIGHT_PER_CHANNEL_QSPEC: "INT8_WEIGHT_PER_CHANNEL_QSPEC",
     INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC: "INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC",
     SOFTMAX_OUTPUT_FIXED_QSPEC: "SOFTMAX_OUTPUT_FIXED_QSPEC",
-    None: "None",
 }
 
 
 def _qspec_repr(qspec):
-    return SUPPORTED_QSPECS.get(qspec, "CUSTOM_QSPEC")
+    """
+    Get a human readable representation of QuantizationSpecs.
+
+    Note that the observer_or_fake_quant_ctr field is created dynamically with the qspec
+    so two qspecs created at different times will not evaluate as equal. Therefore a
+    custom comparison is required.
+
+    #TODO: Clean up qconfig/ qspec string representation logic in cortex_m/arm backend.
+    """
+    if isinstance(qspec, SharedQuantizationSpec):
+        return "SHARED_QSPEC"
+    elif isinstance(qspec, DerivedQuantizationSpec):
+        return "DERIVED_QSPEC"
+    elif qspec is None:
+        return "NO_QSPEC"
+    elif isinstance(qspec, QuantizationSpec):
+        for key, val in SUPPORTED_QSPECS.items():
+            if type(qspec) is not type(key):
+                continue
+            if qspec.dtype != key.dtype:
+                continue
+            if qspec.quant_min != key.quant_min:
+                continue
+            if qspec.quant_max != key.quant_max:
+                continue
+            if qspec.qscheme != key.qscheme:
+                continue
+            if qspec.is_dynamic != key.is_dynamic:
+                continue
+            return val
+    return "UNREGISTRED_QSPEC"
 
 
 class QuantizerInfo(NamedTuple):
@@ -283,8 +318,13 @@ class QuantizerReporter:
     inheriting from QuantizerReporterUser.
     """
 
-    def __init__(self, quantizers: List[QuantizerReporterUser]):
+    def __init__(
+        self,
+        quantizers: List[QuantizerReporterUser],
+        report_title: str = "QUANTIZATION REPORT",
+    ):
         self.quantizers: Dict[Quantizer, QuantizerReport] = {}
+        self.report_title = report_title
         self.set_quantizers(quantizers)
 
     def set_quantizers(self, quantizers: List[QuantizerReporterUser]) -> None:
@@ -357,7 +397,12 @@ class QuantizerReporter:
         report_rows: List[str] = []
         separator = "-" * 100
         report_rows.append(separator)
-        report_rows.append(" " * 39 + " QUANTIZATION REPORT " + " " * 40)
+        assert (
+            len(self.report_title) < 100
+        ), "Report title must be less than 100 characters to be properly formatted in the report header."
+        pre_pad = (100 - len(self.report_title)) // 2
+        post_pad = 100 - len(self.report_title) - pre_pad
+        report_rows.append(" " * pre_pad + f"{self.report_title}" + " " * post_pad)
         report_rows.append(separator)
 
         for report in self.quantizers.values():

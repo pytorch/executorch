@@ -45,7 +45,7 @@ class PatternMatcher:
 
     def __init__(
         self,
-        support_dict: dict[tuple[OpOverload, ...], PatternCheck],
+        support_dict: dict[tuple[OpOverload, ...], Optional[type[PatternCheck]]],
         support_dict_name: str | None = None,
     ):
         self.support_dict = support_dict

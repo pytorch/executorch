@@ -6,10 +6,12 @@
 
 import logging
 import operator
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import torch
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
+
+from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
@@ -36,7 +38,6 @@ from executorch.backends.cortex_m.quantizer.quantizer_support import (
     CONV_TRANSPOSE_OP_PATTERNS,
     CORTEX_M_QUANTIZER_SUPPORT_DICT,
 )
-from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
@@ -59,18 +60,34 @@ def has_float_output(node: Node) -> bool:
 
 def mark_node_as_annotated(
     node: Node,
-    input_qspec_map: dict[Node, Optional[QuantizationSpec]],
-    output_qspec: Optional[QuantizationSpec],
-    reporter: Optional[QuantizerReporter] = None,
-    quantizer: Optional[Quantizer] = None,
+    input_qspec_map,
+    output_qspec,
+    is_quantized,
 ) -> None:
-    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(input_qspec_map, output_qspec)
-    annotation_info = ArmAnnotationInfo(
-        quantized=True,
+    """Fills various meta data fields required for quantization, partitioning,
+    and backend lowering.
+
+    Note: quantization_config is needed to distinguish between otherwise
+    identical annotations:
+    1. Node explicitly marked as not quantized using quantization_config = None
+    2. Node which is quantized but all inputs/outputs are quantized
+    """
+
+    # Annotate node for toracho
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map, output_qspec, _annotated=True
     )
-    meta_custom = node.meta.get("custom", {})
-    meta_custom[ArmAnnotationInfo.CUSTOM_META_KEY] = dict(annotation_info)
-    node.meta["custom"] = meta_custom
+
+    # Mark operator nodes as quantized to be folded in fold_qdq_with_annotated_qparams and know what to partition
+    if node.op == "call_function":
+        meta_custom = node.meta.get("custom", {})
+        meta_custom[ArmAnnotationInfo.CUSTOM_META_KEY] = ArmAnnotationInfo(
+            quantized=is_quantized
+        )
+        node.meta["custom"] = meta_custom
+
+    # Mark nodes to not be touched by transform_for_annotation in quantization dry-run
+    node.meta[DISALLOW_TFA_META_KEY] = not is_quantized
 
 
 class CortexMQuantizer(ComposableQuantizer):
@@ -128,12 +145,12 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
 
     def __init__(
         self,
-        quantization_config: QuantizationConfig,
+        quantization_config: QuantizationConfig | None,
         node_finder: NodeFinder,
         pattern_matcher: PatternMatcher,
     ) -> None:
         super().__init__()
-        self.quantization_config: QuantizationConfig = quantization_config
+        self.quantization_config: QuantizationConfig | None = quantization_config
         self.node_finder: NodeFinder = node_finder
         self.pattern_matcher: PatternMatcher = pattern_matcher
 
@@ -141,7 +158,7 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
         name = self.__class__.__name__
         targeted_nodes_description = str(self.node_finder)
         quantization_config_path = SUPPORTED_QCONFIGS.get(
-            self.quantization_config, "CUSTOM_QCONFIG"
+            self.quantization_config, "UNREGISTRED_QCONFIG"
         )
         support_config_path = self.pattern_matcher.support_dict_name
 
@@ -182,15 +199,34 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
         - All other outputs coming out of the matched pattern are annotated as output activations.
 
         """
+        parameter_targets = {
+            torch.ops.aten.linear.default,
+            torch.ops.aten.convolution.default,
+            torch.ops.aten.conv1d.default,
+            torch.ops.aten.conv1d.padding,
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.conv2d.padding,
+            torch.ops.aten.conv3d.default,
+            torch.ops.aten.conv3d.padding,
+            torch.ops.aten.conv_transpose2d.input,
+        }
+
         for node in match:
             input_qspec_map = {}
             output_qspec = None
 
             params = [n for n in node.all_input_nodes if self.is_parameter(n, model)]
             # Check that the assumptions on number of parameters hold to avoid silent errors
-            assert (
-                0 <= len(params) <= 2
-            ), f"{self.__class__.__name__} expected 0 params, 1 params (weight) or 2 params (weight, bias), but got {len(params)} for node {node}."
+            if node.target in parameter_targets:
+                if len(params) == 0 or len(params) > 2:
+                    logger.warning(
+                        f"{node.name} is expected to have parameter tensors for weight/bias but no such inputs found, which may cause unexpected quantization annotations. This is likely caused by incorrect tensor instantiations or non-constant weight/biases."
+                    )
+            else:
+                if len(params) > 0:
+                    logger.warning(
+                        f"{node.name} is not expected to not have parameter tensors but found {[n.name for n in params]}, which may cause unexpected quantization annotations."
+                    )
 
             for input_node in node.all_input_nodes:
                 # Observers only work on floating point tensors, so make sure to skip other dtypes
@@ -207,14 +243,18 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
                     )
                 elif input_node not in match:
                     input_qspec_map[input_node] = (
-                        config.get_input_act_qspec() if config else None
+                        config.get_input_act_qspec(node, input_node) if config else None
                     )
 
             if all(node not in match for node in node.users) and output_qspec is None:
-                output_qspec = config.get_output_act_qspec(node) if config else None
+                if has_float_output(node):
+                    output_qspec = config.get_output_act_qspec(node) if config else None
 
             mark_node_as_annotated(
-                node, input_qspec_map, output_qspec, self.reporter, self
+                node,
+                input_qspec_map,
+                output_qspec,
+                config is not None,  # None qconfig -> explicitly not quantized node
             )
 
     def annotate(self, model: GraphModule) -> None:
@@ -242,11 +282,11 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
     i.e. ops which does not change the scale such as clone, min/max, transposes and so on.
 
     Args:
-        targets (Optional[List[OpOverload]]): List of operator overloads to apply shared quantization spec to.
-            If None, a default list of supported ops is used.
+        targets (Optional[List[Callable[..., object]]]): List of operator targets to apply shared
+            quantization specs to. If None, a default list of supported ops is used.
     """
 
-    SHARED_QSPEC_OPS_DEFAULT: List[OpOverload] = [
+    SHARED_QSPEC_OPS_DEFAULT: List[Callable[..., object]] = [
         # Clone
         torch.ops.aten.clone.default,
         torch.ops.aten.lift_fresh_copy.default,
@@ -344,7 +384,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.higher_order.cond,
     ]
 
-    def __init__(self, targets: Optional[List[OpOverload]] = None) -> None:
+    def __init__(self, targets: Optional[List[Callable[..., object]]] = None) -> None:
         super().__init__()
         if targets is None:
             self.targets = self.SHARED_QSPEC_OPS_DEFAULT
@@ -439,6 +479,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
                 root_node,
                 {},
                 None,
+                is_quantized=True,
             )
             return
 
@@ -482,9 +523,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
                 else:
                     output_qspec = shared_qspec
                 mark_node_as_annotated(
-                    node,
-                    input_qspec_map,
-                    output_qspec,
+                    node, input_qspec_map, output_qspec, is_quantized=True
                 )
 
             # Force the root qspec to be the adjacent spec
