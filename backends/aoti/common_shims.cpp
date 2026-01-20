@@ -218,7 +218,7 @@ AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_storage_size(Tensor* tensor, int64_t* ret_size) {
   (void)tensor;
   (void)ret_size;
-  throw std::runtime_error("Not implemented");
+  throw std::runtime_error("Not implemented: aoti_torch_get_storage_size");
   return Error::Internal;
 }
 
@@ -226,7 +226,8 @@ AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_clone_preserve_strides(Tensor* self, Tensor** ret_new_tensor) {
   (void)self;
   (void)ret_new_tensor;
-  throw std::runtime_error("Not implemented");
+  throw std::runtime_error(
+      "Not implemented: aoti_torch_clone_preserve_strides");
   return Error::Internal;
 }
 
@@ -234,7 +235,7 @@ AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_clone(Tensor* self, Tensor** ret_new_tensor) {
   (void)self;
   (void)ret_new_tensor;
-  throw std::runtime_error("Not implemented");
+  throw std::runtime_error("Not implemented: aoti_torch_clone");
   return Error::Internal;
 }
 
@@ -257,7 +258,8 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob(
   (void)device_type;
   (void)device_index;
   (void)ret_new_tensor;
-  throw std::runtime_error("Not implemented");
+  throw std::runtime_error(
+      "Not implemented: aoti_torch_create_tensor_from_blob");
   return Error::Internal;
 }
 
