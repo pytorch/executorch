@@ -8,7 +8,7 @@
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 
-#include <climits>
+#include <cstdint>
 #include <cstring>
 
 #include <gtest/gtest.h>
@@ -141,20 +141,23 @@ TEST_F(BufferDataLoaderTest, OverflowLoadFails) {
   BufferDataLoader edl(data, sizeof(data));
 
   // Loading with offset + size that would overflow should fail.
+  // Use a small valid offset but a size that causes overflow.
+  // If overflow wasn't checked, 1 + SIZE_MAX would wrap to 0, which is <= 256.
   {
     Result<FreeableBuffer> fb = edl.load(
-        /*offset=*/SIZE_MAX,
-        /*size=*/1,
+        /*offset=*/1,
+        /*size=*/SIZE_MAX,
         /*segment_info=*/
         DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
   }
 
-  // Another overflow case: large offset and size that sum to overflow.
+  // Another overflow case: offset within bounds, size causes overflow.
+  // 128 + (SIZE_MAX - 127) wraps to 0.
   {
     Result<FreeableBuffer> fb = edl.load(
-        /*offset=*/SIZE_MAX / 2 + 1,
-        /*size=*/SIZE_MAX / 2 + 1,
+        /*offset=*/128,
+        /*size=*/SIZE_MAX - 127,
         /*segment_info=*/
         DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
