@@ -43,7 +43,7 @@ portability details.
 ## Environment Setup
  Clone the ExecuTorch repository from GitHub and create a conda environment. Venv can be used in place of conda.
    ```bash
-   git clone -b viable/strict https://github.com/pytorch/executorch.git
+   git clone -b release/1.1 https://github.com/pytorch/executorch.git
    cd executorch
    conda create -yn executorch python=3.10.0
    conda activate executorch
