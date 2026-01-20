@@ -53,7 +53,7 @@ OPTION_LIST=(
   "--disable-ethos-u-deps Do not setup what is needed for Ethos-U"
   "--enable-mlsdk-deps Setup what is needed for MLSDK"
   "--install-mlsdk-deps-with-pip (default) Use MLSDK PyPi package. This flag will be removed."
-  "--install-mlsdk-deps-from-src Build from source intead of using MLSDK PyPi packages"
+  "--install-mlsdk-deps-from-src Build from source instead of using MLSDK PyPi packages"
   "--mlsdk-manifest-url URL to the MLSDK manifest for vulkan."
   "--help Display help"
 )
