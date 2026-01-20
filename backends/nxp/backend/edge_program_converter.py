@@ -56,7 +56,7 @@ class EdgeProgramToIRConverter:
     """
 
     _default_conversion_config = ConversionConfig()
-    _default_target_spec = NeutronTargetSpec("imxrt700", "SDK_25_09")
+    _default_target_spec = NeutronTargetSpec("imxrt700", "SDK_25_12")
     _default_delegation_options = CustomDelegationOptions()
 
     def convert_program(

@@ -7,7 +7,7 @@
 set -u
 
 # Install neutron-converter
-pip install --index-url https://eiq.nxp.com/repository neutron_converter_SDK_25_09
+pip install --index-url https://eiq.nxp.com/repository neutron_converter_SDK_25_12
 
 # Get the directory of the current script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
