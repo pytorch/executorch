@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -22,6 +22,7 @@ from typing import (
 
 import torch
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
+from executorch.backends.arm.ethosu import EthosUCompileSpec
 
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
@@ -88,9 +89,9 @@ class PipelineStage:
             raise RuntimeError(f"{self.id} args updated after being called.")
 
 
-class BasePipelineMaker(Generic[T]):
+class BasePipeline(Generic[T]):
     """
-    The BasePiplineMaker defines a list of stages to be applied to a torch.nn.module for lowering it
+    The BasePipeline defines a list of stages to be applied to a torch.nn.module for lowering it
     in the Arm backend. To be inherited and adjusted for particular targets. Importantly, the
     pipeline list can be modified before running the pipeline to support various pipeline extensions
     and debugging usecases.
@@ -317,7 +318,7 @@ class BasePipelineMaker(Generic[T]):
                 raise e
 
 
-class TOSAPipelineMaker(BasePipelineMaker, Generic[T]):
+class TOSAPipeline(BasePipeline, Generic[T]):
     @staticmethod
     def is_tosa_ref_model_available():
         """Checks if the TOSA reference model is available."""
@@ -343,7 +344,7 @@ class TOSAPipelineMaker(BasePipelineMaker, Generic[T]):
         super().run()
 
 
-class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
+class TosaPipelineINT(TOSAPipeline, Generic[T]):
     """
     Lowers a graph to INT TOSA spec (with quantization) and tests it with the TOSA reference model.
 
@@ -475,7 +476,7 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
             )
 
 
-class TosaPipelineFP(TOSAPipelineMaker, Generic[T]):
+class TosaPipelineFP(TOSAPipeline, Generic[T]):
     """
     Lowers a graph to FP TOSA spec and tests it with the TOSA reference model.
 
@@ -558,7 +559,90 @@ class TosaPipelineFP(TOSAPipelineMaker, Generic[T]):
             )
 
 
-class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
+class EthosUPipelineINTBase(BasePipeline, Generic[T]):
+    """Base class that encapsulates shared Ethos-U INT pipeline setup."""
+
+    def __init__(
+        self,
+        compile_spec: EthosUCompileSpec,
+        module: torch.nn.Module,
+        test_data: T,
+        aten_ops: str | List[str],
+        exir_ops: str | Sequence[str] | None,
+        run_on_fvp: bool = True,
+        symmetric_io_quantization: bool = False,
+        per_channel_quantization: bool = True,
+        a16w8_quantization: bool = False,
+        use_to_edge_transform_and_lower: bool = True,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 1,
+        epsilon: float = 2**-12,
+    ):
+        super().__init__(
+            module,
+            test_data,
+            aten_ops,
+            compile_spec,
+            exir_ops,
+            use_to_edge_transform_and_lower,
+        )
+
+        quantizer = EthosUQuantizer(compile_spec)
+        # choose int8 or int16 activation quantization
+        if a16w8_quantization:
+            quantization_config = get_symmetric_a16w8_quantization_config(
+                is_per_channel=per_channel_quantization, epsilon=epsilon
+            )
+        else:
+            quantization_config = get_symmetric_quantization_config(
+                is_per_channel=per_channel_quantization
+            )
+        if symmetric_io_quantization:
+            quantizer.set_io(quantization_config)
+        quant_stage = Quantize(quantizer, quantization_config)
+
+        self.add_stage(self.tester.quantize, quant_stage, pos=0)
+
+        remove_quant_nodes_stage = (
+            "to_edge_transform_and_lower"
+            if use_to_edge_transform_and_lower
+            else "partition"
+        )
+
+        if _has_quantizable_inputs(test_data):
+            # only add stages if we have quantizable input
+            self.add_stage_after(
+                "quantize",
+                self.tester.check,
+                [
+                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                ],
+                suffix="quant_nodes",
+            )
+            self.add_stage_after(
+                remove_quant_nodes_stage,
+                self.tester.check_not,
+                [
+                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                ],
+                suffix="quant_nodes",
+            )
+
+        if run_on_fvp:
+            self.add_stage(self.tester.serialize)
+            self.add_stage(
+                self.tester.run_method_and_compare_outputs,
+                atol=atol,
+                rtol=rtol,
+                qtol=qtol,
+                inputs=self.test_data,
+            )
+
+
+class EthosU55PipelineINT(EthosUPipelineINTBase, Generic[T]):
     """
     Lowers a graph to u55 INT TOSA spec and tests it on the Corstone300 FVP, if run_on_fvp is true.
 
@@ -569,8 +653,8 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
 
        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
        if not using use_edge_to_transform_and_lower.
-       run_on_fvp: Set to true to test the pte fileon a fvp simulator.
-       use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
+       run_on_fvp: Set to true to test the pte file on a fvp simulator.
+       use_edge_to_transform_and_lower: Selects between two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
     """
 
@@ -579,7 +663,7 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
         module: torch.nn.Module,
         test_data: T,
         aten_ops: str | List[str],
-        exir_ops: Optional[str | List[str]] = None,
+        exir_ops: str | Sequence[str] | None = None,
         run_on_fvp: bool = True,
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
@@ -596,70 +680,25 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
             custom_path=custom_path,
             tosa_debug_mode=tosa_debug_mode,
         )
-        quantizer = EthosUQuantizer(compile_spec)
-        # choose int8 or int16 activation quantization
-        if a16w8_quantization:
-            quantization_config = get_symmetric_a16w8_quantization_config(
-                is_per_channel=per_channel_quantization, epsilon=epsilon
-            )
-        else:
-            quantization_config = get_symmetric_quantization_config(
-                is_per_channel=per_channel_quantization
-            )
-        if symmetric_io_quantization:
-            quantizer.set_io(quantization_config)
-        quant_stage = Quantize(quantizer, quantization_config)
-
         super().__init__(
+            compile_spec,
             module,
             test_data,
             aten_ops,
-            compile_spec,
             exir_ops,
-            use_to_edge_transform_and_lower,
+            run_on_fvp=run_on_fvp,
+            symmetric_io_quantization=symmetric_io_quantization,
+            per_channel_quantization=per_channel_quantization,
+            a16w8_quantization=a16w8_quantization,
+            use_to_edge_transform_and_lower=use_to_edge_transform_and_lower,
+            atol=atol,
+            rtol=rtol,
+            qtol=qtol,
+            epsilon=epsilon,
         )
 
-        self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
-        remove_quant_nodes_stage = (
-            "to_edge_transform_and_lower"
-            if use_to_edge_transform_and_lower
-            else "partition"
-        )
-
-        if _has_quantizable_inputs(test_data):
-            # only add stages if we have quantizable input
-            self.add_stage_after(
-                "quantize",
-                self.tester.check,
-                [
-                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-                ],
-                suffix="quant_nodes",
-            )
-            self.add_stage_after(
-                remove_quant_nodes_stage,
-                self.tester.check_not,
-                [
-                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-                ],
-                suffix="quant_nodes",
-            )
-
-        if run_on_fvp:
-            self.add_stage(self.tester.serialize)
-            self.add_stage(
-                self.tester.run_method_and_compare_outputs,
-                atol=atol,
-                rtol=rtol,
-                qtol=qtol,
-                inputs=self.test_data,
-            )
-
-
-class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
+class EthosU85PipelineINT(EthosUPipelineINTBase, Generic[T]):
     """
     Lowers a graph to u85 INT TOSA spec and tests it on the Corstone320 FVP, if run_on_fvp is true.
 
@@ -670,8 +709,8 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
 
        exir_ops: Exir dialect ops expected to be found in the graph after to_edge if not using
                  use_edge_to_transform_and_lower.
-       run_on_fvp: Set to true to test the pte fileon a fvp simulator.
-       use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
+       run_on_fvp: Set to true to test the pte file on a fvp simulator.
+       use_edge_to_transform_and_lower: Selects between two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
     """
 
@@ -680,7 +719,7 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
         module: torch.nn.Module,
         test_data: T,
         aten_ops: str | List[str],
-        exir_ops: str | List[str] | None = None,
+        exir_ops: str | Sequence[str] | None = None,
         run_on_fvp: bool = True,
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
@@ -697,70 +736,25 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
             custom_path=custom_path,
             tosa_debug_mode=tosa_debug_mode,
         )
-        quantizer = EthosUQuantizer(compile_spec)
-        # choose int8 or int16 activation quantization
-        if a16w8_quantization:
-            quantization_config = get_symmetric_a16w8_quantization_config(
-                is_per_channel=per_channel_quantization, epsilon=epsilon
-            )
-        else:
-            quantization_config = get_symmetric_quantization_config(
-                is_per_channel=per_channel_quantization
-            )
-        if symmetric_io_quantization:
-            quantizer.set_io(quantization_config)
-        quant_stage = Quantize(quantizer, quantization_config)
-
         super().__init__(
+            compile_spec,
             module,
             test_data,
             aten_ops,
-            compile_spec,
             exir_ops,
-            use_to_edge_transform_and_lower,
+            run_on_fvp=run_on_fvp,
+            symmetric_io_quantization=symmetric_io_quantization,
+            per_channel_quantization=per_channel_quantization,
+            a16w8_quantization=a16w8_quantization,
+            use_to_edge_transform_and_lower=use_to_edge_transform_and_lower,
+            atol=atol,
+            rtol=rtol,
+            qtol=qtol,
+            epsilon=epsilon,
         )
 
-        self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
-        remove_quant_nodes_stage = (
-            "to_edge_transform_and_lower"
-            if use_to_edge_transform_and_lower
-            else "partition"
-        )
-
-        if _has_quantizable_inputs(test_data):
-            # only add stages if we have quantizable input
-            self.add_stage_after(
-                "quantize",
-                self.tester.check,
-                [
-                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-                ],
-                suffix="quant_nodes",
-            )
-            self.add_stage_after(
-                remove_quant_nodes_stage,
-                self.tester.check_not,
-                [
-                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-                ],
-                suffix="quant_nodes",
-            )
-
-        if run_on_fvp:
-            self.add_stage(self.tester.serialize)
-            self.add_stage(
-                self.tester.run_method_and_compare_outputs,
-                atol=atol,
-                rtol=rtol,
-                qtol=qtol,
-                inputs=self.test_data,
-            )
-
-
-class PassPipeline(TOSAPipelineMaker, Generic[T]):
+class PassPipeline(TOSAPipeline, Generic[T]):
     """
     Runs single passes directly on an edge_program and checks operators before/after.
 
@@ -858,7 +852,7 @@ class PassPipeline(TOSAPipelineMaker, Generic[T]):
             super().run()
 
 
-class TransformAnnotationPassPipeline(TOSAPipelineMaker, Generic[T]):
+class TransformAnnotationPassPipeline(TOSAPipeline, Generic[T]):
     """
     Runs transform_for_annotation_pipeline passes directly on an exported program and checks output.
 
@@ -914,7 +908,7 @@ class TransformAnnotationPassPipeline(TOSAPipelineMaker, Generic[T]):
         )
 
 
-class QuantizationPipeline(TOSAPipelineMaker, Generic[T]):
+class QuantizationPipeline(TOSAPipeline, Generic[T]):
     """
     Runs quantization and checks that appropriate nodes are annotated with an expected
     quantization-spec.
@@ -971,7 +965,7 @@ class QuantizationPipeline(TOSAPipelineMaker, Generic[T]):
         )
 
 
-class OpNotSupportedPipeline(TOSAPipelineMaker, Generic[T]):
+class OpNotSupportedPipeline(TOSAPipeline, Generic[T]):
     """
     Runs the partitioner on a module and checks that ops are not delegated to test
     SupportedTOSAOperatorChecks.
@@ -1040,7 +1034,7 @@ class OpNotSupportedPipeline(TOSAPipelineMaker, Generic[T]):
         self.pop_stage("to_executorch")
 
 
-class VgfPipeline(BasePipelineMaker, Generic[T]):
+class VgfPipeline(BasePipeline, Generic[T]):
     """
     Lowers a graph based on TOSA spec (with or without quantization) and converts TOSA to VFG.
 
