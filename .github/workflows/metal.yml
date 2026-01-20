@@ -14,7 +14,7 @@ concurrency:
 jobs:
   test-metal-builds:
     name: test-executorch-metal-build
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.10
     with:
       runner: macos-m2-stable
       python-version: '3.11'
@@ -32,7 +32,7 @@ jobs:
     name: export-model-metal-artifact
       # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.10
     secrets: inherit
     strategy:
       fail-fast: false
@@ -81,7 +81,7 @@ jobs:
   test-model-metal-e2e:
     name: test-model-metal-e2e
     needs: export-model-metal-artifact
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.10
     strategy:
       fail-fast: false
       matrix:
