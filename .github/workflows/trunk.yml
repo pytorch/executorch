@@ -90,6 +90,11 @@ jobs:
         allowedpattern='^(pip|pip3)[[:space:]]+install([[:space:]].*)?$'
         run_command_block_from_zephyr_readme 'Install requirements' "${allowedpattern}"
 
+        # Make sure to backup the zephyr_scratch folder if it exists to allow for local
+        # testing that does not lose code/data
+        if [ -d "zephyr_scratch" ]; then
+          mv "zephyr_scratch" "zephyr_scratch.backup.$(date +%Y%m%d%H%M%S)"
+        fi
         mkdir -p zephyr_scratch/
 
         cd zephyr_scratch
@@ -130,8 +135,13 @@ jobs:
         ln -s ${EXECUTORCH_PROJ_ROOT} modules/lib/executorch
 
         # Setup git local user for Executorch git to allows modules/lib/executorch/examples/arm/setup.sh be run inside CI later
-        git config --global user.email "github_executorch@arm.com"
-        git config --global user.name "Github Executorch"
+        # Configure git user only if not already set
+        if ! git config --get user.name >/dev/null 2>&1; then
+          git config --global user.name "Github Executorch"
+        fi
+        if ! git config --get user.email >/dev/null 2>&1; then
+          git config --global user.email "github_executorch@arm.com"
+        fi
 
         # Allowed only "cd/git/install_executorch.sh" commands
         run_command_block_from_zephyr_readme 'Setup ExecuTorch' '^(cd [^;&|]+|git submodule([[:space:]].*)?|\./install_executorch\.sh([[:space:]].*)?)$'
