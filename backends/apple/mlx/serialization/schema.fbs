@@ -1,0 +1,409 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// AUTO-GENERATED from ops_schema.py - regenerate with: python generate.py
+//
+// FlatBuffer schema for MLX delegate
+// Defines the IR that gets serialized into the .pte file and executed by MLX runtime
+
+namespace mlx_delegate;
+
+// =============================================================================
+// Core types
+// =============================================================================
+
+enum DTypeId : byte {
+    f16 = 0,
+    f32 = 1,
+    bf16 = 2,
+    i32 = 3,
+    i64 = 4,
+    u32 = 5,
+    u8 = 6,
+    boolean = 7,
+    i8 = 8
+}
+
+// Tensor slot identifier - indexes into tensors array
+struct Tid {
+    idx: uint32;
+}
+
+// Value slot identifier - indexes into values array
+// Values are stored as variant<int64, double, bool> at runtime
+struct Vid {
+    idx: uint32;
+}
+
+// For fields that can be either a literal int or a runtime Vid
+table IntOrVid {
+    literal: int64;  // widened to int64 for future-proofing
+    vid: Vid;
+    is_vid: bool = false;
+}
+
+// For fields that can be either a literal float or a runtime Vid
+table FloatOrVid {
+    literal: double;  // widened to double for future-proofing
+    vid: Vid;
+    is_vid: bool = false;
+}
+
+// =============================================================================
+// Op nodes - mirrors ops_schema.py dataclasses
+// =============================================================================
+
+table NoopNode {}
+
+table LinearNode {
+    x: Tid (required);
+    weight: Tid (required);
+    out: Tid (required);
+    bias: Tid;  // optional
+}
+
+table ItemIntNode {
+    x: Tid (required);
+    out: Vid (required);
+}
+
+table ExpandDimsNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
+table TileNode {
+    x: Tid (required);
+    out: Tid (required);
+    reps: [int32] (required);
+}
+
+table TakeAlongAxisNode {
+    x: Tid (required);
+    indices: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
+table RMSNormNode {
+    x: Tid (required);
+    weight: Tid (required);
+    out: Tid (required);
+    eps: float;
+}
+
+table LayerNormNode {
+    x: Tid (required);
+    out: Tid (required);
+    weight: Tid;  // optional
+    bias: Tid;    // optional
+    eps: float;
+}
+
+table RopeNode {
+    q_in: Tid (required);
+    k_in: Tid (required);
+    q_out: Tid (required);
+    k_out: Tid (required);
+    head_dim: int32;
+    pos: Vid (required);
+    freqs: Tid;  // optional
+    traditional: bool = false;
+    base: float;
+    base_is_set: bool = false;  // to distinguish None from 0.0
+    scale: float = 1.0;
+}
+
+table SdpaNode {
+    q: Tid (required);
+    k: Tid (required);
+    v: Tid (required);
+    out: Tid (required);
+    scale: float;
+    mask: Tid;  // optional
+    causal: bool = false;
+}
+
+table AddNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table AddScalarNode {
+    a: IntOrVid (required);
+    b: IntOrVid (required);
+    out: Vid (required);
+}
+
+table SymSizeNode {
+    a: Tid (required);
+    dim: int32;
+    out: Vid (required);
+}
+
+table MulNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table Conv1DNode {
+    x: Tid (required);
+    w: Tid (required);
+    out: Tid (required);
+    stride: int32 = 1;
+    padding: int32 = 0;
+    dilation: int32 = 1;
+    groups: int32 = 1;
+}
+
+table GeluNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ARangeNode {
+    out: Tid (required);
+    start: int32;
+    stop: int32;
+    step: int32 = 1;
+    dtype: DTypeId;
+    dtype_is_set: bool = false;
+}
+
+table SiluNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ReshapeNode {
+    x: Tid (required);
+    out: Tid (required);
+    shape: [IntOrVid] (required);
+}
+
+table TransposeNode {
+    x: Tid (required);
+    out: Tid (required);
+    perm: [int32] (required);
+}
+
+table ContiguousNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table IdCopyNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table GatherNode {
+    table_: Tid (required);  // 'table' is reserved in flatbuffers
+    ids: Tid (required);
+    out: Tid (required);
+}
+
+table SliceNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: IntOrVid (required);
+    start: IntOrVid (required);
+    end: IntOrVid (required);
+}
+
+table CastNode {
+    x: Tid (required);
+    out: Tid (required);
+    dtype: DTypeId;
+}
+
+table QuantizedLinearNode {
+    x: Tid (required);
+    w: Tid (required);
+    scales: Tid (required);
+    out: Tid (required);
+    biases: Tid;  // optional - quantization biases
+    bias: Tid;    // optional - neural network bias
+    group_size: int32;
+    bits: int32;
+    mode: string (required);
+    out_dtype: DTypeId;
+}
+
+table ConcatNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
+table FullNode {
+    out: Tid (required);
+    shape: [int32] (required);
+    v: float;
+    dtype: DTypeId;
+}
+
+table ZerosNode {
+    out: Tid (required);
+    shape: [int32] (required);
+    dtype: DTypeId;
+}
+
+table OnesNode {
+    out: Tid (required);
+    shape: [int32] (required);
+    dtype: DTypeId;
+}
+
+table ArgmaxNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
+table SliceUpdateNode {
+    dst: Tid (required);
+    update: Tid (required);
+    axis: IntOrVid (required);
+    start: IntOrVid (required);
+    stop: IntOrVid (required);
+}
+
+table QuantizedGatherNode {
+    table_q: Tid (required);
+    scales: Tid (required);
+    ids: Tid (required);
+    out: Tid (required);
+    biases: Tid;  // optional
+    group_size: int32;
+    bits: int32;
+    mode: string (required);
+    out_dtype: DTypeId;
+}
+
+// =============================================================================
+// Union of all op types
+// =============================================================================
+
+union OpNode {
+    NoopNode,
+    LinearNode,
+    ItemIntNode,
+    ExpandDimsNode,
+    TileNode,
+    TakeAlongAxisNode,
+    RMSNormNode,
+    LayerNormNode,
+    RopeNode,
+    SdpaNode,
+    AddNode,
+    AddScalarNode,
+    SymSizeNode,
+    MulNode,
+    Conv1DNode,
+    GeluNode,
+    ARangeNode,
+    SiluNode,
+    ReshapeNode,
+    TransposeNode,
+    ContiguousNode,
+    IdCopyNode,
+    GatherNode,
+    SliceNode,
+    CastNode,
+    QuantizedLinearNode,
+    ConcatNode,
+    FullNode,
+    ZerosNode,
+    OnesNode,
+    ArgmaxNode,
+    SliceUpdateNode,
+    QuantizedGatherNode
+}
+
+// =============================================================================
+// Instruction wrapper
+// =============================================================================
+
+table Instruction {
+    op: OpNode (required);
+}
+
+// =============================================================================
+// Tensor metadata
+// =============================================================================
+
+table TensorMeta {
+    shape: [IntOrVid] (required);  // Can be literal ints or Vid refs for dynamic dims
+    dtype: DTypeId;
+    strides: [int32];
+}
+
+// =============================================================================
+// Slot variant for I/O mapping
+// =============================================================================
+
+enum SlotType : byte {
+    TensorSlot = 0,
+    IntValueSlot = 1,
+    FloatValueSlot = 2,
+    BoolValueSlot = 3
+}
+
+table SlotVariant {
+    idx: uint32;
+    slot_type: SlotType = TensorSlot;
+}
+
+// =============================================================================
+// Name to slot mapping entry
+// =============================================================================
+
+table NamedSlot {
+    name: string (required);
+    slot: SlotVariant (required);
+}
+
+// =============================================================================
+// Data segment for constants
+// =============================================================================
+
+table DataSegment {
+    offset: uint64;
+    size: uint64;
+}
+
+// =============================================================================
+// Root type: MLX Graph
+// =============================================================================
+
+table MLXGraph {
+    // Version for compatibility
+    version: string;
+
+    // Tensor slot counts
+    num_constant_tensors: uint32;
+    num_non_constant_tensors: uint32;
+    num_non_constant_values: uint32;
+
+    // Instructions (the program)
+    instructions: [Instruction] (required);
+
+    // I/O mappings
+    input_map: [SlotVariant];
+    output_map: [SlotVariant];
+    mutable_buffer_map: [SlotVariant];
+
+    // Name to slot lookup
+    named_slots: [NamedSlot];
+
+    // Tensor metadata (for non-temp tensors)
+    tensor_meta: [TensorMeta];
+
+    // Constant data segment info
+    constant_segment: DataSegment;
+}
+
+root_type MLXGraph;

@@ -110,7 +110,7 @@
       "inherits": ["common"],
       "cacheVariables": {
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/pybind.cmake",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0"
       },
       "condition": {
         "type": "inList",
