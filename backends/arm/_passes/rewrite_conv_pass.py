@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -168,7 +168,8 @@ class RewriteConvPass(ArmPass):
         if "output_qparams" in node.meta and len(node.meta["output_qparams"]) > 0:
             bias_data = torch.zeros(size=(output_channels,), dtype=torch.int32)
         else:
-            bias_data = torch.zeros(size=(output_channels,), dtype=torch.float32)
+            output_dtype = node.meta["val"].dtype
+            bias_data = torch.zeros(size=(output_channels,), dtype=output_dtype)
 
         with graph_module.graph.inserting_after(weight_node):
             bias_node = create_constant_placeholder(

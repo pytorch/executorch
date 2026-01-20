@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -74,6 +74,8 @@ class Conv2dVisitor(NodeVisitor):
                 validate_valid_dtype(
                     self.target, [inputs[2]], [ts.DType.INT48], self.tosa_spec
                 )
+        if self.tosa_spec.support_extension("bf16"):
+            valid_input_dtypes.append(ts.DType.BF16)
 
         validate_valid_dtype(
             self.target,
@@ -101,6 +103,9 @@ class Conv2dVisitor(NodeVisitor):
 
         conv2d_output_name = output.name
         acc_type = output.dtype
+        if output.dtype == ts.DType.BF16:
+            # Accumulate BF16 inputs in FP32 for better precision per TOSA BF16 extension.
+            acc_type = ts.DType.FP32
 
         tosa_graph.addConst(
             [1], inputs[0].dtype, [input_zp], name=f"{conv2d_output_name}_input_zp"
