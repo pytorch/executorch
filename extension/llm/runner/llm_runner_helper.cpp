@@ -17,6 +17,7 @@
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
+#include <executorch/extension/memory_allocator/cpu_caching_malloc_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
@@ -210,15 +211,28 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 
   // Create the Module
   std::unique_ptr<Module> module;
+  uint32_t max_cached_memory_size_bytes_ = 1024 * 1024 * 10; // 10MB
   if (data_files.size() > 0) {
     module = std::make_unique<Module>(
         model_path,
         data_files,
         Module::LoadMode::File,
-        std::move(event_tracer));
+        std::move(event_tracer),
+        nullptr, // memory allocator
+        std::make_unique<
+            executorch::extension::CPUCachingAllocator>( // temp memory
+                                                         // allocator
+            max_cached_memory_size_bytes_));
   } else {
     module = std::make_unique<Module>(
-        model_path, Module::LoadMode::File, std::move(event_tracer));
+        model_path,
+        Module::LoadMode::File,
+        std::move(event_tracer), // event tracer
+        nullptr, // memory allocator
+        std::make_unique<
+            executorch::extension::CPUCachingAllocator>( // temp memory
+                                                         // allocator
+            max_cached_memory_size_bytes_));
   }
 
   // Get metadata from Module
