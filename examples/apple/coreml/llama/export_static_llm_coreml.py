@@ -27,7 +27,10 @@ import torch
 import torch.nn as nn
 import torch.utils._pytree as pytree
 
-from executorch.backends.apple.coreml.compiler import CoreMLBackend
+from executorch.backends.apple.coreml.compiler.coreml_preprocess import (
+    CoreMLBackend,
+    MULTIMETHOD_WEIGHT_SHARING_STRATEGY,
+)
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.examples.apple.coreml.llama.utils import (
     replace_linear_with_split_linear,
@@ -90,26 +93,41 @@ class BlockWithGraphBreak(nn.Module):
 
 
 def remove_graph_break_(edge_manager):
+    """Remove graph break ops from all methods in the edge manager."""
     from executorch.exir.dialects._ops import ops as exir_ops
 
-    for n in edge_manager.exported_program().graph_module.graph.nodes:
-        if n.target == exir_ops.edge.executorch_utils.graph_break.Tensor:
-            n.replace_all_uses_with(n.args[0])
-    edge_manager.exported_program().graph_module.graph.eliminate_dead_code()
+    # Get all method names
+    method_names = edge_manager.methods
+    for method_name in method_names:
+        ep = edge_manager.exported_program(method_name)
+        for n in ep.graph_module.graph.nodes:
+            if n.target == exir_ops.edge.executorch_utils.graph_break.Tensor:
+                n.replace_all_uses_with(n.args[0])
+        ep.graph_module.graph.eliminate_dead_code()
 
 
-def load_model(checkpoint_path: str, params_path: str, max_context_len: int):
-    """Load the model from checkpoint with static_mha attention type."""
+def load_model(
+    checkpoint_path: str,
+    params_path: str,
+    max_context_len: int,
+    generate_full_logits: bool = True,
+):
+    """Load the model from checkpoint with static_mha attention type.
+
+    Args:
+        checkpoint_path: Path to the model checkpoint (.pth)
+        params_path: Path to params.json
+        max_context_len: Maximum context length
+        generate_full_logits: If True, output logits for all tokens (needed for
+            lookahead decoding). If False, only output logits for the last token
+            (more efficient for standard autoregressive generation).
+    """
     with open(params_path, "r") as f:
         params = json.loads(f.read())
 
-    # TODO: to support lookahead decoding, the static model outputs
-    # full logits, but if we are not using lookahead decoding, we can have a
-    # more efficient model by setting generate_full_logits=False and supplying the last
-    # valid token
     args = ModelArgs(
         max_context_len=max_context_len,
-        generate_full_logits=True,
+        generate_full_logits=generate_full_logits,
         **params,
     )
     args.attention_type = "static_mha"
@@ -150,6 +168,55 @@ def load_model(checkpoint_path: str, params_path: str, max_context_len: int):
         print(f"Unexpected keys: {unexpected}")
 
     return model, args
+
+
+def _create_example_inputs(model_args, input_len, max_context_len, float_dtype):
+    """
+    Create example inputs for a given input length.
+
+    Args:
+        model_args: Model configuration arguments
+        input_len: Sequence length for this forward pass
+        max_context_len: Maximum context length
+        float_dtype: Float dtype (torch.float16 or torch.float32)
+
+    Returns:
+        Tuple of (example_inputs, cache_len) where example_inputs is the tuple
+        expected by the model's forward method.
+    """
+    cache_len = max_context_len - input_len
+
+    mgr = StaticAttentionIOManager(
+        model_args,
+        input_len=input_len,
+        cache_lens=cache_len,
+        batch_size=1,
+        dtype=float_dtype,
+        style="smart_mask",
+        mask_val=float("-inf"),
+    )
+
+    options = {
+        "masks": mgr.masks,
+        "freqs_cos_override": mgr.freqs_cos[:input_len],
+        "freqs_sin_override": mgr.freqs_sin[:input_len],
+        "in_cache_state": (mgr.k_caches, mgr.v_caches),
+    }
+
+    # When generate_full_logits=False, we need to pass last_valid_token_pos
+    # to tell the model which position's logits to output.
+    # This is the index of the last real token (before any padding).
+    if not model_args.generate_full_logits:
+        options["last_valid_token_pos"] = torch.tensor(
+            [input_len - 1], dtype=torch.long
+        )
+
+    example_inputs = (
+        torch.zeros(1, input_len, dtype=torch.int32),
+        options,
+    )
+
+    return example_inputs, cache_len
 
 
 def _get_metadata(model_args, example_inputs, input_len, cache_len, float_dtype):
@@ -320,11 +387,29 @@ def main():
         help="Disable graph breaks between transformer blocks",
     )
 
+    # Export mode options
+    parser.add_argument(
+        "--multifunction",
+        action="store_true",
+        help="Export as multifunction model with separate prefill (seqlen=input_len) "
+        "and decode (seqlen=1) methods. Weight sharing is enabled across methods. "
+        "When disabled, exports a single-method model with fixed seqlen=input_len "
+        "and generate_full_logits=True for lookahead decoding support.",
+    )
+
     args = parser.parse_args()
 
     # Compute cache length
 
-    print("Quantization and datatype:")
+    print("Export mode:")
+    if args.multifunction:
+        print(
+            "\tMultifunction: separate prefill/decode graphs, generate_full_logits=False"
+        )
+    else:
+        print("\tSingle method: fixed seqlen, generate_full_logits=True (lookahead)")
+
+    print("\nQuantization and datatype:")
     print(f"\tEmbedding quantize: {args.embedding_quantize}")
     print(f"\tLinear quantize: {args.linear_quantize}")
     print(f"\tDtype: {args.dtype}")
@@ -340,11 +425,15 @@ def main():
     print(f"\tMax splits: {args.max_splits}")
 
     # Load model
+    # For multifunction: generate_full_logits=False (efficient, only last token)
+    # For single method: generate_full_logits=True (needed for lookahead decoding)
+    generate_full_logits = not args.multifunction
     print(f"\nLoading model from {args.checkpoint}...")
     model, model_args = load_model(
         args.checkpoint,
         args.params,
         args.max_context_len,
+        generate_full_logits=generate_full_logits,
     )
     print(f"Model loaded: {model_args.n_layers} layers, {model_args.dim} dim")
 
@@ -413,73 +502,177 @@ def main():
             model.layers[n_layers - 1], break_before=False
         )
 
-    # Create IO manager and example inputs
-    mgr = StaticAttentionIOManager(
-        model_args,
-        input_len=args.input_len,
-        cache_lens=cache_len,
-        batch_size=1,
-        dtype=float_dtype,
-        style="smart_mask",  # Use smart_mask to match C++ StaticTransformerRunner
-        mask_val=float("-inf"),
-    )
-    example_inputs = (
-        torch.zeros(1, args.input_len, dtype=torch.int32),
-        {
-            "masks": mgr.masks,
-            "freqs_cos_override": mgr.freqs_cos[: args.input_len],
-            "freqs_sin_override": mgr.freqs_sin[: args.input_len],
-            "in_cache_state": (mgr.k_caches, mgr.v_caches),
-        },
-    )
+    if args.multifunction:
+        # Multifunction mode: separate prefill and decode graphs with weight sharing
+        decode_input_len = 1
+        prefill_input_len = args.input_len  # default 32
 
-    # Test eager execution
-    print("\nTesting eager execution...")
-    with torch.no_grad():
-        model(*example_inputs)
-    print("Eager execution successful!")
+        print(f"\nCreating example inputs for decode (seqlen={decode_input_len})...")
+        decode_inputs, decode_cache_len = _create_example_inputs(
+            model_args, decode_input_len, args.max_context_len, float_dtype
+        )
 
-    # Export the model
-    print("\nExporting model...")
-    ep = torch.export.export(model, example_inputs)
-    print("Export successful!")
-    print(ep)
+        print(f"Creating example inputs for prefill (seqlen={prefill_input_len})...")
+        prefill_inputs, prefill_cache_len = _create_example_inputs(
+            model_args, prefill_input_len, args.max_context_len, float_dtype
+        )
 
-    # Generate metadata for C++ runner
-    print("\nGenerating metadata for C++ runner...")
-    constant_methods = _get_metadata(
-        model_args, example_inputs, args.input_len, cache_len, float_dtype
-    )
+        # Test eager execution for both
+        print("\nTesting eager execution (decode, seqlen=1)...")
+        with torch.no_grad():
+            model(*decode_inputs)
+        print("Decode eager execution successful!")
 
-    # Setup CoreML partitioner
-    print("\nSetting up CoreML partitioner...")
-    compile_specs = CoreMLBackend.generate_compile_specs(
-        minimum_deployment_target=ct.target.iOS18,
-        compute_precision={
-            torch.float16: ct.precision.FLOAT16,
-            torch.float32: ct.precision.FLOAT32,
-        }[float_dtype],
-        compute_unit=ct.ComputeUnit.CPU_AND_NE,
-        model_type=CoreMLBackend.MODEL_TYPE.MODEL,
-    )
-    partitioner = CoreMLPartitioner(
-        compile_specs=compile_specs,
-        take_over_mutable_buffer=False,
-        skip_ops_for_coreml_delegation=[],
-    )
+        print(f"\nTesting eager execution (prefill, seqlen={prefill_input_len})...")
+        with torch.no_grad():
+            model(*prefill_inputs)
+        print("Prefill eager execution successful!")
 
-    # Lower to edge with constant methods for C++ runner
-    print("\nLowering to edge...")
-    edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
-    edge_manager = to_edge_transform_and_lower(
-        ep,
-        partitioner=[partitioner],
-        constant_methods=constant_methods,
-        compile_config=edge_compile_config,
-    )
+        # Export both graphs
+        print("\nExporting decode model (seqlen=1)...")
+        decode_ep = torch.export.export(model, decode_inputs)
+        print("Decode export successful!")
+        print(decode_ep)
 
-    print("\nDelegated program:")
-    print(format_delegated_graph(edge_manager.exported_program().graph_module))
+        print(f"\nExporting prefill model (seqlen={prefill_input_len})...")
+        prefill_ep = torch.export.export(model, prefill_inputs)
+        print("Prefill export successful!")
+        print(prefill_ep)
+
+        # Generate metadata for C++ runner
+        # constant_methods are shared across all methods, so we prefix method-specific
+        # metadata with the method name
+        print("\nGenerating metadata for C++ runner...")
+        decode_metadata = _get_metadata(
+            model_args, decode_inputs, decode_input_len, decode_cache_len, float_dtype
+        )
+        prefill_metadata = _get_metadata(
+            model_args,
+            prefill_inputs,
+            prefill_input_len,
+            prefill_cache_len,
+            float_dtype,
+        )
+
+        # Combine metadata - shared values go without prefix, method-specific values get prefixed
+        constant_methods = {
+            # Shared metadata (same for both methods)
+            "vocab_size": decode_metadata["vocab_size"],
+            "head_dim": decode_metadata["head_dim"],
+            "n_heads_per_cache": decode_metadata["n_heads_per_cache"],
+            "freqs_cos": decode_metadata["freqs_cos"],
+            "freqs_sin": decode_metadata["freqs_sin"],
+            # Decode-specific metadata (forward method)
+            "decode_input_len": decode_metadata["forward_input_len"],
+            "decode_freqs_cos_input_index": decode_metadata["freqs_cos_input_index"],
+            "decode_freqs_sin_input_index": decode_metadata["freqs_sin_input_index"],
+            "decode_mask_specs": decode_metadata["mask_specs"],
+            "decode_kv_cache_specs": decode_metadata["kv_cache_specs"],
+            # Prefill-specific metadata
+            "prefill_input_len": prefill_metadata["forward_input_len"],
+            "prefill_freqs_cos_input_index": prefill_metadata["freqs_cos_input_index"],
+            "prefill_freqs_sin_input_index": prefill_metadata["freqs_sin_input_index"],
+            "prefill_mask_specs": prefill_metadata["mask_specs"],
+            "prefill_kv_cache_specs": prefill_metadata["kv_cache_specs"],
+        }
+
+        # Setup CoreML partitioner with multimethod weight sharing
+        print("\nSetting up CoreML partitioner (multifunction with weight sharing)...")
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18,
+            compute_precision={
+                torch.float16: ct.precision.FLOAT16,
+                torch.float32: ct.precision.FLOAT32,
+            }[float_dtype],
+            compute_unit=ct.ComputeUnit.CPU_AND_NE,
+            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
+        )
+        compile_specs.append(
+            CoreMLBackend.generate_multimethod_weight_sharing_strategy_compile_spec(
+                MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
+            )
+        )
+        partitioner = CoreMLPartitioner(
+            compile_specs=compile_specs,
+            take_over_mutable_buffer=False,
+            skip_ops_for_coreml_delegation=[],
+        )
+
+        # Lower to edge with both decode and prefill methods
+        print("\nLowering to edge (multi-method: decode + prefill)...")
+        edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+
+        # Create multi-method edge manager with decode as "forward" and prefill as "prefill"
+        edge_manager = to_edge_transform_and_lower(
+            {"forward": decode_ep, "prefill": prefill_ep},
+            partitioner=[partitioner],
+            constant_methods=constant_methods,
+            compile_config=edge_compile_config,
+        )
+
+        print("\nDelegated program (decode/forward):")
+        print(format_delegated_graph(edge_manager.exported_program().graph_module))
+
+        print("\nDelegated program (prefill):")
+        print(
+            format_delegated_graph(
+                edge_manager.exported_program("prefill").graph_module
+            )
+        )
+    else:
+        # Single method mode: fixed seqlen with generate_full_logits=True for lookahead
+        print(f"\nCreating example inputs (seqlen={args.input_len})...")
+        example_inputs, example_cache_len = _create_example_inputs(
+            model_args, args.input_len, args.max_context_len, float_dtype
+        )
+
+        # Test eager execution
+        print("\nTesting eager execution...")
+        with torch.no_grad():
+            model(*example_inputs)
+        print("Eager execution successful!")
+
+        # Export the model
+        print("\nExporting model...")
+        ep = torch.export.export(model, example_inputs)
+        print("Export successful!")
+        print(ep)
+
+        # Generate metadata for C++ runner
+        print("\nGenerating metadata for C++ runner...")
+        constant_methods = _get_metadata(
+            model_args, example_inputs, args.input_len, example_cache_len, float_dtype
+        )
+
+        # Setup CoreML partitioner
+        print("\nSetting up CoreML partitioner...")
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18,
+            compute_precision={
+                torch.float16: ct.precision.FLOAT16,
+                torch.float32: ct.precision.FLOAT32,
+            }[float_dtype],
+            compute_unit=ct.ComputeUnit.CPU_AND_NE,
+            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
+        )
+        partitioner = CoreMLPartitioner(
+            compile_specs=compile_specs,
+            take_over_mutable_buffer=False,
+            skip_ops_for_coreml_delegation=[],
+        )
+
+        # Lower to edge with constant methods for C++ runner
+        print("\nLowering to edge...")
+        edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+        edge_manager = to_edge_transform_and_lower(
+            ep,
+            partitioner=[partitioner],
+            constant_methods=constant_methods,
+            compile_config=edge_compile_config,
+        )
+
+        print("\nDelegated program:")
+        print(format_delegated_graph(edge_manager.exported_program().graph_module))
 
     # Convert to ExecuTorch
     print("\nConverting to ExecuTorch...")

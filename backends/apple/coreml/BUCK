@@ -64,6 +64,9 @@ runtime.cxx_library(
         "-Wno-receiver-expr",
         "-Wno-error",
     ],
+    preprocessor_flags = [
+        "-DJSON_NOEXCEPTION",
+    ],
     define_static_target = True,
     header_namespace = "backends/apple/coreml",
     exported_headers = ["runtime/delegate/executorch_operations.h", "runtime/include/coreml_backend/delegate.h"],
@@ -89,6 +92,7 @@ runtime.cxx_library(
     platforms = [APPLE],
     visibility = ["PUBLIC"],
     deps = [
+        "fbsource//third-party/nlohmann-json:nlohmann-json",
         "//executorch/runtime/backend:interface",
         "//executorch/runtime/core:core",
         "//executorch/runtime/kernel:kernel_includes",
