@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,6 +11,7 @@ from collections.abc import Sequence
 
 import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
+    AccumulateIndexPutPass,
     AnnotateDecomposedMatmulPass,
     AnnotateOutputDimOrderPass,
     BroadcastArgsPass,
@@ -78,6 +79,7 @@ from executorch.backends.arm._passes import (
     DecomposeSoftmaxUnstablePass,
     DecomposeSqrtPass,
     DecomposeSumPass,
+    DecomposeTanPass,
     DecomposeTOSAUnsupportedClampPass,
     DecomposeVarPass,
     DecorateFp32toInt32CastingPass,
@@ -106,6 +108,7 @@ from executorch.backends.arm._passes import (
     RewriteBoolBitwiseNotToLogicalNotPass,
     RewriteBoolToFp32CastViaInt8Pass,
     RewriteConvPass,
+    RewriteIndexPutPass,
     RewriteMatmulPass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
@@ -269,6 +272,7 @@ class ArmPassManager(PassManager):
                 DecomposeSqrtPass(),
                 DecomposeAtanPass(),
                 DecomposeAtanhPass(),
+                DecomposeTanPass(),
                 DecomposeAddmmPass(),
                 DecomposeEluPass(),
                 DecomposeExpm1Pass(),
@@ -302,6 +306,8 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post scalar-removal)
         self.add_passes(
             [
+                AccumulateIndexPutPass(),
+                RewriteIndexPutPass(),
                 DecomposeRemainderPass(),
                 DecomposeDivTensorModePass(),
                 DecomposeEmbeddingPass(),
@@ -429,6 +435,7 @@ class ArmPassManager(PassManager):
                 DecomposeSoftmaxUnstablePass(tfa_pass=True),
                 DecomposeSoftmaxPass(tfa_pass=True),
                 ConvertMinMaxPass(tfa_pass=True),
+                AccumulateIndexPutPass(tfa_pass=True),
             ]
         )
 

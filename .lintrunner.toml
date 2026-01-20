@@ -203,6 +203,8 @@ include_patterns = ['**']
 exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
+    'shim/**',
+    'shim',
     '**/*.png',
     '**/*.webp',
     '**/*.jpeg',
