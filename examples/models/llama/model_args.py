@@ -134,6 +134,9 @@ class ModelArgs:
     model_architecture: Optional[str] = (
         None  # Architecture of model. For HF models, please refer to the HF model.config.architectures. This is used in QNN backend only for now.
     )
+    # gemma2 attn and output soft capping
+    final_logit_softcapping: Optional[float] = None
+    attn_logit_softcapping: Optional[float] = None
 
     def __post_init__(self):
         if self.n_kv_heads is None:
