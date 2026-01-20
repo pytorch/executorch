@@ -74,7 +74,9 @@ target_compile_definitions(metal_backend PUBLIC ET_BUILD_METAL)
 
 # Define macro for stats collection if enabled
 if(EXECUTORCH_METAL_COLLECT_STATS)
-  target_compile_definitions(metal_backend PUBLIC EXECUTORCH_METAL_COLLECT_STATS)
+  target_compile_definitions(
+    metal_backend PUBLIC EXECUTORCH_METAL_COLLECT_STATS
+  )
   message(STATUS "Metal backend stats collection enabled")
 endif()
 
