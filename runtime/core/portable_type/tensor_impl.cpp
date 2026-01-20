@@ -70,8 +70,8 @@ TensorImpl::TensorImpl(
 
 size_t TensorImpl::nbytes() const {
   size_t result;
-  bool overflow =
-      c10::mul_overflows(static_cast<size_t>(numel_), elementSize(type_), &result);
+  bool overflow = c10::mul_overflows(
+      static_cast<size_t>(numel_), elementSize(type_), &result);
   ET_CHECK_MSG(!overflow, "nbytes overflowed");
   return result;
 }
