@@ -72,9 +72,14 @@ class DecomposeBatchNorm(XNNPACKPass):
                 why(node, f"Channel dimension must be statically known, but was {input_meta.shape[1]}.")
             return False
 
-        if not is_param_node(exported_program, node.args[1]) or not is_param_node(exported_program, node.args[2]):
+        if node.args[1] is not None and not is_param_node(exported_program, node.args[1]):
             if why:
-                why(node, "Batch norm affine weight and bias must be static.")
+                why(node, "Batch norm affine weight must be static.")
+            return False
+
+        if node.args[2] is not None and not is_param_node(exported_program, node.args[2]):
+            if why:
+                why(node, "Batch norm affine bias must be static.")
             return False
 
         if not is_param_node(exported_program, node.args[3]) or not is_param_node(exported_program, node.args[4]):
@@ -85,6 +90,11 @@ class DecomposeBatchNorm(XNNPACKPass):
         if isinstance(node.args[-1], torch.fx.Node):
             if why:
                 why(node, "Batch norm epsilon must be static.")
+            return False
+
+        if node.target == exir_ops.edge.aten.native_batch_norm.default and node.args[5] is not False:
+            if why:
+                why(node, "Training batch norm is not supported.")
             return False
 
         return True
@@ -103,11 +113,23 @@ class DecomposeBatchNorm(XNNPACKPass):
         """
 
         # See https://docs.pytorch.org/docs/stable/generated/torch.nn.BatchNorm1d.html
-        denom = torch.sqrt(running_var + torch.Tensor([eps]))
-        weight = gamma / denom
-        bias = -running_mean * gamma / denom + beta
 
-        return weight, bias
+        # Do the math in double precision and convert back to the original dtype at the
+        # end. ATen kernels do this math in increased precision for float16. Note that
+        # all of the parameter dtypes must match, as per the ATen behavior.
+
+        # Also note that gamma and beta can be None if affine=False. This is equivalent
+        # to gamma = 1 and beta = 0.
+        gamma_f64 = gamma.double() if gamma is not None else torch.Tensor([1]).double()
+        beta_f64 = beta.double() if beta is not None else torch.Tensor([0]).double()
+        running_mean_f64 = running_mean.double()
+        running_var_f64 = running_var.double()
+
+        denom = torch.sqrt(running_var_f64 + torch.Tensor([eps]))
+        new_weight = gamma_f64 / denom
+        new_bias = -running_mean_f64 * gamma_f64 / denom + beta_f64
+
+        return new_weight.to(running_mean.dtype), new_bias.to(running_mean.dtype)
 
     def replace_bn_node_with_conv(
         self,

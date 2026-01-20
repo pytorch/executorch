@@ -16,9 +16,6 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
 )
 from executorch.backends.xnnpack.utils.utils import is_param_node
-from executorch.exir.backend.canonical_partitioners.config_partitioner import (
-    format_target_name,
-)
 from executorch.exir.backend.utils import WhyNoPartition
 from torch.export import ExportedProgram
 

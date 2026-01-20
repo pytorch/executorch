@@ -50,11 +50,11 @@ class TestBatchNorm(unittest.TestCase):
     class BatchNorm2d(torch.nn.Module):
         """BatchNorm2d with NCHW input (batch, channels, height, width)."""
 
-        def __init__(self, num_features: int, dtype: torch.dtype = torch.float):
+        def __init__(self, num_features: int, dtype: torch.dtype = torch.float, affine: bool = True):
             super().__init__()
             self.num_features = num_features
             self.dtype = dtype
-            self.bn = torch.nn.BatchNorm2d(num_features).to(dtype)
+            self.bn = torch.nn.BatchNorm2d(num_features, affine=affine).to(dtype)
 
         def forward(self, x):
             return self.bn(x)
@@ -153,6 +153,28 @@ class TestBatchNorm(unittest.TestCase):
     def test_fp16_batch_norm_nchw(self):
         """Test BatchNorm2d with fp16 NCHW input is lowered to XNNPACK."""
         self._test_batch_norm(self.BatchNorm2d(num_features=3, dtype=torch.float16))
+
+    def test_fp32_batch_norm_nchw_non_affine(self):
+        """Test non-affine BatchNorm2d with NCHW input is lowered to XNNPACK."""
+        self._test_batch_norm(self.BatchNorm2d(num_features=3, affine=False))
+
+    class BatchNorm2dChannelsLast(torch.nn.Module):
+        """BatchNorm2d with channels_last memory format input."""
+
+        def __init__(self, num_features: int):
+            super().__init__()
+            self.num_features = num_features
+            self.bn = torch.nn.BatchNorm2d(num_features)
+
+        def forward(self, x):
+            return self.bn(x)
+
+        def get_inputs(self):
+            return (torch.randn(2, self.num_features, 4, 4).to(memory_format=torch.channels_last),)
+
+    def test_fp32_batch_norm_nchw_channels_last(self):
+        """Test BatchNorm2d with channels_last memory format input is lowered to XNNPACK."""
+        self._test_batch_norm(self.BatchNorm2dChannelsLast(num_features=3))
 
     class BatchNorm3d(torch.nn.Module):
         """BatchNorm3d with NCDHW input (batch, channels, depth, height, width)."""
@@ -275,5 +297,65 @@ class TestBatchNorm(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    class Conv2dBatchNormChannelsLast(torch.nn.Module):
+        """Conv2d followed by BatchNorm (fuseable pattern) with channels_last input."""
+
+        def __init__(self, in_channels: int, out_channels: int):
+            super().__init__()
+            self.in_channels = in_channels
+            self.conv = torch.nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+            self.bn = randomize_bn(out_channels)
+
+        def forward(self, x):
+            x = self.conv(x)
+            x = self.bn(x)
+            return x
+
+        def get_inputs(self):
+            return (torch.randn(2, self.in_channels, 8, 8).to(memory_format=torch.channels_last),)
+
+    def test_fp32_conv2d_batch_norm_fused_channels_last(self):
+        """
+        Test Conv2d + BatchNorm with channels_last input where the BatchNorm is
+        fused into the Conv2d.
+        """
+        model = self.Conv2dBatchNormChannelsLast(in_channels=3, out_channels=8)
+        model.eval()
+
+        (
+            Tester(model, model.get_inputs())
+            .export()
+            .to_edge_transform_and_lower()
+            # BatchNorm should be fused into conv (not present in the graph)
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default"
+                ]
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_training_bn_not_partitioned(self):
+        """Test that training mode BatchNorm is not partitioned."""
+        model = self.BatchNorm2d(num_features=3)
+        for _ in range(5):
+            model(*model.get_inputs())
+
+        (
+            Tester(model, model.get_inputs(), training=True)
+            .export()
+            .to_edge_transform_and_lower()
+            .check(
+                [
+                    "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_functional"
+                ]
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
             .run_method_and_compare_outputs()
         )
