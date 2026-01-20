@@ -29,7 +29,64 @@ The static model has several ANE optimizations, including:
 * Re-writing SDPA to avoid 5-D tensors to imporve performance.  This also fixes an accuracy bug that was introduced in iOS 26 (addresses this: https://github.com/pytorch/executorch/issues/15833)
 
 
-We are working on adding a C++ runner as well.
+## C++ Runner
+
+A C++ runner is also available for running static attention LLM models. The runner extends `TextDecoderRunner` from the ExecutorTorch LLM extension and manages KV cache I/O with smart_mask style cache updates.
+
+### Building on macOS
+
+The easiest way to build is using the provided build script:
+
+```bash
+cd examples/apple/coreml/llama/runner
+./build_and_run.sh --help  # Show options
+./build_and_run.sh         # Build and run with defaults
+```
+
+Or build manually from the executorch root directory using the macos preset:
+
+```bash
+cmake -S . -B cmake-out --preset macos
+cmake --build cmake-out --config Release --target run_static_llm_coreml -j$(sysctl -n hw.ncpu)
+```
+
+The executable will be at: `cmake-out/examples/apple/coreml/llama/runner/Release/run_static_llm_coreml`
+
+### Running
+
+```bash
+./cmake-out/examples/apple/coreml/llama/runner/Release/run_static_llm_coreml \
+  --model static_llm_coreml_model.pte \
+  --params /path/to/params.json \
+  --tokenizer /path/to/tokenizer.model \
+  --prompt "Once upon a time," \
+  --max_new_tokens 100 \
+  --input_len 32 \
+  --cache_len 992 \
+  --temperature 0.0
+```
+
+### Command-line Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--model` | Path to the .pte model file | (required) |
+| `--params` | Path to params.json | (required) |
+| `--tokenizer` | Path to tokenizer file | (required) |
+| `--prompt` | Input prompt | (required) |
+| `--max_new_tokens` | Maximum tokens to generate | 100 |
+| `--input_len` | Input sequence length (must match export) | 32 |
+| `--cache_len` | KV cache length (must match export) | 992 |
+| `--temperature` | Sampling temperature (0 = greedy) | 0.0 |
+
+### Features
+
+The C++ runner:
+- Extends `TextDecoderRunner` from `executorch/extension/llm/runner/`
+- Manages KV cache I/O with smart_mask style cache updates
+- Supports multiple tokenizer formats (HuggingFace JSON, TikToken, SentencePiece, BPE)
+- Computes RoPE frequencies internally (Llama 3 style with base=500000)
+- Reads model configuration from params.json
 
 
 # Deprecated (export.py, run.py, and run_lookahead.py)
