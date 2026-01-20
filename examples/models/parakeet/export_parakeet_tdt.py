@@ -7,6 +7,7 @@ import tarfile
 import tempfile
 
 import torch
+
 import torchaudio
 from executorch.exir import (
     EdgeCompileConfig,
@@ -43,51 +44,89 @@ def greedy_decode_eager(
     return hypotheses[0].y_sequence
 
 
-class DecoderPredict(torch.nn.Module):
-    def __init__(self, decoder):
+class EncoderWithProjection(torch.nn.Module):
+    """Encoder that outputs projected features ready for the joint network."""
+
+    def __init__(self, encoder, joint):
+        super().__init__()
+        self.encoder = encoder
+        self.project_encoder = joint.project_encoder
+
+    def forward(
+        self, audio_signal: torch.Tensor, length: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Run encoder: [B, feat_in, T_mel] -> [B, enc_dim, T_enc]
+        encoded, enc_len = self.encoder(audio_signal=audio_signal, length=length)
+        # Transpose: [B, enc_dim, T_enc] -> [B, T_enc, enc_dim]
+        encoded_t = encoded.transpose(1, 2)
+        # Project: [B, T_enc, enc_dim] -> [B, T_enc, joint_hidden]
+        f_proj = self.project_encoder(encoded_t)
+        return f_proj, enc_len
+
+
+class DecoderStep(torch.nn.Module):
+    """Single decoder RNN step that outputs projected features for the joint network."""
+
+    def __init__(self, decoder, joint):
         super().__init__()
         self.decoder = decoder
+        self.project_prednet = joint.project_prednet
         self.pred_hidden = decoder.pred_hidden
         self.pred_rnn_layers = getattr(decoder, "pred_rnn_layers", 2)
 
     def forward(
         self, token: torch.Tensor, h: torch.Tensor, c: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # Run decoder RNN step
         g, new_state = self.decoder.predict(y=token, state=[h, c], add_sos=False)
-        return g, new_state[0], new_state[1]
+        # Project decoder output: [B, 1, pred_hidden] -> [B, 1, joint_hidden]
+        g_proj = self.project_prednet(g)
+        return g_proj, new_state[0], new_state[1]
 
 
 def greedy_decode_executorch(
-    encoder_output: torch.Tensor,
+    f_proj: torch.Tensor,
     encoder_len: int,
     program,
     blank_id: int,
-    vocab_size: int,
     num_rnn_layers: int = 2,
     pred_hidden: int = 640,
     max_symbols_per_step: int = 10,
     durations: list[int] | None = None,
 ) -> list[int]:
+    """Greedy TDT decoding using ExecuTorch methods.
+
+    Args:
+        f_proj: Projected encoder output [B, T, joint_hidden] (already transposed and projected)
+        encoder_len: Number of valid encoder frames
+        program: ExecuTorch program with loaded methods
+        blank_id: Token ID for blank
+        num_rnn_layers: Number of RNN layers in decoder
+        pred_hidden: Hidden size of decoder RNN
+        max_symbols_per_step: Maximum symbols per frame
+        durations: Duration values for TDT
+
+    Returns:
+        List of decoded token IDs
+    """
     if durations is None:
         durations = [0, 1, 2, 3, 4]
 
     hypothesis = []
-    num_token_classes = vocab_size + 1
 
-    encoder_output = encoder_output.transpose(1, 2)
-
-    proj_enc_method = program.load_method("joint_project_encoder")
-    f_proj = proj_enc_method.execute([encoder_output.contiguous()])[0]
-
-    decoder_predict_method = program.load_method("decoder_predict")
-    proj_dec_method = program.load_method("joint_project_decoder")
+    decoder_step_method = program.load_method("decoder_step")
     joint_method = program.load_method("joint")
 
+    # Initialize decoder state
     h = torch.zeros(num_rnn_layers, 1, pred_hidden)
     c = torch.zeros(num_rnn_layers, 1, pred_hidden)
 
-    sos_g = torch.zeros(1, 1, pred_hidden)
-    g_proj = proj_dec_method.execute([sos_g])[0]
+    # Prime decoder with SOS (blank_id) to match NeMo TDT behavior
+    sos_token = torch.tensor([[blank_id]], dtype=torch.long)
+    sos_result = decoder_step_method.execute([sos_token, h, c])
+    g_proj = sos_result[0]
+    h = sos_result[1]
+    c = sos_result[2]
 
     t = 0
     symbols_on_frame = 0
@@ -96,13 +135,8 @@ def greedy_decode_executorch(
         f_t = f_proj[:, t : t + 1, :].contiguous()
 
         joint_out = joint_method.execute([f_t, g_proj])
-
-        full_logits = joint_out[0].squeeze()
-        token_logits = full_logits[:num_token_classes]
-        duration_logits = full_logits[num_token_classes:]
-
-        k = token_logits.argmax().item()
-        dur_idx = duration_logits.argmax().item()
+        k = joint_out[0].item()
+        dur_idx = joint_out[1].item()
         dur = durations[dur_idx]
 
         if k == blank_id:
@@ -112,12 +146,11 @@ def greedy_decode_executorch(
             hypothesis.append(k)
 
             token = torch.tensor([[k]], dtype=torch.long)
-            result = decoder_predict_method.execute([token, h, c])
-            g = result[0]
+            result = decoder_step_method.execute([token, h, c])
+            g_proj = result[0]
             h = result[1]
             c = result[2]
 
-            g_proj = proj_dec_method.execute([g])[0]
             t += dur
 
             if dur == 0:
@@ -152,16 +185,15 @@ def transcribe_executorch(audio_path: str, model, et_buffer) -> str:
         encoder_method = program.load_method("encoder")
         mel_len_tensor = torch.tensor([mel_len], dtype=torch.int64)
         enc_result = encoder_method.execute([mel, mel_len_tensor])
-        encoded = enc_result[0]
+        f_proj = enc_result[0]
         encoded_len = enc_result[1].item()
 
         vocab_size = model.tokenizer.vocab_size
         tokens = greedy_decode_executorch(
-            encoded,
+            f_proj,
             encoded_len,
             program,
             blank_id=vocab_size,
-            vocab_size=vocab_size,
             num_rnn_layers=model.decoder.pred_rnn_layers,
             pred_hidden=model.decoder.pred_hidden,
         )
@@ -236,31 +268,19 @@ def extract_tokenizer(output_dir: str) -> str | None:
     return output_path
 
 
-class JointAfterProjection(torch.nn.Module):
-    def __init__(self, joint):
+class JointWithArgmax(torch.nn.Module):
+    """Joint network that returns token and duration indices directly."""
+
+    def __init__(self, joint, num_token_classes):
         super().__init__()
         self.joint = joint
+        self.num_token_classes = num_token_classes
 
     def forward(self, f, g):
-        return self.joint.joint_after_projection(f, g)
-
-
-class JointProjectEncoder(torch.nn.Module):
-    def __init__(self, joint):
-        super().__init__()
-        self.joint = joint
-
-    def forward(self, f):
-        return self.joint.project_encoder(f)
-
-
-class JointProjectDecoder(torch.nn.Module):
-    def __init__(self, joint):
-        super().__init__()
-        self.joint = joint
-
-    def forward(self, g):
-        return self.joint.project_prednet(g)
+        logits = self.joint.joint_after_projection(f, g).squeeze()
+        token_id = logits[: self.num_token_classes].argmax()
+        duration_idx = logits[self.num_token_classes :].argmax()
+        return token_id, duration_idx
 
 
 class PreprocessorWrapper(torch.nn.Module):
@@ -301,56 +321,46 @@ def export_all(model):
     feat_in = getattr(model.encoder, "_feat_in", 128)
     audio_signal = torch.randn(1, feat_in, 100)
     length = torch.tensor([100], dtype=torch.int64)
+    encoder_with_proj = EncoderWithProjection(model.encoder, model.joint)
+    encoder_with_proj.eval()
     programs["encoder"] = export(
-        model.encoder,
+        encoder_with_proj,
         (),
         kwargs={"audio_signal": audio_signal, "length": length},
         dynamic_shapes={"audio_signal": {2: Dim.AUTO}, "length": {}},
         strict=False,
     )
 
-    decoder_predict = DecoderPredict(model.decoder)
-    decoder_predict.eval()
-    token = torch.tensor([[0]], dtype=torch.long)
     num_layers = model.decoder.pred_rnn_layers
     pred_hidden = model.decoder.pred_hidden
+    decoder_step = DecoderStep(model.decoder, model.joint)
+    decoder_step.eval()
+    token = torch.tensor([[0]], dtype=torch.long)
     h = torch.zeros(num_layers, 1, pred_hidden)
     c = torch.zeros(num_layers, 1, pred_hidden)
-    programs["decoder_predict"] = export(
-        decoder_predict,
+    programs["decoder_step"] = export(
+        decoder_step,
         (token, h, c),
         dynamic_shapes={"token": {}, "h": {}, "c": {}},
         strict=False,
     )
 
     joint_hidden = model.joint.joint_hidden
+    num_token_classes = model.tokenizer.vocab_size + 1  # +1 for blank
 
     f_proj = torch.randn(1, 1, joint_hidden)
     g_proj = torch.randn(1, 1, joint_hidden)
     programs["joint"] = export(
-        JointAfterProjection(model.joint),
+        JointWithArgmax(model.joint, num_token_classes),
         (f_proj, g_proj),
         dynamic_shapes={"f": {}, "g": {}},
         strict=False,
     )
 
-    enc_output_dim = getattr(model.encoder, "_feat_out", 1024)
-
-    programs["joint_project_encoder"] = export(
-        JointProjectEncoder(model.joint),
-        (torch.randn(1, 25, enc_output_dim),),
-        dynamic_shapes={"f": {1: Dim("enc_time", min=1, max=60000)}},
-        strict=False,
-    )
-
-    programs["joint_project_decoder"] = export(
-        JointProjectDecoder(model.joint),
-        (torch.randn(1, 1, pred_hidden),),
-        dynamic_shapes={"g": {}},
-        strict=False,
-    )
-
     sample_rate = model.preprocessor._cfg.sample_rate
+    window_stride = float(model.preprocessor._cfg.window_stride)
+    encoder_subsampling_factor = int(getattr(model.encoder, "subsampling_factor", 8))
+
     metadata = {
         "num_rnn_layers": num_layers,
         "pred_hidden": pred_hidden,
@@ -358,53 +368,117 @@ def export_all(model):
         "vocab_size": model.tokenizer.vocab_size,
         "blank_id": model.tokenizer.vocab_size,
         "sample_rate": sample_rate,
+        "window_stride": window_stride,
+        "encoder_subsampling_factor": encoder_subsampling_factor,
     }
 
     return programs, metadata
 
 
-def lower_to_executorch(programs, metadata=None, backend="portable"):
+def _create_xnnpack_partitioners(programs):
+    """Create XNNPACK partitioners for all programs except preprocessor."""
+    from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+        XnnpackPartitioner,
+    )
+
+    print("\nLowering to ExecuTorch with XNNPACK...")
     partitioner = {}
+    for key in programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            partitioner[key] = [XnnpackPartitioner()]
+    return partitioner, programs
 
+
+# This custom decomposition is the key to making Parakeet run on the Metal backend.
+# Without this, linear gets decomposed in a way that doesn't work for us.
+# When input/weight tensors are 2D and bias is present, this gets decomposed into addmm and
+# reinterpret_tensor_wrapper gets called on the bias, to make it look like a 2D tensor.
+# On one hand, this requires us to implement addmm in the Metal backend. But more importantly,
+# the reinterpret_tensor_wrapper call makes its way to ExecuTorch, causing a call to executorch::extension::from_blob
+# with a 0 stride. ExecuTorch doesn't support that, and raises an error.
+# This decomposition avoids that problem, and also avoids having to implement addmm.
+def _linear_bias_decomposition(input, weight, bias=None):
+    """Decompose linear with bias into matmul + add."""
+    # linear(input, weight) = input @ weight.T
+    # Use matmul instead of mm to handle batched inputs (3D+)
+    weight_t = torch.ops.aten.t.default(weight)
+    out = torch.ops.aten.matmul.default(input, weight_t)
+    if bias is not None:
+        return torch.ops.aten.add.Tensor(out, bias)
+    return out
+
+
+def _create_metal_partitioners(programs):
+    """Create Metal partitioners for all programs except preprocessor."""
+    from executorch.backends.apple.metal.metal_backend import MetalBackend
+    from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+
+    print("\nLowering to ExecuTorch with Metal...")
+
+    # Run decompositions for non-preprocessor programs
+    updated_programs = {}
+    for key, ep in programs.items():
+        # print(f"Running decompositions for {key}")
+        # print(ep.graph_module)
+        if key != "preprocessor":
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.linear.default: _linear_bias_decomposition}
+            )
+        else:
+            updated_programs[key] = ep
+
+    partitioner = {}
+    for key in updated_programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
+            partitioner[key] = [MetalPartitioner(compile_specs)]
+    return partitioner, updated_programs
+
+
+def _create_cuda_partitioners(programs, is_windows=False):
+    """Create CUDA partitioners for all programs except preprocessor."""
+    from executorch.backends.cuda.cuda_backend import CudaBackend
+    from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
+    from torch._inductor.decomposition import conv1d_to_conv2d
+
+    print(f"\nLowering to ExecuTorch with CUDA{' (Windows)' if is_windows else ''}...")
+
+    # Run decompositions for non-preprocessor programs
+    updated_programs = {}
+    for key, ep in programs.items():
+        if key != "preprocessor":
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
+            )
+        else:
+            updated_programs[key] = ep
+
+    partitioner = {}
+    for key in updated_programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
+            if is_windows:
+                compile_specs.append(CompileSpec("platform", "windows".encode("utf-8")))
+            partitioner[key] = [CudaPartitioner(compile_specs)]
+    return partitioner, updated_programs
+
+
+def lower_to_executorch(programs, metadata=None, backend="portable"):
     if backend == "xnnpack":
-        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-            XnnpackPartitioner,
-        )
-
-        print("\nLowering to ExecuTorch with XNNPACK...")
-        for key in programs.keys():
-            if key == "preprocessor":
-                partitioner[key] = []
-            else:
-                partitioner[key] = [XnnpackPartitioner()]
-
+        partitioner, programs = _create_xnnpack_partitioners(programs)
+    elif backend == "metal":
+        partitioner, programs = _create_metal_partitioners(programs)
     elif backend in ("cuda", "cuda-windows"):
-        from executorch.backends.cuda.cuda_backend import CudaBackend
-        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-        from executorch.exir.backend.compile_spec_schema import CompileSpec
-        from torch._inductor.decomposition import conv1d_to_conv2d
-
-        print(
-            f"\nLowering to ExecuTorch with CUDA{' (Windows)' if backend == 'cuda-windows' else ''}..."
+        partitioner, programs = _create_cuda_partitioners(
+            programs, is_windows=(backend == "cuda-windows")
         )
-
-        for key, ep in programs.items():
-            if key != "preprocessor":
-                programs[key] = ep.run_decompositions(
-                    {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
-                )
-
-        for key in programs.keys():
-            if key == "preprocessor":
-                partitioner[key] = []
-            else:
-                compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
-                if backend == "cuda-windows":
-                    compile_specs.append(
-                        CompileSpec("platform", "windows".encode("utf-8"))
-                    )
-                partitioner[key] = [CudaPartitioner(compile_specs)]
-
     else:
         print("\nLowering to ExecuTorch...")
         partitioner = []
@@ -442,10 +516,21 @@ def main():
         "--backend",
         type=str,
         default="portable",
-        choices=["portable", "xnnpack", "cuda", "cuda-windows"],
+        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
         help="Backend for acceleration (default: portable)",
     )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="fp32",
+        choices=["fp32", "fp16", "bf16"],
+        help="Model dtype for Metal/CUDA backends (default: fp32)",
+    )
     args = parser.parse_args()
+
+    # Validate dtype for Metal backend
+    if args.backend == "metal" and args.dtype == "fp16":
+        parser.error("Metal backend only supports fp32 and bf16, not fp16")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -454,6 +539,14 @@ def main():
 
     print("Loading model...")
     model = load_model()
+
+    # Convert model to specified dtype for Metal/CUDA backends
+    if args.dtype == "bf16":
+        print("Converting model to bfloat16...")
+        model = model.to(torch.bfloat16)
+    elif args.dtype == "fp16":
+        print("Converting model to float16...")
+        model = model.to(torch.float16)
 
     print("\nExporting components...")
     programs, metadata = export_all(model)
