@@ -164,6 +164,10 @@ define_overridable_option(
   EXECUTORCH_BUILD_METAL "Build the Metal backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_METAL_COLLECT_STATS
+  "Enable Metal backend performance statistics collection" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_VGF "Build the Arm VGF backend" BOOL OFF
 )
 define_overridable_option(

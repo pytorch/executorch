@@ -35,6 +35,8 @@
 
 namespace executorch::backends::metal {
 
+#ifdef EXECUTORCH_METAL_COLLECT_STATS
+
 // Per-method timing statistics
 struct MethodStats {
   double total_ms = 0.0;
@@ -116,6 +118,8 @@ get_metal_backend_init_per_method_stats() {
   }
   return result;
 }
+
+#endif // EXECUTORCH_METAL_COLLECT_STATS
 
 #define LOAD_SYMBOL(handle, member, name, so_handle)                        \
   do {                                                                      \
@@ -222,7 +226,9 @@ class ET_EXPERIMENTAL MetalBackend final
       FreeableBuffer* processed, // This will be a empty buffer
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
+#ifdef EXECUTORCH_METAL_COLLECT_STATS
     auto init_start = std::chrono::high_resolution_clock::now();
+#endif
     ET_LOG(Info, "MetalBackend::init - Starting initialization");
 
     std::string method_name;
@@ -348,6 +354,7 @@ class ET_EXPERIMENTAL MetalBackend final
 
     ET_LOG(Info, "MetalBackend::init - Initialization completed successfully");
 
+#ifdef EXECUTORCH_METAL_COLLECT_STATS
     // Accumulate init timing statistics
     auto init_end = std::chrono::high_resolution_clock::now();
     double elapsed_ms =
@@ -367,6 +374,7 @@ class ET_EXPERIMENTAL MetalBackend final
         method_stats.call_count++;
       }
     }
+#endif
 
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
@@ -376,7 +384,9 @@ class ET_EXPERIMENTAL MetalBackend final
       BackendExecutionContext& context,
       DelegateHandle* handle_,
       Span<EValue*> args) const override {
+#ifdef EXECUTORCH_METAL_COLLECT_STATS
     auto execute_start = std::chrono::high_resolution_clock::now();
+#endif
     ET_LOG(Debug, "MetalBackend execute");
 
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
@@ -622,6 +632,7 @@ class ET_EXPERIMENTAL MetalBackend final
 
     ET_LOG(Debug, "MetalBackend execution completed successfully");
 
+#ifdef EXECUTORCH_METAL_COLLECT_STATS
     // Accumulate timing statistics
     auto execute_end = std::chrono::high_resolution_clock::now();
     double elapsed_ms =
@@ -642,6 +653,7 @@ class ET_EXPERIMENTAL MetalBackend final
         method_stats.call_count++;
       }
     }
+#endif
 
     return Error::Ok;
   }

@@ -7,6 +7,9 @@
  */
 
 #include <executorch/backends/apple/metal/runtime/stats.h>
+
+#ifdef EXECUTORCH_METAL_COLLECT_STATS
+
 #include <iostream>
 
 namespace executorch {
@@ -79,3 +82,5 @@ void print_metal_backend_stats() {
 } // namespace metal
 } // namespace backends
 } // namespace executorch
+
+#endif // EXECUTORCH_METAL_COLLECT_STATS
