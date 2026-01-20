@@ -1,0 +1,709 @@
+#!/usr/bin/env python3
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""
+Utilities for MLX delegate op testing.
+
+This module provides functions to:
+1. Save/load tensors to/from binary files (compatible with C++ op_test_runner)
+2. Export simple models to .pte files
+3. Compare expected vs actual outputs
+4. Run the C++ op_test_runner binary
+"""
+
+import struct
+import subprocess
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import torch
+
+
+# DType enum values matching C++ op_test_runner
+DTYPE_FLOAT32 = 0
+DTYPE_FLOAT16 = 1
+DTYPE_INT32 = 2
+DTYPE_INT64 = 3
+DTYPE_BFLOAT16 = 4
+
+
+def torch_dtype_to_bin_dtype(dtype: torch.dtype) -> int:
+    """Convert torch dtype to binary file dtype enum value."""
+    mapping = {
+        torch.float32: DTYPE_FLOAT32,
+        torch.float16: DTYPE_FLOAT16,
+        torch.int32: DTYPE_INT32,
+        torch.int64: DTYPE_INT64,
+        torch.bfloat16: DTYPE_BFLOAT16,
+    }
+    if dtype not in mapping:
+        raise ValueError(f"Unsupported dtype: {dtype}")
+    return mapping[dtype]
+
+
+def bin_dtype_to_torch_dtype(dtype_val: int) -> torch.dtype:
+    """Convert binary file dtype enum value to torch dtype."""
+    mapping = {
+        DTYPE_FLOAT32: torch.float32,
+        DTYPE_FLOAT16: torch.float16,
+        DTYPE_INT32: torch.int32,
+        DTYPE_INT64: torch.int64,
+        DTYPE_BFLOAT16: torch.bfloat16,
+    }
+    if dtype_val not in mapping:
+        raise ValueError(f"Unknown dtype value: {dtype_val}")
+    return mapping[dtype_val]
+
+
+def save_tensors_to_bin(tensors: List[torch.Tensor], path: Union[str, Path]) -> None:
+    """
+    Save a list of tensors to a binary file.
+
+    Binary format:
+    - 4 bytes: number of tensors (uint32)
+    For each tensor:
+      - 4 bytes: dtype enum (uint32)
+      - 4 bytes: number of dimensions (uint32)
+      - 4 bytes * ndim: shape (int32 each)
+      - N bytes: tensor data
+    """
+    path = Path(path)
+
+    with open(path, "wb") as f:
+        # Write number of tensors
+        f.write(struct.pack("I", len(tensors)))
+
+        for tensor in tensors:
+            # Ensure contiguous
+            tensor = tensor.contiguous()
+
+            # Write dtype
+            dtype_val = torch_dtype_to_bin_dtype(tensor.dtype)
+            f.write(struct.pack("I", dtype_val))
+
+            # Write ndim
+            f.write(struct.pack("I", tensor.dim()))
+
+            # Write shape
+            for s in tensor.shape:
+                f.write(struct.pack("i", s))
+
+            # Write data - bf16 needs special handling since numpy doesn't support it
+            if tensor.dtype == torch.bfloat16:
+                # View bf16 as uint16 to preserve raw bytes
+                f.write(tensor.view(torch.uint16).numpy().tobytes())
+            else:
+                f.write(tensor.numpy().tobytes())
+
+
+def load_tensors_from_bin(path: Union[str, Path]) -> List[torch.Tensor]:
+    """
+    Load a list of tensors from a binary file.
+    """
+    path = Path(path)
+
+    # Mapping from torch dtype to numpy dtype
+    np_dtype_map = {
+        torch.float32: np.float32,
+        torch.float16: np.float16,
+        torch.int32: np.int32,
+        torch.int64: np.int64,
+        # bfloat16 needs special handling - read as uint16
+    }
+
+    # Element size for each dtype
+    elem_size_map = {
+        torch.float32: 4,
+        torch.float16: 2,
+        torch.int32: 4,
+        torch.int64: 8,
+        torch.bfloat16: 2,
+    }
+
+    tensors = []
+    with open(path, "rb") as f:
+        # Read number of tensors
+        num_tensors = struct.unpack("I", f.read(4))[0]
+
+        for _ in range(num_tensors):
+            # Read dtype
+            dtype_val = struct.unpack("I", f.read(4))[0]
+            dtype = bin_dtype_to_torch_dtype(dtype_val)
+
+            # Read ndim
+            ndim = struct.unpack("I", f.read(4))[0]
+
+            # Read shape
+            shape = []
+            for _ in range(ndim):
+                shape.append(struct.unpack("i", f.read(4))[0])
+
+            # Read data
+            numel = 1
+            for s in shape:
+                numel *= s
+
+            elem_size = elem_size_map[dtype]
+            data_bytes = f.read(numel * elem_size)
+
+            # Convert to tensor
+            if dtype == torch.bfloat16:
+                # Read as uint16 and view as bfloat16
+                arr = np.frombuffer(data_bytes, dtype=np.uint16).reshape(shape)
+                tensor = torch.tensor(arr).view(torch.bfloat16)
+            else:
+                arr = np.frombuffer(data_bytes, dtype=np_dtype_map[dtype]).reshape(
+                    shape
+                )
+                tensor = torch.from_numpy(arr.copy())
+
+            tensors.append(tensor)
+
+    return tensors
+
+
+def export_model_to_pte(
+    model: torch.nn.Module,
+    example_inputs: Tuple[torch.Tensor, ...],
+    output_path: Union[str, Path],
+    use_fp16: bool = False,
+    dynamic_shapes: Optional[Dict] = None,
+    verbose: bool = False,
+) -> None:
+    """
+    Export a PyTorch model to a .pte file using the MLX delegate.
+
+    Args:
+        model: The PyTorch model to export.
+        example_inputs: Example inputs for tracing.
+        output_path: Path to save the .pte file.
+        use_fp16: Whether to use FP16 precision.
+        dynamic_shapes: Optional dynamic shapes specification for torch.export.
+            Example: {0: {0: Dim("batch", min=1, max=32)}} for dynamic batch on first input.
+        verbose: Whether to print the exported program for debugging.
+    """
+    import executorch.exir as exir
+    from executorch.backends.apple.mlx import MLXPartitioner
+    from executorch.exir.backend.backend_details import CompileSpec
+    from executorch.exir.capture._config import ExecutorchBackendConfig
+    from torch.export import export
+
+    model = model.eval()
+
+    # Export with torch.export
+    exported_program = export(
+        model, example_inputs, dynamic_shapes=dynamic_shapes, strict=True
+    )
+
+    # Print exported program if verbose
+    if verbose:
+        print("\n" + "=" * 60)
+        print("EXPORTED PROGRAM (torch.export)")
+        print("=" * 60)
+        print(exported_program)
+
+    # Lower to edge and delegate to MLX
+    compile_specs = [CompileSpec("use_fp16", bytes([use_fp16]))]
+    edge_program = exir.to_edge_transform_and_lower(
+        exported_program,
+        partitioner=[MLXPartitioner(compile_specs=compile_specs)],
+    )
+
+    # Print edge program if verbose
+    if verbose:
+        print("\n" + "=" * 60)
+        print("EDGE PROGRAM (after decomposition)")
+        print("=" * 60)
+        print(edge_program.exported_program())
+
+    # Export to ExecuTorch
+    executorch_program = edge_program.to_executorch(
+        config=ExecutorchBackendConfig(extract_delegate_segments=True)
+    )
+
+    # Save to file
+    output_path = Path(output_path)
+    with open(output_path, "wb") as f:
+        f.write(executorch_program.buffer)
+
+
+def inspect_pte_file(pte_path: Union[str, Path]) -> Dict:
+    """
+    Inspect a PTE file and return the MLX graph information.
+
+    Returns:
+        Dictionary with MLX graph details
+    """
+    from executorch.backends.apple.mlx.pte_inspector import (
+        extract_delegate_payload,
+        parse_mlx_payload,
+    )
+
+    pte_path = Path(pte_path)
+    pte_data = pte_path.read_bytes()
+
+    # Extract MLX delegate payload
+    payload = extract_delegate_payload(pte_data, "MLXBackend")
+    if payload is None:
+        return {"error": "Could not extract MLX delegate payload"}
+
+    # Parse the MLX payload
+    mlx_data = parse_mlx_payload(payload)
+    return mlx_data
+
+
+def print_mlx_graph_summary(pte_path: Union[str, Path]) -> None:
+    """
+    Print a human-readable summary of the MLX graph in a PTE file.
+    """
+    mlx_data = inspect_pte_file(pte_path)
+
+    if "error" in mlx_data:
+        print(f"Error: {mlx_data['error']}")
+        return
+
+    graph = mlx_data.get("graph", {})
+
+    print("\n" + "=" * 60)
+    print("MLX Graph Summary")
+    print("=" * 60)
+
+    # Basic info
+    print(f"Version: {graph.get('version', 'unknown')}")
+    print(f"Constant tensors: {graph.get('num_constant_tensors', 0)}")
+    print(f"Non-constant tensors: {graph.get('num_non_constant_tensors', 0)}")
+    print(f"Non-constant values: {graph.get('num_non_constant_values', 0)}")
+    print(f"Instructions: {graph.get('num_instructions', 0)}")
+
+    # Constant data size
+    constant_seg = graph.get("constant_segment", {})
+    if constant_seg:
+        print(f"Constant data: {constant_seg.get('size', 0):,} bytes")
+
+    # Instructions
+    instructions = graph.get("instructions", [])
+    if instructions:
+        print("\nInstructions:")
+        for instr in instructions:
+            op_name = instr.get("op_name", f"op_{instr.get('op_type', '?')}")
+            print(f"  [{instr.get('index', '?')}] {op_name}")
+
+            # Print operands (skip index, op_type, op_name)
+            for key, value in instr.items():
+                if key in ("index", "op_type", "op_name"):
+                    continue
+                if isinstance(value, dict):
+                    if "tid" in value:
+                        print(f"      {key}: tid {value['tid']}")
+                    elif "vid" in value:
+                        print(f"      {key}: vid {value['vid']}")
+                    elif "value" in value:
+                        print(f"      {key}: {value['value']}")
+                    else:
+                        print(f"      {key}: {value}")
+                elif value is not None:
+                    print(f"      {key}: {value}")
+
+    # Named slots
+    named_slots = graph.get("named_slots", [])
+    if named_slots:
+        print("\nNamed Slots:")
+        for slot in named_slots:
+            slot_type = "tensor" if slot.get("slot_type", 0) == 0 else "value"
+            print(
+                f"  [{slot.get('slot_idx', '?')}] {slot.get('name', '?')} ({slot_type})"
+            )
+
+    # Input/Output maps
+    input_map = graph.get("input_map", [])
+    output_map = graph.get("output_map", [])
+
+    if input_map:
+        print("\nInputs:")
+        for inp in input_map:
+            slot_type = "tid" if inp.get("slot_type", 0) == 0 else "vid"
+            print(f"  {slot_type} {inp.get('idx', '?')}")
+
+    if output_map:
+        print("\nOutputs:")
+        for out in output_map:
+            slot_type = "tid" if out.get("slot_type", 0) == 0 else "vid"
+            print(f"  {slot_type} {out.get('idx', '?')}")
+
+    print("=" * 60 + "\n")
+
+
+def compare_outputs(
+    expected: List[torch.Tensor],
+    actual: List[torch.Tensor],
+    rtol: float = 1e-5,
+    atol: float = 1e-5,
+) -> Tuple[bool, str]:
+    """
+    Compare expected and actual outputs using torch.allclose.
+
+    Returns:
+        (passed, message) tuple
+    """
+    if len(expected) != len(actual):
+        return (
+            False,
+            f"Output count mismatch: expected {len(expected)}, got {len(actual)}",
+        )
+
+    for i, (exp, act) in enumerate(zip(expected, actual)):
+        if exp.shape != act.shape:
+            return (
+                False,
+                f"Output {i} shape mismatch: expected {exp.shape}, got {act.shape}",
+            )
+
+        if exp.dtype != act.dtype:
+            # Convert both to float32 for comparison
+            exp = exp.float()
+            act = act.float()
+
+        if not torch.allclose(exp, act, rtol=rtol, atol=atol):
+            max_diff = (exp - act).abs().max().item()
+            mean_diff = (exp - act).abs().mean().item()
+            return False, (
+                f"Output {i} values do not match:\n"
+                f"  max_diff={max_diff:.6e}, mean_diff={mean_diff:.6e}\n"
+                f"  rtol={rtol}, atol={atol}\n"
+                f"  expected[:5]={exp.flatten()[:5].tolist()}\n"
+                f"  actual[:5]={act.flatten()[:5].tolist()}"
+            )
+
+    return True, "All outputs match"
+
+
+def find_executorch_root() -> Path:
+    """Find the executorch root directory."""
+    test_dir = Path(__file__).parent
+
+    # Walk up to find the executorch root (has CMakeLists.txt and backends dir at root)
+    executorch_root = test_dir
+    for _ in range(10):  # Max 10 levels up
+        if (executorch_root / "CMakeLists.txt").exists() and (
+            executorch_root / "backends"
+        ).exists():
+            # Check if we're in src/executorch (editable install)
+            if (
+                executorch_root.name == "executorch"
+                and executorch_root.parent.name == "src"
+            ):
+                executorch_root = executorch_root.parent.parent
+            break
+        executorch_root = executorch_root.parent
+
+    return executorch_root
+
+
+def find_build_dir() -> Optional[Path]:
+    """Find the cmake build directory containing op_test_runner."""
+    executorch_root = find_executorch_root()
+
+    # Check common build locations
+    candidates = [
+        executorch_root / "cmake-out-mlx",
+        executorch_root / "cmake-out",
+        executorch_root / "build",
+    ]
+
+    for candidate in candidates:
+        runner_path = (
+            candidate / "backends" / "apple" / "mlx" / "test" / "op_test_runner"
+        )
+        if runner_path.exists():
+            return candidate
+
+    # Return first candidate that exists as a directory (for rebuild)
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+
+    return None
+
+
+def find_op_test_runner() -> Path:
+    """Find the op_test_runner binary."""
+    executorch_root = find_executorch_root()
+
+    # Check common build locations
+    candidates = [
+        executorch_root
+        / "cmake-out-mlx"
+        / "backends"
+        / "apple"
+        / "mlx"
+        / "test"
+        / "op_test_runner",
+        executorch_root
+        / "cmake-out"
+        / "backends"
+        / "apple"
+        / "mlx"
+        / "test"
+        / "op_test_runner",
+        executorch_root
+        / "build"
+        / "backends"
+        / "apple"
+        / "mlx"
+        / "test"
+        / "op_test_runner",
+    ]
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    raise FileNotFoundError(
+        f"Could not find op_test_runner binary. Tried:\n"
+        + "\n".join(f"  - {c}" for c in candidates)
+        + "\n\nBuild with: cd cmake-out && cmake --build . --target op_test_runner"
+    )
+
+
+def rebuild_op_test_runner(verbose: bool = False) -> bool:
+    """
+    Rebuild the op_test_runner binary using cmake.
+
+    Args:
+        verbose: Whether to print build output.
+
+    Returns:
+        True if build succeeded, False otherwise.
+    """
+    build_dir = find_build_dir()
+    if build_dir is None:
+        print("Error: Could not find cmake build directory.")
+        print("Make sure you have run cmake configuration first.")
+        return False
+
+    print(f"Rebuilding op_test_runner in {build_dir}...")
+
+    cmd = ["cmake", "--build", str(build_dir), "--target", "op_test_runner", "-j8"]
+
+    if verbose:
+        print(f"Running: {' '.join(cmd)}")
+
+    result = subprocess.run(
+        cmd,
+        capture_output=not verbose,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        print(f"Build failed with exit code {result.returncode}")
+        if not verbose and result.stderr:
+            print(f"stderr: {result.stderr}")
+        if not verbose and result.stdout:
+            print(f"stdout: {result.stdout}")
+        return False
+
+    print("Build succeeded.")
+    return True
+
+
+def run_cpp_test_runner(
+    pte_path: Path,
+    input_path: Path,
+    output_path: Path,
+    verbose: bool = False,
+) -> bool:
+    """
+    Run the C++ op_test_runner binary.
+
+    Args:
+        pte_path: Path to the .pte model file.
+        input_path: Path to input .bin file.
+        output_path: Path to write output .bin file.
+        verbose: Whether to print verbose output.
+
+    Returns:
+        True if execution succeeded, False otherwise.
+    """
+    runner = find_op_test_runner()
+
+    cmd = [
+        str(runner),
+        "--pte",
+        str(pte_path),
+        "--input",
+        str(input_path),
+        "--output",
+        str(output_path),
+    ]
+    if verbose:
+        cmd.append("--verbose")
+
+    print(f"Running: {' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        print(f"FAILED: {result.stderr}")
+        print(f"stdout: {result.stdout}")
+        return False
+
+    print(f"C++ binary output: {result.stdout.strip()}")
+    return True
+
+
+class OpTestCase:
+    """
+    Base class for op test cases.
+
+    Subclasses should implement:
+    - name: str - test name
+    - create_model() -> nn.Module
+    - create_inputs() -> Tuple[torch.Tensor, ...]
+
+    Optionally override:
+    - get_dynamic_shapes() -> Optional[Dict] - for dynamic shape testing
+    - create_test_inputs() -> Tuple[torch.Tensor, ...] - inputs for testing (may differ from export inputs)
+    """
+
+    name: str = "base_test"
+    rtol: float = 1e-5
+    atol: float = 1e-5
+    use_fp16: bool = False
+
+    def create_model(self) -> torch.nn.Module:
+        raise NotImplementedError
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        """Create inputs for export (tracing)."""
+        raise NotImplementedError
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        """Create inputs for testing. Override for dynamic shape tests."""
+        return self.create_inputs()
+
+    def get_dynamic_shapes(self) -> Optional[Dict]:
+        """Return dynamic shapes specification for torch.export, or None for static shapes."""
+        return None
+
+    def get_test_dir(self) -> Path:
+        """Get the directory for this test's files."""
+        test_dir = Path(__file__).parent / "op_tests" / self.name
+        test_dir.mkdir(parents=True, exist_ok=True)
+        return test_dir
+
+    def generate_test_files(self, verbose: bool = False) -> Tuple[Path, Path, Path]:
+        """
+        Generate .pte, input.bin, and expected_output.bin files.
+
+        Args:
+            verbose: Whether to print the exported program for debugging.
+
+        Returns:
+            (pte_path, input_path, expected_output_path)
+        """
+        test_dir = self.get_test_dir()
+
+        pte_path = test_dir / "model.pte"
+        input_path = test_dir / "input.bin"
+        expected_path = test_dir / "expected_output.bin"
+
+        # Create model and inputs
+        model = self.create_model()
+        export_inputs = self.create_inputs()
+        test_inputs = self.create_test_inputs()
+
+        # Get expected outputs using test inputs
+        model.eval()
+        with torch.no_grad():
+            if isinstance(test_inputs, torch.Tensor):
+                test_inputs = (test_inputs,)
+            expected_outputs = model(*test_inputs)
+            if isinstance(expected_outputs, torch.Tensor):
+                expected_outputs = [expected_outputs]
+            else:
+                expected_outputs = list(expected_outputs)
+
+        # Export model with export inputs (and potentially dynamic shapes)
+        print(f"Exporting model to {pte_path}")
+        if isinstance(export_inputs, torch.Tensor):
+            export_inputs = (export_inputs,)
+
+        dynamic_shapes = self.get_dynamic_shapes()
+        if dynamic_shapes:
+            print(f"  Using dynamic shapes: {dynamic_shapes}")
+
+        export_model_to_pte(
+            model,
+            export_inputs,
+            pte_path,
+            use_fp16=self.use_fp16,
+            dynamic_shapes=dynamic_shapes,
+            verbose=verbose,
+        )
+
+        # Save test inputs
+        print(f"Saving inputs to {input_path}")
+        if isinstance(test_inputs, torch.Tensor):
+            test_inputs = [test_inputs]
+        else:
+            test_inputs = list(test_inputs)
+        save_tensors_to_bin(test_inputs, input_path)
+
+        # Save expected outputs
+        print(f"Saving expected outputs to {expected_path}")
+        save_tensors_to_bin(expected_outputs, expected_path)
+
+        return pte_path, input_path, expected_path
+
+    def compare_with_actual(
+        self, actual_output_path: Union[str, Path]
+    ) -> Tuple[bool, str]:
+        """
+        Compare actual outputs with expected outputs.
+        """
+        test_dir = self.get_test_dir()
+        expected_path = test_dir / "expected_output.bin"
+
+        expected = load_tensors_from_bin(expected_path)
+        actual = load_tensors_from_bin(actual_output_path)
+
+        return compare_outputs(expected, actual, rtol=self.rtol, atol=self.atol)
+
+    def run_test(self, verbose: bool = False) -> bool:
+        """
+        Run the full test: generate files, run C++, compare outputs.
+
+        Returns:
+            True if test passed, False otherwise.
+        """
+        print(f"\n{'='*60}")
+        print(f"Running test: {self.name}")
+        print(f"{'='*60}\n")
+
+        # Generate test files
+        print("Step 1: Generating test files...")
+        pte_path, input_path, expected_path = self.generate_test_files()
+
+        # Print MLX graph summary
+        print_mlx_graph_summary(pte_path)
+
+        # Run C++ binary
+        print("Step 2: Running C++ binary...")
+        actual_path = self.get_test_dir() / "actual_output.bin"
+        if not run_cpp_test_runner(pte_path, input_path, actual_path, verbose=verbose):
+            return False
+
+        # Compare outputs
+        print("\nStep 3: Comparing outputs...")
+        passed, message = self.compare_with_actual(actual_path)
+
+        if passed:
+            print(f"✓ PASSED: {message}")
+        else:
+            print(f"✗ FAILED: {message}")
+
+        return passed

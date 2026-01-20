@@ -774,6 +774,9 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREML"):
             cmake_build_args += ["--target", "executorchcoreml"]
 
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_MLX"):
+            cmake_build_args += ["--target", "mlxdelegate"]
+
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
             cmake_build_args += ["--target", "custom_ops_aot_lib"]
             cmake_build_args += ["--target", "quantized_ops_aot_lib"]
