@@ -214,3 +214,108 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         source .ci/scripts/test_model_e2e.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+
+  export-parakeet-cuda-artifact:
+    name: export-parakeet-cuda-artifact
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      upload-artifact: nvidia-parakeet-tdt-cuda-non-quantized
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch"
+        ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Install Parakeet dependencies"
+        pip install -r examples/models/parakeet/install_requirements.txt
+        pip list
+        echo "::endgroup::"
+
+        echo "::group::Export Parakeet model"
+        python examples/models/parakeet/export_parakeet_tdt.py \
+            --backend cuda \
+            --output-dir "${RUNNER_ARTIFACT_DIR}"
+
+        # Verify exported artifacts exist
+        test -f "${RUNNER_ARTIFACT_DIR}/parakeet_tdt.pte"
+        test -f "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd"
+        test -f "${RUNNER_ARTIFACT_DIR}/tokenizer.model"
+        ls -al "${RUNNER_ARTIFACT_DIR}"
+        echo "::endgroup::"
+
+  test-parakeet-cuda-e2e:
+    name: test-parakeet-cuda-e2e
+    needs: export-parakeet-cuda-artifact
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      download-artifact: nvidia-parakeet-tdt-cuda-non-quantized
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        MODEL_DIR="${RUNNER_ARTIFACT_DIR}"
+
+        # Verify artifacts were downloaded
+        test -f "${MODEL_DIR}/parakeet_tdt.pte"
+        test -f "${MODEL_DIR}/aoti_cuda_blob.ptd"
+        test -f "${MODEL_DIR}/tokenizer.model"
+
+        echo "::group::Setup ExecuTorch Requirements"
+        ./install_requirements.sh
+        pip list
+        echo "::endgroup::"
+
+        echo "::group::Download test audio"
+        # Download sample audio for testing
+        AUDIO_URL="https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
+        curl -L "${AUDIO_URL}" -o "${MODEL_DIR}/test_audio.wav"
+        echo "::endgroup::"
+
+        echo "::group::Build Parakeet runner"
+        make parakeet-cuda
+        echo "::endgroup::"
+
+        echo "::group::Run Parakeet runner"
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        RUNNER_BIN="cmake-out/examples/models/parakeet/parakeet_runner"
+
+        set +e
+        OUTPUT=$($RUNNER_BIN \
+            --model_path "${MODEL_DIR}/parakeet_tdt.pte" \
+            --data_path "${MODEL_DIR}/aoti_cuda_blob.ptd" \
+            --audio_path "${MODEL_DIR}/test_audio.wav" \
+            --tokenizer_path "${MODEL_DIR}/tokenizer.model" 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        echo "Runner output:"
+        echo "$OUTPUT"
+
+        if [ $EXIT_CODE -ne 0 ]; then
+            echo "ERROR: Parakeet runner failed with exit code: $EXIT_CODE"
+            exit $EXIT_CODE
+        fi
+
+        echo "SUCCESS: Parakeet runner completed successfully"
+        echo "::endgroup::"
