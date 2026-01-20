@@ -72,13 +72,13 @@ std::string parseNamedDataKey(const void* data, size_t size) {
                error ? error.localizedDescription.UTF8String : "not a dictionary");
         return "";
     }
-    
+
     NSDictionary *dict = (NSDictionary *)jsonObject;
     NSString *key = dict[@"key"];
     if ([key isKindOfClass:[NSString class]]) {
         return std::string([key UTF8String]);
     }
-    
+
     return "";
 }
 
@@ -221,7 +221,7 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
     // This will hold the NamedDataStore data if needed, keeping it alive until scope exit
     std::optional<FreeableBuffer> namedDataStoreBuffer;
     Buffer buffer(nullptr, 0);
-    
+
     // Check if this is a multifunction model using NamedDataStore for weight sharing.
     // When MULTIMETHOD_WEIGHT_SHARING_STRATEGY is POSITIONAL, the processed bytes
     // contain a JSON reference to the model data in NamedDataStore.
@@ -230,9 +230,9 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
     auto it = specs_map.find(weightSharingKey);
     if (it != specs_map.end()) {
         std::string value(reinterpret_cast<const char*>(it->second.data()), it->second.size());
-        useNamedDataStore = (value == "POSITIONAL");
+        useNamedDataStore = (value == "positional");
     }
-    
+
     if (useNamedDataStore) {
         // Parse the key from the JSON reference
         std::string key = parseNamedDataKey(processed->data(), processed->size());
@@ -240,28 +240,28 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
                                  InvalidProgram,
                                  "%s: Failed to parse NamedDataStore key from JSON reference.",
                                  ETCoreMLStrings.delegateIdentifier.UTF8String);
-        
+
         ET_LOG(Debug, "%s: Loading model from NamedDataStore with key: %s",
                ETCoreMLStrings.delegateIdentifier.UTF8String, key.c_str());
-        
+
         // Get the NamedDataMap from context
         const auto* named_data_map = context.get_named_data_map();
         ET_CHECK_OR_RETURN_ERROR(named_data_map != nullptr,
                                  InvalidProgram,
                                  "%s: NamedDataMap is null but multimethod_weight_sharing_strategy is POSITIONAL.",
                                  ETCoreMLStrings.delegateIdentifier.UTF8String);
-        
+
         // Load the model data from NamedDataMap
         auto result = named_data_map->get_data(key.c_str());
         ET_CHECK_OR_RETURN_ERROR(result.ok(),
                                  InvalidProgram,
                                  "%s: Failed to load model data from NamedDataStore with key: %s",
                                  ETCoreMLStrings.delegateIdentifier.UTF8String, key.c_str());
-        
+
         // Move the result into namedDataStoreBuffer to keep it alive until scope exit
         namedDataStoreBuffer.emplace(std::move(result.get()));
         buffer = Buffer(namedDataStoreBuffer->data(), namedDataStoreBuffer->size());
-        
+
         ET_LOG(Debug, "%s: Loaded %zu bytes from NamedDataStore",
                ETCoreMLStrings.delegateIdentifier.UTF8String, namedDataStoreBuffer->size());
     } else {
@@ -280,7 +280,7 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
     ET_CHECK_OR_RETURN_ERROR(handle != nullptr,
                              InvalidProgram,
                              "%s: Failed to init the model.", ETCoreMLStrings.delegateIdentifier.UTF8String);
-    
+
     // namedDataStoreBuffer (if used) will be freed automatically when it goes out of scope
     processed->Free();
     return handle;
