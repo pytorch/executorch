@@ -146,7 +146,8 @@ class LlamaRunner(ABC):
 
         generate_time = time.time() - generate_start
         print(f"Prefill time: {prefill_time}")
-        print(f"Generation tok/s: {len(tokens) / generate_time}")
+        num_generated_tokens = len(tokens) - len(prompt_tokens) - 1
+        print(f"Generation tok/s: {num_generated_tokens / generate_time}")
 
         return tokens if echo else tokens[len(prompt_tokens) :]
 
