@@ -67,7 +67,7 @@ python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte
 
 ```bash
 # In the dir examples/raspberry_pi/pico2
-build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte # This creates executorch_pico.uf2, a firmware image for Pico2
+./build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte # This creates executorch_pico.uf2, a firmware image for Pico2
 ```
 
 ### Flash Firmware

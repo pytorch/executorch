@@ -22,11 +22,15 @@ runtime.python_library(
 runtime.python_library(
     name = "runner_utils",
     srcs = ["runner_utils.py"],
+    resources = {
+        "fbsource//third-party/flatbuffers:flatc-host": "flatbuffers-flatc",
+    },
     deps = [
         ":conftest",
         "//executorch/backends/arm:arm_compile_spec",
         "//executorch/backends/arm:ethosu",
         "//executorch/backends/arm/tosa:compile_spec",
+        "//executorch/backends/arm/tosa:schemas",
         "//executorch/backends/arm:vgf",
         "//executorch/backends/arm/tosa:specification",
         "//executorch/exir:lib",
