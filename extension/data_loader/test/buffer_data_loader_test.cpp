@@ -8,6 +8,7 @@
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 
+#include <climits>
 #include <cstring>
 
 #include <gtest/gtest.h>
@@ -128,6 +129,32 @@ TEST_F(BufferDataLoaderTest, OutOfBoundsLoadFails) {
     Result<FreeableBuffer> fb = edl.load(
         /*offset=*/sizeof(data) + 1,
         /*size=*/0,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    EXPECT_NE(fb.error(), Error::Ok);
+  }
+}
+
+TEST_F(BufferDataLoaderTest, OverflowLoadFails) {
+  // Wrap some data in a loader.
+  uint8_t data[256] = {};
+  BufferDataLoader edl(data, sizeof(data));
+
+  // Loading with offset + size that would overflow should fail.
+  {
+    Result<FreeableBuffer> fb = edl.load(
+        /*offset=*/SIZE_MAX,
+        /*size=*/1,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    EXPECT_NE(fb.error(), Error::Ok);
+  }
+
+  // Another overflow case: large offset and size that sum to overflow.
+  {
+    Result<FreeableBuffer> fb = edl.load(
+        /*offset=*/SIZE_MAX / 2 + 1,
+        /*size=*/SIZE_MAX / 2 + 1,
         /*segment_info=*/
         DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
