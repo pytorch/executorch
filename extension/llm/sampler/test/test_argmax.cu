@@ -334,5 +334,3 @@ TEST_F(ArgmaxTest, MaxAtLast) {
 }
 
 // Test with different thread counts
-
-

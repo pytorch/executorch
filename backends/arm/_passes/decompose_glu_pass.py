@@ -43,7 +43,7 @@ class DecomposeGluPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in [edge_glu, aten_glu]:
+        if op not in [edge_glu, aten_glu] or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         hadamard_prod, sigmoid, slice_op = get_ops(op)

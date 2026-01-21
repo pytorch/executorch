@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,6 +11,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
+    get_symmetric_a8w4_quantization_config,
     TOSAQuantizer,
 )
 from executorch.backends.arm.test import common, conftest
@@ -166,6 +167,35 @@ def test_linear_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+def test_linear_tosa_INT_a8w4(test_data: torch.Tensor):
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+    pipeline = TosaPipelineINT[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op,
+        tosa_extensions=["int4"],
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.add_stage_after(
+        "to_edge_transform_and_lower",
+        pipeline.tester.check_dtype_count,
+        {
+            "CONST": {"INT4": 2},
+            "CONV2D": {"INT32": 1},
+            "RESCALE": {"INT8": 1},
+        },
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_rank1_INT)
 @common.XfailIfNoCorstone300
 def test_linear_u55_INT(test_data: torch.Tensor):
@@ -299,25 +329,7 @@ def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-x_fails = {}
-x_skips = {}
-
-for test_name in [
-    "model_linear_rank4_zeros",
-    "model_linear_rank4_negative_ones",
-    "model_linear_rank4_negative_large_rand",
-]:
-    for set_per_chan in ["True", "False"]:
-        key = test_name + ",per_channel_quant={}".format(set_per_chan)
-        reason = (
-            "MLETORCH-1452: AssertionError: Output 0 does not match reference output."
-        )
-        x_fails[key] = reason
-        # TODO: Check why xfail doesn't work for this buck target. In the interim rely on skip
-        x_skips[key] = reason
-
-
-@common.parametrize("test_data", test_data_all_16a8w, xfails=x_fails, skips=x_skips)
+@common.parametrize("test_data", test_data_all_16a8w)
 @common.XfailIfNoCorstone300
 def test_linear_16a8w_u55_INT(test_data: torch.Tensor):
     """Test linear operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""

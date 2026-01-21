@@ -45,17 +45,12 @@ add_executable(test_argmax test_argmax.cu)
 
 target_include_directories(
   test_argmax PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
-                        ${CUDAToolkit_INCLUDE_DIRS}
+                      ${CUDAToolkit_INCLUDE_DIRS}
 )
 
 target_link_libraries(
-  test_argmax
-  PRIVATE GTest::gtest
-          GTest::gtest_main
-          executorch_core
-          extension_llm_sampler_cuda
-          CUDA::cudart
+  test_argmax PRIVATE GTest::gtest GTest::gtest_main executorch_core
+                      extension_llm_sampler_cuda CUDA::cudart
 )
 
 add_test(NAME test_argmax COMMAND test_argmax)
-

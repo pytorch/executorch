@@ -67,4 +67,3 @@ int32_t argmax_cuda(
 } // namespace llm
 } // namespace extension
 } // namespace executorch
-

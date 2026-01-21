@@ -2,7 +2,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -26,7 +26,7 @@ enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
 enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
-enable_mlsdk_pip_install=0  # This is a temporary option that will soon be the default
+enable_mlsdk_pip_install=1
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -52,7 +52,8 @@ OPTION_LIST=(
   "--enable-emulation-layer Enable MLSDK Vulkan emulation layer"
   "--disable-ethos-u-deps Do not setup what is needed for Ethos-U"
   "--enable-mlsdk-deps Setup what is needed for MLSDK"
-  "--install-mlsdk-deps-with-pip Use MLSDK PyPi package instead of building from source"
+  "--install-mlsdk-deps-with-pip (default) Use MLSDK PyPi package. This flag will be removed."
+  "--install-mlsdk-deps-from-src Build from source instead of using MLSDK PyPi packages"
   "--mlsdk-manifest-url URL to the MLSDK manifest for vulkan."
   "--help Display help"
 )
@@ -146,6 +147,10 @@ function check_options() {
                 enable_mlsdk_pip_install=1
                 shift
                 ;;
+            --install-mlsdk-deps-from-src)
+                enable_mlsdk_pip_install=0
+                shift
+                ;;
             --enable-mlsdk-deps)
                 enable_model_converter=1
                 enable_vgf_lib=1
@@ -230,25 +235,8 @@ function create_setup_path(){
 }
 
 function use_mlsdk_pip_package() {
-    os=$(uname -s)
-    arch=$(uname -m)
-
     if [[ "${enable_mlsdk_pip_install}" -eq 0 ]]; then
         return 1
-    fi
-
-    if [[ "$os" == "Darwin" ]]; then
-        if [[ "${enable_mlsdk_pip_install}" -eq 1 ]]; then
-            log_step "mlsdk" "[error] MLSDK pip install not yet supported on MacOS"
-            exit 1
-        fi
-    fi
-
-    if [[ "$arch" == "arm64" || "$arch" == "aarch64" ]]; then
-        if [[ "${enable_mlsdk_pip_install}" -eq 1 ]]; then
-            log_step "mlsdk" "[error] MLSDK pip install not yet supported on aarch64"
-            exit 1
-        fi
     fi
 
     return 0
@@ -345,9 +333,8 @@ if [[ $is_script_sourced -eq 0 ]]; then
     fi
 
     pushd tosa-tools
-    git fetch origin main
-    git checkout 8468d041c50c6d806f3c1c18c66d7ef641e46580 # serialization lib pybindings
-    git cherry-pick 368f0cd745b2a1569bf36f077daeba95775de192 # perf fix for >2gb models
+    git checkout v2025.11.0
+
     if [[ ! -d "reference_model" ]]; then
         log_step "main" "[error] Missing reference_model directory in tosa-tools repo."
         exit 1

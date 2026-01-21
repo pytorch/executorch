@@ -156,7 +156,10 @@ class AotiBackend(ABC):
         # Apply custom backend-specific passes
         custom_passes = cls.get_custom_passes(compile_specs)
         for custom_pass in custom_passes:
-            custom_pass(device_edge_program.graph_module)
+            if getattr(custom_pass, "requires_exported_program", False):
+                custom_pass(device_edge_program)
+            else:
+                custom_pass(device_edge_program.graph_module)
 
         # Run decompositions if any
         if decomposition_table:

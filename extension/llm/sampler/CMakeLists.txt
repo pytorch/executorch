@@ -21,6 +21,15 @@ endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
+add_library(extension_llm_sampler STATIC sampler.cpp)
+
+target_link_libraries(extension_llm_sampler PUBLIC executorch_core)
+
+install(
+  TARGETS extension_llm_sampler
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
 # If the project is configured to build with CUDA support, build the CUDA
 # sampler library.
 if(EXECUTORCH_BUILD_CUDA)
@@ -31,31 +40,19 @@ if(EXECUTORCH_BUILD_CUDA)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
     # Define CUDA sampler library
-    add_library(extension_llm_sampler STATIC argmax.cu)
+    add_library(cuda_sampler_lib STATIC argmax.cu)
     target_include_directories(
-      extension_llm_sampler
-      PUBLIC ${EXECUTORCH_ROOT}
-             ${EXECUTORCH_ROOT}/..
-             ${CUDAToolkit_INCLUDE_DIRS}
+      cuda_sampler_lib PUBLIC ${EXECUTORCH_ROOT} ${EXECUTORCH_ROOT}/..
+                              ${CUDAToolkit_INCLUDE_DIRS}
     )
-    target_compile_definitions(extension_llm_sampler PUBLIC CUDA_AVAILABLE)
-    target_link_libraries(extension_llm_sampler PUBLIC executorch_core
-                                                            CUDA::cudart
-    )
+    target_compile_definitions(cuda_sampler_lib PUBLIC CUDA_AVAILABLE)
+    target_link_libraries(cuda_sampler_lib PUBLIC executorch_core CUDA::cudart)
     set_target_properties(
-      extension_llm_sampler
-      PROPERTIES POSITION_INDEPENDENT_CODE ON CUDA_SEPARABLE_COMPILATION ON
+      cuda_sampler_lib PROPERTIES POSITION_INDEPENDENT_CODE ON
+                                  CUDA_SEPARABLE_COMPILATION ON
     )
 
-    message(
-      STATUS "CUDAToolkit found; building extension_llm_sampler_cuda library"
-    )
-
-    install(
-      TARGETS extension_llm_sampler
-      EXPORT ExecuTorchTargets
-      DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    )
+    target_link_libraries(extension_llm_sampler PUBLIC cuda_sampler_lib)
   else()
     message(
       STATUS
@@ -73,4 +70,3 @@ install(
   PATTERN "*.cuh"
   PATTERN "test" EXCLUDE
 )
-

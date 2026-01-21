@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -56,6 +56,11 @@ if(NOT EXISTS "${ET_PTE_FILE_PATH}")
       "pte file not provided. Please provide pte file for the application and retry."
   )
 endif()
+
+# Get Ethos-U drivers
+include(${ET_DIR_PATH}/backends/arm/scripts/corstone_utils.cmake)
+fetch_ethos_u_content(${ETHOS_SDK_PATH} ${ET_DIR_PATH})
+
 if(NOT EXISTS "${ETHOS_SDK_PATH}")
   message(
     FATAL_ERROR
@@ -75,8 +80,8 @@ add_executable(img_class_example main.cpp)
 
 target_sources(
   img_class_example
-  PRIVATE main.cpp ../executor_runner/arm_memory_allocator.cpp
-          ../executor_runner/arm_perf_monitor.cpp
+  PRIVATE main.cpp
+          ${CMAKE_SOURCE_DIR}/../../executor_runner/arm_memory_allocator.cpp
 )
 
 target_link_libraries(

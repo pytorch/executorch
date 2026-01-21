@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -85,8 +85,8 @@ class DecomposeMeanDimPass(ArmPass):
         SizeAdjustInputPass,
     }
 
-    def __init__(self, graph_module, tosa_spec):
-        super().__init__()
+    def __init__(self, graph_module, tosa_spec, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._graph_module = graph_module
         self._tosa_spec = tosa_spec
         # Lazy import to avoid circular dependency with operator_support
@@ -104,7 +104,7 @@ class DecomposeMeanDimPass(ArmPass):
             torch.ops.aten.mean.dim,
             exir_ops.edge.aten.mean.default,
             torch.ops.aten.mean.default,
-        ):
+        ) or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         x = get_node_arg(args, 0)
@@ -167,7 +167,11 @@ class DecomposeMeanDimPass(ArmPass):
 
         sum = super().call_operator(sum_op, (input_node, dims, True), {}, meta, True)
         full = super().call_operator(
-            full_op, ([1] * len(output_shape), 1 / N), {"dtype": dtype}, meta, True
+            full_op,
+            ([1] * len(output_shape), 1 / N),
+            {"dtype": dtype, "device": input_node.data.device},
+            meta,
+            True,
         )
         if (quant_ops := get_quantization(input_node.node.target)) is not None:
             # Insert Q and DQ nodes after full op.
