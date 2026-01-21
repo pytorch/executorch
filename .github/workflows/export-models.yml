@@ -168,7 +168,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
 
         pip install -U "huggingface_hub[cli]"
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        python -m huggingface_hub.commands.huggingface_cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         pip install accelerate sentencepiece
         pip list
 
