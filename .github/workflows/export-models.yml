@@ -1,0 +1,461 @@
+name: export-models
+
+on:
+  schedule:
+    # Run daily at midnight UTC
+    - cron: '0 0 * * *'
+  pull_request:
+    paths:
+      - .github/workflows/export-models.yml
+  # Allow manual trigger from Actions webpage
+  workflow_dispatch:
+    inputs:
+      models:
+        description: 'Comma-separated list of models to export (e.g., mv3,mv2,meta-llama/Llama-3.2-1B)'
+        required: false
+        type: string
+        default: 'mv3,mv2,ic4,ic3,resnet50,mobilebert,w2l,meta-llama/Llama-3.2-1B,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8,Qwen/Qwen3-0.6B,HuggingFaceTB/SmolLM2-135M,allenai/OLMo-1B-hf,google/gemma-3-1b-it'
+      configs:
+        description: 'Comma-separated list of export configs (leave empty for auto-detection based on model)'
+        required: false
+        type: string
+      s3_prefix:
+        description: 'S3 prefix path for uploaded models (default: executorch-models)'
+        required: false
+        type: string
+        default: 'executorch-models'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  set-parameters:
+    runs-on: ubuntu-22.04
+    outputs:
+      models_matrix: ${{ steps.set-parameters.outputs.models_matrix }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'false'
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Set parameters
+        id: set-parameters
+        shell: bash
+        run: |
+          set -eux
+
+          # Default models for scheduled runs
+          DEFAULT_MODELS="mv3,mv2,ic4,ic3,resnet50,mobilebert,w2l,meta-llama/Llama-3.2-1B,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8,Qwen/Qwen3-0.6B,HuggingFaceTB/SmolLM2-135M,allenai/OLMo-1B-hf,google/gemma-3-1b-it"
+
+          MODELS="${{ inputs.models }}"
+          if [ -z "$MODELS" ]; then
+            MODELS="$DEFAULT_MODELS"
+          fi
+
+          CONFIGS="${{ inputs.configs }}"
+
+          # Generate the matrix JSON
+          python3 << 'EOF'
+          import json
+          import os
+          import sys
+          import re
+
+          sys.path.append(os.path.abspath('.'))
+          from examples.models import MODEL_NAME_TO_MODEL
+
+          models_str = os.environ.get('MODELS', '')
+          configs_str = os.environ.get('CONFIGS', '')
+
+          models = [m.strip() for m in models_str.split(',') if m.strip()]
+          configs = [c.strip() for c in configs_str.split(',') if c.strip()] if configs_str else None
+
+          # Predefined benchmark configurations (subset from gather_benchmark_configs.py)
+          BENCHMARK_CONFIGS = {
+              "xplat": [
+                  "xnnpack_q8",
+                  "hf_xnnpack_custom_spda_kv_cache_8da4w",
+                  "et_xnnpack_custom_spda_kv_cache_8da4w",
+                  "llama3_fb16",
+                  "llama3_spinquant",
+                  "llama3_qlora",
+              ],
+          }
+
+          def is_valid_huggingface_model_id(model_name: str) -> bool:
+              pattern = r"^[a-zA-Z0-9-_]+/[a-zA-Z0-9-_.]+$"
+              return bool(re.match(pattern, model_name))
+
+          def generate_compatible_configs(model_name: str):
+              configs = []
+              if is_valid_huggingface_model_id(model_name):
+                  configs.append("hf_xnnpack_custom_spda_kv_cache_8da4w")
+                  if model_name.startswith("meta-llama/"):
+                      repo_name = model_name.split("meta-llama/")[1]
+                      if "qlora" in repo_name.lower():
+                          configs = ["llama3_qlora"]
+                      elif "spinquant" in repo_name.lower():
+                          configs = ["llama3_spinquant"]
+                      else:
+                          configs.extend(["llama3_fb16", "et_xnnpack_custom_spda_kv_cache_8da4w"])
+                  if model_name.startswith("Qwen/Qwen3"):
+                      configs.append("et_xnnpack_custom_spda_kv_cache_8da4w")
+              elif model_name in MODEL_NAME_TO_MODEL:
+                  configs.append("xnnpack_q8")
+              return configs
+
+          matrix_entries = []
+          for model in models:
+              model_configs = configs if configs else generate_compatible_configs(model)
+              for config in model_configs:
+                  matrix_entries.append({
+                      "model": model,
+                      "config": config
+                  })
+
+          matrix = {"include": matrix_entries}
+
+          # Write to GITHUB_OUTPUT
+          github_output = os.environ.get('GITHUB_OUTPUT', '')
+          output_line = f"models_matrix={json.dumps(matrix)}"
+          if github_output:
+              with open(github_output, 'a') as f:
+                  f.write(output_line + '\n')
+          else:
+              print(f"::set-output name=models_matrix::{json.dumps(matrix)}")
+
+          print(f"Generated matrix with {len(matrix_entries)} entries:")
+          for entry in matrix_entries:
+              print(f"  - {entry['model']} with {entry['config']}")
+          EOF
+        env:
+          MODELS: ${{ inputs.models || 'mv3,mv2,ic4,ic3,resnet50,mobilebert,w2l,meta-llama/Llama-3.2-1B,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8,Qwen/Qwen3-0.6B,HuggingFaceTB/SmolLM2-135M,allenai/OLMo-1B-hf,google/gemma-3-1b-it' }}
+          CONFIGS: ${{ inputs.configs }}
+
+  export-models:
+    name: export-models
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    needs: set-parameters
+    secrets: inherit
+    strategy:
+      matrix: ${{ fromJson(needs.set-parameters.outputs.models_matrix) }}
+      fail-fast: false
+    with:
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      timeout: 60
+      upload-artifact: exported-models
+      upload-artifact-to-s3: true
+      secrets-env: EXECUTORCH_HF_TOKEN
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        echo "::group::Setting up dev environment"
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        if [[ ${{ matrix.config }} == *"qnn"* ]]; then
+            PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+            PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+        fi
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+        # Install requirements for export_llama
+        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+
+        pip install -U "huggingface_hub[cli]"
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        pip install accelerate sentencepiece
+        pip list
+
+        S3_PREFIX="${{ inputs.s3_prefix || 'executorch-models' }}"
+        ARTIFACTS_DIR_NAME="artifacts-to-be-uploaded/${S3_PREFIX}/${{ matrix.model }}_${{ matrix.config }}"
+        echo "::endgroup::"
+
+        echo "::group::Exporting ${{ matrix.config }} model: ${{ matrix.model }}"
+        BUILD_MODE="cmake"
+
+        if [[ ${{ matrix.model }} =~ ^[^/]+/[^/]+$ ]]; then
+            # HuggingFace model. Assume the pattern is always like "<org>/<repo>"
+            HF_MODEL_REPO=${{ matrix.model }}
+            OUT_ET_MODEL_NAME="$(echo "$HF_MODEL_REPO" | awk -F'/' '{print $2}' | sed 's/_/-/g' | tr '[:upper:]' '[:lower:]')_${{ matrix.config }}"
+
+            # Convert HF checkpoint to ET via etLLM path
+            if [[ "$HF_MODEL_REPO" == meta-llama/* ]]; then
+                if [[ ${{ matrix.config }} == "llama3_spinquant" ]]; then
+                    # SpinQuant
+                    # Download prequantized chceckpoint from Hugging Face
+                    DOWNLOADED_PATH=$(
+                      bash .ci/scripts/download_hf_hub.sh \
+                        --model_id "${HF_MODEL_REPO}" \
+                        --files "tokenizer.model" "params.json" "consolidated.00.pth"
+                    )
+                    # Export using ExecuTorch's model definition
+                    python -m extension.llm.export.export_llm \
+                      base.model_class="llama3_2" \
+                      base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
+                      base.params="${DOWNLOADED_PATH}/params.json" \
+                      model.use_sdpa_with_kv_cache=true \
+                      backend.xnnpack.enabled=true \
+                      backend.xnnpack.extended_ops=true \
+                      base.preq_mode="preq_8da4w_out_8da8w" \
+                      base.preq_group_size=32 \
+                      export.max_seq_length=2048 \
+                      export.max_context_length=2048 \
+                      export.output_name="${OUT_ET_MODEL_NAME}.pte" \
+                      model.use_kv_cache=true \
+                      model.dtype_override=fp32 \
+                      base.preq_embedding_quantize=\'8,0\' \
+                      quantization.use_spin_quant=native \
+                      base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"'
+                    ls -lh "${OUT_ET_MODEL_NAME}.pte"
+                elif [[ ${{ matrix.config }} == "llama3_qlora" ]]; then
+                    # QAT + LoRA
+                    # Download prequantized chceckpoint from Hugging Face
+                    DOWNLOADED_PATH=$(
+                      bash .ci/scripts/download_hf_hub.sh \
+                        --model_id "${HF_MODEL_REPO}" \
+                        --files "tokenizer.model" "params.json" "consolidated.00.pth"
+                    )
+                    # Export using ExecuTorch's model definition
+                    python -m extension.llm.export.export_llm \
+                      base.model_class="llama3_2" \
+                      base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
+                      base.params="${DOWNLOADED_PATH}/params.json" \
+                      quantization.use_qat=true \
+                      base.use_lora=16 \
+                      base.preq_mode="preq_8da4w_out_8da8w" \
+                      base.preq_group_size=32 \
+                      base.preq_embedding_quantize=\'8,0\' \
+                      model.use_sdpa_with_kv_cache=true \
+                      model.use_kv_cache=true \
+                      backend.xnnpack.enabled=true \
+                      backend.xnnpack.extended_ops=true \
+                      model.dtype_override=fp32 \
+                      export.max_seq_length=2048 \
+                      export.max_context_length=2048 \
+                      export.output_name="${OUT_ET_MODEL_NAME}.pte" \
+                      base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"'
+                    ls -lh "${OUT_ET_MODEL_NAME}.pte"
+                elif [[ ${{ matrix.config }} == "llama3_fb16" ]]; then
+                    # Original BF16 version, without any quantization
+                    DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
+                    python -m extension.llm.export.export_llm \
+                      base.model_class="llama3_2" \
+                      base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
+                      base.params="${DOWNLOADED_PATH}/params.json" \
+                      model.use_kv_cache=true \
+                      model.use_sdpa_with_kv_cache=true \
+                      backend.xnnpack.enabled=true \
+                      model.dtype_override=bf16 \
+                      base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"' \
+                      export.output_name="${OUT_ET_MODEL_NAME}.pte"
+                    ls -lh "${OUT_ET_MODEL_NAME}.pte"
+                elif [[ ${{ matrix.config }} == "et_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
+                    DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
+                    python -m extension.llm.export.export_llm \
+                      base.model_class=llama3_2 \
+                      base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
+                      base.params="${DOWNLOADED_PATH}/params.json" \
+                      model.use_kv_cache=true \
+                      model.use_sdpa_with_kv_cache=true \
+                      model.dtype_override=fp32 \
+                      backend.xnnpack.enabled=true \
+                      backend.xnnpack.extended_ops=true \
+                      quantization.qmode=8da4w \
+                      quantization.group_size=32 \
+                      quantization.embedding_quantize=\'8,0\' \
+                      base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"' \
+                      export.output_name="${OUT_ET_MODEL_NAME}.pte"
+                    ls -lh "${OUT_ET_MODEL_NAME}.pte"
+                elif [[ ${{ matrix.config }} == "llama3_qnn_htp" ]]; then
+                    export QNN_SDK_ROOT=/tmp/qnn/2.37.0.250724
+                    export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
+                    export PYTHONPATH=$(pwd)/..
+
+                    DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
+                    python -m examples.qualcomm.oss_scripts.llama3_2.llama -- \
+                      --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                      --params "${DOWNLOADED_PATH}/params.json" \
+                      --tokenizer_model "${DOWNLOADED_PATH}/tokenizer.model" \
+                      --compile_only \
+                      --ptq 16a4w \
+                      -m SM8650 \
+                      --model_size 1B \
+                      --model_mode kv \
+                      --prompt "Once"
+
+                    OUT_ET_MODEL_NAME="llama3_2_qnn" # Qualcomm hard-coded it in their script
+                    find . -name "${OUT_ET_MODEL_NAME}.pte" -not -path "./${OUT_ET_MODEL_NAME}.pte" -exec mv {} ./ \;
+                    ls -lh "${OUT_ET_MODEL_NAME}.pte"
+                fi
+            elif [[ "$HF_MODEL_REPO" == "Qwen/Qwen3-0.6B" ]]; then
+              if [[ ${{ matrix.config }} == "et_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
+                DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "." --files "tokenizer.json")
+                python -m extension.llm.export.export_llm \
+                  base.model_class=qwen3_0_6b \
+                  base.params=examples/models/qwen3/config/0_6b_config.json \
+                  model.use_kv_cache=true \
+                  model.use_sdpa_with_kv_cache=true \
+                  model.dtype_override=fp32 \
+                  backend.xnnpack.enabled=true \
+                  backend.xnnpack.extended_ops=true \
+                  quantization.qmode=8da4w \
+                  quantization.group_size=32 \
+                  quantization.embedding_quantize=\'8,0\' \
+                  base.metadata='"{\"get_bos_id\":151644,\"get_eos_ids\":[151645]}"' \
+                  export.output_name="${OUT_ET_MODEL_NAME}.pte"
+                ls -lh "${OUT_ET_MODEL_NAME}.pte"
+              fi
+            fi
+
+            if [[ ${{ matrix.config }} == "hf_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
+              DOWNLOADED_PATH=$(
+                bash .ci/scripts/download_hf_hub.sh \
+                  --model_id "${HF_MODEL_REPO}" \
+                  --files "tokenizer.json"
+              )
+              echo "tokenizer.json is downloaded to $DOWNLOADED_PATH"
+
+              # Install optimum-executorch
+              OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+              git clone https://github.com/huggingface/optimum-executorch
+              pushd optimum-executorch
+              # There is no release yet, for CI stability, always test from the same commit on main
+              git checkout $OPTIMUM_ET_COMMIT
+              python install_dev.py --skip_override_torch
+              pip list
+
+              ARGS=(
+                "--model" "${HF_MODEL_REPO}"
+                "--task" "text-generation"
+                "--recipe" "xnnpack"
+                "--use_custom_sdpa"
+                "--use_custom_kv_cache"
+                "--qlinear" "8da4w"
+                "--qembedding" "8w"
+                "--output_dir" ".."
+              )
+
+              optimum-cli export executorch "${ARGS[@]}"
+              popd
+
+              mv model.pte ${OUT_ET_MODEL_NAME}.pte
+              ls -lh "${OUT_ET_MODEL_NAME}.pte"
+            fi
+
+            zip -j model.zip ${OUT_ET_MODEL_NAME}.pte ${DOWNLOADED_PATH}/tokenizer.*
+            ls -lh model.zip
+            mkdir -p ${ARTIFACTS_DIR_NAME}
+            mv model.zip ${ARTIFACTS_DIR_NAME}
+            ls -lh ${ARTIFACTS_DIR_NAME}
+        elif [[ ${{ matrix.model }} == "llama" ]]; then
+            # Install requirements for export_llama
+            PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+            # Test llama2
+            if [[ ${{ matrix.config }} == *"xnnpack"* ]]; then
+                DELEGATE_CONFIG="xnnpack+custom+qe"
+            elif [[ ${{ matrix.config }} == *"qnn"* ]]; then
+                DELEGATE_CONFIG="qnn"
+            else
+                echo "Unsupported delegate ${{ matrix.config }}"
+                exit 1
+            fi
+            DTYPE="fp32"
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh \
+              -model "${{ matrix.model }}" \
+              -build_tool "${BUILD_MODE}" \
+              -dtype "${DTYPE}" \
+              -mode "${DELEGATE_CONFIG}" \
+              -upload "${ARTIFACTS_DIR_NAME}"
+        else
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh \
+              "${{ matrix.model }}" \
+              "${BUILD_MODE}" \
+              "${{ matrix.config }}" \
+              "${ARTIFACTS_DIR_NAME}"
+        fi
+        echo "::endgroup::"
+
+        # Create a manifest file with export metadata
+        echo "::group::Creating export manifest"
+        cat > ${ARTIFACTS_DIR_NAME}/manifest.json << EOF
+        {
+          "model": "${{ matrix.model }}",
+          "config": "${{ matrix.config }}",
+          "exported_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+          "github_run_id": "${{ github.run_id }}",
+          "github_sha": "${{ github.sha }}",
+          "github_ref": "${{ github.ref }}"
+        }
+        EOF
+        cat ${ARTIFACTS_DIR_NAME}/manifest.json
+        echo "::endgroup::"
+
+  # Summary job that creates an index of all exported models
+  create-export-summary:
+    name: create-export-summary
+    runs-on: ubuntu-22.04
+    needs:
+      - set-parameters
+      - export-models
+    if: always()
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'false'
+
+      - name: Authenticate with AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::308535385114:role/gha_workflow_upload-benchmark-results
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Create export summary
+        shell: bash
+        env:
+          S3_BUCKET: gha-artifacts
+          S3_PREFIX: ${{ github.repository }}/${{ github.run_id }}/artifacts
+        run: |
+          set -eux
+
+          pip install awscli
+
+          # List all exported artifacts
+          echo "Listing exported models from S3..."
+          aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" --recursive || echo "No artifacts found"
+
+          # Create a summary
+          cat > export_summary.json << EOF
+          {
+            "workflow_run_id": "${{ github.run_id }}",
+            "workflow_run_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "exported_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "s3_base_path": "s3://${S3_BUCKET}/${S3_PREFIX}",
+            "models_matrix": ${{ needs.set-parameters.outputs.models_matrix }}
+          }
+          EOF
+
+          cat export_summary.json
+
+          # Upload the summary
+          aws s3 cp export_summary.json "s3://${S3_BUCKET}/${S3_PREFIX}/export_summary.json"
+
+          echo "Export summary uploaded to s3://${S3_BUCKET}/${S3_PREFIX}/export_summary.json"
+          echo ""
+          echo "=== Exported Models ==="
+          echo "Models can be downloaded from:"
+          echo "https://gha-artifacts.s3.amazonaws.com/${S3_PREFIX}/"
