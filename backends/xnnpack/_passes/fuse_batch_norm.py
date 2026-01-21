@@ -79,7 +79,7 @@ class FuseBatchNormPass(XNNPACKPass):
         return PassResult(graph_module, True)
 
     @staticmethod
-    def can_fuse(
+    def can_fuse(  # noqa: C901
         input_node: torch.fx.Node,
         bn: torch.fx.Node,
         program: ExportedProgram,

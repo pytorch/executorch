@@ -36,7 +36,7 @@ class DecomposeBatchNorm(XNNPACKPass):
     }
 
     @staticmethod
-    def can_decompose_batch_norm(
+    def can_decompose_batch_norm(  # noqa: C901
         node: torch.fx.Node,
         exported_program: torch.export.ExportedProgram,
         why: WhyNoPartition | None = None,
