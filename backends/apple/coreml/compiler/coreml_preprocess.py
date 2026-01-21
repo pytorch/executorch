@@ -925,13 +925,23 @@ class CoreMLBackend(BackendDetails):
                 debug_handle_map = debug_handle_maps[partition_idx]
 
                 for method_name in method_names:
-                    # Create JSON reference for runtime to look up model in NamedDataStore
+                    # Create JSON reference for runtime to look up model in NamedDataStore.
+                    # functionName specifies which CoreML function to invoke within the
+                    # multifunction model. The runtime gets the ExecuTorch method name
+                    # separately via BackendInitContext::get_method_name().
+                    #
+                    # We prefix the JSON with a magic number so runtime can identify this
+                    # as a JSON reference rather than raw model bytes.
                     reference = {
                         "version": 1,
                         "key": model_keys[partition_idx],
-                        "method": method_name,
+                        "functionName": method_name,
                     }
-                    reference_bytes = json.dumps(reference).encode("utf-8")
+                    # Magic number "CMJR" (CoreML JSON Reference) followed by JSON bytes
+                    MAGIC_NUMBER = b"CMJR"
+                    reference_bytes = MAGIC_NUMBER + json.dumps(reference).encode(
+                        "utf-8"
+                    )
 
                     preprocess_results[method_name].append(
                         PreprocessResult(

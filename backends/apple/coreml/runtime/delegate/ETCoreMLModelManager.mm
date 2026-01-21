@@ -619,6 +619,7 @@ NSString *raw_model_identifier(NSString *identifier) {
 - (nullable id<ETCoreMLModelExecutor>)_modelExecutorWithAOTData:(NSData *)data
                                                    configuration:(MLModelConfiguration *)configuration
                                                       methodName:(nullable NSString *)methodName
+                                                    functionName:(nullable NSString *)functionName
                                                            error:(NSError * __autoreleasing *)error {
     using namespace inmemoryfs;
 
@@ -642,12 +643,19 @@ NSString *raw_model_identifier(NSString *identifier) {
 
     auto metadataValue = metadata.value();
 
-    // Check if this is a multifunction model with a specific method requested
-    BOOL isMultifunctionWithMethod = metadataValue.is_multifunction() && methodName != nil && methodName.length > 0;
+    // Check if this is a multifunction model
+    BOOL isMultifunction = metadataValue.is_multifunction();
 
     // For multifunction models, populate the top-level input_names/output_names
     // from the method's metadata. This ensures we get the correct names for this method.
-    if (isMultifunctionWithMethod) {
+    if (isMultifunction) {
+        if (methodName == nil || methodName.length == 0) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "Multifunction CoreML models require a methodName for metadata lookup.");
+            return nil;
+        }
+        
         std::string method_name_str = [methodName UTF8String];
         const MethodMetadata* method_metadata = metadataValue.get_method_metadata(method_name_str);
         if (method_metadata != nullptr) {
@@ -665,15 +673,22 @@ NSString *raw_model_identifier(NSString *identifier) {
     // For multifunction CoreML models (ML Programs with multiple functions),
     // we need to set functionName to select the correct function within the model.
     // However, legacy single-function models require functionName to be nil.
-    // The metadata's "methods" field indicates if this is a multifunction model.
     //
-    // Note: We validate that the method name exists in metadata above, but we assume
-    // the CoreML model (.mlpackage) contains a function with this name. If the metadata
-    // is out of sync with the model, MLModel loading will fail with an error from CoreML.
-    if (isMultifunctionWithMethod) {
+    // For multifunction models, functionName is required and specifies which
+    // CoreML function to invoke. It comes from the JSON reference in the
+    // processed bytes and may differ from methodName (e.g., "forward_partition0"
+    // vs "forward").
+    if (isMultifunction) {
+        if (functionName == nil || functionName.length == 0) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "Multifunction CoreML models require a functionName.");
+            return nil;
+        }
+        
 #if defined(__IPHONE_18_0) || defined(__MAC_15_0) || defined(__TVOS_18_0) || defined(__WATCHOS_11_0)
         if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
-            configuration.functionName = methodName;
+            configuration.functionName = functionName;
         } else {
             ETCoreMLLogErrorAndSetNSError(error,
                                           ETCoreMLErrorCorruptedModel,
@@ -727,16 +742,19 @@ NSString *raw_model_identifier(NSString *identifier) {
     return [self loadModelFromAOTData:data
                         configuration:configuration
                            methodName:nil
+                         functionName:nil
                                 error:error];
 }
 
 - (ModelHandle *)loadModelFromAOTData:(NSData*)data
                         configuration:(MLModelConfiguration*)configuration
                            methodName:(nullable NSString*)methodName
+                         functionName:(nullable NSString*)functionName
                                 error:(NSError* __autoreleasing*)error {
     id<ETCoreMLModelExecutor> executor = [self _modelExecutorWithAOTData:data
                                                            configuration:configuration
                                                               methodName:methodName
+                                                            functionName:functionName
                                                                    error:error];
     {
         os_unfair_lock_lock(&_lock);

@@ -80,6 +80,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
 - (ModelHandle*)loadModelFromAOTData:(NSData*)data
                        configuration:(MLModelConfiguration*)configuration
                           methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
                                error:(NSError* __autoreleasing*)error;
 
 - (ModelHandle*)loadModelFromAOTData:(NSData*)data
@@ -166,16 +167,18 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
 
 - (ModelHandle*)loadModelFromAOTData:(NSData*)data
                        configuration:(MLModelConfiguration*)configuration
-                               error:(NSError* __autoreleasing*)error {
+                                error:(NSError* __autoreleasing*)error {
     return [self loadModelFromAOTData:data
                         configuration:configuration
                            methodName:nil
+                         functionName:nil
                                 error:error];
 }
 
 - (ModelHandle*)loadModelFromAOTData:(NSData*)data
                        configuration:(MLModelConfiguration*)configuration
                           methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
                                error:(NSError* __autoreleasing*)error {
     if (![self loadAndReturnError:error]) {
         return nil;
@@ -184,6 +187,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     auto handle = [self.impl loadModelFromAOTData:data
                                     configuration:configuration
                                        methodName:methodName
+                                     functionName:functionName
                                             error:error];
     if ((handle != NULL) && self.config.should_prewarm_model) {
         [self.impl prewarmModelWithHandle:handle error:nil];
@@ -268,16 +272,14 @@ public:
     BackendDelegateImpl& operator=(BackendDelegateImpl const&) = delete;
     
 Handle *init(Buffer processed,
-                   const std::unordered_map<std::string, Buffer>& specs,
-                   const char* method_name = nullptr) const noexcept override {
+                     const std::unordered_map<std::string, Buffer>& specs,
+                     const char* method_name = nullptr,
+                     const char* function_name = nullptr) const noexcept override {
         NSError *localError = nil;
         MLModelConfiguration *configuration = get_model_configuration(specs);
         
         NSString *methodNameStr = method_name ? @(method_name) : nil;
-        
-        // Note: For multifunction CoreML models, functionName is set in
-        // ETCoreMLModelManager::loadModelFromAOTData based on metadata.is_multifunction().
-        // Legacy single-function models require functionName to remain nil.
+        NSString *functionNameStr = function_name ? @(function_name) : nil;
         
         NSData *data = [NSData dataWithBytesNoCopy:const_cast<void *>(processed.data())
                                             length:processed.size()
@@ -285,6 +287,7 @@ Handle *init(Buffer processed,
         ModelHandle *modelHandle = [model_manager_ loadModelFromAOTData:data
                                                           configuration:configuration
                                                              methodName:methodNameStr
+                                                           functionName:functionNameStr
                                                                   error:&localError];
         if (localError != nil) {
             ETCoreMLLogError(localError, "Model init failed");

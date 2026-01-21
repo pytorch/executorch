@@ -53,15 +53,49 @@ using executorch::runtime::Span;
 using executorch::aten::Tensor;
 using executorch::runtime::kTensorDimensionLimit;
 
-/// Parses the JSON reference and extracts the NamedDataStore key.
-/// Expected format: {"key": "..."}
+/// Magic number prefix for JSON references: "CMJR" (CoreML JSON Reference)
+static constexpr const char* kJsonReferenceMagicNumber = "CMJR";
+static constexpr size_t kJsonReferenceMagicNumberSize = 4;
+
+/// Result of parsing the JSON reference for NamedDataStore lookup.
+struct NamedDataReference {
+    /// The key to look up the model data in NamedDataStore.
+    std::string key;
+    /// The CoreML function name to invoke (for multifunction models).
+    /// This may differ from the ExecuTorch method name.
+    std::string function_name;
+};
+
+/// Checks if the data starts with the JSON reference magic number.
 ///
-/// @param data Pointer to the JSON bytes.
-/// @param size Size of the JSON bytes.
-/// @return The extracted key, or empty string if parsing fails.
-std::string parseNamedDataKey(const void* data, size_t size) {
-    NSData *jsonData = [NSData dataWithBytesNoCopy:const_cast<void*>(data)
-                                            length:size
+/// @param data Pointer to the data.
+/// @param size Size of the data.
+/// @return true if the data starts with "CMJR", false otherwise.
+bool isJsonReference(const void* data, size_t size) {
+    if (size < kJsonReferenceMagicNumberSize) {
+        return false;
+    }
+    return memcmp(data, kJsonReferenceMagicNumber, kJsonReferenceMagicNumberSize) == 0;
+}
+
+/// Parses the JSON reference and extracts the NamedDataStore key and function name.
+/// Expected format: "CMJR" magic number followed by JSON {"key": "...", "functionName": "..."}
+///
+/// @param data Pointer to the data (including magic number).
+/// @param size Size of the data.
+/// @return The parsed reference, or nullopt if parsing fails.
+std::optional<NamedDataReference> parseNamedDataReference(const void* data, size_t size) {
+    if (!isJsonReference(data, size)) {
+        ET_LOG(Error, "Data does not start with JSON reference magic number");
+        return std::nullopt;
+    }
+
+    // Skip the magic number
+    const uint8_t* jsonStart = static_cast<const uint8_t*>(data) + kJsonReferenceMagicNumberSize;
+    size_t jsonSize = size - kJsonReferenceMagicNumberSize;
+
+    NSData *jsonData = [NSData dataWithBytesNoCopy:const_cast<uint8_t*>(jsonStart)
+                                            length:jsonSize
                                       freeWhenDone:NO];
     NSError *error = nil;
     id jsonObject = [NSJSONSerialization JSONObjectWithData:jsonData
@@ -70,16 +104,27 @@ std::string parseNamedDataKey(const void* data, size_t size) {
     if (error != nil || ![jsonObject isKindOfClass:[NSDictionary class]]) {
         ET_LOG(Error, "Failed to parse JSON reference: %s",
                error ? error.localizedDescription.UTF8String : "not a dictionary");
-        return "";
+        return std::nullopt;
     }
 
     NSDictionary *dict = (NSDictionary *)jsonObject;
     NSString *key = dict[@"key"];
-    if ([key isKindOfClass:[NSString class]]) {
-        return std::string([key UTF8String]);
+    if (![key isKindOfClass:[NSString class]]) {
+        ET_LOG(Error, "JSON reference missing 'key' field");
+        return std::nullopt;
     }
 
-    return "";
+    NamedDataReference ref;
+    ref.key = std::string([key UTF8String]);
+
+    // functionName specifies which CoreML function to invoke.
+    // If not provided, the runtime will fall back to using methodName.
+    NSString *functionName = dict[@"functionName"];
+    if ([functionName isKindOfClass:[NSString class]]) {
+        ref.function_name = std::string([functionName UTF8String]);
+    }
+
+    return ref;
 }
 
 std::optional<MultiArray::DataType> get_data_type(ScalarType scalar_type) {
@@ -221,42 +266,38 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
     // This will hold the NamedDataStore data if needed, keeping it alive until scope exit
     std::optional<FreeableBuffer> namedDataStoreBuffer;
     Buffer buffer(nullptr, 0);
+    std::string functionName;  // CoreML function name for multifunction models
 
-    // Check if this is a multifunction model using NamedDataStore for weight sharing.
-    // When MULTIMETHOD_WEIGHT_SHARING_STRATEGY is POSITIONAL, the processed bytes
-    // contain a JSON reference to the model data in NamedDataStore.
-    bool useNamedDataStore = false;
-    std::string weightSharingKey(ETCoreMLStrings.multimethodWeightSharingStrategyKeyName.UTF8String);
-    auto it = specs_map.find(weightSharingKey);
-    if (it != specs_map.end()) {
-        std::string value(reinterpret_cast<const char*>(it->second.data()), it->second.size());
-        useNamedDataStore = (value == "positional");
-    }
-
-    if (useNamedDataStore) {
-        // Parse the key from the JSON reference
-        std::string key = parseNamedDataKey(processed->data(), processed->size());
-        ET_CHECK_OR_RETURN_ERROR(!key.empty(),
+    // Check if this is a JSON reference (starts with "CMJR" magic number).
+    // If so, parse it to get the NamedDataStore key and function name.
+    if (isJsonReference(processed->data(), processed->size())) {
+        // Parse the key and functionName from the JSON reference
+        auto ref = parseNamedDataReference(processed->data(), processed->size());
+        ET_CHECK_OR_RETURN_ERROR(ref.has_value(),
                                  InvalidProgram,
-                                 "%s: Failed to parse NamedDataStore key from JSON reference.",
+                                 "%s: Failed to parse NamedDataStore reference from JSON.",
                                  ETCoreMLStrings.delegateIdentifier.UTF8String);
 
-        ET_LOG(Debug, "%s: Loading model from NamedDataStore with key: %s",
-               ETCoreMLStrings.delegateIdentifier.UTF8String, key.c_str());
+        ET_LOG(Debug, "%s: Loading model from NamedDataStore with key: %s, functionName: %s",
+               ETCoreMLStrings.delegateIdentifier.UTF8String,
+               ref->key.c_str(),
+               ref->function_name.c_str());
+
+        functionName = ref->function_name;
 
         // Get the NamedDataMap from context
         const auto* named_data_map = context.get_named_data_map();
         ET_CHECK_OR_RETURN_ERROR(named_data_map != nullptr,
                                  InvalidProgram,
-                                 "%s: NamedDataMap is null but multimethod_weight_sharing_strategy is POSITIONAL.",
+                                 "%s: NamedDataMap is null but processed bytes contain a JSON reference.",
                                  ETCoreMLStrings.delegateIdentifier.UTF8String);
 
         // Load the model data from NamedDataMap
-        auto result = named_data_map->get_data(key.c_str());
+        auto result = named_data_map->get_data(ref->key.c_str());
         ET_CHECK_OR_RETURN_ERROR(result.ok(),
                                  InvalidProgram,
                                  "%s: Failed to load model data from NamedDataStore with key: %s",
-                                 ETCoreMLStrings.delegateIdentifier.UTF8String, key.c_str());
+                                 ETCoreMLStrings.delegateIdentifier.UTF8String, ref->key.c_str());
 
         // Move the result into namedDataStoreBuffer to keep it alive until scope exit
         namedDataStoreBuffer.emplace(std::move(result.get()));
@@ -265,7 +306,7 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
         ET_LOG(Debug, "%s: Loaded %zu bytes from NamedDataStore",
                ETCoreMLStrings.delegateIdentifier.UTF8String, namedDataStoreBuffer->size());
     } else {
-        // Legacy path: use processed bytes directly
+        // Legacy path: use processed bytes directly (contains model data)
         buffer = Buffer(processed->data(), processed->size());
     }
 
@@ -276,7 +317,8 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
     }
 
     std::error_code error;
-    auto handle = impl_->init(std::move(buffer), specs_map, method_name);
+    const char* function_name_cstr = functionName.empty() ? nullptr : functionName.c_str();
+    auto handle = impl_->init(std::move(buffer), specs_map, method_name, function_name_cstr);
     ET_CHECK_OR_RETURN_ERROR(handle != nullptr,
                              InvalidProgram,
                              "%s: Failed to init the model.", ETCoreMLStrings.delegateIdentifier.UTF8String);
