@@ -26,7 +26,6 @@ from executorch.backends.cadence.aot.compiler_utils import (
     get_cascaded_ops,
     get_permuted_dims,
     get_scale,
-    get_shape,
     get_tensor_from_attr,
     get_transposed_dims,
     get_zero_point,
@@ -39,154 +38,159 @@ from executorch.backends.cadence.aot.pass_utils import (
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
-from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, ProxyValue
-from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from torch.fx.node import Argument
+from executorch.exir.pass_base import ExportPass, PassResult
 from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseMMWithAdd(ExportPass):
-    # Return true if the node is a view node.
+class FuseMMWithAdd(RemoveOrReplacePassInterface):
+    """
+    Fuses mm -> add patterns into addmm.
 
-    def is_view_node(self, node: torch.fx.Node):
+    Given a graph of the form:
+    X = aten.mm(A, B)
+    Y = aten.add(X, C)
+
+    Fuse X and Y into a single addmm node, after making sure that we can
+    broadcast C into X.
+
+    There could be view node that takes a view of X, and feeds that
+    to the aten.add node:
+    X = aten.mm(A, B)
+    Y = X.view()
+    Z = aten.add(Y, C)
+
+    Handle this case as well.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.mm.default]
+
+    def _is_view_node(self, node: torch.fx.Node) -> bool:
+        """Return true if the node is a view node."""
         return node.target == exir_ops.edge.aten.view_copy.default
 
-    def fuse_mm_with_add(self, graph_module: torch.fx.GraphModule):
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         """
-        Given a graph of the form:
-        X = aten.mm(A, B)
-        Y = aten.add(X, C)
-        Fuse X and Y into a single addmm node, after making sure that we can
-        broadcast C into X.
-        There could be view node that takes a view of X, and feeds that
-        to the aten.add node:
-        X = aten.mm(A, B)
-        Y = X.view()
-        Z = aten.add(Y, C)
-        Handle this case as well. There are a few conditions for the
-        optimization to be valid:
-        1. There should be a single user of the mm node, otherwise we cannot
-        remove it.
-        2. There should be a single user of the add node, otherwise we cannot
-        fuse it with mm.
+        Try to fuse this mm node with a following add node.
+
+        Returns True if fusion was performed, False otherwise.
         """
-        graph = graph_module.graph
-        for node in graph.find_nodes(
-            op="call_function", target=exir_ops.edge.aten.mm.default
-        ):
-            # We want to discover a chain of mm -> add, or mm -> view -> add.
-            # Only proceed if the current node is an mm node, and has only one
-            # user/successor.
-            if len(node.users) != 1:
-                continue
+        # We want to discover a chain of mm -> add, or mm -> view -> add.
+        # Only proceed if the current node is an mm node, and has only one
+        # user/successor.
+        if len(node.users) != 1:
+            return False
 
-            # Our addmm implementation computes (mat1 * mat2 + bias). So the
-            # addmm node in the graph should have three args. We collectively
-            # term mat1 and mat2 as mm_arg since they are the args of mm node,
-            # and bias as bias_arg.
-            # Since we already have discovered the mm node, we can get mat1 and
-            # mat2 by iterating over its args. So the current node is mm_arg.
-            # bias_arg can be found once we discover the add op that consumes
-            # the output of this mm node. Our next step is to find the add op.
-            mm_arg = node
-            user = list(node.users.keys())[0]
-            # intermediate_view is True when the fusion case is mm -> view -> add
-            intermediate_view = False
-            # Check if the single user of the mm node is a view op. If so, our
-            # graph could potentially have mm -> view -> add. We need to skip
-            # the view op, and check if its successor is the add op. One condition
-            # we need to verify is that the view op must have only a single user
-            # (the add op).
-            if self.is_view_node(user) and len(user.users) == 1:
-                # We want to maintain two invariants:
-                # (1) 'user' is a potential add op that will get fused with the
-                #     mm node;
-                # (2) 'node' is the single predecessor of 'user' that is either
-                #     the mm node, or the current view node;
-                # To maintain the invariant, we must mark this view op as 'node',
-                # and its single successor as 'user'.
-                intermediate_view = True
-                node = user
-                user = list(node.users.keys())[0]
+        # Our addmm implementation computes (mat1 * mat2 + bias). So the
+        # addmm node in the graph should have three args. We collectively
+        # term mat1 and mat2 as mm_arg since they are the args of mm node,
+        # and bias as bias_arg.
+        # Since we already have discovered the mm node, we can get mat1 and
+        # mat2 by iterating over its args. So the current node is mm_arg.
+        # bias_arg can be found once we discover the add op that consumes
+        # the output of this mm node. Our next step is to find the add op.
+        mm_node = node
+        user = list(node.users.keys())[0]
 
-            # Thanks to the invariant, we can now simply check if 'user' is an
-            # add op. We also want to ensure that the add op has only one user,
-            # otherwise we will get not be able to eliminate add op post fusion.
-            if user.target != exir_ops.edge.aten.add.Tensor or len(user.users) != 1:
-                continue
+        # intermediate_view is True when the fusion case is mm -> view -> add
+        intermediate_view = False
+        view_node = None
 
-            # At this point, we have found an mm and an add node that we can
-            # fuse together. One arg of the add op is 'node' (thanks to the
-            # invariant). Find the other arg, and tag it as bias_arg.
-            assert len(user.args) == 2
-            bias_arg = user.args[1] if user.args[0] == node else user.args[0]
+        # Check if the single user of the mm node is a view op. If so, our
+        # graph could potentially have mm -> view -> add. We need to skip
+        # the view op, and check if its successor is the add op. One condition
+        # we need to verify is that the view op must have only a single user
+        # (the add op).
+        if self._is_view_node(user) and len(user.users) == 1:
+            # We want to maintain two invariants:
+            # (1) 'user' is a potential add op that will get fused with the
+            #     mm node;
+            # (2) 'view_node' is the intermediate view node (if present)
+            intermediate_view = True
+            view_node = user
+            user = list(view_node.users.keys())[0]
 
-            # As a last check, make sure that we can broadcast the bias tensor
-            # to the output of mm.
-            mm_arg_shape = get_shape(graph_module, mm_arg)
-            bias_arg_shape = get_shape(graph_module, bias_arg)
-            if (
-                mm_arg_shape is None
-                or bias_arg_shape is None
-                or not broadcastable(mm_arg_shape, bias_arg_shape)
-                or len(bias_arg_shape) > 2
-            ):
-                continue
+        # Check if 'user' is an add op. We also want to ensure that the add op
+        # has only one user, otherwise we will not be able to eliminate add op
+        # post fusion.
+        if user.target != exir_ops.edge.aten.add.Tensor or len(user.users) != 1:
+            return False
 
-            # Create a new addmm node, and insert it before add node. DCE should
-            # take care of removing the dead mm and/or view node. Based on the
-            # invariant, add node corresponds to 'user'.
-            with graph.inserting_before(user):
-                addmm_node = graph.call_function(
-                    exir_ops.edge.aten.addmm.default,
-                    args=(bias_arg, mm_arg.args[0], mm_arg.args[1]),
-                )
-            # Replace all the uses of add node with addmm node, and remove add
-            # node from the graph.
-            user.replace_all_uses_with(addmm_node)
-            graph.erase_node(user)
+        # At this point, we have found an mm and an add node that we can
+        # fuse together. One arg of the add op is either mm_node or view_node.
+        # Find the other arg, and tag it as bias_arg.
+        assert len(user.args) == 2
+        add_input = view_node if intermediate_view else mm_node
+        bias_arg = user.args[1] if user.args[0] == add_input else user.args[0]
 
-            # As a finishing step, we want to ensure that the output of addmm is
-            # in the expected shape. For example, Let us assume the following
-            # input, where A, B are (4, 4) sized tensors, and C is (1, 4) sized
-            # tensor.
-            # T1 = torch.mm(A, B)
-            # T2 = T1.view((2, 2, 4))
-            # return torch.add(T2, C)
-            # Here, the expectation is to get an output of size (2, 2, 4), which
-            # is the shape out of view node T2. However, the fused addmm will
-            # return an output of shape (4, 4). In a nutshell, we need to take
-            # care of the output shape when the following two conditions are met:
-            # 1. The fusion case is mm -> view -> add (i.e., intermediate_view
-            #    is True)
-            # 2. The single successor of addmm is not a view op.
-            addmm_user = list(addmm_node.users.keys())[0]
-            if intermediate_view and not self.is_view_node(addmm_user):
-                # Create a view node that correctly reshapes the output of addmm
-                # (i.e., 'user') to match the output shape of the add node.
-                # Thanks to our invariant, we know that the correct shape is held
-                # by 'node', which points to the view op in mm -> view -> add chain.
-                # We create its copy, and insert it just before addmm_user.
-                with graph.inserting_before(addmm_user):
-                    view_copy_node = graph_module.graph.node_copy(node)
-                # Any uses of addmm are replaced with this view_copy node.
-                addmm_node.replace_all_uses_with(view_copy_node)
-                # Now we massage the args of the view_copy node, so that it takes
-                # view of addmm node.
-                view_args = list(view_copy_node.args)
-                view_args[0] = addmm_node
-                view_copy_node.args = tuple(view_args)
+        # As a last check, make sure that we can broadcast the bias tensor
+        # to the output of mm.
+        mm_shape = mm_node.meta.get("val")
+        bias_shape = (
+            bias_arg.meta.get("val") if isinstance(bias_arg, torch.fx.Node) else None
+        )
 
-        graph_module.recompile()
+        if mm_shape is None or bias_shape is None:
+            return False
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        # Compute the spec prop pass before we begin the fusion pipeline
-        result = SpecPropPass()(graph_module)
-        assert result is not None
-        self.fuse_mm_with_add(result.graph_module)
-        result = super().call(result.graph_module)
-        return result
+        mm_arg_shape = mm_shape.shape
+        bias_arg_shape = bias_shape.shape
+
+        if not broadcastable(mm_arg_shape, bias_arg_shape) or len(bias_arg_shape) > 2:
+            return False
+
+        graph = node.graph
+
+        # Create a new addmm node, and insert it before add node.
+        with graph.inserting_before(user):
+            addmm_node = graph.call_function(
+                exir_ops.edge.aten.addmm.default,
+                args=(bias_arg, mm_node.args[0], mm_node.args[1]),
+            )
+            addmm_node.meta = user.meta
+
+        # Replace all the uses of add node with addmm node, and remove add
+        # node from the graph.
+        user.replace_all_uses_with(addmm_node)
+        graph.erase_node(user)
+
+        # As a finishing step, we want to ensure that the output of addmm is
+        # in the expected shape. For example, Let us assume the following
+        # input, where A, B are (4, 4) sized tensors, and C is (1, 4) sized
+        # tensor.
+        # T1 = torch.mm(A, B)
+        # T2 = T1.view((2, 2, 4))
+        # return torch.add(T2, C)
+        # Here, the expectation is to get an output of size (2, 2, 4), which
+        # is the shape out of view node T2. However, the fused addmm will
+        # return an output of shape (4, 4). In a nutshell, we need to take
+        # care of the output shape when the following two conditions are met:
+        # 1. The fusion case is mm -> view -> add (i.e., intermediate_view
+        #    is True)
+        # 2. The single successor of addmm is not a view op.
+        if len(addmm_node.users) == 0:
+            return False
+
+        addmm_user = list(addmm_node.users.keys())[0]
+        if intermediate_view and not self._is_view_node(addmm_user):
+            assert view_node is not None
+            # Create a view node that correctly reshapes the output of addmm
+            # to match the output shape of the add node.
+            # The correct shape is held by 'view_node', which points to the
+            # view op in mm -> view -> add chain.
+            with graph.inserting_before(addmm_user):
+                view_copy_node = graph.node_copy(view_node)
+            # Any uses of addmm are replaced with this view_copy node.
+            addmm_node.replace_all_uses_with(view_copy_node)
+            # Now we massage the args of the view_copy node, so that it takes
+            # view of addmm node.
+            view_args = list(view_copy_node.args)
+            view_args[0] = addmm_node
+            view_copy_node.args = tuple(view_args)
+
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -550,6 +554,11 @@ class FuseCascadedViewOps(RemoveOrReplacePassInterface):
 
 
 class FuseOpPairsAcrossBranchesPass(ExportPass):
+    """
+    Base class for passes that fuse op pairs across branches.
+    Provides common functionality for finding and fusing producer-consumer chains.
+    """
+
     def check_ok_to_fuse(
         self,
         producer: torch.fx.Node,
@@ -607,7 +616,13 @@ class FuseOpPairsAcrossBranchesPass(ExportPass):
         producer_op_packets: set[EdgeOpOverloadPacket],
         consumer_op_packets: set[EdgeOpOverloadPacket],
         bypass_ops: set[EdgeOpOverload],
-    ) -> None:
+    ) -> bool:
+        """
+        Find and fuse producer-consumer op pairs.
+
+        Returns True if any fusion was performed, False otherwise.
+        """
+        modified = False
         for node in graph_module.graph.nodes:
             # We are only interested in ops that have overload target in
             # producer_op.
@@ -630,8 +645,12 @@ class FuseOpPairsAcrossBranchesPass(ExportPass):
                 continue
 
             self.fuse(node, removal_candidates, graph_module)
+            modified = True
 
-        graph_module.recompile()
+        if modified:
+            graph_module.recompile()
+
+        return modified
 
     def get_fused_node(
         self,
@@ -774,14 +793,14 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         # Remove any dequantize op that has only quantize ops as its users.
-        self.find_and_fuse(
+        modified = self.find_and_fuse(
             graph_module,
             producer_op_packets=self.dequantize_op_packets,
             consumer_op_packets=self.quantize_op_packets,
             bypass_ops=self.bypass_ops,
         )
         # Remove any quantize op that has only dequantze ops as its users.
-        self.find_and_fuse(
+        modified |= self.find_and_fuse(
             graph_module,
             producer_op_packets=self.quantize_op_packets,
             consumer_op_packets=self.dequantize_op_packets,
@@ -794,8 +813,9 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
                 else {exir_ops.edge.aten.view_copy.default}
             ),
         )
-        result = super().call(graph_module)
-        return result
+        if modified:
+            return super().call(graph_module)
+        return PassResult(graph_module, False)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -1059,7 +1079,7 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         # Remove any transpose/permutation op pair that cancel each other.
-        self.find_and_fuse(
+        modified = self.find_and_fuse(
             graph_module,
             producer_op_packets={
                 exir_ops.edge.aten.transpose_copy,
@@ -1071,55 +1091,63 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
             },
             bypass_ops=self.bypass_ops,
         )
-        result = super().call(graph_module)
-        return result
+        if modified:
+            return super().call(graph_module)
+        return PassResult(graph_module, False)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseFullThenReshapePass(ExportPass):
+class FuseFullThenReshapePass(RemoveOrReplacePassInterface):
     """
     A pass that fuses a chain of full and reshape-like operations into a single full operation.
     """
 
-    fusion_candidates: set[EdgeOpOverload] = {
-        exir_ops.edge.aten.transpose_copy.int,
-        exir_ops.edge.aten.permute_copy.default,
-        exir_ops.edge.aten.view_copy.default,
-    }
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
+            exir_ops.edge.aten.transpose_copy.int,
+            exir_ops.edge.aten.permute_copy.default,
+            exir_ops.edge.aten.view_copy.default,
+        ]
 
-    def call_operator(
-        self,
-        op,
-        args: tuple[Argument, ...],
-        kwargs: dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        if op not in self.fusion_candidates:
-            return super().call_operator(op, args, kwargs, meta)
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # Check if the input to this reshape-like node is a full node
+        full_node = node.args[0]
+        if not isinstance(full_node, torch.fx.Node):
+            return False
 
-        full_node = cast(ProxyValue, args[0]).node
         if not (
             full_node.op == "call_function"
             and full_node.target == exir_ops.edge.aten.full.default
         ):
-            # full -> self.fusion_candidates.
-            return super().call_operator(op, args, kwargs, meta)
+            return False
 
+        # Get the fill value from the full node
         fill_value = full_node.args[1]
-        return super().call_operator(
-            exir_ops.edge.aten.full.default,
-            (
-                meta["val"].shape,
-                fill_value,
-            ),
-            {"dtype": meta["val"].dtype},
-            meta,
-        )
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        graph_module = super().call(graph_module).graph_module
-        graph_module.graph.eliminate_dead_code()
-        return PassResult(graph_module, True)
+        # Get the output shape and dtype from this node's metadata
+        val = node.meta.get("val")
+        if val is None:
+            return False
+
+        output_shape = val.shape
+        output_dtype = val.dtype
+
+        graph = node.graph
+
+        # Create a new full node with the final shape
+        with graph.inserting_before(node):
+            new_full_node = graph.call_function(
+                exir_ops.edge.aten.full.default,
+                args=(output_shape, fill_value),
+                kwargs={"dtype": output_dtype},
+            )
+            new_full_node.meta = node.meta
+
+        # Replace all uses of the reshape node with the new full node
+        node.replace_all_uses_with(new_full_node)
+
+        return True
 
 
 class CadenceFuseOpsInGraph:
