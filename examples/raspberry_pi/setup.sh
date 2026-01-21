@@ -160,9 +160,12 @@ detect_host() {
     esac
 
     case "$HOST_ARCH" in
-        x86_64|amd64|arm64|aarch64)
+        x86_64|amd64|arm64)
             HOST_ARCH="x86_64"
             ;;
+	aarch64)
+	    HOST_ARCH="aarch64"
+	    ;;
         *)
             log_error "Unsupported host architecture: $HOST_ARCH"
             exit 1
