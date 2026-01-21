@@ -41,10 +41,7 @@ if(EXECUTORCH_BUILD_CUDA)
 
     # Define CUDA sampler library
     add_library(cuda_sampler_lib STATIC argmax.cu)
-    target_include_directories(
-      cuda_sampler_lib PUBLIC ${EXECUTORCH_ROOT} ${EXECUTORCH_ROOT}/..
-                              ${CUDAToolkit_INCLUDE_DIRS}
-    )
+
     target_compile_definitions(cuda_sampler_lib PUBLIC CUDA_AVAILABLE)
     target_link_libraries(cuda_sampler_lib PUBLIC executorch_core CUDA::cudart)
     set_target_properties(
@@ -53,6 +50,12 @@ if(EXECUTORCH_BUILD_CUDA)
     )
 
     target_link_libraries(extension_llm_sampler PUBLIC cuda_sampler_lib)
+
+    install(
+      TARGETS cuda_sampler_lib
+      EXPORT ExecuTorchTargets
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
   else()
     message(
       STATUS

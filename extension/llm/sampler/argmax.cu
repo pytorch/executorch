@@ -7,7 +7,6 @@
  */
 
 #include <executorch/extension/llm/sampler/argmax.cuh>
-#include <executorch/extension/llm/sampler/cuda_sampler.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace executorch {
