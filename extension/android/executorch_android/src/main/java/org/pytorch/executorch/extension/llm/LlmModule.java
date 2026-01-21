@@ -190,7 +190,8 @@ public class LlmModule {
       int seqLen,
       LlmCallback llmCallback,
       boolean echo) {
-    return generate(image, width, height, channels, prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE);
+    return generate(
+        image, width, height, channels, prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE);
   }
 
   /**

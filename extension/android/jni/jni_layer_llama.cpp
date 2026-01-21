@@ -230,8 +230,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo,
       jfloat temperature) {
-    float effective_temperature =
-        temperature >= 0 ? temperature : temperature_;
+    float effective_temperature = temperature >= 0 ? temperature : temperature_;
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
       prefill_inputs_.clear();
