@@ -1406,9 +1406,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_max_pool2d(self):
-        module = MaxPool2d()  # noqa: F405
+        modules = [
+            MaxPool2d(3, 1, 0, True),  # noqa: F405
+            MaxPool2d(3, 1, 0, False),  # noqa: F405
+            MaxPool2d(3, 1, 1, True),  # noqa: F405
+            MaxPool2d(3, 1, 1, False),  # noqa: F405
+        ]
         sample_input = (torch.randn(4, 3, 24, 24),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_max_pool3d(self):
         # NOTE: The pad should be at most half of effective kernel size.
@@ -3664,10 +3671,24 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_max_pool2d(self):
-        module = MaxPool2d()  # noqa: F405
+        modules = [
+            MaxPool2d(3, 1, 0, True),  # noqa: F405
+            MaxPool2d(3, 1, 0, False),  # noqa: F405
+            MaxPool2d(3, 1, 1, True),  # noqa: F405
+            MaxPool2d(3, 1, 1, False),  # noqa: F405
+        ]
+        test_quants = [QuantDtype.use_8a8w, QuantDtype.use_16a4w, QuantDtype.use_16a8w]
         sample_input = (torch.randn(4, 3, 24, 24),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        test_pairs = [
+            (module, quant_type)  # noqa: F405
+            for module, quant_type in itertools.product(modules, test_quants)
+        ]
+        for i, (test_module, qtype) in enumerate(test_pairs):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(
+                    test_module, sample_input, quant_dtype=qtype
+                )
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_max_pool3d(self):
         # NOTE: The pad should be at most half of effective kernel size.
@@ -6071,6 +6092,9 @@ class TestExampleLLMScript(TestQNN):
             "gemma-2b": TestExampleLLMScript.LlmSpecs(
                 SM8650=32, SM8750=36, ppl=35, pte_size=2_700_000_000
             ),  # 2.7 GB
+            "gemma2-2b": TestExampleLLMScript.LlmSpecs(
+                SM8650=32, SM8750=36, ppl=14, pte_size=2_860_000_000
+            ),  # 2.86 GB
             "gemma3-1b": TestExampleLLMScript.LlmSpecs(
                 SM8650=70, SM8750=100, ppl=23, pte_size=1_200_000_000
             ),  # 1.2 GB
