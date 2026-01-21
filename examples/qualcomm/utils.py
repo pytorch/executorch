@@ -9,6 +9,7 @@
 import argparse
 import csv
 import inspect
+import logging
 import os
 import random
 import shutil
@@ -36,10 +37,16 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchOpPackageOptions,
 )
+from executorch.backends.qualcomm.utils.constants import (
+    DSP_VERSION,
+    HEXAGON_SDK_ROOT,
+    HEXAGON_TOOLS_ROOT,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    get_qnn_context_binary_alignment,
     get_soc_to_arch_map,
     to_edge_transform_and_lower_to_qnn,
 )
@@ -82,18 +89,37 @@ class SimpleADB:
         workspace,
         device_id,
         soc_model,
+        direct_mode_build_path=None,
         host_id=None,
         error_only=False,
         shared_buffer=False,
         dump_intermediate_outputs=False,
-        runner="examples/qualcomm/executor_runner/qnn_executor_runner",
+        runner=None,
         target="aarch64-android",
         backend=QnnExecuTorchBackendType.kHtpBackend,
         expected_input_shape=None,
         expected_output_shape=None,
     ):
+        if runner is None:
+            runner = (
+                "examples/qualcomm/executor_runner/qnn_executor_runner"
+                if direct_mode_build_path is None
+                else "examples/qualcomm/direct_executor_runner/qnn_executor_direct_runner"
+            )
+        if direct_mode_build_path:
+            required_env = [HEXAGON_SDK_ROOT, HEXAGON_TOOLS_ROOT, DSP_VERSION]
+            assert all(
+                var in os.environ for var in required_env
+            ), f"Please ensure the following environment variables are set{required_env}"
+            self.hexagon_sdk_root = os.getenv(HEXAGON_SDK_ROOT)
+            self.hexagon_tools_root = os.getenv(HEXAGON_TOOLS_ROOT)
+            self.dsp_arch = os.getenv(DSP_VERSION)
+            logging.info(f"{HEXAGON_SDK_ROOT}={self.hexagon_sdk_root}")
+            logging.info(f"{HEXAGON_TOOLS_ROOT}={self.hexagon_tools_root}")
+            logging.info(f"{DSP_VERSION}={self.dsp_arch}")
         self.qnn_sdk = qnn_sdk
         self.build_path = build_path
+        self.direct_mode_build_path = direct_mode_build_path
         self.pte_path = pte_path if isinstance(pte_path, list) else [pte_path]
         self.workspace = workspace
         self.device_id = device_id
@@ -135,42 +161,65 @@ class SimpleADB:
             )
 
     def push(self, inputs=None, input_list=None, files=None, init_env=True):
-        artifacts = [
-            *self.pte_path,
-        ]
+        artifacts = [*self.pte_path, f"{self.build_path}/{self.runner}"]
         if init_env:
             self._adb(["shell", f"rm -rf {self.workspace}"])
             self._adb(["shell", f"mkdir -p {self.workspace}"])
 
-            # necessary artifacts
-            artifacts.extend(
-                {
-                    QnnExecuTorchBackendType.kHtpBackend: [
-                        f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
-                        (
-                            f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
-                            f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
-                        ),
-                        (
-                            f"{self.qnn_sdk}/lib/{self.target}/"
-                            f"libQnnHtpV{self.htp_arch}Stub.so"
-                        ),
-                        f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
-                    ],
-                    QnnExecuTorchBackendType.kGpuBackend: [
-                        f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
-                    ],
-                }[self.backend]
-            )
+            if self.direct_mode_build_path:
+                # General artifacts for direct mode.
+                artifacts.extend(
+                    [
+                        f"{self.build_path}/examples/qualcomm/direct_executor_runner/libqnn_executorch_stub.so",
+                        f"{self.direct_mode_build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+                        f"{self.direct_mode_build_path}/backends/qualcomm/qnn_executorch/direct_mode/libqnn_executorch_skel.so",
+                    ]
+                )
+                match self.backend:
+                    case QnnExecuTorchBackendType.kHtpBackend:
+                        artifacts.extend(
+                            [
+                                f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/unsigned/libQnnHtpV{self.htp_arch}.so",
+                                f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/unsigned/libQnnSystem.so",
+                                f"{self.hexagon_tools_root}/Tools/target/hexagon/lib/v{self.htp_arch}/G0/pic/libc++abi.so.1",
+                                f"{self.hexagon_tools_root}/Tools/target/hexagon/lib/v{self.htp_arch}/G0/pic/libc++.so.1",
+                            ]
+                        )
+                    case _:
+                        raise RuntimeError(
+                            f"Direct mode does not support the backend: {self.backend}."
+                        )
 
-            artifacts.extend(
-                [
-                    f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
-                    f"{self.build_path}/{self.runner}",
-                    f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-                    f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
-                ]
-            )
+            else:
+                # General artifacts for traditional mode.
+                artifacts.extend(
+                    [
+                        f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
+                        f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+                        f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
+                    ]
+                )
+                match self.backend:
+                    case QnnExecuTorchBackendType.kHtpBackend:
+                        artifacts.extend(
+                            [
+                                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
+                                f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/unsigned/libQnnHtpV{self.htp_arch}Skel.so",
+                                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpV{self.htp_arch}Stub.so",
+                                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
+                            ]
+                        )
+                    case QnnExecuTorchBackendType.kGpuBackend:
+                        artifacts.extend(
+                            [
+                                f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
+                            ]
+                        )
+                    case _:
+                        raise RuntimeError(
+                            f"Traditional mode does not support the backend: {self.backend}."
+                        )
+
         with tempfile.TemporaryDirectory() as tmp_dir:
             input_list_file, input_files = generate_inputs(
                 tmp_dir, self.input_list_filename, inputs
@@ -237,8 +286,8 @@ class SimpleADB:
             qnn_executor_runner_cmds = " ".join(
                 [
                     f"cd {self.workspace} &&",
-                    "chmod +x ./qnn_executor_runner &&",
-                    f"./qnn_executor_runner {qnn_executor_runner_args}",
+                    f"chmod +x {os.path.basename(self.runner)} &&",
+                    f"export LD_LIBRARY_PATH=. && export ADSP_LIBRARY_PATH=. && echo 0x0C > {os.path.basename(self.runner)}.farf && ./{os.path.basename(self.runner)} {qnn_executor_runner_args}",
                 ]
             )
         else:
@@ -424,6 +473,7 @@ def build_executorch_binary(
     online_prepare=False,
     optrace=False,
     op_package_options: QnnExecuTorchOpPackageOptions = None,
+    direct_mode_build_path=None,
 ):
     """
     A function to generate an ExecuTorch binary for Qualcomm platforms.
@@ -521,15 +571,17 @@ def build_executorch_binary(
         edge_module = lower_module.original_module.module()
         qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
 
+    allocate_io = not (shared_buffer or direct_mode_build_path)
     executorch_config = ExecutorchBackendConfig(
         # For shared buffer, user must pass the memory address
         # which is allocated by RPC memory to executor runner.
         # Therefore, won't want to pre-allocate
         # by memory manager in runtime.
         memory_planning_pass=MemoryPlanningPass(
-            alloc_graph_input=not shared_buffer,
-            alloc_graph_output=not shared_buffer,
+            alloc_graph_input=allocate_io,
+            alloc_graph_output=allocate_io,
         ),
+        segment_alignment=get_qnn_context_binary_alignment(),
     )
     pte_name = f"{file_name}.pte"
     exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
@@ -831,7 +883,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-b",
         "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/build-android",
+        help="path to cmake binary directory for target platform, e.g., /path/to/build-android",
         type=str,
         required=True,
     )
@@ -962,6 +1014,13 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "--pre_gen_pte",
         help="Run the pre-generated pte in the given directory.",
+        type=str,
+    )
+
+    parser.add_argument(
+        "--direct_build_folder",
+        help="Path to cmake binary directory for direct_mode. E.g., path/to/build-hexagon."
+        "If enabled, run self-defined protocol to control fastrpc communication.",
         type=str,
     )
 

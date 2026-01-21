@@ -42,11 +42,16 @@ BUILD_X86_64="true"
 CMAKE_X86_64="build-x86"
 BUILD_ANDROID="true"
 CMAKE_ANDROID="build-android"
+BUILD_HEXAGON="false"
+CMAKE_HEXAGON="build-hexagon"
 BUILD_OE_LINUX="false"
 CMAKE_OE_LINUX="build-oe-linux"
 CLEAN="true"
 BUILD_TYPE="RelWithDebInfo"
 BUILD_JOB_NUMBER="16"
+
+# Default to use CDSP for now
+DSP_TYPE=3 
 
 if [ -z PYTHON_EXECUTABLE ]; then
   PYTHON_EXECUTABLE="python3"
@@ -56,26 +61,27 @@ if [ -z BUCK2 ]; then
   BUCK2="buck2"
 fi
 
-long_options=skip_x86_64,skip_linux_android,skip_linux_embedded,enable_linux_embedded,no_clean,release,job_number:
+long_options=skip_x86_64,skip_linux_android,enable_linux_embedded,enable_hexagon,no_clean,release,job_number:,dsp_type:
 
 parsed_args=$(getopt -a --options '' --longoptions $long_options --name "$0" -- "$@")
 eval set -- "$parsed_args"
-
 
 while true ; do
     case "$1" in
         --skip_x86_64) BUILD_X86_64="false"; shift;;
         --skip_linux_android) BUILD_ANDROID="false"; shift;;
-        --skip_linux_embedded) BUILD_OE_LINUX="false"; shift;;
+        --enable_hexagon) BUILD_HEXAGON="true"; shift;;
         --enable_linux_embedded) BUILD_ANDROID="false"; BUILD_OE_LINUX="true"; shift;;
         --no_clean) CLEAN="false"; shift;;
         --release) BUILD_TYPE="Release"; shift;;
         --job_number) BUILD_JOB_NUMBER="$2"; shift 2;;
+        --dsp_type) DSP_TYPE="$2"; shift 2;;
         --) shift; break;;
     esac
 done
 
 PRJ_ROOT="$( cd "$(dirname "$0")/../../.." ; pwd -P)"
+
 
 if [ "$BUILD_ANDROID" = true ]; then
     if [[ -z ${ANDROID_NDK_ROOT} ]]; then
@@ -119,6 +125,8 @@ if [ "$BUILD_ANDROID" = true ]; then
     EXAMPLE_ROOT=examples/qualcomm
     CMAKE_PREFIX_PATH="${BUILD_ROOT};${BUILD_ROOT}/third-party/gflags;"
 
+    # DSP_TYPE variable only matters when building direct_mode.
+    # Ignore the variable for traditional mode. 
     cmake $PRJ_ROOT/$EXAMPLE_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
         -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
@@ -131,6 +139,7 @@ if [ "$BUILD_ANDROID" = true ]; then
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+        -DDSP_TYPE=$DSP_TYPE \
         -B$EXAMPLE_ROOT
 
     cmake --build $EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
@@ -150,6 +159,72 @@ if [ "$BUILD_ANDROID" = true ]; then
 
     cmake --build $LLAMA_EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
 fi
+
+# TODO: Currently, DSP Domain is set to 3 (cdsp). In future, either create 2 folders: build_cdsp, build_adsp when supporting LPAI, or
+# see if there's a way to build both cdsp and adsp in 1 library.
+if [ "$BUILD_HEXAGON" = true ]; then
+    if [[ -z ${ANDROID_NDK_ROOT} ]]; then
+        echo "Please export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
+        exit -1
+    fi
+
+    if [[ -z ${HEXAGON_SDK_ROOT} ]]; then
+        echo "Please export HEXAGON_SDK_ROOT=/path/to/hexagon-sdk-x.x.x"
+        exit -1
+    fi
+
+    if [[ -z ${HEXAGON_TOOLS_ROOT} ]]; then
+        echo "Please export HEXAGON_TOOLS_ROOT=/path/to/hexagon-sdk-x.x.x/tools/HEXAGON_Tools/x.x.x. Please be aware of tools version is dependent on DSP_VERSION version. Refer to README under this folder for more information."
+        exit -1
+    fi
+
+    if [[ -z ${DSP_VERSION} ]]; then
+        echo "Please export DSP_VERSION=xx. e.g. For SM8750, please export v79. Conversion table can be found in _soc_info_table under executorch/backends/qualcomm/serialization/qc_schema.py."
+        exit -1
+    fi
+
+
+    BUILD_ROOT=$PRJ_ROOT/$CMAKE_HEXAGON
+    if [ "$CLEAN" = true ]; then
+        rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
+    else
+        # Force rebuild flatccrt for the correct platform
+        cd $BUILD_ROOT/third-party/flatcc && make clean
+    fi
+
+    # Build direct mode library
+    cd $BUILD_ROOT
+    cmake .. \
+        -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
+        -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+        -DEXECUTORCH_BUILD_QNN=ON \
+        -DEXECUTORCH_BUILD_XNNPACK=OFF\
+        -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+        -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
+        -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
+        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
+        -DFLATCC_ALLOW_WERROR=OFF \
+        -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
+        -DHEXAGON_SDK_ROOT=$HEXAGON_SDK_ROOT \
+        -DHEXAGON_TOOLS_ROOT=$HEXAGON_TOOLS_ROOT \
+        -DDSP_VERSION=$DSP_VERSION \
+        -DCMAKE_TOOLCHAIN_FILE=$HEXAGON_SDK_ROOT/build/cmake/hexagon_toolchain.cmake \
+        -DDSP_TYPE=$DSP_TYPE \
+        -DANDROID_ABI='arm64-v8a' \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DANDROID_PLATFORM=android-30 \
+        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+        -B$BUILD_ROOT
+
+    cmake --build $BUILD_ROOT -j$BUILD_JOB_NUMBER --target install
+fi
+
 
 if [ "$BUILD_OE_LINUX" = true ]; then
     if [[ -z ${TOOLCHAIN_ROOT_HOST} ]]; then
