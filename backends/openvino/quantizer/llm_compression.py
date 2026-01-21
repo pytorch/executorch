@@ -88,11 +88,11 @@ def apply_nncf_data_aware_compression(
     """
     nncf_calibration_data = None
     if (
-            builder_exported.calibration_seq_length is not None
-            and builder_exported.calibration_data is not None
-            and builder_exported.tokenizer_path is not None
-            and (awq or scale_estimation)
-        ):
+        builder_exported.calibration_seq_length is not None
+        and builder_exported.calibration_data is not None
+        and builder_exported.tokenizer_path is not None
+        and (awq or scale_estimation)
+    ):
         tokenizer = get_tokenizer(builder_exported.tokenizer_path)
         nncf_calibration_data = nncf.Dataset(
             get_calibration_data(
