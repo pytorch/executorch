@@ -1,0 +1,4 @@
+# add this empty BUCK file to unblock landing. Without this, we get land error:
+#   "No build file at xplat/executorch/devtools/bundled_program/serialize/test/BUCK when resolving target fbsource//xplat/executorch/devtools/bundled_program/serialize/test/BUCK:."
+
+oncall("executorch")
