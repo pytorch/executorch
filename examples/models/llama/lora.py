@@ -28,20 +28,17 @@ class LoRALinear(nn.Module):
         self.use_bias = use_bias
         self.dropout = dropout
 
-        linear = nn.Linear(in_dim, out_dim, bias=use_bias)
-        weight = linear.weight
-        bias = linear.bias if self.use_bias else None
-        self.register_parameter("weight", nn.Parameter(weight))
-        self.register_parameter(
-            "bias", nn.Parameter(bias) if bias is not None else None
-        )
-
+        self.linear = nn.Linear(in_dim, out_dim, bias=use_bias)
         self.dropout = nn.Dropout(p=dropout) if dropout > 0.0 else nn.Identity()
         self.lora_a = nn.Linear(in_features=in_dim, out_features=rank, bias=False)
         self.lora_b = nn.Linear(in_features=rank, out_features=out_dim, bias=False)
 
+    @property
+    def weight(self):
+        return self.linear.weight
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out = torch.nn.functional.linear(x, self.weight, self.bias)
+        out = self.linear(x)
         lora_out = self.lora_a(self.dropout(x))
         lora_out = (self.alpha / self.rank) * self.lora_b(lora_out)
 

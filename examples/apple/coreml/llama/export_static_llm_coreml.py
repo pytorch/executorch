@@ -106,6 +106,119 @@ def remove_graph_break_(edge_manager):
                 n.replace_all_uses_with(n.args[0])
         ep.graph_module.graph.eliminate_dead_code()
 
+def prepare_model(
+    model: nn.Module,
+    float_dtype: torch.dtype,
+    target_split_size: int,
+    max_splits: int,
+    embedding_quantize: str,
+    linear_quantize: str,
+    no_graph_breaks: bool,
+):
+    """Apply dtype, splitting, quantization, and graph breaks to a model.
+
+    Args:
+        model: The model to prepare
+        float_dtype: Target dtype (torch.float16 or torch.float32)
+        target_split_size: Target size for linear layer splitting
+        max_splits: Maximum number of splits for linear layers
+        embedding_quantize: Embedding quantization string (e.g., "8,0")
+        linear_quantize: Linear quantization type ("b4w" or "c4w")
+        no_graph_breaks: If True, skip adding graph breaks
+
+    Returns:
+        The prepared model
+    """
+    # Set dtype
+    model = model.to(float_dtype).eval()
+
+    # Apply linear splitting (before quantization)
+    if target_split_size is not None:
+        print(f"\nSplitting linear layers with target size {target_split_size}...")
+        replace_linear_with_split_linear(
+            model,
+            out_target_split_size=target_split_size,
+            out_max_splits=max_splits,
+            in_target_split_size=1,
+            in_max_splits=1,
+        )
+    try:
+        from executorch.examples.models.llama.lora import LoRALinear
+    except ImportError:
+        LoRALinear = None  # type: ignore[assignment]
+        print("LoRALinear import failed, will only quantize nn.Linear layers.")
+    
+    def make_linear_filter_fn(group_size=0):
+        """Create a filter function for linear quantization.
+        Args:
+            group_size: Group size for quantization. 0 means per-axis (no constraint).
+        """
+        def filter_fn(m, fqn):
+            if not isinstance(m, nn.Linear):
+                return False
+            # Skip LoRA adapter layers (small rank projections)
+            if LoRALinear is not None and (".lora_a" in fqn or ".lora_b" in fqn):
+                return False
+
+            if group_size == 0:
+                return True
+            return m.weight.shape[1] % group_size == 0
+
+        return filter_fn
+
+    # Apply embedding quantization
+    if embedding_quantize:
+        bitwidth, group_size = embedding_quantize.split(",")
+        bitwidth = int(bitwidth)
+        group_size = int(group_size)
+        assert bitwidth in [4, 8], "CoreML only supports 4-bit and 8-bit quantization"
+
+        print(f"\nQuantizing embeddings: {bitwidth}-bit, group_size={group_size}...")
+        if group_size == 0:
+            granularity = PerAxis(0)
+        else:
+            granularity = PerGroup(group_size)
+        weight_dtype = getattr(torch, f"int{bitwidth}")
+
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=weight_dtype, granularity=granularity),
+            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+        )
+
+    # Apply linear quantization
+    if linear_quantize == "b4w":
+        print("\nQuantizing linear layers: 4-bit blockwise (group_size=32)...")
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int4,
+                granularity=PerGroup(32),
+            ),
+            filter_fn=make_linear_filter_fn(group_size=32),
+        )
+    elif linear_quantize == "c4w":
+        print("\nQuantizing linear layers: 4-bit channelwise...")
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int4,
+                granularity=PerAxis(0),
+            ),
+            filter_fn=make_linear_filter_fn(group_size=0),
+        )
+
+    # Add graph breaks between transformer blocks
+    # Keeping model pieces smaller helps with ANE performance
+    if not no_graph_breaks:
+        print("\nAdding graph breaks between before/after the transformer blocks...")
+        n_layers = len(model.layers)
+        model.layers[0] = BlockWithGraphBreak(model.layers[0], break_before=True)
+        model.layers[n_layers - 1] = BlockWithGraphBreak(
+            model.layers[n_layers - 1], break_before=False
+        )
+    return model
+
 
 def load_model(
     checkpoint_path: str,
@@ -184,35 +297,40 @@ def load_model(
 
     # Rename attention weight keys for static attention
     # This handles both base weights and LoRA weights
+    from executorch.examples.models.llama.lora import LoRALinear
     for i in range(len(model.layers)):
-        # Base weights
-        if f"layers.{i}.attention.wq.weight" in checkpoint:
-            checkpoint[f"layers.{i}.attention.wqs.0.weight"] = checkpoint.pop(
-                f"layers.{i}.attention.wq.weight"
-            )
-        if f"layers.{i}.attention.wk.weight" in checkpoint:
-            checkpoint[f"layers.{i}.attention.wks.0.weight"] = checkpoint.pop(
-                f"layers.{i}.attention.wk.weight"
-            )
-        if f"layers.{i}.attention.wv.weight" in checkpoint:
-            checkpoint[f"layers.{i}.attention.wvs.0.weight"] = checkpoint.pop(
-                f"layers.{i}.attention.wv.weight"
-            )
+        attn = model.layers[i].attention
+        # Determine weight key suffix based on whether the module is LoRALinear
+        # LoRALinear stores base weight as self.linear.weight; nn.Linear as self.weight
+        for src_name, dst_list_name in [("wq", "wqs"), ("wk", "wks"), ("wv", "wvs")]:
+            dst_mod = getattr(attn, dst_list_name)[0]
+            weight_suffix = "linear.weight" if isinstance(dst_mod, LoRALinear) else "weight"
 
-        # LoRA weights (lora_a and lora_b)
-        for lora_suffix in ["lora_a.weight", "lora_b.weight"]:
-            if f"layers.{i}.attention.wq.{lora_suffix}" in checkpoint:
-                checkpoint[f"layers.{i}.attention.wqs.0.{lora_suffix}"] = checkpoint.pop(
-                    f"layers.{i}.attention.wq.{lora_suffix}"
-                )
-            if f"layers.{i}.attention.wk.{lora_suffix}" in checkpoint:
-                checkpoint[f"layers.{i}.attention.wks.0.{lora_suffix}"] = checkpoint.pop(
-                    f"layers.{i}.attention.wk.{lora_suffix}"
-                )
-            if f"layers.{i}.attention.wv.{lora_suffix}" in checkpoint:
-                checkpoint[f"layers.{i}.attention.wvs.0.{lora_suffix}"] = checkpoint.pop(
-                    f"layers.{i}.attention.wv.{lora_suffix}"
-                )
+            src_key = f"layers.{i}.attention.{src_name}.weight"
+            if src_key in checkpoint:
+                checkpoint[f"layers.{i}.attention.{dst_list_name}.0.{weight_suffix}"] = checkpoint.pop(src_key)
+
+            # LoRA adapter weights
+            for lora_suffix in ["lora_a.weight", "lora_b.weight"]:
+                src_lora_key = f"layers.{i}.attention.{src_name}.{lora_suffix}"
+                if src_lora_key in checkpoint:
+                    checkpoint[f"layers.{i}.attention.{dst_list_name}.0.{lora_suffix}"] = checkpoint.pop(src_lora_key)
+
+        # Also handle wo if it's LoRALinear
+        wo_mod = attn.wo
+        if isinstance(wo_mod, LoRALinear):
+            src_key = f"layers.{i}.attention.wo.weight"
+            if src_key in checkpoint:
+                checkpoint[f"layers.{i}.attention.wo.linear.weight"] = checkpoint.pop(src_key)
+
+        # Handle feed_forward LoRA modules
+        ff = model.layers[i].feed_forward
+        for ff_name in ["w1", "w2", "w3"]:
+            ff_mod = getattr(ff, ff_name, None)
+            if isinstance(ff_mod, LoRALinear):
+                src_key = f"layers.{i}.feed_forward.{ff_name}.weight"
+                if src_key in checkpoint:
+                    checkpoint[f"layers.{i}.feed_forward.{ff_name}.linear.weight"] = checkpoint.pop(src_key)
 
     missing, unexpected = model.load_state_dict(
         checkpoint,
@@ -437,8 +555,8 @@ def main():
     parser.add_argument(
         "--linear_quantize",
         default="c4w",
-        choices=["b4w", "c4w"],
-        help="CoreML linear quantization: b4w (blockwise 4-bit) or c4w (channelwise 4-bit).  The ANE requires channelwise.",
+        choices=["b4w", "c4w", "none"],
+        help="CoreML linear quantization: b4w (blockwise 4-bit), c4w (channelwise 4-bit), or none.  The ANE requires channelwise.",
     )
 
     # Linear splitting options
@@ -509,103 +627,52 @@ def main():
         args.params,
         args.max_context_len,
         generate_full_logits=generate_full_logits,
-        adapter_checkpoint_path=args.adapter_checkpoint,
-        adapter_config_path=args.adapter_config,
     )
     print(f"Model loaded: {model_args.n_layers} layers, {model_args.dim} dim")
 
-    # Set dtype
     float_dtype = {"fp16": torch.float16, "fp32": torch.float32}[args.dtype]
-    model = model.to(float_dtype).eval()
 
-    # Apply linear splitting (before quantization)
-    if args.target_split_size is not None:
-        print(f"\nSplitting linear layers with target size {args.target_split_size}...")
-        replace_linear_with_split_linear(
-            model,
-            out_target_split_size=args.target_split_size,
-            out_max_splits=args.max_splits,
-            in_target_split_size=1,
-            in_max_splits=1,
+    if args.adapter_checkpoint is not None:
+        lora_model, _ = load_model(
+            args.checkpoint,
+            args.params,
+            args.max_context_len,
+            generate_full_logits=generate_full_logits,
+            adapter_checkpoint_path=args.adapter_checkpoint,
+            adapter_config_path=args.adapter_config,
         )
-    try:
-        from executorch.examples.models.llama.lora import LoRALinear
-    except ImportError:
-        LoRALinear = None  # type: ignore[assignment]
-        print("LoRALinear import failed, will only quantize nn.Linear layers.")
-    
-    def make_linear_filter_fn(group_size=0):
-        """Create a filter function for linear quantization.
-        Args:
-            group_size: Group size for quantization. 0 means per-axis (no constraint).
-        """
-        def filter_fn(m, fqn):
-            # Check if it's a regular nn.Linear
-            is_linear = isinstance(m, nn.Linear)
-            # Check if it's a LoRALinear (which has a base weight parameter to quantize)
-            is_lora_linear = LoRALinear is not None and isinstance(m, LoRALinear)
-            if not (is_linear or is_lora_linear):
-                return False
+        print(f"LoRA model loaded: {model_args.n_layers} layers, {model_args.dim} dim")
 
-            # For per-axis (group_size=0), no shape constraint
-            if group_size == 0:
-                return True
-
-            # Check if the weight shape is compatible with group size
-            return m.weight.shape[1] % group_size == 0
-
-        return filter_fn
-
-    # Apply embedding quantization
-    if args.embedding_quantize:
-        bitwidth, group_size = args.embedding_quantize.split(",")
-        bitwidth = int(bitwidth)
-        group_size = int(group_size)
-        assert bitwidth in [4, 8], "CoreML only supports 4-bit and 8-bit quantization"
-
-        print(f"\nQuantizing embeddings: {bitwidth}-bit, group_size={group_size}...")
-        if group_size == 0:
-            granularity = PerAxis(0)
-        else:
-            granularity = PerGroup(group_size)
-        weight_dtype = getattr(torch, f"int{bitwidth}")
-
-        quantize_(
+        print("\nPreparing base model...")
+        model = prepare_model(
             model,
-            IntxWeightOnlyConfig(weight_dtype=weight_dtype, granularity=granularity),
-            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+            float_dtype,
+            args.target_split_size,
+            args.max_splits,
+            args.embedding_quantize,
+            args.linear_quantize,
+            args.no_graph_breaks,
         )
 
-    # Apply linear quantization
-    if args.linear_quantize == "b4w":
-        print("\nQuantizing linear layers: 4-bit blockwise (group_size=32)...")
-        quantize_(
-            model,
-            IntxWeightOnlyConfig(
-                weight_dtype=torch.int4,
-                granularity=PerGroup(32),
-            ),
-            filter_fn=make_linear_filter_fn(group_size=32),
+        print("Preparing LoRA model...")
+        lora_model = prepare_model(
+            lora_model,
+            float_dtype,
+            args.target_split_size,
+            args.max_splits,
+            args.embedding_quantize,
+            args.linear_quantize,
+            args.no_graph_breaks,
         )
-    elif args.linear_quantize == "c4w":
-        print("\nQuantizing linear layers: 4-bit channelwise...")
-        quantize_(
+    else:
+        model = prepare_model(
             model,
-            IntxWeightOnlyConfig(
-                weight_dtype=torch.int4,
-                granularity=PerAxis(0),
-            ),
-            filter_fn=make_linear_filter_fn(group_size=0),
-        )
-
-    # Add graph breaks between transformer blocks
-    # Keeping model pieces smaller helps with ANE performance
-    if not args.no_graph_breaks:
-        print("\nAdding graph breaks between before/after the transformer blocks...")
-        n_layers = len(model.layers)
-        model.layers[0] = BlockWithGraphBreak(model.layers[0], break_before=True)
-        model.layers[n_layers - 1] = BlockWithGraphBreak(
-            model.layers[n_layers - 1], break_before=False
+            float_dtype,
+            args.target_split_size,
+            args.max_splits,
+            args.embedding_quantize,
+            args.linear_quantize,
+            args.no_graph_breaks,
         )
 
     if args.multifunction:
@@ -738,6 +805,78 @@ def main():
         print(
             format_delegated_graph(
                 edge_manager.exported_program("prefill").graph_module
+            )
+        )
+    elif args.adapter_checkpoint is not None:
+        # LoRA multimethod mode: base and LoRA as separate methods with weight sharing
+        example_inputs, _ = _create_example_inputs(
+            model_args, args.input_len, args.max_context_len, float_dtype
+        )
+
+        print("\nTesting eager execution...")
+        with torch.no_grad():
+            model(*example_inputs)
+            lora_model(*example_inputs)
+        print("Eager execution successful for both models!")
+
+        # Export both models
+        print("\nExporting base model...")
+        base_ep = torch.export.export(model, example_inputs, strict=False)
+        print("Base model export successful!")
+
+        print("\nExporting LoRA model...")
+        lora_ep = torch.export.export(lora_model, example_inputs, strict=False)
+        print("LoRA model export successful!")
+
+        # Use dictionary of exported programs for multimethod
+        exported_programs = {
+            "base": base_ep,
+            "lora": lora_ep,
+        }
+
+        # Generate metadata for C++ runner
+        print("\nGenerating metadata for C++ runner...")
+        constant_methods = _get_metadata(
+            model_args, example_inputs, args.input_len, cache_len, float_dtype
+        )
+        # Setup CoreML partitioner
+        print("\nSetting up CoreML partitioner...")
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18,
+            compute_precision={
+                torch.float16: ct.precision.FLOAT16,
+                torch.float32: ct.precision.FLOAT32,
+            }[float_dtype],
+            compute_unit=ct.ComputeUnit.CPU_AND_NE,
+            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
+        )
+        compile_specs.append(
+            CoreMLBackend.generate_multimethod_weight_sharing_strategy_compile_spec(
+                MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
+            )
+        )
+        partitioner = CoreMLPartitioner(
+            compile_specs=compile_specs,
+            take_over_mutable_buffer=False,
+            skip_ops_for_coreml_delegation=[],
+        )
+
+        # Lower to edge with constant methods for C++ runner
+        print("\nLowering to edge... (multi-method: lora + base) ... ")
+        edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+        edge_manager = to_edge_transform_and_lower(
+            exported_programs,
+            partitioner=[partitioner],
+            constant_methods=constant_methods,
+            compile_config=edge_compile_config,
+        )
+        print("\nDelegated program (base):")
+        print(format_delegated_graph(edge_manager.exported_program("base").graph_module))
+
+        print("\nDelegated program (lora):")
+        print(
+            format_delegated_graph(
+                edge_manager.exported_program("lora").graph_module
             )
         )
     else:
