@@ -84,7 +84,8 @@ dedupe_macos_loader_path_rpaths() {
 
 install_domains() {
   echo "Install torchvision and torchaudio"
-  pip install torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/test/cpu
+  pip install --no-build-isolation --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip install --no-build-isolation --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
 }
 
 install_pytorch_and_domains() {
