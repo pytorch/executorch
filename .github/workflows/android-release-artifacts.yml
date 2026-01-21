@@ -15,6 +15,7 @@ on:
         type: choice
         options:
           - "xnnpack"
+          - "xnnpack-no-sme2"
           - "vulkan"
           - "qnn"
           - "all"
@@ -100,6 +101,10 @@ jobs:
           tar xf vulkansdk-linux-x86_64-1.4.321.1.tar.xz -C /tmp
           export PATH="/tmp/1.4.321.1/x86_64/bin:$PATH"
           export EXECUTORCH_BUILD_VULKAN=ON
+        fi
+
+        if [[ "$FLAVOR" == "xnnpack-no-sme2" ]]; then
+          export XNNPACK_ENABLE_ARM_SME2=OFF
         fi
 
         if [[ "$FLAVOR" == "qnn" || "$FLAVOR" == "all" ]]; then
