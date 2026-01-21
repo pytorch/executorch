@@ -197,6 +197,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
         return r
 
     def _is_node_supported(self, node: torch.fx.Node) -> bool:  # noqa: C901
+        # Check if tensor node dtype is supported by vulkan
+        if utils.is_tensor_node(node) and not utils.io_dtypes_are_supported(node):
+            self.log_skip(node, "dtype not supported")
+            return False
+
         if node.op == "call_function":
             # Apply nn module allowlist and blocklist
             if self.nn_module_allowlist is not None:
