@@ -38,10 +38,10 @@ jobs:
         id: set_version
         shell: bash
         run: |
-          VERSION="1.1.0.$(TZ='PST8PDT' date +%Y%m%d)"
+          VERSION="1.1.0"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Guardrail
-        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
+        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/release/1.1' }}
         shell: bash
         run: |
           VERSION="${{ steps.set_version.outputs.version }}"
@@ -198,7 +198,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-frameworks-ios, set-version]
     timeout-minutes: 30
-    environment: ${{ github.ref == 'refs/heads/main' && 'cherry-pick-bot' || '' }}
+    environment: ${{ github.ref == 'refs/heads/release/1.1' && 'cherry-pick-bot' || '' }}
     permissions:
       id-token: write
       contents: write
@@ -223,7 +223,7 @@ jobs:
           name: executorch-frameworks-ios
           path: ${{ runner.temp }}/frameworks-ios/
       - name: Only push to S3 when running the workflow manually from main branch
-        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
+        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/release/1.1' }}
         shell: bash
         run: |
           echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
