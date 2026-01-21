@@ -120,6 +120,9 @@ def to_quantized_edge_program(
         is_qat=use_qat,
     )
 
+    # List of operators to not decompose during the lowering.
+    preserve_ops = [torch.ops.aten.gru.input]
+
     compile_spec = generate_neutron_compile_spec(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
@@ -128,7 +131,7 @@ def to_quantized_edge_program(
     )
     partitioners = [
         NeutronPartitioner(
-            compile_spec, _neutron_target_spec, custom_delegation_options
+            compile_spec, _neutron_target_spec, custom_delegation_options, preserve_ops
         )
     ]
 

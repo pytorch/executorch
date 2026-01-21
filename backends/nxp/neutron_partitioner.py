@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,7 +8,7 @@
 import logging
 import operator
 from dataclasses import dataclass
-from typing import final, Mapping
+from typing import Callable, final, Mapping
 
 import torch
 
@@ -314,12 +314,16 @@ class NeutronPartitioner(Partitioner):
         compile_spec: list[CompileSpec],
         neutron_target_spec: NeutronTargetSpec,
         custom_delegation_options: CustomDelegationOptions | None = None,
+        preserve_ops: list[torch._ops.OpOverload] | None = None,
+        check_op_support: Callable[[torch.fx.Node], bool] | None = None,
     ) -> None:
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
         self.custom_delegation_options = (
             custom_delegation_options or CustomDelegationOptions()
         )
         self.neutron_target_spec = neutron_target_spec
+        self.preserve_ops = preserve_ops or []
+        self.check_op_support = check_op_support
 
     def validate_partitioning_result(
         self,
@@ -419,3 +423,22 @@ class NeutronPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
+
+    def ops_to_not_decompose(
+        self,
+        ep: ExportedProgram,
+    ) -> tuple[list[torch._ops.OpOverload], Callable[[torch.fx.Node], bool] | None]:
+        """
+        Returns a list of operator names that should not be decomposed. When these ops are
+        registered and the `to_backend` is invoked through to_edge_transform_and_lower it will be
+        guaranteed that the program that the backend receives will not have any of these ops
+        decomposed.
+
+        Returns:
+            List[torch._ops.OpOverload]: a list of operator names that should not be decomposed.
+            Optional[Callable[[torch.fx.Node], bool]]]: an optional callable, acting as a filter, that users can provide
+            which will be called for each node in the graph that users can use as a filter for certain
+            nodes that should be continued to be decomposed even though the op they correspond to is
+            in the list returned by ops_to_not_decompose.
+        """
+        return self.preserve_ops, self.check_op_support
