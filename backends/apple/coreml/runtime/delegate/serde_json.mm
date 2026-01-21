@@ -34,7 +34,6 @@ struct ModelMetadataKeys {
     constexpr static std::string_view kInputNamesKey = "inputNames";
     constexpr static std::string_view kOutputNamesKey = "outputNames";
     constexpr static std::string_view kMethodsKey = "methods";
-    constexpr static std::string_view kDefaultMethodKey = "defaultMethod";
 };
 }
 
@@ -51,13 +50,13 @@ struct Converter<executorchcoreml::FileInfo> {
             to_string(FileInfoKeys::kLastModificationTimeIntervalKey) :to_json_value(file_info.last_modification_time_interval)
         };
     }
-    
+
     static void from_json(id json, executorchcoreml::FileInfo& file_info) {
         NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
         if (!json_dict) {
             return;
         }
-        
+
         from_json_value(json_dict[to_string(FileInfoKeys::kRelativePath)], file_info.relative_path);
         from_json_value(json_dict[to_string(FileInfoKeys::kSizeKey)], file_info.size_in_bytes);
         from_json_value(json_dict[to_string(FileInfoKeys::kLastModificationTimeIntervalKey)], file_info.last_modification_time_interval);
@@ -72,13 +71,13 @@ struct Converter<executorchcoreml::PackageInfo> {
             to_string(PackageInfoKeys::kFileInfosKey) : to_json_value(package_info.file_infos)
         };
     }
-    
+
     static void from_json(id json, executorchcoreml::PackageInfo& package_info) {
         NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
         if (!json_dict) {
             return;
         }
-        
+
         from_json_value(json_dict[to_string(PackageInfoKeys::kNameKey)], package_info.name);
         from_json_value(json_dict[to_string(PackageInfoKeys::kFileInfosKey)], package_info.file_infos);
     }
@@ -93,13 +92,13 @@ struct Converter<executorchcoreml::Asset> {
             to_string(ModelAssetKeys::kPackageInfoKey) : to_json_value(asset.package_info)
         };
     }
-    
+
     static void from_json(id json, executorchcoreml::Asset& asset) {
         NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
         if (!json_dict) {
             return;
         }
-        
+
         from_json_value(json_dict[to_string(ModelAssetKeys::kIdentifierKey)], asset.identifier);
         from_json_value(json_dict[to_string(ModelAssetKeys::kPathKey)], asset.path);
         from_json_value(json_dict[to_string(ModelAssetKeys::kPackageInfoKey)], asset.package_info);
@@ -114,13 +113,13 @@ struct Converter<executorchcoreml::MethodMetadata> {
             to_string(ModelMetadataKeys::kOutputNamesKey) : to_json_value(method_metadata.output_names)
         };
     }
-    
+
     static void from_json(id json, executorchcoreml::MethodMetadata& method_metadata) {
         NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
         if (!json_dict) {
             return;
         }
-        
+
         from_json_value(json_dict[to_string(ModelMetadataKeys::kInputNamesKey)], method_metadata.input_names);
         from_json_value(json_dict[to_string(ModelMetadataKeys::kOutputNamesKey)], method_metadata.output_names);
     }
@@ -137,8 +136,7 @@ struct Converter<executorchcoreml::ModelMetadata> {
             }
             return @{
                 to_string(ModelMetadataKeys::kIdentifierKey) : to_json_value(metadata.identifier),
-                to_string(ModelMetadataKeys::kMethodsKey) : methods_dict,
-                to_string(ModelMetadataKeys::kDefaultMethodKey) : to_json_value(metadata.default_method)
+                to_string(ModelMetadataKeys::kMethodsKey) : methods_dict
             };
         }
         // For single-method models, serialize the old format for backwards compatibility
@@ -148,20 +146,19 @@ struct Converter<executorchcoreml::ModelMetadata> {
             to_string(ModelMetadataKeys::kOutputNamesKey) : to_json_value(metadata.output_names)
         };
     }
-    
+
     static void from_json(id json, executorchcoreml::ModelMetadata& metadata) {
         NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
         if (!json_dict) {
             return;
         }
-        
+
         from_json_value(json_dict[to_string(ModelMetadataKeys::kIdentifierKey)], metadata.identifier);
-        
+
         // Check if this is a multifunction model (has "methods" key)
         NSDictionary *methods_dict = SAFE_CAST(json_dict[to_string(ModelMetadataKeys::kMethodsKey)], NSDictionary);
         if (methods_dict) {
             // New multifunction format
-            from_json_value(json_dict[to_string(ModelMetadataKeys::kDefaultMethodKey)], metadata.default_method);
             for (NSString *method_name in methods_dict) {
                 executorchcoreml::MethodMetadata method_metadata;
                 Converter<executorchcoreml::MethodMetadata>::from_json(methods_dict[method_name], method_metadata);

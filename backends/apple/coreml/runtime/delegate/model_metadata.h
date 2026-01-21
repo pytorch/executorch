@@ -92,10 +92,5 @@ struct ModelMetadata {
     std::vector<std::string> output_names;
     /// Per-method metadata (for multifunction models).
     std::map<std::string, MethodMetadata> methods;
-    /// Default method name (for multifunction models).
-    /// Note: This field is currently not used in the ExecuTorch runtime since the method name
-    /// is always provided via BackendInitContext::get_method_name(). It is serialized for
-    /// potential future use cases or other runtimes.
-    std::string default_method;
 };
 } // namespace executorchcoreml
