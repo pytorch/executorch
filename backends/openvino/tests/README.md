@@ -11,6 +11,8 @@ backends/openvino/tests
     └── test_<op_name>.py               # Individual op tests scripts.
 ├── models                              # Directory with model test scripts.
     └── test_classification.py          # Test script for classification models.
+├── quantizer                           # Directory with quantizer test scripts.
+    └── test_llm_compression.py         # Test script for llm compression using NNCF algorithms.
 ├── README.md                           # Documentation for unit tests (this file)
 └── test_runner.py                      # Script to execute unit tests.
 ```
@@ -31,6 +33,7 @@ Before you begin, refer to instructions provided in [OpenVINO Backend for ExecuT
   Supported values:
   - `ops` (default)
   - `models`
+  - `quantizer`
 
 - **`--pattern`** (optional):  
   Pattern to match test files. Provide complete file name to run individual tests. The default value is `test_*.py`

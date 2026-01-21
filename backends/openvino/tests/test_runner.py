@@ -44,10 +44,10 @@ def parse_arguments():
     parser.add_argument(
         "-t",
         "--test_type",
-        help="Specify the type of tests ('ops' or 'models')",
+        help="Specify the type of tests ('ops', 'models' or 'quantizer')",
         type=str,
         default="ops",
-        choices={"ops", "models"},
+        choices={"ops", "models", "quantizer"},
     )
 
     args, ns_args = parser.parse_known_args(namespace=unittest)
@@ -68,8 +68,8 @@ if __name__ == "__main__":
     # Discover all existing op tests in "ops" folder
     suite = loader.discover(test_params["test_type"], pattern=test_params["pattern"])
     # Start running tests
-    with nncf.torch.disable_patching():
-        result = unittest.TextTestRunner().run(suite)
+    # with nncf.torch.disable_patching():
+    result = unittest.TextTestRunner().run(suite)
     if result.wasSuccessful():
         print("OpenVINO backend tests completed successfully")
     else:
