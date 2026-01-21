@@ -1,9 +1,22 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}")
+define_overridable_option(
+  EXECUTORCH_BAREMETAL_SKIP_INSTALL
+  "Skip emitting install/export rules when building bare-metal artifacts" BOOL
+  ON
+)
+
+if(EXECUTORCH_BAREMETAL_SKIP_INSTALL)
+  set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}")
+  # Bare-metal builds consume the build tree directly, so skip generating
+  # install rules to avoid exporting third-party SDK targets that live outside
+  # the repo.
+  set(CMAKE_SKIP_INSTALL_RULES ON)
+endif()
+
 set_overridable_option(EXECUTORCH_BUILD_EXECUTOR_RUNNER OFF)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR OFF)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER OFF)

@@ -50,6 +50,11 @@ if(NOT DEFINED EXECUTORCH_ROOT)
   )
 endif()
 
+set(ET_DIR_PATH
+    "${EXECUTORCH_ROOT}"
+    CACHE PATH "Kept for backward compatibility; synonym for EXECUTORCH_ROOT"
+)
+
 if(NOT EXISTS "${EXECUTORCH_ROOT}/CMakeLists.txt")
   if(EXISTS "${_default_executorch_root}/CMakeLists.txt")
     message(
@@ -193,11 +198,41 @@ endif()
 
 include(${EXECUTORCH_ROOT}/backends/arm/scripts/corstone_utils.cmake)
 
+# Keep the default scratch location aligned with setup.sh/run.sh so a developer
+# who just ran those scripts does not need to pass any extra CMake flags.
 set(ETHOS_SDK_PATH
     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
     CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
 
+# Reuse the in-repo core driver by default so the backend delegate and runner
+# always share the same sources instead of cloning an extra copy under the
+# scratch tree.
+set(_default_core_driver_path
+    "${EXECUTORCH_ROOT}/backends/arm/third-party/ethos-u-core-driver"
+)
+set(_legacy_core_driver_path "${ETHOS_SDK_PATH}/core_software/core_driver")
+if(NOT DEFINED CORE_DRIVER_PATH
+   OR "${CORE_DRIVER_PATH}" STREQUAL ""
+   OR "${CORE_DRIVER_PATH}" STREQUAL "${_legacy_core_driver_path}"
+)
+  set(CORE_DRIVER_PATH
+      "${_default_core_driver_path}"
+      CACHE
+        PATH
+        "Path to the Ethos-U core driver sources used when building Corstone targets"
+        FORCE
+  )
+else()
+  set(CORE_DRIVER_PATH
+      "${CORE_DRIVER_PATH}"
+      CACHE
+        PATH
+        "Path to the Ethos-U core driver sources used when building Corstone targets"
+  )
+endif()
+
+# Detect whether setup.sh already staged the SDK so we can skip the fetch step.
 set(_ethos_u_content_ready FALSE)
 if(EXISTS "${ETHOS_SDK_PATH}/core_platform"
    AND EXISTS "${ETHOS_SDK_PATH}/core_software"
@@ -236,8 +271,13 @@ if(NOT _ethos_u_content_ready)
   )
 endif()
 
+set(ET_PTE_FILE_PATH
+    ""
+    CACHE PATH "Path to ExecuTorch model pte"
+)
+
 if(NOT DEFINED ET_MODEL_PTE_ADDR
-   AND NOT DEFINED ET_PTE_FILE_PATH
+   AND "${ET_PTE_FILE_PATH}" STREQUAL ""
    AND NOT DEFINED SEMIHOSTING
 )
   message(
@@ -248,11 +288,6 @@ if(NOT DEFINED ET_MODEL_PTE_ADDR
       "SEMIHOSTING - pte and input via host filesystem (use by pytest)"
   )
 endif()
-
-set(ET_PTE_FILE_PATH
-    ""
-    CACHE PATH "Path to ExecuTorch model pte"
-)
 
 set(_arm_runner_placeholder_pte
     "${CMAKE_CURRENT_LIST_DIR}/data/placeholder.pte"
@@ -301,49 +336,24 @@ if(NOT SEMIHOSTING
   endif()
 endif()
 
-# Ensure runner util is available even if the top-level build did not enable it.
 if(NOT TARGET extension_runner_util)
-  if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
-     OR EXECUTORCH_BUILD_EXECUTOR_RUNNER
-     OR DEFINED _executorch_extensions
-  )
-    message(
-      WARNING
-        "extension_runner_util target missing even though EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON. Falling back to a local build for backward compatibility."
-    )
-  endif()
-  message(STATUS "arm_executor_runner enabling extension_runner_util locally")
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/extension/runner_util
-    ${CMAKE_BINARY_DIR}/extension_runner_util_baremetal
+  message(
+    FATAL_ERROR
+      "extension_runner_util target missing. Configure ExecuTorch (or the standalone runner) with EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON."
   )
 endif()
 
 if(NOT TARGET quantized_ops_lib OR NOT TARGET quantized_kernels)
-  if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
-    message(
-      WARNING
-        "quantized_ops_lib target missing even though EXECUTORCH_BUILD_KERNELS_QUANTIZED=ON. Falling back to a local build for backward compatibility."
-    )
-  endif()
-  message(STATUS "arm_executor_runner enabling quantized kernels locally")
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/kernels/quantized
-    ${CMAKE_BINARY_DIR}/quantized_kernels_baremetal
+  message(
+    FATAL_ERROR
+      "quantized kernels not found. Ensure EXECUTORCH_BUILD_KERNELS_QUANTIZED=ON when configuring ExecuTorch."
   )
 endif()
 
 if(NOT TARGET cortex_m_ops_lib OR NOT TARGET cortex_m_kernels)
-  if(EXECUTORCH_BUILD_CORTEX_M)
-    message(
-      FATAL_ERROR
-        "cortex_m_ops_lib target missing even though EXECUTORCH_BUILD_CORTEX_M=ON. Please regenerate your build directory."
-    )
-  endif()
-  message(STATUS "arm_executor_runner enabling cortex_m backend locally")
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/backends/cortex_m
-    ${CMAKE_BINARY_DIR}/cortex_m_backend_baremetal
+  message(
+    FATAL_ERROR
+      "cortex_m backend not found. Ensure EXECUTORCH_BUILD_CORTEX_M=ON when configuring ExecuTorch."
   )
 endif()
 
@@ -425,25 +435,6 @@ target_sources(
   arm_executor_runner PRIVATE arm_executor_runner.cpp arm_perf_monitor.cpp
                               arm_memory_allocator.cpp
 )
-
-set(_arm_runner_required_targets
-    executorch
-    executorch_delegate_ethos_u
-    extension_runner_util
-    quantized_ops_lib
-    cortex_m_ops_lib
-    quantized_kernels
-    cortex_m_kernels
-    portable_kernels
-)
-foreach(_runner_target ${_arm_runner_required_targets})
-  if(NOT TARGET ${_runner_target})
-    message(
-      FATAL_ERROR
-        "Missing target '${_runner_target}' required by arm_executor_runner. Configure the ExecuTorch build with EXECUTORCH_BUILD_ARM_BAREMETAL=ON (and related options) before building this target."
-    )
-  endif()
-endforeach()
 
 # Check for "U55" in SYSTEM_CONFIG
 string(FIND "${SYSTEM_CONFIG}" "U55" U55_FOUND)
@@ -600,6 +591,9 @@ endif()
 # bin size as we link in a number of other symbols
 target_link_libraries(arm_executor_runner PUBLIC ${arm_executor_runner_link})
 
+# Ensure the ELF lands next to the CMake build tree so run.sh (and downstream
+# tooling) can locate it deterministically regardless of multi-config vs
+# single-config generators.
 target_link_options(
   arm_executor_runner PUBLIC LINKER:-Map=arm_executor_runner.map
 )
@@ -652,7 +646,8 @@ if(CMAKE_BUILD_TYPE MATCHES "AddressSanitizer")
   target_link_options(arm_executor_runner PRIVATE ${_et_runner_asan_flags})
   if(NOT TARGET executorch_asan)
     add_subdirectory(
-      ${ET_DIR_PATH}/examples/arm/asan ${CMAKE_CURRENT_BINARY_DIR}/asan_runtime
+      ${EXECUTORCH_ROOT}/examples/arm/asan
+      ${CMAKE_CURRENT_BINARY_DIR}/asan_runtime
     )
   endif()
   target_link_libraries(arm_executor_runner PRIVATE executorch_asan)
