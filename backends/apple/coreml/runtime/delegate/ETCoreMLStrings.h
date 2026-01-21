@@ -30,9 +30,6 @@ NS_ASSUME_NONNULL_BEGIN
 /// The key name for compute units.
 @property (class, copy, readonly, nonatomic) NSString* computeUnitsKeyName;
 
-/// The key name for multimethod weight sharing strategy.
-@property (class, copy, readonly, nonatomic) NSString* multimethodWeightSharingStrategyKeyName;
-
 /// The compiled model package extension name.
 @property (class, copy, readonly, nonatomic) NSString* compiledModelExtensionName;
 

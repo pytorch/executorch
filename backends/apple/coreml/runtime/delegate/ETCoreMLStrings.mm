@@ -35,11 +35,6 @@
     return ETCoreMLComputeUnitsName;
 }
 
-+ (NSString *)multimethodWeightSharingStrategyKeyName {
-    static NSString * const ETCoreMLMultimethodWeightSharingStrategyKeyName = @"multimethod_weight_sharing_strategy";
-    return ETCoreMLMultimethodWeightSharingStrategyKeyName;
-}
-
 + (NSString *)compiledModelExtensionName {
     static NSString * const ETCoreMLCompiledModelExtensionName = @"mlmodelc";
     return ETCoreMLCompiledModelExtensionName;
@@ -117,7 +112,7 @@
                 result = [paths.lastObject stringByAppendingPathComponent:self.productName];
             }
         });
-        
+
         return result;
     #endif
 }
@@ -131,7 +126,7 @@
         dispatch_once(&onceToken, ^{
             result = [NSTemporaryDirectory() stringByAppendingPathComponent:self.productName];
         });
-        
+
         return result;
     #endif
 }
