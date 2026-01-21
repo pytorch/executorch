@@ -39,18 +39,18 @@ $COMPILE_SPEC
 
 ### Partitioner API
 
-See [Partitioner API](arm-vgf-partitioner.md) for more information of the Partitioner API.
+See [Partitioner API](arm-vgf-partitioner.md) for more information of the Partitioner API. <!-- @lint-ignore -->
 
 ## Quantization
 
 The VGF quantizer supports [Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)
 and [Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html).
 
-For more information on quantization, see [Quantization](arm-vgf-quantization.md).
+For more information on quantization, see [Quantization](arm-vgf-quantization.md). <!-- @lint-ignore -->
 
 ## Runtime Integration
 
-The VGF backend can use the default ExecuTorch runner. The steps required for building and running it are explained in the [VGF Backend Tutorial](tutorials/vgf-getting-started.md).
+The VGF backend can use the default ExecuTorch runner. The steps required for building and running it are explained in the [VGF Backend Tutorial](tutorials/vgf-getting-started.md). <!-- @lint-ignore -->
 The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
 
 ## Reference

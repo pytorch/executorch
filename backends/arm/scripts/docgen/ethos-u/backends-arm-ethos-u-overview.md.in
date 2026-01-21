@@ -52,7 +52,7 @@ Since the Ethos-U backend is integer-only, all operators intended be executed on
 [Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)  and
 [Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html) quantization.
 
-For more information on quantization, see [Quantization](arm-ethos-u-quantization.md)
+For more information on quantization, see [Quantization](arm-ethos-u-quantization.md) <!-- @lint-ignore -->
 
 ## Runtime Integration
 
