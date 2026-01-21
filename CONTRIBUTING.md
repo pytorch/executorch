@@ -326,7 +326,7 @@ for their help in the PR comments.
 ### Continuous Integration
 See https://hud.pytorch.org/hud/pytorch/executorch/main for the current state of
 the CI (continuous integration) jobs. If `main` is broken, consider rebasing
-your PR onto the `viable/strict` branch, which points to the most recent
+your PR onto the `release/1.1` branch, which points to the most recent
 all-green commit.
 
 &nbsp;
