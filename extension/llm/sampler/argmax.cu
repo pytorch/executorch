@@ -36,9 +36,7 @@ int32_t argmax_cuda(
       vocab_size,
       out_token_gpu,
       nullptr, // don't need max logit value
-      cuda_stream,
-      256 // threads per block
-  );
+      cuda_stream);
 
   // Copy result back to host
   int32_t token;

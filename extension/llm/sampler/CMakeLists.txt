@@ -31,19 +31,19 @@ if(EXECUTORCH_BUILD_CUDA)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
     # Define CUDA sampler library
-    add_library(extension_llm_sampler_cuda STATIC argmax.cu cuda_sampler.cu)
+    add_library(extension_llm_sampler STATIC argmax.cu)
     target_include_directories(
-      extension_llm_sampler_cuda
+      extension_llm_sampler
       PUBLIC ${EXECUTORCH_ROOT}
              ${EXECUTORCH_ROOT}/..
              ${CUDAToolkit_INCLUDE_DIRS}
     )
-    target_compile_definitions(extension_llm_sampler_cuda PUBLIC CUDA_AVAILABLE)
-    target_link_libraries(extension_llm_sampler_cuda PUBLIC executorch_core
+    target_compile_definitions(extension_llm_sampler PUBLIC CUDA_AVAILABLE)
+    target_link_libraries(extension_llm_sampler PUBLIC executorch_core
                                                             CUDA::cudart
     )
     set_target_properties(
-      extension_llm_sampler_cuda
+      extension_llm_sampler
       PROPERTIES POSITION_INDEPENDENT_CODE ON CUDA_SEPARABLE_COMPILATION ON
     )
 
@@ -52,7 +52,7 @@ if(EXECUTORCH_BUILD_CUDA)
     )
 
     install(
-      TARGETS extension_llm_sampler_cuda
+      TARGETS extension_llm_sampler
       EXPORT ExecuTorchTargets
       DESTINATION ${CMAKE_INSTALL_LIBDIR}
     )

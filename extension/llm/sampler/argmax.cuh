@@ -100,9 +100,10 @@ __global__ void argmax_vocab_rows_kernel(
   // warp reduce
   best = warp_argmax_xor(best);
 
-  // shared collect warp winners (supports up to 1024 threads = 32 warps)
-  __shared__ float s_val[32];
-  __shared__ int s_idx[32];
+  // shared collect warp winners (dynamic size based on warps_per_block)
+  extern __shared__ char smem[];
+  float* s_val = reinterpret_cast<float*>(smem);
+  int* s_idx = reinterpret_cast<int*>(s_val + warps_per_block);
 
   if (lane == 0) {
     s_val[warp] = best.v;
@@ -138,31 +139,52 @@ inline void launch_argmax_vocab_rows(
     int vocab,
     int* out_token,
     float* out_maxlogit,
-    cudaStream_t stream,
-    int threads = 256) {
-  dim3 block(threads);
+    cudaStream_t stream) {
+  // 256 threads (8 warps) is the standard choice for reduction kernels:
+  // good occupancy, low shared memory, works well across all architectures.
+  constexpr int kThreadsPerBlock = 256;
+  constexpr int kWarpsPerBlock = kThreadsPerBlock / 32;
+
+  dim3 block(kThreadsPerBlock);
   dim3 grid(rows);
+
+  // Calculate shared memory size: one float and one int per warp
+  constexpr size_t smem_size = kWarpsPerBlock * (sizeof(float) + sizeof(int));
 
   switch (scalar_type) {
     case ::executorch::aten::ScalarType::Float:
-      argmax_vocab_rows_kernel<float><<<grid, block, 0, stream>>>(
+      argmax_vocab_rows_kernel<float><<<grid, block, smem_size, stream>>>(
           (const float*)logits, rows, vocab, out_token, out_maxlogit);
       break;
     case ::executorch::aten::ScalarType::Half:
-      argmax_vocab_rows_kernel<half><<<grid, block, 0, stream>>>(
+      argmax_vocab_rows_kernel<half><<<grid, block, smem_size, stream>>>(
           (const half*)logits, rows, vocab, out_token, out_maxlogit);
       break;
     case ::executorch::aten::ScalarType::BFloat16:
-      argmax_vocab_rows_kernel<nv_bfloat16><<<grid, block, 0, stream>>>(
+      argmax_vocab_rows_kernel<nv_bfloat16><<<grid, block, smem_size, stream>>>(
           (const nv_bfloat16*)logits, rows, vocab, out_token, out_maxlogit);
       break;
     default:
       // Unsupported type, fall back to float
-      argmax_vocab_rows_kernel<float><<<grid, block, 0, stream>>>(
+      argmax_vocab_rows_kernel<float><<<grid, block, smem_size, stream>>>(
           (const float*)logits, rows, vocab, out_token, out_maxlogit);
       break;
   }
 }
+
+// Wrapper function that performs argmax on GPU logits tensor (single row).
+// Returns the token index with the highest logit value.
+// logits_ptr: pointer to GPU memory containing logits
+// vocab_size: vocabulary size
+// scalar_type: data type of the logits tensor
+// cuda_stream: CUDA stream for async execution (nullptr for default stream)
+// out_token_gpu: pre-allocated GPU memory for output token (int*)
+int32_t argmax_cuda(
+    const void* logits_ptr,
+    int vocab_size,
+    ::executorch::aten::ScalarType scalar_type,
+    cudaStream_t cuda_stream,
+    int* out_token_gpu);
 
 } // namespace cuda
 } // namespace llm

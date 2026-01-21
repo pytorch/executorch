@@ -37,27 +37,25 @@ endif()
 # Find installed ExecuTorch
 find_package(executorch CONFIG REQUIRED HINTS ${CMAKE_INSTALL_PREFIX})
 
-# List of CUDA test files
-set(LLM_SAMPLER_CUDA_TESTS test_argmax)
+set(LLM_SAMPLER_CUDA_SRCS argmax.cu)
 
 enable_testing()
 
-foreach(test_name ${LLM_SAMPLER_CUDA_TESTS})
-  add_executable(${test_name} ${test_name}.cu)
+add_executable(test_argmax test_argmax.cu)
 
-  target_include_directories(
-    ${test_name} PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
-                         ${CUDAToolkit_INCLUDE_DIRS}
-  )
+target_include_directories(
+  test_argmax PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
+                        ${CUDAToolkit_INCLUDE_DIRS}
+)
 
-  target_link_libraries(
-    ${test_name}
-    PRIVATE GTest::gtest
-            GTest::gtest_main
-            executorch_core
-            CUDA::cudart
-  )
+target_link_libraries(
+  test_argmax
+  PRIVATE GTest::gtest
+          GTest::gtest_main
+          executorch_core
+          extension_llm_sampler_cuda
+          CUDA::cudart
+)
 
-  add_test(NAME ${test_name} COMMAND ${test_name})
-endforeach()
+add_test(NAME test_argmax COMMAND test_argmax)
 

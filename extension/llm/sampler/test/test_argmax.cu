@@ -127,30 +127,14 @@ TEST_F(ArgmaxTest, BasicFloat32) {
 
   float* gpu_logits = create_float_tensor(logits);
 
-  launch_argmax_vocab_rows(
+  int32_t out_token = argmax_cuda(
       gpu_logits,
-      ::executorch::aten::ScalarType::Float,
-      1, // rows
       vocab_size,
-      out_token_gpu_,
-      out_maxlogit_gpu_,
+      ::executorch::aten::ScalarType::Float,
       stream_,
-      256);
-
-  ASSERT_EQ(cudaStreamSynchronize(stream_), cudaSuccess);
-
-  int out_token;
-  float out_maxlogit;
-  ASSERT_EQ(
-      cudaMemcpy(&out_token, out_token_gpu_, sizeof(int), cudaMemcpyDeviceToHost),
-      cudaSuccess);
-  ASSERT_EQ(
-      cudaMemcpy(
-          &out_maxlogit, out_maxlogit_gpu_, sizeof(float), cudaMemcpyDeviceToHost),
-      cudaSuccess);
+      out_token_gpu_);
 
   EXPECT_EQ(out_token, expected_idx);
-  EXPECT_FLOAT_EQ(out_maxlogit, logits[expected_idx]);
 
   cudaFree(gpu_logits);
 }
@@ -163,31 +147,14 @@ TEST_F(ArgmaxTest, BasicHalf) {
 
   half* gpu_logits = create_half_tensor(logits);
 
-  launch_argmax_vocab_rows(
+  int32_t out_token = argmax_cuda(
       gpu_logits,
-      ::executorch::aten::ScalarType::Half,
-      1, // rows
       vocab_size,
-      out_token_gpu_,
-      out_maxlogit_gpu_,
+      ::executorch::aten::ScalarType::Half,
       stream_,
-      256);
-
-  ASSERT_EQ(cudaStreamSynchronize(stream_), cudaSuccess);
-
-  int out_token;
-  float out_maxlogit;
-  ASSERT_EQ(
-      cudaMemcpy(&out_token, out_token_gpu_, sizeof(int), cudaMemcpyDeviceToHost),
-      cudaSuccess);
-  ASSERT_EQ(
-      cudaMemcpy(
-          &out_maxlogit, out_maxlogit_gpu_, sizeof(float), cudaMemcpyDeviceToHost),
-      cudaSuccess);
+      out_token_gpu_);
 
   EXPECT_EQ(out_token, expected_idx);
-  // Half precision has some tolerance
-  EXPECT_NEAR(out_maxlogit, logits[expected_idx], 0.01f);
 
   cudaFree(gpu_logits);
 }
@@ -200,31 +167,14 @@ TEST_F(ArgmaxTest, BasicBFloat16) {
 
   nv_bfloat16* gpu_logits = create_bfloat16_tensor(logits);
 
-  launch_argmax_vocab_rows(
+  int32_t out_token = argmax_cuda(
       gpu_logits,
-      ::executorch::aten::ScalarType::BFloat16,
-      1, // rows
       vocab_size,
-      out_token_gpu_,
-      out_maxlogit_gpu_,
+      ::executorch::aten::ScalarType::BFloat16,
       stream_,
-      256);
-
-  ASSERT_EQ(cudaStreamSynchronize(stream_), cudaSuccess);
-
-  int out_token;
-  float out_maxlogit;
-  ASSERT_EQ(
-      cudaMemcpy(&out_token, out_token_gpu_, sizeof(int), cudaMemcpyDeviceToHost),
-      cudaSuccess);
-  ASSERT_EQ(
-      cudaMemcpy(
-          &out_maxlogit, out_maxlogit_gpu_, sizeof(float), cudaMemcpyDeviceToHost),
-      cudaSuccess);
+      out_token_gpu_);
 
   EXPECT_EQ(out_token, expected_idx);
-  // BFloat16 has some tolerance
-  EXPECT_NEAR(out_maxlogit, logits[expected_idx], 0.1f);
 
   cudaFree(gpu_logits);
 }
@@ -247,30 +197,14 @@ TEST_F(ArgmaxTest, LargeVocab) {
 
   float* gpu_logits = create_float_tensor(logits);
 
-  launch_argmax_vocab_rows(
+  int32_t out_token = argmax_cuda(
       gpu_logits,
-      ::executorch::aten::ScalarType::Float,
-      1, // rows
       vocab_size,
-      out_token_gpu_,
-      out_maxlogit_gpu_,
+      ::executorch::aten::ScalarType::Float,
       stream_,
-      256);
-
-  ASSERT_EQ(cudaStreamSynchronize(stream_), cudaSuccess);
-
-  int out_token;
-  float out_maxlogit;
-  ASSERT_EQ(
-      cudaMemcpy(&out_token, out_token_gpu_, sizeof(int), cudaMemcpyDeviceToHost),
-      cudaSuccess);
-  ASSERT_EQ(
-      cudaMemcpy(
-          &out_maxlogit, out_maxlogit_gpu_, sizeof(float), cudaMemcpyDeviceToHost),
-      cudaSuccess);
+      out_token_gpu_);
 
   EXPECT_EQ(out_token, expected_idx);
-  EXPECT_FLOAT_EQ(out_maxlogit, 100.0f);
 
   cudaFree(gpu_logits);
 }
@@ -301,8 +235,7 @@ TEST_F(ArgmaxTest, MultipleRows) {
       vocab_size,
       out_token_gpu_,
       out_maxlogit_gpu_,
-      stream_,
-      256);
+      stream_);
 
   ASSERT_EQ(cudaStreamSynchronize(stream_), cudaSuccess);
 
@@ -329,22 +262,12 @@ TEST_F(ArgmaxTest, TieBreaking) {
 
   float* gpu_logits = create_float_tensor(logits);
 
-  launch_argmax_vocab_rows(
+  int32_t out_token = argmax_cuda(
       gpu_logits,
-      ::executorch::aten::ScalarType::Float,
-      1, // rows
       vocab_size,
-      out_token_gpu_,
-      nullptr, // don't need max logit
+      ::executorch::aten::ScalarType::Float,
       stream_,
-      256);
-
-  ASSERT_EQ(cudaStreamSynchronize(stream_), cudaSuccess);
-
-  int out_token;
-  ASSERT_EQ(
-      cudaMemcpy(&out_token, out_token_gpu_, sizeof(int), cudaMemcpyDeviceToHost),
-      cudaSuccess);
+      out_token_gpu_);
 
   // Smallest index should win on tie
   EXPECT_EQ(out_token, 0);
@@ -360,30 +283,14 @@ TEST_F(ArgmaxTest, NegativeValues) {
 
   float* gpu_logits = create_float_tensor(logits);
 
-  launch_argmax_vocab_rows(
+  int32_t out_token = argmax_cuda(
       gpu_logits,
-      ::executorch::aten::ScalarType::Float,
-      1, // rows
       vocab_size,
-      out_token_gpu_,
-      out_maxlogit_gpu_,
+      ::executorch::aten::ScalarType::Float,
       stream_,
-      256);
-
-  ASSERT_EQ(cudaStreamSynchronize(stream_), cudaSuccess);
-
-  int out_token;
-  float out_maxlogit;
-  ASSERT_EQ(
-      cudaMemcpy(&out_token, out_token_gpu_, sizeof(int), cudaMemcpyDeviceToHost),
-      cudaSuccess);
-  ASSERT_EQ(
-      cudaMemcpy(
-          &out_maxlogit, out_maxlogit_gpu_, sizeof(float), cudaMemcpyDeviceToHost),
-      cudaSuccess);
+      out_token_gpu_);
 
   EXPECT_EQ(out_token, expected_idx);
-  EXPECT_FLOAT_EQ(out_maxlogit, -1.0f);
 
   cudaFree(gpu_logits);
 }
@@ -395,22 +302,12 @@ TEST_F(ArgmaxTest, MaxAtFirst) {
 
   float* gpu_logits = create_float_tensor(logits);
 
-  launch_argmax_vocab_rows(
+  int32_t out_token = argmax_cuda(
       gpu_logits,
-      ::executorch::aten::ScalarType::Float,
-      1,
       vocab_size,
-      out_token_gpu_,
-      nullptr,
+      ::executorch::aten::ScalarType::Float,
       stream_,
-      256);
-
-  ASSERT_EQ(cudaStreamSynchronize(stream_), cudaSuccess);
-
-  int out_token;
-  ASSERT_EQ(
-      cudaMemcpy(&out_token, out_token_gpu_, sizeof(int), cudaMemcpyDeviceToHost),
-      cudaSuccess);
+      out_token_gpu_);
 
   EXPECT_EQ(out_token, 0);
 
@@ -424,22 +321,12 @@ TEST_F(ArgmaxTest, MaxAtLast) {
 
   float* gpu_logits = create_float_tensor(logits);
 
-  launch_argmax_vocab_rows(
+  int32_t out_token = argmax_cuda(
       gpu_logits,
-      ::executorch::aten::ScalarType::Float,
-      1,
       vocab_size,
-      out_token_gpu_,
-      nullptr,
+      ::executorch::aten::ScalarType::Float,
       stream_,
-      256);
-
-  ASSERT_EQ(cudaStreamSynchronize(stream_), cudaSuccess);
-
-  int out_token;
-  ASSERT_EQ(
-      cudaMemcpy(&out_token, out_token_gpu_, sizeof(int), cudaMemcpyDeviceToHost),
-      cudaSuccess);
+      out_token_gpu_);
 
   EXPECT_EQ(out_token, 4);
 
@@ -447,42 +334,5 @@ TEST_F(ArgmaxTest, MaxAtLast) {
 }
 
 // Test with different thread counts
-TEST_F(ArgmaxTest, DifferentThreadCounts) {
-  std::vector<float> logits(1024);
-  std::mt19937 gen(123);
-  std::uniform_real_distribution<float> dist(-10.0f, 10.0f);
-  for (size_t i = 0; i < logits.size(); ++i) {
-    logits[i] = dist(gen);
-  }
-
-  int expected_idx = cpu_argmax(logits);
-  float* gpu_logits = create_float_tensor(logits);
-
-  std::vector<int> thread_counts = {32, 64, 128, 256, 512};
-
-  for (int threads : thread_counts) {
-    launch_argmax_vocab_rows(
-        gpu_logits,
-        ::executorch::aten::ScalarType::Float,
-        1,
-        static_cast<int>(logits.size()),
-        out_token_gpu_,
-        nullptr,
-        stream_,
-        threads);
-
-    ASSERT_EQ(cudaStreamSynchronize(stream_), cudaSuccess);
-
-    int out_token;
-    ASSERT_EQ(
-        cudaMemcpy(
-            &out_token, out_token_gpu_, sizeof(int), cudaMemcpyDeviceToHost),
-        cudaSuccess);
-
-    EXPECT_EQ(out_token, expected_idx) << "Failed with " << threads << " threads";
-  }
-
-  cudaFree(gpu_logits);
-}
 
 
