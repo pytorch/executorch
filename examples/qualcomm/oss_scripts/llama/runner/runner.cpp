@@ -118,6 +118,9 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kLlama3;
   } else if (decoder_model_version == "gemma") {
     decoder_model_version_ = DecoderModelVersion::kGemma;
+  } else if (decoder_model_version == "gemma2") {
+    decoder_model_version_ = DecoderModelVersion::kGemma2;
+    cache_mode_ = CacheMode::HybridCache;
   } else if (decoder_model_version == "gemma3") {
     decoder_model_version_ = DecoderModelVersion::kGemma3;
     cache_mode_ = CacheMode::HybridCache;
@@ -202,6 +205,7 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
   } else if (
       decoder_model_version_ == DecoderModelVersion::kGemma ||
+      decoder_model_version_ == DecoderModelVersion::kGemma2 ||
       decoder_model_version_ == DecoderModelVersion::kGemma3) {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kCodegen) {
