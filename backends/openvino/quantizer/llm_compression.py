@@ -60,7 +60,7 @@ def transform_fn(token_pos_map: Tuple[int, int]):
     :param token_pos_map: This input contains the position and its token ID
     """
     inputs = (
-        torch.tensor(token_pos_map[1]).unsqueeze(0).unsqueeze(0),
+        torch.tensor([[token_pos_map[1]]]),
         {"input_pos": torch.tensor([token_pos_map[0]])},
     )
 
@@ -103,6 +103,11 @@ def apply_nncf_data_aware_compression(
             ),
             transform_func=transform_fn,
         )
+
+    # AWQ can work without a dataset as well.
+    if scale_estimation and not nncf_calibration_data:
+        msg = "Scale Estimation is enabled but no calibration dataset is provided"
+        raise RuntimeError(msg)
 
     builder_exported.pre_autograd_graph_module = (
         nncf.experimental.torch.fx.compress_pt2e(
