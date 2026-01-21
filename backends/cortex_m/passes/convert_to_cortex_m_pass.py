@@ -199,14 +199,16 @@ class ConvertToCortexMPass(XNNPACKPass):
         if use_depthwise_conv:
             # For depthwise: OIHW -> IHWO which gives [1, H, W, C_OUT] for CMSIS-NN
             # PyTorch depthwise weight is [out_ch, 1, H, W], permute to [1, H, W, out_ch]
-            weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous(
-                memory_format=torch.channels_last
-            )
+            # The permute achieves the desired logical layout (IHWO). CMSIS-NN expects
+            # weights in physically contiguous memory after the permute (not in channels-last)
+            # so we use contiguous() here.
+            weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous()
         else:
             # For regular conv: OIHW -> OHWI
-            weight_permuted = weight_tensor.permute(0, 2, 3, 1).contiguous(
-                memory_format=torch.channels_last
-            )
+            # The permute achieves the desired logical layout (OHWI). CMSIS-NN expects
+            # weights in physically contiguous memory after the permute (not in channels-last)
+            # so we use contiguous() here.
+            weight_permuted = weight_tensor.permute(0, 2, 3, 1).contiguous()
 
         with node.graph.inserting_after(weight):
             weight_nhwc = create_constant_placeholder(
