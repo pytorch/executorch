@@ -295,12 +295,11 @@ class PreprocessorWrapper(torch.nn.Module):
         return mel, mel_len
 
 
-def export_all(model, max_audio_sec: int = 60):
+def export_all(model):
     """Export all model components.
 
-    Args:
-        model: The Parakeet model to export.
-        max_audio_sec: Maximum audio duration in seconds the model will support.
+    The maximum audio duration is determined by the model's internal
+    max_audio_length (~50 seconds for Parakeet with max_audio_length=5000).
     """
     programs = {}
 
@@ -308,26 +307,26 @@ def export_all(model, max_audio_sec: int = 60):
     sample_rate = model.preprocessor._cfg.sample_rate
     window_stride = float(model.preprocessor._cfg.window_stride)
 
-    # Calculate sizes based on max_audio_sec
-    # max_audio_samples: raw audio samples for preprocessor
-    # max_mel_frames: mel spectrogram frames for encoder (~100 frames/sec with 10ms window_stride)
+    # Get encoder's actual limit from NeMo model
+    encoder_max_frames = model.encoder.max_audio_length  # typically 5000
+    max_audio_sec = int(encoder_max_frames * window_stride)
+
     max_audio_samples = int(sample_rate * max_audio_sec)
     max_mel_frames = int(max_audio_sec / window_stride)
 
     preprocessor_wrapper = PreprocessorWrapper(model.preprocessor)
     preprocessor_wrapper.eval()
-    # Use max_audio_samples for the sample input to help Dim.AUTO infer appropriate bounds
     sample_audio = torch.randn(max_audio_samples)
     sample_length = torch.tensor([sample_audio.shape[0]], dtype=torch.int64)
-    # The preprocessor definition changes if cuda is available (likely due to making it cuda graphable).
-    # Unfortunately that new definition is not supported by export, so we need to stop that from happening.
+    # The preprocessor uses different code paths when CUDA is available, which include
+    # data-dependent conditionals that torch.export cannot handle. Force CPU path.
     old_cuda_is_available = torch.cuda.is_available
     torch.cuda.is_available = lambda: False
     programs["preprocessor"] = export(
         preprocessor_wrapper,
         (sample_audio, sample_length),
         dynamic_shapes={
-            # min=1600 samples = 0.1 sec @ 16kHz, max from max_audio_sec
+            # min=1600 samples = 0.1 sec @ 16kHz, max aligned with encoder limit
             "audio": {0: Dim("audio_len", min=1600, max=max_audio_samples)},
             "length": {},
         },
@@ -336,8 +335,8 @@ def export_all(model, max_audio_sec: int = 60):
     torch.cuda.is_available = old_cuda_is_available
 
     feat_in = getattr(model.encoder, "_feat_in", 128)
-    # Use max_mel_frames for the sample input to help Dim.AUTO infer appropriate bounds
-    # max_mel_frames = max_audio_sec / window_stride (e.g., 60 sec / 0.01 = 6000 frames)
+    # Use max_mel_frames as example to ensure Dim.AUTO infers the full range.
+    # Smaller examples cause Dim.AUTO to infer narrow bounds.
     audio_signal = torch.randn(1, feat_in, max_mel_frames)
     length = torch.tensor([max_mel_frames], dtype=torch.int64)
     encoder_with_proj = EncoderWithProjection(model.encoder, model.joint)
@@ -347,7 +346,11 @@ def export_all(model, max_audio_sec: int = 60):
         encoder_with_proj,
         (),
         kwargs={"audio_signal": audio_signal, "length": length},
-        dynamic_shapes={"audio_signal": {2: Dim.AUTO}, "length": {}},
+        dynamic_shapes={
+            # Use Dim.AUTO - explicit bounds fail due to complex attention guards
+            "audio_signal": {2: Dim.AUTO},
+            "length": {},
+        },
         strict=False,
     )
 
@@ -546,12 +549,6 @@ def main():
         choices=["fp32", "fp16", "bf16"],
         help="Model dtype for Metal/CUDA backends (default: fp32)",
     )
-    parser.add_argument(
-        "--max-audio-sec",
-        type=int,
-        default=30,
-        help="Maximum audio duration in seconds the model will support (default: 30)",
-    )
     args = parser.parse_args()
 
     # Validate dtype for Metal backend
@@ -575,7 +572,7 @@ def main():
         model = model.to(torch.float16)
 
     print("\nExporting components...")
-    programs, metadata = export_all(model, max_audio_sec=args.max_audio_sec)
+    programs, metadata = export_all(model)
 
     et = lower_to_executorch(programs, metadata=metadata, backend=args.backend)
 
