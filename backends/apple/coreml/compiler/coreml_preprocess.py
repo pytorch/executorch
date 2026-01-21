@@ -86,8 +86,6 @@ class MultifunctionModelMetadata:
     identifier: str
     # Per-method metadata (method name -> MethodMetadata).
     methods: Dict[str, MethodMetadata]
-    # The default method name.
-    defaultMethod: str
 
 
 @dataclass
@@ -878,7 +876,6 @@ class CoreMLBackend(BackendDetails):
                 multifunction_metadata = MultifunctionModelMetadata(
                     identifier=identifier,
                     methods={k: asdict(v) for k, v in methods_metadata.items()},
-                    defaultMethod=first_method,
                 )
 
                 # Save consolidated metadata
