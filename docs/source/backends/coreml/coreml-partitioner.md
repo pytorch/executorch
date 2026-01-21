@@ -211,4 +211,4 @@ prefill_method = program.load_method("prefill")
 prefill_output = prefill_method.execute(prefill_inputs)
 ```
 
-For a complete example including KV cache handling, see the [multifunction test](https://github.com/pytorch/executorch/blob/main/backends/apple/coreml/test/test_coreml_multifunction.py) and the [LLM export script](https://github.com/pytorch/executorch/blob/main/examples/apple/coreml/llama/export_static_llm_coreml.py).
+For a complete example including KV cache handling, see the [multifunction test](../../../../backends/apple/coreml/test/test_coreml_multifunction.py) and the [LLM export script](../../../../examples/apple/coreml/llama/export_static_llm_coreml.py).
