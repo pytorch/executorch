@@ -88,6 +88,7 @@ runtime.python_test(
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//pytorch/ao:torchao",  # @manual
+        "//pytorch/vision:torchvision",  # @manual
         "//caffe2:torch",
     ],
     external_deps = [

@@ -38,6 +38,7 @@ DECODER_MODEL_VERSION = {
     "llama3_2-3b_instruct": "llama3",
     "codegen2_1b": "codegen",
     "gemma-2b": "gemma",
+    "gemma2-2b": "gemma2",
     "gemma3-1b": "gemma3",
     "granite_3_3-2b_instruct": "granite",
     "phi_4_mini": "phi_4_mini",
