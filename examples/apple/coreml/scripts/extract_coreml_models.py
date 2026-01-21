@@ -58,13 +58,13 @@ def extract_coreml_models(pte_data: bytes):
                 ].data
 
                 # Check if this is a JSON reference to named_data (multifunction models)
-                try:
-                    reference = json.loads(raw_bytes.decode("utf-8"))
-                    if (
-                        isinstance(reference, dict)
-                        and "version" in reference
-                        and "key" in reference
-                    ):
+                # JSON references are prefixed with "CMJR" magic number
+                MAGIC_NUMBER = b"CMJR"
+                if raw_bytes.startswith(MAGIC_NUMBER):
+                    # Strip magic number and parse JSON
+                    json_bytes = raw_bytes[len(MAGIC_NUMBER) :]
+                    try:
+                        reference = json.loads(json_bytes.decode("utf-8"))
                         key = reference.get("key")
                         if key in extracted_keys:
                             # Already extracted this partition, skip
@@ -78,8 +78,11 @@ def extract_coreml_models(pte_data: bytes):
                                 f"Warning: Named data key '{key}' not found in program"
                             )
                             continue
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    # Not JSON, treat as raw model data (legacy format)
+                    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                        print(f"Warning: Failed to parse JSON reference: {e}")
+                        continue
+                else:
+                    # Not a JSON reference, treat as raw model data (legacy format)
                     coreml_processed_bytes = raw_bytes
 
             case _:
