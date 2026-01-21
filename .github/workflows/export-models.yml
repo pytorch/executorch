@@ -159,7 +159,7 @@ jobs:
         echo "::group::Setting up dev environment"
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        if [[ ${{ matrix.config }} == *"qnn"* ]]; then
+        if [[ "${{ matrix.config }}" == *"qnn"* ]]; then
             PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
             PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         fi
@@ -179,14 +179,14 @@ jobs:
         echo "::group::Exporting ${{ matrix.config }} model: ${{ matrix.model }}"
         BUILD_MODE="cmake"
 
-        if [[ ${{ matrix.model }} =~ ^[^/]+/[^/]+$ ]]; then
+        if [[ "${{ matrix.model }}" =~ ^[^/]+/[^/]+$ ]]; then
             # HuggingFace model. Assume the pattern is always like "<org>/<repo>"
             HF_MODEL_REPO=${{ matrix.model }}
             OUT_ET_MODEL_NAME="$(echo "$HF_MODEL_REPO" | awk -F'/' '{print $2}' | sed 's/_/-/g' | tr '[:upper:]' '[:lower:]')_${{ matrix.config }}"
 
             # Convert HF checkpoint to ET via etLLM path
             if [[ "$HF_MODEL_REPO" == meta-llama/* ]]; then
-                if [[ ${{ matrix.config }} == "llama3_spinquant" ]]; then
+                if [[ "${{ matrix.config }}" == "llama3_spinquant" ]]; then
                     # SpinQuant
                     # Download prequantized chceckpoint from Hugging Face
                     DOWNLOADED_PATH=$(
@@ -213,7 +213,7 @@ jobs:
                       quantization.use_spin_quant=native \
                       base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"'
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
-                elif [[ ${{ matrix.config }} == "llama3_qlora" ]]; then
+                elif [[ "${{ matrix.config }}" == "llama3_qlora" ]]; then
                     # QAT + LoRA
                     # Download prequantized chceckpoint from Hugging Face
                     DOWNLOADED_PATH=$(
@@ -241,7 +241,7 @@ jobs:
                       export.output_name="${OUT_ET_MODEL_NAME}.pte" \
                       base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"'
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
-                elif [[ ${{ matrix.config }} == "llama3_fb16" ]]; then
+                elif [[ "${{ matrix.config }}" == "llama3_fb16" ]]; then
                     # Original BF16 version, without any quantization
                     DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
                     python -m extension.llm.export.export_llm \
@@ -255,7 +255,7 @@ jobs:
                       base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"' \
                       export.output_name="${OUT_ET_MODEL_NAME}.pte"
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
-                elif [[ ${{ matrix.config }} == "et_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
+                elif [[ "${{ matrix.config }}" == "et_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
                     DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
                     python -m extension.llm.export.export_llm \
                       base.model_class=llama3_2 \
@@ -272,7 +272,7 @@ jobs:
                       base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"' \
                       export.output_name="${OUT_ET_MODEL_NAME}.pte"
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
-                elif [[ ${{ matrix.config }} == "llama3_qnn_htp" ]]; then
+                elif [[ "${{ matrix.config }}" == "llama3_qnn_htp" ]]; then
                     export QNN_SDK_ROOT=/tmp/qnn/2.37.0.250724
                     export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
                     export PYTHONPATH=$(pwd)/..
@@ -294,7 +294,7 @@ jobs:
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
                 fi
             elif [[ "$HF_MODEL_REPO" == "Qwen/Qwen3-0.6B" ]]; then
-              if [[ ${{ matrix.config }} == "et_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
+              if [[ "${{ matrix.config }}" == "et_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
                 DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "." --files "tokenizer.json")
                 python -m extension.llm.export.export_llm \
                   base.model_class=qwen3_0_6b \
@@ -313,7 +313,7 @@ jobs:
               fi
             fi
 
-            if [[ ${{ matrix.config }} == "hf_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
+            if [[ "${{ matrix.config }}" == "hf_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
               DOWNLOADED_PATH=$(
                 bash .ci/scripts/download_hf_hub.sh \
                   --model_id "${HF_MODEL_REPO}" \
@@ -353,13 +353,13 @@ jobs:
             mkdir -p ${ARTIFACTS_DIR_NAME}
             mv model.zip ${ARTIFACTS_DIR_NAME}
             ls -lh ${ARTIFACTS_DIR_NAME}
-        elif [[ ${{ matrix.model }} == "llama" ]]; then
+        elif [[ "${{ matrix.model }}" == "llama" ]]; then
             # Install requirements for export_llama
             PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
             # Test llama2
-            if [[ ${{ matrix.config }} == *"xnnpack"* ]]; then
+            if [[ "${{ matrix.config }}" == *"xnnpack"* ]]; then
                 DELEGATE_CONFIG="xnnpack+custom+qe"
-            elif [[ ${{ matrix.config }} == *"qnn"* ]]; then
+            elif [[ "${{ matrix.config }}" == *"qnn"* ]]; then
                 DELEGATE_CONFIG="qnn"
             else
                 echo "Unsupported delegate ${{ matrix.config }}"
