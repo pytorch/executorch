@@ -659,7 +659,17 @@ def get_quant_properties(  # noqa: C901
                 [input_act_qspec if n == inputs[0] else shared_qspec for n in inputs],
             )
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+    elif node.target in (
+        torch.ops.aten.index_put.default,
+        torch.ops.aten.index_put_.default,
+    ):
+        shared_qspec = SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
+        quant_properties.quant_inputs = [
+            _QuantProperty(0, input_act_qspec),
+            _QuantProperty(2, shared_qspec),
+        ]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)

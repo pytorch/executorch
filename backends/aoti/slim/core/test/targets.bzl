@@ -34,3 +34,13 @@ def define_common_targets():
             "//executorch/backends/aoti/slim/core:storage",
         ],
     )
+
+    runtime.cxx_test(
+        name = "test_slimtensor_dtypes",
+        srcs = [
+            "test_slimtensor_dtypes.cpp",
+        ],
+        deps = [
+            "//executorch/backends/aoti/slim/factory:empty",
+        ],
+    )
