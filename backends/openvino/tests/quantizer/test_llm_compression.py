@@ -117,7 +117,6 @@ class TestCalibrationDataGeneration(unittest.TestCase):
     and then compare it with a reference created manually"""
 
     def test_get_calibration_data_with_mock_module(self):
-        # Create mock tokenizer
         mock_tokenizer = Mock()
         mock_tokenizer.eos_id = 2
         mock_tokenizer.encode = Mock(return_value=[1, 5, 6])

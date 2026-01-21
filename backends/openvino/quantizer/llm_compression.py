@@ -6,7 +6,7 @@
 
 # mypy: disable-error-code=import-not-found
 
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Tuple
 
 import torch
 from executorch.extension.llm.export.builder import LLMEdgeManager
