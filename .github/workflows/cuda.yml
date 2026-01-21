@@ -27,7 +27,7 @@ jobs:
         cuda-version: ["12.6", "12.8", "12.9", "13.0"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.10
     permissions:
       id-token: write
       contents: read
@@ -64,7 +64,7 @@ jobs:
 
   test-models-cuda:
     name: test-models-cuda
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.10
     permissions:
       id-token: write
       contents: read
@@ -89,7 +89,7 @@ jobs:
 
   unittest-cuda:
     name: unittest-cuda
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.10
     permissions:
       id-token: write
       contents: read
@@ -121,7 +121,7 @@ jobs:
     name: export-model-cuda-artifact
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.10
     permissions:
       id-token: write
       contents: read
@@ -177,7 +177,7 @@ jobs:
   test-model-cuda-e2e:
     name: test-model-cuda-e2e
     needs: export-model-cuda-artifact
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.10
     permissions:
       id-token: write
       contents: read

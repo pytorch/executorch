@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   apple:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.10
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +33,7 @@ jobs:
         ${CONDA_RUN} cmake --build cmake-out -j$(( $(sysctl -n hw.ncpu) - 1 ))
 
   zephyr:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.10
     strategy:
       fail-fast: false
       matrix:
@@ -72,7 +72,7 @@ jobs:
         cmake --preset ${{ matrix.preset }}
         cmake --build cmake-out -j$(( $(nproc) - 1 ))
   linux:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.10
     strategy:
       fail-fast: false
       matrix:
@@ -105,7 +105,7 @@ jobs:
         cmake --build cmake-out -j$(( $(nproc) - 1 ))
 
   windows:
-    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@release/2.10
     strategy:
       fail-fast: false
       matrix:

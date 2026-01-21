@@ -27,7 +27,7 @@ on:
 
 jobs:
   linux:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.10
     permissions:
       id-token: write
       contents: read
@@ -42,7 +42,7 @@ jobs:
         .ci/scripts/unittest-linux.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
 
   macos:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.10
     with:
       runner: macos-m1-stable
       python-version: '3.11'
@@ -56,7 +56,7 @@ jobs:
 
   windows:
     if: ${{ inputs.build-tool == 'cmake' }}
-    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@release/2.10
     with:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
