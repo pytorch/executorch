@@ -40,4 +40,3 @@ install(
   PATTERN "*.cuh"
   PATTERN "test" EXCLUDE
 )
-

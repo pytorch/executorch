@@ -34,10 +34,13 @@ list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
 # include sampler
-add_subdirectory(${EXECUTORCH_ROOT}/extension/llm/sampler ${CMAKE_CURRENT_BINARY_DIR}/../sampler)
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/sampler
+  ${CMAKE_CURRENT_BINARY_DIR}/../sampler
+)
 
-set(runner_deps executorch_core extension_module extension_tensor extension_llm_sampler
-                tokenizers::tokenizers
+set(runner_deps executorch_core extension_module extension_tensor
+                extension_llm_sampler tokenizers::tokenizers
 )
 
 # depend on arange_utils
