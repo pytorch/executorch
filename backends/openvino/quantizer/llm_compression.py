@@ -113,7 +113,6 @@ def apply_nncf_data_aware_compression(
             missing_params.append("calibration_seq_length")
         if builder_exported.tokenizer_path is None:
             missing_params.append("tokenizer_path")
-        msg = "Scale Estimation is enabled but no calibration dataset is provided."
         if missing_params:
             msg += (
                 " Missing required calibration parameter(s): "
