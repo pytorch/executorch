@@ -1,8 +1,6 @@
 import argparse
 import unittest
 
-import nncf.torch  # type: ignore[import-untyped,import-not-found]
-
 
 class OpenvinoTestSuite(unittest.TestSuite):
 
@@ -68,7 +66,6 @@ if __name__ == "__main__":
     # Discover all existing op tests in "ops" folder
     suite = loader.discover(test_params["test_type"], pattern=test_params["pattern"])
     # Start running tests
-    # with nncf.torch.disable_patching():
     result = unittest.TextTestRunner().run(suite)
     if result.wasSuccessful():
         print("OpenVINO backend tests completed successfully")

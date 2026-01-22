@@ -19,7 +19,7 @@ except ImportError:
     raise ImportError("Please install nncf via backends/openvino/requirements.txt")
 
 
-# This code is taken from https://github.com/pytorch/executorch/blob/0c54fd0483314da173f8e14d63d2ed9591c7133a/extension/llm/export/builder.py#L278
+# This code is adapted from https://github.com/pytorch/executorch/blob/0c54fd0483314da173f8e14d63d2ed9591c7133a/extension/llm/export/builder.py#L278
 def get_calibration_data(
     module: torch.fx.GraphModule, tokenizer, prompts: str, max_len: int
 ):
@@ -30,7 +30,7 @@ def get_calibration_data(
     Currently, this method is only tested with Llama models.
     """
     # TODO: change criteria & support batch inputs if necessary
-    pos = torch.tensor(0, dtype=torch.int64)
+    pos = 0
     token_list = tokenizer.encode(prompts, bos=True, eos=False)
 
     with torch.no_grad():
@@ -44,7 +44,7 @@ def get_calibration_data(
                 token_list.append(torch.argmax(logits[:], dim=-1).item())
     token_list = [
         (
-            pos,
+            torch.tensor(pos, dtype=torch.int64),
             token,
         )
         for pos, token in enumerate(token_list)
@@ -95,7 +95,7 @@ def apply_nncf_data_aware_compression(
     ):
         tokenizer = get_tokenizer(builder_exported.tokenizer_path)
         nncf_calibration_data = nncf.Dataset(
-            get_calibration_data(
+            get_calibration_data(  # type: ignore[arg-type]
                 builder_exported.pre_autograd_graph_module,
                 tokenizer,
                 builder_exported.calibration_data,
@@ -106,8 +106,20 @@ def apply_nncf_data_aware_compression(
 
     # AWQ can work without a dataset as well.
     if scale_estimation and not nncf_calibration_data:
-        msg = "Scale Estimation is enabled but no calibration dataset is provided"
-        raise RuntimeError(msg)
+        missing_params = []
+        if builder_exported.calibration_data is None:
+            missing_params.append("calibration_data")
+        if builder_exported.calibration_seq_length is None:
+            missing_params.append("calibration_seq_length")
+        if builder_exported.tokenizer_path is None:
+            missing_params.append("tokenizer_path")
+        msg = "Scale Estimation is enabled but no calibration dataset is provided."
+        if missing_params:
+            msg += (
+                " Missing required calibration parameter(s): "
+                + ", ".join(missing_params)
+                + ". Please provide calibration_data, calibration_seq_length, and tokenizer_path."
+            )
 
     builder_exported.pre_autograd_graph_module = (
         nncf.experimental.torch.fx.compress_pt2e(

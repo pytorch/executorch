@@ -241,7 +241,6 @@ def build_args_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--openvino_awq",
-        required=False,
         action="store_true",
         help="Whether to use AWQ from NNCF. Applicable only for the OpenVINO backend.",
     )
