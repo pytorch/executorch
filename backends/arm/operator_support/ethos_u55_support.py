@@ -153,10 +153,10 @@ class EthosU55DtypeSupport(OperatorSupportBase):
         ):
             for input_node in node.all_input_nodes:
                 dtype = _try_determine_dtype(input_node)
-                if dtype is not None and dtype != torch.int8:
+                if dtype is not None and dtype not in (torch.int8, torch.int16):
                     self.reporter.report_reject(
                         input_node,
-                        f"Input {input_node.name} has unsupported dtype {dtype} (Supports i8).",
+                        f"Input {input_node.name} has unsupported dtype {dtype} (Supports i8, i16).",
                     )
                     return False
 

@@ -590,3 +590,52 @@ def test_convolution_2d_u55_INT_not_delegated(module: Conv2d):
         quantize=True,
         u55_subset=True,
     ).run()
+
+
+@common.parametrize("test_data", test_data_INT)
+def test_conv2d_tosa_INT_a16w8(test_data: input_t):
+    """Test conv2d with 16A8W quantization for TOSA INT."""
+    model, per_channel_quantization = test_data()
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_extensions=["int16"],
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@common.XfailIfNoCorstone300
+def test_conv2d_u55_INT_a16w8(test_data: input_t):
+    """Test conv2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@common.XfailIfNoCorstone320
+def test_conv2d_u85_INT_a16w8(test_data: input_t):
+    """Test conv2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
