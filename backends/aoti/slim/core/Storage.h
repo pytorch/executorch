@@ -231,17 +231,6 @@ class MaybeOwningStorage {
     }
   }
 
-  /// Constructs non-owning storage with external memory.
-  /// @param device The device where the data resides.
-  /// @param data Pointer to external memory (not owned by this storage).
-  /// @param nbytes Size of the external memory in bytes.
-  MaybeOwningStorage(const c10::Device& device, void* data, size_t nbytes)
-      : device_(device),
-        data_(data),
-        capacity_(nbytes),
-        deleter_(detail::noop),
-        is_owning_(false) {}
-
   /// Default constructor is deleted - storage must have a device.
   MaybeOwningStorage() = delete;
 
