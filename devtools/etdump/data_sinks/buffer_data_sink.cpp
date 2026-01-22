@@ -33,7 +33,12 @@ BufferDataSink::create(void* ptr, size_t size, size_t alignment) noexcept {
 }
 
 Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
-  if (length == 0) {
+  bool inPlaceTensor = false;
+
+  if (length != 0 && ptr == nullptr) {
+    inPlaceTensor = true;
+  } else if (length == 0 || ptr == nullptr) {
+    ET_LOG(Info, "Invalid data to write to buffer");
     return offset_;
   }
 
@@ -50,7 +55,13 @@ Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
 
   // Zero out the padding between data blobs
   memset(last_data_end, 0, cur_data_begin - last_data_end);
-  memcpy(cur_data_begin, ptr, length);
+
+  if (inPlaceTensor) {
+    memset(cur_data_begin, 0, length);
+  } else {
+    memcpy(cur_data_begin, ptr, length);
+  }
+
   offset_ = (size_t)(cur_data_end - debug_buffer_.data());
 
   return (size_t)(cur_data_begin - debug_buffer_.data());
