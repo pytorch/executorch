@@ -133,7 +133,7 @@ def install_optional_example_requirements(use_pytorch_nightly):
             else "torchvision"
         ),
         (
-            f"torchaudio==2.10.0.{NIGHTLY_VERSION}"
+            f"torchaudio==2.11.0.{NIGHTLY_VERSION}"
             if use_pytorch_nightly
             else "torchaudio"
         ),
