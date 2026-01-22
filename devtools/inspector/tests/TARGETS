@@ -11,17 +11,14 @@ python_unittest(
         ci.buckconfig("executorch.event_tracer_enabled", "true"),
     ),
     deps = [
-        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
-        "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/devtools:lib",
         "//executorch/devtools/debug_format:et_schema",
         "//executorch/devtools/etdump:schema_flatcc",
         "//executorch/devtools/etrecord/tests:etrecord_test_library",
         "//executorch/devtools/inspector:inspector",
         "//executorch/devtools/inspector:lib",
-        "//executorch/devtools/inspector/tests:inspector_test_utils",
         "//executorch/exir:lib",
-        "//executorch/runtime:runtime",
+        "//executorch/devtools/inspector/tests:inspector_test_utils",
     ],
 )
 
