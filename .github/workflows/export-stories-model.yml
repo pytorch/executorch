@@ -9,7 +9,7 @@ on:
 jobs:
   export-llava-model:
     name: export-llava-model
-    runs-on: linux.24xlarge
+    runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
       id-token: write
@@ -18,7 +18,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13.0'
+          python-version: '3.11'
 
       - name: Checkout executorch
         uses: actions/checkout@v4
