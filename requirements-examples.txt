@@ -3,5 +3,5 @@
 datasets == 3.6.0 # 4.0.0 deprecates trust_remote_code and load scripts. For now pin to 3.6.0
 timm == 1.0.7
 torchsr == 1.0.4
-torchtune @ git+https://github.com/pytorch/torchtune.git
+torchtune @ git+https://github.com/pytorch/torchtune.git@44271b570af36cfda8ee20a4479d2652770378c0
 transformers == 5.0.0rc1
