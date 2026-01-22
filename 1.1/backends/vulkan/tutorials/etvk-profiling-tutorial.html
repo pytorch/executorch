@@ -1,0 +1,1585 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+    <title>Executing and profiling an ExecuTorch Vulkan model on device &#8212; ExecuTorch 1.1 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../../../_static/documentation_options.js?v=56dcb7b8"></script>
+    <script src="../../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/vulkan/tutorials/etvk-profiling-tutorial';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '1.1';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
+        </script>
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/backends/vulkan/tutorials/etvk-profiling-tutorial.html" />
+    <link rel="icon" href="../../../_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+<script>
+  if (window.location.hostname === 'docs.pytorch.org' || window.location.hostname === 'docs-preview.pytorch.org') {
+    const script = document.createElement('script');
+    script.src = 'https://cmp.osano.com/16A0DbT9yDNIaQkvZ/31b1b91a-e0b6-47ea-bde2-7f2bd13dbe5c/osano.js?variant=one';
+    document.head.appendChild(script);
+  }
+</script>
+<script>
+  // Cookie banner for non-LF projects
+  document.addEventListener('DOMContentLoaded', function () {
+    // Hide cookie banner on local environments and LF owned docs
+    if (window.location.hostname === 'localhost' ||
+      window.location.hostname === '0.0.0.0' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'docs.pytorch.org' ||
+      window.location.hostname === 'docs-preview.pytorch.org' ||
+      window.location.hostname.startsWith('192.168.')) {
+      const banner = document.querySelector('.cookie-banner-wrapper');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+  });
+</script>
+<!-- Conditional CSS for header and footer height adjustment -->
+
+
+<link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="../../../_static/js/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+<meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="../../../_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
+<meta name="pytorch_project" content="">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS" height="0" width="0"
+    style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager -->
+<script>(function (w, d, s, l, i) {
+    w[l] = w[l] || []; w[l].push({
+      'gtm.start':
+        new Date().getTime(), event: 'gtm.js'
+    }); var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+        'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+    j.onload = function () {
+      window.dispatchEvent(new Event('gtm_loaded'));
+      console.log('GTM loaded successfully');
+    };
+  })(window, document, 'script', 'dataLayer', 'GTM-T8XT4PS');
+</script>
+<!-- End Google Tag Manager -->
+<!-- Facebook Pixel Code -->
+<script>
+  !function (f, b, e, v, n, t, s) {
+    if (f.fbq) return; n = f.fbq = function () {
+      n.callMethod ?
+        n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+    };
+    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+    n.queue = []; t = b.createElement(e); t.async = !0;
+    t.src = v; s = b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t, s)
+  }(window, document, 'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '243028289693773');
+  fbq('track', 'PageView');
+</script>
+<script>
+  document.documentElement.setAttribute('data-version', '1.1');
+</script>
+<noscript>
+  <img height="1" width="1" src="https://www.facebook.com/tr?id=243028289693773&ev=PageView&noscript=1" />
+</noscript>
+<script>
+  function gtag() {
+    window.dataLayer.push(arguments);
+  }
+</script>
+<!-- End Facebook Pixel Code -->
+<!-- Repository configuration for tutorials -->
+
+<!-- Script to Fix scrolling -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Fix anchor scrolling
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const targetId = this.getAttribute('href').substring(1);
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          const headerHeight =
+            (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
+            (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
+
+          const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
+          window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+          });
+
+          // Update URL hash without scrolling
+          history.pushState(null, null, '#' + targetId);
+        }
+      });
+    });
+  });
+</script>
+
+<script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+  </head>
+
+<body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
+  
+    <div class="container-fluid header-holder tutorials-header" id="header-holder">
+   <div class="header-container-wrapper">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                <span>Learn</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started/locally">
+                  <span class=dropdown-title>Get Started</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/webinars/">
+                  <span class="dropdown-title">Webinars</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Community</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://landscape.pytorch.org/" target="_blank">
+                  <span class="dropdown-title">Landscape</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/join-ecosystem">
+                  <span class="dropdown-title">Join the Ecosystem</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-hub/">
+                  <span class="dropdown-title">Community Hub</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/">
+                  <span class="dropdown-title">Forums</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contributor-awards/">
+                  <span class="dropdown-title">Contributor Awards</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-events/">
+                  <span class="dropdown-title">Community Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/programs/ambassadors/">
+                  <span class="dropdown-title">PyTorch Ambassadors</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Projects</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/pytorch/">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/vllm/">
+                  <span class="dropdown-title">vLLM</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/deepspeed/">
+                  <span class="dropdown-title">DeepSpeed</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/host-your-project/">
+                  <span class="dropdown-title">Host Your Project</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/ray/">
+                  <span class="dropdown-title">RAY</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span> Docs</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/domains">
+                  <span class="dropdown-title">Domains</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Blogs & News</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">Blog</span>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/announcements">
+                  <span class="dropdown-title">Announcements</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/case-studies/">
+                  <span class="dropdown-title">Case Studies</span>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                </a>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>About</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/members">
+                  <span class="dropdown-title">Members</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact">
+                  <span class="dropdown-title">Contact</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/wp-content/uploads/2025/09/pytorch_brand_guide_091925a.pdf">
+                  <span class="dropdown-title">Brand Guidelines</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown main-menu-button">
+              <a href="https://pytorch.org/join" data-cta="join">
+                JOIN
+              </a>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu">
+        <i class="fa-solid fa-ellipsis"></i>
+      </a>
+    </div>
+  </div>
+ </div>
+
+ <!-- Begin Mobile Menu -->
+
+<div class="mobile-main-menu">
+  <div class="container-fluid">
+    <div class="header-container-wrapper">
+      <div class="mobile-main-menu-header-container">
+        <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu">
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="mobile-main-menu-links-container">
+    <div class="main-menu">
+      <ul>
+         <li class="resources-mobile-menu-title">
+           <a>Learn</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/get-started/locally">Get Started</a>
+           </li>
+           <li>
+             <a href="https://docs.pytorch.org/tutorials">Tutorials</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/webinars/">Webinars</a>
+          </li>
+        </ul>
+         <li class="resources-mobile-menu-title">
+           <a>Community</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://landscape.pytorch.org/">Landscape</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/join-ecosystem">Join the Ecosystem</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/community-hub/">Community Hub</a>
+           </li>
+           <li>
+             <a href="https://discuss.pytorch.org/">Forums</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/resources">Developer Resources</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/contributor-awards/">Contributor Awards</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/community-events/">Community Events</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/programs/ambassadors/">PyTorch Ambassadors</a>
+          </li>
+       </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Projects</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/projects/pytorch/">PyTorch</a>
+           </li>
+
+           <li>
+             <a href="https://pytorch.org/projects/vllm/">vLLM</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/projects/deepspeed/">DeepSpeed</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/projects/host-your-project/">Host Your Project</a>
+           </li>
+         </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Docs</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://docs.pytorch.org/docs/stable/index.html">PyTorch</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/domains">Domains</a>
+          </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>Blog & News</a>
+        </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/announcements">Announcements</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/case-studies/">Case Studies</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/events">Events</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/newsletter">Newsletter</a>
+           </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>About</a>
+        </li>
+
+        <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/members">Members</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/governing-board">Governing Board</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+         </li>
+         <li>
+             <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/staff">Staff</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/contact">Contact</a>
+          </li>
+        </ul>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- End Mobile Menu -->
+  
+  
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class=" navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch 1.1 documentation - Home"/>
+    <script>document.write(`<img src="../../../_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch 1.1 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+    
+      <div class="navbar-item">
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-2"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-2"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-2"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-2">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script></div>
+    
+  </div>
+  
+  <div class=" navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../api-section.html">
+    API
+  </a>
+</li>
+
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="../../../support-section.html">
+    Support
+  </a>
+</li>
+
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+      
+        <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../api-section.html">
+    API
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../support-section.html">
+    Support
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Executing and profiling an ExecuTorch Vulkan model on device</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etvk-llama-tutorial.html">Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page">Executing...</li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+</div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+  
+<div id="searchbox"></div>
+  <article class="bd-article" id="pytorch-article">
+    <!-- Hidden breadcrumb schema for SEO only -->
+    <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="Executing and profiling an ExecuTorch Vulkan model on device">
+        <meta itemprop="position" content="1">
+      </div>
+    </div>
+
+    
+    
+
+    
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="executing-and-profiling-an-executorch-vulkan-model-on-device">
+<h1>Executing and profiling an ExecuTorch Vulkan model on device<a class="headerlink" href="#executing-and-profiling-an-executorch-vulkan-model-on-device" title="Link to this heading">#</a></h1>
+<p>This tutorial assumes that you have a working local copy of the ExecuTorch repo,
+and have gone through the steps to install the executorch pip package or have
+installed it by building from source.</p>
+<p>This tutorial also assumes that you have the Android SDK tools installed and
+that you are able to connect to an Android device via <code class="docutils literal notranslate"><span class="pre">adb</span></code>.</p>
+<p>Finally, the Android NDK should also be installed, and your environment should
+have a variable <code class="docutils literal notranslate"><span class="pre">ANDROID_NDK</span></code> that points to the root directory of the NDK.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_ndk&gt;
+</pre></div>
+</div>
+<section id="lower-a-model-to-executorch-vulkan-and-obtain-the-pte-file">
+<h2>Lower a model to ExecuTorch Vulkan and obtain the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file<a class="headerlink" href="#lower-a-model-to-executorch-vulkan-and-obtain-the-pte-file" title="Link to this heading">#</a></h2>
+<p>The commands in this tutorial are assumed to be executed from ExecuTorch’s root
+directory.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch
+</pre></div>
+</div>
+<p>For this tutorial, we will use the export script in
+<a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/vulkan"><code class="docutils literal notranslate"><span class="pre">executorch/examples/vulkan/export.py</span></code></a>,
+however any method of generating a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file will suffice. In this tutorial,
+the InceptionV3 model is exported.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.vulkan.export<span class="w"> </span>--model_name<span class="o">=</span>ic3<span class="w"> </span>-o<span class="w"> </span>.<span class="w"> </span>-fp16
+</pre></div>
+</div>
+<p>After exporting, there should be a file called <code class="docutils literal notranslate"><span class="pre">ic3_vulkan.pte</span></code> in the root
+directory of ExecuTorch. Feel free to modify the <code class="docutils literal notranslate"><span class="pre">-o</span></code> argument of the script to
+control where the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file will be stored.</p>
+<p>Then, push the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file to device.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/data/local/tmp/etvk/models/<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+adb<span class="w"> </span>push<span class="w"> </span>ic3_vulkan.pte<span class="w"> </span>/data/local/tmp/etvk/models/ic3_vulkan.pte
+</pre></div>
+</div>
+</section>
+<section id="build-the-executor-runner-binary-and-push-to-device">
+<h2>Build the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> binary and push to device<a class="headerlink" href="#build-the-executor-runner-binary-and-push-to-device" title="Link to this heading">#</a></h2>
+<p>To be able to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file on device, first the core libraries,
+including the Vulkan backend, must be compiled for Android. Note that
+<code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_ENABLE_EVENT_TRACER=ON</span></code> is used to turn on profiling, and
+<code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON</span></code> is used to build the runner binary that
+will be used to execute and profile the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>.<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out-android-so<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--preset<span class="w"> </span><span class="s2">&quot;android-arm64-v8a&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_PLATFORM<span class="o">=</span>android-28<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_PAL_DEFAULT<span class="o">=</span>posix<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_LLAMA_JNI<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_VULKAN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_TESTS<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXECUTOR_RUNNER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_ENABLE_EVENT_TRACER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Bcmake-out-android-so<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-android-so<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
+</pre></div>
+</div>
+<p>Once the build completes, we can push the runner binary to device.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>cmake-out-android-so/executor_runner<span class="w"> </span>/data/local/tmp/etvk/executor_runner
+</pre></div>
+</div>
+</section>
+<section id="execute-the-pte-file">
+<h2>Execute the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file<a class="headerlink" href="#execute-the-pte-file" title="Link to this heading">#</a></h2>
+<p>Finally, we can execute the lowered <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file on your device. To test run the
+model file without profiling:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/etvk/executor_runner<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--model_path<span class="w"> </span>/data/local/tmp/etvk/models/ic3_vulkan.pte
+</pre></div>
+</div>
+<p>Now, with profiling:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nv">MODEL_NAME</span><span class="o">=</span>ic3<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="nv">BACKEND</span><span class="o">=</span>vulkan<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="nv">NUM_ITERS</span><span class="o">=</span><span class="m">3</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/data/local/tmp/etvk/etdumps/<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/etvk/executor_runner<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--model_path<span class="w"> </span>/data/local/tmp/etvk/models/<span class="si">${</span><span class="nv">MODEL_NAME</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>.pte<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--num_executions<span class="o">=</span><span class="si">${</span><span class="nv">NUM_ITERS</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--etdump_path<span class="w"> </span>/data/local/tmp/etvk/etdumps/<span class="si">${</span><span class="nv">MODEL_NAME</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>.etdp<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+adb<span class="w"> </span>pull<span class="w"> </span>/data/local/tmp/etvk/etdumps/<span class="si">${</span><span class="nv">MODEL_NAME</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>.etdp<span class="w"> </span><span class="si">${</span><span class="nv">MODEL_NAME</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>.etdp<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+adb<span class="w"> </span>shell<span class="w"> </span>rm<span class="w"> </span>/data/local/tmp/etvk/etdumps/<span class="si">${</span><span class="nv">MODEL_NAME</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>.etdp<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+python<span class="w"> </span>devtools/inspector/inspector_cli.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--etdump_path<span class="w"> </span><span class="si">${</span><span class="nv">MODEL_NAME</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>.etdp
+</pre></div>
+</div>
+<p>Here is some sample (tailed) output from a Samsung Galaxy S24:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">165</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>conv2d_clamp_half_163<span class="w">                  </span>│<span class="w">   </span><span class="m">0</span>.345082<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.346164<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.346247<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.345748<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.344812<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.346268<span class="w">   </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488974948084</span>,<span class="w"> </span><span class="m">2081488995911052</span>,<span class="w"> </span><span class="m">2081489016763676</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">166</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>conv2d_clamp_half_164<span class="w">                  </span>│<span class="w">   </span><span class="m">0</span>.306124<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.30654<span class="w">    </span>│<span class="w">   </span><span class="m">0</span>.306998<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.306557<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.30602<span class="w">    </span>│<span class="w">   </span><span class="m">0</span>.307112<span class="w">   </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488975294716</span>,<span class="w"> </span><span class="m">2081488996256228</span>,<span class="w"> </span><span class="m">2081489017110204</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">167</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>set_zero_int32_165<span class="w">                     </span>│<span class="w">   </span><span class="m">0</span>.00240245<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00244403<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00248561<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00244403<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00239205<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.002496<span class="w">   </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488975601100</span>,<span class="w"> </span><span class="m">2081488996563132</span>,<span class="w"> </span><span class="m">2081489017417680</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">168</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>concat_2_texture3d_half_166<span class="w">            </span>│<span class="w">   </span><span class="m">0</span>.0122305<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.01248<span class="w">    </span>│<span class="w">   </span><span class="m">0</span>.0125634<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0124108<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0121682<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0125842<span class="w">  </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488975603960</span>,<span class="w"> </span><span class="m">2081488996565940</span>,<span class="w"> </span><span class="m">2081489017420436</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">169</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>set_zero_int32_167<span class="w">                     </span>│<span class="w">   </span><span class="m">0</span>.00157056<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00161195<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00161214<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00159478<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00156021<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00161219<span class="w"> </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488975616804</span>,<span class="w"> </span><span class="m">2081488996578888</span>,<span class="w"> </span><span class="m">2081489017432968</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">170</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>concat_3_texture3d_half_168<span class="w">            </span>│<span class="w">   </span><span class="m">0</span>.0420369<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0423281<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0427857<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0423974<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0419641<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0429001<span class="w">  </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488975618728</span>,<span class="w"> </span><span class="m">2081488996580864</span>,<span class="w"> </span><span class="m">2081489017434944</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">171</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>update_concat_offset_3_int32_169<span class="w">       </span>│<span class="w">   </span><span class="m">0</span>.00261035<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00265193<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00265212<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00263468<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00259995<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00265217<span class="w"> </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488975661992</span>,<span class="w"> </span><span class="m">2081488996623556</span>,<span class="w"> </span><span class="m">2081489017477272</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">172</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>concat_1_texture3d_half_170<span class="w">            </span>│<span class="w">   </span><span class="m">0</span>.00758157<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00774789<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00803914<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00779994<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00753999<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00811195<span class="w"> </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488975664956</span>,<span class="w"> </span><span class="m">2081488996626572</span>,<span class="w"> </span><span class="m">2081489017480288</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">173</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>mean2d_half_171<span class="w">                        </span>│<span class="w">   </span><span class="m">0</span>.0147889<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0148721<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0150384<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0149067<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.0147681<span class="w">  </span>│<span class="w">   </span><span class="m">0</span>.01508<span class="w">    </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488975673432</span>,<span class="w"> </span><span class="m">2081488996634476</span>,<span class="w"> </span><span class="m">2081489017488400</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">174</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>view_half_172<span class="w">                          </span>│<span class="w">   </span><span class="m">0</span>.00644803<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00644803<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00653119<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00648268<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00644803<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00655198<span class="w"> </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488975688876</span>,<span class="w"> </span><span class="m">2081488996649712</span>,<span class="w"> </span><span class="m">2081489017503532</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">175</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>view_half_173<span class="w">                          </span>│<span class="w">   </span><span class="m">0</span>.00488806<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00488806<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00488806<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00488806<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00488806<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00488806<span class="w"> </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488975695688</span>,<span class="w"> </span><span class="m">2081488996656524</span>,<span class="w"> </span><span class="m">2081489017510448</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">176</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>linear_naive_texture3d_half_174<span class="w">        </span>│<span class="w">   </span><span class="m">0</span>.586726<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.590096<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.595338<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.590876<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.585884<span class="w">   </span>│<span class="w">   </span><span class="m">0</span>.596648<span class="w">   </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488975700940</span>,<span class="w"> </span><span class="m">2081488996661776</span>,<span class="w"> </span><span class="m">2081489017515700</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">177</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>image_to_nchw_texture3d_half_float_175<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00270395<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00270414<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00274572<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00272139<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00270391<span class="w"> </span>│<span class="w">   </span><span class="m">0</span>.00275612<span class="w"> </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>True<span class="w">              </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">2081488976297952</span>,<span class="w"> </span><span class="m">2081488997248024</span>,<span class="w"> </span><span class="m">2081489018106160</span><span class="o">]</span><span class="w"> </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">178</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>DELEGATE_CALL<span class="w">                          </span>│<span class="w">  </span><span class="m">20</span>.8864<span class="w">     </span>│<span class="w">  </span><span class="m">20</span>.9461<span class="w">     </span>│<span class="w">  </span><span class="m">21</span>.5925<span class="w">     </span>│<span class="w">  </span><span class="m">21</span>.1906<span class="w">     </span>│<span class="w">  </span><span class="m">20</span>.8715<span class="w">     </span>│<span class="w">  </span><span class="m">21</span>.7541<span class="w">     </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>False<span class="w">             </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">358395625</span>,<span class="w"> </span><span class="m">380178646</span>,<span class="w"> </span><span class="m">401147657</span><span class="o">]</span><span class="w">                      </span>│
+├─────┼────────────────────┼────────────────────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────┼────────────┼───────────────────┼─────────────────────────┼────────────────────────────────────────────────────────┤
+│<span class="w"> </span><span class="m">179</span><span class="w"> </span>│<span class="w"> </span>Execute<span class="w">            </span>│<span class="w"> </span>Method::execute<span class="w">                        </span>│<span class="w">  </span><span class="m">20</span>.8867<span class="w">     </span>│<span class="w">  </span><span class="m">20</span>.9464<span class="w">     </span>│<span class="w">  </span><span class="m">21</span>.593<span class="w">      </span>│<span class="w">  </span><span class="m">21</span>.191<span class="w">      </span>│<span class="w">  </span><span class="m">20</span>.8718<span class="w">     </span>│<span class="w">  </span><span class="m">21</span>.7547<span class="w">     </span>│<span class="w"> </span><span class="o">[]</span><span class="w">         </span>│<span class="w"> </span>False<span class="w">             </span>│<span class="w">                         </span>│<span class="w"> </span><span class="o">[</span><span class="m">358395521</span>,<span class="w"> </span><span class="m">380178542</span>,<span class="w"> </span><span class="m">401147552</span><span class="o">]</span><span class="w">                      </span>│
+╘═════╧════════════════════╧════════════════════════════════════════╧══════════════╧══════════════╧══════════════╧══════════════╧══════════════╧══════════════╧════════════╧═══════════════════╧═════════════════════════╧════════════════════════════════════════════════════════╛
+</pre></div>
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+  </article>
+  
+              
+              
+                <footer class="bd-footer-article">
+                  <div class="footer-article-items footer-article__inner">
+  
+    <div class="footer-article-item">
+<div class="feedback">
+  
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+
+  <div class="feedback-send">
+    <button class="feedback-btn"
+            onclick="openGitHubIssue()"
+            data-bs-title="Create a GitHub Issue"
+            data-bs-placement="bottom"
+            data-bs-toggle="tooltip"
+            data-gtm="feedback-btn-click">Send Feedback
+    </button>
+  </div>
+</div>
+
+<div class="prev-next-area">
+</div>
+
+<div class="footer-info">
+  <p class="copyright">
+    
+  </p>
+
+  <p class="theme-version">
+    Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+  </p>
+</div>
+</div>
+  
+</div>
+                </footer>
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc">
+<div class="sidebar-secondary-items sidebar-secondary__inner">
+    
+       <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lower-a-model-to-executorch-vulkan-and-obtain-the-pte-file">Lower a model to ExecuTorch Vulkan and obtain the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-the-executor-runner-binary-and-push-to-device">Build the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> binary and push to device</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#execute-the-pte-file">Execute the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file</a></li>
+</ul>
+  </nav></div>
+    
+       <div class="sidebar-secondary-item">
+
+  
+  <div class="tocsection editthispage">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/vulkan/tutorials/etvk-profiling-tutorial.md">
+      <i class="fa-solid fa-pencil"></i>
+      
+      
+        
+          Edit on GitHub
+        
+      
+    </a>
+  </div>
+</div>
+    
+       <div class="sidebar-secondary-item">
+    <div class="tocsection sourcelink">
+      <a href="../../../_sources/backends/vulkan/tutorials/etvk-profiling-tutorial.md.txt">
+        <i class="fa-solid fa-file-lines"></i> Show Source
+      </a>
+    </div>
+</div>
+    
+
+
+
+
+</div>
+</div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  
+
+<div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+  <div class="container">
+    <div class="row">
+      <div class="col-md-4">
+        <h2>Docs</h2>
+        <p>Access comprehensive developer documentation for PyTorch</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/docs/stable/index.html">View Docs</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Tutorials</h2>
+        <p>Get in-depth tutorials for beginners and advanced developers</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/tutorials">View Tutorials</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Resources</h2>
+        <p>Find development resources and get your questions answered</p>
+        <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<footer class="site-footer">
+
+  <div class="container footer-container">
+
+    <div class="newsletter" id="newsletter">
+
+      <p class="newsletter__title is-style-max-width-800"><strong>Stay in touch</strong> for updates, event info, and
+        the latest news</p>
+
+
+      <script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+      <script>
+        hbspt.forms.create({
+          region: "na1",
+          portalId: "8112310",
+          formId: "2fb2231c-000b-4ec5-88a0-1ab242549c9e"
+        });
+      </script>
+
+
+      <p class="newsletter__privacy">By submitting this form, I consent to receive marketing emails from the LF and its
+        projects regarding their events, training, research, developments, and related announcements. I understand that
+        I can unsubscribe at any time using the links in the footers of the emails I receive. <a
+          href="https://www.linuxfoundation.org/privacy/">Privacy Policy</a>.</p>
+
+    </div>
+
+    <div class="lf-grid">
+      <ul class="social-links">
+        <li><a href="https://www.facebook.com/pytorch" target="_blank" title="PyTorch on Facebook">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-0.51 -0.26 26.45 26.45" aria-label="Facebook">
+              <path fill="currentColor"
+                d="M25.497 13.075c0-2.45-.698-4.848-2.011-6.911a12.765 12.765 0 0 0-5.398-4.73A12.671 12.671 0 0 0 11.008.38a12.705 12.705 0 0 0-6.529 2.95A12.827 12.827 0 0 0 .563 9.358a12.896 12.896 0 0 0-.07 7.201 12.831 12.831 0 0 0 3.801 6.103 12.709 12.709 0 0 0 6.471 3.078v-8.957H7.53v-3.708h3.235v-2.824c0-3.213 1.903-4.988 4.813-4.988.956.014 1.909.097 2.852.25V8.67h-1.607a1.83 1.83 0 0 0-1.518.497 1.854 1.854 0 0 0-.561 1.505v2.404h3.535l-.563 3.708h-2.97v8.957a12.725 12.725 0 0 0 7.697-4.337 12.87 12.87 0 0 0 3.054-8.328z" />
+            </svg>
+          </a></li>
+        <li><a href="https://twitter.com/pytorch" target="_blank" title="PyTorch on X">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 300 300" aria-label="X">
+              <path fill="currentColor"
+                d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.youtube.com/pytorch" target="_blank" title="PyTorch on YouTube">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0.21 0.27 34.45 25.07" aria-label="YouTube">
+              <path fill="currentColor"
+                d="M33.729 6.084s-.327-2.33-1.317-3.356a4.691 4.691 0 0 0-3.32-1.432c-4.634-.34-11.589-.34-11.589-.34h-.014s-6.954 0-11.59.342a4.692 4.692 0 0 0-3.32 1.432c-.993 1.025-1.315 3.354-1.315 3.354a52.189 52.189 0 0 0-.331 5.473v2.566c.014 1.829.125 3.656.331 5.472 0 0 .322 2.33 1.316 3.36 1.26 1.345 2.916 1.3 3.653 1.445 2.65.26 11.263.34 11.263.34s6.96-.01 11.597-.353a4.691 4.691 0 0 0 3.32-1.432c.993-1.026 1.316-3.356 1.316-3.356.206-1.817.316-3.644.33-5.473v-2.57a52.26 52.26 0 0 0-.33-5.472zM14.076 17.232V7.729l8.951 4.768-8.95 4.735z" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.linkedin.com/company/pytorch" target="_blank" title="PyTorch on LinkedIn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-10.23 -10.23 531.96 531.96" aria-label="LinkedIn">
+              <rect width="512" height="512" rx="0" fill="currentColor" />
+              <circle fill="#000" cx="142" cy="138" r="37" />
+              <path stroke="#000" stroke-width="66" d="M244 194v198M142 194v198" />
+              <path fill="#000"
+                d="M276 282c0-20 13-40 36-40 24 0 33 18 33 45v105h66V279c0-61-32-89-76-89-34 0-51 19-59 32" />
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.slack.com" target="_blank" title="PyTorch Slack">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.16 -0.03 21.19 21.19" aria-label="Slack">
+              <path fill="currentColor"
+                d="M4.896 13.27a2.147 2.147 0 0 1-2.141 2.142A2.147 2.147 0 0 1 .613 13.27c0-1.178.963-2.141 2.142-2.141h2.141v2.141zm1.08 0c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.363a2.147 2.147 0 0 1-2.142 2.141 2.147 2.147 0 0 1-2.141-2.142V13.27zm2.141-8.6a2.147 2.147 0 0 1-2.141-2.14c0-1.18.962-2.142 2.141-2.142s2.142.963 2.142 2.141v2.142H8.117zm0 1.08c1.179 0 2.141.962 2.141 2.141a2.147 2.147 0 0 1-2.141 2.142H2.755A2.147 2.147 0 0 1 .613 7.89c0-1.179.963-2.141 2.142-2.141h5.362zm8.599 2.141c0-1.179.963-2.141 2.141-2.141 1.179 0 2.143.962 2.143 2.14a2.147 2.147 0 0 1-2.142 2.142h-2.141V7.89zm-1.08 0a2.147 2.147 0 0 1-2.141 2.142 2.147 2.147 0 0 1-2.141-2.142V2.53c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.362zm-2.141 8.6c1.179 0 2.142.962 2.142 2.14a2.147 2.147 0 0 1-2.142 2.142 2.147 2.147 0 0 1-2.141-2.141V16.49h2.141zm0-1.08a2.147 2.147 0 0 1-2.141-2.141c0-1.179.962-2.142 2.141-2.142h5.362c1.179 0 2.142.963 2.142 2.142a2.147 2.147 0 0 1-2.142 2.142h-5.362z">
+              </path>
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.org/wechat" title="PyTorch on WeChat">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.14 -0.17 38.02 33.02" aria-label="WeChat">
+              <path fill="currentColor"
+                d="M26.289 10.976a12.972 12.972 0 0 0-8.742 3.53 10.386 10.386 0 0 0-3.224 8.795c-1.326-.164-2.535-.345-3.75-.448a2.332 2.332 0 0 0-1.273.216c-1.18.666-2.311 1.418-3.652 2.255.246-1.112.405-2.087.687-3.024a1.15 1.15 0 0 0-.523-1.52C1.737 17.902.02 13.601 1.307 9.165c1.189-4.1 4.11-6.587 8.077-7.884A13.54 13.54 0 0 1 24.18 5.617a10.135 10.135 0 0 1 2.109 5.359zM10.668 9.594a1.564 1.564 0 0 0-2.095-1.472 1.52 1.52 0 0 0-.895 1.964 1.502 1.502 0 0 0 1.391.966 1.545 1.545 0 0 0 1.598-1.46v.002zm8.15-1.566a1.567 1.567 0 0 0-1.528 1.543 1.528 1.528 0 0 0 1.571 1.492 1.52 1.52 0 0 0 1.375-2.117 1.518 1.518 0 0 0-1.415-.919l-.003.001z">
+              </path>
+              <path fill="currentColor"
+                d="M33.914 32.137c-1.075-.478-2.062-1.196-3.11-1.306-1.049-.11-2.145.494-3.24.605a10.821 10.821 0 0 1-8.781-2.864c-4.682-4.33-4.013-10.97 1.403-14.518 4.811-3.154 11.874-2.102 15.268 2.273a8.671 8.671 0 0 1-1.002 12.095c-1.046.929-1.422 1.693-.751 2.917.102.257.174.525.213.798zM21.68 20.292a1.264 1.264 0 1 0 .01-2.528 1.264 1.264 0 0 0-.01 2.528zm7.887-2.526a1.266 1.266 0 0 0-1.256 1.21 1.247 1.247 0 1 0 1.256-1.21z">
+              </path>
+            </svg>
+          </a></li>
+      </ul>
+    </div>
+    
+    <div class="privacy-policy">
+      <div class="copyright">
+      
+        <p>
+          &copy; PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has registered
+          trademarks and uses trademarks. For more information, including terms of use, privacy policy, and trademark
+          usage, please see our <a href="https://www.linuxfoundation.org/legal/policies">Policies</a> page. <a
+            href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a>. <a
+            href="http://www.linuxfoundation.org/privacy">Privacy Policy</a>.
+        </p>
+        
+      </div>
+    </div>
+
+
+  </div>
+</footer>
+
+<div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../../../_static/img/pytorch-x.svg">
+  </div>
+</div>
+  
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2024, ExecuTorch.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  <script type="application/ld+json">
+    {
+       "@context": "https://schema.org",
+       "@type": "Article",
+       "name": "Executing and profiling an ExecuTorch Vulkan model on device",
+       "headline": "Executing and profiling an ExecuTorch Vulkan model on device",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
+       "url": "/backends/vulkan/tutorials/etvk-profiling-tutorial.html",
+       "articleBody": "Executing and profiling an ExecuTorch Vulkan model on device# This tutorial assumes that you have a working local copy of the ExecuTorch repo, and have gone through the steps to install the executorch pip package or have installed it by building from source. This tutorial also assumes that you have the Android SDK tools installed and that you are able to connect to an Android device via adb. Finally, the Android NDK should also be installed, and your environment should have a variable ANDROID_NDK that points to the root directory of the NDK. export ANDROID_NDK=\u003cpath_to_ndk\u003e Lower a model to ExecuTorch Vulkan and obtain the .pte file# The commands in this tutorial are assumed to be executed from ExecuTorch\u2019s root directory. cd ~/executorch For this tutorial, we will use the export script in executorch/examples/vulkan/export.py, however any method of generating a .pte file will suffice. In this tutorial, the InceptionV3 model is exported. python -m examples.vulkan.export --model_name=ic3 -o . -fp16 After exporting, there should be a file called ic3_vulkan.pte in the root directory of ExecuTorch. Feel free to modify the -o argument of the script to control where the .pte file will be stored. Then, push the .pte file to device. adb shell mkdir -p /data/local/tmp/etvk/models/ \u0026\u0026 \\ adb push ic3_vulkan.pte /data/local/tmp/etvk/models/ic3_vulkan.pte Build the executor_runner binary and push to device# To be able to run the .pte file on device, first the core libraries, including the Vulkan backend, must be compiled for Android. Note that -DEXECUTORCH_ENABLE_EVENT_TRACER=ON is used to turn on profiling, and -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON is used to build the runner binary that will be used to execute and profile the .pte file. cmake . \\ -DCMAKE_INSTALL_PREFIX=cmake-out-android-so \\ -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \\ -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \\ --preset \"android-arm64-v8a\" \\ -DANDROID_PLATFORM=android-28 \\ -DPYTHON_EXECUTABLE=python \\ -DCMAKE_BUILD_TYPE=Release \\ -DEXECUTORCH_PAL_DEFAULT=posix \\ -DEXECUTORCH_BUILD_LLAMA_JNI=ON \\ -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \\ -DEXECUTORCH_BUILD_VULKAN=ON \\ -DEXECUTORCH_BUILD_TESTS=OFF \\ -DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=ON \\ -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \\ -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \\ -Bcmake-out-android-so \u0026\u0026 \\ cmake --build cmake-out-android-so -j16 --target install --config Release Once the build completes, we can push the runner binary to device. adb push cmake-out-android-so/executor_runner /data/local/tmp/etvk/executor_runner Execute the .pte file# Finally, we can execute the lowered .pte file on your device. To test run the model file without profiling: adb shell /data/local/tmp/etvk/executor_runner \\ --model_path /data/local/tmp/etvk/models/ic3_vulkan.pte Now, with profiling: MODEL_NAME=ic3 \u0026\u0026 \\ BACKEND=vulkan \u0026\u0026 \\ NUM_ITERS=3 \u0026\u0026 \\ adb shell mkdir -p /data/local/tmp/etvk/etdumps/ \u0026\u0026 \\ adb shell /data/local/tmp/etvk/executor_runner \\ --model_path /data/local/tmp/etvk/models/${MODEL_NAME}_${BACKEND}.pte \\ --num_executions=${NUM_ITERS} \\ --etdump_path /data/local/tmp/etvk/etdumps/${MODEL_NAME}_${BACKEND}.etdp \u0026\u0026 \\ adb pull /data/local/tmp/etvk/etdumps/${MODEL_NAME}_${BACKEND}.etdp ${MODEL_NAME}_${BACKEND}.etdp \u0026\u0026 \\ adb shell rm /data/local/tmp/etvk/etdumps/${MODEL_NAME}_${BACKEND}.etdp \u0026\u0026 \\ python devtools/inspector/inspector_cli.py \\ --etdump_path ${MODEL_NAME}_${BACKEND}.etdp Here is some sample (tailed) output from a Samsung Galaxy S24: \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 165 \u2502 Execute \u2502 conv2d_clamp_half_163 \u2502 0.345082 \u2502 0.346164 \u2502 0.346247 \u2502 0.345748 \u2502 0.344812 \u2502 0.346268 \u2502 [] \u2502 True \u2502 \u2502 [2081488974948084, 2081488995911052, 2081489016763676] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 166 \u2502 Execute \u2502 conv2d_clamp_half_164 \u2502 0.306124 \u2502 0.30654 \u2502 0.306998 \u2502 0.306557 \u2502 0.30602 \u2502 0.307112 \u2502 [] \u2502 True \u2502 \u2502 [2081488975294716, 2081488996256228, 2081489017110204] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 167 \u2502 Execute \u2502 set_zero_int32_165 \u2502 0.00240245 \u2502 0.00244403 \u2502 0.00248561 \u2502 0.00244403 \u2502 0.00239205 \u2502 0.002496 \u2502 [] \u2502 True \u2502 \u2502 [2081488975601100, 2081488996563132, 2081489017417680] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 168 \u2502 Execute \u2502 concat_2_texture3d_half_166 \u2502 0.0122305 \u2502 0.01248 \u2502 0.0125634 \u2502 0.0124108 \u2502 0.0121682 \u2502 0.0125842 \u2502 [] \u2502 True \u2502 \u2502 [2081488975603960, 2081488996565940, 2081489017420436] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 169 \u2502 Execute \u2502 set_zero_int32_167 \u2502 0.00157056 \u2502 0.00161195 \u2502 0.00161214 \u2502 0.00159478 \u2502 0.00156021 \u2502 0.00161219 \u2502 [] \u2502 True \u2502 \u2502 [2081488975616804, 2081488996578888, 2081489017432968] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 170 \u2502 Execute \u2502 concat_3_texture3d_half_168 \u2502 0.0420369 \u2502 0.0423281 \u2502 0.0427857 \u2502 0.0423974 \u2502 0.0419641 \u2502 0.0429001 \u2502 [] \u2502 True \u2502 \u2502 [2081488975618728, 2081488996580864, 2081489017434944] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 171 \u2502 Execute \u2502 update_concat_offset_3_int32_169 \u2502 0.00261035 \u2502 0.00265193 \u2502 0.00265212 \u2502 0.00263468 \u2502 0.00259995 \u2502 0.00265217 \u2502 [] \u2502 True \u2502 \u2502 [2081488975661992, 2081488996623556, 2081489017477272] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 172 \u2502 Execute \u2502 concat_1_texture3d_half_170 \u2502 0.00758157 \u2502 0.00774789 \u2502 0.00803914 \u2502 0.00779994 \u2502 0.00753999 \u2502 0.00811195 \u2502 [] \u2502 True \u2502 \u2502 [2081488975664956, 2081488996626572, 2081489017480288] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 173 \u2502 Execute \u2502 mean2d_half_171 \u2502 0.0147889 \u2502 0.0148721 \u2502 0.0150384 \u2502 0.0149067 \u2502 0.0147681 \u2502 0.01508 \u2502 [] \u2502 True \u2502 \u2502 [2081488975673432, 2081488996634476, 2081489017488400] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 174 \u2502 Execute \u2502 view_half_172 \u2502 0.00644803 \u2502 0.00644803 \u2502 0.00653119 \u2502 0.00648268 \u2502 0.00644803 \u2502 0.00655198 \u2502 [] \u2502 True \u2502 \u2502 [2081488975688876, 2081488996649712, 2081489017503532] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 175 \u2502 Execute \u2502 view_half_173 \u2502 0.00488806 \u2502 0.00488806 \u2502 0.00488806 \u2502 0.00488806 \u2502 0.00488806 \u2502 0.00488806 \u2502 [] \u2502 True \u2502 \u2502 [2081488975695688, 2081488996656524, 2081489017510448] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 176 \u2502 Execute \u2502 linear_naive_texture3d_half_174 \u2502 0.586726 \u2502 0.590096 \u2502 0.595338 \u2502 0.590876 \u2502 0.585884 \u2502 0.596648 \u2502 [] \u2502 True \u2502 \u2502 [2081488975700940, 2081488996661776, 2081489017515700] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 177 \u2502 Execute \u2502 image_to_nchw_texture3d_half_float_175 \u2502 0.00270395 \u2502 0.00270414 \u2502 0.00274572 \u2502 0.00272139 \u2502 0.00270391 \u2502 0.00275612 \u2502 [] \u2502 True \u2502 \u2502 [2081488976297952, 2081488997248024, 2081489018106160] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 178 \u2502 Execute \u2502 DELEGATE_CALL \u2502 20.8864 \u2502 20.9461 \u2502 21.5925 \u2502 21.1906 \u2502 20.8715 \u2502 21.7541 \u2502 [] \u2502 False \u2502 \u2502 [358395625, 380178646, 401147657] \u2502 \u251c\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524 \u2502 179 \u2502 Execute \u2502 Method::execute \u2502 20.8867 \u2502 20.9464 \u2502 21.593 \u2502 21.191 \u2502 20.8718 \u2502 21.7547 \u2502 [] \u2502 False \u2502 \u2502 [358395521, 380178542, 401147552] \u2502 \u2558\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255b",
+       "author": {
+         "@type": "Organization",
+         "name": "PyTorch Contributors",
+         "url": "https://pytorch.org"
+       },
+       "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
+       "mainEntityOfPage": {
+         "@type": "WebPage",
+         "@id": "/backends/vulkan/tutorials/etvk-profiling-tutorial.html"
+       },
+       "datePublished": "2023-01-01T00:00:00Z",
+       "dateModified": "2023-01-01T00:00:00Z"
+     }
+ </script>
+  <script>
+    // Tutorials Call to action event tracking
+    $("[data-behavior='call-to-action-event']").on('click', function () {
+      fbq('trackCustom', "Download", {
+        tutorialTitle: $('h1:first').text(),
+        downloadLink: this.href,
+        tutorialLink: window.location.href,
+        downloadTitle: $(this).attr("data-response")
+      });
+      if (typeof gtag === 'function') {
+        gtag('event', 'click', {
+          'event_category': $(this).attr("data-response"),
+          'event_label': $("h1").first().text(),
+          'tutorial_link': window.location.href
+        });
+      }
+    });
+  </script>
+  
+  </body>
+</html>

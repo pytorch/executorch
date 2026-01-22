@@ -1,0 +1,1998 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+    <title>ExecuTorch on Raspberry Pi &#8212; ExecuTorch 1.1 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="_static/documentation_options.js?v=56dcb7b8"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'raspberry_pi_llama_tutorial';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '1.1';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
+        </script>
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/raspberry_pi_llama_tutorial.html" />
+    <link rel="icon" href="_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Embedded Systems" href="embedded-section.html" />
+    <link rel="prev" title="&lt;no title&gt;" href="desktop-mps.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+<script>
+  if (window.location.hostname === 'docs.pytorch.org' || window.location.hostname === 'docs-preview.pytorch.org') {
+    const script = document.createElement('script');
+    script.src = 'https://cmp.osano.com/16A0DbT9yDNIaQkvZ/31b1b91a-e0b6-47ea-bde2-7f2bd13dbe5c/osano.js?variant=one';
+    document.head.appendChild(script);
+  }
+</script>
+<script>
+  // Cookie banner for non-LF projects
+  document.addEventListener('DOMContentLoaded', function () {
+    // Hide cookie banner on local environments and LF owned docs
+    if (window.location.hostname === 'localhost' ||
+      window.location.hostname === '0.0.0.0' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'docs.pytorch.org' ||
+      window.location.hostname === 'docs-preview.pytorch.org' ||
+      window.location.hostname.startsWith('192.168.')) {
+      const banner = document.querySelector('.cookie-banner-wrapper');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+  });
+</script>
+<!-- Conditional CSS for header and footer height adjustment -->
+
+
+<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+<meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
+<meta name="pytorch_project" content="">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS" height="0" width="0"
+    style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager -->
+<script>(function (w, d, s, l, i) {
+    w[l] = w[l] || []; w[l].push({
+      'gtm.start':
+        new Date().getTime(), event: 'gtm.js'
+    }); var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+        'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+    j.onload = function () {
+      window.dispatchEvent(new Event('gtm_loaded'));
+      console.log('GTM loaded successfully');
+    };
+  })(window, document, 'script', 'dataLayer', 'GTM-T8XT4PS');
+</script>
+<!-- End Google Tag Manager -->
+<!-- Facebook Pixel Code -->
+<script>
+  !function (f, b, e, v, n, t, s) {
+    if (f.fbq) return; n = f.fbq = function () {
+      n.callMethod ?
+        n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+    };
+    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+    n.queue = []; t = b.createElement(e); t.async = !0;
+    t.src = v; s = b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t, s)
+  }(window, document, 'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '243028289693773');
+  fbq('track', 'PageView');
+</script>
+<script>
+  document.documentElement.setAttribute('data-version', '1.1');
+</script>
+<noscript>
+  <img height="1" width="1" src="https://www.facebook.com/tr?id=243028289693773&ev=PageView&noscript=1" />
+</noscript>
+<script>
+  function gtag() {
+    window.dataLayer.push(arguments);
+  }
+</script>
+<!-- End Facebook Pixel Code -->
+<!-- Repository configuration for tutorials -->
+
+<!-- Script to Fix scrolling -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Fix anchor scrolling
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const targetId = this.getAttribute('href').substring(1);
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          const headerHeight =
+            (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
+            (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
+
+          const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
+          window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+          });
+
+          // Update URL hash without scrolling
+          history.pushState(null, null, '#' + targetId);
+        }
+      });
+    });
+  });
+</script>
+
+<script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+  </head>
+
+<body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
+  
+    <div class="container-fluid header-holder tutorials-header" id="header-holder">
+   <div class="header-container-wrapper">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                <span>Learn</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started/locally">
+                  <span class=dropdown-title>Get Started</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/webinars/">
+                  <span class="dropdown-title">Webinars</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Community</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://landscape.pytorch.org/" target="_blank">
+                  <span class="dropdown-title">Landscape</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/join-ecosystem">
+                  <span class="dropdown-title">Join the Ecosystem</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-hub/">
+                  <span class="dropdown-title">Community Hub</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/">
+                  <span class="dropdown-title">Forums</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contributor-awards/">
+                  <span class="dropdown-title">Contributor Awards</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-events/">
+                  <span class="dropdown-title">Community Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/programs/ambassadors/">
+                  <span class="dropdown-title">PyTorch Ambassadors</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Projects</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/pytorch/">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/vllm/">
+                  <span class="dropdown-title">vLLM</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/deepspeed/">
+                  <span class="dropdown-title">DeepSpeed</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/host-your-project/">
+                  <span class="dropdown-title">Host Your Project</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/ray/">
+                  <span class="dropdown-title">RAY</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span> Docs</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/domains">
+                  <span class="dropdown-title">Domains</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Blogs & News</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">Blog</span>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/announcements">
+                  <span class="dropdown-title">Announcements</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/case-studies/">
+                  <span class="dropdown-title">Case Studies</span>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                </a>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>About</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/members">
+                  <span class="dropdown-title">Members</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact">
+                  <span class="dropdown-title">Contact</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/wp-content/uploads/2025/09/pytorch_brand_guide_091925a.pdf">
+                  <span class="dropdown-title">Brand Guidelines</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown main-menu-button">
+              <a href="https://pytorch.org/join" data-cta="join">
+                JOIN
+              </a>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu">
+        <i class="fa-solid fa-ellipsis"></i>
+      </a>
+    </div>
+  </div>
+ </div>
+
+ <!-- Begin Mobile Menu -->
+
+<div class="mobile-main-menu">
+  <div class="container-fluid">
+    <div class="header-container-wrapper">
+      <div class="mobile-main-menu-header-container">
+        <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu">
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="mobile-main-menu-links-container">
+    <div class="main-menu">
+      <ul>
+         <li class="resources-mobile-menu-title">
+           <a>Learn</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/get-started/locally">Get Started</a>
+           </li>
+           <li>
+             <a href="https://docs.pytorch.org/tutorials">Tutorials</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/webinars/">Webinars</a>
+          </li>
+        </ul>
+         <li class="resources-mobile-menu-title">
+           <a>Community</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://landscape.pytorch.org/">Landscape</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/join-ecosystem">Join the Ecosystem</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/community-hub/">Community Hub</a>
+           </li>
+           <li>
+             <a href="https://discuss.pytorch.org/">Forums</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/resources">Developer Resources</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/contributor-awards/">Contributor Awards</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/community-events/">Community Events</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/programs/ambassadors/">PyTorch Ambassadors</a>
+          </li>
+       </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Projects</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/projects/pytorch/">PyTorch</a>
+           </li>
+
+           <li>
+             <a href="https://pytorch.org/projects/vllm/">vLLM</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/projects/deepspeed/">DeepSpeed</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/projects/host-your-project/">Host Your Project</a>
+           </li>
+         </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Docs</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://docs.pytorch.org/docs/stable/index.html">PyTorch</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/domains">Domains</a>
+          </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>Blog & News</a>
+        </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/announcements">Announcements</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/case-studies/">Case Studies</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/events">Events</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/newsletter">Newsletter</a>
+           </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>About</a>
+        </li>
+
+        <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/members">Members</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/governing-board">Governing Board</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+         </li>
+         <li>
+             <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/staff">Staff</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/contact">Contact</a>
+          </li>
+        </ul>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- End Mobile Menu -->
+  
+  
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class=" navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch 1.1 documentation - Home"/>
+    <script>document.write(`<img src="_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch 1.1 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+    
+      <div class="navbar-item">
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-2"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-2"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-2"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-2">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script></div>
+    
+  </div>
+  
+  <div class=" navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="api-section.html">
+    API
+  </a>
+</li>
+
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+    Support
+  </a>
+</li>
+
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+      
+        <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="api-section.html">
+    API
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="support-section.html">
+    Support
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Edge Platforms</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="android-section.html">Android</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="android-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="android-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="android-vulkan.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="android-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l3"><a class="reference internal" href="android-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="android-arm-vgf.html">Arm VGF Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="backends/samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-quantization.html">Quantization</a></li>
+<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-op-support.html">Operator Support</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="android-examples.html">Examples &amp; Demos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="ios-section.html">iOS</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="ios-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="ios-coreml.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="ios-mps.html">MPS Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="ios-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l2"><a class="reference internal" href="ios-examples.html">Examples &amp; Demos</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="desktop-section.html">Desktop &amp; Laptop Platforms</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="desktop-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="desktop-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="desktop-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">ExecuTorch on Raspberry Pi</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="embedded-section.html">Embedded Systems</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l2"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
+<li class="toctree-l2"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l2"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="embedded-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="embedded-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="embedded-nxp.html">NXP eIQ Neutron Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">ExecuTorch on Raspberry Pi</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pico2_tutorial.html">Pico2: A simple MNIST Tutorial</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="edge-platforms-section.html" class="nav-link">Edge</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="desktop-section.html" class="nav-link">Desktop &amp; Laptop Platforms</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">ExecuTorch...</li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+</div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+  
+<div id="searchbox"></div>
+  <article class="bd-article" id="pytorch-article">
+    <!-- Hidden breadcrumb schema for SEO only -->
+    <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="edge-platforms-section.html">
+        <meta itemprop="name" content="Edge">
+        <meta itemprop="position" content="1">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="desktop-section.html">
+        <meta itemprop="name" content="Desktop &amp; Laptop Platforms">
+        <meta itemprop="position" content="2">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="ExecuTorch on Raspberry Pi">
+        <meta itemprop="position" content="3">
+      </div>
+    </div>
+
+    
+    
+
+    
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="executorch-on-raspberry-pi">
+<h1>ExecuTorch on Raspberry Pi<a class="headerlink" href="#executorch-on-raspberry-pi" title="Link to this heading">#</a></h1>
+<section id="tldr">
+<h2>TLDR<a class="headerlink" href="#tldr" title="Link to this heading">#</a></h2>
+<p>This tutorial demonstrates how to deploy <strong>Llama models on Raspberry Pi 4/5 devices</strong> using ExecuTorch:</p>
+<ul class="simple">
+<li><p><strong>Prerequisites</strong>: Linux host machine, Python 3.10-3.13, conda environment, Raspberry Pi 4/5</p></li>
+<li><p><strong>Setup</strong>: Automated cross-compilation using <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script for ARM toolchain installation</p></li>
+<li><p><strong>Export</strong>: Convert Llama models to optimized <code class="docutils literal notranslate"><span class="pre">.pte</span></code> format with quantization options</p></li>
+<li><p><strong>Deploy</strong>: Transfer binaries to Raspberry Pi and configure runtime libraries</p></li>
+<li><p><strong>Optimize</strong>: Build optimization and performance tuning techniques</p></li>
+<li><p><strong>Result</strong>: Efficient on-device Llama inference</p></li>
+</ul>
+</section>
+<section id="prerequisites-and-hardware-requirements">
+<h2>Prerequisites and Hardware Requirements<a class="headerlink" href="#prerequisites-and-hardware-requirements" title="Link to this heading">#</a></h2>
+<section id="host-machine-requirements">
+<h3>Host Machine Requirements<a class="headerlink" href="#host-machine-requirements" title="Link to this heading">#</a></h3>
+<p><strong>Operating System</strong>: Linux x86_64 (Ubuntu 20.04+ or CentOS Stream 9+)</p>
+<p><strong>Software Dependencies</strong>:</p>
+<ul class="simple">
+<li><p><strong>Python 3.10-3.13</strong> (ExecuTorch requirement)</p></li>
+<li><p><strong>conda</strong> or <strong>venv</strong> for environment management</p></li>
+<li><p><strong>CMake 3.29.6+</strong></p></li>
+<li><p><strong>Git</strong> for repository cloning</p></li>
+</ul>
+</section>
+<section id="target-device-requirements">
+<h3>Target Device Requirements<a class="headerlink" href="#target-device-requirements" title="Link to this heading">#</a></h3>
+<p><strong>Supported Devices</strong>: <strong>Raspberry Pi 4</strong> and <strong>Raspberry Pi 5</strong> with <strong>64-bit OS</strong></p>
+<p><strong>Memory Requirements</strong>:</p>
+<ul class="simple">
+<li><p><strong>RAM &amp; Storage</strong> Varies by model size and optimization level</p></li>
+<li><p><strong>64-bit Raspberry Pi OS</strong> (Bullseye or newer)</p></li>
+</ul>
+</section>
+<section id="verification-commands">
+<h3>Verification Commands<a class="headerlink" href="#verification-commands" title="Link to this heading">#</a></h3>
+<p>Verify your host machine compatibility:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Check OS and architecture</span>
+uname<span class="w"> </span>-s<span class="w">  </span><span class="c1"># Should output: Linux</span>
+uname<span class="w"> </span>-m<span class="w">  </span><span class="c1"># Should output: x86_64</span>
+
+<span class="c1"># Check Python version</span>
+python3<span class="w"> </span>--version<span class="w">  </span><span class="c1"># Should be 3.10-3.13</span>
+
+<span class="c1"># Check required tools</span>
+<span class="nb">hash</span><span class="w"> </span>cmake<span class="w"> </span>git<span class="w"> </span>md5sum<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Missing required tools&quot;</span>
+
+cmake<span class="w"> </span>--version<span class="w">  </span><span class="c1"># Should be 3.29.6+ at minimum</span>
+
+<span class="c1">## Development Environment Setup</span>
+
+<span class="c1">### Clone ExecuTorch Repository</span>
+
+First,<span class="w"> </span>clone<span class="w"> </span>the<span class="w"> </span>ExecuTorch<span class="w"> </span>repository<span class="w"> </span>with<span class="w"> </span>the<span class="w"> </span>Raspberry<span class="w"> </span>Pi<span class="w"> </span>support:
+
+<span class="sb">```</span>bash
+<span class="c1"># Create project directory</span>
+mkdir<span class="w"> </span>~/executorch-rpi<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>~/executorch-rpi<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w">  </span>git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>release/1.0<span class="w"> </span>https://github.com/pytorch/executorch.git<span class="w"> </span><span class="o">&amp;&amp;</span>
+<span class="nb">cd</span><span class="w"> </span>executorch
+</pre></div>
+</div>
+</section>
+<section id="create-conda-environment">
+<h3>Create Conda Environment<a class="headerlink" href="#create-conda-environment" title="Link to this heading">#</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create conda environment</span>
+conda<span class="w"> </span>create<span class="w"> </span>-yn<span class="w"> </span>executorch<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10.0
+conda<span class="w"> </span>activate<span class="w"> </span>executorch
+
+<span class="c1"># Upgrade pip</span>
+pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip
+</pre></div>
+</div>
+<p>Alternative: Virtual Environment
+If you prefer Python’s built-in virtual environment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+<span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip
+</pre></div>
+</div>
+<p>Refer to → <a class="reference internal" href="getting-started.html"><span class="doc">Getting Started with ExecuTorch</span></a> for more details.</p>
+</section>
+</section>
+<section id="cross-compilation-toolchain-step">
+<h2>Cross-Compilation Toolchain Step<a class="headerlink" href="#cross-compilation-toolchain-step" title="Link to this heading">#</a></h2>
+<p>Run the following script on your Linux host machine:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Run the Raspberry Pi setup script for Pi 5</span>
+examples/raspberry_pi/setup.sh<span class="w"> </span>pi5
+</pre></div>
+</div>
+<p>On successful completion, you should see the following output:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span><span class="w"> </span>Linking<span class="w"> </span>CXX<span class="w"> </span>executable<span class="w"> </span>llama_main
+<span class="o">[</span><span class="m">100</span>%<span class="o">]</span><span class="w"> </span>Built<span class="w"> </span>target<span class="w"> </span>llama_main
+<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>LLaMA<span class="w"> </span>runner<span class="w"> </span>built<span class="w"> </span><span class="nv">successfully</span>
+
+<span class="o">====</span><span class="w"> </span>Verifying<span class="w"> </span>Build<span class="w"> </span><span class="nv">Outputs</span><span class="w"> </span><span class="o">====</span>
+<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>✓<span class="w"> </span>llama_main<span class="w"> </span><span class="o">(</span><span class="m">6</span>.1M<span class="o">)</span>
+<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>✓<span class="w"> </span>libllama_runner.so<span class="w"> </span><span class="o">(</span><span class="m">4</span>.0M<span class="o">)</span>
+<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>✓<span class="w"> </span>libextension_module.a<span class="w"> </span><span class="o">(</span>89K<span class="o">)</span><span class="w"> </span>-<span class="w"> </span>static<span class="w"> </span>library
+
+✓<span class="w"> </span>ExecuTorch<span class="w"> </span>cross-compilation<span class="w"> </span>setup<span class="w"> </span>completed<span class="w"> </span>successfully!
+</pre></div>
+</div>
+</section>
+<section id="model-preparation-and-export">
+<h2>Model Preparation and Export<a class="headerlink" href="#model-preparation-and-export" title="Link to this heading">#</a></h2>
+<section id="download-llama-models">
+<h3>Download Llama Models<a class="headerlink" href="#download-llama-models" title="Link to this heading">#</a></h3>
+<p>Download the Llama model from Hugging Face or any other source, and make sure that following files exist.</p>
+<ul class="simple">
+<li><p>consolidated.00.pth (model weights)</p></li>
+<li><p>params.json (model config)</p></li>
+<li><p>tokenizer.model (tokenizer)</p></li>
+</ul>
+</section>
+<section id="export-llama-to-executorch-format">
+<h3>Export Llama to ExecuTorch Format<a class="headerlink" href="#export-llama-to-executorch-format" title="Link to this heading">#</a></h3>
+<p>After downloading the Llama model, export it to ExecuTorch format using the provided script:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1">#### Set these paths to point to the exported files. Following is an example instruction to export a llama model</span>
+
+<span class="nv">LLAMA_QUANTIZED_CHECKPOINT</span><span class="o">=</span>path/to/consolidated.00.pth
+<span class="nv">LLAMA_PARAMS</span><span class="o">=</span>path/to/params.json
+
+python<span class="w"> </span>-m<span class="w"> </span>extension.llm.export.export_llm<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--config<span class="w"> </span>examples/models/llama/config/llama_xnnpack_spinquant.yaml<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>+base.model_class<span class="o">=</span><span class="s2">&quot;llama3_2&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>+base.checkpoint<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">LLAMA_QUANTIZED_CHECKPOINT</span><span class="p">:?</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>+base.params<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">LLAMA_PARAMS</span><span class="p">:?</span><span class="si">}</span><span class="s2">&quot;</span>
+</pre></div>
+</div>
+<p>The file llama3_2.pte will be generated at the place where you run the command</p>
+<ul class="simple">
+<li><p>For more details see <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md#option-a-download-and-export-llama32-1b3b-model">Option A: Download and Export Llama3.2 1B/3B Model</a></p></li>
+<li><p>Also refer to → <a class="reference internal" href="llm/export-llm.html"><span class="doc">Exporting LLMs</span></a> for more details.</p></li>
+</ul>
+</section>
+</section>
+<section id="raspberry-pi-deployment">
+<h2>Raspberry Pi Deployment<a class="headerlink" href="#raspberry-pi-deployment" title="Link to this heading">#</a></h2>
+<section id="transfer-binaries-to-raspberry-pi">
+<h3>Transfer Binaries to Raspberry Pi<a class="headerlink" href="#transfer-binaries-to-raspberry-pi" title="Link to this heading">#</a></h3>
+<p>After successful cross-compilation, transfer the required files:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1">##### Set Raspberry Pi details</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">RPI_UN</span><span class="o">=</span><span class="s2">&quot;pi&quot;</span><span class="w">  </span><span class="c1"># Your Raspberry Pi username</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">RPI_IP</span><span class="o">=</span><span class="s2">&quot;your-rpi-ip-address&quot;</span>
+
+<span class="c1">##### Create deployment directory on Raspberry Pi</span>
+ssh<span class="w"> </span><span class="nv">$RPI_UN</span>@<span class="nv">$RPI_IP</span><span class="w"> </span><span class="s1">&#39;mkdir -p ~/executorch-deployment&#39;</span>
+<span class="c1">##### Copy main executable</span>
+scp<span class="w"> </span>cmake-out/examples/models/llama/llama_main<span class="w"> </span><span class="nv">$RPI_UN</span>@<span class="nv">$RPI_IP</span>:~/executorch-deployment/
+<span class="c1">##### Copy runtime library</span>
+scp<span class="w"> </span>cmake-out/examples/models/llama/runner/libllama_runner.so<span class="w"> </span><span class="nv">$RPI_UN</span>@<span class="nv">$RPI_IP</span>:~/executorch-deployment/
+<span class="c1">##### Copy model file</span>
+scp<span class="w"> </span>llama3_2.pte<span class="w"> </span><span class="nv">$RPI_UN</span>@<span class="nv">$RPI_IP</span>:~/executorch-deployment/
+scp<span class="w"> </span>./tokenizer.model<span class="w"> </span><span class="nv">$RPI_UN</span>@<span class="nv">$RPI_IP</span>:~/executorch-deployment/
+</pre></div>
+</div>
+</section>
+<section id="configure-runtime-libraries-on-raspberry-pi">
+<h3>Configure Runtime Libraries on Raspberry Pi<a class="headerlink" href="#configure-runtime-libraries-on-raspberry-pi" title="Link to this heading">#</a></h3>
+<p>SSH into your Raspberry Pi and configure the runtime:</p>
+<section id="set-up-library-environment">
+<h4>Set up library environment<a class="headerlink" href="#set-up-library-environment" title="Link to this heading">#</a></h4>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
+<span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>setup_env.sh
+chmod<span class="w"> </span>+x<span class="w"> </span>setup_env.sh
+
+<span class="c1">#### Make executable</span>
+
+chmod<span class="w"> </span>+x<span class="w"> </span>llama_main
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+<section id="dry-run">
+<h2>Dry Run<a class="headerlink" href="#dry-run" title="Link to this heading">#</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">source</span><span class="w"> </span>setup_env.sh
+./llama_main<span class="w"> </span>--help
+</pre></div>
+</div>
+<p>Make sure that the output does not have any GLIBC / other library mismatch errors in the output. If you see any, follow the troubleshooting steps below.</p>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">#</a></h2>
+<section id="issue-1-glibc-version-mismatch">
+<h3>Issue 1: GLIBC Version Mismatch<a class="headerlink" href="#issue-1-glibc-version-mismatch" title="Link to this heading">#</a></h3>
+<p><strong>Problem:</strong> The binary was compiled with a newer GLIBC version (2.38) than what’s available on your Raspberry Pi (2.36).</p>
+<p><strong>Error Symptoms:</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./llama_main:<span class="w"> </span>/lib/aarch64-linux-gnu/libm.so.6:<span class="w"> </span>version<span class="w"> </span><span class="sb">`</span>GLIBC_2.38<span class="s1">&#39; not found (required by ./llama_main)</span>
+<span class="s1">./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38&#39;</span><span class="w"> </span>not<span class="w"> </span>found<span class="w"> </span><span class="o">(</span>required<span class="w"> </span>by<span class="w"> </span>./llama_main<span class="o">)</span>
+./llama_main:<span class="w"> </span>/lib/aarch64-linux-gnu/libstdc++.so.6:<span class="w"> </span>version<span class="w"> </span><span class="sb">`</span>CXXABI_1.3.15<span class="s1">&#39; not found (required by ./llama_main)</span>
+<span class="s1">./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38&#39;</span><span class="w"> </span>not<span class="w"> </span>found<span class="w"> </span><span class="o">(</span>required<span class="w"> </span>by<span class="w"> </span>/lib/libllama_runner.so<span class="o">)</span>
+</pre></div>
+</div>
+<p><strong>There are two potential solutions:</strong></p>
+<ul class="simple">
+<li><p><strong>Solution A</strong>: Modify the Pi to match the binary (run on Pi)</p></li>
+<li><p><strong>Solution B</strong>: Modify the binary to match the Pi (run on host)</p></li>
+</ul>
+<section id="solution-a-upgrade-glibc-on-raspberry-pi-recommended">
+<h4>Solution A: Upgrade GLIBC on Raspberry Pi (Recommended)<a class="headerlink" href="#solution-a-upgrade-glibc-on-raspberry-pi-recommended" title="Link to this heading">#</a></h4>
+<ol class="arabic simple">
+<li><p><strong>Check your current GLIBC version:</strong></p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ldd<span class="w"> </span>--version
+<span class="c1"># Output: ldd (Debian GLIBC 2.36-9+rpt2+deb12u12) 2.36</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="2">
+<li><p><strong>⚠️ Compatibility Warning and Safety Check:</strong></p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Just check and warn - don&#39;t do the upgrade</span>
+<span class="nv">current_glibc</span><span class="o">=</span><span class="k">$(</span>ldd<span class="w"> </span>--version<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-n1<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-o<span class="w"> </span><span class="s1">&#39;[0-9]\+\.[0-9]\+&#39;</span><span class="k">)</span>
+<span class="nv">required_glibc</span><span class="o">=</span><span class="s2">&quot;2.38&quot;</span>
+
+<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Current GLIBC: </span><span class="nv">$current_glibc</span><span class="s2">&quot;</span>
+<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Required GLIBC: </span><span class="nv">$required_glibc</span><span class="s2">&quot;</span>
+
+<span class="k">if</span><span class="w"> </span><span class="o">[[</span><span class="w"> </span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$current_glibc</span><span class="s2"> &lt; </span><span class="nv">$required_glibc</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>bc<span class="w"> </span>-l<span class="k">)</span><span class="w"> </span>-eq<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="o">]]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;⚠️  WARNING: Your GLIBC version is too old&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;   You need to upgrade to continue with the next steps&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;   Consider using Solution B (rebuild binary) for better safety&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;&quot;</span>
+<span class="k">else</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;✅ Your GLIBC version is already compatible&quot;</span>
+<span class="k">fi</span>
+</pre></div>
+</div>
+<p><strong>NOTE:</strong> If the output shows “⚠️  WARNING: Your GLIBC version is too old”, proceed with either Upgrade / Step #3 below (or) Solution B. Otherwise skip the next step as your device is <strong>already compatible</strong> and directly go to Step#4.</p>
+<ol class="arabic simple" start="3">
+<li><p><strong>Upgrade to newer GLIBC:</strong></p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Add Debian unstable repository</span>
+<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;deb http://deb.debian.org/debian sid main contrib non-free&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>/etc/apt/sources.list
+
+<span class="c1"># Update package lists</span>
+sudo<span class="w"> </span>apt<span class="w"> </span>update
+
+<span class="c1"># Install newer GLIBC packages</span>
+sudo<span class="w"> </span>apt-get<span class="w"> </span>-t<span class="w"> </span>sid<span class="w"> </span>install<span class="w"> </span>libc6<span class="w"> </span>libstdc++6
+
+<span class="c1"># Reboot system</span>
+sudo<span class="w"> </span>reboot
+</pre></div>
+</div>
+<ol class="arabic simple" start="4">
+<li><p><strong>Verify compatibility after reboot:</strong></p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
+<span class="nb">source</span><span class="w"> </span>setup_env.sh
+
+<span class="c1"># Test that the binary works</span>
+<span class="k">if</span><span class="w"> </span>./llama_main<span class="w"> </span>--help<span class="w"> </span><span class="p">&amp;</span>&gt;/dev/null<span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;✅ GLIBC upgrade successful - binary is compatible&quot;</span>
+<span class="k">else</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;❌ GLIBC upgrade failed - binary still incompatible&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Consider rolling back or refer to documentation for troubleshooting&quot;</span>
+<span class="k">fi</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="5">
+<li><p><strong>Test the fix:</strong></p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
+<span class="nb">source</span><span class="w"> </span>setup_env.sh
+./llama_main<span class="w"> </span>--model_path<span class="w"> </span>./llama3_2.pte<span class="w"> </span>--tokenizer_path<span class="w"> </span>./tokenizer.model<span class="w"> </span>--seq_len<span class="w"> </span><span class="m">128</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;Hello&quot;</span>
+</pre></div>
+</div>
+<p><strong>Important Notes:</strong></p>
+<ul class="simple">
+<li><p>Select “Yes” when prompted to restart services</p></li>
+<li><p>Press Enter to keep current version for configuration files</p></li>
+<li><p>Backup important data before upgrading</p></li>
+</ul>
+</section>
+<section id="solution-b-rebuild-with-raspberry-pi-s-glibc-advanced">
+<h4>Solution B: Rebuild with Raspberry Pi’s GLIBC (Advanced)<a class="headerlink" href="#solution-b-rebuild-with-raspberry-pi-s-glibc-advanced" title="Link to this heading">#</a></h4>
+<p>If you prefer not to upgrade your Raspberry Pi system:</p>
+<ol class="arabic simple">
+<li><p><strong>Copy Pi’s filesystem to host machine:</strong></p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># On Raspberry Pi - install rsync</span>
+ssh<span class="w"> </span>pi@&lt;your-rpi-ip&gt;
+sudo<span class="w"> </span>apt<span class="w"> </span>update<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>rsync
+<span class="nb">exit</span>
+
+<span class="c1"># On host machine - copy Pi&#39;s filesystem</span>
+mkdir<span class="w"> </span>-p<span class="w"> </span>~/rpi5-sysroot
+rsync<span class="w"> </span>-aAXv<span class="w"> </span>--exclude<span class="o">={</span><span class="s2">&quot;/proc&quot;</span>,<span class="s2">&quot;/sys&quot;</span>,<span class="s2">&quot;/dev&quot;</span>,<span class="s2">&quot;/run&quot;</span>,<span class="s2">&quot;/tmp&quot;</span>,<span class="s2">&quot;/mnt&quot;</span>,<span class="s2">&quot;/media&quot;</span>,<span class="s2">&quot;/lost+found&quot;</span><span class="o">}</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>pi@&lt;your-rpi-ip&gt;:/<span class="w"> </span>~/rpi5-sysroot
+</pre></div>
+</div>
+<ol class="arabic simple" start="2">
+<li><p><strong>Update CMake toolchain file:</strong></p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Edit arm-toolchain-pi5.cmake</span>
+<span class="c1"># Replace this line:</span>
+<span class="c1"># set(CMAKE_SYSROOT &quot;${TOOLCHAIN_PATH}/aarch64-none-linux-gnu/libc&quot;)</span>
+
+<span class="c1"># With this:</span>
+set<span class="o">(</span>CMAKE_SYSROOT<span class="w"> </span><span class="s2">&quot;/home/yourusername/rpi5-sysroot&quot;</span><span class="o">)</span>
+set<span class="o">(</span>CMAKE_FIND_ROOT_PATH<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">CMAKE_SYSROOT</span><span class="si">}</span><span class="s2">&quot;</span><span class="o">)</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="3">
+<li><p><strong>Rebuild binaries:</strong></p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Clean and rebuild</span>
+rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out
+./examples/raspberry_pi/rpi_setup.sh<span class="w"> </span>pi5<span class="w"> </span>--force-rebuild
+
+<span class="c1"># Verify GLIBC version</span>
+strings<span class="w"> </span>./cmake-out/examples/models/llama/llama_main<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>GLIBC_
+<span class="c1"># Should show max GLIBC_2.36 (matching your Pi)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="issue-2-library-not-found">
+<h3>Issue 2: Library Not Found<a class="headerlink" href="#issue-2-library-not-found" title="Link to this heading">#</a></h3>
+<p><strong>Problem:</strong> Required libraries are not found at runtime.</p>
+<p><strong>Error Symptoms:</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./llama_main:<span class="w"> </span>error<span class="w"> </span><span class="k">while</span><span class="w"> </span>loading<span class="w"> </span>shared<span class="w"> </span>libraries:<span class="w"> </span>libllama_runner.so:<span class="w"> </span>cannot<span class="w"> </span>open<span class="w"> </span>shared<span class="w"> </span>object<span class="w"> </span>file
+</pre></div>
+</div>
+<p><strong>Solution:</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Ensure you&#39;re in the correct directory and environment is set</span>
+<span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
+<span class="nb">source</span><span class="w"> </span>setup_env.sh
+./llama_main<span class="w"> </span>--help
+</pre></div>
+</div>
+<p><strong>Root Cause:</strong> Either <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code> is not set or you’re not in the deployment directory.</p>
+</section>
+<hr class="docutils" />
+<section id="issue-3-tokenizer-json-parsing-warnings">
+<h3>Issue 3: Tokenizer JSON Parsing Warnings<a class="headerlink" href="#issue-3-tokenizer-json-parsing-warnings" title="Link to this heading">#</a></h3>
+<p><strong>Problem:</strong> Warning messages about JSON parsing errors after running the llama_main binary.</p>
+<p><strong>Error Symptoms:</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>E<span class="w"> </span>tokenizers:hf_tokenizer.cpp:60<span class="o">]</span><span class="w"> </span>Error<span class="w"> </span>parsing<span class="w"> </span>json<span class="w"> </span>file:<span class="w"> </span><span class="o">[</span>json.exception.parse_error.101<span class="o">]</span>
+</pre></div>
+</div>
+<p><strong>Solution:</strong> These warnings can be safely ignored. They don’t affect model inference.</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="quick-test-command">
+<h2>Quick Test Command<a class="headerlink" href="#quick-test-command" title="Link to this heading">#</a></h2>
+<p>After resolving issues, test with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
+<span class="nb">source</span><span class="w"> </span>setup_env.sh
+./llama_main<span class="w"> </span>--model_path<span class="w"> </span>./llama3_2.pte<span class="w"> </span>--tokenizer_path<span class="w"> </span>./tokenizer.model<span class="w"> </span>--seq_len<span class="w"> </span><span class="m">128</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;What is the meaning of life?&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="debugging-tools">
+<h2>Debugging Tools<a class="headerlink" href="#debugging-tools" title="Link to this heading">#</a></h2>
+<p>Enable ExecuTorch logging:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Set log level for debugging</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ET_LOG_LEVEL</span><span class="o">=</span>Info
+./llama_main<span class="w"> </span>--model_path<span class="w"> </span>./model.pte<span class="w"> </span>--verbose
+</pre></div>
+</div>
+</section>
+<section id="final-run-command">
+<h2>Final Run command<a class="headerlink" href="#final-run-command" title="Link to this heading">#</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
+<span class="nb">source</span><span class="w"> </span>setup_env.sh
+./llama_main<span class="w"> </span>--model_path<span class="w"> </span>./llama3_2.pte<span class="w"> </span>--tokenizer_path<span class="w"> </span>./tokenizer.model<span class="w"> </span>--seq_len<span class="w"> </span><span class="m">128</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;What is the meaning of life?&quot;</span>
+</pre></div>
+</div>
+<p>Happy Inferencing!</p>
+</section>
+</section>
+
+
+                </article>
+              
+  </article>
+  
+              
+              
+                <footer class="bd-footer-article">
+                  <div class="footer-article-items footer-article__inner">
+  
+    <div class="footer-article-item">
+<div class="feedback">
+  
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+
+  <div class="feedback-send">
+    <button class="feedback-btn"
+            onclick="openGitHubIssue()"
+            data-bs-title="Create a GitHub Issue"
+            data-bs-placement="bottom"
+            data-bs-toggle="tooltip"
+            data-gtm="feedback-btn-click">Send Feedback
+    </button>
+  </div>
+</div>
+
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="desktop-mps.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">&lt;no title&gt;</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="embedded-section.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Embedded Systems</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+
+<div class="footer-info">
+  <p class="copyright">
+    
+  </p>
+
+  <p class="theme-version">
+    Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+  </p>
+</div>
+</div>
+  
+</div>
+                </footer>
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="desktop-mps.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">&lt;no title&gt;</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="embedded-section.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Embedded Systems</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc">
+<div class="sidebar-secondary-items sidebar-secondary__inner">
+    
+       <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tldr">TLDR</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites-and-hardware-requirements">Prerequisites and Hardware Requirements</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#host-machine-requirements">Host Machine Requirements</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#target-device-requirements">Target Device Requirements</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#verification-commands">Verification Commands</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#create-conda-environment">Create Conda Environment</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cross-compilation-toolchain-step">Cross-Compilation Toolchain Step</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#model-preparation-and-export">Model Preparation and Export</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#download-llama-models">Download Llama Models</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#export-llama-to-executorch-format">Export Llama to ExecuTorch Format</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#raspberry-pi-deployment">Raspberry Pi Deployment</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#transfer-binaries-to-raspberry-pi">Transfer Binaries to Raspberry Pi</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#configure-runtime-libraries-on-raspberry-pi">Configure Runtime Libraries on Raspberry Pi</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#set-up-library-environment">Set up library environment</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dry-run">Dry Run</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#troubleshooting">Troubleshooting</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#issue-1-glibc-version-mismatch">Issue 1: GLIBC Version Mismatch</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#solution-a-upgrade-glibc-on-raspberry-pi-recommended">Solution A: Upgrade GLIBC on Raspberry Pi (Recommended)</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#solution-b-rebuild-with-raspberry-pi-s-glibc-advanced">Solution B: Rebuild with Raspberry Pi’s GLIBC (Advanced)</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#issue-2-library-not-found">Issue 2: Library Not Found</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#issue-3-tokenizer-json-parsing-warnings">Issue 3: Tokenizer JSON Parsing Warnings</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#quick-test-command">Quick Test Command</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#debugging-tools">Debugging Tools</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#final-run-command">Final Run command</a></li>
+</ul>
+  </nav></div>
+    
+       <div class="sidebar-secondary-item">
+
+  
+  <div class="tocsection editthispage">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/raspberry_pi_llama_tutorial.md">
+      <i class="fa-solid fa-pencil"></i>
+      
+      
+        
+          Edit on GitHub
+        
+      
+    </a>
+  </div>
+</div>
+    
+       <div class="sidebar-secondary-item">
+    <div class="tocsection sourcelink">
+      <a href="_sources/raspberry_pi_llama_tutorial.md.txt">
+        <i class="fa-solid fa-file-lines"></i> Show Source
+      </a>
+    </div>
+</div>
+    
+
+
+
+
+</div>
+</div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  
+
+<div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+  <div class="container">
+    <div class="row">
+      <div class="col-md-4">
+        <h2>Docs</h2>
+        <p>Access comprehensive developer documentation for PyTorch</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/docs/stable/index.html">View Docs</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Tutorials</h2>
+        <p>Get in-depth tutorials for beginners and advanced developers</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/tutorials">View Tutorials</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Resources</h2>
+        <p>Find development resources and get your questions answered</p>
+        <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<footer class="site-footer">
+
+  <div class="container footer-container">
+
+    <div class="newsletter" id="newsletter">
+
+      <p class="newsletter__title is-style-max-width-800"><strong>Stay in touch</strong> for updates, event info, and
+        the latest news</p>
+
+
+      <script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+      <script>
+        hbspt.forms.create({
+          region: "na1",
+          portalId: "8112310",
+          formId: "2fb2231c-000b-4ec5-88a0-1ab242549c9e"
+        });
+      </script>
+
+
+      <p class="newsletter__privacy">By submitting this form, I consent to receive marketing emails from the LF and its
+        projects regarding their events, training, research, developments, and related announcements. I understand that
+        I can unsubscribe at any time using the links in the footers of the emails I receive. <a
+          href="https://www.linuxfoundation.org/privacy/">Privacy Policy</a>.</p>
+
+    </div>
+
+    <div class="lf-grid">
+      <ul class="social-links">
+        <li><a href="https://www.facebook.com/pytorch" target="_blank" title="PyTorch on Facebook">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-0.51 -0.26 26.45 26.45" aria-label="Facebook">
+              <path fill="currentColor"
+                d="M25.497 13.075c0-2.45-.698-4.848-2.011-6.911a12.765 12.765 0 0 0-5.398-4.73A12.671 12.671 0 0 0 11.008.38a12.705 12.705 0 0 0-6.529 2.95A12.827 12.827 0 0 0 .563 9.358a12.896 12.896 0 0 0-.07 7.201 12.831 12.831 0 0 0 3.801 6.103 12.709 12.709 0 0 0 6.471 3.078v-8.957H7.53v-3.708h3.235v-2.824c0-3.213 1.903-4.988 4.813-4.988.956.014 1.909.097 2.852.25V8.67h-1.607a1.83 1.83 0 0 0-1.518.497 1.854 1.854 0 0 0-.561 1.505v2.404h3.535l-.563 3.708h-2.97v8.957a12.725 12.725 0 0 0 7.697-4.337 12.87 12.87 0 0 0 3.054-8.328z" />
+            </svg>
+          </a></li>
+        <li><a href="https://twitter.com/pytorch" target="_blank" title="PyTorch on X">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 300 300" aria-label="X">
+              <path fill="currentColor"
+                d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.youtube.com/pytorch" target="_blank" title="PyTorch on YouTube">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0.21 0.27 34.45 25.07" aria-label="YouTube">
+              <path fill="currentColor"
+                d="M33.729 6.084s-.327-2.33-1.317-3.356a4.691 4.691 0 0 0-3.32-1.432c-4.634-.34-11.589-.34-11.589-.34h-.014s-6.954 0-11.59.342a4.692 4.692 0 0 0-3.32 1.432c-.993 1.025-1.315 3.354-1.315 3.354a52.189 52.189 0 0 0-.331 5.473v2.566c.014 1.829.125 3.656.331 5.472 0 0 .322 2.33 1.316 3.36 1.26 1.345 2.916 1.3 3.653 1.445 2.65.26 11.263.34 11.263.34s6.96-.01 11.597-.353a4.691 4.691 0 0 0 3.32-1.432c.993-1.026 1.316-3.356 1.316-3.356.206-1.817.316-3.644.33-5.473v-2.57a52.26 52.26 0 0 0-.33-5.472zM14.076 17.232V7.729l8.951 4.768-8.95 4.735z" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.linkedin.com/company/pytorch" target="_blank" title="PyTorch on LinkedIn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-10.23 -10.23 531.96 531.96" aria-label="LinkedIn">
+              <rect width="512" height="512" rx="0" fill="currentColor" />
+              <circle fill="#000" cx="142" cy="138" r="37" />
+              <path stroke="#000" stroke-width="66" d="M244 194v198M142 194v198" />
+              <path fill="#000"
+                d="M276 282c0-20 13-40 36-40 24 0 33 18 33 45v105h66V279c0-61-32-89-76-89-34 0-51 19-59 32" />
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.slack.com" target="_blank" title="PyTorch Slack">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.16 -0.03 21.19 21.19" aria-label="Slack">
+              <path fill="currentColor"
+                d="M4.896 13.27a2.147 2.147 0 0 1-2.141 2.142A2.147 2.147 0 0 1 .613 13.27c0-1.178.963-2.141 2.142-2.141h2.141v2.141zm1.08 0c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.363a2.147 2.147 0 0 1-2.142 2.141 2.147 2.147 0 0 1-2.141-2.142V13.27zm2.141-8.6a2.147 2.147 0 0 1-2.141-2.14c0-1.18.962-2.142 2.141-2.142s2.142.963 2.142 2.141v2.142H8.117zm0 1.08c1.179 0 2.141.962 2.141 2.141a2.147 2.147 0 0 1-2.141 2.142H2.755A2.147 2.147 0 0 1 .613 7.89c0-1.179.963-2.141 2.142-2.141h5.362zm8.599 2.141c0-1.179.963-2.141 2.141-2.141 1.179 0 2.143.962 2.143 2.14a2.147 2.147 0 0 1-2.142 2.142h-2.141V7.89zm-1.08 0a2.147 2.147 0 0 1-2.141 2.142 2.147 2.147 0 0 1-2.141-2.142V2.53c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.362zm-2.141 8.6c1.179 0 2.142.962 2.142 2.14a2.147 2.147 0 0 1-2.142 2.142 2.147 2.147 0 0 1-2.141-2.141V16.49h2.141zm0-1.08a2.147 2.147 0 0 1-2.141-2.141c0-1.179.962-2.142 2.141-2.142h5.362c1.179 0 2.142.963 2.142 2.142a2.147 2.147 0 0 1-2.142 2.142h-5.362z">
+              </path>
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.org/wechat" title="PyTorch on WeChat">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.14 -0.17 38.02 33.02" aria-label="WeChat">
+              <path fill="currentColor"
+                d="M26.289 10.976a12.972 12.972 0 0 0-8.742 3.53 10.386 10.386 0 0 0-3.224 8.795c-1.326-.164-2.535-.345-3.75-.448a2.332 2.332 0 0 0-1.273.216c-1.18.666-2.311 1.418-3.652 2.255.246-1.112.405-2.087.687-3.024a1.15 1.15 0 0 0-.523-1.52C1.737 17.902.02 13.601 1.307 9.165c1.189-4.1 4.11-6.587 8.077-7.884A13.54 13.54 0 0 1 24.18 5.617a10.135 10.135 0 0 1 2.109 5.359zM10.668 9.594a1.564 1.564 0 0 0-2.095-1.472 1.52 1.52 0 0 0-.895 1.964 1.502 1.502 0 0 0 1.391.966 1.545 1.545 0 0 0 1.598-1.46v.002zm8.15-1.566a1.567 1.567 0 0 0-1.528 1.543 1.528 1.528 0 0 0 1.571 1.492 1.52 1.52 0 0 0 1.375-2.117 1.518 1.518 0 0 0-1.415-.919l-.003.001z">
+              </path>
+              <path fill="currentColor"
+                d="M33.914 32.137c-1.075-.478-2.062-1.196-3.11-1.306-1.049-.11-2.145.494-3.24.605a10.821 10.821 0 0 1-8.781-2.864c-4.682-4.33-4.013-10.97 1.403-14.518 4.811-3.154 11.874-2.102 15.268 2.273a8.671 8.671 0 0 1-1.002 12.095c-1.046.929-1.422 1.693-.751 2.917.102.257.174.525.213.798zM21.68 20.292a1.264 1.264 0 1 0 .01-2.528 1.264 1.264 0 0 0-.01 2.528zm7.887-2.526a1.266 1.266 0 0 0-1.256 1.21 1.247 1.247 0 1 0 1.256-1.21z">
+              </path>
+            </svg>
+          </a></li>
+      </ul>
+    </div>
+    
+    <div class="privacy-policy">
+      <div class="copyright">
+      
+        <p>
+          &copy; PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has registered
+          trademarks and uses trademarks. For more information, including terms of use, privacy policy, and trademark
+          usage, please see our <a href="https://www.linuxfoundation.org/legal/policies">Policies</a> page. <a
+            href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a>. <a
+            href="http://www.linuxfoundation.org/privacy">Privacy Policy</a>.
+        </p>
+        
+      </div>
+    </div>
+
+
+  </div>
+</footer>
+
+<div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/img/pytorch-x.svg">
+  </div>
+</div>
+  
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2024, ExecuTorch.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  <script type="application/ld+json">
+    {
+       "@context": "https://schema.org",
+       "@type": "Article",
+       "name": "ExecuTorch on Raspberry Pi",
+       "headline": "ExecuTorch on Raspberry Pi",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
+       "url": "/raspberry_pi_llama_tutorial.html",
+       "articleBody": "ExecuTorch on Raspberry Pi# TLDR# This tutorial demonstrates how to deploy Llama models on Raspberry Pi 4/5 devices using ExecuTorch: Prerequisites: Linux host machine, Python 3.10-3.13, conda environment, Raspberry Pi 4/5 Setup: Automated cross-compilation using setup.sh script for ARM toolchain installation Export: Convert Llama models to optimized .pte format with quantization options Deploy: Transfer binaries to Raspberry Pi and configure runtime libraries Optimize: Build optimization and performance tuning techniques Result: Efficient on-device Llama inference Prerequisites and Hardware Requirements# Host Machine Requirements# Operating System: Linux x86_64 (Ubuntu 20.04+ or CentOS Stream 9+) Software Dependencies: Python 3.10-3.13 (ExecuTorch requirement) conda or venv for environment management CMake 3.29.6+ Git for repository cloning Target Device Requirements# Supported Devices: Raspberry Pi 4 and Raspberry Pi 5 with 64-bit OS Memory Requirements: RAM \u0026 Storage Varies by model size and optimization level 64-bit Raspberry Pi OS (Bullseye or newer) Verification Commands# Verify your host machine compatibility: # Check OS and architecture uname -s # Should output: Linux uname -m # Should output: x86_64 # Check Python version python3 --version # Should be 3.10-3.13 # Check required tools hash cmake git md5sum 2\u003e/dev/null || echo \"Missing required tools\" cmake --version # Should be 3.29.6+ at minimum ## Development Environment Setup ### Clone ExecuTorch Repository First, clone the ExecuTorch repository with the Raspberry Pi support: ```bash # Create project directory mkdir ~/executorch-rpi \u0026\u0026 cd ~/executorch-rpi \u0026\u0026 git clone -b release/1.0 https://github.com/pytorch/executorch.git \u0026\u0026 cd executorch Create Conda Environment# # Create conda environment conda create -yn executorch python=3.10.0 conda activate executorch # Upgrade pip pip install --upgrade pip Alternative: Virtual Environment If you prefer Python\u2019s built-in virtual environment: python3 -m venv .venv source .venv/bin/activate pip install --upgrade pip Refer to \u2192 Getting Started with ExecuTorch for more details. Cross-Compilation Toolchain Step# Run the following script on your Linux host machine: # Run the Raspberry Pi setup script for Pi 5 examples/raspberry_pi/setup.sh pi5 On successful completion, you should see the following output: [100%] Linking CXX executable llama_main [100%] Built target llama_main [SUCCESS] LLaMA runner built successfully ==== Verifying Build Outputs ==== [SUCCESS] \u2713 llama_main (6.1M) [SUCCESS] \u2713 libllama_runner.so (4.0M) [SUCCESS] \u2713 libextension_module.a (89K) - static library \u2713 ExecuTorch cross-compilation setup completed successfully! Model Preparation and Export# Download Llama Models# Download the Llama model from Hugging Face or any other source, and make sure that following files exist. consolidated.00.pth (model weights) params.json (model config) tokenizer.model (tokenizer) Export Llama to ExecuTorch Format# After downloading the Llama model, export it to ExecuTorch format using the provided script: #### Set these paths to point to the exported files. Following is an example instruction to export a llama model LLAMA_QUANTIZED_CHECKPOINT=path/to/consolidated.00.pth LLAMA_PARAMS=path/to/params.json python -m extension.llm.export.export_llm \\ --config examples/models/llama/config/llama_xnnpack_spinquant.yaml \\ +base.model_class=\"llama3_2\" \\ +base.checkpoint=\"${LLAMA_QUANTIZED_CHECKPOINT:?}\" \\ +base.params=\"${LLAMA_PARAMS:?}\" The file llama3_2.pte will be generated at the place where you run the command For more details see Option A: Download and Export Llama3.2 1B/3B Model Also refer to \u2192 Exporting LLMs for more details. Raspberry Pi Deployment# Transfer Binaries to Raspberry Pi# After successful cross-compilation, transfer the required files: ##### Set Raspberry Pi details export RPI_UN=\"pi\" # Your Raspberry Pi username export RPI_IP=\"your-rpi-ip-address\" ##### Create deployment directory on Raspberry Pi ssh $RPI_UN@$RPI_IP \u0027mkdir -p ~/executorch-deployment\u0027 ##### Copy main executable scp cmake-out/examples/models/llama/llama_main $RPI_UN@$RPI_IP:~/executorch-deployment/ ##### Copy runtime library scp cmake-out/examples/models/llama/runner/libllama_runner.so $RPI_UN@$RPI_IP:~/executorch-deployment/ ##### Copy model file scp llama3_2.pte $RPI_UN@$RPI_IP:~/executorch-deployment/ scp ./tokenizer.model $RPI_UN@$RPI_IP:~/executorch-deployment/ Configure Runtime Libraries on Raspberry Pi# SSH into your Raspberry Pi and configure the runtime: Set up library environment# cd ~/executorch-deployment echo \u0027export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH\u0027 \u003e setup_env.sh chmod +x setup_env.sh #### Make executable chmod +x llama_main Dry Run# source setup_env.sh ./llama_main --help Make sure that the output does not have any GLIBC / other library mismatch errors in the output. If you see any, follow the troubleshooting steps below. Troubleshooting# Issue 1: GLIBC Version Mismatch# Problem: The binary was compiled with a newer GLIBC version (2.38) than what\u2019s available on your Raspberry Pi (2.36). Error Symptoms: ./llama_main: /lib/aarch64-linux-gnu/libm.so.6: version `GLIBC_2.38\u0027 not found (required by ./llama_main) ./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38\u0027 not found (required by ./llama_main) ./llama_main: /lib/aarch64-linux-gnu/libstdc++.so.6: version `CXXABI_1.3.15\u0027 not found (required by ./llama_main) ./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38\u0027 not found (required by /lib/libllama_runner.so) There are two potential solutions: Solution A: Modify the Pi to match the binary (run on Pi) Solution B: Modify the binary to match the Pi (run on host) Solution A: Upgrade GLIBC on Raspberry Pi (Recommended)# Check your current GLIBC version: ldd --version # Output: ldd (Debian GLIBC 2.36-9+rpt2+deb12u12) 2.36 \u26a0\ufe0f Compatibility Warning and Safety Check: # Just check and warn - don\u0027t do the upgrade current_glibc=$(ldd --version | head -n1 | grep -o \u0027[0-9]\\+\\.[0-9]\\+\u0027) required_glibc=\"2.38\" echo \"Current GLIBC: $current_glibc\" echo \"Required GLIBC: $required_glibc\" if [[ $(echo \"$current_glibc \u003c $required_glibc\" | bc -l) -eq 1 ]]; then echo \"\" echo \"\u26a0\ufe0f WARNING: Your GLIBC version is too old\" echo \" You need to upgrade to continue with the next steps\" echo \" Consider using Solution B (rebuild binary) for better safety\" echo \"\" else echo \"\u2705 Your GLIBC version is already compatible\" fi NOTE: If the output shows \u201c\u26a0\ufe0f WARNING: Your GLIBC version is too old\u201d, proceed with either Upgrade / Step #3 below (or) Solution B. Otherwise skip the next step as your device is already compatible and directly go to Step#4. Upgrade to newer GLIBC: # Add Debian unstable repository echo \"deb http://deb.debian.org/debian sid main contrib non-free\" | sudo tee -a /etc/apt/sources.list # Update package lists sudo apt update # Install newer GLIBC packages sudo apt-get -t sid install libc6 libstdc++6 # Reboot system sudo reboot Verify compatibility after reboot: cd ~/executorch-deployment source setup_env.sh # Test that the binary works if ./llama_main --help \u0026\u003e/dev/null; then echo \"\u2705 GLIBC upgrade successful - binary is compatible\" else echo \"\u274c GLIBC upgrade failed - binary still incompatible\" echo \"Consider rolling back or refer to documentation for troubleshooting\" fi Test the fix: cd ~/executorch-deployment source setup_env.sh ./llama_main --model_path ./llama3_2.pte --tokenizer_path ./tokenizer.model --seq_len 128 --prompt \"Hello\" Important Notes: Select \u201cYes\u201d when prompted to restart services Press Enter to keep current version for configuration files Backup important data before upgrading Solution B: Rebuild with Raspberry Pi\u2019s GLIBC (Advanced)# If you prefer not to upgrade your Raspberry Pi system: Copy Pi\u2019s filesystem to host machine: # On Raspberry Pi - install rsync ssh pi@\u003cyour-rpi-ip\u003e sudo apt update \u0026\u0026 sudo apt install rsync exit # On host machine - copy Pi\u0027s filesystem mkdir -p ~/rpi5-sysroot rsync -aAXv --exclude={\"/proc\",\"/sys\",\"/dev\",\"/run\",\"/tmp\",\"/mnt\",\"/media\",\"/lost+found\"} \\ pi@\u003cyour-rpi-ip\u003e:/ ~/rpi5-sysroot Update CMake toolchain file: # Edit arm-toolchain-pi5.cmake # Replace this line: # set(CMAKE_SYSROOT \"${TOOLCHAIN_PATH}/aarch64-none-linux-gnu/libc\") # With this: set(CMAKE_SYSROOT \"/home/yourusername/rpi5-sysroot\") set(CMAKE_FIND_ROOT_PATH \"${CMAKE_SYSROOT}\") Rebuild binaries: # Clean and rebuild rm -rf cmake-out ./examples/raspberry_pi/rpi_setup.sh pi5 --force-rebuild # Verify GLIBC version strings ./cmake-out/examples/models/llama/llama_main | grep GLIBC_ # Should show max GLIBC_2.36 (matching your Pi) Issue 2: Library Not Found# Problem: Required libraries are not found at runtime. Error Symptoms: ./llama_main: error while loading shared libraries: libllama_runner.so: cannot open shared object file Solution: # Ensure you\u0027re in the correct directory and environment is set cd ~/executorch-deployment source setup_env.sh ./llama_main --help Root Cause: Either LD_LIBRARY_PATH is not set or you\u2019re not in the deployment directory. Issue 3: Tokenizer JSON Parsing Warnings# Problem: Warning messages about JSON parsing errors after running the llama_main binary. Error Symptoms: E tokenizers:hf_tokenizer.cpp:60] Error parsing json file: [json.exception.parse_error.101] Solution: These warnings can be safely ignored. They don\u2019t affect model inference. Quick Test Command# After resolving issues, test with: cd ~/executorch-deployment source setup_env.sh ./llama_main --model_path ./llama3_2.pte --tokenizer_path ./tokenizer.model --seq_len 128 --prompt \"What is the meaning of life?\" Debugging Tools# Enable ExecuTorch logging: # Set log level for debugging export ET_LOG_LEVEL=Info ./llama_main --model_path ./model.pte --verbose Final Run command# cd ~/executorch-deployment source setup_env.sh ./llama_main --model_path ./llama3_2.pte --tokenizer_path ./tokenizer.model --seq_len 128 --prompt \"What is the meaning of life?\" Happy Inferencing!",
+       "author": {
+         "@type": "Organization",
+         "name": "PyTorch Contributors",
+         "url": "https://pytorch.org"
+       },
+       "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
+       "mainEntityOfPage": {
+         "@type": "WebPage",
+         "@id": "/raspberry_pi_llama_tutorial.html"
+       },
+       "datePublished": "2023-01-01T00:00:00Z",
+       "dateModified": "2023-01-01T00:00:00Z"
+     }
+ </script>
+  <script>
+    // Tutorials Call to action event tracking
+    $("[data-behavior='call-to-action-event']").on('click', function () {
+      fbq('trackCustom', "Download", {
+        tutorialTitle: $('h1:first').text(),
+        downloadLink: this.href,
+        tutorialLink: window.location.href,
+        downloadTitle: $(this).attr("data-response")
+      });
+      if (typeof gtag === 'function') {
+        gtag('event', 'click', {
+          'event_category': $(this).attr("data-response"),
+          'event_label': $("h1").first().text(),
+          'tutorial_link': window.location.href
+        });
+      }
+    });
+  </script>
+  
+  </body>
+</html>

@@ -1,0 +1,2209 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>executorch.exir.backend.backend_api &#8212; ExecuTorch 1.1 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../../../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../../../../_static/documentation_options.js?v=56dcb7b8"></script>
+    <script src="../../../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs"></script>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs"></script>
+    <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs";mermaid.registerLayoutLoaders(elkLayouts);mermaid.initialize({startOnLoad:false});</script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+    <script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";
+window.addEventListener("load", () => mermaid.run());
+</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/executorch/exir/backend/backend_api';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '1.1';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
+        </script>
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/_modules/executorch/exir/backend/backend_api.html" />
+    <link rel="icon" href="../../../../_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+<script>
+  if (window.location.hostname === 'docs.pytorch.org' || window.location.hostname === 'docs-preview.pytorch.org') {
+    const script = document.createElement('script');
+    script.src = 'https://cmp.osano.com/16A0DbT9yDNIaQkvZ/31b1b91a-e0b6-47ea-bde2-7f2bd13dbe5c/osano.js?variant=one';
+    document.head.appendChild(script);
+  }
+</script>
+<script>
+  // Cookie banner for non-LF projects
+  document.addEventListener('DOMContentLoaded', function () {
+    // Hide cookie banner on local environments and LF owned docs
+    if (window.location.hostname === 'localhost' ||
+      window.location.hostname === '0.0.0.0' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'docs.pytorch.org' ||
+      window.location.hostname === 'docs-preview.pytorch.org' ||
+      window.location.hostname.startsWith('192.168.')) {
+      const banner = document.querySelector('.cookie-banner-wrapper');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+  });
+</script>
+<!-- Conditional CSS for header and footer height adjustment -->
+
+
+<link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="../../../../_static/js/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+<meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="../../../../_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
+<meta name="pytorch_project" content="">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS" height="0" width="0"
+    style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager -->
+<script>(function (w, d, s, l, i) {
+    w[l] = w[l] || []; w[l].push({
+      'gtm.start':
+        new Date().getTime(), event: 'gtm.js'
+    }); var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+        'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+    j.onload = function () {
+      window.dispatchEvent(new Event('gtm_loaded'));
+      console.log('GTM loaded successfully');
+    };
+  })(window, document, 'script', 'dataLayer', 'GTM-T8XT4PS');
+</script>
+<!-- End Google Tag Manager -->
+<!-- Facebook Pixel Code -->
+<script>
+  !function (f, b, e, v, n, t, s) {
+    if (f.fbq) return; n = f.fbq = function () {
+      n.callMethod ?
+        n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+    };
+    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+    n.queue = []; t = b.createElement(e); t.async = !0;
+    t.src = v; s = b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t, s)
+  }(window, document, 'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '243028289693773');
+  fbq('track', 'PageView');
+</script>
+<script>
+  document.documentElement.setAttribute('data-version', '1.1');
+</script>
+<noscript>
+  <img height="1" width="1" src="https://www.facebook.com/tr?id=243028289693773&ev=PageView&noscript=1" />
+</noscript>
+<script>
+  function gtag() {
+    window.dataLayer.push(arguments);
+  }
+</script>
+<!-- End Facebook Pixel Code -->
+<!-- Repository configuration for tutorials -->
+
+<!-- Script to Fix scrolling -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Fix anchor scrolling
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const targetId = this.getAttribute('href').substring(1);
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          const headerHeight =
+            (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
+            (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
+
+          const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
+          window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+          });
+
+          // Update URL hash without scrolling
+          history.pushState(null, null, '#' + targetId);
+        }
+      });
+    });
+  });
+</script>
+
+<script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+  </head>
+
+<body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
+  
+    <div class="container-fluid header-holder tutorials-header" id="header-holder">
+   <div class="header-container-wrapper">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                <span>Learn</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started/locally">
+                  <span class=dropdown-title>Get Started</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/webinars/">
+                  <span class="dropdown-title">Webinars</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Community</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://landscape.pytorch.org/" target="_blank">
+                  <span class="dropdown-title">Landscape</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/join-ecosystem">
+                  <span class="dropdown-title">Join the Ecosystem</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-hub/">
+                  <span class="dropdown-title">Community Hub</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/">
+                  <span class="dropdown-title">Forums</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contributor-awards/">
+                  <span class="dropdown-title">Contributor Awards</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-events/">
+                  <span class="dropdown-title">Community Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/programs/ambassadors/">
+                  <span class="dropdown-title">PyTorch Ambassadors</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Projects</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/pytorch/">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/vllm/">
+                  <span class="dropdown-title">vLLM</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/deepspeed/">
+                  <span class="dropdown-title">DeepSpeed</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/host-your-project/">
+                  <span class="dropdown-title">Host Your Project</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/ray/">
+                  <span class="dropdown-title">RAY</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span> Docs</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/domains">
+                  <span class="dropdown-title">Domains</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Blogs & News</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">Blog</span>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/announcements">
+                  <span class="dropdown-title">Announcements</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/case-studies/">
+                  <span class="dropdown-title">Case Studies</span>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                </a>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>About</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/members">
+                  <span class="dropdown-title">Members</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact">
+                  <span class="dropdown-title">Contact</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/wp-content/uploads/2025/09/pytorch_brand_guide_091925a.pdf">
+                  <span class="dropdown-title">Brand Guidelines</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown main-menu-button">
+              <a href="https://pytorch.org/join" data-cta="join">
+                JOIN
+              </a>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu">
+        <i class="fa-solid fa-ellipsis"></i>
+      </a>
+    </div>
+  </div>
+ </div>
+
+ <!-- Begin Mobile Menu -->
+
+<div class="mobile-main-menu">
+  <div class="container-fluid">
+    <div class="header-container-wrapper">
+      <div class="mobile-main-menu-header-container">
+        <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu">
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="mobile-main-menu-links-container">
+    <div class="main-menu">
+      <ul>
+         <li class="resources-mobile-menu-title">
+           <a>Learn</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/get-started/locally">Get Started</a>
+           </li>
+           <li>
+             <a href="https://docs.pytorch.org/tutorials">Tutorials</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/webinars/">Webinars</a>
+          </li>
+        </ul>
+         <li class="resources-mobile-menu-title">
+           <a>Community</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://landscape.pytorch.org/">Landscape</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/join-ecosystem">Join the Ecosystem</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/community-hub/">Community Hub</a>
+           </li>
+           <li>
+             <a href="https://discuss.pytorch.org/">Forums</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/resources">Developer Resources</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/contributor-awards/">Contributor Awards</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/community-events/">Community Events</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/programs/ambassadors/">PyTorch Ambassadors</a>
+          </li>
+       </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Projects</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/projects/pytorch/">PyTorch</a>
+           </li>
+
+           <li>
+             <a href="https://pytorch.org/projects/vllm/">vLLM</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/projects/deepspeed/">DeepSpeed</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/projects/host-your-project/">Host Your Project</a>
+           </li>
+         </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Docs</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://docs.pytorch.org/docs/stable/index.html">PyTorch</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/domains">Domains</a>
+          </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>Blog & News</a>
+        </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/announcements">Announcements</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/case-studies/">Case Studies</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/events">Events</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/newsletter">Newsletter</a>
+           </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>About</a>
+        </li>
+
+        <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/members">Members</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/governing-board">Governing Board</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+         </li>
+         <li>
+             <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/staff">Staff</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/contact">Contact</a>
+          </li>
+        </ul>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- End Mobile Menu -->
+  
+  
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class=" navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../../_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch 1.1 documentation - Home"/>
+    <script>document.write(`<img src="../../../../_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch 1.1 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+    
+      <div class="navbar-item">
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-2"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-2"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-2"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-2">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script></div>
+    
+  </div>
+  
+  <div class=" navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../api-section.html">
+    API
+  </a>
+</li>
+
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="../../../../support-section.html">
+    Support
+  </a>
+</li>
+
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+      
+        <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="../../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <div class="bd-sidebar-primary bd-sidebar hide-on-wide">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../api-section.html">
+    API
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../../support-section.html">
+    Support
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="../../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../../../index.html" class="nav-link">Module code</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">executorch.e...</li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+</div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+  
+<div id="searchbox"></div>
+  <article class="bd-article" id="pytorch-article">
+    <!-- Hidden breadcrumb schema for SEO only -->
+    <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="../../../index.html">
+        <meta itemprop="name" content="Module code">
+        <meta itemprop="position" content="1">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="executorch.exir.backend.backend_api">
+        <meta itemprop="position" content="2">
+      </div>
+    </div>
+
+    
+    
+
+    
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <h1>Source code for executorch.exir.backend.backend_api</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) Meta Platforms, Inc. and affiliates.</span>
+<span class="c1"># All rights reserved.</span>
+<span class="c1"># Copyright 2025 Arm Limited and/or its affiliates.</span>
+<span class="c1">#</span>
+<span class="c1"># This source code is licensed under the BSD-style license found in the</span>
+<span class="c1"># LICENSE file in the root directory of this source tree.</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">contextmanager</span><span class="p">,</span> <span class="n">nullcontext</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">singledispatch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Generator</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Mapping</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.backend_details</span><span class="w"> </span><span class="kn">import</span> <span class="n">BackendDetails</span><span class="p">,</span> <span class="n">PreprocessResult</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.compile_spec_schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompileSpec</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">Partitioner</span><span class="p">,</span> <span class="n">PartitionResult</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.utils</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_maybe_duplicate_constant_nodes</span><span class="p">,</span>
+    <span class="n">is_identical_graph</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.delegate</span><span class="w"> </span><span class="kn">import</span> <span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="n">get_lowered_module_name</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.graph_module</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_control_flow_submodules</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.lowered_backend_module</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_unsafe_adjust_original_program</span><span class="p">,</span>
+    <span class="n">create_exported_program_from_submodule</span><span class="p">,</span>
+    <span class="n">create_submodule_from_nodes</span><span class="p">,</span>
+    <span class="n">LoweredBackendModule</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.program._fake_program</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_fake_program</span><span class="p">,</span>
+    <span class="n">update_to_real_program</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch._export.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_buffer</span><span class="p">,</span> <span class="n">is_lifted_tensor_constant</span><span class="p">,</span> <span class="n">is_param</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export.exported_program</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">InputSpec</span><span class="p">,</span> <span class="n">OutputSpec</span>
+
+
+<div class="viewcode-block" id="to_backend">
+<a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.to_backend">[docs]</a>
+<span class="nd">@singledispatch</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_backend</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A generic function the dispatch happens on the type of the first argument. There are currently to overloaded to_backend function:</span>
+
+<span class="sd">    Note: Python is dynamically-typed language and therefore cannot have proper method overloading as that requires the language to</span>
+<span class="sd">    be able to discriminate between types at compile-time. @to_backend.register will attach the function to to_backend() base on the type of the first</span>
+<span class="sd">    argument (type annotation is required). However, it can&#39;t take multiple types as arguments.</span>
+
+<span class="sd">    ::</span>
+
+<span class="sd">     def to_backend(</span>
+<span class="sd">         backend_id: str,</span>
+<span class="sd">         edge_graph_module: ExportedProgram,</span>
+<span class="sd">         compile_specs: List[CompileSpec],</span>
+<span class="sd">     ) -&gt; LoweredBackendModule:</span>
+
+<span class="sd">     def to_backend(</span>
+<span class="sd">         edge_program: ExportedProgram,</span>
+<span class="sd">         partitioner: Partitioner,</span>
+<span class="sd">     ) -&gt; ExportedProgram:</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+
+<span class="nd">@to_backend</span><span class="o">.</span><span class="n">register</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span>
+    <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LoweredBackendModule</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Add overloaded implementations for to_backend:</span>
+
+<span class="sd">    ::</span>
+
+<span class="sd">     def to_backend(</span>
+<span class="sd">         backend_id: str,</span>
+<span class="sd">         edge_program: ExportedProgram,</span>
+<span class="sd">         compile_specs: List[CompileSpec],</span>
+<span class="sd">     ) -&gt; LoweredBackendModule:</span>
+
+
+<span class="sd">    Requires the passed in exported program in Edge dialect to be executed in</span>
+<span class="sd">    the backend identified by backend_id. The forward method of the given</span>
+<span class="sd">    edge_graph_module will be targeted for execution.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        backend_id: The backend identifier.</span>
+<span class="sd">        exported_program: An exported program in Edge dialect to target for</span>
+<span class="sd">        lowering to the backend.</span>
+<span class="sd">        compile_specs: A list of backend-specific objects with static</span>
+<span class="sd">            metadata to configure the &quot;compilation&quot; process (e.g. it could be</span>
+<span class="sd">            another dictionary itself).</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        LoweredBackendModule: A Module that has been lowered to the target backend.</span>
+<span class="sd">        Internally, the lowered Module contains these special attributes:</span>
+<span class="sd">        backend_id (str: backend id), __processed_module__ (str: a compiled module)</span>
+<span class="sd">        compile_spec, original_module (original exported program)</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        NotImplementedError: The backend is not implemented (e.g. it was not found).</span>
+<span class="sd">        This exception is derived from RuntimeError and should be caught accordingly.</span>
+<span class="sd">        RuntimeError: The module cannot be processed by the backend.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">edge_program</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">)</span>
+
+    <span class="c1"># All backend implementation are final, so we don&#39;t need to consider nested subclasses.</span>
+    <span class="k">for</span> <span class="bp">cls</span> <span class="ow">in</span> <span class="n">BackendDetails</span><span class="o">.</span><span class="n">__subclasses__</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">backend_id</span> <span class="o">==</span> <span class="bp">cls</span><span class="o">.</span><span class="vm">__name__</span><span class="p">:</span>
+            <span class="n">copied_edge_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
+            <span class="n">preprocess_result</span><span class="p">:</span> <span class="n">PreprocessResult</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">preprocess</span><span class="p">(</span>
+                <span class="n">copied_edge_program</span><span class="p">,</span>
+                <span class="n">compile_specs</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">lowered_module</span> <span class="o">=</span> <span class="n">LoweredBackendModule</span><span class="p">(</span>
+                <span class="n">edge_program</span><span class="o">=</span><span class="n">edge_program</span><span class="p">,</span>
+                <span class="n">backend_id</span><span class="o">=</span><span class="n">backend_id</span><span class="p">,</span>
+                <span class="n">processed_bytes</span><span class="o">=</span><span class="n">preprocess_result</span><span class="o">.</span><span class="n">processed_bytes</span><span class="p">,</span>
+                <span class="n">compile_specs</span><span class="o">=</span><span class="n">compile_specs</span><span class="p">,</span>
+                <span class="n">named_data_store_output</span><span class="o">=</span><span class="n">preprocess_result</span><span class="o">.</span><span class="n">data_store_output</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;debug_handle_map&quot;</span><span class="p">:</span> <span class="n">preprocess_result</span><span class="o">.</span><span class="n">debug_handle_map</span>
+            <span class="p">}</span>
+            <span class="k">if</span> <span class="n">preprocess_result</span><span class="o">.</span><span class="n">_delegate_info_meta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;_delegate_info_meta&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">preprocess_result</span><span class="o">.</span><span class="n">_delegate_info_meta</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="n">lowered_module</span>
+    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Backend </span><span class="si">{</span><span class="n">backend_id</span><span class="si">}</span><span class="s2"> was not found.&quot;</span><span class="p">)</span>
+
+
+<span class="n">_ENABLE_VALIDATION</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">disable_validation</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Disables validation&quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_ENABLE_VALIDATION</span>
+    <span class="n">_ENABLE_VALIDATION</span> <span class="o">=</span> <span class="kc">False</span>
+
+
+<span class="nd">@contextmanager</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">validation_disabled</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Disables checking functions (ex. if the partitioned graph is identical to</span>
+<span class="sd">    the original graph). This context manager should only be used in certain</span>
+<span class="sd">    scenarios (such as when it has been profiled that checks are taking too</span>
+<span class="sd">    long, and are not necessarily needed)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_ENABLE_VALIDATION</span>
+    <span class="n">existing_setting</span> <span class="o">=</span> <span class="n">_ENABLE_VALIDATION</span>
+    <span class="n">disable_validation</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">yield</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">_ENABLE_VALIDATION</span> <span class="o">=</span> <span class="n">existing_setting</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_node_list_with_same_tag</span><span class="p">(</span>
+    <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
+    <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return a list of nodes with the same tag.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">node_list</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;output node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> should not be tagged&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="ow">not</span> <span class="n">is_param</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
+                    <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_buffer</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
+                    <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_lifted_tensor_constant</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
+                <span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> &quot;</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># check that the users all belong to the same tag</span>
+                    <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">users</span><span class="p">:</span>
+                        <span class="n">users_tag</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">users_tag</span> <span class="o">!=</span> <span class="n">tag</span><span class="p">:</span>
+                            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                                <span class="sa">f</span><span class="s2">&quot;constant data node (</span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2">) is tagged with (</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">) but has user (</span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="s2">) which has tag (</span><span class="si">{</span><span class="n">users_tag</span><span class="si">}</span><span class="s2">)&quot;</span>
+                            <span class="p">)</span>
+            <span class="n">node_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">node_list</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_insert_lowered_submodule</span><span class="p">(</span>
+    <span class="n">submodule_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">call_submodule_node</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">,</span>
+    <span class="n">submodule_output_node</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">,</span>
+    <span class="n">lowered_module</span><span class="p">:</span> <span class="n">LoweredBackendModule</span><span class="p">,</span>
+    <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">toplevel_input_specs_to_delete</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">InputSpec</span><span class="p">],</span>
+    <span class="n">toplevel_output_specs_to_delete</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">OutputSpec</span><span class="p">],</span>
+<span class="p">):</span>
+    <span class="n">owning_graph_module</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">owning_module</span>
+    <span class="c1"># call delegate args should only use user_inputs</span>
+    <span class="n">call_delegate_args</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="c1"># names of input_specs to delete</span>
+    <span class="n">input_specs_to_delete</span> <span class="o">=</span> <span class="n">toplevel_input_specs_to_delete</span>
+    <span class="c1"># Delete owned constants from the call_submodule_node args</span>
+    <span class="k">for</span> <span class="n">call_sm_input</span> <span class="ow">in</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">args</span><span class="p">:</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">call_sm_input</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">call_sm_input</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">input_specs_to_delete</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">call_delegate_args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">call_sm_input</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate_debug_handle</span><span class="p">(</span><span class="n">ep</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Generate a debug handle for the given ExportedProgram.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">debug_handle</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+            <span class="n">debug_handle</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">debug_handle</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;debug_handle&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">debug_handle</span> <span class="o">+</span> <span class="mi">1</span>
+
+    <span class="c1"># Replace the partitioned submodule with a lowered submodule</span>
+    <span class="c1"># Add call_method node with function &quot;forward&quot;</span>
+    <span class="k">with</span> <span class="n">owning_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">inserting_before</span><span class="p">(</span><span class="n">call_submodule_node</span><span class="p">):</span>
+        <span class="n">lowered_name</span> <span class="o">=</span> <span class="n">get_lowered_module_name</span><span class="p">(</span><span class="n">owning_graph_module</span><span class="p">,</span> <span class="n">lowered_module</span><span class="p">)</span>
+        <span class="n">lowered_node</span> <span class="o">=</span> <span class="n">owning_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_attr</span><span class="p">(</span><span class="n">lowered_name</span><span class="p">)</span>
+        <span class="n">call_delegate_node</span> <span class="o">=</span> <span class="n">owning_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">call_function</span><span class="p">(</span>
+            <span class="n">executorch_call_delegate</span><span class="p">,</span>
+            <span class="p">(</span><span class="n">lowered_node</span><span class="p">,)</span> <span class="o">+</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">call_delegate_args</span><span class="p">),</span>
+            <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">kwargs</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">call_delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;debug_handle&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">generate_debug_handle</span><span class="p">(</span><span class="n">owning_program</span><span class="p">)</span>
+        <span class="n">call_delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">out_arg</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">out_arg</span> <span class="ow">in</span> <span class="n">submodule_output_node</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="p">]</span>
+        <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">replace_all_uses_with</span><span class="p">(</span><span class="n">call_delegate_node</span><span class="p">)</span>
+        <span class="n">owning_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">call_submodule_node</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">is_submodule</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">toplevel_input_specs_to_delete</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">toplevel_output_specs_to_delete</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+    <span class="k">elif</span> <span class="p">(</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">toplevel_input_specs_to_delete</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span>
+        <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">toplevel_output_specs_to_delete</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span>
+    <span class="p">):</span>
+        <span class="n">_unsafe_adjust_original_program</span><span class="p">(</span>
+            <span class="n">owning_program</span><span class="p">,</span>
+            <span class="n">call_delegate_node</span><span class="p">,</span>
+            <span class="n">toplevel_input_specs_to_delete</span><span class="p">,</span>
+            <span class="n">toplevel_output_specs_to_delete</span><span class="p">,</span>
+        <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_partition_and_lower_one_graph_module</span><span class="p">(</span>
+    <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
+    <span class="n">partition_result</span><span class="p">:</span> <span class="n">PartitionResult</span><span class="p">,</span>
+    <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Partitioned and lowered the graph module based on the partition tag, this is to handle one graph module.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">delegation_spec</span> <span class="ow">in</span> <span class="n">partition_result</span><span class="o">.</span><span class="n">partition_tags</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="c1"># Create partition with nodes containing this tag. There should only be</span>
+        <span class="c1"># one contained submodule per tag</span>
+        <span class="n">node_list</span> <span class="o">=</span> <span class="n">_get_node_list_with_same_tag</span><span class="p">(</span>
+            <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">owning_program</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">node_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Did not find any nodes for tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;For tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">, found nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># Tag the nodes that are params as buffers, so we can order the submodule as (Parms + Buffers) (User Inputs)</span>
+
+        <span class="n">replace_ctx</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">_set_replace_hook</span><span class="p">(</span>
+                <span class="n">owning_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">get_replace_hook</span><span class="p">()</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">is_submodule</span>
+            <span class="k">else</span> <span class="n">nullcontext</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="k">with</span> <span class="n">replace_ctx</span><span class="p">:</span>
+            <span class="n">submodule</span><span class="p">,</span> <span class="n">call_module_node</span> <span class="o">=</span> <span class="n">create_submodule_from_nodes</span><span class="p">(</span>
+                <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">node_list</span><span class="p">,</span> <span class="n">tag</span>
+            <span class="p">)</span>
+
+        <span class="n">tagged_graph_module_output_node</span> <span class="o">=</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output_node</span><span class="p">()</span>
+        <span class="n">submodule_output_node</span> <span class="o">=</span> <span class="n">submodule</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output_node</span><span class="p">()</span>
+        <span class="c1"># Copy the output node meta from the original output node, because</span>
+        <span class="c1"># create_submodule_from_nodes doesn&#39;t cover the meta field</span>
+        <span class="n">submodule_output_node</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="n">tagged_graph_module_output_node</span><span class="o">.</span><span class="n">meta</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Partitioned graph module: </span><span class="si">{</span><span class="n">tagged_graph_module</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="p">(</span>
+            <span class="n">submodule_program</span><span class="p">,</span>
+            <span class="n">toplevel_input_specs_to_delete</span><span class="p">,</span>
+            <span class="n">toplevel_output_specs_to_delete</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">=</span> <span class="n">create_exported_program_from_submodule</span><span class="p">(</span>
+            <span class="n">submodule</span><span class="p">,</span>
+            <span class="n">owning_program</span><span class="p">,</span>
+            <span class="n">tag</span><span class="p">,</span>
+            <span class="n">call_module_node</span><span class="p">,</span>
+            <span class="n">is_submodule</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">lowered_submodule</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span>
+            <span class="n">delegation_spec</span><span class="o">.</span><span class="n">backend_id</span><span class="p">,</span>
+            <span class="n">submodule_program</span><span class="p">,</span>
+            <span class="n">delegation_spec</span><span class="o">.</span><span class="n">compile_specs</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">_insert_lowered_submodule</span><span class="p">(</span>
+            <span class="n">submodule_program</span><span class="p">,</span>
+            <span class="n">owning_program</span><span class="p">,</span>
+            <span class="n">call_module_node</span><span class="p">,</span>
+            <span class="n">submodule_output_node</span><span class="p">,</span>
+            <span class="n">lowered_submodule</span><span class="p">,</span>
+            <span class="n">is_submodule</span><span class="p">,</span>
+            <span class="n">toplevel_input_specs_to_delete</span><span class="p">,</span>
+            <span class="n">toplevel_output_specs_to_delete</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">owning_program</span><span class="o">.</span><span class="n">_validate</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">tagged_graph_module</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_partition_and_lower</span><span class="p">(</span>
+    <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
+    <span class="n">partition_result</span><span class="p">:</span> <span class="n">PartitionResult</span><span class="p">,</span>
+    <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Partitions the graph module into submodules based on tags, and then lowered the nodes with the same tag as one lowered module, including the submodule from control flow</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">partitioned_module</span> <span class="o">=</span> <span class="n">_partition_and_lower_one_graph_module</span><span class="p">(</span>
+        <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">partition_result</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">,</span> <span class="n">is_submodule</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Recursively partition and lower for submodules</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">submod</span><span class="p">,</span> <span class="n">_node</span> <span class="ow">in</span> <span class="n">get_control_flow_submodules</span><span class="p">(</span><span class="n">partitioned_module</span><span class="p">):</span>
+        <span class="n">partitioned_submodule</span> <span class="o">=</span> <span class="n">_partition_and_lower</span><span class="p">(</span>
+            <span class="n">submod</span><span class="p">,</span> <span class="n">partition_result</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">,</span> <span class="n">is_submodule</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">partitioned_submodule</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">tagged_graph_module</span>
+
+
+<span class="nd">@to_backend</span><span class="o">.</span><span class="n">register</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span>
+    <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">partitioner_instance</span><span class="p">:</span> <span class="n">Partitioner</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Add overloaded implementations for to_backend:</span>
+
+<span class="sd">    ::</span>
+
+<span class="sd">     def to_backend(</span>
+<span class="sd">         edge_program: ExportedProgram,</span>
+<span class="sd">         partitioner: Partitioner,</span>
+<span class="sd">     ) -&gt; ExportedProgram:</span>
+
+<span class="sd">    Returns a semantically-equivalent program to the one given as input (represented</span>
+<span class="sd">    as a graph module in Edge dialect), but with portions of the program targeted for</span>
+<span class="sd">    delegation as determined by the partitioner.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        ExportedProgram: Program in Edge dialect.</span>
+
+<span class="sd">        partitioner: An instance of the partitioner, in charge with tagging</span>
+<span class="sd">        portions of the input program for delegation. A valid partitioner must return PartitionerResult</span>
+<span class="sd">        including both tagged exported program and partitioner_tag: Dict[str, DelegationSpec], where each key is a tag name and</span>
+<span class="sd">        the nodes with same tag will be fused a one subgraph and delegated to backend specififed in delegation spec.</span>
+
+
+<span class="sd">    Returns:</span>
+<span class="sd">        ExportedProgram: The input program, with some portions targeted for delegation.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">edge_program</span><span class="o">.</span><span class="n">_validate</span><span class="p">()</span>
+
+    <span class="c1"># Use fake program, with FakeTensors in the state dict, to avoid copying large constant values.</span>
+    <span class="c1"># Fall back to deepcopy if no fake mode is found. TODO(T182910699): Remove this fallback.</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">get_fake_program</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Error in get_fake_program for graph </span><span class="si">{</span><span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="si">}</span><span class="s2">, fallback to deepcopy: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+        <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
+    <span class="n">partitioner_result</span> <span class="o">=</span> <span class="n">partitioner_instance</span><span class="p">(</span><span class="n">fake_edge_program</span><span class="p">)</span>
+    <span class="n">tagged_exported_program</span> <span class="o">=</span> <span class="n">partitioner_result</span><span class="o">.</span><span class="n">tagged_exported_program</span>
+
+    <span class="c1"># Check that the partitioner did not modify the original graph</span>
+    <span class="k">if</span> <span class="n">_ENABLE_VALIDATION</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="n">is_identical_graph</span><span class="p">(</span>
+            <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
+            <span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
+        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;The partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> should not modify the graph module&quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Disabled validating the partitioner.&quot;</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="p">(</span>
+        <span class="n">partitioner_result</span><span class="o">.</span><span class="n">partition_tags</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> needs a `partition_tags` field containing a mapping of tags to delegate spec&quot;</span>
+
+    <span class="n">update_to_real_program</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">edge_program</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">partitioner_result</span><span class="o">.</span><span class="n">partition_tags</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">_maybe_duplicate_constant_nodes</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">tag</span><span class="p">)</span>
+
+    <span class="n">tagged_graph_module</span> <span class="o">=</span> <span class="n">_partition_and_lower</span><span class="p">(</span>
+        <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
+        <span class="n">partitioner_result</span><span class="p">,</span>
+        <span class="n">tagged_exported_program</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Partitioner added delegation tags to the graph module nodes,</span>
+    <span class="c1"># we make sure to remove them after we finished partition_and_lower</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ExportedProgram</span><span class="p">(</span>
+        <span class="n">root</span><span class="o">=</span><span class="n">tagged_graph_module</span><span class="p">,</span>
+        <span class="n">graph</span><span class="o">=</span><span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
+        <span class="n">graph_signature</span><span class="o">=</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span>
+        <span class="n">state_dict</span><span class="o">=</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+        <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">),</span>
+        <span class="n">module_call_graph</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">),</span>
+        <span class="n">example_inputs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">constants</span><span class="o">=</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
+        <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">],</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_create_partitions_in_graph_module</span><span class="p">(</span>
+    <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
+    <span class="n">partition_result</span><span class="p">:</span> <span class="n">PartitionResult</span><span class="p">,</span>
+    <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]]:</span>
+    <span class="n">backend_id_to_submodule_name</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">delegation_spec</span> <span class="ow">in</span> <span class="n">partition_result</span><span class="o">.</span><span class="n">partition_tags</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="c1"># Create partition with nodes containing this tag. There should only be</span>
+        <span class="c1"># one contained submodule per tag</span>
+        <span class="n">node_list</span> <span class="o">=</span> <span class="n">_get_node_list_with_same_tag</span><span class="p">(</span>
+            <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">owning_program</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">node_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Did not find any nodes for tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;For tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">, found nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># Tag the nodes that are params as buffers, so we can order the submodule as (Parms + Buffers) (User Inputs)</span>
+
+        <span class="n">replace_ctx</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">_set_replace_hook</span><span class="p">(</span>
+                <span class="n">owning_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">get_replace_hook</span><span class="p">()</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">is_submodule</span>
+            <span class="k">else</span> <span class="n">nullcontext</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="k">with</span> <span class="n">replace_ctx</span><span class="p">:</span>
+            <span class="n">submodule</span><span class="p">,</span> <span class="n">call_module_node</span> <span class="o">=</span> <span class="n">create_submodule_from_nodes</span><span class="p">(</span>
+                <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">node_list</span><span class="p">,</span> <span class="n">tag</span>
+            <span class="p">)</span>
+
+        <span class="n">submodule_output_node</span> <span class="o">=</span> <span class="n">submodule</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output_node</span><span class="p">()</span>
+        <span class="c1"># Copy the output node meta from the original output node, because</span>
+        <span class="c1"># create_submodule_from_nodes doesn&#39;t cover the meta field</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Partitioned graph module: </span><span class="si">{</span><span class="n">tagged_graph_module</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="p">(</span>
+            <span class="n">submodule_program</span><span class="p">,</span>
+            <span class="n">toplevel_input_specs_to_delete</span><span class="p">,</span>
+            <span class="n">toplevel_output_specs_to_delete</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">=</span> <span class="n">create_exported_program_from_submodule</span><span class="p">(</span>
+            <span class="n">submodule</span><span class="p">,</span>
+            <span class="n">owning_program</span><span class="p">,</span>
+            <span class="n">tag</span><span class="p">,</span>
+            <span class="n">call_module_node</span><span class="p">,</span>
+            <span class="n">is_submodule</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;backend_id&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_spec</span><span class="o">.</span><span class="n">backend_id</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;compile_spec&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_spec</span><span class="o">.</span><span class="n">compile_specs</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;submodule_program&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">submodule_program</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;toplevel_input_specs_to_delete&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">toplevel_input_specs_to_delete</span>
+        <span class="p">)</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;toplevel_output_specs_to_delete&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">toplevel_output_specs_to_delete</span>
+        <span class="p">)</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;is_submodule&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">is_submodule</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;submodule_output_node&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">submodule_output_node</span>
+
+        <span class="k">if</span> <span class="n">delegation_spec</span><span class="o">.</span><span class="n">backend_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">backend_id_to_submodule_name</span><span class="p">:</span>
+            <span class="n">backend_id_to_submodule_name</span><span class="p">[</span><span class="n">delegation_spec</span><span class="o">.</span><span class="n">backend_id</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># The call_module_node created here might not be the same node instance as</span>
+        <span class="c1"># the one in the final graph module. This is because this node might be replaced</span>
+        <span class="c1"># in future edits to the graph. As a result, we just keep track of the node&#39;s name</span>
+        <span class="c1"># and at the end we search for this node in our final graph module</span>
+        <span class="n">backend_id_to_submodule_name</span><span class="p">[</span><span class="n">delegation_spec</span><span class="o">.</span><span class="n">backend_id</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">call_module_node</span><span class="o">.</span><span class="n">target</span>
+        <span class="p">)</span>
+
+    <span class="n">created_submodule_nodes</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">backend_id_to_submodule_name</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
+    <span class="k">for</span> <span class="n">backend_id</span><span class="p">,</span> <span class="n">submodule_name</span> <span class="ow">in</span> <span class="n">backend_id_to_submodule_name</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_module&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">submodule_name</span><span class="p">:</span>
+                <span class="n">created_submodule_nodes</span><span class="p">[</span><span class="n">backend_id</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+
+    <span class="c1"># check the number of submodule_names and submodule_nodes are equal</span>
+    <span class="k">for</span> <span class="n">backend_id</span> <span class="ow">in</span> <span class="n">created_submodule_nodes</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">created_submodule_nodes</span><span class="p">[</span><span class="n">backend_id</span><span class="p">])</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span>
+            <span class="n">backend_id_to_submodule_name</span><span class="p">[</span><span class="n">backend_id</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">created_submodule_nodes</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_create_partitions</span><span class="p">(</span>
+    <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
+    <span class="n">partition_result</span><span class="p">:</span> <span class="n">PartitionResult</span><span class="p">,</span>
+    <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]]:</span>
+    <span class="n">backend_id_to_call_submodules</span> <span class="o">=</span> <span class="n">_create_partitions_in_graph_module</span><span class="p">(</span>
+        <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">partition_result</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">,</span> <span class="n">is_submodule</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Recursively partition and lower for submodules</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">submod</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">get_control_flow_submodules</span><span class="p">(</span><span class="n">tagged_graph_module</span><span class="p">):</span>
+        <span class="n">nested_backend_id_to_call_submodules</span> <span class="o">=</span> <span class="n">_create_partitions</span><span class="p">(</span>
+            <span class="n">submod</span><span class="p">,</span> <span class="n">partition_result</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">,</span> <span class="n">is_submodule</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="p">(</span>
+            <span class="n">backend_id</span><span class="p">,</span>
+            <span class="n">nested_submodules</span><span class="p">,</span>
+        <span class="p">)</span> <span class="ow">in</span> <span class="n">nested_backend_id_to_call_submodules</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">backend_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">backend_id_to_call_submodules</span><span class="p">:</span>
+                <span class="n">backend_id_to_call_submodules</span><span class="p">[</span><span class="n">backend_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">nested_submodules</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">backend_id_to_call_submodules</span><span class="p">[</span><span class="n">backend_id</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">nested_submodules</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">backend_id_to_call_submodules</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">lower_all_submodules_to_backend</span><span class="p">(</span>
+    <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">method_to_submodules_nodes</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]],</span>
+    <span class="n">method_to_tagged_edge_program</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Lower all submodules nodes given in the method_to_submodule_nodes map to backend_id.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># The created exported program for the submodules are in the call_module node&#39;s meta data</span>
+    <span class="c1"># We just map the method_to_submodule_nodes directly to the method_to_partitioned_exported_programs</span>
+    <span class="n">method_to_partitioned_program</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">method_name</span><span class="p">:</span> <span class="p">[</span>
+            <span class="c1"># perform deep copy here in case backends change graph inside preprocess method</span>
+            <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;submodule_program&quot;</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">call_submodule_nodes</span>
+        <span class="p">]</span>
+        <span class="k">for</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">call_submodule_nodes</span> <span class="ow">in</span> <span class="n">method_to_submodules_nodes</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+    <span class="p">}</span>
+    <span class="n">method_to_compile_specs</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">method_name</span><span class="p">:</span> <span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;compile_spec&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">call_submodule_nodes</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">call_submodule_nodes</span> <span class="ow">in</span> <span class="n">method_to_submodules_nodes</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+    <span class="p">}</span>
+
+    <span class="n">backend_name_to_subclass</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">subclass</span><span class="o">.</span><span class="vm">__name__</span><span class="p">:</span> <span class="n">subclass</span> <span class="k">for</span> <span class="n">subclass</span> <span class="ow">in</span> <span class="n">BackendDetails</span><span class="o">.</span><span class="n">__subclasses__</span><span class="p">()</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="n">backend_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">backend_name_to_subclass</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Backend </span><span class="si">{</span><span class="n">backend_id</span><span class="si">}</span><span class="s2"> was not found.&quot;</span><span class="p">)</span>
+
+    <span class="n">method_to_preprocess_result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">PreprocessResult</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">backend_name_to_subclass</span><span class="p">[</span><span class="n">backend_id</span><span class="p">]</span><span class="o">.</span><span class="n">preprocess_multimethod</span><span class="p">(</span>
+            <span class="n">method_to_partitioned_program</span><span class="p">,</span> <span class="n">method_to_compile_specs</span>
+        <span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">method_name</span> <span class="ow">in</span> <span class="n">method_to_preprocess_result</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+        <span class="n">owning_program</span> <span class="o">=</span> <span class="n">method_to_tagged_edge_program</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span>
+        <span class="n">list_of_preprocess_results</span> <span class="o">=</span> <span class="n">method_to_preprocess_result</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span>
+        <span class="n">list_of_call_submodule_nodes</span> <span class="o">=</span> <span class="n">method_to_submodules_nodes</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span>
+        <span class="n">list_of_compile_specs</span> <span class="o">=</span> <span class="n">method_to_compile_specs</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">preprocess_result</span><span class="p">,</span> <span class="n">call_submodule_node</span><span class="p">,</span> <span class="n">compile_spec</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+            <span class="n">list_of_preprocess_results</span><span class="p">,</span>
+            <span class="n">list_of_call_submodule_nodes</span><span class="p">,</span>
+            <span class="n">list_of_compile_specs</span><span class="p">,</span>
+        <span class="p">):</span>
+            <span class="n">submodule_program</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;submodule_program&quot;</span><span class="p">]</span>
+            <span class="n">lowered_module</span> <span class="o">=</span> <span class="n">LoweredBackendModule</span><span class="p">(</span>
+                <span class="n">edge_program</span><span class="o">=</span><span class="n">submodule_program</span><span class="p">,</span>
+                <span class="n">backend_id</span><span class="o">=</span><span class="n">backend_id</span><span class="p">,</span>
+                <span class="n">processed_bytes</span><span class="o">=</span><span class="n">preprocess_result</span><span class="o">.</span><span class="n">processed_bytes</span><span class="p">,</span>
+                <span class="n">compile_specs</span><span class="o">=</span><span class="n">compile_spec</span><span class="p">,</span>
+                <span class="n">named_data_store_output</span><span class="o">=</span><span class="n">preprocess_result</span><span class="o">.</span><span class="n">data_store_output</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;debug_handle_map&quot;</span><span class="p">:</span> <span class="n">preprocess_result</span><span class="o">.</span><span class="n">debug_handle_map</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="k">if</span> <span class="n">preprocess_result</span><span class="o">.</span><span class="n">_delegate_info_meta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;_delegate_info_meta&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">preprocess_result</span><span class="o">.</span><span class="n">_delegate_info_meta</span>
+                <span class="p">)</span>
+            <span class="n">is_submodule</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;is_submodule&quot;</span><span class="p">]</span>
+            <span class="n">toplevel_input_specs_to_delete</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span>
+                <span class="s2">&quot;toplevel_input_specs_to_delete&quot;</span>
+            <span class="p">]</span>
+            <span class="n">toplevel_output_specs_to_delete</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span>
+                <span class="s2">&quot;toplevel_output_specs_to_delete&quot;</span>
+            <span class="p">]</span>
+            <span class="n">submodule_output_node</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;submodule_output_node&quot;</span><span class="p">]</span>
+
+            <span class="n">_insert_lowered_submodule</span><span class="p">(</span>
+                <span class="n">submodule_program</span><span class="p">,</span>
+                <span class="n">owning_program</span><span class="p">,</span>
+                <span class="n">call_submodule_node</span><span class="p">,</span>
+                <span class="n">submodule_output_node</span><span class="p">,</span>
+                <span class="n">lowered_module</span><span class="p">,</span>
+                <span class="n">is_submodule</span><span class="p">,</span>
+                <span class="n">toplevel_input_specs_to_delete</span><span class="p">,</span>
+                <span class="n">toplevel_output_specs_to_delete</span><span class="p">,</span>
+            <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">remove_used_metadata</span><span class="p">(</span><span class="n">graph</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Graph</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Remove the used metadata from the graph.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;backend_id&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;submodule_program&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;toplevel_input_specs_to_delete&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;toplevel_output_specs_to_delete&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;is_submodule&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;submodule_output_node&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MethodProgramsPartitionerSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Since single dispatch for to_backend requires the first argument to be a</span>
+<span class="sd">    valid class, we create the following dataclass spec to hold the dictionaries</span>
+<span class="sd">    mapping the method name to the corresponding program, partitioner</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">method_to_edge_program</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span>
+    <span class="n">method_to_partitioner</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Partitioner</span><span class="p">]</span>
+
+
+<span class="nd">@to_backend</span><span class="o">.</span><span class="n">register</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span>
+    <span class="n">method_edge_program_partitioners</span><span class="p">:</span> <span class="n">MethodProgramsPartitionerSpec</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Add overloaded implementations for to_backend:</span>
+
+<span class="sd">    ::</span>
+
+<span class="sd">     def to_backend(</span>
+<span class="sd">        method_edge_program_partitioners: MethodProgramsPartitionerSpec</span>
+<span class="sd">    ) -&gt; Dict[str, ExportedProgram]:</span>
+
+<span class="sd">    Returns a semantically-equivalent dictionary of programs to the programs given as input (represented</span>
+<span class="sd">    as a graph module in Edge dialect), but with portions of the program targeted for</span>
+<span class="sd">    delegation as determined by the partitioner.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        method_edge_program_partitioners: contains two mappings,</span>
+<span class="sd">        - method_to_edge_program: mapping of method names to their respective programs in Edge dialect.</span>
+<span class="sd">        - method_to_partitioner: mapping of method names to an instance of the partitioner, in charge with tagging</span>
+<span class="sd">        portions of the specified program for delegation. A valid partitioner must return PartitionerResult</span>
+<span class="sd">        including both tagged exported program and partitioner_tag: Dict[str, DelegationSpec], where each key is a tag name and</span>
+<span class="sd">        the nodes with same tag will be fused a one subgraph and delegated to backend specififed in delegation spec.</span>
+
+
+<span class="sd">    Returns:</span>
+<span class="sd">        ExportedProgram: The input program, with some portions targeted for delegation.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">method_to_edge_program</span> <span class="o">=</span> <span class="n">method_edge_program_partitioners</span><span class="o">.</span><span class="n">method_to_edge_program</span>
+    <span class="n">method_to_partitioner</span> <span class="o">=</span> <span class="n">method_edge_program_partitioners</span><span class="o">.</span><span class="n">method_to_partitioner</span>
+
+    <span class="n">partitioned_and_lowered_exported_programs</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">backend_id_to_method_submodules_map</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">method_to_tagged_exported_program</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">for</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">partitioner_instance</span> <span class="ow">in</span> <span class="n">method_to_partitioner</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">assert</span> <span class="p">(</span>
+            <span class="n">method_name</span> <span class="ow">in</span> <span class="n">method_to_edge_program</span>
+        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Partitioner for method </span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2"> is not provided&quot;</span>
+        <span class="n">edge_program</span> <span class="o">=</span> <span class="n">method_to_edge_program</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span>
+        <span class="n">edge_program</span><span class="o">.</span><span class="n">_validate</span><span class="p">()</span>
+
+        <span class="c1"># Use fake program, with FakeTensors in the state dict, to avoid copying large constant values.</span>
+        <span class="c1"># Fall back to deepcopy if no fake mode is found. TODO(T182910699): Remove this fallback.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">get_fake_program</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Error in get_fake_program for graph </span><span class="si">{</span><span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="si">}</span><span class="s2">, fallback to deepcopy: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+            <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
+        <span class="n">partitioner_result</span> <span class="o">=</span> <span class="n">partitioner_instance</span><span class="p">(</span><span class="n">fake_edge_program</span><span class="p">)</span>
+        <span class="n">tagged_exported_program</span> <span class="o">=</span> <span class="n">partitioner_result</span><span class="o">.</span><span class="n">tagged_exported_program</span>
+        <span class="n">method_to_tagged_exported_program</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">tagged_exported_program</span>
+
+        <span class="c1"># Check that the partitioner did not modify the original graph</span>
+        <span class="k">if</span> <span class="n">_ENABLE_VALIDATION</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">is_identical_graph</span><span class="p">(</span>
+                <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
+                <span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
+            <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;The partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> should not modify the graph module&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Disabled validating the partitioner.&quot;</span><span class="p">)</span>
+
+        <span class="k">assert</span> <span class="p">(</span>
+            <span class="n">partitioner_result</span><span class="o">.</span><span class="n">partition_tags</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> needs a `partition_tags` field containing a mapping of tags to delegate spec&quot;</span>
+
+        <span class="n">update_to_real_program</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">edge_program</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">partitioner_result</span><span class="o">.</span><span class="n">partition_tags</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">_maybe_duplicate_constant_nodes</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">tag</span><span class="p">)</span>
+
+        <span class="n">backend_id_to_call_submodule_nodes</span> <span class="o">=</span> <span class="n">_create_partitions</span><span class="p">(</span>
+            <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
+            <span class="n">partitioner_result</span><span class="p">,</span>
+            <span class="n">tagged_exported_program</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="p">(</span>
+            <span class="n">backend_id</span><span class="p">,</span>
+            <span class="n">call_submodule_nodes</span><span class="p">,</span>
+        <span class="p">)</span> <span class="ow">in</span> <span class="n">backend_id_to_call_submodule_nodes</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">backend_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">backend_id_to_method_submodules_map</span><span class="p">:</span>
+                <span class="n">backend_id_to_method_submodules_map</span><span class="p">[</span><span class="n">backend_id</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">backend_id_to_method_submodules_map</span><span class="p">[</span><span class="n">backend_id</span><span class="p">][</span>
+                <span class="n">method_name</span>
+            <span class="p">]</span> <span class="o">=</span> <span class="n">call_submodule_nodes</span>
+
+    <span class="k">for</span> <span class="p">(</span>
+        <span class="n">backend_id</span><span class="p">,</span>
+        <span class="n">method_to_submodule_nodes</span><span class="p">,</span>
+    <span class="p">)</span> <span class="ow">in</span> <span class="n">backend_id_to_method_submodules_map</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">lower_all_submodules_to_backend</span><span class="p">(</span>
+            <span class="n">backend_id</span><span class="p">,</span>
+            <span class="n">method_to_submodule_nodes</span><span class="p">,</span>
+            <span class="n">method_to_tagged_exported_program</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">method_name</span> <span class="ow">in</span> <span class="n">method_to_edge_program</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">method_name</span> <span class="ow">in</span> <span class="n">method_to_tagged_exported_program</span><span class="p">:</span>
+            <span class="n">tagged_exported_program</span> <span class="o">=</span> <span class="n">method_to_tagged_exported_program</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span>
+            <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">_validate</span><span class="p">()</span>
+            <span class="n">remove_used_metadata</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="p">)</span>
+            <span class="n">partitioned_and_lowered_exported_programs</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
+                <span class="n">root</span><span class="o">=</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
+                <span class="n">graph</span><span class="o">=</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
+                <span class="n">graph_signature</span><span class="o">=</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span>
+                <span class="n">state_dict</span><span class="o">=</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+                <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span>
+                    <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">range_constraints</span>
+                <span class="p">),</span>
+                <span class="n">module_call_graph</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span>
+                    <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">module_call_graph</span>
+                <span class="p">),</span>
+                <span class="n">example_inputs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">constants</span><span class="o">=</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
+                <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">],</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># this edge program wasn&#39;t partitioned, so we can just return it as is</span>
+            <span class="n">partitioned_and_lowered_exported_programs</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">method_to_edge_program</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span>
+            <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">partitioned_and_lowered_exported_programs</span>
+</pre></div>
+
+                </article>
+              
+  </article>
+  
+              
+              
+                <footer class="bd-footer-article">
+                  <div class="footer-article-items footer-article__inner">
+  
+    <div class="footer-article-item">
+<div class="feedback">
+  
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+
+  <div class="feedback-send">
+    <button class="feedback-btn"
+            onclick="openGitHubIssue()"
+            data-bs-title="Create a GitHub Issue"
+            data-bs-placement="bottom"
+            data-bs-toggle="tooltip"
+            data-gtm="feedback-btn-click">Send Feedback
+    </button>
+  </div>
+</div>
+
+<div class="prev-next-area">
+</div>
+
+<div class="footer-info">
+  <p class="copyright">
+    
+  </p>
+
+  <p class="theme-version">
+    Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+  </p>
+</div>
+</div>
+  
+</div>
+                </footer>
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  
+
+<div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+  <div class="container">
+    <div class="row">
+      <div class="col-md-4">
+        <h2>Docs</h2>
+        <p>Access comprehensive developer documentation for PyTorch</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/docs/stable/index.html">View Docs</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Tutorials</h2>
+        <p>Get in-depth tutorials for beginners and advanced developers</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/tutorials">View Tutorials</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Resources</h2>
+        <p>Find development resources and get your questions answered</p>
+        <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<footer class="site-footer">
+
+  <div class="container footer-container">
+
+    <div class="newsletter" id="newsletter">
+
+      <p class="newsletter__title is-style-max-width-800"><strong>Stay in touch</strong> for updates, event info, and
+        the latest news</p>
+
+
+      <script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+      <script>
+        hbspt.forms.create({
+          region: "na1",
+          portalId: "8112310",
+          formId: "2fb2231c-000b-4ec5-88a0-1ab242549c9e"
+        });
+      </script>
+
+
+      <p class="newsletter__privacy">By submitting this form, I consent to receive marketing emails from the LF and its
+        projects regarding their events, training, research, developments, and related announcements. I understand that
+        I can unsubscribe at any time using the links in the footers of the emails I receive. <a
+          href="https://www.linuxfoundation.org/privacy/">Privacy Policy</a>.</p>
+
+    </div>
+
+    <div class="lf-grid">
+      <ul class="social-links">
+        <li><a href="https://www.facebook.com/pytorch" target="_blank" title="PyTorch on Facebook">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-0.51 -0.26 26.45 26.45" aria-label="Facebook">
+              <path fill="currentColor"
+                d="M25.497 13.075c0-2.45-.698-4.848-2.011-6.911a12.765 12.765 0 0 0-5.398-4.73A12.671 12.671 0 0 0 11.008.38a12.705 12.705 0 0 0-6.529 2.95A12.827 12.827 0 0 0 .563 9.358a12.896 12.896 0 0 0-.07 7.201 12.831 12.831 0 0 0 3.801 6.103 12.709 12.709 0 0 0 6.471 3.078v-8.957H7.53v-3.708h3.235v-2.824c0-3.213 1.903-4.988 4.813-4.988.956.014 1.909.097 2.852.25V8.67h-1.607a1.83 1.83 0 0 0-1.518.497 1.854 1.854 0 0 0-.561 1.505v2.404h3.535l-.563 3.708h-2.97v8.957a12.725 12.725 0 0 0 7.697-4.337 12.87 12.87 0 0 0 3.054-8.328z" />
+            </svg>
+          </a></li>
+        <li><a href="https://twitter.com/pytorch" target="_blank" title="PyTorch on X">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 300 300" aria-label="X">
+              <path fill="currentColor"
+                d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.youtube.com/pytorch" target="_blank" title="PyTorch on YouTube">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0.21 0.27 34.45 25.07" aria-label="YouTube">
+              <path fill="currentColor"
+                d="M33.729 6.084s-.327-2.33-1.317-3.356a4.691 4.691 0 0 0-3.32-1.432c-4.634-.34-11.589-.34-11.589-.34h-.014s-6.954 0-11.59.342a4.692 4.692 0 0 0-3.32 1.432c-.993 1.025-1.315 3.354-1.315 3.354a52.189 52.189 0 0 0-.331 5.473v2.566c.014 1.829.125 3.656.331 5.472 0 0 .322 2.33 1.316 3.36 1.26 1.345 2.916 1.3 3.653 1.445 2.65.26 11.263.34 11.263.34s6.96-.01 11.597-.353a4.691 4.691 0 0 0 3.32-1.432c.993-1.026 1.316-3.356 1.316-3.356.206-1.817.316-3.644.33-5.473v-2.57a52.26 52.26 0 0 0-.33-5.472zM14.076 17.232V7.729l8.951 4.768-8.95 4.735z" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.linkedin.com/company/pytorch" target="_blank" title="PyTorch on LinkedIn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-10.23 -10.23 531.96 531.96" aria-label="LinkedIn">
+              <rect width="512" height="512" rx="0" fill="currentColor" />
+              <circle fill="#000" cx="142" cy="138" r="37" />
+              <path stroke="#000" stroke-width="66" d="M244 194v198M142 194v198" />
+              <path fill="#000"
+                d="M276 282c0-20 13-40 36-40 24 0 33 18 33 45v105h66V279c0-61-32-89-76-89-34 0-51 19-59 32" />
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.slack.com" target="_blank" title="PyTorch Slack">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.16 -0.03 21.19 21.19" aria-label="Slack">
+              <path fill="currentColor"
+                d="M4.896 13.27a2.147 2.147 0 0 1-2.141 2.142A2.147 2.147 0 0 1 .613 13.27c0-1.178.963-2.141 2.142-2.141h2.141v2.141zm1.08 0c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.363a2.147 2.147 0 0 1-2.142 2.141 2.147 2.147 0 0 1-2.141-2.142V13.27zm2.141-8.6a2.147 2.147 0 0 1-2.141-2.14c0-1.18.962-2.142 2.141-2.142s2.142.963 2.142 2.141v2.142H8.117zm0 1.08c1.179 0 2.141.962 2.141 2.141a2.147 2.147 0 0 1-2.141 2.142H2.755A2.147 2.147 0 0 1 .613 7.89c0-1.179.963-2.141 2.142-2.141h5.362zm8.599 2.141c0-1.179.963-2.141 2.141-2.141 1.179 0 2.143.962 2.143 2.14a2.147 2.147 0 0 1-2.142 2.142h-2.141V7.89zm-1.08 0a2.147 2.147 0 0 1-2.141 2.142 2.147 2.147 0 0 1-2.141-2.142V2.53c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.362zm-2.141 8.6c1.179 0 2.142.962 2.142 2.14a2.147 2.147 0 0 1-2.142 2.142 2.147 2.147 0 0 1-2.141-2.141V16.49h2.141zm0-1.08a2.147 2.147 0 0 1-2.141-2.141c0-1.179.962-2.142 2.141-2.142h5.362c1.179 0 2.142.963 2.142 2.142a2.147 2.147 0 0 1-2.142 2.142h-5.362z">
+              </path>
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.org/wechat" title="PyTorch on WeChat">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.14 -0.17 38.02 33.02" aria-label="WeChat">
+              <path fill="currentColor"
+                d="M26.289 10.976a12.972 12.972 0 0 0-8.742 3.53 10.386 10.386 0 0 0-3.224 8.795c-1.326-.164-2.535-.345-3.75-.448a2.332 2.332 0 0 0-1.273.216c-1.18.666-2.311 1.418-3.652 2.255.246-1.112.405-2.087.687-3.024a1.15 1.15 0 0 0-.523-1.52C1.737 17.902.02 13.601 1.307 9.165c1.189-4.1 4.11-6.587 8.077-7.884A13.54 13.54 0 0 1 24.18 5.617a10.135 10.135 0 0 1 2.109 5.359zM10.668 9.594a1.564 1.564 0 0 0-2.095-1.472 1.52 1.52 0 0 0-.895 1.964 1.502 1.502 0 0 0 1.391.966 1.545 1.545 0 0 0 1.598-1.46v.002zm8.15-1.566a1.567 1.567 0 0 0-1.528 1.543 1.528 1.528 0 0 0 1.571 1.492 1.52 1.52 0 0 0 1.375-2.117 1.518 1.518 0 0 0-1.415-.919l-.003.001z">
+              </path>
+              <path fill="currentColor"
+                d="M33.914 32.137c-1.075-.478-2.062-1.196-3.11-1.306-1.049-.11-2.145.494-3.24.605a10.821 10.821 0 0 1-8.781-2.864c-4.682-4.33-4.013-10.97 1.403-14.518 4.811-3.154 11.874-2.102 15.268 2.273a8.671 8.671 0 0 1-1.002 12.095c-1.046.929-1.422 1.693-.751 2.917.102.257.174.525.213.798zM21.68 20.292a1.264 1.264 0 1 0 .01-2.528 1.264 1.264 0 0 0-.01 2.528zm7.887-2.526a1.266 1.266 0 0 0-1.256 1.21 1.247 1.247 0 1 0 1.256-1.21z">
+              </path>
+            </svg>
+          </a></li>
+      </ul>
+    </div>
+    
+    <div class="privacy-policy">
+      <div class="copyright">
+      
+        <p>
+          &copy; PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has registered
+          trademarks and uses trademarks. For more information, including terms of use, privacy policy, and trademark
+          usage, please see our <a href="https://www.linuxfoundation.org/legal/policies">Policies</a> page. <a
+            href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a>. <a
+            href="http://www.linuxfoundation.org/privacy">Privacy Policy</a>.
+        </p>
+        
+      </div>
+    </div>
+
+
+  </div>
+</footer>
+
+<div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../../../../_static/img/pytorch-x.svg">
+  </div>
+</div>
+  
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2024, ExecuTorch.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  <script type="application/ld+json">
+    {
+       "@context": "https://schema.org",
+       "@type": "Article",
+       "name": "executorch.exir.backend.backend_api",
+       "headline": "executorch.exir.backend.backend_api",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
+       "url": "/_modules/executorch/exir/backend/backend_api.html",
+       "articleBody": "Source code for executorch.exir.backend.backend_api # Copyright (c) Meta Platforms, Inc. and affiliates. # All rights reserved. # Copyright 2025 Arm Limited and/or its affiliates. # # This source code is licensed under the BSD-style license found in the # LICENSE file in the root directory of this source tree. import copy import logging from contextlib import contextmanager, nullcontext from dataclasses import dataclass from functools import singledispatch from typing import Dict, Generator, List, Mapping import torch from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult from executorch.exir.backend.compile_spec_schema import CompileSpec from executorch.exir.backend.partitioner import Partitioner, PartitionResult from executorch.exir.backend.utils import ( _maybe_duplicate_constant_nodes, is_identical_graph, ) from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name from executorch.exir.graph_module import get_control_flow_submodules from executorch.exir.lowered_backend_module import ( _unsafe_adjust_original_program, create_exported_program_from_submodule, create_submodule_from_nodes, LoweredBackendModule, ) from executorch.exir.program._fake_program import ( get_fake_program, update_to_real_program, ) from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param from torch.export.exported_program import ExportedProgram, InputSpec, OutputSpec [docs] @singledispatch def to_backend(args): \"\"\" A generic function the dispatch happens on the type of the first argument. There are currently to overloaded to_backend function: Note: Python is dynamically-typed language and therefore cannot have proper method overloading as that requires the language to be able to discriminate between types at compile-time. @to_backend.register will attach the function to to_backend() base on the type of the first argument (type annotation is required). However, it can\u0027t take multiple types as arguments. :: def to_backend( backend_id: str, edge_graph_module: ExportedProgram, compile_specs: List[CompileSpec], ) -\u003e LoweredBackendModule: def to_backend( edge_program: ExportedProgram, partitioner: Partitioner, ) -\u003e ExportedProgram: \"\"\" pass @to_backend.register def _( backend_id: str, edge_program: ExportedProgram, compile_specs: List[CompileSpec], ) -\u003e LoweredBackendModule: \"\"\" Add overloaded implementations for to_backend: :: def to_backend( backend_id: str, edge_program: ExportedProgram, compile_specs: List[CompileSpec], ) -\u003e LoweredBackendModule: Requires the passed in exported program in Edge dialect to be executed in the backend identified by backend_id. The forward method of the given edge_graph_module will be targeted for execution. Args: backend_id: The backend identifier. exported_program: An exported program in Edge dialect to target for lowering to the backend. compile_specs: A list of backend-specific objects with static metadata to configure the \"compilation\" process (e.g. it could be another dictionary itself). Returns: LoweredBackendModule: A Module that has been lowered to the target backend. Internally, the lowered Module contains these special attributes: backend_id (str: backend id), __processed_module__ (str: a compiled module) compile_spec, original_module (original exported program) Raises: NotImplementedError: The backend is not implemented (e.g. it was not found). This exception is derived from RuntimeError and should be caught accordingly. RuntimeError: The module cannot be processed by the backend. \"\"\" assert isinstance(edge_program, ExportedProgram) # All backend implementation are final, so we don\u0027t need to consider nested subclasses. for cls in BackendDetails.__subclasses__(): if backend_id == cls.__name__: copied_edge_program = copy.deepcopy(edge_program) preprocess_result: PreprocessResult = cls.preprocess( copied_edge_program, compile_specs, ) lowered_module = LoweredBackendModule( edge_program=edge_program, backend_id=backend_id, processed_bytes=preprocess_result.processed_bytes, compile_specs=compile_specs, named_data_store_output=preprocess_result.data_store_output, ) lowered_module.meta = { \"debug_handle_map\": preprocess_result.debug_handle_map } if preprocess_result._delegate_info_meta is not None: lowered_module.meta[\"_delegate_info_meta\"] = ( preprocess_result._delegate_info_meta ) return lowered_module raise NotImplementedError(f\"Backend {backend_id} was not found.\") _ENABLE_VALIDATION: bool = True def disable_validation() -\u003e None: \"\"\"Disables validation\"\"\" global _ENABLE_VALIDATION _ENABLE_VALIDATION = False @contextmanager def validation_disabled() -\u003e Generator[None, None, None]: \"\"\" Disables checking functions (ex. if the partitioned graph is identical to the original graph). This context manager should only be used in certain scenarios (such as when it has been profiled that checks are taking too long, and are not necessarily needed) \"\"\" global _ENABLE_VALIDATION existing_setting = _ENABLE_VALIDATION disable_validation() try: yield finally: _ENABLE_VALIDATION = existing_setting def _get_node_list_with_same_tag( tagged_graph_module: torch.fx.GraphModule, tag: str, owning_program: ExportedProgram, ) -\u003e List[torch.fx.Node]: \"\"\" Return a list of nodes with the same tag. \"\"\" node_list = [] for node in tagged_graph_module.graph.nodes: if node.meta.get(\"delegation_tag\", \"\") == tag: if node.op == \"output\": raise RuntimeError(f\"output node {node} should not be tagged\") if node.op == \"placeholder\": if ( not is_param(owning_program, node) and not is_buffer(owning_program, node) and not is_lifted_tensor_constant(owning_program, node) ): raise RuntimeError( f\"placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: {node} \" ) else: # check that the users all belong to the same tag for user in node.users: users_tag = user.meta.get(\"delegation_tag\", None) if users_tag != tag: raise RuntimeError( f\"constant data node ({node}) is tagged with ({tag}) but has user ({user}) which has tag ({users_tag})\" ) node_list.append(node) return node_list def _insert_lowered_submodule( submodule_program: ExportedProgram, owning_program: ExportedProgram, call_submodule_node: torch.fx.Node, submodule_output_node: torch.fx.Node, lowered_module: LoweredBackendModule, is_submodule: bool, toplevel_input_specs_to_delete: Dict[str, InputSpec], toplevel_output_specs_to_delete: Dict[str, OutputSpec], ): owning_graph_module = call_submodule_node.graph.owning_module # call delegate args should only use user_inputs call_delegate_args = [] # names of input_specs to delete input_specs_to_delete = toplevel_input_specs_to_delete # Delete owned constants from the call_submodule_node args for call_sm_input in call_submodule_node.args: if ( isinstance(call_sm_input, torch.fx.Node) and call_sm_input.name in input_specs_to_delete.keys() ): continue call_delegate_args.append(call_sm_input) def generate_debug_handle(ep: ExportedProgram) -\u003e int: \"\"\" Generate a debug handle for the given ExportedProgram. \"\"\" debug_handle = 0 for node in ep.graph_module.graph.nodes: debug_handle = max(debug_handle, node.meta.get(\"debug_handle\", 0)) return debug_handle + 1 # Replace the partitioned submodule with a lowered submodule # Add call_method node with function \"forward\" with owning_graph_module.graph.inserting_before(call_submodule_node): lowered_name = get_lowered_module_name(owning_graph_module, lowered_module) lowered_node = owning_graph_module.graph.get_attr(lowered_name) call_delegate_node = owning_graph_module.graph.call_function( executorch_call_delegate, (lowered_node,) + tuple(call_delegate_args), call_submodule_node.kwargs, ) call_delegate_node.meta[\"debug_handle\"] = generate_debug_handle(owning_program) call_delegate_node.meta[\"val\"] = [ out_arg.meta[\"val\"] for out_arg in submodule_output_node.args[0] ] call_submodule_node.replace_all_uses_with(call_delegate_node) owning_graph_module.graph.erase_node(call_submodule_node) if is_submodule: assert len(toplevel_input_specs_to_delete) == 0 assert len(toplevel_output_specs_to_delete) == 0 elif ( len(toplevel_input_specs_to_delete) \u003e 0 or len(toplevel_output_specs_to_delete) \u003e 0 ): _unsafe_adjust_original_program( owning_program, call_delegate_node, toplevel_input_specs_to_delete, toplevel_output_specs_to_delete, ) def _partition_and_lower_one_graph_module( tagged_graph_module: torch.fx.GraphModule, partition_result: PartitionResult, owning_program: ExportedProgram, is_submodule: bool, ) -\u003e torch.fx.GraphModule: \"\"\" Partitioned and lowered the graph module based on the partition tag, this is to handle one graph module. \"\"\" for tag, delegation_spec in partition_result.partition_tags.items(): # Create partition with nodes containing this tag. There should only be # one contained submodule per tag node_list = _get_node_list_with_same_tag( tagged_graph_module, tag, owning_program ) if len(node_list) == 0: logging.debug(f\"Did not find any nodes for tag {tag}\") continue logging.debug(f\"For tag {tag}, found nodes {node_list}\") # Tag the nodes that are params as buffers, so we can order the submodule as (Parms + Buffers) (User Inputs) replace_ctx = ( tagged_graph_module._set_replace_hook( owning_program.graph_signature.get_replace_hook() ) if not is_submodule else nullcontext() ) with replace_ctx: submodule, call_module_node = create_submodule_from_nodes( tagged_graph_module, node_list, tag ) tagged_graph_module_output_node = tagged_graph_module.graph.output_node() submodule_output_node = submodule.graph.output_node() # Copy the output node meta from the original output node, because # create_submodule_from_nodes doesn\u0027t cover the meta field submodule_output_node.meta = tagged_graph_module_output_node.meta logging.debug(f\"Partitioned graph module: {tagged_graph_module}\") ( submodule_program, toplevel_input_specs_to_delete, toplevel_output_specs_to_delete, ) = create_exported_program_from_submodule( submodule, owning_program, tag, call_module_node, is_submodule, ) lowered_submodule = to_backend( delegation_spec.backend_id, submodule_program, delegation_spec.compile_specs, ) _insert_lowered_submodule( submodule_program, owning_program, call_module_node, submodule_output_node, lowered_submodule, is_submodule, toplevel_input_specs_to_delete, toplevel_output_specs_to_delete, ) owning_program._validate() return tagged_graph_module def _partition_and_lower( tagged_graph_module: torch.fx.GraphModule, partition_result: PartitionResult, owning_program: ExportedProgram, is_submodule: bool = False, ) -\u003e torch.fx.GraphModule: \"\"\" Partitions the graph module into submodules based on tags, and then lowered the nodes with the same tag as one lowered module, including the submodule from control flow \"\"\" partitioned_module = _partition_and_lower_one_graph_module( tagged_graph_module, partition_result, owning_program, is_submodule ) # Recursively partition and lower for submodules for name, submod, _node in get_control_flow_submodules(partitioned_module): partitioned_submodule = _partition_and_lower( submod, partition_result, owning_program, is_submodule=True ) tagged_graph_module.add_module(name, partitioned_submodule) return tagged_graph_module @to_backend.register def _( edge_program: ExportedProgram, partitioner_instance: Partitioner, ) -\u003e ExportedProgram: \"\"\" Add overloaded implementations for to_backend: :: def to_backend( edge_program: ExportedProgram, partitioner: Partitioner, ) -\u003e ExportedProgram: Returns a semantically-equivalent program to the one given as input (represented as a graph module in Edge dialect), but with portions of the program targeted for delegation as determined by the partitioner. Args: ExportedProgram: Program in Edge dialect. partitioner: An instance of the partitioner, in charge with tagging portions of the input program for delegation. A valid partitioner must return PartitionerResult including both tagged exported program and partitioner_tag: Dict[str, DelegationSpec], where each key is a tag name and the nodes with same tag will be fused a one subgraph and delegated to backend specififed in delegation spec. Returns: ExportedProgram: The input program, with some portions targeted for delegation. \"\"\" edge_program._validate() # Use fake program, with FakeTensors in the state dict, to avoid copying large constant values. # Fall back to deepcopy if no fake mode is found. TODO(T182910699): Remove this fallback. try: fake_edge_program = get_fake_program(edge_program) except Exception as e: logging.warning( f\"Error in get_fake_program for graph {edge_program.graph_module}, fallback to deepcopy: {e}\" ) fake_edge_program = copy.deepcopy(edge_program) partitioner_result = partitioner_instance(fake_edge_program) tagged_exported_program = partitioner_result.tagged_exported_program # Check that the partitioner did not modify the original graph if _ENABLE_VALIDATION: assert is_identical_graph( tagged_exported_program.graph_module, edge_program.graph_module, ), f\"The partitioner {partitioner_instance} should not modify the graph module\" else: logging.warning(\"Disabled validating the partitioner.\") assert ( partitioner_result.partition_tags is not None ), f\"Partitioner {partitioner_instance} needs a `partition_tags` field containing a mapping of tags to delegate spec\" update_to_real_program(tagged_exported_program, edge_program) for tag, _ in partitioner_result.partition_tags.items(): _maybe_duplicate_constant_nodes(tagged_exported_program, tag) tagged_graph_module = _partition_and_lower( tagged_exported_program.graph_module, partitioner_result, tagged_exported_program, ) # Partitioner added delegation tags to the graph module nodes, # we make sure to remove them after we finished partition_and_lower for node in tagged_graph_module.graph.nodes: node.meta.pop(\"delegation_tag\", None) return ExportedProgram( root=tagged_graph_module, graph=tagged_graph_module.graph, graph_signature=tagged_exported_program.graph_signature, state_dict=tagged_exported_program.state_dict, range_constraints=copy.deepcopy(tagged_exported_program.range_constraints), module_call_graph=copy.deepcopy(tagged_exported_program.module_call_graph), example_inputs=None, constants=tagged_exported_program.constants, verifiers=[tagged_exported_program.verifier], ) def _create_partitions_in_graph_module( tagged_graph_module: torch.fx.GraphModule, partition_result: PartitionResult, owning_program: ExportedProgram, is_submodule: bool, ) -\u003e Dict[str, List[torch.fx.Node]]: backend_id_to_submodule_name = {} for tag, delegation_spec in partition_result.partition_tags.items(): # Create partition with nodes containing this tag. There should only be # one contained submodule per tag node_list = _get_node_list_with_same_tag( tagged_graph_module, tag, owning_program ) if len(node_list) == 0: logging.debug(f\"Did not find any nodes for tag {tag}\") continue logging.debug(f\"For tag {tag}, found nodes {node_list}\") # Tag the nodes that are params as buffers, so we can order the submodule as (Parms + Buffers) (User Inputs) replace_ctx = ( tagged_graph_module._set_replace_hook( owning_program.graph_signature.get_replace_hook() ) if not is_submodule else nullcontext() ) with replace_ctx: submodule, call_module_node = create_submodule_from_nodes( tagged_graph_module, node_list, tag ) submodule_output_node = submodule.graph.output_node() # Copy the output node meta from the original output node, because # create_submodule_from_nodes doesn\u0027t cover the meta field logging.debug(f\"Partitioned graph module: {tagged_graph_module}\") ( submodule_program, toplevel_input_specs_to_delete, toplevel_output_specs_to_delete, ) = create_exported_program_from_submodule( submodule, owning_program, tag, call_module_node, is_submodule, ) call_module_node.meta[\"backend_id\"] = delegation_spec.backend_id call_module_node.meta[\"compile_spec\"] = delegation_spec.compile_specs call_module_node.meta[\"submodule_program\"] = submodule_program call_module_node.meta[\"toplevel_input_specs_to_delete\"] = ( toplevel_input_specs_to_delete ) call_module_node.meta[\"toplevel_output_specs_to_delete\"] = ( toplevel_output_specs_to_delete ) call_module_node.meta[\"is_submodule\"] = is_submodule call_module_node.meta[\"submodule_output_node\"] = submodule_output_node if delegation_spec.backend_id not in backend_id_to_submodule_name: backend_id_to_submodule_name[delegation_spec.backend_id] = [] # The call_module_node created here might not be the same node instance as # the one in the final graph module. This is because this node might be replaced # in future edits to the graph. As a result, we just keep track of the node\u0027s name # and at the end we search for this node in our final graph module backend_id_to_submodule_name[delegation_spec.backend_id].append( call_module_node.target ) created_submodule_nodes = {key: [] for key in backend_id_to_submodule_name.keys()} for backend_id, submodule_name in backend_id_to_submodule_name.items(): for node in tagged_graph_module.graph.nodes: if node.op == \"call_module\" and node.target in submodule_name: created_submodule_nodes[backend_id].append(node) # check the number of submodule_names and submodule_nodes are equal for backend_id in created_submodule_nodes.keys(): assert len(created_submodule_nodes[backend_id]) == len( backend_id_to_submodule_name[backend_id] ) return created_submodule_nodes def _create_partitions( tagged_graph_module: torch.fx.GraphModule, partition_result: PartitionResult, owning_program: ExportedProgram, is_submodule: bool = False, ) -\u003e Dict[str, List[torch.fx.Node]]: backend_id_to_call_submodules = _create_partitions_in_graph_module( tagged_graph_module, partition_result, owning_program, is_submodule ) # Recursively partition and lower for submodules for _, submod, _ in get_control_flow_submodules(tagged_graph_module): nested_backend_id_to_call_submodules = _create_partitions( submod, partition_result, owning_program, is_submodule=True ) for ( backend_id, nested_submodules, ) in nested_backend_id_to_call_submodules.items(): if backend_id not in backend_id_to_call_submodules: backend_id_to_call_submodules[backend_id] = nested_submodules else: backend_id_to_call_submodules[backend_id].extend(nested_submodules) return backend_id_to_call_submodules def lower_all_submodules_to_backend( backend_id: str, method_to_submodules_nodes: Dict[str, List[torch.fx.Node]], method_to_tagged_edge_program: Dict[str, ExportedProgram], ) -\u003e None: \"\"\" Lower all submodules nodes given in the method_to_submodule_nodes map to backend_id. \"\"\" # The created exported program for the submodules are in the call_module node\u0027s meta data # We just map the method_to_submodule_nodes directly to the method_to_partitioned_exported_programs method_to_partitioned_program = { method_name: [ # perform deep copy here in case backends change graph inside preprocess method copy.deepcopy(node.meta[\"submodule_program\"]) for node in call_submodule_nodes ] for method_name, call_submodule_nodes in method_to_submodules_nodes.items() } method_to_compile_specs = { method_name: [node.meta[\"compile_spec\"] for node in call_submodule_nodes] for method_name, call_submodule_nodes in method_to_submodules_nodes.items() } backend_name_to_subclass = { subclass.__name__: subclass for subclass in BackendDetails.__subclasses__() } if backend_id not in backend_name_to_subclass: raise NotImplementedError(f\"Backend {backend_id} was not found.\") method_to_preprocess_result: dict[str, List[PreprocessResult]] = ( backend_name_to_subclass[backend_id].preprocess_multimethod( method_to_partitioned_program, method_to_compile_specs ) ) for method_name in method_to_preprocess_result.keys(): owning_program = method_to_tagged_edge_program[method_name] list_of_preprocess_results = method_to_preprocess_result[method_name] list_of_call_submodule_nodes = method_to_submodules_nodes[method_name] list_of_compile_specs = method_to_compile_specs[method_name] for preprocess_result, call_submodule_node, compile_spec in zip( list_of_preprocess_results, list_of_call_submodule_nodes, list_of_compile_specs, ): submodule_program = call_submodule_node.meta[\"submodule_program\"] lowered_module = LoweredBackendModule( edge_program=submodule_program, backend_id=backend_id, processed_bytes=preprocess_result.processed_bytes, compile_specs=compile_spec, named_data_store_output=preprocess_result.data_store_output, ) lowered_module.meta = { \"debug_handle_map\": preprocess_result.debug_handle_map, } if preprocess_result._delegate_info_meta is not None: assert lowered_module.meta is not None lowered_module.meta[\"_delegate_info_meta\"] = ( preprocess_result._delegate_info_meta ) is_submodule = call_submodule_node.meta[\"is_submodule\"] toplevel_input_specs_to_delete = call_submodule_node.meta[ \"toplevel_input_specs_to_delete\" ] toplevel_output_specs_to_delete = call_submodule_node.meta[ \"toplevel_output_specs_to_delete\" ] submodule_output_node = call_submodule_node.meta[\"submodule_output_node\"] _insert_lowered_submodule( submodule_program, owning_program, call_submodule_node, submodule_output_node, lowered_module, is_submodule, toplevel_input_specs_to_delete, toplevel_output_specs_to_delete, ) def remove_used_metadata(graph: torch.fx.Graph) -\u003e None: \"\"\" Remove the used metadata from the graph. \"\"\" for node in graph.nodes: node.meta.pop(\"delegation_tag\", None) node.meta.pop(\"backend_id\", None) node.meta.pop(\"submodule_program\", None) node.meta.pop(\"toplevel_input_specs_to_delete\", None) node.meta.pop(\"toplevel_output_specs_to_delete\", None) node.meta.pop(\"is_submodule\", None) node.meta.pop(\"submodule_output_node\", None) @dataclass class MethodProgramsPartitionerSpec: \"\"\" Since single dispatch for to_backend requires the first argument to be a valid class, we create the following dataclass spec to hold the dictionaries mapping the method name to the corresponding program, partitioner \"\"\" method_to_edge_program: Mapping[str, ExportedProgram] method_to_partitioner: Mapping[str, Partitioner] @to_backend.register def _( method_edge_program_partitioners: MethodProgramsPartitionerSpec, ) -\u003e Dict[str, ExportedProgram]: \"\"\" Add overloaded implementations for to_backend: :: def to_backend( method_edge_program_partitioners: MethodProgramsPartitionerSpec ) -\u003e Dict[str, ExportedProgram]: Returns a semantically-equivalent dictionary of programs to the programs given as input (represented as a graph module in Edge dialect), but with portions of the program targeted for delegation as determined by the partitioner. Args: method_edge_program_partitioners: contains two mappings, - method_to_edge_program: mapping of method names to their respective programs in Edge dialect. - method_to_partitioner: mapping of method names to an instance of the partitioner, in charge with tagging portions of the specified program for delegation. A valid partitioner must return PartitionerResult including both tagged exported program and partitioner_tag: Dict[str, DelegationSpec], where each key is a tag name and the nodes with same tag will be fused a one subgraph and delegated to backend specififed in delegation spec. Returns: ExportedProgram: The input program, with some portions targeted for delegation. \"\"\" method_to_edge_program = method_edge_program_partitioners.method_to_edge_program method_to_partitioner = method_edge_program_partitioners.method_to_partitioner partitioned_and_lowered_exported_programs = {} backend_id_to_method_submodules_map = {} method_to_tagged_exported_program = {} for method_name, partitioner_instance in method_to_partitioner.items(): assert ( method_name in method_to_edge_program ), f\"Partitioner for method {method_name} is not provided\" edge_program = method_to_edge_program[method_name] edge_program._validate() # Use fake program, with FakeTensors in the state dict, to avoid copying large constant values. # Fall back to deepcopy if no fake mode is found. TODO(T182910699): Remove this fallback. try: fake_edge_program = get_fake_program(edge_program) except Exception as e: logging.warning( f\"Error in get_fake_program for graph {edge_program.graph_module}, fallback to deepcopy: {e}\" ) fake_edge_program = copy.deepcopy(edge_program) partitioner_result = partitioner_instance(fake_edge_program) tagged_exported_program = partitioner_result.tagged_exported_program method_to_tagged_exported_program[method_name] = tagged_exported_program # Check that the partitioner did not modify the original graph if _ENABLE_VALIDATION: assert is_identical_graph( tagged_exported_program.graph_module, edge_program.graph_module, ), f\"The partitioner {partitioner_instance} should not modify the graph module\" else: logging.warning(\"Disabled validating the partitioner.\") assert ( partitioner_result.partition_tags is not None ), f\"Partitioner {partitioner_instance} needs a `partition_tags` field containing a mapping of tags to delegate spec\" update_to_real_program(tagged_exported_program, edge_program) for tag, _ in partitioner_result.partition_tags.items(): _maybe_duplicate_constant_nodes(tagged_exported_program, tag) backend_id_to_call_submodule_nodes = _create_partitions( tagged_exported_program.graph_module, partitioner_result, tagged_exported_program, ) for ( backend_id, call_submodule_nodes, ) in backend_id_to_call_submodule_nodes.items(): if backend_id not in backend_id_to_method_submodules_map: backend_id_to_method_submodules_map[backend_id] = {} backend_id_to_method_submodules_map[backend_id][ method_name ] = call_submodule_nodes for ( backend_id, method_to_submodule_nodes, ) in backend_id_to_method_submodules_map.items(): lower_all_submodules_to_backend( backend_id, method_to_submodule_nodes, method_to_tagged_exported_program, ) for method_name in method_to_edge_program.keys(): if method_name in method_to_tagged_exported_program: tagged_exported_program = method_to_tagged_exported_program[method_name] tagged_exported_program._validate() remove_used_metadata(tagged_exported_program.graph_module.graph) partitioned_and_lowered_exported_programs[method_name] = ExportedProgram( root=tagged_exported_program.graph_module, graph=tagged_exported_program.graph_module.graph, graph_signature=tagged_exported_program.graph_signature, state_dict=tagged_exported_program.state_dict, range_constraints=copy.deepcopy( tagged_exported_program.range_constraints ), module_call_graph=copy.deepcopy( tagged_exported_program.module_call_graph ), example_inputs=None, constants=tagged_exported_program.constants, verifiers=[tagged_exported_program.verifier], ) else: # this edge program wasn\u0027t partitioned, so we can just return it as is partitioned_and_lowered_exported_programs[method_name] = ( method_to_edge_program[method_name] ) return partitioned_and_lowered_exported_programs",
+       "author": {
+         "@type": "Organization",
+         "name": "PyTorch Contributors",
+         "url": "https://pytorch.org"
+       },
+       "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
+       "mainEntityOfPage": {
+         "@type": "WebPage",
+         "@id": "/_modules/executorch/exir/backend/backend_api.html"
+       },
+       "datePublished": "2023-01-01T00:00:00Z",
+       "dateModified": "2023-01-01T00:00:00Z"
+     }
+ </script>
+  <script>
+    // Tutorials Call to action event tracking
+    $("[data-behavior='call-to-action-event']").on('click', function () {
+      fbq('trackCustom', "Download", {
+        tutorialTitle: $('h1:first').text(),
+        downloadLink: this.href,
+        tutorialLink: window.location.href,
+        downloadTitle: $(this).attr("data-response")
+      });
+      if (typeof gtag === 'function') {
+        gtag('event', 'click', {
+          'event_category': $(this).attr("data-response"),
+          'event_label': $("h1").first().text(),
+          'tutorial_link': window.location.href
+        });
+      }
+    });
+  </script>
+  
+  </body>
+</html>

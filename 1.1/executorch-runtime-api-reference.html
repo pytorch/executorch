@@ -1,0 +1,2153 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+    <title>Runtime API Reference &#8212; ExecuTorch 1.1 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="_static/documentation_options.js?v=56dcb7b8"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'executorch-runtime-api-reference';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '1.1';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
+        </script>
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/executorch-runtime-api-reference.html" />
+    <link rel="icon" href="_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Detailed C++ Runtime APIs Tutorial" href="running-a-model-cpp-tutorial.html" />
+    <link rel="prev" title="Embedded Systems" href="embedded-section.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+<script>
+  if (window.location.hostname === 'docs.pytorch.org' || window.location.hostname === 'docs-preview.pytorch.org') {
+    const script = document.createElement('script');
+    script.src = 'https://cmp.osano.com/16A0DbT9yDNIaQkvZ/31b1b91a-e0b6-47ea-bde2-7f2bd13dbe5c/osano.js?variant=one';
+    document.head.appendChild(script);
+  }
+</script>
+<script>
+  // Cookie banner for non-LF projects
+  document.addEventListener('DOMContentLoaded', function () {
+    // Hide cookie banner on local environments and LF owned docs
+    if (window.location.hostname === 'localhost' ||
+      window.location.hostname === '0.0.0.0' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'docs.pytorch.org' ||
+      window.location.hostname === 'docs-preview.pytorch.org' ||
+      window.location.hostname.startsWith('192.168.')) {
+      const banner = document.querySelector('.cookie-banner-wrapper');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+  });
+</script>
+<!-- Conditional CSS for header and footer height adjustment -->
+
+
+<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+<meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
+<meta name="pytorch_project" content="">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS" height="0" width="0"
+    style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager -->
+<script>(function (w, d, s, l, i) {
+    w[l] = w[l] || []; w[l].push({
+      'gtm.start':
+        new Date().getTime(), event: 'gtm.js'
+    }); var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+        'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+    j.onload = function () {
+      window.dispatchEvent(new Event('gtm_loaded'));
+      console.log('GTM loaded successfully');
+    };
+  })(window, document, 'script', 'dataLayer', 'GTM-T8XT4PS');
+</script>
+<!-- End Google Tag Manager -->
+<!-- Facebook Pixel Code -->
+<script>
+  !function (f, b, e, v, n, t, s) {
+    if (f.fbq) return; n = f.fbq = function () {
+      n.callMethod ?
+        n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+    };
+    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+    n.queue = []; t = b.createElement(e); t.async = !0;
+    t.src = v; s = b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t, s)
+  }(window, document, 'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '243028289693773');
+  fbq('track', 'PageView');
+</script>
+<script>
+  document.documentElement.setAttribute('data-version', '1.1');
+</script>
+<noscript>
+  <img height="1" width="1" src="https://www.facebook.com/tr?id=243028289693773&ev=PageView&noscript=1" />
+</noscript>
+<script>
+  function gtag() {
+    window.dataLayer.push(arguments);
+  }
+</script>
+<!-- End Facebook Pixel Code -->
+<!-- Repository configuration for tutorials -->
+
+<!-- Script to Fix scrolling -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Fix anchor scrolling
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const targetId = this.getAttribute('href').substring(1);
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          const headerHeight =
+            (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
+            (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
+
+          const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
+          window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+          });
+
+          // Update URL hash without scrolling
+          history.pushState(null, null, '#' + targetId);
+        }
+      });
+    });
+  });
+</script>
+
+<script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+  </head>
+
+<body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
+  
+    <div class="container-fluid header-holder tutorials-header" id="header-holder">
+   <div class="header-container-wrapper">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                <span>Learn</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started/locally">
+                  <span class=dropdown-title>Get Started</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/webinars/">
+                  <span class="dropdown-title">Webinars</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Community</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://landscape.pytorch.org/" target="_blank">
+                  <span class="dropdown-title">Landscape</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/join-ecosystem">
+                  <span class="dropdown-title">Join the Ecosystem</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-hub/">
+                  <span class="dropdown-title">Community Hub</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/">
+                  <span class="dropdown-title">Forums</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contributor-awards/">
+                  <span class="dropdown-title">Contributor Awards</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-events/">
+                  <span class="dropdown-title">Community Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/programs/ambassadors/">
+                  <span class="dropdown-title">PyTorch Ambassadors</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Projects</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/pytorch/">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/vllm/">
+                  <span class="dropdown-title">vLLM</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/deepspeed/">
+                  <span class="dropdown-title">DeepSpeed</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/host-your-project/">
+                  <span class="dropdown-title">Host Your Project</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/ray/">
+                  <span class="dropdown-title">RAY</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span> Docs</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/domains">
+                  <span class="dropdown-title">Domains</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Blogs & News</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">Blog</span>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/announcements">
+                  <span class="dropdown-title">Announcements</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/case-studies/">
+                  <span class="dropdown-title">Case Studies</span>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                </a>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>About</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/members">
+                  <span class="dropdown-title">Members</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact">
+                  <span class="dropdown-title">Contact</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/wp-content/uploads/2025/09/pytorch_brand_guide_091925a.pdf">
+                  <span class="dropdown-title">Brand Guidelines</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown main-menu-button">
+              <a href="https://pytorch.org/join" data-cta="join">
+                JOIN
+              </a>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu">
+        <i class="fa-solid fa-ellipsis"></i>
+      </a>
+    </div>
+  </div>
+ </div>
+
+ <!-- Begin Mobile Menu -->
+
+<div class="mobile-main-menu">
+  <div class="container-fluid">
+    <div class="header-container-wrapper">
+      <div class="mobile-main-menu-header-container">
+        <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu">
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="mobile-main-menu-links-container">
+    <div class="main-menu">
+      <ul>
+         <li class="resources-mobile-menu-title">
+           <a>Learn</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/get-started/locally">Get Started</a>
+           </li>
+           <li>
+             <a href="https://docs.pytorch.org/tutorials">Tutorials</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/webinars/">Webinars</a>
+          </li>
+        </ul>
+         <li class="resources-mobile-menu-title">
+           <a>Community</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://landscape.pytorch.org/">Landscape</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/join-ecosystem">Join the Ecosystem</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/community-hub/">Community Hub</a>
+           </li>
+           <li>
+             <a href="https://discuss.pytorch.org/">Forums</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/resources">Developer Resources</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/contributor-awards/">Contributor Awards</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/community-events/">Community Events</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/programs/ambassadors/">PyTorch Ambassadors</a>
+          </li>
+       </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Projects</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/projects/pytorch/">PyTorch</a>
+           </li>
+
+           <li>
+             <a href="https://pytorch.org/projects/vllm/">vLLM</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/projects/deepspeed/">DeepSpeed</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/projects/host-your-project/">Host Your Project</a>
+           </li>
+         </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Docs</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://docs.pytorch.org/docs/stable/index.html">PyTorch</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/domains">Domains</a>
+          </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>Blog & News</a>
+        </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/announcements">Announcements</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/case-studies/">Case Studies</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/events">Events</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/newsletter">Newsletter</a>
+           </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>About</a>
+        </li>
+
+        <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/members">Members</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/governing-board">Governing Board</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+         </li>
+         <li>
+             <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/staff">Staff</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/contact">Contact</a>
+          </li>
+        </ul>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- End Mobile Menu -->
+  
+  
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class=" navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch 1.1 documentation - Home"/>
+    <script>document.write(`<img src="_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch 1.1 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+    
+      <div class="navbar-item">
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-2"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-2"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-2"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-2">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script></div>
+    
+  </div>
+  
+  <div class=" navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="api-section.html">
+    API
+  </a>
+</li>
+
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+    Support
+  </a>
+</li>
+
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+      
+        <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="api-section.html">
+    API
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="support-section.html">
+    Support
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Edge Platforms</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="android-section.html">Android</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="android-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="android-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="android-vulkan.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="android-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l3"><a class="reference internal" href="android-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="android-arm-vgf.html">Arm VGF Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="backends/samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-quantization.html">Quantization</a></li>
+<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-op-support.html">Operator Support</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="android-examples.html">Examples &amp; Demos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="ios-section.html">iOS</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="ios-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="ios-coreml.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="ios-mps.html">MPS Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="ios-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l2"><a class="reference internal" href="ios-examples.html">Examples &amp; Demos</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="desktop-section.html">Desktop &amp; Laptop Platforms</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="desktop-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="desktop-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="desktop-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="embedded-section.html">Embedded Systems</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Runtime API Reference</a></li>
+<li class="toctree-l2"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
+<li class="toctree-l2"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l2"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="embedded-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="embedded-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="embedded-nxp.html">NXP eIQ Neutron Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pico2_tutorial.html">Pico2: A simple MNIST Tutorial</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="edge-platforms-section.html" class="nav-link">Edge</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="embedded-section.html" class="nav-link">Embedded Systems</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Runtime API...</li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+</div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+  
+<div id="searchbox"></div>
+  <article class="bd-article" id="pytorch-article">
+    <!-- Hidden breadcrumb schema for SEO only -->
+    <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="edge-platforms-section.html">
+        <meta itemprop="name" content="Edge">
+        <meta itemprop="position" content="1">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="embedded-section.html">
+        <meta itemprop="name" content="Embedded Systems">
+        <meta itemprop="position" content="2">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="Runtime API Reference">
+        <meta itemprop="position" content="3">
+      </div>
+    </div>
+
+    
+    
+
+    
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="runtime-api-reference">
+<h1>Runtime API Reference<a class="headerlink" href="#runtime-api-reference" title="Link to this heading">#</a></h1>
+<p>The ExecuTorch C++ API provides an on-device execution framework for exported PyTorch models.</p>
+<p>For a tutorial style introduction to the runtime API, check out the
+<a class="reference external" href="using-executorch-cpp.html">using executorch with cpp tutorial</a> and its <a class="reference external" href="extension-module.html">simplified</a> version.</p>
+<p>For detailed information on how APIs evolve and the deprecation process, please refer to the <a class="reference external" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a>.</p>
+<section id="model-loading-and-execution">
+<h2>Model Loading and Execution<a class="headerlink" href="#model-loading-and-execution" title="Link to this heading">#</a></h2>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>doxygenclass: Cannot find class “executorch::runtime::Program” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>doxygenclass: Cannot find class “executorch::runtime::Method” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>doxygenclass: Cannot find class “executorch::runtime::MethodMeta” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
+</div>
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime10DataLoaderE">
+<span id="_CPPv3N10executorch7runtime10DataLoaderE"></span><span id="_CPPv2N10executorch7runtime10DataLoaderE"></span><span id="executorch::runtime::DataLoader"></span><span class="target" id="classexecutorch_1_1runtime_1_1DataLoader"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DataLoader</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime10DataLoaderE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Loads from a data source.</p>
+<p>See //executorch/extension/data_loader for common implementations. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classexecutorch_1_1runtime_1_1DataLoader_1af81a1eec80deec1325f644f956221c60"></span><span class="sig-name descname"><span class="pre">virtual</span> <span class="pre">ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">FreeableBuffer</span> <span class="pre">&gt;</span> <span class="pre">load</span> <span class="pre">(size_t</span> <span class="pre">offset,</span> <span class="pre">size_t</span> <span class="pre">size,</span> <span class="pre">const</span> <span class="pre">SegmentInfo</span> <span class="pre">&amp;segment_info)</span> <span class="pre">const</span> <span class="pre">=0</span></span></dt>
+<dd><p>Loads data from the underlying data source.</p>
+<p>NOTE: This must be thread-safe. If this call modifies common state, the implementation must do its own locking.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>offset</strong> – The byte offset in the data source to start loading from. </p></li>
+<li><p><strong>size</strong> – The number of bytes to load. </p></li>
+<li><p><strong>segment_info</strong> – Information about the segment being loaded.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>a <code class="docutils literal notranslate"><span class="pre">FreeableBuffer</span></code> that owns the loaded data. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classexecutorch_1_1runtime_1_1DataLoader_1a0b30756c8f7e4083061b5319964b9efb"></span><span class="sig-name descname"><span class="pre">inline</span> <span class="pre">virtual</span> <span class="pre">ET_NODISCARD</span> <span class="pre">Error</span> <span class="pre">load_into</span> <span class="pre">(size_t</span> <span class="pre">offset,</span> <span class="pre">size_t</span> <span class="pre">size,</span> <span class="pre">const</span> <span class="pre">SegmentInfo</span> <span class="pre">&amp;segment_info,</span> <span class="pre">void</span> <span class="pre">*buffer)</span> <span class="pre">const</span></span></dt>
+<dd><p>Loads data from the underlying data source into the provided buffer.</p>
+<p>NOTE: This must be thread-safe. If this call modifies common state, the implementation must do its own locking.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>offset</strong> – The byte offset in the data source to start loading from. </p></li>
+<li><p><strong>size</strong> – The number of bytes to load. </p></li>
+<li><p><strong>segment_info</strong> – Information about the segment being loaded. </p></li>
+<li><p><strong>buffer</strong> – The buffer to load data into. Must point to at least <code class="docutils literal notranslate"><span class="pre">size</span></code> bytes of memory.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>an Error indicating if the load was successful. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classexecutorch_1_1runtime_1_1DataLoader_1a273fe4a836cfc00807e045b45d12e045"></span><span class="sig-name descname"><span class="pre">virtual</span> <span class="pre">ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">size_t</span> <span class="pre">&gt;</span> <span class="pre">size</span> <span class="pre">()</span> <span class="pre">const</span> <span class="pre">=0</span></span></dt>
+<dd><p>Returns the length of the underlying data source, typically the file size. </p>
+</dd></dl>
+
+</div>
+<dl class="cpp struct">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime10DataLoader11SegmentInfoE">
+<span id="_CPPv3N10executorch7runtime10DataLoader11SegmentInfoE"></span><span id="_CPPv2N10executorch7runtime10DataLoader11SegmentInfoE"></span><span id="executorch::runtime::DataLoader::SegmentInfo"></span><span class="target" id="structexecutorch_1_1runtime_1_1DataLoader_1_1SegmentInfo"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">SegmentInfo</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfoE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Describes the content of the segment. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-types">Public Types</p>
+<dl class="cpp enum-class">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4TypeE">
+<span id="_CPPv3N10executorch7runtime10DataLoader11SegmentInfo4TypeE"></span><span id="_CPPv2N10executorch7runtime10DataLoader11SegmentInfo4TypeE"></span><span class="target" id="structexecutorch_1_1runtime_1_1DataLoader_1_1SegmentInfo_1adcc6c4e04b70d699ec9d891866a3d759"></span><span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Type</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4TypeE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Represents the purpose of the segment. </p>
+<p><em>Values:</em></p>
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type7ProgramE">
+<span id="_CPPv3N10executorch7runtime10DataLoader11SegmentInfo4Type7ProgramE"></span><span id="_CPPv2N10executorch7runtime10DataLoader11SegmentInfo4Type7ProgramE"></span><span class="target" id="structexecutorch_1_1runtime_1_1DataLoader_1_1SegmentInfo_1adcc6c4e04b70d699ec9d891866a3d759a95c50c7cc68e399ac5540898dfd06820"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Program</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type7ProgramE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Data for the actual program. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type8ConstantE">
+<span id="_CPPv3N10executorch7runtime10DataLoader11SegmentInfo4Type8ConstantE"></span><span id="_CPPv2N10executorch7runtime10DataLoader11SegmentInfo4Type8ConstantE"></span><span class="target" id="structexecutorch_1_1runtime_1_1DataLoader_1_1SegmentInfo_1adcc6c4e04b70d699ec9d891866a3d759acb17869fe51048b5a5c4c6106551a255"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Constant</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type8ConstantE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Holds constant tensor data. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type7BackendE">
+<span id="_CPPv3N10executorch7runtime10DataLoader11SegmentInfo4Type7BackendE"></span><span id="_CPPv2N10executorch7runtime10DataLoader11SegmentInfo4Type7BackendE"></span><span class="target" id="structexecutorch_1_1runtime_1_1DataLoader_1_1SegmentInfo_1adcc6c4e04b70d699ec9d891866a3d759a2e427c268ac1768b9add94b65e2d6c14"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Backend</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type7BackendE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Data used for initializing a backend. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type7MutableE">
+<span id="_CPPv3N10executorch7runtime10DataLoader11SegmentInfo4Type7MutableE"></span><span id="_CPPv2N10executorch7runtime10DataLoader11SegmentInfo4Type7MutableE"></span><span class="target" id="structexecutorch_1_1runtime_1_1DataLoader_1_1SegmentInfo_1adcc6c4e04b70d699ec9d891866a3d759ad924522d30d6615e9f71e91504364a9d"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Mutable</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type7MutableE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Data used for initializing mutable tensors. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type8ExternalE">
+<span id="_CPPv3N10executorch7runtime10DataLoader11SegmentInfo4Type8ExternalE"></span><span id="_CPPv2N10executorch7runtime10DataLoader11SegmentInfo4Type8ExternalE"></span><span class="target" id="structexecutorch_1_1runtime_1_1DataLoader_1_1SegmentInfo_1adcc6c4e04b70d699ec9d891866a3d759ab206a1b4ea1097761f78e8876f6da779"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">External</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type8ExternalE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Data used for initializing external tensors. </p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime10DataLoader11SegmentInfo12segment_typeE">
+<span id="_CPPv3N10executorch7runtime10DataLoader11SegmentInfo12segment_typeE"></span><span id="_CPPv2N10executorch7runtime10DataLoader11SegmentInfo12segment_typeE"></span><span id="executorch::runtime::DataLoader::SegmentInfo::segment_type__Type"></span><span class="target" id="structexecutorch_1_1runtime_1_1DataLoader_1_1SegmentInfo_1a4868c89d9cb44b3e94b15f0a4936c1f9"></span><a class="reference internal" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4TypeE" title="executorch::runtime::DataLoader::SegmentInfo::Type"><span class="n"><span class="pre">Type</span></span></a><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">segment_type</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo12segment_typeE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Type of the segment. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime10DataLoader11SegmentInfo13segment_indexE">
+<span id="_CPPv3N10executorch7runtime10DataLoader11SegmentInfo13segment_indexE"></span><span id="_CPPv2N10executorch7runtime10DataLoader11SegmentInfo13segment_indexE"></span><span id="executorch::runtime::DataLoader::SegmentInfo::segment_index__s"></span><span class="target" id="structexecutorch_1_1runtime_1_1DataLoader_1_1SegmentInfo_1a6efa31e1ea04da34d7944a83e0ecb80a"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">segment_index</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo13segment_indexE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Index of the segment within the segment list. Undefined for program segments. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime10DataLoader11SegmentInfo10descriptorE">
+<span id="_CPPv3N10executorch7runtime10DataLoader11SegmentInfo10descriptorE"></span><span id="_CPPv2N10executorch7runtime10DataLoader11SegmentInfo10descriptorE"></span><span id="executorch::runtime::DataLoader::SegmentInfo::descriptor__cCP"></span><span class="target" id="structexecutorch_1_1runtime_1_1DataLoader_1_1SegmentInfo_1ae9a509a83dc51dab3423f6e520ec7f9c"></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">descriptor</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo10descriptorE" title="Link to this definition">#</a><br /></dt>
+<dd><p>An optional, null-terminated string describing the segment. For <code class="docutils literal notranslate"><span class="pre">Backend</span></code> segments, this is the backend ID. Null for other segment types. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime15MemoryAllocatorE">
+<span id="_CPPv3N10executorch7runtime15MemoryAllocatorE"></span><span id="_CPPv2N10executorch7runtime15MemoryAllocatorE"></span><span id="executorch::runtime::MemoryAllocator"></span><span class="target" id="classexecutorch_1_1runtime_1_1MemoryAllocator"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MemoryAllocator</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime15MemoryAllocatorE" title="Link to this definition">#</a><br /></dt>
+<dd><p>A class that does simple allocation based on a size and returns the pointer to the memory address. It bookmarks a buffer with certain size. The allocation is simply checking space and growing the cur_ pointer with each allocation request.</p>
+<p>Simple example:</p>
+<p>// User allocates a 100 byte long memory in the heap. uint8_t* memory_pool = malloc(100 * sizeof(uint8_t)); <a class="reference internal" href="#classexecutorch_1_1runtime_1_1MemoryAllocator"><span class="std std-ref">MemoryAllocator</span></a> allocator(100, memory_pool) // Pass allocator object in the Executor</p>
+<p>Underneath the hood, ExecuTorch will call allocator.allocate() to keep iterating cur_ pointer </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t">
+<span id="_CPPv3N10executorch7runtime15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t"></span><span id="_CPPv2N10executorch7runtime15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t"></span><span id="executorch::runtime::MemoryAllocator::MemoryAllocator__uint32_t.uint8_tP"></span><span class="target" id="classexecutorch_1_1runtime_1_1MemoryAllocator_1aa8005754d92f6c2aa744af8a38563098"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MemoryAllocator</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">size</span></span>, <span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">base_address</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10executorch7runtime15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t" title="Link to this definition">#</a><br /></dt>
+<dd><p>Constructs a new memory allocator of a given <code class="docutils literal notranslate"><span class="pre">size</span></code>, starting at the provided <code class="docutils literal notranslate"><span class="pre">base_address</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>size</strong> – <strong>[in]</strong> The size in bytes of the buffer at <code class="docutils literal notranslate"><span class="pre">base_address</span></code>. </p></li>
+<li><p><strong>base_address</strong> – <strong>[in]</strong> The buffer to allocate from. Does not take ownership of this buffer, so it must be valid for the lifetime of of the <a class="reference internal" href="#classexecutorch_1_1runtime_1_1MemoryAllocator"><span class="std std-ref">MemoryAllocator</span></a>. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime15MemoryAllocator8allocateE6size_t6size_t">
+<span id="_CPPv3N10executorch7runtime15MemoryAllocator8allocateE6size_t6size_t"></span><span id="_CPPv2N10executorch7runtime15MemoryAllocator8allocateE6size_t6size_t"></span><span id="executorch::runtime::MemoryAllocator::allocate__s.s"></span><span class="target" id="classexecutorch_1_1runtime_1_1MemoryAllocator_1a42353f55f8457f1862385a290ec70213"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">virtual</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">allocate</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">size</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">alignment</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N10executorch7runtime15MemoryAllocator17kDefaultAlignmentE" title="executorch::runtime::MemoryAllocator::kDefaultAlignment"><span class="n"><span class="pre">kDefaultAlignment</span></span></a><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10executorch7runtime15MemoryAllocator8allocateE6size_t6size_t" title="Link to this definition">#</a><br /></dt>
+<dd><p>Allocates <code class="docutils literal notranslate"><span class="pre">size</span></code> bytes of memory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>size</strong> – <strong>[in]</strong> Number of bytes to allocate. </p></li>
+<li><p><strong>alignment</strong> – <strong>[in]</strong> Minimum alignment for the returned pointer. Must be a power of 2.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return values<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>nullptr</strong> – Not enough memory, or <code class="docutils literal notranslate"><span class="pre">alignment</span></code> was not a power of 2. </p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Aligned pointer to the allocated memory on success. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4I0EN10executorch7runtime15MemoryAllocator16allocateInstanceEP1T6size_t">
+<span id="_CPPv3I0EN10executorch7runtime15MemoryAllocator16allocateInstanceE6size_t"></span><span id="_CPPv2I0EN10executorch7runtime15MemoryAllocator16allocateInstanceE6size_t"></span><span class="k"><span class="pre">template</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">typename</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">T</span></span></span><span class="p"><span class="pre">&gt;</span></span><br /><span class="target" id="classexecutorch_1_1runtime_1_1MemoryAllocator_1a85b43abd446ec6d46dd8deacf1d1c0df"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4I0EN10executorch7runtime15MemoryAllocator16allocateInstanceEP1T6size_t" title="executorch::runtime::MemoryAllocator::allocateInstance::T"><span class="n"><span class="pre">T</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">allocateInstance</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">alignment</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">alignof</span></span><span class="p"><span class="pre">(</span></span><a class="reference internal" href="#_CPPv4I0EN10executorch7runtime15MemoryAllocator16allocateInstanceEP1T6size_t" title="executorch::runtime::MemoryAllocator::allocateInstance::T"><span class="n"><span class="pre">T</span></span></a><span class="p"><span class="pre">)</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4I0EN10executorch7runtime15MemoryAllocator16allocateInstanceEP1T6size_t" title="Link to this definition">#</a><br /></dt>
+<dd><p>Allocates a buffer large enough for an instance of type T. Note that the memory will not be initialized.</p>
+<p>Example: <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">auto</span> <span class="n">p</span> <span class="o">=</span> <span class="n">memory_allocator</span><span class="o">-&gt;</span><span class="n">allocateInstance</span><span class="o">&lt;</span><span class="n">MyType</span><span class="o">&gt;</span><span class="p">();</span>
+</pre></div>
+</div>
+</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>alignment</strong> – <strong>[in]</strong> Minimum alignment for the returned pointer. Must be a power of 2. Defaults to the natural alignment of T.</p>
+</dd>
+<dt class="field-even">Return values<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>nullptr</strong> – Not enough memory, or <code class="docutils literal notranslate"><span class="pre">alignment</span></code> was not a power of 2. </p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Aligned pointer to the allocated memory on success. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4I0EN10executorch7runtime15MemoryAllocator12allocateListEP1T6size_t6size_t">
+<span id="_CPPv3I0EN10executorch7runtime15MemoryAllocator12allocateListE6size_t6size_t"></span><span id="_CPPv2I0EN10executorch7runtime15MemoryAllocator12allocateListE6size_t6size_t"></span><span class="k"><span class="pre">template</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">typename</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">T</span></span></span><span class="p"><span class="pre">&gt;</span></span><br /><span class="target" id="classexecutorch_1_1runtime_1_1MemoryAllocator_1afe55827a7b3f7df505d9c68503b6cc75"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4I0EN10executorch7runtime15MemoryAllocator12allocateListEP1T6size_t6size_t" title="executorch::runtime::MemoryAllocator::allocateList::T"><span class="n"><span class="pre">T</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">allocateList</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">size</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">alignment</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">alignof</span></span><span class="p"><span class="pre">(</span></span><a class="reference internal" href="#_CPPv4I0EN10executorch7runtime15MemoryAllocator12allocateListEP1T6size_t6size_t" title="executorch::runtime::MemoryAllocator::allocateList::T"><span class="n"><span class="pre">T</span></span></a><span class="p"><span class="pre">)</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4I0EN10executorch7runtime15MemoryAllocator12allocateListEP1T6size_t6size_t" title="Link to this definition">#</a><br /></dt>
+<dd><p>Allocates <code class="docutils literal notranslate"><span class="pre">size</span></code> number of chunks of type T, where each chunk is of size equal to sizeof(T) bytes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>size</strong> – <strong>[in]</strong> Number of memory chunks to allocate. </p></li>
+<li><p><strong>alignment</strong> – <strong>[in]</strong> Minimum alignment for the returned pointer. Must be a power of 2. Defaults to the natural alignment of T.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return values<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>nullptr</strong> – Not enough memory, or <code class="docutils literal notranslate"><span class="pre">alignment</span></code> was not a power of 2. </p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Aligned pointer to the allocated memory on success. </p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-static-attributes">Public Static Attributes</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime15MemoryAllocator17kDefaultAlignmentE">
+<span id="_CPPv3N10executorch7runtime15MemoryAllocator17kDefaultAlignmentE"></span><span id="_CPPv2N10executorch7runtime15MemoryAllocator17kDefaultAlignmentE"></span><span id="executorch::runtime::MemoryAllocator::kDefaultAlignment__s"></span><span class="target" id="classexecutorch_1_1runtime_1_1MemoryAllocator_1a20c129f1fa085edbb5e9160d3fd99a8c"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><span class="k"><span class="pre">constexpr</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">kDefaultAlignment</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">alignof</span></span><span class="p"><span class="pre">(</span></span><span class="kt"><span class="pre">void</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime15MemoryAllocator17kDefaultAlignmentE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Default alignment of memory returned by this class. Ensures that pointer fields of structs will be aligned. Larger types like <code class="docutils literal notranslate"><span class="pre">long</span> <span class="pre">double</span></code> may not be, however, depending on the toolchain and architecture. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime21HierarchicalAllocatorE">
+<span id="_CPPv3N10executorch7runtime21HierarchicalAllocatorE"></span><span id="_CPPv2N10executorch7runtime21HierarchicalAllocatorE"></span><span id="executorch::runtime::HierarchicalAllocator"></span><span class="target" id="classexecutorch_1_1runtime_1_1HierarchicalAllocator"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HierarchicalAllocator</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime21HierarchicalAllocatorE" title="Link to this definition">#</a><br /></dt>
+<dd><p>A group of buffers that can be used to represent a device’s memory hierarchy. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE">
+<span id="_CPPv3N10executorch7runtime21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE"></span><span id="_CPPv2N10executorch7runtime21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE"></span><span id="executorch::runtime::HierarchicalAllocator::HierarchicalAllocator__Span:Span:uint8_t::"></span><span class="target" id="classexecutorch_1_1runtime_1_1HierarchicalAllocator_1a729ed3d08dbb418a3a361097495cd7c7"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">explicit</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HierarchicalAllocator</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">Span</span></span><span class="p"><span class="pre">&lt;</span></span><span class="n"><span class="pre">Span</span></span><span class="p"><span class="pre">&lt;</span></span><span class="n"><span class="pre">uint8_t</span></span><span class="p"><span class="pre">&gt;</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">buffers</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10executorch7runtime21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Constructs a new hierarchical allocator with the given array of buffers.</p>
+<p><ul class="simple">
+<li><p>Memory IDs are based on the index into <code class="docutils literal notranslate"><span class="pre">buffers</span></code>: <code class="docutils literal notranslate"><span class="pre">buffers[N]</span></code> will have a memory ID of <code class="docutils literal notranslate"><span class="pre">N</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">buffers.size()</span></code> must be &gt;= <code class="docutils literal notranslate"><span class="pre">MethodMeta::num_non_const_buffers()</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">buffers[N].size()</span></code> must be &gt;= <code class="docutils literal notranslate"><span class="pre">MethodMeta::non_const_buffer_size(N)</span></code>. </p></li>
+</ul>
+</p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator">
+<span id="_CPPv3N10executorch7runtime21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator"></span><span id="_CPPv2N10executorch7runtime21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator"></span><span id="executorch::runtime::HierarchicalAllocator::HierarchicalAllocator__uint32_t.MemoryAllocatorP"></span><span class="target" id="classexecutorch_1_1runtime_1_1HierarchicalAllocator_1a13b7401d384c385edac0296a8e3af16a"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ET_DEPRECATED</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HierarchicalAllocator</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">n_allocators</span></span>, <a class="reference internal" href="#_CPPv4N10executorch7runtime15MemoryAllocatorE" title="executorch::runtime::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">allocators</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10executorch7runtime21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator" title="Link to this definition">#</a><br /></dt>
+<dd><p>DEPRECATED: Use spans instead. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classexecutorch_1_1runtime_1_1HierarchicalAllocator_1a2b20aa9b08fa3ab381ac86bcb82b5c62"></span><span class="sig-name descname"><span class="pre">inline</span> <span class="pre">ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">void</span> <span class="pre">*</span> <span class="pre">&gt;</span> <span class="pre">get_offset_address</span> <span class="pre">(uint32_t</span> <span class="pre">memory_id,</span> <span class="pre">size_t</span> <span class="pre">offset_bytes,</span> <span class="pre">size_t</span> <span class="pre">size_bytes)</span></span></dt>
+<dd><p>Returns the address at the byte offset <code class="docutils literal notranslate"><span class="pre">offset_bytes</span></code> from the given buffer’s base address, which points to at least <code class="docutils literal notranslate"><span class="pre">size_bytes</span></code> of memory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>memory_id</strong> – <strong>[in]</strong> The ID of the buffer in the hierarchy. </p></li>
+<li><p><strong>offset_bytes</strong> – <strong>[in]</strong> The offset in bytes into the specified buffer. </p></li>
+<li><p><strong>size_bytes</strong> – <strong>[in]</strong> The amount of memory that should be available at the offset.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>On success, the address of the requested byte offset into the specified buffer. On failure, a non-Ok Error. </p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime13MemoryManagerE">
+<span id="_CPPv3N10executorch7runtime13MemoryManagerE"></span><span id="_CPPv2N10executorch7runtime13MemoryManagerE"></span><span id="executorch::runtime::MemoryManager"></span><span class="target" id="classexecutorch_1_1runtime_1_1MemoryManager"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MemoryManager</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime13MemoryManagerE" title="Link to this definition">#</a><br /></dt>
+<dd><p>A container class for allocators used during Method load and execution.</p>
+<p>This class consolidates all dynamic memory needs for Method load and execution. This can allow for heap-based as well as heap-less execution (relevant to some embedded scenarios), and overall provides more control over memory use.</p>
+<p>This class, however, cannot ensure all allocation is accounted for since kernel and backend implementations are free to use a separate way to allocate memory (e.g., for things like scratch space). But we do suggest that backends and kernels use these provided allocators whenever possible. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator">
+<span id="_CPPv3N10executorch7runtime13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator"></span><span id="_CPPv2N10executorch7runtime13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator"></span><span id="executorch::runtime::MemoryManager::MemoryManager__MemoryAllocatorP.HierarchicalAllocatorP.MemoryAllocatorP"></span><span class="target" id="classexecutorch_1_1runtime_1_1MemoryManager_1a31ee3d30090541e3053fa2b0acb5c9da"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">explicit</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MemoryManager</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv4N10executorch7runtime15MemoryAllocatorE" title="executorch::runtime::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">method_allocator</span></span>, <a class="reference internal" href="#_CPPv4N10executorch7runtime21HierarchicalAllocatorE" title="executorch::runtime::HierarchicalAllocator"><span class="n"><span class="pre">HierarchicalAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">planned_memory</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">nullptr</span></span>, <a class="reference internal" href="#_CPPv4N10executorch7runtime15MemoryAllocatorE" title="executorch::runtime::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">temp_allocator</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">nullptr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10executorch7runtime13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator" title="Link to this definition">#</a><br /></dt>
+<dd><p>Constructs a new <a class="reference internal" href="#classexecutorch_1_1runtime_1_1MemoryManager"><span class="std std-ref">MemoryManager</span></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>method_allocator</strong> – <strong>[in]</strong> The allocator to use when loading a Method and allocating its internal structures. Must outlive the Method that uses it. </p></li>
+<li><p><strong>planned_memory</strong> – <strong>[in]</strong> The memory-planned buffers to use for mutable tensor data when executing a Method. Must outlive the Method that uses it. May be <code class="docutils literal notranslate"><span class="pre">nullptr</span></code> if the Method does not use any memory-planned tensor data. The sizes of the buffers in this <a class="reference internal" href="#classexecutorch_1_1runtime_1_1HierarchicalAllocator"><span class="std std-ref">HierarchicalAllocator</span></a> must agree with the corresponding <code class="docutils literal notranslate"><span class="pre">MethodMeta::num_memory_planned_buffers()</span></code> and <code class="docutils literal notranslate"><span class="pre">MethodMeta::memory_planned_buffer_size(N)</span></code> values, which are embedded in the Program. </p></li>
+<li><p><strong>temp_allocator</strong> – <strong>[in]</strong> The allocator to use when allocating temporary data during kernel or delegate execution. Must outlive the Method that uses it. May be <code class="docutils literal notranslate"><span class="pre">nullptr</span></code> if the Method does not use kernels or delegates that allocate temporary data. This allocator will be reset after every kernel or delegate call during execution. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator">
+<span id="_CPPv3N10executorch7runtime13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator"></span><span id="_CPPv2N10executorch7runtime13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator"></span><span id="executorch::runtime::MemoryManager::MemoryManager__MemoryAllocatorP.HierarchicalAllocatorP.MemoryAllocatorP.MemoryAllocatorP"></span><span class="target" id="classexecutorch_1_1runtime_1_1MemoryManager_1a4e6d4e93373f78fc387043b1b3353b3e"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ET_DEPRECATED</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MemoryManager</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv4N10executorch7runtime15MemoryAllocatorE" title="executorch::runtime::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">constant_allocator</span></span>, <a class="reference internal" href="#_CPPv4N10executorch7runtime21HierarchicalAllocatorE" title="executorch::runtime::HierarchicalAllocator"><span class="n"><span class="pre">HierarchicalAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">non_constant_allocator</span></span>, <a class="reference internal" href="#_CPPv4N10executorch7runtime15MemoryAllocatorE" title="executorch::runtime::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">runtime_allocator</span></span>, <a class="reference internal" href="#_CPPv4N10executorch7runtime15MemoryAllocatorE" title="executorch::runtime::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">temporary_allocator</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10executorch7runtime13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator" title="Link to this definition">#</a><br /></dt>
+<dd><p>DEPRECATED: Use the constructor without <code class="docutils literal notranslate"><span class="pre">constant_allocator</span></code> instead.</p>
+<p>TODO(T162089316): Remove this once all users migrate to the new ctor. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime13MemoryManager16method_allocatorEv">
+<span id="_CPPv3NK10executorch7runtime13MemoryManager16method_allocatorEv"></span><span id="_CPPv2NK10executorch7runtime13MemoryManager16method_allocatorEv"></span><span id="executorch::runtime::MemoryManager::method_allocatorC"></span><span class="target" id="classexecutorch_1_1runtime_1_1MemoryManager_1ab388e7932306e5a29c94e34b399af05b"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N10executorch7runtime15MemoryAllocatorE" title="executorch::runtime::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">method_allocator</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime13MemoryManager16method_allocatorEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the allocator that the runtime will use to allocate internal structures while loading a Method. Must not be used after its associated Method has been loaded. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime13MemoryManager14planned_memoryEv">
+<span id="_CPPv3NK10executorch7runtime13MemoryManager14planned_memoryEv"></span><span id="_CPPv2NK10executorch7runtime13MemoryManager14planned_memoryEv"></span><span id="executorch::runtime::MemoryManager::planned_memoryC"></span><span class="target" id="classexecutorch_1_1runtime_1_1MemoryManager_1add13351257873341541ec803338491aa"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N10executorch7runtime21HierarchicalAllocatorE" title="executorch::runtime::HierarchicalAllocator"><span class="n"><span class="pre">HierarchicalAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">planned_memory</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime13MemoryManager14planned_memoryEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the memory-planned buffers to use for mutable tensor data. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime13MemoryManager14temp_allocatorEv">
+<span id="_CPPv3NK10executorch7runtime13MemoryManager14temp_allocatorEv"></span><span id="_CPPv2NK10executorch7runtime13MemoryManager14temp_allocatorEv"></span><span id="executorch::runtime::MemoryManager::temp_allocatorC"></span><span class="target" id="classexecutorch_1_1runtime_1_1MemoryManager_1a94107a41a86d956917b83544326937d6"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N10executorch7runtime15MemoryAllocatorE" title="executorch::runtime::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">temp_allocator</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime13MemoryManager14temp_allocatorEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the allocator to use for allocating temporary data during kernel or delegate execution.</p>
+<p>This allocator will be reset after every kernel or delegate call during execution. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+</section>
+<section id="values">
+<h2>Values<a class="headerlink" href="#values" title="Link to this heading">#</a></h2>
+<dl class="cpp struct">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime6EValueE">
+<span id="_CPPv3N10executorch7runtime6EValueE"></span><span id="_CPPv2N10executorch7runtime6EValueE"></span><span id="executorch::runtime::EValue"></span><span class="target" id="structexecutorch_1_1runtime_1_1EValue"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">EValue</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime6EValueE" title="Link to this definition">#</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime6EValue6EValueEN10executorch4aten6ScalarE">
+<span id="_CPPv3N10executorch7runtime6EValue6EValueEN10executorch4aten6ScalarE"></span><span id="_CPPv2N10executorch7runtime6EValue6EValueEN10executorch4aten6ScalarE"></span><span id="executorch::runtime::EValue::EValue__executorch::aten::Scalar"></span><span class="target" id="structexecutorch_1_1runtime_1_1EValue_1a16a08a43c328237db8875be5c323ddc2"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">EValue</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">executorch</span></span><span class="p"><span class="pre">::</span></span><span class="n"><span class="pre">aten</span></span><span class="p"><span class="pre">::</span></span><span class="n"><span class="pre">Scalar</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">s</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10executorch7runtime6EValue6EValueEN10executorch4aten6ScalarE" title="Link to this definition">#</a><br /></dt>
+<dd><p>Construct an <a class="reference internal" href="#structexecutorch_1_1runtime_1_1EValue"><span class="std std-ref">EValue</span></a> using the implicit value of a Scalar. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4I0ENK10executorch7runtime6EValue10toOptionalENSt8optionalI1TEEv">
+<span id="_CPPv3I0ENK10executorch7runtime6EValue10toOptionalEv"></span><span id="_CPPv2I0ENK10executorch7runtime6EValue10toOptionalEv"></span><span class="k"><span class="pre">template</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">typename</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">T</span></span></span><span class="p"><span class="pre">&gt;</span></span><br /><span class="target" id="structexecutorch_1_1runtime_1_1EValue_1ab4eb09f5f26418aff7f46940429e6884"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">std</span></span><span class="p"><span class="pre">::</span></span><span class="n"><span class="pre">optional</span></span><span class="p"><span class="pre">&lt;</span></span><a class="reference internal" href="#_CPPv4I0ENK10executorch7runtime6EValue10toOptionalENSt8optionalI1TEEv" title="executorch::runtime::EValue::toOptional::T"><span class="n"><span class="pre">T</span></span></a><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">toOptional</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4I0ENK10executorch7runtime6EValue10toOptionalENSt8optionalI1TEEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Converts the <a class="reference internal" href="#structexecutorch_1_1runtime_1_1EValue"><span class="std std-ref">EValue</span></a> to an optional object that can represent both T and an uninitialized state. </p>
+</dd></dl>
+
+</div>
+<dl class="cpp union">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime6EValue7PayloadE">
+<span id="_CPPv3N10executorch7runtime6EValue7PayloadE"></span><span id="_CPPv2N10executorch7runtime6EValue7PayloadE"></span><span class="target" id="unionexecutorch_1_1runtime_1_1EValue_1_1Payload"></span><span class="k"><span class="pre">union</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Payload</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime6EValue7PayloadE" title="Link to this definition">#</a><br /></dt>
+<dd><dl class="cpp union">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime6EValue7Payload24TriviallyCopyablePayloadE">
+<span id="_CPPv3N10executorch7runtime6EValue7Payload24TriviallyCopyablePayloadE"></span><span id="_CPPv2N10executorch7runtime6EValue7Payload24TriviallyCopyablePayloadE"></span><span class="target" id="unionexecutorch_1_1runtime_1_1EValue_1_1Payload_1_1TriviallyCopyablePayload"></span><span class="k"><span class="pre">union</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">TriviallyCopyablePayload</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime6EValue7Payload24TriviallyCopyablePayloadE" title="Link to this definition">#</a><br /></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</dd></dl>
+
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime7etensor6TensorE">
+<span id="_CPPv3N10executorch7runtime7etensor6TensorE"></span><span id="_CPPv2N10executorch7runtime7etensor6TensorE"></span><span id="executorch::runtime::etensor::Tensor"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Tensor</span></span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime7etensor6TensorE" title="Link to this definition">#</a><br /></dt>
+<dd><p>A minimal <a class="reference internal" href="#classexecutorch_1_1runtime_1_1etensor_1_1Tensor"><span class="std std-ref">Tensor</span></a> type whose API is a source compatible subset of at::Tensor.</p>
+<p>NOTE: Instances of this class do not own the TensorImpl given to it, which means that the caller must guarantee that the TensorImpl lives longer than any <a class="reference internal" href="#classexecutorch_1_1runtime_1_1etensor_1_1Tensor"><span class="std std-ref">Tensor</span></a> instances that point to it.</p>
+<p>See the documention on TensorImpl for details about the return/parameter types used here and how they relate to at::Tensor. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-types">Public Types</p>
+<dl class="cpp type">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime7etensor6Tensor9SizesTypeE">
+<span id="_CPPv3N10executorch7runtime7etensor6Tensor9SizesTypeE"></span><span id="_CPPv2N10executorch7runtime7etensor6Tensor9SizesTypeE"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a2801e1dfede5c4ad3ae371416262e063"></span><span class="k"><span class="pre">using</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">SizesType</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="n"><span class="pre">TensorImpl</span></span><span class="p"><span class="pre">::</span></span><span class="n"><span class="pre">SizesType</span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime7etensor6Tensor9SizesTypeE" title="Link to this definition">#</a><br /></dt>
+<dd><p>The type used for elements of <code class="docutils literal notranslate"><a class="reference internal" href="#classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a4b0cbace414b1f5fbe0ee908f26c7404"><span class="std std-ref"><span class="pre">sizes()</span></span></a></code>. </p>
+</dd></dl>
+
+<dl class="cpp type">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime7etensor6Tensor12DimOrderTypeE">
+<span id="_CPPv3N10executorch7runtime7etensor6Tensor12DimOrderTypeE"></span><span id="_CPPv2N10executorch7runtime7etensor6Tensor12DimOrderTypeE"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a022c42f3b091582d0e156de04b354539"></span><span class="k"><span class="pre">using</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DimOrderType</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="n"><span class="pre">TensorImpl</span></span><span class="p"><span class="pre">::</span></span><span class="n"><span class="pre">DimOrderType</span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime7etensor6Tensor12DimOrderTypeE" title="Link to this definition">#</a><br /></dt>
+<dd><p>The type used for elements of <code class="docutils literal notranslate"><a class="reference internal" href="#classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1afc437fd6a62ea4885bbdb980190a6a7b"><span class="std std-ref"><span class="pre">dim_order()</span></span></a></code>. </p>
+</dd></dl>
+
+<dl class="cpp type">
+<dt class="sig sig-object cpp" id="_CPPv4N10executorch7runtime7etensor6Tensor11StridesTypeE">
+<span id="_CPPv3N10executorch7runtime7etensor6Tensor11StridesTypeE"></span><span id="_CPPv2N10executorch7runtime7etensor6Tensor11StridesTypeE"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a353b89305d676ac0a41b7f613ee66816"></span><span class="k"><span class="pre">using</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">StridesType</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="n"><span class="pre">TensorImpl</span></span><span class="p"><span class="pre">::</span></span><span class="n"><span class="pre">StridesType</span></span><a class="headerlink" href="#_CPPv4N10executorch7runtime7etensor6Tensor11StridesTypeE" title="Link to this definition">#</a><br /></dt>
+<dd><p>The type used for elements of <code class="docutils literal notranslate"><a class="reference internal" href="#classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1ae6e6334a330ab83d3af5f41f2304e045"><span class="std std-ref"><span class="pre">strides()</span></span></a></code>. </p>
+</dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor19unsafeGetTensorImplEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor19unsafeGetTensorImplEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor19unsafeGetTensorImplEv"></span><span id="executorch::runtime::etensor::Tensor::unsafeGetTensorImplC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1ada0bfb26473624950a23c69211a23eb3"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">TensorImpl</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">unsafeGetTensorImpl</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor19unsafeGetTensorImplEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns a pointer to the underlying TensorImpl.</p>
+<p>NOTE: Clients should be wary of operating on the TensorImpl directly instead of the <a class="reference internal" href="#classexecutorch_1_1runtime_1_1etensor_1_1Tensor"><span class="std std-ref">Tensor</span></a>. It is easy to break things. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor6nbytesEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor6nbytesEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor6nbytesEv"></span><span id="executorch::runtime::etensor::Tensor::nbytesC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1ae2826e55d496447c28eaa4a2704e2582"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">nbytes</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor6nbytesEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the size of the tensor in bytes.</p>
+<p>NOTE: Only the alive space is returned not the total capacity of the underlying data blob. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor4sizeE7ssize_t">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor4sizeE7ssize_t"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor4sizeE7ssize_t"></span><span id="executorch::runtime::etensor::Tensor::size__ssize_tC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1aaa2aa95580a86b523818eff013d520e6"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">size</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">dim</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor4sizeE7ssize_t" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the size of the tensor at the given dimension.</p>
+<p>NOTE: that <a class="reference internal" href="#classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1aaa2aa95580a86b523818eff013d520e6"><span class="std std-ref">size()</span></a> intentionally does not return SizeType even though it returns an element of an array of SizeType. This is to help make calls of this method more compatible with at::Tensor, and more consistent with the rest of the methods on this class and in ETensor. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor3dimEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor3dimEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor3dimEv"></span><span id="executorch::runtime::etensor::Tensor::dimC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1ace9801f356ba33805b26132c29cfc827"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dim</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor3dimEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the tensor’s number of dimensions. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor5numelEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor5numelEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor5numelEv"></span><span id="executorch::runtime::etensor::Tensor::numelC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a2a0fac1ac4e189e92b8f88a28d1d47d9"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">numel</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor5numelEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the number of elements in the tensor. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor11scalar_typeEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor11scalar_typeEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor11scalar_typeEv"></span><span id="executorch::runtime::etensor::Tensor::scalar_typeC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a9972b89db43e38a25ad177292ce8468c"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ScalarType</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">scalar_type</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor11scalar_typeEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the type of the elements in the tensor (int32, float, bool, etc). </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor12element_sizeEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor12element_sizeEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor12element_sizeEv"></span><span id="executorch::runtime::etensor::Tensor::element_sizeC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1ae22232b009225e67f41416ee117ef46c"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">element_size</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor12element_sizeEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the size in bytes of one element of the tensor. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor5sizesEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor5sizesEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor5sizesEv"></span><span id="executorch::runtime::etensor::Tensor::sizesC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a4b0cbace414b1f5fbe0ee908f26c7404"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">ArrayRef</span></span><span class="p"><span class="pre">&lt;</span></span><a class="reference internal" href="#_CPPv4N10executorch7runtime7etensor6Tensor9SizesTypeE" title="executorch::runtime::etensor::Tensor::SizesType"><span class="n"><span class="pre">SizesType</span></span></a><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">sizes</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor5sizesEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the sizes of the tensor at each dimension. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor9dim_orderEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor9dim_orderEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor9dim_orderEv"></span><span id="executorch::runtime::etensor::Tensor::dim_orderC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1afc437fd6a62ea4885bbdb980190a6a7b"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">ArrayRef</span></span><span class="p"><span class="pre">&lt;</span></span><a class="reference internal" href="#_CPPv4N10executorch7runtime7etensor6Tensor12DimOrderTypeE" title="executorch::runtime::etensor::Tensor::DimOrderType"><span class="n"><span class="pre">DimOrderType</span></span></a><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dim_order</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor9dim_orderEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the order the dimensions are laid out in memory. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor7stridesEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor7stridesEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor7stridesEv"></span><span id="executorch::runtime::etensor::Tensor::stridesC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1ae6e6334a330ab83d3af5f41f2304e045"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">ArrayRef</span></span><span class="p"><span class="pre">&lt;</span></span><a class="reference internal" href="#_CPPv4N10executorch7runtime7etensor6Tensor11StridesTypeE" title="executorch::runtime::etensor::Tensor::StridesType"><span class="n"><span class="pre">StridesType</span></span></a><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">strides</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor7stridesEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the strides of the tensor at each dimension. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor14shape_dynamismEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor14shape_dynamismEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor14shape_dynamismEv"></span><span id="executorch::runtime::etensor::Tensor::shape_dynamismC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a0e5914ed795b60c455bc4f8751d53d00"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">TensorShapeDynamism</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">shape_dynamism</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor14shape_dynamismEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns the mutability of the shape of the tensor. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4I0ENK10executorch7runtime7etensor6Tensor14const_data_ptrEPK1Tv">
+<span id="_CPPv3I0ENK10executorch7runtime7etensor6Tensor14const_data_ptrEv"></span><span id="_CPPv2I0ENK10executorch7runtime7etensor6Tensor14const_data_ptrEv"></span><span class="k"><span class="pre">template</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">typename</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">T</span></span></span><span class="p"><span class="pre">&gt;</span></span><br /><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a12e3ff080958f89f89c29b342f4d0225"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4I0ENK10executorch7runtime7etensor6Tensor14const_data_ptrEPK1Tv" title="executorch::runtime::etensor::Tensor::const_data_ptr::T"><span class="n"><span class="pre">T</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">const_data_ptr</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4I0ENK10executorch7runtime7etensor6Tensor14const_data_ptrEPK1Tv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns a pointer of type T to the constant underlying data blob. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor14const_data_ptrEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor14const_data_ptrEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor14const_data_ptrEv"></span><span id="executorch::runtime::etensor::Tensor::const_data_ptrC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1ad4a84fe3c36bbdee46d3a205d52b4df4"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">const_data_ptr</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor14const_data_ptrEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns a pointer to the constant underlying data blob. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4I0ENK10executorch7runtime7etensor6Tensor16mutable_data_ptrEP1Tv">
+<span id="_CPPv3I0ENK10executorch7runtime7etensor6Tensor16mutable_data_ptrEv"></span><span id="_CPPv2I0ENK10executorch7runtime7etensor6Tensor16mutable_data_ptrEv"></span><span class="k"><span class="pre">template</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">typename</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">T</span></span></span><span class="p"><span class="pre">&gt;</span></span><br /><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a0c5ec266f454187412b753a2ea509837"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4I0ENK10executorch7runtime7etensor6Tensor16mutable_data_ptrEP1Tv" title="executorch::runtime::etensor::Tensor::mutable_data_ptr::T"><span class="n"><span class="pre">T</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">mutable_data_ptr</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4I0ENK10executorch7runtime7etensor6Tensor16mutable_data_ptrEP1Tv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns a pointer of type T to the mutable underlying data blob. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime7etensor6Tensor16mutable_data_ptrEv">
+<span id="_CPPv3NK10executorch7runtime7etensor6Tensor16mutable_data_ptrEv"></span><span id="_CPPv2NK10executorch7runtime7etensor6Tensor16mutable_data_ptrEv"></span><span id="executorch::runtime::etensor::Tensor::mutable_data_ptrC"></span><span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a25bf9eca8d0eb502c58c68fac26af330"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">mutable_data_ptr</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime7etensor6Tensor16mutable_data_ptrEv" title="Link to this definition">#</a><br /></dt>
+<dd><p>Returns a pointer to the mutable underlying data blob. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a835415d71c455000ff66d05439e3239a"></span><span class="sig-name descname"><span class="pre">template&lt;typename</span> <span class="pre">T&gt;</span> <span class="pre">inline</span> <span class="pre">ET_DEPRECATED</span> <span class="pre">T</span> <span class="pre">*</span> <span class="pre">data_ptr</span> <span class="pre">()</span> <span class="pre">const</span></span></dt>
+<dd><p>DEPRECATED: Use const_data_ptr or mutable_data_ptr instead. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1aa644f3e656483b704edb82e24bc3591c"></span><span class="sig-name descname"><span class="pre">inline</span> <span class="pre">ET_DEPRECATED</span> <span class="pre">void</span> <span class="pre">*</span> <span class="pre">data_ptr</span> <span class="pre">()</span> <span class="pre">const</span></span></dt>
+<dd><p>DEPRECATED: Use const_data_ptr or mutable_data_ptr instead. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classexecutorch_1_1runtime_1_1etensor_1_1Tensor_1a49c1d947f4d15ddaac103a32b6d89b75"></span><span class="sig-name descname"><span class="pre">inline</span> <span class="pre">ET_DEPRECATED</span> <span class="pre">void</span> <span class="pre">set_data</span> <span class="pre">(void</span> <span class="pre">*ptr)</span> <span class="pre">const</span></span></dt>
+<dd><p>DEPRECATED: Changes the data_ptr the tensor aliases. Does not free the previously pointed to data, does not assume ownership semantics of the new ptr. This api does not exist in at::Tensor so kernel developers should avoid it. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+</section>
+</section>
+
+
+                </article>
+              
+  </article>
+  
+              
+              
+                <footer class="bd-footer-article">
+                  <div class="footer-article-items footer-article__inner">
+  
+    <div class="footer-article-item">
+<div class="feedback">
+  
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+
+  <div class="feedback-send">
+    <button class="feedback-btn"
+            onclick="openGitHubIssue()"
+            data-bs-title="Create a GitHub Issue"
+            data-bs-placement="bottom"
+            data-bs-toggle="tooltip"
+            data-gtm="feedback-btn-click">Send Feedback
+    </button>
+  </div>
+</div>
+
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="embedded-section.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Embedded Systems</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="running-a-model-cpp-tutorial.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Detailed C++ Runtime APIs Tutorial</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+
+<div class="footer-info">
+  <p class="copyright">
+    
+  </p>
+
+  <p class="theme-version">
+    Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+  </p>
+</div>
+</div>
+  
+</div>
+                </footer>
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="embedded-section.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Embedded Systems</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="running-a-model-cpp-tutorial.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Detailed C++ Runtime APIs Tutorial</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc">
+<div class="sidebar-secondary-items sidebar-secondary__inner">
+    
+       <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#model-loading-and-execution">Model Loading and Execution</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime10DataLoaderE"><code class="docutils literal notranslate"><span class="pre">executorch::runtime::DataLoader</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfoE"><code class="docutils literal notranslate"><span class="pre">executorch::runtime::DataLoader::SegmentInfo</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4TypeE"><code class="docutils literal notranslate"><span class="pre">Type</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type7ProgramE"><code class="docutils literal notranslate"><span class="pre">Program</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type8ConstantE"><code class="docutils literal notranslate"><span class="pre">Constant</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type7BackendE"><code class="docutils literal notranslate"><span class="pre">Backend</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type7MutableE"><code class="docutils literal notranslate"><span class="pre">Mutable</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo4Type8ExternalE"><code class="docutils literal notranslate"><span class="pre">External</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo12segment_typeE"><code class="docutils literal notranslate"><span class="pre">segment_type</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo13segment_indexE"><code class="docutils literal notranslate"><span class="pre">segment_index</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime10DataLoader11SegmentInfo10descriptorE"><code class="docutils literal notranslate"><span class="pre">descriptor</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime15MemoryAllocatorE"><code class="docutils literal notranslate"><span class="pre">executorch::runtime::MemoryAllocator</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t"><code class="docutils literal notranslate"><span class="pre">MemoryAllocator()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime15MemoryAllocator8allocateE6size_t6size_t"><code class="docutils literal notranslate"><span class="pre">allocate()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4I0EN10executorch7runtime15MemoryAllocator16allocateInstanceEP1T6size_t"><code class="docutils literal notranslate"><span class="pre">allocateInstance()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4I0EN10executorch7runtime15MemoryAllocator12allocateListEP1T6size_t6size_t"><code class="docutils literal notranslate"><span class="pre">allocateList()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime15MemoryAllocator17kDefaultAlignmentE"><code class="docutils literal notranslate"><span class="pre">kDefaultAlignment</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime21HierarchicalAllocatorE"><code class="docutils literal notranslate"><span class="pre">executorch::runtime::HierarchicalAllocator</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE"><code class="docutils literal notranslate"><span class="pre">HierarchicalAllocator()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator"><code class="docutils literal notranslate"><span class="pre">HierarchicalAllocator()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime13MemoryManagerE"><code class="docutils literal notranslate"><span class="pre">executorch::runtime::MemoryManager</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator"><code class="docutils literal notranslate"><span class="pre">MemoryManager()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator"><code class="docutils literal notranslate"><span class="pre">MemoryManager()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime13MemoryManager16method_allocatorEv"><code class="docutils literal notranslate"><span class="pre">method_allocator()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime13MemoryManager14planned_memoryEv"><code class="docutils literal notranslate"><span class="pre">planned_memory()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime13MemoryManager14temp_allocatorEv"><code class="docutils literal notranslate"><span class="pre">temp_allocator()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#values">Values</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime6EValueE"><code class="docutils literal notranslate"><span class="pre">executorch::runtime::EValue</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime6EValue6EValueEN10executorch4aten6ScalarE"><code class="docutils literal notranslate"><span class="pre">EValue()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4I0ENK10executorch7runtime6EValue10toOptionalENSt8optionalI1TEEv"><code class="docutils literal notranslate"><span class="pre">toOptional()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime6EValue7PayloadE"><code class="docutils literal notranslate"><span class="pre">executorch::runtime::EValue::Payload</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime6EValue7Payload24TriviallyCopyablePayloadE"><code class="docutils literal notranslate"><span class="pre">executorch::runtime::EValue::Payload::TriviallyCopyablePayload</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime7etensor6TensorE"><code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::Tensor</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime7etensor6Tensor9SizesTypeE"><code class="docutils literal notranslate"><span class="pre">SizesType</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime7etensor6Tensor12DimOrderTypeE"><code class="docutils literal notranslate"><span class="pre">DimOrderType</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4N10executorch7runtime7etensor6Tensor11StridesTypeE"><code class="docutils literal notranslate"><span class="pre">StridesType</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor19unsafeGetTensorImplEv"><code class="docutils literal notranslate"><span class="pre">unsafeGetTensorImpl()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor6nbytesEv"><code class="docutils literal notranslate"><span class="pre">nbytes()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor4sizeE7ssize_t"><code class="docutils literal notranslate"><span class="pre">size()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor3dimEv"><code class="docutils literal notranslate"><span class="pre">dim()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor5numelEv"><code class="docutils literal notranslate"><span class="pre">numel()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor11scalar_typeEv"><code class="docutils literal notranslate"><span class="pre">scalar_type()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor12element_sizeEv"><code class="docutils literal notranslate"><span class="pre">element_size()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor5sizesEv"><code class="docutils literal notranslate"><span class="pre">sizes()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor9dim_orderEv"><code class="docutils literal notranslate"><span class="pre">dim_order()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor7stridesEv"><code class="docutils literal notranslate"><span class="pre">strides()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor14shape_dynamismEv"><code class="docutils literal notranslate"><span class="pre">shape_dynamism()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4I0ENK10executorch7runtime7etensor6Tensor14const_data_ptrEPK1Tv"><code class="docutils literal notranslate"><span class="pre">const_data_ptr()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor14const_data_ptrEv"><code class="docutils literal notranslate"><span class="pre">const_data_ptr()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4I0ENK10executorch7runtime7etensor6Tensor16mutable_data_ptrEP1Tv"><code class="docutils literal notranslate"><span class="pre">mutable_data_ptr()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#_CPPv4NK10executorch7runtime7etensor6Tensor16mutable_data_ptrEv"><code class="docutils literal notranslate"><span class="pre">mutable_data_ptr()</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+    
+       <div class="sidebar-secondary-item">
+
+  
+  <div class="tocsection editthispage">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/executorch-runtime-api-reference.rst">
+      <i class="fa-solid fa-pencil"></i>
+      
+      
+        
+          Edit on GitHub
+        
+      
+    </a>
+  </div>
+</div>
+    
+       <div class="sidebar-secondary-item">
+    <div class="tocsection sourcelink">
+      <a href="_sources/executorch-runtime-api-reference.rst.txt">
+        <i class="fa-solid fa-file-lines"></i> Show Source
+      </a>
+    </div>
+</div>
+    
+
+
+
+
+</div>
+</div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  
+
+<div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+  <div class="container">
+    <div class="row">
+      <div class="col-md-4">
+        <h2>Docs</h2>
+        <p>Access comprehensive developer documentation for PyTorch</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/docs/stable/index.html">View Docs</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Tutorials</h2>
+        <p>Get in-depth tutorials for beginners and advanced developers</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/tutorials">View Tutorials</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Resources</h2>
+        <p>Find development resources and get your questions answered</p>
+        <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<footer class="site-footer">
+
+  <div class="container footer-container">
+
+    <div class="newsletter" id="newsletter">
+
+      <p class="newsletter__title is-style-max-width-800"><strong>Stay in touch</strong> for updates, event info, and
+        the latest news</p>
+
+
+      <script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+      <script>
+        hbspt.forms.create({
+          region: "na1",
+          portalId: "8112310",
+          formId: "2fb2231c-000b-4ec5-88a0-1ab242549c9e"
+        });
+      </script>
+
+
+      <p class="newsletter__privacy">By submitting this form, I consent to receive marketing emails from the LF and its
+        projects regarding their events, training, research, developments, and related announcements. I understand that
+        I can unsubscribe at any time using the links in the footers of the emails I receive. <a
+          href="https://www.linuxfoundation.org/privacy/">Privacy Policy</a>.</p>
+
+    </div>
+
+    <div class="lf-grid">
+      <ul class="social-links">
+        <li><a href="https://www.facebook.com/pytorch" target="_blank" title="PyTorch on Facebook">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-0.51 -0.26 26.45 26.45" aria-label="Facebook">
+              <path fill="currentColor"
+                d="M25.497 13.075c0-2.45-.698-4.848-2.011-6.911a12.765 12.765 0 0 0-5.398-4.73A12.671 12.671 0 0 0 11.008.38a12.705 12.705 0 0 0-6.529 2.95A12.827 12.827 0 0 0 .563 9.358a12.896 12.896 0 0 0-.07 7.201 12.831 12.831 0 0 0 3.801 6.103 12.709 12.709 0 0 0 6.471 3.078v-8.957H7.53v-3.708h3.235v-2.824c0-3.213 1.903-4.988 4.813-4.988.956.014 1.909.097 2.852.25V8.67h-1.607a1.83 1.83 0 0 0-1.518.497 1.854 1.854 0 0 0-.561 1.505v2.404h3.535l-.563 3.708h-2.97v8.957a12.725 12.725 0 0 0 7.697-4.337 12.87 12.87 0 0 0 3.054-8.328z" />
+            </svg>
+          </a></li>
+        <li><a href="https://twitter.com/pytorch" target="_blank" title="PyTorch on X">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 300 300" aria-label="X">
+              <path fill="currentColor"
+                d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.youtube.com/pytorch" target="_blank" title="PyTorch on YouTube">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0.21 0.27 34.45 25.07" aria-label="YouTube">
+              <path fill="currentColor"
+                d="M33.729 6.084s-.327-2.33-1.317-3.356a4.691 4.691 0 0 0-3.32-1.432c-4.634-.34-11.589-.34-11.589-.34h-.014s-6.954 0-11.59.342a4.692 4.692 0 0 0-3.32 1.432c-.993 1.025-1.315 3.354-1.315 3.354a52.189 52.189 0 0 0-.331 5.473v2.566c.014 1.829.125 3.656.331 5.472 0 0 .322 2.33 1.316 3.36 1.26 1.345 2.916 1.3 3.653 1.445 2.65.26 11.263.34 11.263.34s6.96-.01 11.597-.353a4.691 4.691 0 0 0 3.32-1.432c.993-1.026 1.316-3.356 1.316-3.356.206-1.817.316-3.644.33-5.473v-2.57a52.26 52.26 0 0 0-.33-5.472zM14.076 17.232V7.729l8.951 4.768-8.95 4.735z" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.linkedin.com/company/pytorch" target="_blank" title="PyTorch on LinkedIn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-10.23 -10.23 531.96 531.96" aria-label="LinkedIn">
+              <rect width="512" height="512" rx="0" fill="currentColor" />
+              <circle fill="#000" cx="142" cy="138" r="37" />
+              <path stroke="#000" stroke-width="66" d="M244 194v198M142 194v198" />
+              <path fill="#000"
+                d="M276 282c0-20 13-40 36-40 24 0 33 18 33 45v105h66V279c0-61-32-89-76-89-34 0-51 19-59 32" />
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.slack.com" target="_blank" title="PyTorch Slack">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.16 -0.03 21.19 21.19" aria-label="Slack">
+              <path fill="currentColor"
+                d="M4.896 13.27a2.147 2.147 0 0 1-2.141 2.142A2.147 2.147 0 0 1 .613 13.27c0-1.178.963-2.141 2.142-2.141h2.141v2.141zm1.08 0c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.363a2.147 2.147 0 0 1-2.142 2.141 2.147 2.147 0 0 1-2.141-2.142V13.27zm2.141-8.6a2.147 2.147 0 0 1-2.141-2.14c0-1.18.962-2.142 2.141-2.142s2.142.963 2.142 2.141v2.142H8.117zm0 1.08c1.179 0 2.141.962 2.141 2.141a2.147 2.147 0 0 1-2.141 2.142H2.755A2.147 2.147 0 0 1 .613 7.89c0-1.179.963-2.141 2.142-2.141h5.362zm8.599 2.141c0-1.179.963-2.141 2.141-2.141 1.179 0 2.143.962 2.143 2.14a2.147 2.147 0 0 1-2.142 2.142h-2.141V7.89zm-1.08 0a2.147 2.147 0 0 1-2.141 2.142 2.147 2.147 0 0 1-2.141-2.142V2.53c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.362zm-2.141 8.6c1.179 0 2.142.962 2.142 2.14a2.147 2.147 0 0 1-2.142 2.142 2.147 2.147 0 0 1-2.141-2.141V16.49h2.141zm0-1.08a2.147 2.147 0 0 1-2.141-2.141c0-1.179.962-2.142 2.141-2.142h5.362c1.179 0 2.142.963 2.142 2.142a2.147 2.147 0 0 1-2.142 2.142h-5.362z">
+              </path>
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.org/wechat" title="PyTorch on WeChat">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.14 -0.17 38.02 33.02" aria-label="WeChat">
+              <path fill="currentColor"
+                d="M26.289 10.976a12.972 12.972 0 0 0-8.742 3.53 10.386 10.386 0 0 0-3.224 8.795c-1.326-.164-2.535-.345-3.75-.448a2.332 2.332 0 0 0-1.273.216c-1.18.666-2.311 1.418-3.652 2.255.246-1.112.405-2.087.687-3.024a1.15 1.15 0 0 0-.523-1.52C1.737 17.902.02 13.601 1.307 9.165c1.189-4.1 4.11-6.587 8.077-7.884A13.54 13.54 0 0 1 24.18 5.617a10.135 10.135 0 0 1 2.109 5.359zM10.668 9.594a1.564 1.564 0 0 0-2.095-1.472 1.52 1.52 0 0 0-.895 1.964 1.502 1.502 0 0 0 1.391.966 1.545 1.545 0 0 0 1.598-1.46v.002zm8.15-1.566a1.567 1.567 0 0 0-1.528 1.543 1.528 1.528 0 0 0 1.571 1.492 1.52 1.52 0 0 0 1.375-2.117 1.518 1.518 0 0 0-1.415-.919l-.003.001z">
+              </path>
+              <path fill="currentColor"
+                d="M33.914 32.137c-1.075-.478-2.062-1.196-3.11-1.306-1.049-.11-2.145.494-3.24.605a10.821 10.821 0 0 1-8.781-2.864c-4.682-4.33-4.013-10.97 1.403-14.518 4.811-3.154 11.874-2.102 15.268 2.273a8.671 8.671 0 0 1-1.002 12.095c-1.046.929-1.422 1.693-.751 2.917.102.257.174.525.213.798zM21.68 20.292a1.264 1.264 0 1 0 .01-2.528 1.264 1.264 0 0 0-.01 2.528zm7.887-2.526a1.266 1.266 0 0 0-1.256 1.21 1.247 1.247 0 1 0 1.256-1.21z">
+              </path>
+            </svg>
+          </a></li>
+      </ul>
+    </div>
+    
+    <div class="privacy-policy">
+      <div class="copyright">
+      
+        <p>
+          &copy; PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has registered
+          trademarks and uses trademarks. For more information, including terms of use, privacy policy, and trademark
+          usage, please see our <a href="https://www.linuxfoundation.org/legal/policies">Policies</a> page. <a
+            href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a>. <a
+            href="http://www.linuxfoundation.org/privacy">Privacy Policy</a>.
+        </p>
+        
+      </div>
+    </div>
+
+
+  </div>
+</footer>
+
+<div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/img/pytorch-x.svg">
+  </div>
+</div>
+  
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2024, ExecuTorch.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  <script type="application/ld+json">
+    {
+       "@context": "https://schema.org",
+       "@type": "Article",
+       "name": "Runtime API Reference",
+       "headline": "Runtime API Reference",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
+       "url": "/executorch-runtime-api-reference.html",
+       "articleBody": "Runtime API Reference# The ExecuTorch C++ API provides an on-device execution framework for exported PyTorch models. For a tutorial style introduction to the runtime API, check out the using executorch with cpp tutorial and its simplified version. For detailed information on how APIs evolve and the deprecation process, please refer to the ExecuTorch API Life Cycle and Deprecation Policy. Model Loading and Execution# Warning doxygenclass: Cannot find class \u201cexecutorch::runtime::Program\u201d in doxygen xml output for project \u201cExecuTorch\u201d from directory: ../build/xml/ Warning doxygenclass: Cannot find class \u201cexecutorch::runtime::Method\u201d in doxygen xml output for project \u201cExecuTorch\u201d from directory: ../build/xml/ Warning doxygenclass: Cannot find class \u201cexecutorch::runtime::MethodMeta\u201d in doxygen xml output for project \u201cExecuTorch\u201d from directory: ../build/xml/ class DataLoader# Loads from a data source. See //executorch/extension/data_loader for common implementations. Public Functions virtual ET_NODISCARD Result\u003c FreeableBuffer \u003e load (size_t offset, size_t size, const SegmentInfo \u0026segment_info) const =0 Loads data from the underlying data source. NOTE: This must be thread-safe. If this call modifies common state, the implementation must do its own locking. Parameters: offset \u2013 The byte offset in the data source to start loading from. size \u2013 The number of bytes to load. segment_info \u2013 Information about the segment being loaded. Returns: a FreeableBuffer that owns the loaded data. inline virtual ET_NODISCARD Error load_into (size_t offset, size_t size, const SegmentInfo \u0026segment_info, void *buffer) const Loads data from the underlying data source into the provided buffer. NOTE: This must be thread-safe. If this call modifies common state, the implementation must do its own locking. Parameters: offset \u2013 The byte offset in the data source to start loading from. size \u2013 The number of bytes to load. segment_info \u2013 Information about the segment being loaded. buffer \u2013 The buffer to load data into. Must point to at least size bytes of memory. Returns: an Error indicating if the load was successful. virtual ET_NODISCARD Result\u003c size_t \u003e size () const =0 Returns the length of the underlying data source, typically the file size. struct SegmentInfo# Describes the content of the segment. Public Types enum class Type# Represents the purpose of the segment. Values: enumerator Program# Data for the actual program. enumerator Constant# Holds constant tensor data. enumerator Backend# Data used for initializing a backend. enumerator Mutable# Data used for initializing mutable tensors. enumerator External# Data used for initializing external tensors. Public Members Type segment_type# Type of the segment. size_t segment_index# Index of the segment within the segment list. Undefined for program segments. const char *descriptor# An optional, null-terminated string describing the segment. For Backend segments, this is the backend ID. Null for other segment types. class MemoryAllocator# A class that does simple allocation based on a size and returns the pointer to the memory address. It bookmarks a buffer with certain size. The allocation is simply checking space and growing the cur_ pointer with each allocation request. Simple example: // User allocates a 100 byte long memory in the heap. uint8_t* memory_pool = malloc(100 * sizeof(uint8_t)); MemoryAllocator allocator(100, memory_pool) // Pass allocator object in the Executor Underneath the hood, ExecuTorch will call allocator.allocate() to keep iterating cur_ pointer Public Functions inline MemoryAllocator(uint32_t size, uint8_t *base_address)# Constructs a new memory allocator of a given size, starting at the provided base_address. Parameters: size \u2013 [in] The size in bytes of the buffer at base_address. base_address \u2013 [in] The buffer to allocate from. Does not take ownership of this buffer, so it must be valid for the lifetime of of the MemoryAllocator. inline virtual void *allocate(size_t size, size_t alignment = kDefaultAlignment)# Allocates size bytes of memory. Parameters: size \u2013 [in] Number of bytes to allocate. alignment \u2013 [in] Minimum alignment for the returned pointer. Must be a power of 2. Return values: nullptr \u2013 Not enough memory, or alignment was not a power of 2. Returns: Aligned pointer to the allocated memory on success. template\u003ctypename T\u003einline T *allocateInstance(size_t alignment = alignof(T))# Allocates a buffer large enough for an instance of type T. Note that the memory will not be initialized. Example: auto p = memory_allocator-\u003eallocateInstance\u003cMyType\u003e(); Parameters: alignment \u2013 [in] Minimum alignment for the returned pointer. Must be a power of 2. Defaults to the natural alignment of T. Return values: nullptr \u2013 Not enough memory, or alignment was not a power of 2. Returns: Aligned pointer to the allocated memory on success. template\u003ctypename T\u003einline T *allocateList(size_t size, size_t alignment = alignof(T))# Allocates size number of chunks of type T, where each chunk is of size equal to sizeof(T) bytes. Parameters: size \u2013 [in] Number of memory chunks to allocate. alignment \u2013 [in] Minimum alignment for the returned pointer. Must be a power of 2. Defaults to the natural alignment of T. Return values: nullptr \u2013 Not enough memory, or alignment was not a power of 2. Returns: Aligned pointer to the allocated memory on success. Public Static Attributes static constexpr size_t kDefaultAlignment = alignof(void*)# Default alignment of memory returned by this class. Ensures that pointer fields of structs will be aligned. Larger types like long double may not be, however, depending on the toolchain and architecture. class HierarchicalAllocator# A group of buffers that can be used to represent a device\u2019s memory hierarchy. Public Functions inline explicit HierarchicalAllocator(Span\u003cSpan\u003cuint8_t\u003e\u003e buffers)# Constructs a new hierarchical allocator with the given array of buffers. Memory IDs are based on the index into buffers: buffers[N] will have a memory ID of N. buffers.size() must be \u003e= MethodMeta::num_non_const_buffers(). buffers[N].size() must be \u003e= MethodMeta::non_const_buffer_size(N). inline ET_DEPRECATED HierarchicalAllocator(uint32_t n_allocators, MemoryAllocator *allocators)# DEPRECATED: Use spans instead. inline ET_NODISCARD Result\u003c void * \u003e get_offset_address (uint32_t memory_id, size_t offset_bytes, size_t size_bytes) Returns the address at the byte offset offset_bytes from the given buffer\u2019s base address, which points to at least size_bytes of memory. Parameters: memory_id \u2013 [in] The ID of the buffer in the hierarchy. offset_bytes \u2013 [in] The offset in bytes into the specified buffer. size_bytes \u2013 [in] The amount of memory that should be available at the offset. Returns: On success, the address of the requested byte offset into the specified buffer. On failure, a non-Ok Error. class MemoryManager# A container class for allocators used during Method load and execution. This class consolidates all dynamic memory needs for Method load and execution. This can allow for heap-based as well as heap-less execution (relevant to some embedded scenarios), and overall provides more control over memory use. This class, however, cannot ensure all allocation is accounted for since kernel and backend implementations are free to use a separate way to allocate memory (e.g., for things like scratch space). But we do suggest that backends and kernels use these provided allocators whenever possible. Public Functions inline explicit MemoryManager(MemoryAllocator *method_allocator, HierarchicalAllocator *planned_memory = nullptr, MemoryAllocator *temp_allocator = nullptr)# Constructs a new MemoryManager. Parameters: method_allocator \u2013 [in] The allocator to use when loading a Method and allocating its internal structures. Must outlive the Method that uses it. planned_memory \u2013 [in] The memory-planned buffers to use for mutable tensor data when executing a Method. Must outlive the Method that uses it. May be nullptr if the Method does not use any memory-planned tensor data. The sizes of the buffers in this HierarchicalAllocator must agree with the corresponding MethodMeta::num_memory_planned_buffers() and MethodMeta::memory_planned_buffer_size(N) values, which are embedded in the Program. temp_allocator \u2013 [in] The allocator to use when allocating temporary data during kernel or delegate execution. Must outlive the Method that uses it. May be nullptr if the Method does not use kernels or delegates that allocate temporary data. This allocator will be reset after every kernel or delegate call during execution. inline ET_DEPRECATED MemoryManager(MemoryAllocator *constant_allocator, HierarchicalAllocator *non_constant_allocator, MemoryAllocator *runtime_allocator, MemoryAllocator *temporary_allocator)# DEPRECATED: Use the constructor without constant_allocator instead. TODO(T162089316): Remove this once all users migrate to the new ctor. inline MemoryAllocator *method_allocator() const# Returns the allocator that the runtime will use to allocate internal structures while loading a Method. Must not be used after its associated Method has been loaded. inline HierarchicalAllocator *planned_memory() const# Returns the memory-planned buffers to use for mutable tensor data. inline MemoryAllocator *temp_allocator() const# Returns the allocator to use for allocating temporary data during kernel or delegate execution. This allocator will be reset after every kernel or delegate call during execution. Values# struct EValue# Public Functions inline EValue(executorch::aten::Scalar s)# Construct an EValue using the implicit value of a Scalar. template\u003ctypename T\u003einline std::optional\u003cT\u003e toOptional() const# Converts the EValue to an optional object that can represent both T and an uninitialized state. union Payload# union TriviallyCopyablePayload# class Tensor# A minimal Tensor type whose API is a source compatible subset of at::Tensor. NOTE: Instances of this class do not own the TensorImpl given to it, which means that the caller must guarantee that the TensorImpl lives longer than any Tensor instances that point to it. See the documention on TensorImpl for details about the return/parameter types used here and how they relate to at::Tensor. Public Types using SizesType = TensorImpl::SizesType# The type used for elements of sizes(). using DimOrderType = TensorImpl::DimOrderType# The type used for elements of dim_order(). using StridesType = TensorImpl::StridesType# The type used for elements of strides(). Public Functions inline TensorImpl *unsafeGetTensorImpl() const# Returns a pointer to the underlying TensorImpl. NOTE: Clients should be wary of operating on the TensorImpl directly instead of the Tensor. It is easy to break things. inline size_t nbytes() const# Returns the size of the tensor in bytes. NOTE: Only the alive space is returned not the total capacity of the underlying data blob. inline ssize_t size(ssize_t dim) const# Returns the size of the tensor at the given dimension. NOTE: that size() intentionally does not return SizeType even though it returns an element of an array of SizeType. This is to help make calls of this method more compatible with at::Tensor, and more consistent with the rest of the methods on this class and in ETensor. inline ssize_t dim() const# Returns the tensor\u2019s number of dimensions. inline ssize_t numel() const# Returns the number of elements in the tensor. inline ScalarType scalar_type() const# Returns the type of the elements in the tensor (int32, float, bool, etc). inline ssize_t element_size() const# Returns the size in bytes of one element of the tensor. inline const ArrayRef\u003cSizesType\u003e sizes() const# Returns the sizes of the tensor at each dimension. inline const ArrayRef\u003cDimOrderType\u003e dim_order() const# Returns the order the dimensions are laid out in memory. inline const ArrayRef\u003cStridesType\u003e strides() const# Returns the strides of the tensor at each dimension. inline TensorShapeDynamism shape_dynamism() const# Returns the mutability of the shape of the tensor. template\u003ctypename T\u003einline const T *const_data_ptr() const# Returns a pointer of type T to the constant underlying data blob. inline const void *const_data_ptr() const# Returns a pointer to the constant underlying data blob. template\u003ctypename T\u003einline T *mutable_data_ptr() const# Returns a pointer of type T to the mutable underlying data blob. inline void *mutable_data_ptr() const# Returns a pointer to the mutable underlying data blob. template\u003ctypename T\u003e inline ET_DEPRECATED T * data_ptr () const DEPRECATED: Use const_data_ptr or mutable_data_ptr instead. inline ET_DEPRECATED void * data_ptr () const DEPRECATED: Use const_data_ptr or mutable_data_ptr instead. inline ET_DEPRECATED void set_data (void *ptr) const DEPRECATED: Changes the data_ptr the tensor aliases. Does not free the previously pointed to data, does not assume ownership semantics of the new ptr. This api does not exist in at::Tensor so kernel developers should avoid it.",
+       "author": {
+         "@type": "Organization",
+         "name": "PyTorch Contributors",
+         "url": "https://pytorch.org"
+       },
+       "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
+       "mainEntityOfPage": {
+         "@type": "WebPage",
+         "@id": "/executorch-runtime-api-reference.html"
+       },
+       "datePublished": "2023-01-01T00:00:00Z",
+       "dateModified": "2023-01-01T00:00:00Z"
+     }
+ </script>
+  <script>
+    // Tutorials Call to action event tracking
+    $("[data-behavior='call-to-action-event']").on('click', function () {
+      fbq('trackCustom', "Download", {
+        tutorialTitle: $('h1:first').text(),
+        downloadLink: this.href,
+        tutorialLink: window.location.href,
+        downloadTitle: $(this).attr("data-response")
+      });
+      if (typeof gtag === 'function') {
+        gtag('event', 'click', {
+          'event_category': $(this).attr("data-response"),
+          'event_label': $("h1").first().text(),
+          'tutorial_link': window.location.href
+        });
+      }
+    });
+  </script>
+  
+  </body>
+</html>

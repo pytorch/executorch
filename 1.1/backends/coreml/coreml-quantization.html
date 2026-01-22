@@ -1,0 +1,1680 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+    <title>Quantization &#8212; ExecuTorch 1.1 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../../_static/documentation_options.js?v=56dcb7b8"></script>
+    <script src="../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/coreml/coreml-quantization';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '1.1';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
+        </script>
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/backends/coreml/coreml-quantization.html" />
+    <link rel="icon" href="../../_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Op support" href="coreml-op-support.html" />
+    <link rel="prev" title="Partitioner API" href="coreml-partitioner.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+<script>
+  if (window.location.hostname === 'docs.pytorch.org' || window.location.hostname === 'docs-preview.pytorch.org') {
+    const script = document.createElement('script');
+    script.src = 'https://cmp.osano.com/16A0DbT9yDNIaQkvZ/31b1b91a-e0b6-47ea-bde2-7f2bd13dbe5c/osano.js?variant=one';
+    document.head.appendChild(script);
+  }
+</script>
+<script>
+  // Cookie banner for non-LF projects
+  document.addEventListener('DOMContentLoaded', function () {
+    // Hide cookie banner on local environments and LF owned docs
+    if (window.location.hostname === 'localhost' ||
+      window.location.hostname === '0.0.0.0' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'docs.pytorch.org' ||
+      window.location.hostname === 'docs-preview.pytorch.org' ||
+      window.location.hostname.startsWith('192.168.')) {
+      const banner = document.querySelector('.cookie-banner-wrapper');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+  });
+</script>
+<!-- Conditional CSS for header and footer height adjustment -->
+
+
+<link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="../../_static/js/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+<meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="../../_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
+<meta name="pytorch_project" content="">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS" height="0" width="0"
+    style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager -->
+<script>(function (w, d, s, l, i) {
+    w[l] = w[l] || []; w[l].push({
+      'gtm.start':
+        new Date().getTime(), event: 'gtm.js'
+    }); var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+        'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+    j.onload = function () {
+      window.dispatchEvent(new Event('gtm_loaded'));
+      console.log('GTM loaded successfully');
+    };
+  })(window, document, 'script', 'dataLayer', 'GTM-T8XT4PS');
+</script>
+<!-- End Google Tag Manager -->
+<!-- Facebook Pixel Code -->
+<script>
+  !function (f, b, e, v, n, t, s) {
+    if (f.fbq) return; n = f.fbq = function () {
+      n.callMethod ?
+        n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+    };
+    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+    n.queue = []; t = b.createElement(e); t.async = !0;
+    t.src = v; s = b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t, s)
+  }(window, document, 'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '243028289693773');
+  fbq('track', 'PageView');
+</script>
+<script>
+  document.documentElement.setAttribute('data-version', '1.1');
+</script>
+<noscript>
+  <img height="1" width="1" src="https://www.facebook.com/tr?id=243028289693773&ev=PageView&noscript=1" />
+</noscript>
+<script>
+  function gtag() {
+    window.dataLayer.push(arguments);
+  }
+</script>
+<!-- End Facebook Pixel Code -->
+<!-- Repository configuration for tutorials -->
+
+<!-- Script to Fix scrolling -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Fix anchor scrolling
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const targetId = this.getAttribute('href').substring(1);
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          const headerHeight =
+            (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
+            (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
+
+          const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
+          window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+          });
+
+          // Update URL hash without scrolling
+          history.pushState(null, null, '#' + targetId);
+        }
+      });
+    });
+  });
+</script>
+
+<script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+  </head>
+
+<body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
+  
+    <div class="container-fluid header-holder tutorials-header" id="header-holder">
+   <div class="header-container-wrapper">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                <span>Learn</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started/locally">
+                  <span class=dropdown-title>Get Started</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/webinars/">
+                  <span class="dropdown-title">Webinars</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Community</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://landscape.pytorch.org/" target="_blank">
+                  <span class="dropdown-title">Landscape</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/join-ecosystem">
+                  <span class="dropdown-title">Join the Ecosystem</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-hub/">
+                  <span class="dropdown-title">Community Hub</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/">
+                  <span class="dropdown-title">Forums</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contributor-awards/">
+                  <span class="dropdown-title">Contributor Awards</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-events/">
+                  <span class="dropdown-title">Community Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/programs/ambassadors/">
+                  <span class="dropdown-title">PyTorch Ambassadors</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Projects</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/pytorch/">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/vllm/">
+                  <span class="dropdown-title">vLLM</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/deepspeed/">
+                  <span class="dropdown-title">DeepSpeed</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/host-your-project/">
+                  <span class="dropdown-title">Host Your Project</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/ray/">
+                  <span class="dropdown-title">RAY</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span> Docs</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/domains">
+                  <span class="dropdown-title">Domains</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Blogs & News</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">Blog</span>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/announcements">
+                  <span class="dropdown-title">Announcements</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/case-studies/">
+                  <span class="dropdown-title">Case Studies</span>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                </a>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>About</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/members">
+                  <span class="dropdown-title">Members</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact">
+                  <span class="dropdown-title">Contact</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/wp-content/uploads/2025/09/pytorch_brand_guide_091925a.pdf">
+                  <span class="dropdown-title">Brand Guidelines</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown main-menu-button">
+              <a href="https://pytorch.org/join" data-cta="join">
+                JOIN
+              </a>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu">
+        <i class="fa-solid fa-ellipsis"></i>
+      </a>
+    </div>
+  </div>
+ </div>
+
+ <!-- Begin Mobile Menu -->
+
+<div class="mobile-main-menu">
+  <div class="container-fluid">
+    <div class="header-container-wrapper">
+      <div class="mobile-main-menu-header-container">
+        <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu">
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="mobile-main-menu-links-container">
+    <div class="main-menu">
+      <ul>
+         <li class="resources-mobile-menu-title">
+           <a>Learn</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/get-started/locally">Get Started</a>
+           </li>
+           <li>
+             <a href="https://docs.pytorch.org/tutorials">Tutorials</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/webinars/">Webinars</a>
+          </li>
+        </ul>
+         <li class="resources-mobile-menu-title">
+           <a>Community</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://landscape.pytorch.org/">Landscape</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/join-ecosystem">Join the Ecosystem</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/community-hub/">Community Hub</a>
+           </li>
+           <li>
+             <a href="https://discuss.pytorch.org/">Forums</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/resources">Developer Resources</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/contributor-awards/">Contributor Awards</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/community-events/">Community Events</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/programs/ambassadors/">PyTorch Ambassadors</a>
+          </li>
+       </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Projects</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/projects/pytorch/">PyTorch</a>
+           </li>
+
+           <li>
+             <a href="https://pytorch.org/projects/vllm/">vLLM</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/projects/deepspeed/">DeepSpeed</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/projects/host-your-project/">Host Your Project</a>
+           </li>
+         </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Docs</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://docs.pytorch.org/docs/stable/index.html">PyTorch</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/domains">Domains</a>
+          </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>Blog & News</a>
+        </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/announcements">Announcements</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/case-studies/">Case Studies</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/events">Events</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/newsletter">Newsletter</a>
+           </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>About</a>
+        </li>
+
+        <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/members">Members</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/governing-board">Governing Board</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+         </li>
+         <li>
+             <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/staff">Staff</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/contact">Contact</a>
+          </li>
+        </ul>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- End Mobile Menu -->
+  
+  
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class=" navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch 1.1 documentation - Home"/>
+    <script>document.write(`<img src="../../_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch 1.1 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+    
+      <div class="navbar-item">
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-2"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-2"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-2"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-2">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script></div>
+    
+  </div>
+  
+  <div class=" navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../../backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../api-section.html">
+    API
+  </a>
+</li>
+
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="../../support-section.html">
+    Support
+  </a>
+</li>
+
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+      
+        <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../../backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../api-section.html">
+    API
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../support-section.html">
+    Support
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Backend Overview</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../cuda/cuda-overview.html">CUDA Backend</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="coreml-overview.html">Core ML Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="coreml-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="coreml-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="coreml-op-support.html">Op support</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-samsung-exynos.html">Samsung Exynos Backend (TBD)</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../../backends-section.html" class="nav-link">Backends</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="coreml-overview.html" class="nav-link">Core ML Backend</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Quantization</li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+</div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+  
+<div id="searchbox"></div>
+  <article class="bd-article" id="pytorch-article">
+    <!-- Hidden breadcrumb schema for SEO only -->
+    <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="../../backends-section.html">
+        <meta itemprop="name" content="Backends">
+        <meta itemprop="position" content="1">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="coreml-overview.html">
+        <meta itemprop="name" content="Core ML Backend">
+        <meta itemprop="position" content="2">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="Quantization">
+        <meta itemprop="position" content="3">
+      </div>
+    </div>
+
+    
+    
+
+    
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="quantization">
+<h1>Quantization<a class="headerlink" href="#quantization" title="Link to this heading">#</a></h1>
+<p>To quantize a PyTorch model for the Core ML backend, use the <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.  <code class="docutils literal notranslate"><span class="pre">Quantizers</span></code> are backend specific, which means the <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code> is configured to quantize models to leverage the quantized operators offered by the Core ML backend.</p>
+<section id="supported-quantization-schemes">
+<h2>Supported Quantization Schemes<a class="headerlink" href="#supported-quantization-schemes" title="Link to this heading">#</a></h2>
+<p>The CoreML delegate supports the following quantization schemes:</p>
+<ul class="simple">
+<li><p>8-bit static and weight-only quantization via the PT2E flow; dynamic quantization is not supported by CoreML.</p></li>
+<li><p>4-bit weight-only affine quantization (per-group or per-channel) via the quantize_ flow</p></li>
+<li><p>1-8 bit weight-only LUT quantization (per grouped-channel) via the quantize_ flow</p></li>
+</ul>
+</section>
+<section id="bit-quantization-using-the-pt2e-flow">
+<h2>8-bit Quantization using the PT2E Flow<a class="headerlink" href="#bit-quantization-using-the-pt2e-flow" title="Link to this heading">#</a></h2>
+<p>Quantization with the Core ML backend requires exporting the model for iOS 17 or later.
+To perform 8-bit quantization with the PT2E flow, follow these steps:</p>
+<ol class="arabic simple">
+<li><p>Create a <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig"><code class="docutils literal notranslate"><span class="pre">coremltools.optimize.torch.quantization.LinearQuantizerConfig</span></code></a> and use it to create an instance of a <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export</span></code> to export a graph module that will be prepared for quantization.</p></li>
+<li><p>Call <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> to prepare the model for quantization.</p></li>
+<li><p>Run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.</p></li>
+<li><p>Call <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> to quantize the model.</p></li>
+<li><p>Export and lower the model using the standard flow.</p></li>
+</ol>
+<p>The output of <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> is a PyTorch model which can be exported and lowered using the normal flow. As it is a regular PyTorch model, it can also be used to evaluate the accuracy of the quantized model using standard PyTorch techniques.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">coremltools</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ct</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoreMLQuantizer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.partition</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoreMLPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.compiler</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoreMLBackend</span>
+
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
+
+<span class="c1"># Step 1: Define a LinearQuantizerConfig and create an instance of a CoreMLQuantizer</span>
+<span class="c1"># Note that &quot;linear&quot; here does not mean only linear layers are quantized, but that linear (aka affine) quantization</span>
+<span class="c1"># is being performed</span>
+<span class="n">static_8bit_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="p">(</span>
+    <span class="n">global_config</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">ModuleLinearQuantizerConfig</span><span class="p">(</span>
+        <span class="n">quantization_scheme</span><span class="o">=</span><span class="s2">&quot;symmetric&quot;</span><span class="p">,</span>
+        <span class="n">activation_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">quint8</span><span class="p">,</span>
+        <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">qint8</span><span class="p">,</span>
+        <span class="n">weight_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">static_8bit_config</span><span class="p">)</span>
+
+<span class="c1"># Step 2: Export the model for training</span>
+<span class="n">training_gm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+
+<span class="c1"># Step 3: Prepare the model for quantization</span>
+<span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">training_gm</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+
+<span class="c1"># Step 4: Calibrate the model on representative data</span>
+<span class="c1"># Replace with your own calibration data</span>
+<span class="k">for</span> <span class="n">calibration_sample</span> <span class="ow">in</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">)]:</span>
+    <span class="n">prepared_model</span><span class="p">(</span><span class="n">calibration_sample</span><span class="p">)</span>
+
+<span class="c1"># Step 5: Convert the calibrated model to a quantized model</span>
+<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span>
+
+<span class="c1"># Step 6: Export the quantized model to Core ML</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span>
+        <span class="n">CoreMLPartitioner</span><span class="p">(</span>
+             <span class="c1"># iOS17 is required for the quantized ops in this example</span>
+            <span class="n">compile_specs</span><span class="o">=</span><span class="n">CoreMLBackend</span><span class="o">.</span><span class="n">generate_compile_specs</span><span class="p">(</span>
+                <span class="n">minimum_deployment_target</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">iOS17</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+    <span class="p">],</span>
+<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>The above does static quantization (activations and weights are quantized).</p>
+<p>You can see a full description of available quantization configs in the <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig">coremltools documentation</a>.  For example, the config below will perform weight-only quantization:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">weight_only_8bit_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="p">(</span>
+    <span class="n">global_config</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">ModuleLinearQuantizerConfig</span><span class="p">(</span>
+        <span class="n">quantization_scheme</span><span class="o">=</span><span class="s2">&quot;symmetric&quot;</span><span class="p">,</span>
+        <span class="n">activation_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">qint8</span><span class="p">,</span>
+        <span class="n">weight_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">weight_only_8bit_config</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code>, even for data-free weight-only quantization.</p>
+<p>See <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
+</section>
+<section id="llm-quantization-with-quantize">
+<h2>LLM quantization with quantize_<a class="headerlink" href="#llm-quantization-with-quantize" title="Link to this heading">#</a></h2>
+<p>The Core ML backend also supports quantizing models with the <a class="reference external" href="https://github.com/pytorch/ao">torchao</a> quantize_ API.  This is most commonly used for LLMs, requiring more advanced quantization.  Since quantize_ is not backend aware, it is important to use a config that is compatible with Core ML:</p>
+<ul class="simple">
+<li><p>Quantize embedding/linear layers with IntxWeightOnlyConfig (with weight_dtype torch.int4 or torch.int8, using PerGroup or PerAxis granularity).  Using 4-bit or PerGroup quantization requires exporting with minimum_deployment_target &gt;= ct.target.iOS18.  Using 8-bit quantization with per-axis granularity is supported on ct.target.IOS16+.  See <a class="reference internal" href="coreml-partitioner.html#coreml-compilespec"><span class="std std-ref">Core ML <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code></span></a> for more information on setting the deployment target.</p></li>
+<li><p>Quantize embedding/linear layers with CodebookWeightOnlyConfig (with dtype torch.uint1 through torch.uint8, using various block sizes).  Quantizing with CodebookWeightOnlyConfig requires exporting with minimum_deployment_target &gt;= ct.target.iOS18, see <a class="reference internal" href="coreml-partitioner.html#coreml-compilespec"><span class="std std-ref">Core ML <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code></span></a> for more information on setting the deployment target.</p></li>
+</ul>
+<p>Below is an example that quantizes embeddings to 8-bits per-axis and linear layers to 4-bits using group_size=32 with affine quantization:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.granularity</span><span class="w"> </span><span class="kn">import</span> <span class="n">PerGroup</span><span class="p">,</span> <span class="n">PerAxis</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.quant_api</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">IntxWeightOnlyConfig</span><span class="p">,</span>
+    <span class="n">quantize_</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Quantize embeddings with 8-bits, per channel</span>
+<span class="n">embedding_config</span> <span class="o">=</span> <span class="n">IntxWeightOnlyConfig</span><span class="p">(</span>
+    <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int8</span><span class="p">,</span>
+    <span class="n">granularity</span><span class="o">=</span><span class="n">PerAxis</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">quantize_</span><span class="p">(</span>
+    <span class="n">eager_model</span><span class="p">,</span>
+    <span class="n">embedding_config</span><span class="p">,</span>
+    <span class="k">lambda</span> <span class="n">m</span><span class="p">,</span> <span class="n">fqn</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">),</span>
+<span class="p">)</span>
+
+<span class="c1"># Quantize linear layers with 4-bits, per-group</span>
+<span class="n">linear_config</span> <span class="o">=</span> <span class="n">IntxWeightOnlyConfig</span><span class="p">(</span>
+    <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int4</span><span class="p">,</span>
+    <span class="n">granularity</span><span class="o">=</span><span class="n">PerGroup</span><span class="p">(</span><span class="mi">32</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">quantize_</span><span class="p">(</span>
+    <span class="n">eager_model</span><span class="p">,</span>
+    <span class="n">linear_config</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Below is another example that uses codebook quantization to quantize both embeddings and linear layers to 3-bits.
+In the coremltools documentation, this is called <a class="reference external" href="https://apple.github.io/coremltools/docs-guides/source/opt-palettization-overview.html">palettization</a>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.quant_api</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">quantize_</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.prototype.quantization.codebook_coreml</span><span class="w"> </span><span class="kn">import</span> <span class="n">CodebookWeightOnlyConfig</span>
+
+<span class="n">quant_config</span> <span class="o">=</span> <span class="n">CodebookWeightOnlyConfig</span><span class="p">(</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">uint3</span><span class="p">,</span>
+    <span class="c1"># There is one LUT per 16 rows</span>
+    <span class="n">block_size</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+<span class="p">)</span>
+
+<span class="n">quantize_</span><span class="p">(</span>
+    <span class="n">eager_model</span><span class="p">,</span>
+    <span class="n">quant_config</span><span class="p">,</span>
+    <span class="k">lambda</span> <span class="n">m</span><span class="p">,</span> <span class="n">fqn</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Both of the above examples will export and lower to Core ML with the to_edge_transform_and_lower API.</p>
+</section>
+</section>
+
+
+                </article>
+              
+  </article>
+  
+              
+              
+                <footer class="bd-footer-article">
+                  <div class="footer-article-items footer-article__inner">
+  
+    <div class="footer-article-item">
+<div class="feedback">
+  
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+
+  <div class="feedback-send">
+    <button class="feedback-btn"
+            onclick="openGitHubIssue()"
+            data-bs-title="Create a GitHub Issue"
+            data-bs-placement="bottom"
+            data-bs-toggle="tooltip"
+            data-gtm="feedback-btn-click">Send Feedback
+    </button>
+  </div>
+</div>
+
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="coreml-partitioner.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Partitioner API</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="coreml-op-support.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Op support</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+
+<div class="footer-info">
+  <p class="copyright">
+    
+  </p>
+
+  <p class="theme-version">
+    Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+  </p>
+</div>
+</div>
+  
+</div>
+                </footer>
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="coreml-partitioner.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Partitioner API</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="coreml-op-support.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Op support</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc">
+<div class="sidebar-secondary-items sidebar-secondary__inner">
+    
+       <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#supported-quantization-schemes">Supported Quantization Schemes</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#bit-quantization-using-the-pt2e-flow">8-bit Quantization using the PT2E Flow</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#llm-quantization-with-quantize">LLM quantization with quantize_</a></li>
+</ul>
+  </nav></div>
+    
+       <div class="sidebar-secondary-item">
+
+  
+  <div class="tocsection editthispage">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/coreml/coreml-quantization.md">
+      <i class="fa-solid fa-pencil"></i>
+      
+      
+        
+          Edit on GitHub
+        
+      
+    </a>
+  </div>
+</div>
+    
+       <div class="sidebar-secondary-item">
+    <div class="tocsection sourcelink">
+      <a href="../../_sources/backends/coreml/coreml-quantization.md.txt">
+        <i class="fa-solid fa-file-lines"></i> Show Source
+      </a>
+    </div>
+</div>
+    
+
+
+
+
+</div>
+</div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  
+
+<div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+  <div class="container">
+    <div class="row">
+      <div class="col-md-4">
+        <h2>Docs</h2>
+        <p>Access comprehensive developer documentation for PyTorch</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/docs/stable/index.html">View Docs</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Tutorials</h2>
+        <p>Get in-depth tutorials for beginners and advanced developers</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/tutorials">View Tutorials</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Resources</h2>
+        <p>Find development resources and get your questions answered</p>
+        <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<footer class="site-footer">
+
+  <div class="container footer-container">
+
+    <div class="newsletter" id="newsletter">
+
+      <p class="newsletter__title is-style-max-width-800"><strong>Stay in touch</strong> for updates, event info, and
+        the latest news</p>
+
+
+      <script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+      <script>
+        hbspt.forms.create({
+          region: "na1",
+          portalId: "8112310",
+          formId: "2fb2231c-000b-4ec5-88a0-1ab242549c9e"
+        });
+      </script>
+
+
+      <p class="newsletter__privacy">By submitting this form, I consent to receive marketing emails from the LF and its
+        projects regarding their events, training, research, developments, and related announcements. I understand that
+        I can unsubscribe at any time using the links in the footers of the emails I receive. <a
+          href="https://www.linuxfoundation.org/privacy/">Privacy Policy</a>.</p>
+
+    </div>
+
+    <div class="lf-grid">
+      <ul class="social-links">
+        <li><a href="https://www.facebook.com/pytorch" target="_blank" title="PyTorch on Facebook">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-0.51 -0.26 26.45 26.45" aria-label="Facebook">
+              <path fill="currentColor"
+                d="M25.497 13.075c0-2.45-.698-4.848-2.011-6.911a12.765 12.765 0 0 0-5.398-4.73A12.671 12.671 0 0 0 11.008.38a12.705 12.705 0 0 0-6.529 2.95A12.827 12.827 0 0 0 .563 9.358a12.896 12.896 0 0 0-.07 7.201 12.831 12.831 0 0 0 3.801 6.103 12.709 12.709 0 0 0 6.471 3.078v-8.957H7.53v-3.708h3.235v-2.824c0-3.213 1.903-4.988 4.813-4.988.956.014 1.909.097 2.852.25V8.67h-1.607a1.83 1.83 0 0 0-1.518.497 1.854 1.854 0 0 0-.561 1.505v2.404h3.535l-.563 3.708h-2.97v8.957a12.725 12.725 0 0 0 7.697-4.337 12.87 12.87 0 0 0 3.054-8.328z" />
+            </svg>
+          </a></li>
+        <li><a href="https://twitter.com/pytorch" target="_blank" title="PyTorch on X">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 300 300" aria-label="X">
+              <path fill="currentColor"
+                d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.youtube.com/pytorch" target="_blank" title="PyTorch on YouTube">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0.21 0.27 34.45 25.07" aria-label="YouTube">
+              <path fill="currentColor"
+                d="M33.729 6.084s-.327-2.33-1.317-3.356a4.691 4.691 0 0 0-3.32-1.432c-4.634-.34-11.589-.34-11.589-.34h-.014s-6.954 0-11.59.342a4.692 4.692 0 0 0-3.32 1.432c-.993 1.025-1.315 3.354-1.315 3.354a52.189 52.189 0 0 0-.331 5.473v2.566c.014 1.829.125 3.656.331 5.472 0 0 .322 2.33 1.316 3.36 1.26 1.345 2.916 1.3 3.653 1.445 2.65.26 11.263.34 11.263.34s6.96-.01 11.597-.353a4.691 4.691 0 0 0 3.32-1.432c.993-1.026 1.316-3.356 1.316-3.356.206-1.817.316-3.644.33-5.473v-2.57a52.26 52.26 0 0 0-.33-5.472zM14.076 17.232V7.729l8.951 4.768-8.95 4.735z" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.linkedin.com/company/pytorch" target="_blank" title="PyTorch on LinkedIn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-10.23 -10.23 531.96 531.96" aria-label="LinkedIn">
+              <rect width="512" height="512" rx="0" fill="currentColor" />
+              <circle fill="#000" cx="142" cy="138" r="37" />
+              <path stroke="#000" stroke-width="66" d="M244 194v198M142 194v198" />
+              <path fill="#000"
+                d="M276 282c0-20 13-40 36-40 24 0 33 18 33 45v105h66V279c0-61-32-89-76-89-34 0-51 19-59 32" />
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.slack.com" target="_blank" title="PyTorch Slack">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.16 -0.03 21.19 21.19" aria-label="Slack">
+              <path fill="currentColor"
+                d="M4.896 13.27a2.147 2.147 0 0 1-2.141 2.142A2.147 2.147 0 0 1 .613 13.27c0-1.178.963-2.141 2.142-2.141h2.141v2.141zm1.08 0c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.363a2.147 2.147 0 0 1-2.142 2.141 2.147 2.147 0 0 1-2.141-2.142V13.27zm2.141-8.6a2.147 2.147 0 0 1-2.141-2.14c0-1.18.962-2.142 2.141-2.142s2.142.963 2.142 2.141v2.142H8.117zm0 1.08c1.179 0 2.141.962 2.141 2.141a2.147 2.147 0 0 1-2.141 2.142H2.755A2.147 2.147 0 0 1 .613 7.89c0-1.179.963-2.141 2.142-2.141h5.362zm8.599 2.141c0-1.179.963-2.141 2.141-2.141 1.179 0 2.143.962 2.143 2.14a2.147 2.147 0 0 1-2.142 2.142h-2.141V7.89zm-1.08 0a2.147 2.147 0 0 1-2.141 2.142 2.147 2.147 0 0 1-2.141-2.142V2.53c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.362zm-2.141 8.6c1.179 0 2.142.962 2.142 2.14a2.147 2.147 0 0 1-2.142 2.142 2.147 2.147 0 0 1-2.141-2.141V16.49h2.141zm0-1.08a2.147 2.147 0 0 1-2.141-2.141c0-1.179.962-2.142 2.141-2.142h5.362c1.179 0 2.142.963 2.142 2.142a2.147 2.147 0 0 1-2.142 2.142h-5.362z">
+              </path>
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.org/wechat" title="PyTorch on WeChat">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.14 -0.17 38.02 33.02" aria-label="WeChat">
+              <path fill="currentColor"
+                d="M26.289 10.976a12.972 12.972 0 0 0-8.742 3.53 10.386 10.386 0 0 0-3.224 8.795c-1.326-.164-2.535-.345-3.75-.448a2.332 2.332 0 0 0-1.273.216c-1.18.666-2.311 1.418-3.652 2.255.246-1.112.405-2.087.687-3.024a1.15 1.15 0 0 0-.523-1.52C1.737 17.902.02 13.601 1.307 9.165c1.189-4.1 4.11-6.587 8.077-7.884A13.54 13.54 0 0 1 24.18 5.617a10.135 10.135 0 0 1 2.109 5.359zM10.668 9.594a1.564 1.564 0 0 0-2.095-1.472 1.52 1.52 0 0 0-.895 1.964 1.502 1.502 0 0 0 1.391.966 1.545 1.545 0 0 0 1.598-1.46v.002zm8.15-1.566a1.567 1.567 0 0 0-1.528 1.543 1.528 1.528 0 0 0 1.571 1.492 1.52 1.52 0 0 0 1.375-2.117 1.518 1.518 0 0 0-1.415-.919l-.003.001z">
+              </path>
+              <path fill="currentColor"
+                d="M33.914 32.137c-1.075-.478-2.062-1.196-3.11-1.306-1.049-.11-2.145.494-3.24.605a10.821 10.821 0 0 1-8.781-2.864c-4.682-4.33-4.013-10.97 1.403-14.518 4.811-3.154 11.874-2.102 15.268 2.273a8.671 8.671 0 0 1-1.002 12.095c-1.046.929-1.422 1.693-.751 2.917.102.257.174.525.213.798zM21.68 20.292a1.264 1.264 0 1 0 .01-2.528 1.264 1.264 0 0 0-.01 2.528zm7.887-2.526a1.266 1.266 0 0 0-1.256 1.21 1.247 1.247 0 1 0 1.256-1.21z">
+              </path>
+            </svg>
+          </a></li>
+      </ul>
+    </div>
+    
+    <div class="privacy-policy">
+      <div class="copyright">
+      
+        <p>
+          &copy; PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has registered
+          trademarks and uses trademarks. For more information, including terms of use, privacy policy, and trademark
+          usage, please see our <a href="https://www.linuxfoundation.org/legal/policies">Policies</a> page. <a
+            href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a>. <a
+            href="http://www.linuxfoundation.org/privacy">Privacy Policy</a>.
+        </p>
+        
+      </div>
+    </div>
+
+
+  </div>
+</footer>
+
+<div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../../_static/img/pytorch-x.svg">
+  </div>
+</div>
+  
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2024, ExecuTorch.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  <script type="application/ld+json">
+    {
+       "@context": "https://schema.org",
+       "@type": "Article",
+       "name": "Quantization",
+       "headline": "Quantization",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
+       "url": "/backends/coreml/coreml-quantization.html",
+       "articleBody": "Quantization# To quantize a PyTorch model for the Core ML backend, use the CoreMLQuantizer. Quantizers are backend specific, which means the CoreMLQuantizer is configured to quantize models to leverage the quantized operators offered by the Core ML backend. Supported Quantization Schemes# The CoreML delegate supports the following quantization schemes: 8-bit static and weight-only quantization via the PT2E flow; dynamic quantization is not supported by CoreML. 4-bit weight-only affine quantization (per-group or per-channel) via the quantize_ flow 1-8 bit weight-only LUT quantization (per grouped-channel) via the quantize_ flow 8-bit Quantization using the PT2E Flow# Quantization with the Core ML backend requires exporting the model for iOS 17 or later. To perform 8-bit quantization with the PT2E flow, follow these steps: Create a coremltools.optimize.torch.quantization.LinearQuantizerConfig and use it to create an instance of a CoreMLQuantizer. Use torch.export.export to export a graph module that will be prepared for quantization. Call prepare_pt2e to prepare the model for quantization. Run the prepared model with representative samples to calibrate the quantizated tensor activation ranges. Call convert_pt2e to quantize the model. Export and lower the model using the standard flow. The output of convert_pt2e is a PyTorch model which can be exported and lowered using the normal flow. As it is a regular PyTorch model, it can also be used to evaluate the accuracy of the quantized model using standard PyTorch techniques. import torch import coremltools as ct import torchvision.models as models from torchvision.models.mobilenetv2 import MobileNet_V2_Weights from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer from executorch.backends.apple.coreml.partition import CoreMLPartitioner from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e from executorch.exir import to_edge_transform_and_lower from executorch.backends.apple.coreml.compiler import CoreMLBackend mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval() sample_inputs = (torch.randn(1, 3, 224, 224), ) # Step 1: Define a LinearQuantizerConfig and create an instance of a CoreMLQuantizer # Note that \"linear\" here does not mean only linear layers are quantized, but that linear (aka affine) quantization # is being performed static_8bit_config = ct.optimize.torch.quantization.LinearQuantizerConfig( global_config=ct.optimize.torch.quantization.ModuleLinearQuantizerConfig( quantization_scheme=\"symmetric\", activation_dtype=torch.quint8, weight_dtype=torch.qint8, weight_per_channel=True, ) ) quantizer = CoreMLQuantizer(static_8bit_config) # Step 2: Export the model for training training_gm = torch.export.export(mobilenet_v2, sample_inputs).module() # Step 3: Prepare the model for quantization prepared_model = prepare_pt2e(training_gm, quantizer) # Step 4: Calibrate the model on representative data # Replace with your own calibration data for calibration_sample in [torch.randn(1, 3, 224, 224)]: prepared_model(calibration_sample) # Step 5: Convert the calibrated model to a quantized model quantized_model = convert_pt2e(prepared_model) # Step 6: Export the quantized model to Core ML et_program = to_edge_transform_and_lower( torch.export.export(quantized_model, sample_inputs), partitioner=[ CoreMLPartitioner( # iOS17 is required for the quantized ops in this example compile_specs=CoreMLBackend.generate_compile_specs( minimum_deployment_target=ct.target.iOS17 ) ) ], ).to_executorch() The above does static quantization (activations and weights are quantized). You can see a full description of available quantization configs in the coremltools documentation. For example, the config below will perform weight-only quantization: weight_only_8bit_config = ct.optimize.torch.quantization.LinearQuantizerConfig( global_config=ct.optimize.torch.quantization.ModuleLinearQuantizerConfig( quantization_scheme=\"symmetric\", activation_dtype=torch.float32, weight_dtype=torch.qint8, weight_per_channel=True, ) ) quantizer = CoreMLQuantizer(weight_only_8bit_config) Quantizing activations requires calibrating the model on representative data. Also note that PT2E currently requires passing at least 1 calibration sample before calling convert_pt2e, even for data-free weight-only quantization. See PyTorch 2 Export Post Training Quantization for more information. LLM quantization with quantize_# The Core ML backend also supports quantizing models with the torchao quantize_ API. This is most commonly used for LLMs, requiring more advanced quantization. Since quantize_ is not backend aware, it is important to use a config that is compatible with Core ML: Quantize embedding/linear layers with IntxWeightOnlyConfig (with weight_dtype torch.int4 or torch.int8, using PerGroup or PerAxis granularity). Using 4-bit or PerGroup quantization requires exporting with minimum_deployment_target \u003e= ct.target.iOS18. Using 8-bit quantization with per-axis granularity is supported on ct.target.IOS16+. See Core ML CompileSpec for more information on setting the deployment target. Quantize embedding/linear layers with CodebookWeightOnlyConfig (with dtype torch.uint1 through torch.uint8, using various block sizes). Quantizing with CodebookWeightOnlyConfig requires exporting with minimum_deployment_target \u003e= ct.target.iOS18, see Core ML CompileSpec for more information on setting the deployment target. Below is an example that quantizes embeddings to 8-bits per-axis and linear layers to 4-bits using group_size=32 with affine quantization: from torchao.quantization.granularity import PerGroup, PerAxis from torchao.quantization.quant_api import ( IntxWeightOnlyConfig, quantize_, ) # Quantize embeddings with 8-bits, per channel embedding_config = IntxWeightOnlyConfig( weight_dtype=torch.int8, granularity=PerAxis(0), ) quantize_( eager_model, embedding_config, lambda m, fqn: isinstance(m, torch.nn.Embedding), ) # Quantize linear layers with 4-bits, per-group linear_config = IntxWeightOnlyConfig( weight_dtype=torch.int4, granularity=PerGroup(32), ) quantize_( eager_model, linear_config, ) Below is another example that uses codebook quantization to quantize both embeddings and linear layers to 3-bits. In the coremltools documentation, this is called palettization: from torchao.quantization.quant_api import ( quantize_, ) from torchao.prototype.quantization.codebook_coreml import CodebookWeightOnlyConfig quant_config = CodebookWeightOnlyConfig( dtype=torch.uint3, # There is one LUT per 16 rows block_size=[16, -1], ) quantize_( eager_model, quant_config, lambda m, fqn: isinstance(m, torch.nn.Embedding) or isinstance(m, torch.nn.Linear), ) Both of the above examples will export and lower to Core ML with the to_edge_transform_and_lower API.",
+       "author": {
+         "@type": "Organization",
+         "name": "PyTorch Contributors",
+         "url": "https://pytorch.org"
+       },
+       "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
+       "mainEntityOfPage": {
+         "@type": "WebPage",
+         "@id": "/backends/coreml/coreml-quantization.html"
+       },
+       "datePublished": "2023-01-01T00:00:00Z",
+       "dateModified": "2023-01-01T00:00:00Z"
+     }
+ </script>
+  <script>
+    // Tutorials Call to action event tracking
+    $("[data-behavior='call-to-action-event']").on('click', function () {
+      fbq('trackCustom', "Download", {
+        tutorialTitle: $('h1:first').text(),
+        downloadLink: this.href,
+        tutorialLink: window.location.href,
+        downloadTitle: $(this).attr("data-response")
+      });
+      if (typeof gtag === 'function') {
+        gtag('event', 'click', {
+          'event_category': $(this).attr("data-response"),
+          'event_label': $("h1").first().text(),
+          'tutorial_link': window.location.href
+        });
+      }
+    });
+  </script>
+  
+  </body>
+</html>

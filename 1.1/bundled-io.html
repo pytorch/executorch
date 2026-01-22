@@ -1,0 +1,2081 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+    <title>Bundled Program – a Tool for ExecuTorch Model Validation &#8212; ExecuTorch 1.1 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="_static/documentation_options.js?v=56dcb7b8"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'bundled-io';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '1.1';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
+        </script>
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/bundled-io.html" />
+    <link rel="icon" href="_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Prerequisite | ETRecord - ExecuTorch Record" href="etrecord.html" />
+    <link rel="prev" title="Introduction to the ExecuTorch Developer Tools" href="devtools-overview.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+<script>
+  if (window.location.hostname === 'docs.pytorch.org' || window.location.hostname === 'docs-preview.pytorch.org') {
+    const script = document.createElement('script');
+    script.src = 'https://cmp.osano.com/16A0DbT9yDNIaQkvZ/31b1b91a-e0b6-47ea-bde2-7f2bd13dbe5c/osano.js?variant=one';
+    document.head.appendChild(script);
+  }
+</script>
+<script>
+  // Cookie banner for non-LF projects
+  document.addEventListener('DOMContentLoaded', function () {
+    // Hide cookie banner on local environments and LF owned docs
+    if (window.location.hostname === 'localhost' ||
+      window.location.hostname === '0.0.0.0' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'docs.pytorch.org' ||
+      window.location.hostname === 'docs-preview.pytorch.org' ||
+      window.location.hostname.startsWith('192.168.')) {
+      const banner = document.querySelector('.cookie-banner-wrapper');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+  });
+</script>
+<!-- Conditional CSS for header and footer height adjustment -->
+
+
+<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+<meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
+<meta name="pytorch_project" content="">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS" height="0" width="0"
+    style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager -->
+<script>(function (w, d, s, l, i) {
+    w[l] = w[l] || []; w[l].push({
+      'gtm.start':
+        new Date().getTime(), event: 'gtm.js'
+    }); var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+        'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+    j.onload = function () {
+      window.dispatchEvent(new Event('gtm_loaded'));
+      console.log('GTM loaded successfully');
+    };
+  })(window, document, 'script', 'dataLayer', 'GTM-T8XT4PS');
+</script>
+<!-- End Google Tag Manager -->
+<!-- Facebook Pixel Code -->
+<script>
+  !function (f, b, e, v, n, t, s) {
+    if (f.fbq) return; n = f.fbq = function () {
+      n.callMethod ?
+        n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+    };
+    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+    n.queue = []; t = b.createElement(e); t.async = !0;
+    t.src = v; s = b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t, s)
+  }(window, document, 'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '243028289693773');
+  fbq('track', 'PageView');
+</script>
+<script>
+  document.documentElement.setAttribute('data-version', '1.1');
+</script>
+<noscript>
+  <img height="1" width="1" src="https://www.facebook.com/tr?id=243028289693773&ev=PageView&noscript=1" />
+</noscript>
+<script>
+  function gtag() {
+    window.dataLayer.push(arguments);
+  }
+</script>
+<!-- End Facebook Pixel Code -->
+<!-- Repository configuration for tutorials -->
+
+<!-- Script to Fix scrolling -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Fix anchor scrolling
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const targetId = this.getAttribute('href').substring(1);
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          const headerHeight =
+            (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
+            (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
+
+          const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
+          window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+          });
+
+          // Update URL hash without scrolling
+          history.pushState(null, null, '#' + targetId);
+        }
+      });
+    });
+  });
+</script>
+
+<script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+  </head>
+
+<body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
+  
+    <div class="container-fluid header-holder tutorials-header" id="header-holder">
+   <div class="header-container-wrapper">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                <span>Learn</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started/locally">
+                  <span class=dropdown-title>Get Started</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/webinars/">
+                  <span class="dropdown-title">Webinars</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Community</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://landscape.pytorch.org/" target="_blank">
+                  <span class="dropdown-title">Landscape</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/join-ecosystem">
+                  <span class="dropdown-title">Join the Ecosystem</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-hub/">
+                  <span class="dropdown-title">Community Hub</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/">
+                  <span class="dropdown-title">Forums</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contributor-awards/">
+                  <span class="dropdown-title">Contributor Awards</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-events/">
+                  <span class="dropdown-title">Community Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/programs/ambassadors/">
+                  <span class="dropdown-title">PyTorch Ambassadors</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Projects</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/pytorch/">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/vllm/">
+                  <span class="dropdown-title">vLLM</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/deepspeed/">
+                  <span class="dropdown-title">DeepSpeed</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/host-your-project/">
+                  <span class="dropdown-title">Host Your Project</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/ray/">
+                  <span class="dropdown-title">RAY</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span> Docs</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/domains">
+                  <span class="dropdown-title">Domains</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Blogs & News</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">Blog</span>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/announcements">
+                  <span class="dropdown-title">Announcements</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/case-studies/">
+                  <span class="dropdown-title">Case Studies</span>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                </a>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>About</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/members">
+                  <span class="dropdown-title">Members</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact">
+                  <span class="dropdown-title">Contact</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/wp-content/uploads/2025/09/pytorch_brand_guide_091925a.pdf">
+                  <span class="dropdown-title">Brand Guidelines</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown main-menu-button">
+              <a href="https://pytorch.org/join" data-cta="join">
+                JOIN
+              </a>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu">
+        <i class="fa-solid fa-ellipsis"></i>
+      </a>
+    </div>
+  </div>
+ </div>
+
+ <!-- Begin Mobile Menu -->
+
+<div class="mobile-main-menu">
+  <div class="container-fluid">
+    <div class="header-container-wrapper">
+      <div class="mobile-main-menu-header-container">
+        <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu">
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="mobile-main-menu-links-container">
+    <div class="main-menu">
+      <ul>
+         <li class="resources-mobile-menu-title">
+           <a>Learn</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/get-started/locally">Get Started</a>
+           </li>
+           <li>
+             <a href="https://docs.pytorch.org/tutorials">Tutorials</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/webinars/">Webinars</a>
+          </li>
+        </ul>
+         <li class="resources-mobile-menu-title">
+           <a>Community</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://landscape.pytorch.org/">Landscape</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/join-ecosystem">Join the Ecosystem</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/community-hub/">Community Hub</a>
+           </li>
+           <li>
+             <a href="https://discuss.pytorch.org/">Forums</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/resources">Developer Resources</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/contributor-awards/">Contributor Awards</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/community-events/">Community Events</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/programs/ambassadors/">PyTorch Ambassadors</a>
+          </li>
+       </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Projects</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/projects/pytorch/">PyTorch</a>
+           </li>
+
+           <li>
+             <a href="https://pytorch.org/projects/vllm/">vLLM</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/projects/deepspeed/">DeepSpeed</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/projects/host-your-project/">Host Your Project</a>
+           </li>
+         </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Docs</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://docs.pytorch.org/docs/stable/index.html">PyTorch</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/domains">Domains</a>
+          </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>Blog & News</a>
+        </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/announcements">Announcements</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/case-studies/">Case Studies</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/events">Events</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/newsletter">Newsletter</a>
+           </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>About</a>
+        </li>
+
+        <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/members">Members</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/governing-board">Governing Board</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+         </li>
+         <li>
+             <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/staff">Staff</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/contact">Contact</a>
+          </li>
+        </ul>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- End Mobile Menu -->
+  
+  
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class=" navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch 1.1 documentation - Home"/>
+    <script>document.write(`<img src="_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch 1.1 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+    
+      <div class="navbar-item">
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-2"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-2"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-2"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-2">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script></div>
+    
+  </div>
+  
+  <div class=" navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="api-section.html">
+    API
+  </a>
+</li>
+
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+    Support
+  </a>
+</li>
+
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+      
+        <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="api-section.html">
+    API
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="support-section.html">
+    Support
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Tools</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="tools-section.html" class="nav-link">Tools</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Bundled...</li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+</div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+  
+<div id="searchbox"></div>
+  <article class="bd-article" id="pytorch-article">
+    <!-- Hidden breadcrumb schema for SEO only -->
+    <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="tools-section.html">
+        <meta itemprop="name" content="Tools">
+        <meta itemprop="position" content="1">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="Bundled Program – a Tool for ExecuTorch Model Validation">
+        <meta itemprop="position" content="2">
+      </div>
+    </div>
+
+    
+    
+
+    
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="bundled-program-a-tool-for-executorch-model-validation">
+<h1>Bundled Program – a Tool for ExecuTorch Model Validation<a class="headerlink" href="#bundled-program-a-tool-for-executorch-model-validation" title="Link to this heading">#</a></h1>
+<section id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Link to this heading">#</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> is a wrapper around the core ExecuTorch program designed to help users wrapping test cases with the model they deploy. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> is not necessarily a core part of the program and not needed for its execution, but is particularly important for various other use-cases, such as model correctness evaluation, including e2e testing during the model bring-up process.</p>
+<p>Overall, the procedure can be broken into two stages, and in each stage we are supporting:</p>
+<ul class="simple">
+<li><p><strong>Emit stage</strong>: Bundling the test I/O cases along with the ExecuTorch program, serializing into flatbuffer.</p></li>
+<li><p><strong>Runtime stage</strong>: Accessing, executing, and verifying the bundled test cases during runtime.</p></li>
+</ul>
+</section>
+<section id="emit-stage">
+<h2>Emit stage<a class="headerlink" href="#emit-stage" title="Link to this heading">#</a></h2>
+<p>This stage mainly focuses on the creation of a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and dumping it out to the disk as a flatbuffer file. The main procedure is as follow:</p>
+<ol class="arabic simple">
+<li><p>Create a model and emit its ExecuTorch program.</p></li>
+<li><p>Construct a <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to record all test cases that needs to be bundled.</p></li>
+<li><p>Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by using the emited model and <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code>.</p></li>
+<li><p>Serialize the <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and dump it out to the disk.</p></li>
+</ol>
+<section id="step-1-create-a-model-and-emit-its-executorch-program">
+<h3>Step 1: Create a Model and Emit its ExecuTorch Program.<a class="headerlink" href="#step-1-create-a-model-and-emit-its-executorch-program" title="Link to this heading">#</a></h3>
+<p>ExecuTorch Program can be emitted from user’s model by using ExecuTorch APIs. Follow the <a class="reference internal" href="getting-started.html#exporting"><span class="std std-ref">Generate and emit sample ExecuTorch program</span></a> or <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Exporting to ExecuTorch tutorial</span></a> <!-- @lint-ignore -->.</p>
+</section>
+<section id="step-2-construct-list-methodtestsuite-to-hold-test-info">
+<h3>Step 2: Construct <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold test info<a class="headerlink" href="#step-2-construct-list-methodtestsuite-to-hold-test-info" title="Link to this heading">#</a></h3>
+<p>In <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code>, we create two new classes, <code class="docutils literal notranslate"><span class="pre">MethodTestCase</span></code> and <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code>, to hold essential info for ExecuTorch program verification.</p>
+<p><code class="docutils literal notranslate"><span class="pre">MethodTestCase</span></code> represents a single testcase. Each <code class="docutils literal notranslate"><span class="pre">MethodTestCase</span></code> contains inputs and expected outputs for a single execution.</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text"><code class="docutils literal notranslate"><span class="pre">MethodTestCase</span></code></span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.devtools.bundled_program.config.MethodTestCase.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_outputs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span></dt>
+<dd><p class="sd-card-text">Single test case for verifying specific method</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p class="sd-card-text"><strong>inputs</strong> – <p class="sd-card-text">All inputs required by eager_model with specific inference method for one-time execution.</p>
+<p class="sd-card-text">It is worth mentioning that, although both bundled program and ET runtime apis support setting input
+other than <cite>torch.tensor</cite> type, only the input in <cite>torch.tensor</cite> type will be actually updated in
+the method, and the rest of the inputs will just do a sanity check if they match the default value in method.</p>
+</p></li>
+<li><p class="sd-card-text"><strong>expected_outputs</strong> – Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p class="sd-card-text">self</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+</details><p><code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code> contains all testing info for single method, including a str representing method name, and a <code class="docutils literal notranslate"><span class="pre">List[MethodTestCase]</span></code> for all testcases:</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text"><code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code></span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.devtools.bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">MethodTestSuite</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_cases</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/devtools/bundled_program/config.html#MethodTestSuite"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
+<dd><p class="sd-card-text">All test info related to verify method</p>
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.devtools.bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">method_name</span></span></dt>
+<dd><p class="sd-card-text">Name of the method to be verified.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.devtools.bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">test_cases</span></span></dt>
+<dd><p class="sd-card-text">All test cases for verifying the method.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+</details><p>Since each model may have multiple inference methods, we need to generate <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold all essential infos.</p>
+</section>
+<section id="step-3-generate-bundledprogram">
+<h3>Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><a class="headerlink" href="#step-3-generate-bundledprogram" title="Link to this heading">#</a></h3>
+<p>We provide <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> class under <code class="docutils literal notranslate"><span class="pre">executorch/devtools/bundled_program/core.py</span></code> to bundled the <code class="docutils literal notranslate"><span class="pre">ExecutorchProgram</span></code>-like variable, including
+<code class="docutils literal notranslate"><span class="pre">ExecutorchProgram</span></code>, <code class="docutils literal notranslate"><span class="pre">MultiMethodExecutorchProgram</span></code> or <code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager</span></code>, with the <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code>:</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text"><code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code></span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.devtools.bundled_program.core.BundledProgram.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">executorch_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method_test_suites</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pte_file_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span></dt>
+<dd><p class="sd-card-text">Create BundledProgram by bundling the given program and method_test_suites together.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p class="sd-card-text"><strong>executorch_program</strong> – The program to be bundled.</p></li>
+<li><p class="sd-card-text"><strong>method_test_suites</strong> – The testcases for certain methods to be bundled.</p></li>
+<li><p class="sd-card-text"><strong>pte_file_path</strong> – The path to pte file to deserialize program if executorch_program is not provided.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+</details><p>Construtor of <code class="docutils literal notranslate"><span class="pre">BundledProgram</span> </code>will do sannity check internally to see if the given <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> matches the given Program’s requirements. Specifically:</p>
+<ol class="arabic simple">
+<li><p>The method_names of each <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code> in <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> for should be also in program. Please notice that it is no need to set testcases for every method in the Program.</p></li>
+<li><p>The metadata of each testcase should meet the requirement of the coresponding inference methods input.</p></li>
+</ol>
+</section>
+<section id="step-4-serialize-bundledprogram-to-flatbuffer">
+<h3>Step 4: Serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to Flatbuffer.<a class="headerlink" href="#step-4-serialize-bundledprogram-to-flatbuffer" title="Link to this heading">#</a></h3>
+<p>To serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to make runtime APIs use it, we provide two APIs, both under <code class="docutils literal notranslate"><span class="pre">executorch/devtools/bundled_program/serialize/__init__.py</span></code>.</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Serialize and Deserialize</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.devtools.bundled_program.serialize.</span></span><span class="sig-name descname"><span class="pre">serialize_from_bundled_program_to_flatbuffer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bundled_program</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/devtools/bundled_program/serialize.html#serialize_from_bundled_program_to_flatbuffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
+<dd><p class="sd-card-text">Serialize a BundledProgram into FlatBuffer binary format.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p class="sd-card-text"><strong>bundled_program</strong> (<em>BundledProgram</em>) – The <cite>BundledProgram</cite> variable to be serialized.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p class="sd-card-text">The serialized FlatBuffer binary data in bytes.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.devtools.bundled_program.serialize.</span></span><span class="sig-name descname"><span class="pre">deserialize_from_flatbuffer_to_bundled_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">flatbuffer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/devtools/bundled_program/serialize.html#deserialize_from_flatbuffer_to_bundled_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
+<dd><p class="sd-card-text">Deserialize a FlatBuffer binary format into a BundledProgram.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p class="sd-card-text"><strong>flatbuffer</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#bytes" title="(in Python v3.14)"><em>bytes</em></a>) – The FlatBuffer binary data in bytes.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p class="sd-card-text">A <cite>BundledProgram</cite> instance.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+</details></section>
+<section id="emit-example">
+<h3>Emit Example<a class="headerlink" href="#emit-example" title="Link to this heading">#</a></h3>
+<p>Here is a flow highlighting how to generate a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> given a PyTorch model and the representative inputs we want to test it along with.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">BundledProgram</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.serialize</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
+
+
+<span class="c1"># Step 1: ExecuTorch Program Export</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SampleModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;An example model with multi-methods. Each method has multiple input and single output&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;a&#39;</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;b&#39;</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">z</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">y</span><span class="p">)</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">y</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">y</span>
+
+
+<span class="c1"># Inference method name of SampleModel we want to bundle testcases to.</span>
+<span class="c1"># Notices that we do not need to bundle testcases for every inference methods.</span>
+<span class="n">method_name</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">SampleModel</span><span class="p">()</span>
+
+<span class="c1"># Inputs for graph capture.</span>
+<span class="n">capture_input</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
+<span class="p">)</span>
+
+<span class="c1"># Export method&#39;s FX Graph.</span>
+<span class="n">method_graph</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span>
+    <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">capture_input</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">(),</span>
+    <span class="n">capture_input</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="c1"># Emit the traced method into ET Program.</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span><span class="n">method_graph</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Step 2: Construct MethodTestSuite for Each Method</span>
+
+<span class="c1"># Prepare the Test Inputs.</span>
+
+<span class="c1"># Number of input sets to be verified</span>
+<span class="n">n_input</span> <span class="o">=</span> <span class="mi">10</span>
+
+<span class="c1"># Input sets to be verified.</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="c1"># Each list below is a individual input set.</span>
+    <span class="c1"># The number of inputs, dtype and size of each input follow Program&#39;s spec.</span>
+    <span class="p">[</span>
+        <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
+        <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
+    <span class="p">]</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_input</span><span class="p">)</span>
+<span class="p">]</span>
+
+<span class="c1"># Generate Test Suites</span>
+<span class="n">method_test_suites</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">MethodTestSuite</span><span class="p">(</span>
+        <span class="n">method_name</span><span class="o">=</span><span class="n">method_name</span><span class="p">,</span>
+        <span class="n">test_cases</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">MethodTestCase</span><span class="p">(</span>
+                <span class="n">inputs</span><span class="o">=</span><span class="nb">input</span><span class="p">,</span>
+                <span class="n">expected_outputs</span><span class="o">=</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">method_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),</span> <span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="nb">input</span> <span class="ow">in</span> <span class="n">inputs</span>
+        <span class="p">],</span>
+    <span class="p">),</span>
+<span class="p">]</span>
+
+<span class="c1"># Step 3: Generate BundledProgram</span>
+<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">BundledProgram</span><span class="p">(</span><span class="n">et_program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+
+<span class="c1"># Step 4: Serialize BundledProgram to flatbuffer.</span>
+<span class="n">serialized_bundled_program</span> <span class="o">=</span> <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
+    <span class="n">bundled_program</span>
+<span class="p">)</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;bundled_program.bpte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">serialized_bundled_program</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>We can also regenerate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> from flatbuffer file if needed:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">deserialize_from_flatbuffer_to_bundled_program</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;bundled_program.bpte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">serialized_bundled_program</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+<span class="n">regenerate_bundled_program</span> <span class="o">=</span> <span class="n">deserialize_from_flatbuffer_to_bundled_program</span><span class="p">(</span><span class="n">serialized_bundled_program</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="runtime-stage">
+<h2>Runtime Stage<a class="headerlink" href="#runtime-stage" title="Link to this heading">#</a></h2>
+<p>This stage mainly focuses on executing the model with the bundled inputs and comparing the model’s output with the bundled expected output. We provide multiple APIs to handle the key parts of it.</p>
+<section id="get-executorch-program-pointer-from-bundledprogram-buffer">
+<h3>Get ExecuTorch Program Pointer from <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> Buffer<a class="headerlink" href="#get-executorch-program-pointer-from-bundledprogram-buffer" title="Link to this heading">#</a></h3>
+<p>We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and Program flatbuffer, we create an API for this
+<code class="docutils literal notranslate"><span class="pre">executorch::bundled_program::get_program_data</span></code>. Check out an <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/1.0/examples/devtools/example_runner/example_runner.cpp#L128-L137">example usage</a> of this API.</p>
+</section>
+<section id="load-bundled-input-to-method">
+<h3>Load Bundled Input to Method<a class="headerlink" href="#load-bundled-input-to-method" title="Link to this heading">#</a></h3>
+<p>To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called <code class="docutils literal notranslate"><span class="pre">executorch::bundled_program::load_bundled_input</span></code>.  Check out an <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/1.0/examples/devtools/example_runner/example_runner.cpp#L253-L259">example usage</a> of this API.</p>
+</section>
+<section id="verify-the-method-s-output">
+<h3>Verify the Method’s Output.<a class="headerlink" href="#verify-the-method-s-output" title="Link to this heading">#</a></h3>
+<p>We call <code class="docutils literal notranslate"><span class="pre">executorch::bundled_program::verify_method_outputs</span></code> to verify the method’s output with bundled expected outputs. Check out an <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/1.0/examples/devtools/example_runner/example_runner.cpp#L301-L307">example usage</a> of this API.</p>
+</section>
+<section id="runtime-example">
+<h3>Runtime Example<a class="headerlink" href="#runtime-example" title="Link to this heading">#</a></h3>
+<p>Please checkout our <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/examples/devtools/README.md#bundledprogram">example runner</a> for a bundled program. You could run these commands to test with the BundledProgram binary (<code class="docutils literal notranslate"><span class="pre">.bpte</span></code>) file you generated in the previous step:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+./examples/devtools/build_example_runner.sh
+./cmake-out/examples/devtools/example_runner<span class="w"> </span>--bundled_program_path<span class="w"> </span><span class="o">{</span>your-bpte-file<span class="o">}</span><span class="w"> </span>--output_verification
+</pre></div>
+</div>
+<p>It is expected to see no output from running the above mentioned snippet.
+For a detailed example of how the runner should be like, please refer to our <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/1.0/examples/devtools/example_runner/example_runner.cpp">example runner</a>.</p>
+</section>
+<section id="try-the-complete-workflow">
+<h3>Try the Complete Workflow<a class="headerlink" href="#try-the-complete-workflow" title="Link to this heading">#</a></h3>
+<p>To test the entire end-to-end workflow including building the example runner, exporting a model, and verifying the bundled program execution, you can use the test script:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+./examples/devtools/test_example_runner.sh
+</pre></div>
+</div>
+<p>This script will:</p>
+<ol class="arabic simple">
+<li><p>Build the example runner using <code class="docutils literal notranslate"><span class="pre">build_example_runner.sh</span></code></p></li>
+<li><p>Export a MobileNetV2 model as a bundled program</p></li>
+<li><p>Run the example runner with the bundled program to verify correctness</p></li>
+</ol>
+<p>This is a great way to ensure your environment is set up correctly and to see the complete BundledProgram workflow in action.</p>
+</section>
+</section>
+<section id="common-errors">
+<h2>Common Errors<a class="headerlink" href="#common-errors" title="Link to this heading">#</a></h2>
+<p>Errors will be raised if <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuites]</span></code> doesn’t match the <code class="docutils literal notranslate"><span class="pre">Program</span></code>. Here’re two common situations:</p>
+<section id="test-input-doesn-t-match-model-s-requirement">
+<h3>Test input doesn’t match model’s requirement.<a class="headerlink" href="#test-input-doesn-t-match-model-s-requirement" title="Link to this heading">#</a></h3>
+<p>Each inference method of PyTorch model has its own requirement for the inputs, like number of input, the dtype of each input, etc. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error if test input not meet the requirement.</p>
+<p>Here’s the example of the dtype of test input not meet model’s requirement:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">BundledProgram</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Module</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">=</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">out_1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+        <span class="n">out_2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out_1</span><span class="p">)</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">out_1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out_2</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">out_2</span>
+
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">Module</span><span class="p">()</span>
+<span class="n">method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;forward&quot;</span><span class="p">]</span>
+
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">),</span> <span class="p">)</span>
+
+<span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
+<span class="n">method_graph</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span>
+    <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">(),</span>
+    <span class="n">inputs</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Emit the traced methods into ET Program.</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graph</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># number of input sets to be verified</span>
+<span class="n">n_input</span> <span class="o">=</span> <span class="mi">10</span>
+
+<span class="c1"># Input sets to be verified for each inference methods.</span>
+<span class="c1"># To simplify, here we create same inputs for all methods.</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># Inference method name corresponding to its test cases.</span>
+    <span class="n">m_name</span><span class="p">:</span> <span class="p">[</span>
+        <span class="c1"># NOTE: executorch program needs torch.float, but here is torch.int</span>
+        <span class="p">[</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int</span><span class="p">),</span>
+        <span class="p">]</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_input</span><span class="p">)</span>
+    <span class="p">]</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+<span class="p">}</span>
+
+<span class="c1"># Generate Test Suites</span>
+<span class="n">method_test_suites</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">MethodTestSuite</span><span class="p">(</span>
+        <span class="n">method_name</span><span class="o">=</span><span class="n">m_name</span><span class="p">,</span>
+        <span class="n">test_cases</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">MethodTestCase</span><span class="p">(</span>
+                <span class="n">inputs</span><span class="o">=</span><span class="nb">input</span><span class="p">,</span>
+                <span class="n">expected_outputs</span><span class="o">=</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),),</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="nb">input</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="n">m_name</span><span class="p">]</span>
+        <span class="p">],</span>
+    <span class="p">)</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+<span class="p">]</span>
+
+<span class="c1"># Generate BundledProgram</span>
+
+<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">BundledProgram</span><span class="p">(</span><span class="n">et_program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+</pre></div>
+</div>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Raised Error</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">The</span> <span class="nb">input</span> <span class="n">tensor</span> <span class="n">tensor</span><span class="p">([[</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span>  <span class="mi">0</span><span class="p">],</span>
+        <span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span> <span class="n">dtype</span> <span class="n">shall</span> <span class="n">be</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">but</span> <span class="n">now</span> <span class="ow">is</span> <span class="n">torch</span><span class="o">.</span><span class="n">int32</span>
+<span class="o">---------------------------------------------------------------------------</span>
+<span class="ne">AssertionError</span>                            <span class="n">Traceback</span> <span class="p">(</span><span class="n">most</span> <span class="n">recent</span> <span class="n">call</span> <span class="n">last</span><span class="p">)</span>
+<span class="n">Cell</span> <span class="n">In</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">line</span> <span class="mi">72</span>
+     <span class="mi">56</span> <span class="n">method_test_suites</span> <span class="o">=</span> <span class="p">[</span>
+     <span class="mi">57</span>     <span class="n">MethodTestSuite</span><span class="p">(</span>
+     <span class="mi">58</span>         <span class="n">method_name</span><span class="o">=</span><span class="n">m_name</span><span class="p">,</span>
+   <span class="p">(</span><span class="o">...</span><span class="p">)</span>
+     <span class="mi">67</span>     <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+     <span class="mi">68</span> <span class="p">]</span>
+     <span class="mi">70</span> <span class="c1"># Step 3: Generate BundledProgram</span>
+<span class="o">---&gt;</span> <span class="mi">72</span> <span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">devtools</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">276</span><span class="p">,</span> <span class="ow">in</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">264</span> <span class="s2">&quot;&quot;&quot;Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.</span>
+<span class="s2">    265</span>
+<span class="s2">    266 Args:</span>
+<span class="s2">   (...)</span>
+<span class="s2">    271     The `BundledProgram` variable contains given ExecuTorch program and test cases.</span>
+<span class="s2">    272 &quot;&quot;&quot;</span>
+    <span class="mi">274</span> <span class="n">method_test_suites</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">method_test_suites</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">method_name</span><span class="p">)</span>
+<span class="o">--&gt;</span> <span class="mi">276</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">278</span> <span class="n">bundled_method_test_suites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledMethodTestSuite</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="mi">280</span> <span class="c1"># Emit data and metadata of bundled tensor</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">devtools</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">219</span><span class="p">,</span> <span class="ow">in</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">215</span> <span class="c1"># type of tensor input should match execution plan</span>
+    <span class="mi">216</span> <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="mi">217</span>     <span class="c1"># pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`</span>
+    <span class="mi">218</span>     <span class="c1"># has no attribute `dtype`.</span>
+<span class="o">--&gt;</span> <span class="mi">219</span>     <span class="k">assert</span> <span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">get_input_dtype</span><span class="p">(</span>
+    <span class="mi">220</span>         <span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span>
+    <span class="mi">221</span>     <span class="p">),</span> <span class="s2">&quot;The input tensor </span><span class="si">{}</span><span class="s2"> dtype shall be </span><span class="si">{}</span><span class="s2">, but now is </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+    <span class="mi">222</span>         <span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">],</span>
+    <span class="mi">223</span>         <span class="n">get_input_dtype</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span><span class="p">),</span>
+    <span class="mi">224</span>         <span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+    <span class="mi">225</span>     <span class="p">)</span>
+    <span class="mi">226</span> <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="ow">in</span> <span class="p">(</span>
+    <span class="mi">227</span>     <span class="nb">int</span><span class="p">,</span>
+    <span class="mi">228</span>     <span class="nb">bool</span><span class="p">,</span>
+    <span class="mi">229</span>     <span class="nb">float</span><span class="p">,</span>
+    <span class="mi">230</span> <span class="p">):</span>
+    <span class="mi">231</span>     <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="o">==</span> <span class="n">get_input_type</span><span class="p">(</span>
+    <span class="mi">232</span>         <span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span>
+    <span class="mi">233</span>     <span class="p">),</span> <span class="s2">&quot;The input primitive dtype shall be </span><span class="si">{}</span><span class="s2">, but now is </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+    <span class="mi">234</span>         <span class="n">get_input_type</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span><span class="p">),</span>
+    <span class="mi">235</span>         <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">]),</span>
+    <span class="mi">236</span>     <span class="p">)</span>
+<span class="ne">AssertionError</span><span class="p">:</span> <span class="n">The</span> <span class="nb">input</span> <span class="n">tensor</span> <span class="n">tensor</span><span class="p">([[</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span>  <span class="mi">0</span><span class="p">],</span>
+        <span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span> <span class="n">dtype</span> <span class="n">shall</span> <span class="n">be</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">but</span> <span class="n">now</span> <span class="ow">is</span> <span class="n">torch</span><span class="o">.</span><span class="n">int32</span>
+
+</pre></div>
+</div>
+</div>
+</details></section>
+<section id="method-name-in-bundleconfig-does-not-exist">
+<h3>Method name in <code class="docutils literal notranslate"><span class="pre">BundleConfig</span></code> does not exist.<a class="headerlink" href="#method-name-in-bundleconfig-does-not-exist" title="Link to this heading">#</a></h3>
+<p>Another common error would be the method name in any <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code> does not exist in Model. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error and show the non-exist method name:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">BundledProgram</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Module</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">=</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">out_1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+        <span class="n">out_2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out_1</span><span class="p">)</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">out_1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out_2</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">out_2</span>
+
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">Module</span><span class="p">()</span>
+<span class="n">method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;forward&quot;</span><span class="p">]</span>
+
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">),)</span>
+
+<span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
+<span class="n">method_graph</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span>
+    <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">(),</span>
+    <span class="n">inputs</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Emit the traced methods into ET Program.</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graph</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># number of input sets to be verified</span>
+<span class="n">n_input</span> <span class="o">=</span> <span class="mi">10</span>
+
+<span class="c1"># Input sets to be verified for each inference methods.</span>
+<span class="c1"># To simplify, here we create same inputs for all methods.</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># Inference method name corresponding to its test cases.</span>
+    <span class="n">m_name</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">[</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">),</span>
+        <span class="p">]</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_input</span><span class="p">)</span>
+    <span class="p">]</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+<span class="p">}</span>
+
+<span class="c1"># Generate Test Suites</span>
+<span class="n">method_test_suites</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">MethodTestSuite</span><span class="p">(</span>
+        <span class="n">method_name</span><span class="o">=</span><span class="n">m_name</span><span class="p">,</span>
+        <span class="n">test_cases</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">MethodTestCase</span><span class="p">(</span>
+                <span class="n">inputs</span><span class="o">=</span><span class="nb">input</span><span class="p">,</span>
+                <span class="n">expected_outputs</span><span class="o">=</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),),</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="nb">input</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="n">m_name</span><span class="p">]</span>
+        <span class="p">],</span>
+    <span class="p">)</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+<span class="p">]</span>
+
+<span class="c1"># NOTE: MISSING_METHOD_NAME is not an inference method in the above model.</span>
+<span class="n">method_test_suites</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">method_name</span> <span class="o">=</span> <span class="s2">&quot;MISSING_METHOD_NAME&quot;</span>
+
+<span class="c1"># Generate BundledProgram</span>
+<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">BundledProgram</span><span class="p">(</span><span class="n">et_program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+
+</pre></div>
+</div>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Raised Error</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">All</span> <span class="n">method</span> <span class="n">names</span> <span class="ow">in</span> <span class="n">bundled</span> <span class="n">config</span> <span class="n">should</span> <span class="n">be</span> <span class="n">found</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">,</span>          <span class="n">but</span> <span class="p">{</span><span class="s1">&#39;MISSING_METHOD_NAME&#39;</span><span class="p">}</span> <span class="n">does</span> <span class="ow">not</span> <span class="n">include</span><span class="o">.</span>
+<span class="o">---------------------------------------------------------------------------</span>
+<span class="ne">AssertionError</span>                            <span class="n">Traceback</span> <span class="p">(</span><span class="n">most</span> <span class="n">recent</span> <span class="n">call</span> <span class="n">last</span><span class="p">)</span>
+<span class="n">Cell</span> <span class="n">In</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span> <span class="n">line</span> <span class="mi">73</span>
+     <span class="mi">70</span> <span class="n">method_test_suites</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">method_name</span> <span class="o">=</span> <span class="s2">&quot;MISSING_METHOD_NAME&quot;</span>
+     <span class="mi">72</span> <span class="c1"># Generate BundledProgram</span>
+<span class="o">---&gt;</span> <span class="mi">73</span> <span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">devtools</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">276</span><span class="p">,</span> <span class="ow">in</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">264</span> <span class="s2">&quot;&quot;&quot;Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.</span>
+<span class="s2">    265</span>
+<span class="s2">    266 Args:</span>
+<span class="s2">   (...)</span>
+<span class="s2">    271     The `BundledProgram` variable contains given ExecuTorch program and test cases.</span>
+<span class="s2">    272 &quot;&quot;&quot;</span>
+    <span class="mi">274</span> <span class="n">method_test_suites</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">method_test_suites</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">method_name</span><span class="p">)</span>
+<span class="o">--&gt;</span> <span class="mi">276</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">278</span> <span class="n">bundled_method_test_suites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledMethodTestSuite</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="mi">280</span> <span class="c1"># Emit data and metadata of bundled tensor</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">devtools</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">141</span><span class="p">,</span> <span class="ow">in</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">138</span> <span class="n">method_name_of_program</span> <span class="o">=</span> <span class="p">{</span><span class="n">e</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">}</span>
+    <span class="mi">139</span> <span class="n">method_name_of_test_suites</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">method_name</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">method_test_suites</span><span class="p">}</span>
+<span class="o">--&gt;</span> <span class="mi">141</span> <span class="k">assert</span> <span class="n">method_name_of_test_suites</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span>
+    <span class="mi">142</span>     <span class="n">method_name_of_program</span>
+    <span class="mi">143</span> <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;All method names in bundled config should be found in program.execution_plan, </span><span class="se">\</span>
+<span class="s2">    144      but </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">method_name_of_test_suites</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">method_name_of_program</span><span class="p">)</span><span class="si">}</span><span class="s2"> does not include.&quot;</span>
+    <span class="mi">146</span> <span class="c1"># check if method_tesdt_suites has been sorted in ascending alphabetical order of method name.</span>
+    <span class="mi">147</span> <span class="k">for</span> <span class="n">test_suite_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">method_test_suites</span><span class="p">)):</span>
+<span class="ne">AssertionError</span><span class="p">:</span> <span class="n">All</span> <span class="n">method</span> <span class="n">names</span> <span class="ow">in</span> <span class="n">bundled</span> <span class="n">config</span> <span class="n">should</span> <span class="n">be</span> <span class="n">found</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">,</span>          <span class="n">but</span> <span class="p">{</span><span class="s1">&#39;MISSING_METHOD_NAME&#39;</span><span class="p">}</span> <span class="n">does</span> <span class="ow">not</span> <span class="n">include</span><span class="o">.</span>
+</pre></div>
+</div>
+</div>
+</details></section>
+</section>
+</section>
+
+
+                </article>
+              
+  </article>
+  
+              
+              
+                <footer class="bd-footer-article">
+                  <div class="footer-article-items footer-article__inner">
+  
+    <div class="footer-article-item">
+<div class="feedback">
+  
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+
+  <div class="feedback-send">
+    <button class="feedback-btn"
+            onclick="openGitHubIssue()"
+            data-bs-title="Create a GitHub Issue"
+            data-bs-placement="bottom"
+            data-bs-toggle="tooltip"
+            data-gtm="feedback-btn-click">Send Feedback
+    </button>
+  </div>
+</div>
+
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="devtools-overview.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Introduction to the ExecuTorch Developer Tools</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="etrecord.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Prerequisite | ETRecord - ExecuTorch Record</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+
+<div class="footer-info">
+  <p class="copyright">
+    
+  </p>
+
+  <p class="theme-version">
+    Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+  </p>
+</div>
+</div>
+  
+</div>
+                </footer>
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="devtools-overview.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Introduction to the ExecuTorch Developer Tools</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="etrecord.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Prerequisite | ETRecord - ExecuTorch Record</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc">
+<div class="sidebar-secondary-items sidebar-secondary__inner">
+    
+       <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#introduction">Introduction</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#emit-stage">Emit stage</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-1-create-a-model-and-emit-its-executorch-program">Step 1: Create a Model and Emit its ExecuTorch Program.</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-2-construct-list-methodtestsuite-to-hold-test-info">Step 2: Construct <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold test info</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-3-generate-bundledprogram">Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-4-serialize-bundledprogram-to-flatbuffer">Step 4: Serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to Flatbuffer.</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#emit-example">Emit Example</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-stage">Runtime Stage</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#get-executorch-program-pointer-from-bundledprogram-buffer">Get ExecuTorch Program Pointer from <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> Buffer</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#load-bundled-input-to-method">Load Bundled Input to Method</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#verify-the-method-s-output">Verify the Method’s Output.</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-example">Runtime Example</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#try-the-complete-workflow">Try the Complete Workflow</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#common-errors">Common Errors</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#test-input-doesn-t-match-model-s-requirement">Test input doesn’t match model’s requirement.</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#method-name-in-bundleconfig-does-not-exist">Method name in <code class="docutils literal notranslate"><span class="pre">BundleConfig</span></code> does not exist.</a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+    
+       <div class="sidebar-secondary-item">
+
+  
+  <div class="tocsection editthispage">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/bundled-io.md">
+      <i class="fa-solid fa-pencil"></i>
+      
+      
+        
+          Edit on GitHub
+        
+      
+    </a>
+  </div>
+</div>
+    
+       <div class="sidebar-secondary-item">
+    <div class="tocsection sourcelink">
+      <a href="_sources/bundled-io.md.txt">
+        <i class="fa-solid fa-file-lines"></i> Show Source
+      </a>
+    </div>
+</div>
+    
+
+
+
+
+</div>
+</div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  
+
+<div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+  <div class="container">
+    <div class="row">
+      <div class="col-md-4">
+        <h2>Docs</h2>
+        <p>Access comprehensive developer documentation for PyTorch</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/docs/stable/index.html">View Docs</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Tutorials</h2>
+        <p>Get in-depth tutorials for beginners and advanced developers</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/tutorials">View Tutorials</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Resources</h2>
+        <p>Find development resources and get your questions answered</p>
+        <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<footer class="site-footer">
+
+  <div class="container footer-container">
+
+    <div class="newsletter" id="newsletter">
+
+      <p class="newsletter__title is-style-max-width-800"><strong>Stay in touch</strong> for updates, event info, and
+        the latest news</p>
+
+
+      <script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+      <script>
+        hbspt.forms.create({
+          region: "na1",
+          portalId: "8112310",
+          formId: "2fb2231c-000b-4ec5-88a0-1ab242549c9e"
+        });
+      </script>
+
+
+      <p class="newsletter__privacy">By submitting this form, I consent to receive marketing emails from the LF and its
+        projects regarding their events, training, research, developments, and related announcements. I understand that
+        I can unsubscribe at any time using the links in the footers of the emails I receive. <a
+          href="https://www.linuxfoundation.org/privacy/">Privacy Policy</a>.</p>
+
+    </div>
+
+    <div class="lf-grid">
+      <ul class="social-links">
+        <li><a href="https://www.facebook.com/pytorch" target="_blank" title="PyTorch on Facebook">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-0.51 -0.26 26.45 26.45" aria-label="Facebook">
+              <path fill="currentColor"
+                d="M25.497 13.075c0-2.45-.698-4.848-2.011-6.911a12.765 12.765 0 0 0-5.398-4.73A12.671 12.671 0 0 0 11.008.38a12.705 12.705 0 0 0-6.529 2.95A12.827 12.827 0 0 0 .563 9.358a12.896 12.896 0 0 0-.07 7.201 12.831 12.831 0 0 0 3.801 6.103 12.709 12.709 0 0 0 6.471 3.078v-8.957H7.53v-3.708h3.235v-2.824c0-3.213 1.903-4.988 4.813-4.988.956.014 1.909.097 2.852.25V8.67h-1.607a1.83 1.83 0 0 0-1.518.497 1.854 1.854 0 0 0-.561 1.505v2.404h3.535l-.563 3.708h-2.97v8.957a12.725 12.725 0 0 0 7.697-4.337 12.87 12.87 0 0 0 3.054-8.328z" />
+            </svg>
+          </a></li>
+        <li><a href="https://twitter.com/pytorch" target="_blank" title="PyTorch on X">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 300 300" aria-label="X">
+              <path fill="currentColor"
+                d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.youtube.com/pytorch" target="_blank" title="PyTorch on YouTube">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0.21 0.27 34.45 25.07" aria-label="YouTube">
+              <path fill="currentColor"
+                d="M33.729 6.084s-.327-2.33-1.317-3.356a4.691 4.691 0 0 0-3.32-1.432c-4.634-.34-11.589-.34-11.589-.34h-.014s-6.954 0-11.59.342a4.692 4.692 0 0 0-3.32 1.432c-.993 1.025-1.315 3.354-1.315 3.354a52.189 52.189 0 0 0-.331 5.473v2.566c.014 1.829.125 3.656.331 5.472 0 0 .322 2.33 1.316 3.36 1.26 1.345 2.916 1.3 3.653 1.445 2.65.26 11.263.34 11.263.34s6.96-.01 11.597-.353a4.691 4.691 0 0 0 3.32-1.432c.993-1.026 1.316-3.356 1.316-3.356.206-1.817.316-3.644.33-5.473v-2.57a52.26 52.26 0 0 0-.33-5.472zM14.076 17.232V7.729l8.951 4.768-8.95 4.735z" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.linkedin.com/company/pytorch" target="_blank" title="PyTorch on LinkedIn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-10.23 -10.23 531.96 531.96" aria-label="LinkedIn">
+              <rect width="512" height="512" rx="0" fill="currentColor" />
+              <circle fill="#000" cx="142" cy="138" r="37" />
+              <path stroke="#000" stroke-width="66" d="M244 194v198M142 194v198" />
+              <path fill="#000"
+                d="M276 282c0-20 13-40 36-40 24 0 33 18 33 45v105h66V279c0-61-32-89-76-89-34 0-51 19-59 32" />
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.slack.com" target="_blank" title="PyTorch Slack">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.16 -0.03 21.19 21.19" aria-label="Slack">
+              <path fill="currentColor"
+                d="M4.896 13.27a2.147 2.147 0 0 1-2.141 2.142A2.147 2.147 0 0 1 .613 13.27c0-1.178.963-2.141 2.142-2.141h2.141v2.141zm1.08 0c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.363a2.147 2.147 0 0 1-2.142 2.141 2.147 2.147 0 0 1-2.141-2.142V13.27zm2.141-8.6a2.147 2.147 0 0 1-2.141-2.14c0-1.18.962-2.142 2.141-2.142s2.142.963 2.142 2.141v2.142H8.117zm0 1.08c1.179 0 2.141.962 2.141 2.141a2.147 2.147 0 0 1-2.141 2.142H2.755A2.147 2.147 0 0 1 .613 7.89c0-1.179.963-2.141 2.142-2.141h5.362zm8.599 2.141c0-1.179.963-2.141 2.141-2.141 1.179 0 2.143.962 2.143 2.14a2.147 2.147 0 0 1-2.142 2.142h-2.141V7.89zm-1.08 0a2.147 2.147 0 0 1-2.141 2.142 2.147 2.147 0 0 1-2.141-2.142V2.53c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.362zm-2.141 8.6c1.179 0 2.142.962 2.142 2.14a2.147 2.147 0 0 1-2.142 2.142 2.147 2.147 0 0 1-2.141-2.141V16.49h2.141zm0-1.08a2.147 2.147 0 0 1-2.141-2.141c0-1.179.962-2.142 2.141-2.142h5.362c1.179 0 2.142.963 2.142 2.142a2.147 2.147 0 0 1-2.142 2.142h-5.362z">
+              </path>
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.org/wechat" title="PyTorch on WeChat">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.14 -0.17 38.02 33.02" aria-label="WeChat">
+              <path fill="currentColor"
+                d="M26.289 10.976a12.972 12.972 0 0 0-8.742 3.53 10.386 10.386 0 0 0-3.224 8.795c-1.326-.164-2.535-.345-3.75-.448a2.332 2.332 0 0 0-1.273.216c-1.18.666-2.311 1.418-3.652 2.255.246-1.112.405-2.087.687-3.024a1.15 1.15 0 0 0-.523-1.52C1.737 17.902.02 13.601 1.307 9.165c1.189-4.1 4.11-6.587 8.077-7.884A13.54 13.54 0 0 1 24.18 5.617a10.135 10.135 0 0 1 2.109 5.359zM10.668 9.594a1.564 1.564 0 0 0-2.095-1.472 1.52 1.52 0 0 0-.895 1.964 1.502 1.502 0 0 0 1.391.966 1.545 1.545 0 0 0 1.598-1.46v.002zm8.15-1.566a1.567 1.567 0 0 0-1.528 1.543 1.528 1.528 0 0 0 1.571 1.492 1.52 1.52 0 0 0 1.375-2.117 1.518 1.518 0 0 0-1.415-.919l-.003.001z">
+              </path>
+              <path fill="currentColor"
+                d="M33.914 32.137c-1.075-.478-2.062-1.196-3.11-1.306-1.049-.11-2.145.494-3.24.605a10.821 10.821 0 0 1-8.781-2.864c-4.682-4.33-4.013-10.97 1.403-14.518 4.811-3.154 11.874-2.102 15.268 2.273a8.671 8.671 0 0 1-1.002 12.095c-1.046.929-1.422 1.693-.751 2.917.102.257.174.525.213.798zM21.68 20.292a1.264 1.264 0 1 0 .01-2.528 1.264 1.264 0 0 0-.01 2.528zm7.887-2.526a1.266 1.266 0 0 0-1.256 1.21 1.247 1.247 0 1 0 1.256-1.21z">
+              </path>
+            </svg>
+          </a></li>
+      </ul>
+    </div>
+    
+    <div class="privacy-policy">
+      <div class="copyright">
+      
+        <p>
+          &copy; PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has registered
+          trademarks and uses trademarks. For more information, including terms of use, privacy policy, and trademark
+          usage, please see our <a href="https://www.linuxfoundation.org/legal/policies">Policies</a> page. <a
+            href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a>. <a
+            href="http://www.linuxfoundation.org/privacy">Privacy Policy</a>.
+        </p>
+        
+      </div>
+    </div>
+
+
+  </div>
+</footer>
+
+<div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/img/pytorch-x.svg">
+  </div>
+</div>
+  
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2024, ExecuTorch.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  <script type="application/ld+json">
+    {
+       "@context": "https://schema.org",
+       "@type": "Article",
+       "name": "Bundled Program \u2013 a Tool for ExecuTorch Model Validation",
+       "headline": "Bundled Program \u2013 a Tool for ExecuTorch Model Validation",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
+       "url": "/bundled-io.html",
+       "articleBody": "Bundled Program \u2013 a Tool for ExecuTorch Model Validation# Introduction# BundledProgram is a wrapper around the core ExecuTorch program designed to help users wrapping test cases with the model they deploy. BundledProgram is not necessarily a core part of the program and not needed for its execution, but is particularly important for various other use-cases, such as model correctness evaluation, including e2e testing during the model bring-up process. Overall, the procedure can be broken into two stages, and in each stage we are supporting: Emit stage: Bundling the test I/O cases along with the ExecuTorch program, serializing into flatbuffer. Runtime stage: Accessing, executing, and verifying the bundled test cases during runtime. Emit stage# This stage mainly focuses on the creation of a BundledProgram and dumping it out to the disk as a flatbuffer file. The main procedure is as follow: Create a model and emit its ExecuTorch program. Construct a List[MethodTestSuite] to record all test cases that needs to be bundled. Generate BundledProgram by using the emited model and List[MethodTestSuite]. Serialize the BundledProgram and dump it out to the disk. Step 1: Create a Model and Emit its ExecuTorch Program.# ExecuTorch Program can be emitted from user\u2019s model by using ExecuTorch APIs. Follow the Generate and emit sample ExecuTorch program or Exporting to ExecuTorch tutorial . Step 2: Construct List[MethodTestSuite] to hold test info# In BundledProgram, we create two new classes, MethodTestCase and MethodTestSuite, to hold essential info for ExecuTorch program verification. MethodTestCase represents a single testcase. Each MethodTestCase contains inputs and expected outputs for a single execution. MethodTestCase executorch.devtools.bundled_program.config.MethodTestCase.__init__(self, inputs, expected_outputs=None) Single test case for verifying specific method Parameters: inputs \u2013 All inputs required by eager_model with specific inference method for one-time execution. It is worth mentioning that, although both bundled program and ET runtime apis support setting input other than torch.tensor type, only the input in torch.tensor type will be actually updated in the method, and the rest of the inputs will just do a sanity check if they match the default value in method. expected_outputs \u2013 Expected output of given input for verification. It can be None if user only wants to use the test case for profiling. Returns: self MethodTestSuite contains all testing info for single method, including a str representing method name, and a List[MethodTestCase] for all testcases: MethodTestSuite executorch.devtools.bundled_program.config.MethodTestSuite(method_name, test_cases)[source] All test info related to verify method executorch.devtools.bundled_program.config.method_name Name of the method to be verified. executorch.devtools.bundled_program.config.test_cases All test cases for verifying the method. Since each model may have multiple inference methods, we need to generate List[MethodTestSuite] to hold all essential infos. Step 3: Generate BundledProgram# We provide BundledProgram class under executorch/devtools/bundled_program/core.py to bundled the ExecutorchProgram-like variable, including ExecutorchProgram, MultiMethodExecutorchProgram or ExecutorchProgramManager, with the List[MethodTestSuite]: BundledProgram executorch.devtools.bundled_program.core.BundledProgram.__init__(self, executorch_program, method_test_suites, pte_file_path=None) Create BundledProgram by bundling the given program and method_test_suites together. Parameters: executorch_program \u2013 The program to be bundled. method_test_suites \u2013 The testcases for certain methods to be bundled. pte_file_path \u2013 The path to pte file to deserialize program if executorch_program is not provided. Construtor of BundledProgram will do sannity check internally to see if the given List[MethodTestSuite] matches the given Program\u2019s requirements. Specifically: The method_names of each MethodTestSuite in List[MethodTestSuite] for should be also in program. Please notice that it is no need to set testcases for every method in the Program. The metadata of each testcase should meet the requirement of the coresponding inference methods input. Step 4: Serialize BundledProgram to Flatbuffer.# To serialize BundledProgram to make runtime APIs use it, we provide two APIs, both under executorch/devtools/bundled_program/serialize/__init__.py. Serialize and Deserialize executorch.devtools.bundled_program.serialize.serialize_from_bundled_program_to_flatbuffer(bundled_program)[source] Serialize a BundledProgram into FlatBuffer binary format. Parameters: bundled_program (BundledProgram) \u2013 The BundledProgram variable to be serialized. Returns: The serialized FlatBuffer binary data in bytes. executorch.devtools.bundled_program.serialize.deserialize_from_flatbuffer_to_bundled_program(flatbuffer)[source] Deserialize a FlatBuffer binary format into a BundledProgram. Parameters: flatbuffer (bytes) \u2013 The FlatBuffer binary data in bytes. Returns: A BundledProgram instance. Emit Example# Here is a flow highlighting how to generate a BundledProgram given a PyTorch model and the representative inputs we want to test it along with. import torch from executorch.exir import to_edge_transform_and_lower from executorch.devtools import BundledProgram from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite from executorch.devtools.bundled_program.serialize import ( serialize_from_bundled_program_to_flatbuffer, ) from torch.export import export # Step 1: ExecuTorch Program Export class SampleModel(torch.nn.Module): \"\"\"An example model with multi-methods. Each method has multiple input and single output\"\"\" def __init__(self) -\u003e None: super().__init__() self.register_buffer(\u0027a\u0027, 3 * torch.ones(2, 2, dtype=torch.int32)) self.register_buffer(\u0027b\u0027, 2 * torch.ones(2, 2, dtype=torch.int32)) def forward(self, x: torch.Tensor, q: torch.Tensor) -\u003e torch.Tensor: z = x.clone() torch.mul(self.a, x, out=z) y = x.clone() torch.add(z, self.b, out=y) torch.add(y, q, out=y) return y # Inference method name of SampleModel we want to bundle testcases to. # Notices that we do not need to bundle testcases for every inference methods. method_name = \"forward\" model = SampleModel() # Inputs for graph capture. capture_input = ( (torch.rand(2, 2) - 0.5).to(dtype=torch.int32), (torch.rand(2, 2) - 0.5).to(dtype=torch.int32), ) # Export method\u0027s FX Graph. method_graph = export( export(model, capture_input).module(), capture_input, ) # Emit the traced method into ET Program. et_program = to_edge_transform_and_lower(method_graph).to_executorch() # Step 2: Construct MethodTestSuite for Each Method # Prepare the Test Inputs. # Number of input sets to be verified n_input = 10 # Input sets to be verified. inputs = [ # Each list below is a individual input set. # The number of inputs, dtype and size of each input follow Program\u0027s spec. [ (torch.rand(2, 2) - 0.5).to(dtype=torch.int32), (torch.rand(2, 2) - 0.5).to(dtype=torch.int32), ] for _ in range(n_input) ] # Generate Test Suites method_test_suites = [ MethodTestSuite( method_name=method_name, test_cases=[ MethodTestCase( inputs=input, expected_outputs=(getattr(model, method_name)(*input), ), ) for input in inputs ], ), ] # Step 3: Generate BundledProgram bundled_program = BundledProgram(et_program, method_test_suites) # Step 4: Serialize BundledProgram to flatbuffer. serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer( bundled_program ) save_path = \"bundled_program.bpte\" with open(save_path, \"wb\") as f: f.write(serialized_bundled_program) We can also regenerate BundledProgram from flatbuffer file if needed: from executorch.devtools.bundled_program.serialize import deserialize_from_flatbuffer_to_bundled_program save_path = \"bundled_program.bpte\" with open(save_path, \"rb\") as f: serialized_bundled_program = f.read() regenerate_bundled_program = deserialize_from_flatbuffer_to_bundled_program(serialized_bundled_program) Runtime Stage# This stage mainly focuses on executing the model with the bundled inputs and comparing the model\u2019s output with the bundled expected output. We provide multiple APIs to handle the key parts of it. Get ExecuTorch Program Pointer from BundledProgram Buffer# We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing BundledProgram and Program flatbuffer, we create an API for this executorch::bundled_program::get_program_data. Check out an example usage of this API. Load Bundled Input to Method# To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called executorch::bundled_program::load_bundled_input. Check out an example usage of this API. Verify the Method\u2019s Output.# We call executorch::bundled_program::verify_method_outputs to verify the method\u2019s output with bundled expected outputs. Check out an example usage of this API. Runtime Example# Please checkout our example runner for a bundled program. You could run these commands to test with the BundledProgram binary (.bpte) file you generated in the previous step: cd executorch ./examples/devtools/build_example_runner.sh ./cmake-out/examples/devtools/example_runner --bundled_program_path {your-bpte-file} --output_verification It is expected to see no output from running the above mentioned snippet. For a detailed example of how the runner should be like, please refer to our example runner. Try the Complete Workflow# To test the entire end-to-end workflow including building the example runner, exporting a model, and verifying the bundled program execution, you can use the test script: cd executorch ./examples/devtools/test_example_runner.sh This script will: Build the example runner using build_example_runner.sh Export a MobileNetV2 model as a bundled program Run the example runner with the bundled program to verify correctness This is a great way to ensure your environment is set up correctly and to see the complete BundledProgram workflow in action. Common Errors# Errors will be raised if List[MethodTestSuites] doesn\u2019t match the Program. Here\u2019re two common situations: Test input doesn\u2019t match model\u2019s requirement.# Each inference method of PyTorch model has its own requirement for the inputs, like number of input, the dtype of each input, etc. BundledProgram will raise error if test input not meet the requirement. Here\u2019s the example of the dtype of test input not meet model\u2019s requirement: import torch from executorch.exir import to_edge from executorch.devtools import BundledProgram from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite from torch.export import export class Module(torch.nn.Module): def __init__(self): super().__init__() self.a = 3 * torch.ones(2, 2, dtype=torch.float) self.b = 2 * torch.ones(2, 2, dtype=torch.float) def forward(self, x): out_1 = torch.ones(2, 2, dtype=torch.float) out_2 = torch.ones(2, 2, dtype=torch.float) torch.mul(self.a, x, out=out_1) torch.add(out_1, self.b, out=out_2) return out_2 model = Module() method_names = [\"forward\"] inputs = (torch.ones(2, 2, dtype=torch.float), ) # Find each method of model needs to be traced my its name, export its FX Graph. method_graph = export( export(model, inputs).module(), inputs, ) # Emit the traced methods into ET Program. et_program = to_edge(method_graph).to_executorch() # number of input sets to be verified n_input = 10 # Input sets to be verified for each inference methods. # To simplify, here we create same inputs for all methods. inputs = { # Inference method name corresponding to its test cases. m_name: [ # NOTE: executorch program needs torch.float, but here is torch.int [ torch.randint(-5, 5, (2, 2), dtype=torch.int), ] for _ in range(n_input) ] for m_name in method_names } # Generate Test Suites method_test_suites = [ MethodTestSuite( method_name=m_name, test_cases=[ MethodTestCase( inputs=input, expected_outputs=(getattr(model, m_name)(*input),), ) for input in inputs[m_name] ], ) for m_name in method_names ] # Generate BundledProgram bundled_program = BundledProgram(et_program, method_test_suites) Raised Error The input tensor tensor([[-2, 0], [-2, -1]], dtype=torch.int32) dtype shall be torch.float32, but now is torch.int32 --------------------------------------------------------------------------- AssertionError Traceback (most recent call last) Cell In[1], line 72 56 method_test_suites = [ 57 MethodTestSuite( 58 method_name=m_name, (...) 67 for m_name in method_names 68 ] 70 # Step 3: Generate BundledProgram ---\u003e 72 bundled_program = create_bundled_program(program, method_test_suites) File /executorch/devtools/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites) 264 \"\"\"Create bp_schema.BundledProgram by bundling the given program and method_test_suites together. 265 266 Args: (...) 271 The `BundledProgram` variable contains given ExecuTorch program and test cases. 272 \"\"\" 274 method_test_suites = sorted(method_test_suites, key=lambda x: x.method_name) --\u003e 276 assert_valid_bundle(program, method_test_suites) 278 bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = [] 280 # Emit data and metadata of bundled tensor File /executorch/devtools/bundled_program/core.py:219, in assert_valid_bundle(program, method_test_suites) 215 # type of tensor input should match execution plan 216 if type(cur_plan_test_inputs[j]) == torch.Tensor: 217 # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]` 218 # has no attribute `dtype`. --\u003e 219 assert cur_plan_test_inputs[j].dtype == get_input_dtype( 220 program, program_plan_id, j 221 ), \"The input tensor {} dtype shall be {}, but now is {}\".format( 222 cur_plan_test_inputs[j], 223 get_input_dtype(program, program_plan_id, j), 224 cur_plan_test_inputs[j].dtype, 225 ) 226 elif type(cur_plan_test_inputs[j]) in ( 227 int, 228 bool, 229 float, 230 ): 231 assert type(cur_plan_test_inputs[j]) == get_input_type( 232 program, program_plan_id, j 233 ), \"The input primitive dtype shall be {}, but now is {}\".format( 234 get_input_type(program, program_plan_id, j), 235 type(cur_plan_test_inputs[j]), 236 ) AssertionError: The input tensor tensor([[-2, 0], [-2, -1]], dtype=torch.int32) dtype shall be torch.float32, but now is torch.int32 Method name in BundleConfig does not exist.# Another common error would be the method name in any MethodTestSuite does not exist in Model. BundledProgram will raise error and show the non-exist method name: import torch from executorch.exir import to_edge from executorch.devtools import BundledProgram from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite from torch.export import export class Module(torch.nn.Module): def __init__(self): super().__init__() self.a = 3 * torch.ones(2, 2, dtype=torch.float) self.b = 2 * torch.ones(2, 2, dtype=torch.float) def forward(self, x): out_1 = torch.ones(2, 2, dtype=torch.float) out_2 = torch.ones(2, 2, dtype=torch.float) torch.mul(self.a, x, out=out_1) torch.add(out_1, self.b, out=out_2) return out_2 model = Module() method_names = [\"forward\"] inputs = (torch.ones(2, 2, dtype=torch.float),) # Find each method of model needs to be traced my its name, export its FX Graph. method_graph = export( export(model, inputs).module(), inputs, ) # Emit the traced methods into ET Program. et_program = to_edge(method_graph).to_executorch() # number of input sets to be verified n_input = 10 # Input sets to be verified for each inference methods. # To simplify, here we create same inputs for all methods. inputs = { # Inference method name corresponding to its test cases. m_name: [ [ torch.randint(-5, 5, (2, 2), dtype=torch.float), ] for _ in range(n_input) ] for m_name in method_names } # Generate Test Suites method_test_suites = [ MethodTestSuite( method_name=m_name, test_cases=[ MethodTestCase( inputs=input, expected_outputs=(getattr(model, m_name)(*input),), ) for input in inputs[m_name] ], ) for m_name in method_names ] # NOTE: MISSING_METHOD_NAME is not an inference method in the above model. method_test_suites[0].method_name = \"MISSING_METHOD_NAME\" # Generate BundledProgram bundled_program = BundledProgram(et_program, method_test_suites) Raised Error All method names in bundled config should be found in program.execution_plan, but {\u0027MISSING_METHOD_NAME\u0027} does not include. --------------------------------------------------------------------------- AssertionError Traceback (most recent call last) Cell In[3], line 73 70 method_test_suites[0].method_name = \"MISSING_METHOD_NAME\" 72 # Generate BundledProgram ---\u003e 73 bundled_program = create_bundled_program(program, method_test_suites) File /executorch/devtools/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites) 264 \"\"\"Create bp_schema.BundledProgram by bundling the given program and method_test_suites together. 265 266 Args: (...) 271 The `BundledProgram` variable contains given ExecuTorch program and test cases. 272 \"\"\" 274 method_test_suites = sorted(method_test_suites, key=lambda x: x.method_name) --\u003e 276 assert_valid_bundle(program, method_test_suites) 278 bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = [] 280 # Emit data and metadata of bundled tensor File /executorch/devtools/bundled_program/core.py:141, in assert_valid_bundle(program, method_test_suites) 138 method_name_of_program = {e.name for e in program.execution_plan} 139 method_name_of_test_suites = {t.method_name for t in method_test_suites} --\u003e 141 assert method_name_of_test_suites.issubset( 142 method_name_of_program 143 ), f\"All method names in bundled config should be found in program.execution_plan, \\ 144 but {str(method_name_of_test_suites - method_name_of_program)} does not include.\" 146 # check if method_tesdt_suites has been sorted in ascending alphabetical order of method name. 147 for test_suite_id in range(1, len(method_test_suites)): AssertionError: All method names in bundled config should be found in program.execution_plan, but {\u0027MISSING_METHOD_NAME\u0027} does not include.",
+       "author": {
+         "@type": "Organization",
+         "name": "PyTorch Contributors",
+         "url": "https://pytorch.org"
+       },
+       "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
+       "mainEntityOfPage": {
+         "@type": "WebPage",
+         "@id": "/bundled-io.html"
+       },
+       "datePublished": "2023-01-01T00:00:00Z",
+       "dateModified": "2023-01-01T00:00:00Z"
+     }
+ </script>
+  <script>
+    // Tutorials Call to action event tracking
+    $("[data-behavior='call-to-action-event']").on('click', function () {
+      fbq('trackCustom', "Download", {
+        tutorialTitle: $('h1:first').text(),
+        downloadLink: this.href,
+        tutorialLink: window.location.href,
+        downloadTitle: $(this).attr("data-response")
+      });
+      if (typeof gtag === 'function') {
+        gtag('event', 'click', {
+          'event_category': $(this).attr("data-response"),
+          'event_label': $("h1").first().text(),
+          'tutorial_link': window.location.href
+        });
+      }
+    });
+  </script>
+  
+  </body>
+</html>
