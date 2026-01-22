@@ -10,6 +10,7 @@
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 
 #include <gtest/gtest.h>
+#include <cstdint>
 #include <random>
 
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -448,4 +449,12 @@ TEST_F(TensorImplTest, TestResizingTensorToZeroAndBack) {
   t.set_sizes_contiguous({new_sizes, 2});
   EXPECT_GT(t.numel(), 0);
   EXPECT_EQ(t.data(), data);
+}
+
+TEST_F(TensorImplTest, TestNbytesOverflow) {
+  SizesType sizes[3] = {
+      static_cast<SizesType>(1 << 21),
+      static_cast<SizesType>(1 << 21),
+      static_cast<SizesType>(1 << 21)};
+  ET_EXPECT_DEATH(TensorImpl t(ScalarType::Float, 3, sizes), "");
 }
