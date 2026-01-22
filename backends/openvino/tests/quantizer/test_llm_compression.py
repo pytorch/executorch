@@ -7,17 +7,17 @@ from executorch.backends.openvino.quantizer import OpenVINOQuantizer, Quantizati
 from executorch.backends.openvino.quantizer.llm_compression import (
     apply_nncf_data_aware_compression,
     get_calibration_data,
+    transform_fn,
 )
 from executorch.extension.llm.export.builder import LLMEdgeManager
-from synthetic_test_models import SimpleTransformer  # type: ignore[import-not-found]
+from synthetic_test_models import ExportLlamaTestModel  # type: ignore[import-not-found]
 
 
 class TestWeightsOnlyQuantization(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.model_name = "llama"
-        cls.model_class_name = "Llama2Model"
-        cls.model = SimpleTransformer()
+        torch.manual_seed(42)
+        cls.model = ExportLlamaTestModel(vocab_size=5, hidden_size=2, num_layers=1)
         cls.model.eval()
 
         cls.max_seq_len = 128
@@ -51,6 +51,61 @@ class TestWeightsOnlyQuantization(unittest.TestCase):
 
         cls.calibration_data = "The quick brown fox jumps over the lazy dog."
 
+        cls.reference_scales = {
+            "awq_only": {
+                "symmetric_weights_decompressor_embed_weight._scale": torch.tensor(
+                    [[-0.042084], [-0.029312], [0.140381], [-0.276123], [-0.057709]],
+                    dtype=torch.float16,
+                ),
+                "symmetric_weights_decompressor_layers_0_weight._scale": torch.tensor(
+                    [[0.040710], [-0.058624]], dtype=torch.float16
+                ),
+                "relu/awq_mul._scale_value": torch.tensor([[[1.0, 1.0]]]),
+                "symmetric_weights_decompressor_lm_head_weight_updated_constant0._scale": torch.tensor(
+                    [[0.053131], [0.087280], [-0.079834], [-0.068237], [-0.054626]],
+                    dtype=torch.float16,
+                ),
+            },
+            "scale_estimation_only": {
+                "symmetric_weights_decompressor_embed_weight._scale": torch.tensor(
+                    [[-0.042084], [-0.029312], [0.140381], [-0.276123], [-0.057709]],
+                    dtype=torch.float16,
+                ),
+                "symmetric_weights_decompressor_layers_0_weight._scale": torch.tensor(
+                    [[0.040710], [-0.057709]], dtype=torch.float16
+                ),
+                "symmetric_weights_decompressor_lm_head_weight._scale": torch.tensor(
+                    [[0.0], [0.0], [-0.0], [-0.0], [-0.0]], dtype=torch.float16
+                ),
+            },
+            "awq_and_scale_estimation": {
+                "symmetric_weights_decompressor_embed_weight._scale": torch.tensor(
+                    [[-0.042084], [-0.029312], [0.140381], [-0.276123], [-0.057709]],
+                    dtype=torch.float16,
+                ),
+                "symmetric_weights_decompressor_layers_0_weight._scale": torch.tensor(
+                    [[0.040710], [-0.057709]], dtype=torch.float16
+                ),
+                "relu/awq_mul._scale_value": torch.tensor([[[1.0, 1.0]]]),
+                "symmetric_weights_decompressor_lm_head_weight_updated_constant0._scale": torch.tensor(
+                    [[0.0], [0.0], [-0.0], [-0.0], [-0.0]], dtype=torch.float16
+                ),
+            },
+            "no_calibration": {
+                "symmetric_weights_decompressor_embed_weight._scale": torch.tensor(
+                    [[-0.042084], [-0.029312], [0.140381], [-0.276123], [-0.057709]],
+                    dtype=torch.float16,
+                ),
+                "symmetric_weights_decompressor_layers_0_weight._scale": torch.tensor(
+                    [[0.040710], [-0.058624]], dtype=torch.float16
+                ),
+                "symmetric_weights_decompressor_lm_head_weight._scale": torch.tensor(
+                    [[0.053131], [0.087280], [-0.079834], [-0.068237], [-0.054626]],
+                    dtype=torch.float16,
+                ),
+            },
+        }
+
     def _create_builder(self, config_name, calibration_data=None):
         builder_kwargs = {
             "model": self.model,
@@ -66,11 +121,28 @@ class TestWeightsOnlyQuantization(unittest.TestCase):
                 {
                     "calibration_seq_length": 32,
                     "calibration_data": calibration_data,
-                    "tokenizer_path": "dummy_path",  # Will be mocked
+                    "tokenizer_path": "dummy_path",
                 }
             )
 
         return LLMEdgeManager(**builder_kwargs)
+
+    def _extract_scales_from_model(self, model):
+        extracted_scales = {}
+        state_dict = dict(model.state_dict())
+        for name, _ in state_dict.items():
+            if "_scale" in name.lower():
+                extracted_scales[name] = state_dict[name]
+        return extracted_scales
+
+    def _compare_scales(self, extracted_scales, reference_scales):
+        for name, reference_value in reference_scales.items():
+            self.assertIn(name, extracted_scales, f"Scale {name} not found in model")
+            extracted_value = extracted_scales[name]
+            self.assertTrue(
+                torch.allclose(extracted_value, reference_value),
+                f"Scale {name} mismatch {extracted_value}",
+            )
 
     @patch("executorch.backends.openvino.quantizer.llm_compression.get_tokenizer")
     @patch(
@@ -79,18 +151,7 @@ class TestWeightsOnlyQuantization(unittest.TestCase):
     def test_compression_flow_with_mocked_calibration(
         self, mock_get_calibration_data, mock_get_tokenizer
     ):
-        mock_calibration_data = [
-            (0, 1),
-            (1, 5),
-            (2, 10),
-            (3, 15),
-            (4, 20),
-            (5, 25),
-            (6, 30),
-            (7, 35),
-            (8, 40),
-            (9, 45),
-        ]
+        mock_calibration_data = [(i, i) for i in range(5)]
         mock_get_calibration_data.return_value = mock_calibration_data
 
         mock_tokenizer = Mock()
@@ -108,16 +169,13 @@ class TestWeightsOnlyQuantization(unittest.TestCase):
                     config["name"], calibration_data=calibration_data
                 )
                 builder.export()
-                import copy
 
-                original_model = copy.deepcopy(builder.pre_autograd_graph_module)
-
-                test_input = torch.tensor([[5]], dtype=torch.long)
+                test_input = torch.tensor([[4]], dtype=torch.long)
                 test_pos = torch.tensor([0], dtype=torch.long)
-                reference_output = original_model(test_input, {"input_pos": test_pos})
-
+                # Quantize weights for all layers(including embedding and lm_head which would by default be in INT8)
+                # to Per-Channel INT4 Symmetric
                 quantizer = OpenVINOQuantizer(
-                    mode=QuantizationMode.INT4WO_SYM, group_size=-1
+                    mode=QuantizationMode.INT4WO_SYM, group_size=-1, all_layers=True
                 )
                 builder = apply_nncf_data_aware_compression(
                     builder,
@@ -125,17 +183,18 @@ class TestWeightsOnlyQuantization(unittest.TestCase):
                     awq=config["awq"],
                     scale_estimation=config["scale_estimation"],
                 )
-
-                compressed_output = builder.pre_autograd_graph_module(
-                    test_input, {"input_pos": test_pos}
+                # Run the model to check it is performant
+                builder.pre_autograd_graph_module(test_input, {"input_pos": test_pos})
+                extracted_scales = self._extract_scales_from_model(
+                    builder.pre_autograd_graph_module
                 )
-
-                torch.allclose(compressed_output, reference_output)
+                self._compare_scales(
+                    extracted_scales,
+                    self.reference_scales[config["name"]],
+                )
 
 
 class TestCalibrationDataGeneration(unittest.TestCase):
-    """Test the calibration data generation method. We first create a mock tokenizer
-    and then compare it with a reference created manually"""
 
     def test_get_calibration_data_with_mock_module(self):
         mock_tokenizer = Mock()
@@ -146,8 +205,21 @@ class TestCalibrationDataGeneration(unittest.TestCase):
         mock_module.return_value = torch.tensor([[[0.1, 0.2, 0.9, 0.0]]])
 
         result = get_calibration_data(
-            mock_module, mock_tokenizer, "test prompt", max_len=10  # Will be mocked
+            mock_module, mock_tokenizer, "test prompt", max_len=10
         )
 
         positions = [item[0] for item in result]
         self.assertEqual(positions, list(range(len(positions))))
+
+    def test_transform_fn(self):
+        token_pos_map = (5, 10)
+        result = transform_fn(token_pos_map)
+
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(len(result), 2)
+
+        token, input_pos_dict = result
+        self.assertEqual(token.shape, torch.Size([1, 1]))
+        self.assertEqual(token, torch.tensor([[10]]))
+        self.assertIn("input_pos", input_pos_dict)
+        self.assertEqual(input_pos_dict["input_pos"], torch.tensor([5]))

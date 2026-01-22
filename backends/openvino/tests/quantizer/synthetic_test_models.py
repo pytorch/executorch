@@ -1,8 +1,8 @@
 import torch
 
 
-class SimpleTransformer(torch.nn.Module):
-    def __init__(self, vocab_size=100, hidden_size=64, num_layers=2):
+class ExportLlamaTestModel(torch.nn.Module):
+    def __init__(self, vocab_size=5, hidden_size=2, num_layers=1):
         super().__init__()
         self.embed = torch.nn.Embedding(vocab_size, hidden_size)
         self.layers = torch.nn.ModuleList(
