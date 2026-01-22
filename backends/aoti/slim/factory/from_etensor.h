@@ -73,8 +73,8 @@ inline SlimTensor from_etensor(
   SlimTensor result = empty_strided(
       makeArrayRef(sizes_vec), makeArrayRef(strides_vec), dtype, target_device);
 
-  // Step 3: Copy data from ETensor (source device) to SlimTensor (target device)
-  // Supports CPU→CPU, CPU→CUDA, CUDA→CPU, or CUDA→CUDA copy
+  // Step 3: Copy data from ETensor (source device) to SlimTensor (target
+  // device) Supports CPU→CPU, CPU→CUDA, CUDA→CPU, or CUDA→CUDA copy
   const void* src_data = etensor.const_data_ptr();
   void* dst_data = result.data_ptr();
   size_t nbytes = etensor.nbytes();

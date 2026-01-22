@@ -91,7 +91,8 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
  * @param tensor Pointer to the tensor to delete (must not be null)
  * @return AOTITorchError error code (Error::Ok on success)
  */
-AOTI_SHIM_EXPORT AOTITorchError aoti_torch_delete_tensor_object(SlimTensor* tensor);
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_delete_tensor_object(SlimTensor* tensor);
 
 /**
  * Creates a new tensor handle that shares storage with the original tensor.

@@ -147,11 +147,13 @@ int32_t aoti_torch_device_type_cuda() {
 // ============================================================
 
 bool aoti_torch_grad_mode_is_enabled() {
+  // ExecuTorch doesn't support autograd
   return false;
 }
 
 AOTITorchError aoti_torch_grad_mode_set_enabled(bool enabled) {
   if (enabled) {
+    // ExecuTorch doesn't support autograd
     return Error::NotSupported;
   }
   return Error::Ok;
@@ -160,100 +162,3 @@ AOTITorchError aoti_torch_grad_mode_set_enabled(bool enabled) {
 } // namespace aoti
 } // namespace backends
 } // namespace executorch
-
-// ============================================================
-// extern "C" wrappers for dynamic symbol lookup (dlsym)
-// AOTI-generated .so files need these symbols with C linkage
-// ============================================================
-
-using Tensor = executorch::backends::aoti::Tensor;
-using Error = executorch::runtime::Error;
-
-extern "C" {
-
-Error aoti_torch_get_data_ptr(Tensor* tensor, void** ret_data_ptr) {
-  return executorch::backends::aoti::aoti_torch_get_data_ptr(
-      tensor, ret_data_ptr);
-}
-
-Error aoti_torch_get_sizes(Tensor* tensor, int64_t** ret_sizes) {
-  return executorch::backends::aoti::aoti_torch_get_sizes(tensor, ret_sizes);
-}
-
-Error aoti_torch_get_strides(Tensor* tensor, int64_t** ret_strides) {
-  return executorch::backends::aoti::aoti_torch_get_strides(tensor, ret_strides);
-}
-
-Error aoti_torch_get_dtype(Tensor* tensor, int32_t* ret_dtype) {
-  return executorch::backends::aoti::aoti_torch_get_dtype(tensor, ret_dtype);
-}
-
-Error aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim) {
-  return executorch::backends::aoti::aoti_torch_get_dim(tensor, ret_dim);
-}
-
-Error aoti_torch_get_storage_offset(Tensor* tensor, int64_t* ret_storage_offset) {
-  return executorch::backends::aoti::aoti_torch_get_storage_offset(
-      tensor, ret_storage_offset);
-}
-
-Error aoti_torch_get_storage_size(Tensor* tensor, int64_t* ret_size) {
-  return executorch::backends::aoti::aoti_torch_get_storage_size(
-      tensor, ret_size);
-}
-
-Error aoti_torch_get_device_type(Tensor* tensor, int32_t* ret_device_type) {
-  return executorch::backends::aoti::aoti_torch_get_device_type(
-      tensor, ret_device_type);
-}
-
-Error aoti_torch_get_device_index(Tensor* tensor, int32_t* ret_device_index) {
-  return executorch::backends::aoti::aoti_torch_get_device_index(
-      tensor, ret_device_index);
-}
-
-int32_t aoti_torch_dtype_float32() {
-  return executorch::backends::aoti::aoti_torch_dtype_float32();
-}
-
-int32_t aoti_torch_dtype_bfloat16() {
-  return executorch::backends::aoti::aoti_torch_dtype_bfloat16();
-}
-
-int32_t aoti_torch_dtype_int64() {
-  return executorch::backends::aoti::aoti_torch_dtype_int64();
-}
-
-int32_t aoti_torch_dtype_int32() {
-  return executorch::backends::aoti::aoti_torch_dtype_int32();
-}
-
-int32_t aoti_torch_dtype_int16() {
-  return executorch::backends::aoti::aoti_torch_dtype_int16();
-}
-
-int32_t aoti_torch_dtype_int8() {
-  return executorch::backends::aoti::aoti_torch_dtype_int8();
-}
-
-int32_t aoti_torch_dtype_bool() {
-  return executorch::backends::aoti::aoti_torch_dtype_bool();
-}
-
-int32_t aoti_torch_device_type_cpu() {
-  return executorch::backends::aoti::aoti_torch_device_type_cpu();
-}
-
-int32_t aoti_torch_device_type_cuda() {
-  return executorch::backends::aoti::aoti_torch_device_type_cuda();
-}
-
-bool aoti_torch_grad_mode_is_enabled() {
-  return executorch::backends::aoti::aoti_torch_grad_mode_is_enabled();
-}
-
-Error aoti_torch_grad_mode_set_enabled(bool enabled) {
-  return executorch::backends::aoti::aoti_torch_grad_mode_set_enabled(enabled);
-}
-
-} // extern "C"

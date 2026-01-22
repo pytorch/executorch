@@ -8,8 +8,27 @@ cpp_unittest(
     srcs = [
         "test_common_shims.cpp",
     ],
+    headers = [
+        "utils.h",
+    ],
     deps = [
         "//executorch/backends/aoti:common_shims",
+        "//executorch/extension/tensor:tensor",
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/platform:platform",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+        "//executorch/runtime/core/exec_aten:lib",
+        "//executorch/extension/tensor:tensor",
+    ],
+)
+
+cpp_unittest(
+    name = "test_common_shims_slim",
+    srcs = [
+        "test_common_shims_slim.cpp",
+    ],
+    deps = [
+        "//executorch/backends/aoti:common_shims_slim",
         "//executorch/backends/aoti/slim/core:slimtensor",
         "//executorch/backends/aoti/slim/factory:empty",
         "//executorch/runtime/core:core",

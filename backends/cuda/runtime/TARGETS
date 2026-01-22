@@ -4,28 +4,6 @@ load("//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
 oncall("executorch")
 
 runtime.cxx_library(
-    name = "guard",
-    srcs = [
-        "guard.cpp",
-    ],
-    headers = [
-        "guard.h",
-        "utils.h",
-    ],
-    visibility = ["PUBLIC"],
-    deps = [
-        "//executorch/runtime/platform:platform",
-    ],
-    exported_deps = [
-        "//executorch/runtime/core:core",
-        "//executorch/runtime/core/exec_aten:lib",
-    ],
-    external_deps = [
-        ("cuda", None, "cuda-lazy"),
-    ],
-)
-
-runtime.cxx_library(
     name = "cuda_platform",
     srcs = [
         "platform/platform.cpp",
@@ -74,12 +52,15 @@ runtime.cxx_library(
         "shims/cuda_guard.cpp",
         "shims/int4mm.cu",
         "shims/memory.cpp",
+        "shims/tensor_attribute.cpp",
     ],
     headers = [
         "shims/cuda_guard.h",
         "shims/int4mm.cuh",
         "shims/int4mm.h",
         "shims/memory.h",
+        "shims/tensor_attribute.h",
+        "utils.h",
     ],
     # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
     link_whole = True,
@@ -90,12 +71,14 @@ runtime.cxx_library(
     visibility = ["PUBLIC"],
     deps = [
         ":tensor_maker",
-        "//executorch/backends/aoti:common_shims_slim",
+        "//executorch/backends/aoti:aoti_common_slim",
         "//executorch/backends/aoti/slim/core:slimtensor",
         "//executorch/backends/aoti/slim/factory:empty",
         "//executorch/backends/aoti/slim/factory:from_blob",
+        "//executorch/backends/aoti/slim/cuda:guard",
         "//executorch/runtime/core:core",
         "//executorch/runtime/core/exec_aten:lib",
+        "//executorch/runtime/core/exec_aten/util:tensor_util",
         "//executorch/runtime/platform:platform",
     ],
     nvcc_flags = get_nvcc_arch_args() + [
@@ -104,15 +87,6 @@ runtime.cxx_library(
     ],
     external_deps = [
         ("cuda", None, "cuda-lazy"),
-    ],
-)
-
-# Legacy alias for backward compatibility
-runtime.cxx_library(
-    name = "runtime_shims_slim",
-    visibility = ["PUBLIC"],
-    exported_deps = [
-        ":runtime_shims",
     ],
 )
 
@@ -129,8 +103,8 @@ runtime.cxx_library(
     preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
     visibility = ["PUBLIC"],
     deps = [
-        ":runtime_shims_slim",
-        "//executorch/backends/aoti:aoti_common",
+        ":runtime_shims",
+        "//executorch/backends/aoti:aoti_common_slim",
         "//executorch/backends/aoti/slim/core:slimtensor",
         "//executorch/backends/aoti/slim/factory:empty",
         "//executorch/backends/aoti/slim/factory:from_blob",

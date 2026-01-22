@@ -11,6 +11,7 @@
 #include <executorch/backends/aoti/slim/factory/empty.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/aoti/slim/util/array_ref_util.h>
+#include <executorch/backends/aoti/slim/util/size_util.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch::backends::cuda {
@@ -23,6 +24,7 @@ using c10::ScalarType;
 using executorch::backends::aoti::slim::empty_strided;
 using executorch::backends::aoti::slim::from_blob;
 using executorch::backends::aoti::slim::IntArrayRef;
+using executorch::backends::aoti::slim::makeArrayRef;
 
 // Use SlimTensor directly to avoid naming conflicts with ETensor
 using SlimTensor = executorch::backends::aoti::slim::SlimTensor;
@@ -98,16 +100,28 @@ AOTITorchError aoti_torch_empty_strided(
       "aoti_torch_empty_strided: sizes_ptr is null but ndim > 0");
 
   IntArrayRef sizes(sizes_ptr, static_cast<size_t>(ndim));
-  IntArrayRef strides(strides_ptr, static_cast<size_t>(ndim));
 
-  // Create the SlimTensor using empty_strided (owning)
-  *ret_new_tensor = new SlimTensor(empty_strided(
-      sizes,
-      strides,
-      static_cast<ScalarType>(dtype),
-      Device(
-          static_cast<DeviceType>(device_type),
-          static_cast<DeviceIndex>(device_index))));
+  // Handle nullptr strides by computing contiguous strides
+  if (strides_ptr == nullptr) {
+    std::vector<int64_t> contig_strides =
+        executorch::backends::aoti::slim::compute_contiguous_strides(sizes);
+    *ret_new_tensor = new SlimTensor(empty_strided(
+        sizes,
+        makeArrayRef(contig_strides),
+        static_cast<ScalarType>(dtype),
+        Device(
+            static_cast<DeviceType>(device_type),
+            static_cast<DeviceIndex>(device_index))));
+  } else {
+    IntArrayRef strides(strides_ptr, static_cast<size_t>(ndim));
+    *ret_new_tensor = new SlimTensor(empty_strided(
+        sizes,
+        strides,
+        static_cast<ScalarType>(dtype),
+        Device(
+            static_cast<DeviceType>(device_type),
+            static_cast<DeviceIndex>(device_index))));
+  }
 
   return Error::Ok;
 }
@@ -238,7 +252,9 @@ AOTITorchError aoti_torch_item_bool(SlimTensor* tensor, bool* ret_value) {
   return Error::Ok;
 }
 
-AOTITorchError aoti_torch_assign_tensors_out(SlimTensor* src, SlimTensor** ret_dst) {
+AOTITorchError aoti_torch_assign_tensors_out(
+    SlimTensor* src,
+    SlimTensor** ret_dst) {
   ET_CHECK_OR_RETURN_ERROR(
       src != nullptr,
       InvalidArgument,

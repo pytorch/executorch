@@ -11,11 +11,6 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <string>
-#include <vector>
-
-#ifdef CUDA_AVAILABLE
-#include <executorch/backends/aoti/slim/core/slim_tensor.h>
-#endif
 
 namespace executorch {
 namespace backends {
@@ -100,7 +95,6 @@ struct AOTIDelegateHandle {
   AOTInductorModelContainerGetNumOutputsFunc get_num_outputs;
   AOTInductorModelContainerRunFunc run;
   AOTInductorModelUpdateConstantsFromBlobFunc update_constants_from_blob;
-
 };
 
 } // namespace aoti

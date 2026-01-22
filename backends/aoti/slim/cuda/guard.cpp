@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cuda/runtime/guard.h>
-#include <executorch/backends/cuda/runtime/utils.h>
+#include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/runtime/platform/log.h>
+#include <limits>
 #include <unordered_map>
 
 namespace executorch::backends::cuda {
@@ -21,9 +21,11 @@ thread_local std::unordered_map<DeviceIndex, cudaStream_t> current_streams_;
 Error setCurrentCUDAStream(cudaStream_t stream, DeviceIndex device_index) {
   if (device_index == -1) {
     // Get current device if not specified
-    int current_device;
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&current_device));
-    device_index = current_device;
+    // CUDA API returns int, explicit cast to DeviceIndex (int8_t) following
+    // ATen
+    int tmp_device = -1;
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&tmp_device));
+    device_index = static_cast<DeviceIndex>(tmp_device);
   }
 
   current_streams_[device_index] = stream;
@@ -32,9 +34,11 @@ Error setCurrentCUDAStream(cudaStream_t stream, DeviceIndex device_index) {
 
 Result<cudaStream_t> getCurrentCUDAStream(DeviceIndex device_index) {
   if (device_index == -1) {
-    int current_device;
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&current_device));
-    device_index = current_device;
+    // CUDA API returns int, explicit cast to DeviceIndex (int8_t) following
+    // ATen
+    int tmp_device = -1;
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&tmp_device));
+    device_index = static_cast<DeviceIndex>(tmp_device);
   }
 
   auto it = current_streams_.find(device_index);
@@ -58,25 +62,28 @@ CUDAGuard::CUDAGuard(CUDAGuard&& other) noexcept
 
 CUDAGuard::~CUDAGuard() {
   if (original_device_index_ != current_device_index_) {
+    // DeviceIndex (int8_t) implicitly widens to int for cudaSetDevice
     cudaError_t err = cudaSetDevice(original_device_index_);
     if (err != cudaSuccess) {
       ET_LOG(
           Error,
           "~CUDAGuard: Failed to restore device to %d: %s",
-          original_device_index_,
+          static_cast<int>(original_device_index_),
           cudaGetErrorString(err));
     }
   }
 }
 
 Error CUDAGuard::set_index(DeviceIndex device_index) {
-  int orig_index = -1;
-  ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&orig_index));
+  // CUDA API returns int, explicit cast to DeviceIndex (int8_t) following ATen
+  int tmp_device = -1;
+  ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&tmp_device));
 
-  original_device_index_ = orig_index;
+  original_device_index_ = static_cast<DeviceIndex>(tmp_device);
   current_device_index_ = device_index;
 
   if (current_device_index_ != original_device_index_) {
+    // DeviceIndex (int8_t) implicitly widens to int for cudaSetDevice
     ET_CUDA_CHECK_OR_RETURN_ERROR(cudaSetDevice(current_device_index_));
   }
 
@@ -111,7 +118,7 @@ CUDAStreamGuard::~CUDAStreamGuard() {
       ET_LOG(
           Error,
           "~CUDAStreamGuard: Failed to restore stream for device %d",
-          device_index_);
+          static_cast<int>(device_index_));
     }
   }
 }
@@ -121,7 +128,10 @@ Error CUDAStreamGuard::set_stream(
     DeviceIndex device_index) {
   auto result = getCurrentCUDAStream(device_index);
   if (!result.ok()) {
-    ET_LOG(Error, "Failed to get current stream for device %d", device_index);
+    ET_LOG(
+        Error,
+        "Failed to get current stream for device %d",
+        static_cast<int>(device_index));
     return result.error();
   }
 

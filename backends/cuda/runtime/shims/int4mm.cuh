@@ -40,10 +40,11 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <executorch/backends/cuda/runtime/guard.h>
+#include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
-#include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/aoti/common_shims_slim.h>
+#include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/aoti/utils.h>
 
 #if (defined(USE_ROCM) && ROCM_VERSION >= 50700) || ((defined(CUDA_VERSION) && CUDA_VERSION >= 12000) && (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800)))
@@ -57,6 +58,7 @@
 
 namespace executorch::backends::cuda {
 using executorch::backends::aoti::Tensor;
+namespace c10 = executorch::backends::aoti::slim::c10;
 
 template <typename U, typename V>
 constexpr __host__ __device__ auto divDown(U a, V b) -> decltype(a + b) {
@@ -1177,14 +1179,13 @@ Tensor* _weight_int4pack_mm_cuda(
   ET_CHECK(B_innerKTiles == 2 || B_innerKTiles == 4 || B_innerKTiles == 8);
 
   // A is standard row major
-  // SlimTensor::dtype() returns slim::c10::ScalarType, cast to int32_t for comparison
-  ET_CHECK(static_cast<int32_t>(A.dtype()) == static_cast<int32_t>(SupportedDTypes::BFLOAT16));
+  ET_CHECK(A.dtype() == c10::ScalarType::BFloat16);
   // ET only supports contiguous tensors for now
   // ET_CHECK(A.is_contiguous());
   ET_CHECK(A.dim() == 2);
 
   // B has B_innerKTiles k-tiles in the innermost dimension
-  ET_CHECK(static_cast<int32_t>(B.dtype()) == static_cast<int32_t>(SupportedDTypes::INT32));
+  ET_CHECK(B.dtype() == c10::ScalarType::Int);
   // ET only supports contiguous tensors for now
   // ET_CHECK(B.is_contiguous());
   ET_CHECK(B.dim() == 4);
@@ -1213,8 +1214,8 @@ Tensor* _weight_int4pack_mm_cuda(
     2,
     shape.data(),
     stride.data(),
-    static_cast<int32_t>(SupportedDTypes::BFLOAT16),
-    static_cast<int32_t>(SupportedDevices::CUDA),
+    static_cast<int32_t>(c10::ScalarType::BFloat16),
+    static_cast<int32_t>(c10::DeviceType::CUDA),
     0,
     &C_final
   );

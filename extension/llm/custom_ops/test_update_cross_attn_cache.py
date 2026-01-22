@@ -14,10 +14,13 @@ from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 # Check CUDA availability once at module level
 CUDA_AVAILABLE = torch.cuda.is_available()
 
+# Check if CUDA device has compatible compute capability for Triton kernels
+# Minimum CC 9.0 (Hopper) required for current PyTorch/Triton build
+CUDA_CC_COMPATIBLE = CUDA_AVAILABLE and torch.cuda.get_device_capability()[0] >= 9
+
 
 class TestUpdateCrossAttnCache(unittest.TestCase):
     def test_update_cross_attn_cache(self):
-
         # Create tensors
         # Cache: [B=2, H=1, S_max=4, D=4]
         cache = torch.zeros(2, 1, 4, 4, dtype=torch.float32)
@@ -101,7 +104,6 @@ class TestUpdateCrossAttnCache(unittest.TestCase):
         )
 
     def test_update_cross_attn_cache_export(self):
-
         # Create tensors
         # Cache: [B=2, H=1, S_max=4, D=4]
         cache = torch.zeros(2, 1, 4, 4, dtype=torch.float32)
@@ -154,7 +156,6 @@ class TestUpdateCrossAttnCache(unittest.TestCase):
         )
 
     def test_update_cross_attn_cache_different_shapes(self):
-
         # Test with different batch sizes and sequence lengths
         test_cases = [
             # (B, H, S_max, S, D)
@@ -190,7 +191,6 @@ class TestUpdateCrossAttnCache(unittest.TestCase):
                 )
 
     def test_update_cross_attn_cache_full_sequence(self):
-
         # Cache: [B=2, H=1, S_max=4, D=4]
         cache = torch.zeros(2, 1, 4, 4, dtype=torch.float32)
         # Value: [B=2, H=1, S=4, D=4] (S == S_max)
@@ -207,7 +207,9 @@ class TestUpdateCrossAttnCache(unittest.TestCase):
             cache, value, msg="Cache not fully updated when S == S_max"
         )
 
-    @unittest.skipUnless(CUDA_AVAILABLE, "CUDA not available")
+    @unittest.skipUnless(
+        CUDA_CC_COMPATIBLE, "Requires CUDA with compute capability >= 9.0"
+    )
     def test_alias_and_update_cross_attn_cache_with_cond_triton(self):
         """Test combining alias and update_cross_attn_cache ops with torch.cond,
         lowered to Triton on CUDA. True branch uses alias, false branch uses

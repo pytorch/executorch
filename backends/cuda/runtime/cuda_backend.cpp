@@ -34,7 +34,6 @@
 
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
-#include <executorch/backends/aoti/common_shims.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
@@ -64,13 +63,13 @@ using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
 // SlimTensor type aliases
-using slim::c10::Device;
-using slim::c10::DeviceType;
 using slim::CPU_DEVICE;
 using slim::DEFAULT_CUDA_DEVICE;
 using slim::DeviceTraits;
 using slim::from_etensor;
 using slim::SlimTensor;
+using slim::c10::Device;
+using slim::c10::DeviceType;
 
 namespace {
 constexpr char kSkipCopyOutputToCpuForMethod[] =
@@ -305,8 +304,9 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         args.size())
 
-    // NOTE: ExecuTorch tensors maybe on CPU or GPU due to the skip-copy optimization
-    // We need to create GPU copies for CUDA kernel execution using SlimTensor
+    // NOTE: ExecuTorch tensors maybe on CPU or GPU due to the skip-copy
+    // optimization We need to create GPU copies for CUDA kernel execution using
+    // SlimTensor
     std::vector<SlimTensor> gpu_input_tensors(n_inputs);
     std::vector<SlimTensor*> gpu_inputs(n_inputs);
     std::vector<SlimTensor> gpu_output_tensors(n_outputs);
@@ -316,8 +316,8 @@ class ET_EXPERIMENTAL CudaBackend final
     for (size_t i = 0; i < n_inputs; i++) {
       auto* cpu_tensor = &(args[i]->toTensor());
 
-      // Check if input data is already on GPU (skip-copy optimization for inputs)
-      // This can happen when the caller has pre-staged data on GPU
+      // Check if input data is already on GPU (skip-copy optimization for
+      // inputs) This can happen when the caller has pre-staged data on GPU
       cudaPointerAttributes attributes{};
       const void* data_ptr = cpu_tensor->const_data_ptr();
       if (data_ptr != nullptr) {

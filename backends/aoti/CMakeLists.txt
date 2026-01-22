@@ -29,8 +29,7 @@ find_package_torch()
 add_library(aoti_common INTERFACE)
 target_include_directories(
   aoti_common
-  INTERFACE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
-            $<INSTALL_INTERFACE:include>
+  INTERFACE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
             $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
 )
 target_compile_options(

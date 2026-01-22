@@ -7,7 +7,7 @@
  */
 
 #include <cuda_runtime.h>
-#include <executorch/backends/cuda/runtime/guard.h>
+#include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/runtime/platform/platform.h>
 #include <gtest/gtest.h>
 
