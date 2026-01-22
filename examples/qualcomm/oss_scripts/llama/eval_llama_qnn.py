@@ -212,7 +212,7 @@ def prepare_model(args):
 def prequant_algorithm(model, prefill_config, args):
     # TODO: use dtype of model checkpoint
     model = model.to(device=args.device, dtype=torch.float)
-    inputs = model.get_example_inputs(use_kv_cache=False)
+    inputs = model.get_example_inputs()
     tokens, atten_mask = inputs
     tokens.to(args.device)
     for mask in atten_mask.masks:
