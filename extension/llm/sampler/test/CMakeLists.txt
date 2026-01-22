@@ -50,7 +50,7 @@ target_include_directories(
 
 target_link_libraries(
   test_argmax PRIVATE GTest::gtest GTest::gtest_main executorch_core
-                      extension_llm_sampler_cuda CUDA::cudart
+                      extension_llm_sampler CUDA::cudart
 )
 
 add_test(NAME test_argmax COMMAND test_argmax)

@@ -46,7 +46,6 @@ if(EXECUTORCH_BUILD_CUDA)
     target_link_libraries(cuda_sampler_lib PUBLIC executorch_core CUDA::cudart)
     set_target_properties(
       cuda_sampler_lib PROPERTIES POSITION_INDEPENDENT_CODE ON
-                                  CUDA_SEPARABLE_COMPILATION ON
     )
 
     target_link_libraries(extension_llm_sampler PUBLIC cuda_sampler_lib)
