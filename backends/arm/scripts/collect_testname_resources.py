@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -55,6 +55,7 @@ _CUSTOM_EDGE_OPS = [
     "matmul.default",
     "upsample_bilinear2d.vec",
     "upsample_nearest2d.vec",
+    "index_put.default",
 ]
 _ALL_EDGE_OPS = _SAMPLE_INPUT.keys() | _CUSTOM_EDGE_OPS
 

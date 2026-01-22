@@ -703,15 +703,44 @@ class DynamicModelE2ETest(unittest.TestCase):
             ),
         )(self)
 
-    @skipUnless(RUN_SKIPPED, "Emitter is not ready yet")
     def test_ft_map_basic(self):
-        maketest(
-            FTMapBasic,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-                enable_functionalization=False,  # TODO enable functionalization
-            ),
-        )(self)
+        """Test FTMapBasic model through the modern torch.export API."""
+        from executorch.exir import EdgeCompileConfig, to_edge
+
+        # Create model and get inputs
+        model = FTMapBasic()
+        inputs = model.get_random_inputs()
+
+        # Export the model
+        exported_program = torch.export.export(
+            model,
+            inputs,
+        )
+
+        # Convert to edge program
+        edge_program = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+
+        # Convert to executorch
+        executorch_program = edge_program.to_executorch()
+
+        # Load and run
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
+
+        # Test execution matches eager mode
+        eager_output = model(*inputs)
+        et_output = executorch_module.forward(list(inputs))[0]
+
+        # Compare outputs
+        torch.testing.assert_close(
+            et_output,
+            eager_output,
+            rtol=1e-5,
+            atol=1e-8,
+            msg="ExecuTorch output doesn't match eager output",
+        )
 
     @skipUnless(RUN_SKIPPED, "TODO(larryliu0820) Fix this in both fbcode and oss")
     def test_ft_cond_dynshape(self):
@@ -723,15 +752,51 @@ class DynamicModelE2ETest(unittest.TestCase):
             ),
         )(self)
 
-    @skipUnless(RUN_SKIPPED, "Emitter is not ready yet")
     def test_ft_map_dynshape(self):
-        maketest(
-            FTMapDynShape,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-                enable_functionalization=False,  # TODO enable functionalization
-            ),
-        )(self)
+        """Test FTMapDynShape model through the modern torch.export API.
+
+        Note: The higher-order map operation specializes on the iteration dimension
+        at export time, so varying batch sizes are not supported. This test verifies
+        that the map-based model can be exported and executed correctly through the
+        ExecuTorch pipeline using the modern torch.export.export() API.
+        """
+        from executorch.exir import EdgeCompileConfig, to_edge
+
+        # Create model and get inputs
+        model = FTMapDynShape()
+        # Use upper bound inputs since map specializes on the iteration dimension
+        inputs = model.get_upper_bound_inputs()
+
+        # Export the model
+        exported_program = torch.export.export(
+            model,
+            inputs,
+        )
+
+        # Convert to edge program
+        edge_program = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+
+        # Convert to executorch
+        executorch_program = edge_program.to_executorch()
+
+        # Load and run
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
+
+        # Test execution matches eager mode
+        eager_output = model(*inputs)
+        et_output = executorch_module.forward(list(inputs))[0]
+
+        # Compare outputs
+        torch.testing.assert_close(
+            et_output,
+            eager_output,
+            rtol=1e-5,
+            atol=1e-8,
+            msg="ExecuTorch output doesn't match eager output",
+        )
 
     @skipUnless(RUN_SKIPPED, "TODO(larryliu0820) Fix this in both fbcode and oss")
     def test_batch_norm(self):
