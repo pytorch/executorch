@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 #
-# LLM sampler library
+# LLM sampler library with optional CUDA support
 #
 # ### Editing this file ###
 #
@@ -30,6 +30,38 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+# If the project is configured to build with CUDA support, build the CUDA
+# sampler library.
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit QUIET)
+  if(CUDAToolkit_FOUND)
+    enable_language(CUDA)
+    set(CMAKE_CUDA_STANDARD 17)
+    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+
+    # Define CUDA sampler library
+    add_library(cuda_sampler_lib STATIC argmax.cu)
+
+    target_compile_definitions(cuda_sampler_lib PUBLIC CUDA_AVAILABLE)
+    target_link_libraries(cuda_sampler_lib PUBLIC executorch_core CUDA::cudart)
+    set_target_properties(
+      cuda_sampler_lib PROPERTIES POSITION_INDEPENDENT_CODE ON
+    )
+
+    target_link_libraries(extension_llm_sampler PUBLIC cuda_sampler_lib)
+
+    install(
+      TARGETS cuda_sampler_lib
+      EXPORT ExecuTorchTargets
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+  else()
+    message(
+      STATUS
+        "CUDA requested (EXECUTORCH_BUILD_CUDA=ON) but no CUDA runtime found"
+    )
+  endif()
+endif()
 
 # Install header files
 install(

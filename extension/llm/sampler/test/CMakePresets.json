@@ -1,0 +1,95 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "default",
+            "displayName": "LLM Sampler CUDA Tests",
+            "binaryDir": "${sourceDir}/../../../../cmake-out/extension/llm/sampler/test",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../../cmake-out"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "LLM Sampler CUDA Tests (Debug)",
+            "inherits": ["default"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "default",
+            "displayName": "Build LLM Sampler CUDA Tests",
+            "configurePreset": "default"
+        },
+        {
+            "name": "debug",
+            "displayName": "Build LLM Sampler CUDA Tests (Debug)",
+            "configurePreset": "debug"
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "default",
+            "displayName": "Configure, build, and test LLM Sampler CUDA Tests",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "default"
+                },
+                {
+                    "type": "build",
+                    "name": "default"
+                },
+                {
+                    "type": "test",
+                    "name": "default"
+                }
+            ]
+        },
+        {
+            "name": "debug",
+            "displayName": "Configure, build, and test LLM Sampler CUDA Tests (Debug)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "debug"
+                },
+                {
+                    "type": "build",
+                    "name": "debug"
+                },
+                {
+                    "type": "test",
+                    "name": "debug"
+                }
+            ]
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "default",
+            "displayName": "Run all LLM Sampler CUDA Tests",
+            "configurePreset": "default",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "Run all LLM Sampler CUDA Tests (Debug)",
+            "configurePreset": "debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        }
+    ]
+}
