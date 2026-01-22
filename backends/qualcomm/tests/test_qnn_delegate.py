@@ -1406,9 +1406,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_max_pool2d(self):
-        module = MaxPool2d()  # noqa: F405
+        modules = [
+            MaxPool2d(3, 1, 0, True),  # noqa: F405
+            MaxPool2d(3, 1, 0, False),  # noqa: F405
+            MaxPool2d(3, 1, 1, True),  # noqa: F405
+            MaxPool2d(3, 1, 1, False),  # noqa: F405
+        ]
         sample_input = (torch.randn(4, 3, 24, 24),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_max_pool3d(self):
         # NOTE: The pad should be at most half of effective kernel size.
@@ -1975,6 +1982,15 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.randn([2, 1, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_stack(self):
+        module = Conv2dStack()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 3, 5, 5),
+            torch.randn(1, 3, 3, 3),
+            torch.randn(1, 3, 3, 3),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d_sum_reduce_dim(self):
         module = Conv2dSumReduceDim()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
@@ -1983,6 +1999,14 @@ class TestQNNFloatingPointModel(TestQNN):
     def test_qnn_backend_conv2d_topk(self):
         module = Conv2dTopK()  # noqa: F405
         sample_input = (torch.randn(1, 3, 32, 32),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    # This test is to ensure unbind should be pytorch layout.
+    # However, unbind will be forced decomposed by executorch framework.
+    # Keep it here in case unbind doesn't get forced decomposed in future.
+    def test_qnn_backend_conv2d_unbind(self):
+        module = Conv2dUnbind()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 5, 5),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_copy(self):
@@ -3664,10 +3688,24 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_max_pool2d(self):
-        module = MaxPool2d()  # noqa: F405
+        modules = [
+            MaxPool2d(3, 1, 0, True),  # noqa: F405
+            MaxPool2d(3, 1, 0, False),  # noqa: F405
+            MaxPool2d(3, 1, 1, True),  # noqa: F405
+            MaxPool2d(3, 1, 1, False),  # noqa: F405
+        ]
+        test_quants = [QuantDtype.use_8a8w, QuantDtype.use_16a4w, QuantDtype.use_16a8w]
         sample_input = (torch.randn(4, 3, 24, 24),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        test_pairs = [
+            (module, quant_type)  # noqa: F405
+            for module, quant_type in itertools.product(modules, test_quants)
+        ]
+        for i, (test_module, qtype) in enumerate(test_pairs):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(
+                    test_module, sample_input, quant_dtype=qtype
+                )
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_max_pool3d(self):
         # NOTE: The pad should be at most half of effective kernel size.
@@ -4344,6 +4382,16 @@ class TestQNNQuantizedModel(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_stack(self):
+        module = Conv2dStack()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 3, 5, 5),
+            torch.randn(1, 3, 3, 3),
+            torch.randn(1, 3, 3, 3),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d_sum_reduce_dim(self):
         module = Conv2dSumReduceDim()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
@@ -4353,6 +4401,15 @@ class TestQNNQuantizedModel(TestQNN):
     def test_qnn_backend_conv2d_topk(self):
         module = Conv2dTopK()  # noqa: F405
         sample_input = (torch.randn(1, 3, 32, 32),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    # This test is to ensure unbind should be pytorch layout.
+    # However, unbind will be forced decomposed by executorch framework.
+    # Keep it here in case unbind doesn't get forced decomposed in future.
+    def test_qnn_backend_conv2d_unbind(self):
+        module = Conv2dUnbind()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 5, 5),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -6071,6 +6128,9 @@ class TestExampleLLMScript(TestQNN):
             "gemma-2b": TestExampleLLMScript.LlmSpecs(
                 SM8650=32, SM8750=36, ppl=35, pte_size=2_700_000_000
             ),  # 2.7 GB
+            "gemma2-2b": TestExampleLLMScript.LlmSpecs(
+                SM8650=32, SM8750=36, ppl=14, pte_size=2_860_000_000
+            ),  # 2.86 GB
             "gemma3-1b": TestExampleLLMScript.LlmSpecs(
                 SM8650=70, SM8750=100, ppl=23, pte_size=1_200_000_000
             ),  # 1.2 GB
@@ -7733,7 +7793,7 @@ class TestExampleScript(TestQNN):
                 metric = {
                     # GPU has accuracy issue now
                     QnnExecuTorchBackendType.kGpuBackend: {"top_1": 0, "top_5": 0},
-                    QnnExecuTorchBackendType.kHtpBackend: {"top_1": 55, "top_5": 81},
+                    QnnExecuTorchBackendType.kHtpBackend: {"top_1": 51, "top_5": 76},
                 }
                 self.assertGreaterEqual(
                     msg["top_1"], metric[get_backend_type(self.backend)]["top_1"]
