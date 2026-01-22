@@ -30,6 +30,7 @@ jobs:
         run: |
           ./install_executorch.sh
           ./examples/models/llava/install_requirements.sh
+          pip install accelerate
 
       - name: Export LLaVA model to PTE
         run: |
