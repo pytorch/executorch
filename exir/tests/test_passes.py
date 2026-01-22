@@ -2355,21 +2355,29 @@ class TestPasses(unittest.TestCase):
             torch.channels_last,
         ]
 
-        use_buffer = [False, True]
+        use_buffer_options = [False, True]
 
-        for memory_format, use_buffer in itertools.product(memory_formats, use_buffer):
+        for memory_format, use_buffer in itertools.product(
+            memory_formats, use_buffer_options
+        ):
             constant = torch.randn(2, 3, 4, 5).to(memory_format=memory_format)
             model = self.AddConstant(constant, use_buffer=use_buffer)
             inputs = (torch.randn(2, 3, 4, 5).to(memory_format=memory_format),)
 
             ep = torch.export.export(model, inputs)
-            modified_ep = convert_constant_dim_order_pass.convert_constant_dim_order_pass(copy.deepcopy(ep))
+            modified_ep = (
+                convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                    copy.deepcopy(ep)
+                )
+            )
 
             # Check the outputs - they should match in both data and dim order.
             original_outputs = ep.module()(*inputs)
             modified_outputs = modified_ep.module()(*inputs)
 
-            torch.testing.assert_close(original_outputs, modified_outputs, check_stride=True)
+            torch.testing.assert_close(
+                original_outputs, modified_outputs, check_stride=True
+            )
 
             # Verify that the constant/buffer tensor is not modified. The interface for
             # constants and buffers is just different enough to make it hard to unify the
@@ -2385,7 +2393,9 @@ class TestPasses(unittest.TestCase):
                 original_buffer = original_buffers[buffer_key]
                 modified_buffer = modified_buffers[buffer_key]
 
-                torch.testing.assert_close(original_buffer, modified_buffer, check_stride=True)
+                torch.testing.assert_close(
+                    original_buffer, modified_buffer, check_stride=True
+                )
             else:
                 self.assertEqual(len(ep.constants), 1)
                 self.assertEqual(len(modified_ep.constants), 1)
@@ -2394,7 +2404,9 @@ class TestPasses(unittest.TestCase):
                 original_const = ep.constants[const_key]
                 modified_const = modified_ep.constants[const_key]
 
-                torch.testing.assert_close(original_const, modified_const, check_stride=True)
+                torch.testing.assert_close(
+                    original_const, modified_const, check_stride=True
+                )
 
     def test_convert_constant_dim_order_to_contiguous(self):
         """
@@ -2432,15 +2444,17 @@ class TestPasses(unittest.TestCase):
                 # Sanity check the tensor construction
                 self.assertFalse(
                     constant.is_contiguous(),
-                    f"Test setup error: tensor should be non-contiguous",
+                    "Test setup error: tensor should be non-contiguous",
                 )
 
                 model = self.AddConstant(constant, use_buffer=use_buffer)
                 inputs = (torch.randn(constant.shape),)
 
                 ep = torch.export.export(model, inputs)
-                modified_ep = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
-                    copy.deepcopy(ep)
+                modified_ep = (
+                    convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                        copy.deepcopy(ep)
+                    )
                 )
 
                 # Check the outputs - they should match in data.

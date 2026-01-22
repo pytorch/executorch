@@ -26,9 +26,7 @@ class TestDimOrder(unittest.TestCase):
         inputs = (torch.randn(16, 2),)
 
         for quantize in [False, True]:
-            tester = (
-                Tester(Model(), inputs)
-            )
+            tester = Tester(Model(), inputs)
 
             if quantize:
                 tester.quantize()
