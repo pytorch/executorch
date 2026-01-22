@@ -10,7 +10,28 @@
 
 #include <executorch/backends/aoti/slim/core/Storage.h>
 
+#ifdef CUDA_AVAILABLE
+#include <cuda_runtime.h>
+#endif
+
 namespace executorch::backends::aoti::slim {
+
+// =============================================================================
+// Test Device Helpers
+// =============================================================================
+
+inline std::vector<c10::Device> getTestDevices() {
+  std::vector<c10::Device> devices = {CPU_DEVICE};
+#ifdef CUDA_AVAILABLE
+  devices.push_back(DEFAULT_CUDA_DEVICE);
+#endif
+  return devices;
+}
+
+inline std::string deviceToString(
+    const testing::TestParamInfo<c10::Device>& info) {
+  return info.param.is_cpu() ? "CPU" : "CUDA";
+}
 
 // =============================================================================
 // DeviceTraits<CPU> Tests
@@ -52,30 +73,82 @@ TEST(DeviceTraitsCPUTest, MemcpyCPUToCPU) {
 }
 
 // =============================================================================
-// MaybeOwningStorage Tests - Owning Mode
+// MaybeOwningStorage Parameterized Tests (CPU and CUDA)
 // =============================================================================
 
-TEST(MaybeOwningStorageTest, ConstructOwning) {
+class MaybeOwningStorageParamTest : public testing::TestWithParam<c10::Device> {
+ protected:
+  c10::Device device() const {
+    return GetParam();
+  }
+};
+
+TEST_P(MaybeOwningStorageParamTest, ConstructOwning) {
   constexpr size_t kNbytes = 512;
-  MaybeOwningStorage storage(CPU_DEVICE, kNbytes);
+  MaybeOwningStorage storage(device(), kNbytes);
 
   EXPECT_NE(storage.data(), nullptr);
   EXPECT_EQ(storage.nbytes(), kNbytes);
-  EXPECT_TRUE(storage.device().is_cpu());
+  EXPECT_EQ(storage.device().type(), device().type());
   EXPECT_TRUE(storage.is_owning());
   EXPECT_TRUE(storage.is_resizable());
 }
 
-TEST(MaybeOwningStorageTest, ConstructOwningZeroBytes) {
-  MaybeOwningStorage storage(CPU_DEVICE, 0);
+TEST_P(MaybeOwningStorageParamTest, ConstructOwningZeroBytes) {
+  MaybeOwningStorage storage(device(), 0);
 
   EXPECT_EQ(storage.data(), nullptr);
   EXPECT_EQ(storage.nbytes(), 0);
-  EXPECT_TRUE(storage.device().is_cpu());
+  EXPECT_EQ(storage.device().type(), device().type());
   EXPECT_TRUE(storage.is_owning());
 }
 
-TEST(MaybeOwningStorageTest, DataPersistence) {
+TEST_P(MaybeOwningStorageParamTest, MoveConstruct) {
+  constexpr size_t kNbytes = 256;
+  MaybeOwningStorage original(device(), kNbytes);
+  void* original_data = original.data();
+
+  MaybeOwningStorage moved(std::move(original));
+
+  EXPECT_EQ(moved.data(), original_data);
+  EXPECT_EQ(moved.nbytes(), kNbytes);
+  EXPECT_TRUE(moved.is_owning());
+  EXPECT_EQ(moved.device().type(), device().type());
+
+  EXPECT_EQ(original.data(), nullptr);
+  EXPECT_EQ(original.nbytes(), 0);
+  EXPECT_FALSE(original.is_owning());
+}
+
+TEST_P(MaybeOwningStorageParamTest, MoveAssign) {
+  constexpr size_t kNbytes1 = 256;
+  constexpr size_t kNbytes2 = 512;
+  MaybeOwningStorage storage1(device(), kNbytes1);
+  MaybeOwningStorage storage2(device(), kNbytes2);
+  void* storage2_data = storage2.data();
+
+  storage1 = std::move(storage2);
+
+  EXPECT_EQ(storage1.data(), storage2_data);
+  EXPECT_EQ(storage1.nbytes(), kNbytes2);
+  EXPECT_TRUE(storage1.is_owning());
+
+  EXPECT_EQ(storage2.data(), nullptr);
+  EXPECT_EQ(storage2.nbytes(), 0);
+  EXPECT_FALSE(storage2.is_owning());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    DeviceTests,
+    MaybeOwningStorageParamTest,
+    testing::ValuesIn(getTestDevices()),
+    deviceToString);
+
+// =============================================================================
+// MaybeOwningStorage CPU-Only Tests (require direct data access)
+// =============================================================================
+
+TEST(MaybeOwningStorageCPUTest, DataPersistence) {
   constexpr size_t kNumFloats = 64;
   constexpr size_t kNbytes = kNumFloats * sizeof(float);
   MaybeOwningStorage storage(CPU_DEVICE, kNbytes);
@@ -91,41 +164,7 @@ TEST(MaybeOwningStorageTest, DataPersistence) {
   }
 }
 
-TEST(MaybeOwningStorageTest, MoveConstruct) {
-  constexpr size_t kNbytes = 256;
-  MaybeOwningStorage original(CPU_DEVICE, kNbytes);
-  void* original_data = original.data();
-
-  MaybeOwningStorage moved(std::move(original));
-
-  EXPECT_EQ(moved.data(), original_data);
-  EXPECT_EQ(moved.nbytes(), kNbytes);
-  EXPECT_TRUE(moved.is_owning());
-
-  EXPECT_EQ(original.data(), nullptr);
-  EXPECT_EQ(original.nbytes(), 0);
-  EXPECT_FALSE(original.is_owning());
-}
-
-TEST(MaybeOwningStorageTest, MoveAssign) {
-  constexpr size_t kNbytes1 = 256;
-  constexpr size_t kNbytes2 = 512;
-  MaybeOwningStorage storage1(CPU_DEVICE, kNbytes1);
-  MaybeOwningStorage storage2(CPU_DEVICE, kNbytes2);
-  void* storage2_data = storage2.data();
-
-  storage1 = std::move(storage2);
-
-  EXPECT_EQ(storage1.data(), storage2_data);
-  EXPECT_EQ(storage1.nbytes(), kNbytes2);
-  EXPECT_TRUE(storage1.is_owning());
-
-  EXPECT_EQ(storage2.data(), nullptr);
-  EXPECT_EQ(storage2.nbytes(), 0);
-  EXPECT_FALSE(storage2.is_owning());
-}
-
-TEST(MaybeOwningStorageTest, Clone) {
+TEST(MaybeOwningStorageCPUTest, Clone) {
   constexpr size_t kNumFloats = 32;
   constexpr size_t kNbytes = kNumFloats * sizeof(float);
   MaybeOwningStorage original(CPU_DEVICE, kNbytes);
@@ -150,7 +189,7 @@ TEST(MaybeOwningStorageTest, Clone) {
   EXPECT_FLOAT_EQ(cloned_data[0], 0.0f);
 }
 
-TEST(MaybeOwningStorageTest, CopyFunction) {
+TEST(MaybeOwningStorageCPUTest, CopyFunction) {
   constexpr size_t kNumFloats = 16;
   constexpr size_t kNbytes = kNumFloats * sizeof(float);
   MaybeOwningStorage src_storage(CPU_DEVICE, kNbytes);
@@ -171,23 +210,30 @@ TEST(MaybeOwningStorageTest, CopyFunction) {
 }
 
 // =============================================================================
-// Storage (SharedPtr<MaybeOwningStorage>) Tests
+// Storage (SharedPtr<MaybeOwningStorage>) Parameterized Tests
 // =============================================================================
 
-TEST(StorageSharedPtrTest, BasicUsage) {
+class StorageSharedPtrParamTest : public testing::TestWithParam<c10::Device> {
+ protected:
+  c10::Device device() const {
+    return GetParam();
+  }
+};
+
+TEST_P(StorageSharedPtrParamTest, BasicUsage) {
   constexpr size_t kNbytes = 128;
-  Storage storage(new MaybeOwningStorage(CPU_DEVICE, kNbytes));
+  Storage storage(new MaybeOwningStorage(device(), kNbytes));
 
   EXPECT_NE(storage.get(), nullptr);
   EXPECT_NE(storage->data(), nullptr);
   EXPECT_EQ(storage->nbytes(), kNbytes);
-  EXPECT_TRUE(storage->device().is_cpu());
+  EXPECT_EQ(storage->device().type(), device().type());
   EXPECT_EQ(storage.use_count(), 1);
 }
 
-TEST(StorageSharedPtrTest, SharedOwnership) {
+TEST_P(StorageSharedPtrParamTest, SharedOwnership) {
   constexpr size_t kNbytes = 128;
-  Storage storage1(new MaybeOwningStorage(CPU_DEVICE, kNbytes));
+  Storage storage1(new MaybeOwningStorage(device(), kNbytes));
   void* data_ptr = storage1->data();
 
   Storage storage2 = storage1; // Copy, not reference - increments ref count
@@ -198,7 +244,52 @@ TEST(StorageSharedPtrTest, SharedOwnership) {
   EXPECT_EQ(storage2->data(), data_ptr);
 }
 
-TEST(StorageSharedPtrTest, SharedOwnershipModification) {
+TEST_P(StorageSharedPtrParamTest, ReferenceCountDecrement) {
+  constexpr size_t kNbytes = 64;
+  Storage storage1(new MaybeOwningStorage(device(), kNbytes));
+  EXPECT_EQ(storage1.use_count(), 1);
+
+  {
+    Storage storage2 = storage1;
+    EXPECT_EQ(storage1.use_count(), 2);
+  }
+
+  EXPECT_EQ(storage1.use_count(), 1);
+}
+
+TEST_P(StorageSharedPtrParamTest, MoveSemantics) {
+  constexpr size_t kNbytes = 64;
+  Storage storage1(new MaybeOwningStorage(device(), kNbytes));
+  void* data_ptr = storage1->data();
+
+  Storage storage2 = std::move(storage1);
+
+  EXPECT_EQ(storage1.get(), nullptr);
+  EXPECT_EQ(storage2->data(), data_ptr);
+  EXPECT_EQ(storage2.use_count(), 1);
+}
+
+TEST_P(StorageSharedPtrParamTest, MakeShared) {
+  constexpr size_t kNbytes = 256;
+  Storage storage = make_shared<MaybeOwningStorage>(device(), kNbytes);
+
+  EXPECT_NE(storage.get(), nullptr);
+  EXPECT_NE(storage->data(), nullptr);
+  EXPECT_EQ(storage->nbytes(), kNbytes);
+  EXPECT_EQ(storage.use_count(), 1);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    DeviceTests,
+    StorageSharedPtrParamTest,
+    testing::ValuesIn(getTestDevices()),
+    deviceToString);
+
+// =============================================================================
+// Storage CPU-Only Tests (require direct data access)
+// =============================================================================
+
+TEST(StorageSharedPtrCPUTest, SharedOwnershipModification) {
   constexpr size_t kNumFloats = 8;
   constexpr size_t kNbytes = kNumFloats * sizeof(float);
   Storage storage1(new MaybeOwningStorage(CPU_DEVICE, kNbytes));
@@ -208,7 +299,7 @@ TEST(StorageSharedPtrTest, SharedOwnershipModification) {
     data[i] = 0.0f;
   }
 
-  const Storage& storage2 = storage1;
+  Storage storage2 = storage1;
 
   float* data2 = static_cast<float*>(storage2->data());
   for (size_t i = 0; i < kNumFloats; ++i) {
@@ -221,39 +312,156 @@ TEST(StorageSharedPtrTest, SharedOwnershipModification) {
   }
 }
 
-TEST(StorageSharedPtrTest, ReferenceCountDecrement) {
-  constexpr size_t kNbytes = 64;
-  Storage storage1(new MaybeOwningStorage(CPU_DEVICE, kNbytes));
-  EXPECT_EQ(storage1.use_count(), 1);
+#ifdef CUDA_AVAILABLE
 
-  {
-    Storage storage2 = storage1; // Copy increments ref count
-    EXPECT_EQ(storage1.use_count(), 2);
-  } // storage2 destroyed, ref count decrements
+// =============================================================================
+// DeviceTraits<CUDA> Tests
+// =============================================================================
 
-  EXPECT_EQ(storage1.use_count(), 1);
+TEST(DeviceTraitsCUDATest, AllocateAndFree) {
+  constexpr size_t kSize = 1024;
+  void* ptr =
+      DeviceTraits<c10::DeviceType::CUDA>::allocate(kSize, DEFAULT_CUDA_DEVICE);
+  ASSERT_NE(ptr, nullptr);
+
+  DeviceTraits<c10::DeviceType::CUDA>::free(ptr);
 }
 
-TEST(StorageSharedPtrTest, MoveSemantics) {
-  constexpr size_t kNbytes = 64;
-  Storage storage1(new MaybeOwningStorage(CPU_DEVICE, kNbytes));
-  void* data_ptr = storage1->data();
-
-  Storage storage2 = std::move(storage1);
-
-  EXPECT_EQ(storage1.get(), nullptr);
-  EXPECT_EQ(storage2->data(), data_ptr);
-  EXPECT_EQ(storage2.use_count(), 1);
+TEST(DeviceTraitsCUDATest, AllocateZeroBytes) {
+  void* ptr =
+      DeviceTraits<c10::DeviceType::CUDA>::allocate(0, DEFAULT_CUDA_DEVICE);
+  DeviceTraits<c10::DeviceType::CUDA>::free(ptr);
 }
 
-TEST(StorageSharedPtrTest, MakeShared) {
-  constexpr size_t kNbytes = 256;
-  Storage storage = make_shared<MaybeOwningStorage>(CPU_DEVICE, kNbytes);
+TEST(DeviceTraitsCUDATest, MemcpyCPUToCUDA) {
+  constexpr size_t kSize = 256;
+  float* cpu_src = static_cast<float*>(
+      DeviceTraits<c10::DeviceType::CPU>::allocate(kSize * sizeof(float)));
+  float* cuda_dst =
+      static_cast<float*>(DeviceTraits<c10::DeviceType::CUDA>::allocate(
+          kSize * sizeof(float), DEFAULT_CUDA_DEVICE));
+  float* cpu_verify = static_cast<float*>(
+      DeviceTraits<c10::DeviceType::CPU>::allocate(kSize * sizeof(float)));
 
-  EXPECT_NE(storage.get(), nullptr);
-  EXPECT_NE(storage->data(), nullptr);
-  EXPECT_EQ(storage->nbytes(), kNbytes);
-  EXPECT_EQ(storage.use_count(), 1);
+  for (size_t i = 0; i < kSize; ++i) {
+    cpu_src[i] = static_cast<float>(i) * 2.5f;
+  }
+
+  // Copy CPU -> CUDA
+  DeviceTraits<c10::DeviceType::CUDA>::memcpy(
+      cuda_dst,
+      cpu_src,
+      kSize * sizeof(float),
+      DEFAULT_CUDA_DEVICE,
+      CPU_DEVICE);
+
+  // Copy CUDA -> CPU to verify
+  DeviceTraits<c10::DeviceType::CUDA>::memcpy(
+      cpu_verify,
+      cuda_dst,
+      kSize * sizeof(float),
+      CPU_DEVICE,
+      DEFAULT_CUDA_DEVICE);
+
+  for (size_t i = 0; i < kSize; ++i) {
+    EXPECT_FLOAT_EQ(cpu_verify[i], static_cast<float>(i) * 2.5f);
+  }
+
+  DeviceTraits<c10::DeviceType::CPU>::free(cpu_src);
+  DeviceTraits<c10::DeviceType::CUDA>::free(cuda_dst);
+  DeviceTraits<c10::DeviceType::CPU>::free(cpu_verify);
 }
+
+TEST(DeviceTraitsCUDATest, MemcpyCUDAToCPU) {
+  constexpr size_t kSize = 128;
+  float* cpu_src = static_cast<float*>(
+      DeviceTraits<c10::DeviceType::CPU>::allocate(kSize * sizeof(float)));
+  float* cuda_mem =
+      static_cast<float*>(DeviceTraits<c10::DeviceType::CUDA>::allocate(
+          kSize * sizeof(float), DEFAULT_CUDA_DEVICE));
+  float* cpu_dst = static_cast<float*>(
+      DeviceTraits<c10::DeviceType::CPU>::allocate(kSize * sizeof(float)));
+
+  for (size_t i = 0; i < kSize; ++i) {
+    cpu_src[i] = static_cast<float>(i) + 100.0f;
+  }
+
+  // Copy CPU -> CUDA
+  DeviceTraits<c10::DeviceType::CUDA>::memcpy(
+      cuda_mem,
+      cpu_src,
+      kSize * sizeof(float),
+      DEFAULT_CUDA_DEVICE,
+      CPU_DEVICE);
+
+  // Copy CUDA -> CPU
+  DeviceTraits<c10::DeviceType::CUDA>::memcpy(
+      cpu_dst,
+      cuda_mem,
+      kSize * sizeof(float),
+      CPU_DEVICE,
+      DEFAULT_CUDA_DEVICE);
+
+  for (size_t i = 0; i < kSize; ++i) {
+    EXPECT_FLOAT_EQ(cpu_dst[i], static_cast<float>(i) + 100.0f);
+  }
+
+  DeviceTraits<c10::DeviceType::CPU>::free(cpu_src);
+  DeviceTraits<c10::DeviceType::CUDA>::free(cuda_mem);
+  DeviceTraits<c10::DeviceType::CPU>::free(cpu_dst);
+}
+
+TEST(DeviceTraitsCUDATest, MemcpyCUDAToCUDA) {
+  constexpr size_t kSize = 64;
+  float* cpu_src = static_cast<float*>(
+      DeviceTraits<c10::DeviceType::CPU>::allocate(kSize * sizeof(float)));
+  float* cuda_src =
+      static_cast<float*>(DeviceTraits<c10::DeviceType::CUDA>::allocate(
+          kSize * sizeof(float), DEFAULT_CUDA_DEVICE));
+  float* cuda_dst =
+      static_cast<float*>(DeviceTraits<c10::DeviceType::CUDA>::allocate(
+          kSize * sizeof(float), DEFAULT_CUDA_DEVICE));
+  float* cpu_verify = static_cast<float*>(
+      DeviceTraits<c10::DeviceType::CPU>::allocate(kSize * sizeof(float)));
+
+  for (size_t i = 0; i < kSize; ++i) {
+    cpu_src[i] = static_cast<float>(i) * 3.0f;
+  }
+
+  // Copy CPU -> CUDA src
+  DeviceTraits<c10::DeviceType::CUDA>::memcpy(
+      cuda_src,
+      cpu_src,
+      kSize * sizeof(float),
+      DEFAULT_CUDA_DEVICE,
+      CPU_DEVICE);
+
+  // Copy CUDA src -> CUDA dst
+  DeviceTraits<c10::DeviceType::CUDA>::memcpy(
+      cuda_dst,
+      cuda_src,
+      kSize * sizeof(float),
+      DEFAULT_CUDA_DEVICE,
+      DEFAULT_CUDA_DEVICE);
+
+  // Copy CUDA dst -> CPU to verify
+  DeviceTraits<c10::DeviceType::CUDA>::memcpy(
+      cpu_verify,
+      cuda_dst,
+      kSize * sizeof(float),
+      CPU_DEVICE,
+      DEFAULT_CUDA_DEVICE);
+
+  for (size_t i = 0; i < kSize; ++i) {
+    EXPECT_FLOAT_EQ(cpu_verify[i], static_cast<float>(i) * 3.0f);
+  }
+
+  DeviceTraits<c10::DeviceType::CPU>::free(cpu_src);
+  DeviceTraits<c10::DeviceType::CUDA>::free(cuda_src);
+  DeviceTraits<c10::DeviceType::CUDA>::free(cuda_dst);
+  DeviceTraits<c10::DeviceType::CPU>::free(cpu_verify);
+}
+
+#endif // CUDA_AVAILABLE
 
 } // namespace executorch::backends::aoti::slim
