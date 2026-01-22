@@ -13,12 +13,17 @@ from multiprocessing.connection import Client
 import numpy as np
 
 import torch
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
+    make_quantizer,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
     SimpleADB,
@@ -45,9 +50,16 @@ def main(args):
             image_shape=(256, 256),
             crop_size=224,
         )
-    pte_filename = "mv3_qnn_float16"
+    pte_filename = "mv3_qnn"
     instance = MV3Model()
     backend = get_backend_type(args.backend)
+    quantizer = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
+            quant_dtype=QuantDtype.use_16a8w,
+            eps=2**-10,
+        ),
+    }[backend]
     build_executorch_binary(
         instance.get_eager_model().eval(),
         instance.get_example_inputs(),
@@ -57,6 +69,7 @@ def main(args):
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
         backend=backend,
+        custom_quantizer=quantizer,
         shared_buffer=args.shared_buffer,
         online_prepare=args.online_prepare,
     )
