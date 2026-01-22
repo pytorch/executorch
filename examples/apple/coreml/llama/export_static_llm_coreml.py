@@ -21,13 +21,17 @@ Usage:
 
 import argparse
 import json
+from typing import Optional
 
 import coremltools as ct
 import torch
 import torch.nn as nn
 import torch.utils._pytree as pytree
 
-from executorch.backends.apple.coreml.compiler import CoreMLBackend
+from executorch.backends.apple.coreml.compiler.coreml_preprocess import (
+    CoreMLBackend,
+    MULTIMETHOD_WEIGHT_SHARING_STRATEGY,
+)
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.examples.apple.coreml.llama.utils import (
     replace_linear_with_split_linear,
@@ -90,18 +94,175 @@ class BlockWithGraphBreak(nn.Module):
 
 
 def remove_graph_break_(edge_manager):
+    """Remove graph break ops from all methods in the edge manager."""
     from executorch.exir.dialects._ops import ops as exir_ops
 
-    for n in edge_manager.exported_program().graph_module.graph.nodes:
-        if n.target == exir_ops.edge.executorch_utils.graph_break.Tensor:
-            n.replace_all_uses_with(n.args[0])
-    edge_manager.exported_program().graph_module.graph.eliminate_dead_code()
+    # Get all method names
+    method_names = edge_manager.methods
+    for method_name in method_names:
+        ep = edge_manager.exported_program(method_name)
+        for n in ep.graph_module.graph.nodes:
+            if n.target == exir_ops.edge.executorch_utils.graph_break.Tensor:
+                n.replace_all_uses_with(n.args[0])
+        ep.graph_module.graph.eliminate_dead_code()
+
+def prepare_model(
+    model: nn.Module,
+    float_dtype: torch.dtype,
+    target_split_size: int,
+    max_splits: int,
+    embedding_quantize: str,
+    linear_quantize: str,
+    no_graph_breaks: bool,
+):
+    """Apply dtype, splitting, quantization, and graph breaks to a model.
+
+    Args:
+        model: The model to prepare
+        float_dtype: Target dtype (torch.float16 or torch.float32)
+        target_split_size: Target size for linear layer splitting
+        max_splits: Maximum number of splits for linear layers
+        embedding_quantize: Embedding quantization string (e.g., "8,0")
+        linear_quantize: Linear quantization type ("b4w" or "c4w")
+        no_graph_breaks: If True, skip adding graph breaks
+
+    Returns:
+        The prepared model
+    """
+        # Set dtype
+    model = model.to(float_dtype).eval()
+
+    # Apply linear splitting (before quantization)
+    if target_split_size is not None:
+        print(f"\nSplitting linear layers with target size {target_split_size}...")
+        replace_linear_with_split_linear(
+            model,
+            out_target_split_size=target_split_size,
+            out_max_splits=max_splits,
+            in_target_split_size=1,
+            in_max_splits=1,
+        )
+    try:
+        from executorch.examples.models.llama.lora import LoRALinear
+    except ImportError:
+        LoRALinear = None  # type: ignore[assignment]
+        print("LoRALinear import failed, will only quantize nn.Linear layers.")
+    
+    def make_linear_filter_fn(group_size=0):
+        """Create a filter function for linear quantization.
+        Args:
+            group_size: Group size for quantization. 0 means per-axis (no constraint).
+        """
+        def filter_fn(m, fqn):
+            # Check if it's a regular nn.Linear
+            is_linear = isinstance(m, nn.Linear)
+            # Check if it's a LoRALinear (which has a base weight parameter to quantize)
+            is_lora_linear = LoRALinear is not None and isinstance(m, LoRALinear)
+            if not (is_linear or is_lora_linear):
+                return False
+
+            # For per-axis (group_size=0), no shape constraint
+            if group_size == 0:
+                return True
+
+            # Check if the weight shape is compatible with group size
+            return m.weight.shape[1] % group_size == 0
+
+        return filter_fn
+
+    # Apply embedding quantization
+    if embedding_quantize:
+        bitwidth, group_size = embedding_quantize.split(",")
+        bitwidth = int(bitwidth)
+        group_size = int(group_size)
+        assert bitwidth in [4, 8], "CoreML only supports 4-bit and 8-bit quantization"
+
+        print(f"\nQuantizing embeddings: {bitwidth}-bit, group_size={group_size}...")
+        if group_size == 0:
+            granularity = PerAxis(0)
+        else:
+            granularity = PerGroup(group_size)
+        weight_dtype = getattr(torch, f"int{bitwidth}")
+
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=weight_dtype, granularity=granularity),
+            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+        )
+
+    # Apply linear quantization
+    if linear_quantize == "b4w":
+        print("\nQuantizing linear layers: 4-bit blockwise (group_size=32)...")
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int4,
+                granularity=PerGroup(32),
+            ),
+            filter_fn=make_linear_filter_fn(group_size=32),
+        )
+    elif linear_quantize == "c4w":
+        print("\nQuantizing linear layers: 4-bit channelwise...")
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int4,
+                granularity=PerAxis(0),
+            ),
+            filter_fn=make_linear_filter_fn(group_size=0),
+        )
+
+    # Add graph breaks between transformer blocks
+    # Keeping model pieces smaller helps with ANE performance
+    if not no_graph_breaks:
+        print("\nAdding graph breaks between before/after the transformer blocks...")
+        n_layers = len(model.layers)
+        model.layers[0] = BlockWithGraphBreak(model.layers[0], break_before=True)
+        model.layers[n_layers - 1] = BlockWithGraphBreak(
+            model.layers[n_layers - 1], break_before=False
+        )
+    return model
 
 
-def load_model(checkpoint_path: str, params_path: str, max_context_len: int):
-    """Load the model from checkpoint with static_mha attention type."""
+def load_model(
+    checkpoint_path: str,
+    params_path: str,
+    max_context_len: int,
+    generate_full_logits: bool = True,
+    adapter_checkpoint_path: Optional[str] = None,
+    adapter_config_path: Optional[str] = None,
+):
+    """Load the model from checkpoint with static_mha attention type.
+
+    Args:
+        checkpoint_path: Path to the model checkpoint (.pth)
+        params_path: Path to params.json
+        max_context_len: Maximum context length
+        generate_full_logits: If True, output logits for all tokens (needed for
+            lookahead decoding). If False, only output logits for the last token
+            (more efficient for standard autoregressive generation).
+        adapter_checkpoint_path: Optional path to LoRA adapter weights (adapter_model.safetensors)
+        adapter_config_path: Optional path to adapter config (adapter_config.json)
+    """
     with open(params_path, "r") as f:
         params = json.loads(f.read())
+
+    assert (adapter_config_path is None and adapter_checkpoint_path is None) or (
+        adapter_config_path is not None and adapter_checkpoint_path is not None
+    ), "Both adapter_config_path and adapter_checkpoint_path must be provided together, or neither."
+
+    # Load adapter config if provided
+    adapter_config = None
+    if adapter_config_path is not None:
+        with open(adapter_config_path, "r") as f:
+            adapter_config = json.loads(f.read())
+        print(f"Loaded adapter config: rank={adapter_config.get('r')}, alpha={adapter_config.get('lora_alpha')}")
+        print(f"Target modules: {adapter_config.get('target_modules')}")
+
+        # Merge adapter config into params
+        params["r"] = adapter_config.get("r")
+        params["lora_alpha"] = adapter_config.get("lora_alpha")
+        params["target_modules"] = adapter_config.get("target_modules")
 
     # TODO: to support lookahead decoding, the static model outputs
     # full logits, but if we are not using lookahead decoding, we can have a
@@ -109,7 +270,7 @@ def load_model(checkpoint_path: str, params_path: str, max_context_len: int):
     # valid token
     args = ModelArgs(
         max_context_len=max_context_len,
-        generate_full_logits=True,
+        generate_full_logits=generate_full_logits,
         **params,
     )
     args.attention_type = "static_mha"
@@ -124,8 +285,24 @@ def load_model(checkpoint_path: str, params_path: str, max_context_len: int):
     if "model" in checkpoint:
         checkpoint = checkpoint["model"]
 
+    # Load and merge adapter weights if provided
+    if adapter_checkpoint_path is not None:
+        print(f"Loading LoRA adapter from {adapter_checkpoint_path}...")
+        from safetensors.torch import load_file
+        from executorch.examples.models.llama.convert_weights import unsloth_to_meta
+
+        adapter_weights = load_file(adapter_checkpoint_path)
+        # Convert adapter weight keys to Meta format
+        adapter_weights = unsloth_to_meta(adapter_weights)
+        print(f"Loaded {len(adapter_weights)} adapter weights")
+
+        # Merge adapter weights into checkpoint
+        checkpoint.update(adapter_weights)
+
     # Rename attention weight keys for static attention
+    # This handles both base weights and LoRA weights
     for i in range(len(model.layers)):
+        # Base weights
         if f"layers.{i}.attention.wq.weight" in checkpoint:
             checkpoint[f"layers.{i}.attention.wqs.0.weight"] = checkpoint.pop(
                 f"layers.{i}.attention.wq.weight"
@@ -139,6 +316,21 @@ def load_model(checkpoint_path: str, params_path: str, max_context_len: int):
                 f"layers.{i}.attention.wv.weight"
             )
 
+        # LoRA weights (lora_a and lora_b)
+        for lora_suffix in ["lora_a.weight", "lora_b.weight"]:
+            if f"layers.{i}.attention.wq.{lora_suffix}" in checkpoint:
+                checkpoint[f"layers.{i}.attention.wqs.0.{lora_suffix}"] = checkpoint.pop(
+                    f"layers.{i}.attention.wq.{lora_suffix}"
+                )
+            if f"layers.{i}.attention.wk.{lora_suffix}" in checkpoint:
+                checkpoint[f"layers.{i}.attention.wks.0.{lora_suffix}"] = checkpoint.pop(
+                    f"layers.{i}.attention.wk.{lora_suffix}"
+                )
+            if f"layers.{i}.attention.wv.{lora_suffix}" in checkpoint:
+                checkpoint[f"layers.{i}.attention.wvs.0.{lora_suffix}"] = checkpoint.pop(
+                    f"layers.{i}.attention.wv.{lora_suffix}"
+                )
+
     missing, unexpected = model.load_state_dict(
         checkpoint,
         strict=False,
@@ -150,6 +342,59 @@ def load_model(checkpoint_path: str, params_path: str, max_context_len: int):
         print(f"Unexpected keys: {unexpected}")
 
     return model, args
+
+
+def _create_example_inputs(
+    model_args, input_len, max_context_len, float_dtype, cache_len=None
+):
+    """
+    Create example inputs for a given input length.
+
+    Args:
+        model_args: Model configuration arguments
+        input_len: Sequence length for this forward pass
+        max_context_len: Maximum context length
+        float_dtype: Float dtype (torch.float16 or torch.float32)
+        cache_len: Optional cache length override. If None, uses max_context_len - input_len.
+
+    Returns:
+        Tuple of (example_inputs, cache_len) where example_inputs is the tuple
+        expected by the model's forward method.
+    """
+    if cache_len is None:
+        cache_len = max_context_len - input_len
+
+    mgr = StaticAttentionIOManager(
+        model_args,
+        input_len=input_len,
+        cache_lens=cache_len,
+        batch_size=1,
+        dtype=float_dtype,
+        style="smart_mask",
+        mask_val=float("-inf"),
+    )
+
+    options = {
+        "masks": mgr.masks,
+        "freqs_cos_override": mgr.freqs_cos[:input_len],
+        "freqs_sin_override": mgr.freqs_sin[:input_len],
+        "in_cache_state": (mgr.k_caches, mgr.v_caches),
+    }
+
+    # When generate_full_logits=False, we need to pass last_valid_token_pos
+    # to tell the model which position's logits to output.
+    # This is the index of the last real token (before any padding).
+    if not model_args.generate_full_logits:
+        options["last_valid_token_pos"] = torch.tensor(
+            [input_len - 1], dtype=torch.long
+        )
+
+    example_inputs = (
+        torch.zeros(1, input_len, dtype=torch.int32),
+        options,
+    )
+
+    return example_inputs, cache_len
 
 
 def _get_metadata(model_args, example_inputs, input_len, cache_len, float_dtype):
@@ -263,6 +508,20 @@ def main():
         help="Output filename for the .pte model",
     )
 
+    # LoRA adapter options
+    parser.add_argument(
+        "--adapter_checkpoint",
+        type=str,
+        default=None,
+        help="Path to LoRA adapter weights (adapter_model.safetensors)",
+    )
+    parser.add_argument(
+        "--adapter_config",
+        type=str,
+        default=None,
+        help="Path to adapter config (adapter_config.json)",
+    )
+
     # Model configuration
     parser.add_argument(
         "--max_context_len",
@@ -320,11 +579,29 @@ def main():
         help="Disable graph breaks between transformer blocks",
     )
 
+    # Export mode options
+    parser.add_argument(
+        "--multifunction",
+        action="store_true",
+        help="Export as multifunction model with separate prefill (seqlen=input_len) "
+        "and decode (seqlen=1) methods. Weight sharing is enabled across methods. "
+        "When disabled, exports a single-method model with fixed seqlen=input_len "
+        "and generate_full_logits=True for lookahead decoding support.",
+    )
+
     args = parser.parse_args()
 
     # Compute cache length
 
-    print("Quantization and datatype:")
+    print("Export mode:")
+    if args.multifunction:
+        print(
+            "\tMultifunction: separate prefill/decode graphs, generate_full_logits=False"
+        )
+    else:
+        print("\tSingle method: fixed seqlen, generate_full_logits=True (lookahead)")
+
+    print("\nQuantization and datatype:")
     print(f"\tEmbedding quantize: {args.embedding_quantize}")
     print(f"\tLinear quantize: {args.linear_quantize}")
     print(f"\tDtype: {args.dtype}")
@@ -340,146 +617,417 @@ def main():
     print(f"\tMax splits: {args.max_splits}")
 
     # Load model
+    # For multifunction: generate_full_logits=False (efficient, only last token)
+    # For single method: generate_full_logits=True (needed for lookahead decoding)
+    generate_full_logits = not args.multifunction
     print(f"\nLoading model from {args.checkpoint}...")
-    model, model_args = load_model(
+    base_model, model_args = load_model(
         args.checkpoint,
         args.params,
         args.max_context_len,
+        generate_full_logits=generate_full_logits,
     )
-    print(f"Model loaded: {model_args.n_layers} layers, {model_args.dim} dim")
+    print(f"Base model loaded: {model_args.n_layers} layers, {model_args.dim} dim")
 
-    # Set dtype
+    lora_model, _ = load_model(
+        args.checkpoint,
+        args.params,
+        args.max_context_len,
+        generate_full_logits=generate_full_logits,
+        adapter_checkpoint_path=args.adapter_checkpoint,
+        adapter_config_path=args.adapter_config,
+    )
+    print(f"Lora model loaded: {model_args.n_layers} layers, {model_args.dim} dim")
+
+    # # Set dtype
     float_dtype = {"fp16": torch.float16, "fp32": torch.float32}[args.dtype]
-    model = model.to(float_dtype).eval()
+    # model = model.to(float_dtype).eval()
 
-    # Apply linear splitting (before quantization)
-    if args.target_split_size is not None:
-        print(f"\nSplitting linear layers with target size {args.target_split_size}...")
-        replace_linear_with_split_linear(
-            model,
-            out_target_split_size=args.target_split_size,
-            out_max_splits=args.max_splits,
-            in_target_split_size=1,
-            in_max_splits=1,
+    # # Apply linear splitting (before quantization)
+    # if args.target_split_size is not None:
+    #     print(f"\nSplitting linear layers with target size {args.target_split_size}...")
+    #     replace_linear_with_split_linear(
+    #         model,
+    #         out_target_split_size=args.target_split_size,
+    #         out_max_splits=args.max_splits,
+    #         in_target_split_size=1,
+    #         in_max_splits=1,
+    #     )
+    # try:
+    #     from executorch.examples.models.llama.lora import LoRALinear
+    # except ImportError:
+    #     LoRALinear = None  # type: ignore[assignment]
+    #     print("LoRALinear import failed, will only quantize nn.Linear layers.")
+    
+    # def make_linear_filter_fn(group_size=0):
+    #     """Create a filter function for linear quantization.
+    #     Args:
+    #         group_size: Group size for quantization. 0 means per-axis (no constraint).
+    #     """
+    #     def filter_fn(m, fqn):
+    #         # Check if it's a regular nn.Linear
+    #         is_linear = isinstance(m, nn.Linear)
+    #         # Check if it's a LoRALinear (which has a base weight parameter to quantize)
+    #         is_lora_linear = LoRALinear is not None and isinstance(m, LoRALinear)
+    #         if not (is_linear or is_lora_linear):
+    #             return False
+
+    #         # For per-axis (group_size=0), no shape constraint
+    #         if group_size == 0:
+    #             return True
+
+    #         # Check if the weight shape is compatible with group size
+    #         return m.weight.shape[1] % group_size == 0
+
+    #     return filter_fn
+
+    # # Apply embedding quantization
+    # if args.embedding_quantize:
+    #     bitwidth, group_size = args.embedding_quantize.split(",")
+    #     bitwidth = int(bitwidth)
+    #     group_size = int(group_size)
+    #     assert bitwidth in [4, 8], "CoreML only supports 4-bit and 8-bit quantization"
+
+    #     print(f"\nQuantizing embeddings: {bitwidth}-bit, group_size={group_size}...")
+    #     if group_size == 0:
+    #         granularity = PerAxis(0)
+    #     else:
+    #         granularity = PerGroup(group_size)
+    #     weight_dtype = getattr(torch, f"int{bitwidth}")
+
+    #     quantize_(
+    #         model,
+    #         IntxWeightOnlyConfig(weight_dtype=weight_dtype, granularity=granularity),
+    #         lambda m, fqn: isinstance(m, torch.nn.Embedding),
+    #     )
+
+    # # Apply linear quantization
+    # if args.linear_quantize == "b4w":
+    #     print("\nQuantizing linear layers: 4-bit blockwise (group_size=32)...")
+    #     quantize_(
+    #         model,
+    #         IntxWeightOnlyConfig(
+    #             weight_dtype=torch.int4,
+    #             granularity=PerGroup(32),
+    #         ),
+    #         filter_fn=make_linear_filter_fn(group_size=32),
+    #     )
+    # elif args.linear_quantize == "c4w":
+    #     print("\nQuantizing linear layers: 4-bit channelwise...")
+    #     quantize_(
+    #         model,
+    #         IntxWeightOnlyConfig(
+    #             weight_dtype=torch.int4,
+    #             granularity=PerAxis(0),
+    #         ),
+    #         filter_fn=make_linear_filter_fn(group_size=0),
+    #     )
+
+    # # Add graph breaks between transformer blocks
+    # # Keeping model pieces smaller helps with ANE performance
+    # if not args.no_graph_breaks:
+    #     print("\nAdding graph breaks between before/after the transformer blocks...")
+    #     n_layers = len(model.layers)
+    #     model.layers[0] = BlockWithGraphBreak(model.layers[0], break_before=True)
+    #     model.layers[n_layers - 1] = BlockWithGraphBreak(
+    #         model.layers[n_layers - 1], break_before=False
+    #     )
+    print("[Multimethod] Preparing base model... ")
+    base_model = prepare_model(
+            base_model,
+            float_dtype,
+            args.target_split_size,
+            args.max_splits,
+            args.embedding_quantize,
+            args.linear_quantize,
+            args.no_graph_breaks,
+        )
+    
+    print("[Multimethod] Preparing lora model... ")
+    lora_model = prepare_model(
+            lora_model,
+            float_dtype,
+            args.target_split_size,
+            args.max_splits,
+            args.embedding_quantize,
+            args.linear_quantize,
+            args.no_graph_breaks,
+        )
+    
+    if args.multifunction:
+        # Multifunction mode: separate prefill and decode graphs with weight sharing
+        # Both methods use the same cache_len (decode's cache size) so they can share
+        # the same cache buffer at runtime without any copying.
+        decode_input_len = 1
+        prefill_input_len = args.input_len  # default 32
+        shared_cache_len = (
+            args.max_context_len - decode_input_len
+        )  # Use decode's cache size for both
+
+        print(f"\nShared cache length for prefill/decode: {shared_cache_len}")
+
+        print(f"\nCreating example inputs for decode (seqlen={decode_input_len})...")
+        decode_inputs, decode_cache_len = _create_example_inputs(
+            model_args,
+            decode_input_len,
+            args.max_context_len,
+            float_dtype,
+            cache_len=shared_cache_len,
         )
 
-    # Apply embedding quantization
-    if args.embedding_quantize:
-        bitwidth, group_size = args.embedding_quantize.split(",")
-        bitwidth = int(bitwidth)
-        group_size = int(group_size)
-        assert bitwidth in [4, 8], "CoreML only supports 4-bit and 8-bit quantization"
-
-        print(f"\nQuantizing embeddings: {bitwidth}-bit, group_size={group_size}...")
-        if group_size == 0:
-            granularity = PerAxis(0)
-        else:
-            granularity = PerGroup(group_size)
-        weight_dtype = getattr(torch, f"int{bitwidth}")
-
-        quantize_(
-            model,
-            IntxWeightOnlyConfig(weight_dtype=weight_dtype, granularity=granularity),
-            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+        print(f"Creating example inputs for prefill (seqlen={prefill_input_len})...")
+        prefill_inputs, prefill_cache_len = _create_example_inputs(
+            model_args,
+            prefill_input_len,
+            args.max_context_len,
+            float_dtype,
+            cache_len=shared_cache_len,
         )
 
-    # Apply linear quantization
-    if args.linear_quantize == "b4w":
-        print("\nQuantizing linear layers: 4-bit blockwise (group_size=32)...")
-        quantize_(
-            model,
-            IntxWeightOnlyConfig(
-                weight_dtype=torch.int4,
-                granularity=PerGroup(32),
-            ),
+        # Test eager execution for both
+        print("\nTesting eager execution (decode, seqlen=1)...")
+        with torch.no_grad():
+            model(*decode_inputs)
+        print("Decode eager execution successful!")
+
+        print(f"\nTesting eager execution (prefill, seqlen={prefill_input_len})...")
+        with torch.no_grad():
+            model(*prefill_inputs)
+        print("Prefill eager execution successful!")
+
+        # Export both graphs
+        print("\nExporting decode model (seqlen=1)...")
+        decode_ep = torch.export.export(model, decode_inputs)
+        print("Decode export successful!")
+        print(decode_ep)
+
+        print(f"\nExporting prefill model (seqlen={prefill_input_len})...")
+        prefill_ep = torch.export.export(model, prefill_inputs)
+        print("Prefill export successful!")
+        print(prefill_ep)
+
+        # Generate metadata for C++ runner
+        # constant_methods are shared across all methods, so we prefix method-specific
+        # metadata with the method name
+        print("\nGenerating metadata for C++ runner...")
+        decode_metadata = _get_metadata(
+            model_args, decode_inputs, decode_input_len, decode_cache_len, float_dtype
         )
-    elif args.linear_quantize == "c4w":
-        print("\nQuantizing linear layers: 4-bit channelwise...")
-        quantize_(
-            model,
-            IntxWeightOnlyConfig(
-                weight_dtype=torch.int4,
-                granularity=PerAxis(0),
-            ),
+        prefill_metadata = _get_metadata(
+            model_args,
+            prefill_inputs,
+            prefill_input_len,
+            prefill_cache_len,
+            float_dtype,
         )
 
-    # Add graph breaks between transformer blocks
-    # Keeping model pieces smaller helps with ANE performance
-    if not args.no_graph_breaks:
-        print("\nAdding graph breaks between before/after the transformer blocks...")
-        n_layers = len(model.layers)
-        model.layers[0] = BlockWithGraphBreak(model.layers[0], break_before=True)
-        model.layers[n_layers - 1] = BlockWithGraphBreak(
-            model.layers[n_layers - 1], break_before=False
+        # Combine metadata - shared values go without prefix, method-specific values get prefixed
+        constant_methods = {
+            # Shared metadata (same for both methods)
+            "vocab_size": decode_metadata["vocab_size"],
+            "head_dim": decode_metadata["head_dim"],
+            "n_heads_per_cache": decode_metadata["n_heads_per_cache"],
+            "freqs_cos": decode_metadata["freqs_cos"],
+            "freqs_sin": decode_metadata["freqs_sin"],
+            # Decode-specific metadata (forward method)
+            "decode_input_len": decode_metadata["forward_input_len"],
+            "decode_freqs_cos_input_index": decode_metadata["freqs_cos_input_index"],
+            "decode_freqs_sin_input_index": decode_metadata["freqs_sin_input_index"],
+            "decode_mask_specs": decode_metadata["mask_specs"],
+            "decode_kv_cache_specs": decode_metadata["kv_cache_specs"],
+            # Prefill-specific metadata
+            "prefill_input_len": prefill_metadata["forward_input_len"],
+            "prefill_freqs_cos_input_index": prefill_metadata["freqs_cos_input_index"],
+            "prefill_freqs_sin_input_index": prefill_metadata["freqs_sin_input_index"],
+            "prefill_mask_specs": prefill_metadata["mask_specs"],
+            "prefill_kv_cache_specs": prefill_metadata["kv_cache_specs"],
+        }
+
+        # Setup CoreML partitioner with multimethod weight sharing
+        print("\nSetting up CoreML partitioner (multifunction with weight sharing)...")
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18,
+            compute_precision={
+                torch.float16: ct.precision.FLOAT16,
+                torch.float32: ct.precision.FLOAT32,
+            }[float_dtype],
+            compute_unit=ct.ComputeUnit.CPU_AND_NE,
+            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
+        )
+        compile_specs.append(
+            CoreMLBackend.generate_multimethod_weight_sharing_strategy_compile_spec(
+                MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
+            )
+        )
+        partitioner = CoreMLPartitioner(
+            compile_specs=compile_specs,
+            take_over_mutable_buffer=False,
+            skip_ops_for_coreml_delegation=[],
         )
 
-    # Create IO manager and example inputs
-    mgr = StaticAttentionIOManager(
-        model_args,
-        input_len=args.input_len,
-        cache_lens=cache_len,
-        batch_size=1,
-        dtype=float_dtype,
-        style="smart_mask",  # Use smart_mask to match C++ StaticTransformerRunner
-        mask_val=float("-inf"),
-    )
-    example_inputs = (
-        torch.zeros(1, args.input_len, dtype=torch.int32),
-        {
-            "masks": mgr.masks,
-            "freqs_cos_override": mgr.freqs_cos[: args.input_len],
-            "freqs_sin_override": mgr.freqs_sin[: args.input_len],
-            "in_cache_state": (mgr.k_caches, mgr.v_caches),
-        },
-    )
+        # Lower to edge with both decode and prefill methods
+        print("\nLowering to edge (multi-method: decode + prefill)...")
+        edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
 
-    # Test eager execution
-    print("\nTesting eager execution...")
-    with torch.no_grad():
-        model(*example_inputs)
-    print("Eager execution successful!")
+        # Create multi-method edge manager with decode as "forward" and prefill as "prefill"
+        edge_manager = to_edge_transform_and_lower(
+            {"forward": decode_ep, "prefill": prefill_ep},
+            partitioner=[partitioner],
+            constant_methods=constant_methods,
+            compile_config=edge_compile_config,
+        )
 
-    # Export the model
-    print("\nExporting model...")
-    ep = torch.export.export(model, example_inputs)
-    print("Export successful!")
-    print(ep)
+        print("\nDelegated program (decode/forward):")
+        print(format_delegated_graph(edge_manager.exported_program().graph_module))
 
-    # Generate metadata for C++ runner
-    print("\nGenerating metadata for C++ runner...")
-    constant_methods = _get_metadata(
-        model_args, example_inputs, args.input_len, cache_len, float_dtype
-    )
+        print("\nDelegated program (prefill):")
+        print(
+            format_delegated_graph(
+                edge_manager.exported_program("prefill").graph_module
+            )
+        )
+    elif args.adapter_checkpoint is not None:
+        print("Multimethod multifunction")
+        # Create IO manager and example inputs
+        mgr = StaticAttentionIOManager(
+            model_args,
+            input_len=args.input_len,
+            cache_lens=cache_len,
+            batch_size=1,
+            dtype=float_dtype,
+            style="smart_mask",
+            mask_val=float("-inf"),
+        )
+        example_inputs = (
+            torch.zeros(1, args.input_len, dtype=torch.int32),
+            {
+                "masks": mgr.masks,
+                "freqs_cos_override": mgr.freqs_cos[: args.input_len],
+                "freqs_sin_override": mgr.freqs_sin[: args.input_len],
+                "in_cache_state": (mgr.k_caches, mgr.v_caches),
+            },
+        )
+        # Test eager execution for both models
+        print("\n[Multimethod Export] Testing eager execution...")
+        with torch.no_grad():
+            base_model(*example_inputs)
+            lora_model(*example_inputs)
+        print("Eager execution successful for both models!")
 
-    # Setup CoreML partitioner
-    print("\nSetting up CoreML partitioner...")
-    compile_specs = CoreMLBackend.generate_compile_specs(
-        minimum_deployment_target=ct.target.iOS18,
-        compute_precision={
-            torch.float16: ct.precision.FLOAT16,
-            torch.float32: ct.precision.FLOAT32,
-        }[float_dtype],
-        compute_unit=ct.ComputeUnit.CPU_AND_NE,
-        model_type=CoreMLBackend.MODEL_TYPE.MODEL,
-    )
-    partitioner = CoreMLPartitioner(
-        compile_specs=compile_specs,
-        take_over_mutable_buffer=False,
-        skip_ops_for_coreml_delegation=[],
-    )
+        # Export both models
+        print("\n[Multimethod Export] Exporting base model...")
+        base_ep = torch.export.export(base_model, example_inputs, strict=False)
+        print("Base model export successful!")
 
-    # Lower to edge with constant methods for C++ runner
-    print("\nLowering to edge...")
-    edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
-    edge_manager = to_edge_transform_and_lower(
-        ep,
-        partitioner=[partitioner],
-        constant_methods=constant_methods,
-        compile_config=edge_compile_config,
-    )
+        print("\n[Multimethod Export] Exporting LoRA model...")
+        lora_ep = torch.export.export(lora_model, example_inputs, strict=False)
+        print("LoRA model export successful!")
 
-    print("\nDelegated program:")
-    print(format_delegated_graph(edge_manager.exported_program().graph_module))
+        # Use dictionary of exported programs for multimethod
+        exported_programs = {
+            "base": base_ep,
+            "lora": lora_ep,
+        }
+
+        # Generate metadata for C++ runner
+        print("\nGenerating metadata for C++ runner...")
+        constant_methods = _get_metadata(
+            model_args, example_inputs, args.input_len, cache_len, float_dtype
+        )
+        # Setup CoreML partitioner
+        print("\nSetting up CoreML partitioner...")
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18,
+            compute_precision={
+                torch.float16: ct.precision.FLOAT16,
+                torch.float32: ct.precision.FLOAT32,
+            }[float_dtype],
+            compute_unit=ct.ComputeUnit.CPU_AND_NE,
+            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
+        )
+        compile_specs.append(
+            CoreMLBackend.generate_multimethod_weight_sharing_strategy_compile_spec(
+                MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
+            )
+        )
+        partitioner = CoreMLPartitioner(
+            compile_specs=compile_specs,
+            take_over_mutable_buffer=False,
+            skip_ops_for_coreml_delegation=[],
+        )
+
+        # Lower to edge with constant methods for C++ runner
+        print("\nLowering to edge... (multi-method: lora + base) ... ")
+        edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+        edge_manager = to_edge_transform_and_lower(
+            exported_programs,
+            partitioner=[partitioner],
+            constant_methods=constant_methods,
+            compile_config=edge_compile_config,
+        )
+        print("\nDelegated program (base):")
+        print(format_delegated_graph(edge_manager.exported_program("base").graph_module))
+
+        print("\nDelegated program (lora):")
+        print(
+            format_delegated_graph(
+                edge_manager.exported_program("lora").graph_module
+            )
+        )
+    else:
+        # Single method mode: fixed seqlen with generate_full_logits=True for lookahead
+        print(f"\nCreating example inputs (seqlen={args.input_len})...")
+        example_inputs, example_cache_len = _create_example_inputs(
+            model_args, args.input_len, args.max_context_len, float_dtype
+        )
+
+        # Test eager execution
+        print("\nTesting eager execution...")
+        with torch.no_grad():
+            model(*example_inputs)
+        print("Eager execution successful!")
+
+        # Export the model
+        print("\nExporting model...")
+        ep = torch.export.export(model, example_inputs)
+        print("Export successful!")
+        print(ep)
+
+        # Generate metadata for C++ runner
+        print("\nGenerating metadata for C++ runner...")
+        constant_methods = _get_metadata(
+            model_args, example_inputs, args.input_len, example_cache_len, float_dtype
+        )
+
+        # Setup CoreML partitioner
+        print("\nSetting up CoreML partitioner...")
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18,
+            compute_precision={
+                torch.float16: ct.precision.FLOAT16,
+                torch.float32: ct.precision.FLOAT32,
+            }[float_dtype],
+            compute_unit=ct.ComputeUnit.CPU_AND_NE,
+            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
+        )
+        partitioner = CoreMLPartitioner(
+            compile_specs=compile_specs,
+            take_over_mutable_buffer=False,
+            skip_ops_for_coreml_delegation=[],
+        )
+
+        # Lower to edge with constant methods for C++ runner
+        print("\nLowering to edge...")
+        edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+        edge_manager = to_edge_transform_and_lower(
+            ep,
+            partitioner=[partitioner],
+            constant_methods=constant_methods,
+            compile_config=edge_compile_config,
+        )
+
+        print("\nDelegated program:")
+        print(format_delegated_graph(edge_manager.exported_program().graph_module))
 
     # Convert to ExecuTorch
     print("\nConverting to ExecuTorch...")
