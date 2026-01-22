@@ -41,8 +41,12 @@ class Tester:
         example_inputs: Tuple[torch.Tensor],
         stage_classes: Dict[StageType, Callable] | None = None,
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        training: bool = False,
     ):
-        module.eval()
+        if training:
+            module.train()
+        else:
+            module.eval()
 
         self.stage_classes = stage_classes or Tester.default_stage_classes()
         self.original_module = module
