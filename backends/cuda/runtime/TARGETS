@@ -4,6 +4,28 @@ load("//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
 oncall("executorch")
 
 runtime.cxx_library(
+    name = "guard",
+    srcs = [
+        "guard.cpp",
+    ],
+    headers = [
+        "guard.h",
+        "utils.h",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/runtime/platform:platform",
+    ],
+    exported_deps = [
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/core/exec_aten:lib",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+)
+
+runtime.cxx_library(
     name = "cuda_platform",
     srcs = [
         "platform/platform.cpp",
