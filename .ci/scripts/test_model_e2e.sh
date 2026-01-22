@@ -124,11 +124,11 @@ case "$HF_MODEL" in
     MODEL_NAME="parakeet"
     RUNNER_TARGET="parakeet_runner"
     RUNNER_PATH="parakeet"
-    EXPECTED_OUTPUT=""
+    EXPECTED_OUTPUT="Phoebe"
     PREPROCESSOR=""
     TOKENIZER_URL=""
     TOKENIZER_FILE="tokenizer.model"
-    AUDIO_URL="https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
+    AUDIO_URL="https://dldata-public.s3.us-east-2.amazonaws.com/2086-149220-0033.wav"
     AUDIO_FILE="test_audio.wav"
     IMAGE_PATH=""
     ;;
