@@ -32,6 +32,9 @@
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
+#ifdef ET_BUILD_METAL
+#include <executorch/backends/apple/metal/runtime/stats.h>
+#endif
 
 DEFINE_string(model_path, "parakeet.pte", "Path to Parakeet model (.pte).");
 DEFINE_string(audio_path, "", "Path to input audio file (.wav).");
@@ -415,6 +418,10 @@ int main(int argc, char** argv) {
   std::string text = parakeet::tokenizer_utils::decode_token_sequence(
       decoded_tokens, *tokenizer);
   std::cout << "Transcribed text: " << text << std::endl;
+
+#ifdef ET_BUILD_METAL
+  executorch::backends::metal::print_metal_backend_stats();
+#endif // ET_BUILD_METAL
 
   if (!timestamp_mode.enabled()) {
     return 0;
