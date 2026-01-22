@@ -457,6 +457,30 @@ class Conv2dReLUMaxPoolModule(torch.nn.Module):
         return self.pool(x)
 
 
+class ConvBNModule(torch.nn.Module):
+    def __init__(self, conv_module, conv_bias, bn_affine):
+        super().__init__()
+
+        if conv_module == "conv1d":
+            self.conv = torch.nn.Conv1d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm1d(64, affine=bn_affine)
+        elif conv_module == "conv2d":
+            self.conv = torch.nn.Conv2d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm2d(64, affine=bn_affine)
+        elif conv_module == "conv1d_t":
+            self.conv = torch.nn.ConvTranspose1d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm1d(64, affine=bn_affine)
+        elif conv_module == "conv2d_t":
+            self.conv = torch.nn.ConvTranspose2d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm2d(64, affine=bn_affine)
+        else:
+            raise ValueError(f"Unknown conv_module: {conv_module}")
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.bn(x)
+
+
 class MulTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()

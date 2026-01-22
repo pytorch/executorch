@@ -188,16 +188,6 @@ class TextDecoder(Component):
             get_passes_dependency_for_capture_program() if apply_embedding else None
         )
 
-        # check if sharding required
-        if self.config.num_sharding > 1:
-            SplitGraph, setting = model_sharding.get_split_graph_pass(
-                self.meta["get_n_layers"],
-                shares=self.config.num_sharding,
-            )
-            self.passes_job[SplitGraph] = setting
-            self.dep_table[SplitGraph] = [FoldQDQ]
-            self.dep_table[TagQuantIO] = [SplitGraph]
-
         # load static llama model args
         params_path = (
             config.params_path if control_args.params is None else control_args.params
@@ -210,6 +200,17 @@ class TextDecoder(Component):
         self.decoder = None
         if (instance := self._prepare_model()) is not None:
             self.tok_embedding, self.decoder = instance
+            self.meta = self.decoder.get_metadata()
+
+        # check if sharding required
+        if instance and self.config.num_sharding > 1:
+            SplitGraph, setting = model_sharding.get_split_graph_pass(
+                self.meta["get_n_layers"],
+                shares=self.config.num_sharding,
+            )
+            self.passes_job[SplitGraph] = setting
+            self.dep_table[SplitGraph] = [FoldQDQ]
+            self.dep_table[TagQuantIO] = [SplitGraph]
 
     def _process_model_args(self, model_args: ModelArgs):
         # TODO: support batch inputs if necessary
@@ -246,7 +247,11 @@ class TextDecoder(Component):
             state_dict = torch.load(
                 checkpoint, weights_only=True, map_location="cpu", mmap=True
             )
-            if self.control_args.decoder_model in {"gemma-2b", "gemma3-1b"}:
+            if self.control_args.decoder_model in {
+                "gemma-2b",
+                "gemma2-2b",
+                "gemma3-1b",
+            }:
                 for k, v in state_dict.items():
                     if "norm" not in k:
                         continue
@@ -395,6 +400,19 @@ class TextDecoder(Component):
                         hf_config.text_config.rope_local_base_freq
                     )
                     kwargs["sliding_window"] = hf_config.sliding_window
+                case "gemma2-2b":
+                    from transformers import Gemma2Config
+
+                    hf_config = Gemma2Config.from_pretrained(self.config.repo_id)
+                    kwargs["layer_types"] = hf_config.layer_types
+                    kwargs["rope_local_base_freq"] = hf_config.rope_parameters[
+                        "rope_theta"
+                    ]
+                    kwargs["sliding_window"] = hf_config.sliding_window
+                    kwargs["final_logit_softcapping"] = (
+                        hf_config.final_logit_softcapping
+                    )
+                    kwargs["attn_logit_softcapping"] = hf_config.attn_logit_softcapping
 
         return kwargs
 
