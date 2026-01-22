@@ -120,8 +120,7 @@ jobs:
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
-    # Exception: nvidia/parakeet-tdt doesn't require HuggingFace token, so it can run on forks
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request' || matrix.model.name == 'parakeet-tdt'
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
