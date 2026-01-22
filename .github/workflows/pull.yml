@@ -1042,6 +1042,30 @@ jobs:
           python -m examples.vulkan.export --model_name=$model --test -d
         done
 
+        # Test Llama model export for Vulkan
+        echo "::group::Test Llama Export for Vulkan"
+        source .ci/scripts/utils.sh
+
+        # Install llama requirements
+        bash examples/models/llama/install_requirements.sh
+
+        # Download stories110M model artifacts
+        download_stories_model_artifacts
+
+        # Export llama model with Vulkan backend
+        python -m extension.llm.export.export_llm \
+          base.checkpoint=stories110M.pt \
+          base.params=params.json \
+          model.dtype_override=fp32 \
+          export.output_name=stories110M_vulkan.pte \
+          model.use_kv_cache=true \
+          model.use_sdpa_with_kv_cache=true \
+          backend.vulkan.enabled=true
+
+        # Verify the exported model exists
+        ls -la stories110M_vulkan.pte
+        echo "::endgroup::"
+
   test-vulkan-operators-linux:
     name: test-vulkan-operators-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
