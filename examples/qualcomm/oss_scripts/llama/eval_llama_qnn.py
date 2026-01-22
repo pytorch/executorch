@@ -10,7 +10,6 @@ import json
 
 import logging
 import sys
-import types
 
 import torch
 
@@ -57,8 +56,6 @@ from torchao.prototype.quantization.module_swap.module_swap import (
     QuantizationRecipe,
     quantize_module_swap,
 )
-from torchao.prototype.spinquant import apply_spinquant
-
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
 from transformers import AutoTokenizer
@@ -220,24 +217,6 @@ def prequant_algorithm(model, prefill_config, args):
 
     scales_state_dict = {}
 
-    if args.spinquant:
-        config = types.SimpleNamespace(
-            dim=prefill_config.dim,
-            head_dim=prefill_config.dim // prefill_config.n_heads,
-            n_local_heads=prefill_config.n_heads,
-            intermediate_size=4 * prefill_config.dim,
-        )
-        model.config = config
-        apply_spinquant(
-            model,
-            use_r1=True,
-            use_r2=True,
-            use_r4=False,
-            pretrained_rotation_path=None,
-            qkv_split=True,
-        )
-        logging.info("Applied SpinQuant to the model")
-
     if args.range_setting == "mse_with_act_loss":
         wrapped_model = WrappedLlamaModel(
             model, *atten_mask, args.use_kv_cache, args.max_seq_length, args.device
@@ -397,11 +376,6 @@ def main() -> None:
         "--range_setting",
         help="Choose which range setting method for weight quantization (e.g. mse_weight_only or mse_with_act_loss). If not specified, defaults to minmax",
         type=str,
-    )
-    parser.add_argument(
-        "--spinquant",
-        help="Apply SpinQuant (R1+R2) to the model. Uses random Hadamard matrices for rotations",
-        action="store_true",
     )
     parser.add_argument(
         "--fraction",
