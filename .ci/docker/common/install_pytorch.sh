@@ -17,7 +17,7 @@ install_domains() {
 }
 
 install_pytorch_and_domains() {
-  pip_install --force-reinstall torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/test/cpu
+  pip_install --force-reinstall torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 torchao==0.15.0 --index-url https://download.pytorch.org/whl/test/cpu
 }
 
 install_pytorch_and_domains
