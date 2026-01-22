@@ -32,6 +32,26 @@ def define_common_targets():
             **backend_kwargs
         )
 
+        backend_kwargs = {
+            "external_deps": [("cuda", None, "cuda-lazy")],
+            "preprocessor_flags": ["-DCUDA_AVAILABLE=1"],
+            "keep_gpu_sections": True,
+            "remote_execution": re_test_utils.remote_execution(
+                platform = "gpu-remote-execution",
+            ),
+        } if backend_mode == "cuda" else {}
+
+        runtime.cxx_test(
+            name = "test_storage" + backend_suffix,
+            srcs = [
+                "test_storage.cpp",
+            ],
+            deps = [
+                "//executorch/backends/aoti/slim/core:storage",
+            ],
+            **backend_kwargs
+        )
+
         runtime.cxx_test(
             name = "test_slimtensor_basic"  + backend_suffix,
             srcs = [

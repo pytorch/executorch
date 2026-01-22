@@ -58,6 +58,7 @@ from . import (  # noqa
     op_tosa_conv2d,
     op_tosa_conv3d,
     op_tosa_depthwise_conv2d,
+    op_tosa_gather,
     op_tosa_matmul,
     op_tosa_rescale,
     op_tosa_resize,
