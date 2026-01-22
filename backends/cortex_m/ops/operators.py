@@ -352,7 +352,7 @@ def quantized_linear_meta(
     activation_min,
 ) -> torch.Tensor:
 
-    shape = (*input.shape[:-1], weights.shape[0])
+    shape = (*input.shape[:-1], weights.shape[1])
     return torch.empty(shape, dtype=input.dtype, device=input.device)
 
 
@@ -386,7 +386,7 @@ def quantized_linear_impl(
         input_reshaped = input_int32.reshape(new_shape)
 
         lhs_sum = torch.sum(input_reshaped, dim=-1, keepdim=True) * filter_offset
-        output = torch.mm(input_reshaped, weights_int32.T) + lhs_sum + kernel_sum
+        output = torch.mm(input_reshaped, weights_int32) + lhs_sum + kernel_sum
         output_shape = (*input.shape[:-1], output.shape[-1])
         output_reshaped = output.reshape(output_shape)
     else:
@@ -396,7 +396,7 @@ def quantized_linear_impl(
         new_shape = (prod(input.shape[:-1]), input.shape[-1])
         input_reshaped = input_int32.reshape(new_shape)
 
-        output = torch.mm(input_reshaped, weights_int32.T)
+        output = torch.mm(input_reshaped, weights_int32)
         if bias is not None:
             output = output + bias
         output_shape = (*input.shape[:-1], output.shape[-1])
