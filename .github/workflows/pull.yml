@@ -490,8 +490,8 @@ jobs:
       build-tool: buck2
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
-  unittest-arm-backend-with-no-fvp:
-    name: unittest-arm-backend-with-no-fvp
+  unittest-arm-backend-with-no-deps:
+    name: unittest-arm-backend-with-no-deps
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -499,8 +499,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops
-          - test_arm_baremetal: test_pytest_models
+          - test_arm_baremetal: test_pytest_ops_no_target
+          - test_arm_baremetal: test_pytest_ops_tosa
+          - test_arm_baremetal: test_pytest_models_tosa
+          - test_arm_baremetal: test_run_tosa
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -516,7 +518,7 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        .ci/scripts/setup-arm-baremetal-tools.sh
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
         ARM_TEST=${{ matrix.test_arm_baremetal }}
 
@@ -917,8 +919,9 @@ jobs:
 
   test-samsung-quantmodels-linux:
     name: test-samsung-quantmodels-linux
-    # Skip this job if the pull request is from a fork (secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    # Temporarily disabled - api key invalid
+    if: false
+    # if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -959,8 +962,10 @@ jobs:
 
   test-samsung-models-linux:
     name: test-samsung-models-linux
-    # Skip this job if the pull request is from a fork (secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    # Temporarily disabled - edb (Exynos device bridge) failures and device reservation issues
+    # See: https://github.com/pytorch/executorch/issues/16678
+    if: false
+    # if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -1037,6 +1042,30 @@ jobs:
           python -m examples.vulkan.export --model_name=$model --test -d
         done
 
+        # Test Llama model export for Vulkan
+        echo "::group::Test Llama Export for Vulkan"
+        source .ci/scripts/utils.sh
+
+        # Install llama requirements
+        bash examples/models/llama/install_requirements.sh
+
+        # Download stories110M model artifacts
+        download_stories_model_artifacts
+
+        # Export llama model with Vulkan backend
+        python -m extension.llm.export.export_llm \
+          base.checkpoint=stories110M.pt \
+          base.params=params.json \
+          model.dtype_override=fp32 \
+          export.output_name=stories110M_vulkan.pte \
+          model.use_kv_cache=true \
+          model.use_sdpa_with_kv_cache=true \
+          backend.vulkan.enabled=true
+
+        # Verify the exported model exists
+        ls -la stories110M_vulkan.pte
+        echo "::endgroup::"
+
   test-vulkan-operators-linux:
     name: test-vulkan-operators-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -1084,6 +1113,37 @@ jobs:
         # route in the future.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+
+  test-coreml-bc-macos:
+    name: test-coreml-bc-macos (${{ matrix.runner }})
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        runner: [macos-m1-stable, macos-m2-stable]
+      fail-fast: false
+    with:
+      runner: ${{ matrix.runner }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 180
+      script: |
+        set -eux
+
+        # Set up Python environment
+        eval "$(conda shell.bash hook)"
+        conda activate
+
+        echo "::group::Run CoreML Backward Compatibility Test"
+        # Copy script to temp location since it will checkout old commits
+        # which would overwrite the script itself
+        TEMP_SCRIPT=$(mktemp)
+        cp .ci/scripts/test_coreml_bc.sh "${TEMP_SCRIPT}"
+        bash "${TEMP_SCRIPT}" "$(pwd)"
+        rm -f "${TEMP_SCRIPT}"
+        echo "::endgroup::"
 
   nxp-build-test:
     name: nxp-build-test

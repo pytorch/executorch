@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -153,10 +153,10 @@ class EthosU55DtypeSupport(OperatorSupportBase):
         ):
             for input_node in node.all_input_nodes:
                 dtype = _try_determine_dtype(input_node)
-                if dtype is not None and dtype != torch.int8:
+                if dtype is not None and dtype not in (torch.int8, torch.int16):
                     self.reporter.report_reject(
                         input_node,
-                        f"Input {input_node.name} has unsupported dtype {dtype} (Supports i8).",
+                        f"Input {input_node.name} has unsupported dtype {dtype} (Supports i8, i16).",
                     )
                     return False
 
@@ -204,9 +204,11 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.ne.Tensor,
         exir_ops.edge.aten.ne.Scalar,
         exir_ops.edge.aten.flip.default,  # REVERSE
+        exir_ops.edge.aten.gather.default,  # GATHER
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
         exir_ops.edge.aten.index.Tensor,  # GATHER
         exir_ops.edge.aten.index_select.default,  # GATHER
+        exir_ops.edge.aten.index_put.default,  # SCATTER
         exir_ops.edge.aten.scatter.src,
         exir_ops.edge.aten.scatter.value,
         exir_ops.edge.aten.select_scatter.default,

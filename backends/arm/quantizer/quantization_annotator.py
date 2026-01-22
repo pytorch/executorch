@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -378,6 +378,7 @@ _one_to_one = [
     torch.ops.aten.cosh.default,
     torch.ops.aten.acos.default,
     torch.ops.aten.cumsum.default,
+    torch.ops.aten.tan.default,
 ]
 
 _one_to_one_shared_input_qspec = [
@@ -427,6 +428,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.clamp.default,
     torch.ops.aten.clamp.Tensor,
     torch.ops.aten.unflatten.int,
+    torch.ops.aten.gather.default,
     torch.ops.aten.index_select.default,
     torch.ops.aten.index.Tensor,
     # Neg operator flips the range, but keps the magnitude the same.
@@ -658,7 +660,17 @@ def get_quant_properties(  # noqa: C901
                 [input_act_qspec if n == inputs[0] else shared_qspec for n in inputs],
             )
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+    elif node.target in (
+        torch.ops.aten.index_put.default,
+        torch.ops.aten.index_put_.default,
+    ):
+        shared_qspec = SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
+        quant_properties.quant_inputs = [
+            _QuantProperty(0, input_act_qspec),
+            _QuantProperty(2, shared_qspec),
+        ]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)

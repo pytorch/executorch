@@ -15,10 +15,7 @@ def define_common_targets():
         exported_headers = [
             "error_matchers.h",
         ],
-        visibility = [
-            "//executorch/runtime/core/testing_util/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_external_deps = [
             "gmock",
         ],
