@@ -1,0 +1,118 @@
+name: llm-runner-demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: 'Input text prompt for the LLM runner'
+        required: false
+        default: 'Once'
+        type: string
+      seq_len:
+        description: 'Maximum sequence length for generation'
+        required: false
+        default: '30'
+        type: string
+      temperature:
+        description: 'Temperature for sampling (0 for deterministic)'
+        required: false
+        default: '0'
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-run-llm-runner:
+    name: build-and-run-llm-runner
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 900
+      script: |
+        set -exu
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Get input parameters with defaults
+        PROMPT="${{ inputs.prompt || 'Once' }}"
+        SEQ_LEN="${{ inputs.seq_len || '30' }}"
+        TEMPERATURE="${{ inputs.temperature || '0' }}"
+
+        echo "::group::Input Parameters"
+        echo "Prompt: ${PROMPT}"
+        echo "Sequence Length: ${SEQ_LEN}"
+        echo "Temperature: ${TEMPERATURE}"
+        echo "::endgroup::"
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+        echo "::endgroup::"
+
+        echo "::group::Install LLM Requirements"
+        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+        echo "::endgroup::"
+
+        echo "::group::Download Model Artifacts"
+        # Download stories110M model and tokenizer
+        curl -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt" --output stories110M.pt
+        curl -Ls "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model" --output tokenizer.model
+        # Create params.json file
+        echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
+        echo "::endgroup::"
+
+        echo "::group::Export Model to PTE Format"
+        EXPORTED_MODEL_NAME="llm_demo.pte"
+        EXPORT_ARGS="base.checkpoint=stories110M.pt base.params=params.json model.dtype_override=fp32 export.output_name=${EXPORTED_MODEL_NAME} model.use_kv_cache=true backend.xnnpack.enabled=true backend.xnnpack.extended_ops=true quantization.qmode=8da4w quantization.group_size=128 model.use_sdpa_with_kv_cache=true"
+        python -m extension.llm.export.export_llm ${EXPORT_ARGS}
+        echo "::endgroup::"
+
+        echo "::group::Create Tokenizer Binary"
+        python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
+        echo "::endgroup::"
+
+        echo "::group::Build LLM Runner"
+        # Build ExecuTorch libraries
+        rm -rf cmake-out
+        cmake --preset llm \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_ENABLE_LOGGING=ON
+        cmake --build cmake-out -j9 --target install --config Release
+
+        # Build llama runner
+        pushd extension/llm/tokenizers
+        git submodule update --init
+        popd
+        pushd examples/models/llama
+        cmake --workflow --preset llama-release
+        popd
+        echo "::endgroup::"
+
+        echo "::group::Run LLM Runner"
+        echo "Running LLM with prompt: '${PROMPT}'"
+        cmake-out/examples/models/llama/llama_main \
+            --model_path="${EXPORTED_MODEL_NAME}" \
+            --tokenizer_path=tokenizer.bin \
+            --prompt="${PROMPT}" \
+            --temperature="${TEMPERATURE}" \
+            --seq_len="${SEQ_LEN}" \
+            --warmup=1 | tee result.txt
+        echo "::endgroup::"
+
+        echo "::group::Results"
+        echo "=================================="
+        echo "LLM Runner Output:"
+        echo "=================================="
+        cat result.txt
+        echo "=================================="
+        echo "::endgroup::"
