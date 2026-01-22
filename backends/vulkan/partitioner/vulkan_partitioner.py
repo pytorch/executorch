@@ -97,7 +97,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
         """
         target = node.target
         # Account for custom operators
-        if node.target == torch.ops.higher_order.auto_functionalized:
+        if (
+            node.target == torch.ops.higher_order.auto_functionalized
+            or node.target == torch.ops.higher_order.auto_functionalized_v2
+        ):
             first_arg = node.args[0]
             assert isinstance(first_arg, torch._ops.OpOverload)
             target = first_arg.name()
@@ -218,7 +221,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 return True
 
         target = node.target
-        if node.target == torch.ops.higher_order.auto_functionalized:
+        if (
+            node.target == torch.ops.higher_order.auto_functionalized
+            or node.target == torch.ops.higher_order.auto_functionalized_v2
+        ):
             first_arg = node.args[0]
             assert isinstance(first_arg, torch._ops.OpOverload)
             target = first_arg.name()
