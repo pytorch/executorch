@@ -198,6 +198,22 @@ def test_conv_transpose2d_vgf_quant(test_data):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_INT, xfails=_a8w4_transpose_conv_xfails)
+@common.SkipIfNoModelConverter
+def test_conv_transpose2d_vgf_quant_a8w4(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_INT16)
 @common.SkipIfNoModelConverter
 def test_conv_transpose2d_vgf_INT_int16(test_data):
