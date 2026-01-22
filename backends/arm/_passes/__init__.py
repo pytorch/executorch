@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,9 +6,11 @@
 
 from . import arm_pass_utils  # noqa
 from .arm_pass import ArmPass  # noqa  # usort: skip
+from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
 from .annotate_output_dim_order_pass import AnnotateOutputDimOrderPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
+from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
@@ -75,6 +77,7 @@ from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
 from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
 from .decompose_sum_pass import DecomposeSumPass  # noqa
+from .decompose_tan_pass import DecomposeTanPass  # noqa
 from .decompose_tosa_unsupported_clamp_pass import (  # noqa
     DecomposeTOSAUnsupportedClampPass,
 )
@@ -120,6 +123,7 @@ from .rewrite_bool_to_fp32_cast_via_int8_pass import (  # noqa
     RewriteBoolToFp32CastViaInt8Pass,
 )
 from .rewrite_conv_pass import RewriteConvPass  # noqa
+from .rewrite_index_put_pass import RewriteIndexPutPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa

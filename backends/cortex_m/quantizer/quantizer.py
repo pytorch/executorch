@@ -1,10 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Any, Callable, cast, List, Optional
+from collections import defaultdict
+from typing import Any, Callable, cast, Iterator, List, Optional
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
@@ -243,6 +244,8 @@ class OperatorConfigQuantizer(Quantizer):
                               skipped. Used to match for example particular targets or modules.
     """
 
+    Q_PATTERN_MATCHED_KEY = "quantizer_matched"
+
     def __init__(
         self,
         operator_config: QuantizationConfig,
@@ -284,24 +287,33 @@ class OperatorConfigQuantizer(Quantizer):
         return match
 
     def match_patterns(
-        self, model: GraphModule, patterns: List[List[str]]
-    ) -> List[List[Node]]:
+        self, model: GraphModule, patterns: List[List[OpOverload]]
+    ) -> Iterator[List[Node]]:
         """
         Match all given patterns in the graph and return list of matches.
         Each node can only be part of one match, larger patterns are prioritized.
         Currently only linear patterns (single chain) are supported.
-        """
-        patterns.sort(key=len, reverse=True)
-        matches: List[List[Node]] = []
-        for pattern in patterns:
-            for node in model.graph.nodes:
-                potential_match = self.check_pattern(node, pattern)
-                if potential_match:
-                    matches.append(potential_match)
-                    for node in potential_match:
-                        node.meta["quantizer_matched"] = True
 
-        return matches
+        Q_PATTERN_MATCHED_KEY is set to True in node.meta to track which nodes have
+        already been matched.
+        """
+
+        # maps operator -> list of patterns starting with operator
+        patterns_by_first = defaultdict(list)
+        for p in sorted(patterns, key=len, reverse=True):
+            patterns_by_first[p[0]].append(p)
+
+        for node in model.graph.nodes:
+            if node.meta.get(OperatorConfigQuantizer.Q_PATTERN_MATCHED_KEY, False):
+                continue
+            for pattern in patterns_by_first.get(node.target, []):
+                match_or_none = self.check_pattern(node, pattern)
+                if match_or_none is not None:
+                    for matched_node in match_or_none:
+                        matched_node.meta[
+                            OperatorConfigQuantizer.Q_PATTERN_MATCHED_KEY
+                        ] = True
+                    yield match_or_none
 
     def is_parameter(self, node: Node, model: GraphModule) -> bool:
         """Returns True if the given node is a parameter of the model."""
