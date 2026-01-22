@@ -296,12 +296,15 @@ class MaybeOwningStorage {
       return;
     }
 
-    ET_CHECK_MSG(
-        device_.is_cpu() && src_device.is_cpu(),
-        "Only CPU-to-CPU copy is currently supported");
-
-    DeviceTraits<c10::DeviceType::CPU>::memcpy(
-        dst_data_ptr, src_data_ptr, nbytes, device_, src_device);
+    if (device_.is_cpu() && src_device.is_cpu()) {
+      // CPU to CPU copy
+      DeviceTraits<c10::DeviceType::CPU>::memcpy(
+          dst_data_ptr, src_data_ptr, nbytes, device_, src_device);
+    } else {
+      // At least one of the devices is CUDA
+      DeviceTraits<c10::DeviceType::CUDA>::memcpy(
+          dst_data_ptr, src_data_ptr, nbytes, device_, src_device);
+    }
   }
 
   /// Creates a clone of this storage on the specified device.
