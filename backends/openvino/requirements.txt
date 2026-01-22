@@ -1,2 +1,2 @@
 transformers
-git+https://github.com/openvinotoolkit/nncf@3d753ac#egg=nncf
+git+https://github.com/openvinotoolkit/nncf@61ea196235f8edf474d19acf237f2511f3c75348
