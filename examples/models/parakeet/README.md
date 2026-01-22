@@ -46,32 +46,18 @@ This generates:
 
 ### Building
 
-First, build ExecuTorch with the appropriate preset from the executorch root directory:
+From the executorch root directory:
 
 ```bash
-# For CPU/XNNPACK
-cmake --workflow --preset llm-release
-
-# For Metal (macOS)
-cmake --workflow --preset llm-release-metal
-```
-
-Then build the parakeet runner:
-
-```bash
-cd examples/models/parakeet
-
 # CPU/XNNPACK build
-cmake --workflow --preset parakeet-cpu
+make parakeet-cpu
 
-# Metal build
-cmake --workflow --preset parakeet-metal
+# Metal build (macOS)
+make parakeet-metal
+
+# CUDA build (Linux/Windows)
+make parakeet-cuda
 ```
-
-Available presets:
-- `parakeet-cpu` - CPU-only build
-- `parakeet-cuda` - CUDA acceleration (Linux/Windows)
-- `parakeet-metal` - Metal acceleration (macOS)
 
 ### Running
 

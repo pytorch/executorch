@@ -8,6 +8,7 @@ import os
 import re
 import warnings
 from collections import defaultdict, OrderedDict
+from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
@@ -924,10 +925,24 @@ def from_context_binary(  # noqa: C901
     return bundle_prog
 
 
-def draw_graph(title, path, graph_module: torch.fx.GraphModule):
+class DrawFormat(Enum):
+    SVG = 1
+    PYDOT = 2
+
+
+def draw_graph(title, path, graph_module: torch.fx.GraphModule, format=DrawFormat.SVG):
     graph = passes.graph_drawer.FxGraphDrawer(graph_module, title)
-    with open(f"{path}/{title}.svg", "wb") as f:
-        f.write(graph.get_dot_graph().create_svg())
+    warnings.warn(
+        "For large models such as LLM, it is strongly recommended to use PYDOT format.",
+        stacklevel=1,
+    )
+    if format == DrawFormat.SVG:
+        with open(f"{path}/{title}.svg", "wb") as f:
+            f.write(graph.get_dot_graph().create_svg())
+    elif format == DrawFormat.PYDOT:
+        graph.get_dot_graph().write_raw(f"{path}/{title}.dot")
+    else:
+        raise RuntimeError(f"Unknown format {format}.")
 
 
 def generate_gpu_compiler_spec(
