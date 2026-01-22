@@ -21,6 +21,9 @@ namespace executorch::backends::aoti::slim {
 inline std::vector<c10::Device> get_test_devices() {
   std::vector<c10::Device> devices;
   devices.push_back(CPU_DEVICE);
+#ifdef CUDA_AVAILABLE
+  devices.push_back(DEFAULT_CUDA_DEVICE);
+#endif
   return devices;
 }
 
@@ -52,7 +55,9 @@ INSTANTIATE_TEST_SUITE_P(
     DeviceTests,
     SlimTensorBasicDeviceTest,
     ::testing::ValuesIn(get_test_devices()),
-    [](const ::testing::TestParamInfo<c10::Device>& info) { return "CPU"; });
+    [](const ::testing::TestParamInfo<c10::Device>& info) {
+      return info.param.is_cuda() ? "CUDA" : "CPU";
+    });
 
 // =============================================================================
 // Constructor Tests (Device-Parameterized)
@@ -144,11 +149,11 @@ TEST_P(SlimTensorBasicDeviceTest, Dtype) {
 TEST_P(SlimTensorBasicDeviceTest, Device) {
   SlimTensor tensor = make_2x3_tensor();
 
-  // We only support CPU for now
-  EXPECT_TRUE(tensor.is_cpu());
-  EXPECT_EQ(tensor.device_type(), c10::DeviceType::CPU);
-
+  // Check device type and index
+  EXPECT_EQ(tensor.device_type(), device().type());
   EXPECT_EQ(tensor.device_index(), device().index());
+  EXPECT_EQ(tensor.is_cpu(), device().is_cpu());
+  EXPECT_EQ(tensor.is_cuda(), device().is_cuda());
 }
 
 TEST_P(SlimTensorBasicDeviceTest, Numel) {
