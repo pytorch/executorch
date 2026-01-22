@@ -34,6 +34,14 @@ def find_multiple(n: int, k: int) -> int:
     return n + k - (n % k)
 
 
+def silu_approx(x):
+    x = x.clamp(-3, 3)
+    x2 = x * x
+    x4 = x2 * x2
+    x6 = x4 * x2
+    res = 0.0017 + 0.5 * x + 0.2423  * x2 -0.0153 * x4 + 0.00057 * x6
+    return res
+
 @dataclass
 class ModelArgs:
     dim: int = 2048
@@ -108,6 +116,15 @@ class ModelArgs:
         if self.head_dim is None:
             self.head_dim = self.dim // self.n_heads
 
+def rms_norm_fp16_stable(x, eps=1e-5, min_scale=1e-3):
+    amax = x.abs().amax(dim=-1, keepdim=True)
+    scale = amax.clamp(min=min_scale)
+    x_scaled = x / scale
+
+    var = torch.square(x_scaled).mean(dim=-1, keepdim=True)
+    rms = torch.sqrt(var + eps)
+    y = x_scaled / rms
+    return y
 
 class CoreMLRMSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
@@ -146,10 +163,11 @@ class CoreMLRMSNorm(torch.nn.Module):
         # In future, we want to add CoreML support for the functional RMSNorm op
         # We have yet to do large scale evaluations on the numeric stability of this solution, but note that
         # it appears better than what exists currently (removing FP32 casts and using FP16)
+        norm = torch.linalg.vector_norm(x, dim=-1, keepdim=True)
         rms_norm_eps0 = (
             x
-            * torch.sqrt(torch.tensor(self.dim, dtype=x.dtype))
-            * torch.reciprocal(torch.linalg.vector_norm(x, dim=-1, keepdim=True))
+            * (torch.sqrt(torch.tensor(self.dim, dtype=x.dtype)) / norm)
+            # * torch.reciprocal(torch.linalg.vector_norm(x, dim=-1, keepdim=True))
         )
         return rms_norm_eps0
 
@@ -167,6 +185,10 @@ class CoreMLRMSNorm(torch.nn.Module):
         output = self._norm(x)
         return output * self.weight
 
+_RMS_NORM = CoreMLRMSNorm
+_DECOMPOSE_SDPA = True
+_USE_SOFTMAX = True
+_USE_SILU_APPROX = False
 
 class Rope(torch.nn.Module):
     def __init__(self, params: ModelArgs):
@@ -249,8 +271,15 @@ class FeedForward(nn.Module):
         self.w3 = nn.Linear(args.dim, hidden_dim, bias=False)
 
     def forward(self, x):
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
-
+        t1 = self.w1(x)
+        if _USE_SILU_APPROX:
+            t1 = silu_approx(t1)
+        else:
+            t1 = F.silu(t1)
+        t2 = self.w3(x)
+        out = t1 * t2
+        out = self.w2(out)
+        return out
 
 class ConditionalFeedForward(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -327,8 +356,8 @@ class Attention(nn.Module):
         if self.use_qk_norm:
             q_norm_dim = self.head_dim
             k_norm_dim = self.head_dim
-            self.q_norm_fn = RMSNorm(q_norm_dim, eps=args.norm_eps)
-            self.k_norm_fn = RMSNorm(k_norm_dim, eps=args.norm_eps)
+            self.q_norm_fn = _RMS_NORM(q_norm_dim, eps=args.norm_eps)
+            self.k_norm_fn = _RMS_NORM(k_norm_dim, eps=args.norm_eps)
 
     def forward(
         self,
@@ -364,14 +393,46 @@ class Attention(nn.Module):
         k = torch.concat([k_cache, k], dim=2)
         v = torch.concat([v_cache, v], dim=2)
 
+        # TODO: I'm pretty sure the MB version of SDPA does not require this repeat_interleave, 
         # grouped multiquery attention: expand out keys and values
         if self.n_rep > 1:
             k = k.repeat_interleave(self.n_rep, dim=1)
             v = v.repeat_interleave(self.n_rep, dim=1)
 
-        output = torch.ops.aten.scaled_dot_product_attention.default(
-            q, k, v, attn_mask=attn_mask
-        )
+        if not _DECOMPOSE_SDPA:
+            output = torch.ops.aten.scaled_dot_product_attention.default(
+                q, k, v, attn_mask=attn_mask
+            )
+        else:
+
+            # ------------------------------
+            # Manual SDPA: matmuls + softmax
+            # q: (B, H, T_q, D)
+            # k: (B, H, T_k, D)
+            # v: (B, H, T_k, D)
+            # attn_mask: broadcastable to (B, H, T_q, T_k)
+            # ------------------------------
+            d = q.size(-1)
+            # (B, H, T_q, T_k)
+            scores = torch.matmul(q, k.transpose(-2, -1)) / (d ** 0.5)
+
+            if attn_mask is not None:
+                # attn_mask is already used this way with SDPA, keep same semantics:
+                # 0.0 for allowed, -inf for disallowed, added to scores.
+                scores = scores + attn_mask
+
+            if _USE_SOFTMAX:
+                # (B, H, T_q, T_k)
+                attn_weights = torch.softmax(scores, dim=-1)
+            else:
+                scores = scores.clamp(min=-60.0, max=60.0)
+                scores_max, _ = scores.max(dim=-1, keepdim=True)          # (B, H, T_q, 1)
+                scores_exp = torch.exp(scores - scores_max)
+                attn_weights = scores_exp / scores_exp.sum(dim=-1, keepdim=True)
+
+            # (B, H, T_q, D)
+            output = torch.matmul(attn_weights, v)
+
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
         output = self.wo(output)
         return output, new_k, new_v
@@ -388,8 +449,8 @@ class TransformerBlock(nn.Module):
             self.block_sparse_moe = MOEFeedForward(args)
         else:
             self.feed_forward = FeedForward(args)
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.attention_norm = _RMS_NORM(args.dim, eps=args.norm_eps)
+        self.ffn_norm = _RMS_NORM(args.dim, eps=args.norm_eps)
 
     def forward(
         self,
@@ -404,10 +465,87 @@ class TransformerBlock(nn.Module):
         h, new_k, new_v = self.attention.forward(
             norm_emb, freqs_cos, freqs_sin, k_cache, v_cache, attn_mask
         )
-
         h = x + h
-        out = h + self.feed_forward(self.ffn_norm(h))
+        tmp = self.feed_forward(self.ffn_norm(h))
+        out = h + tmp
         return out, new_k, new_v
+
+
+
+class AttentionBlock(nn.Module):
+    def __init__(self, layer_id: int, args: ModelArgs, rope: Rope):
+        super().__init__()
+        self.n_heads = args.n_heads
+        self.dim = args.dim
+        self.head_dim = args.head_dim
+        self.attention = Attention(args, layer_id, rope)
+        self.attention_norm = _RMS_NORM(args.dim, eps=args.norm_eps)
+
+    def forward(
+        self,
+        x,
+        freqs_cos,
+        freqs_sin,
+        k_cache,
+        v_cache,
+        attn_mask,
+    ):  # x: 1xN
+        norm_emb = self.attention_norm(x)
+        h, new_k, new_v = self.attention.forward(
+            norm_emb, freqs_cos, freqs_sin, k_cache, v_cache, attn_mask
+        )
+        h = x + h
+        return h, new_k, new_v
+
+
+class FeedForwardBlock(nn.Module):
+    def __init__(self, layer_id: int, args: ModelArgs, rope: Rope):
+        super().__init__()
+        self.n_heads = args.n_heads
+        self.dim = args.dim
+        self.head_dim = args.head_dim
+        if args.moe:
+            self.block_sparse_moe = MOEFeedForward(args)
+        else:
+            self.feed_forward = FeedForward(args)
+        self.ffn_norm = _RMS_NORM(args.dim, eps=args.norm_eps)
+
+    def forward(
+        self,
+        h,
+    ):  # x: 1xN
+        tmp = self.feed_forward(self.ffn_norm(h))
+        out = h + tmp
+        return out
+
+
+
+class InputBlock(nn.Module):
+    def __init__(self, params: ModelArgs):
+        super().__init__()
+        self.rope = Rope(params)
+        self.tok_embeddings = nn.Embedding(params.vocab_size, params.dim)
+    
+    def forward(self, tokens: torch.LongTensor, input_pos: torch.LongTensor):
+        h = self.tok_embeddings(tokens)
+        seqlen = h.shape[1]
+        freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seqlen)
+        return h, freqs_cos, freqs_sin 
+
+class OutputBlock(nn.Module):
+    def __init__(self, params: ModelArgs):
+        super().__init__()
+        self.generate_full_logits = params.generate_full_logits
+        self.norm = _RMS_NORM(params.dim, eps=params.norm_eps)
+        self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
+    
+    def forward(self, h, input_length: torch.LongTensor):
+        if not self.generate_full_logits:
+            # Only the last logit is used for the new generated token
+            h = h[:, input_length - 1, :].squeeze(1)
+        h = self.norm(h)
+        logits = self.output(h)
+        return logits
 
 
 class Transformer(nn.Module):
@@ -422,7 +560,7 @@ class Transformer(nn.Module):
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params, self.rope))
-        self.norm = RMSNorm(params.dim, eps=params.norm_eps)
+        self.norm = _RMS_NORM(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.generate_full_logits = params.generate_full_logits
         self.max_seq_len = params.max_seq_len
@@ -508,6 +646,166 @@ def load_model(checkpoint_path, params_path, max_seq_length, use_cache_list):
     print("Unexpected keys: ", unexpected)
 
     return model
+
+def load_model_in_pieces_ITO(checkpoint_path, params_path, max_seq_length, seq_length, float_dtype: torch.dtype = torch.float16):
+    """
+    Loads model in pieces: input, [repeating transformer], output
+    """
+    import json
+
+    with open(params_path, "r") as f:
+        params = json.loads(f.read())
+
+    args = ModelArgs(
+        max_seq_len=max_seq_length,
+        generate_full_logits=False,
+        **params,
+    )
+
+    with torch.device("meta"):
+        rope = Rope(args)
+        in_block = InputBlock(args)
+        out_block = OutputBlock(args)
+        transformer_blocks = []
+        for layer_id in range(args.n_layers):
+            transformer_blocks.append(TransformerBlock(layer_id, args, rope))
+    
+    checkpoint = torch.load(
+        checkpoint_path, map_location="cpu", mmap=True, weights_only=True
+    )
+    if "model" in checkpoint:
+        checkpoint = checkpoint["model"]
+
+    for model in [in_block, out_block]:
+        missing, unexpected = model.load_state_dict(
+            checkpoint,
+            strict=False,
+            assign=True,
+        )
+        assert len(missing) == 0
+        
+    for i, model in enumerate(transformer_blocks):
+        layer_prefix = f"layers.{i}."
+        layer_checkpoint = {k[len(layer_prefix):]:v for k, v in checkpoint.items() if k.startswith(layer_prefix)}
+        missing, unexpected = model.load_state_dict(
+            layer_checkpoint,
+            strict=False,
+            assign=True,
+        )
+        assert len(missing) == 0
+
+    cache_shape = (1, args.n_kv_heads, max_seq_length - seq_length, args.head_dim)
+    attn_mask_shape = (seq_length, max_seq_length)
+    freqs_shape = (seq_length, args.head_dim // 2)
+    h_shape = (1, seq_length, args.dim)
+
+    example_inputs = [
+        (torch.zeros(1, seq_length, dtype=torch.int64), torch.tensor([0], dtype=torch.long),), # InputBlock
+        ( # TransformerBlock
+            torch.zeros(h_shape, dtype=float_dtype), # h
+            torch.zeros(freqs_shape, dtype=float_dtype), # freqs_cos
+            torch.zeros(freqs_shape, dtype=float_dtype), # freqs_sin
+            torch.zeros(cache_shape, dtype=float_dtype), # k_cache
+            torch.zeros(cache_shape, dtype=float_dtype), # v_cache
+            torch.zeros(attn_mask_shape, dtype=float_dtype),
+        ),
+        ( # OutputBlock
+            torch.zeros(h_shape, dtype=float_dtype), # h
+            torch.tensor([0], dtype=torch.long), # input_length
+        ),
+    ]
+
+    models = [in_block] + transformer_blocks + [out_block]
+    for i in range(len(models)):
+        models[i] = models[i].to(float_dtype)
+
+    return models, example_inputs
+
+def load_model_in_pieces_IAFO(checkpoint_path, params_path, max_seq_length, seq_length, float_dtype: torch.dtype = torch.float16):
+    """
+    Loads model in pieces: input, [repeating attention, feedforward], output
+    """
+    import json
+
+    with open(params_path, "r") as f:
+        params = json.loads(f.read())
+
+    args = ModelArgs(
+        max_seq_len=max_seq_length,
+        generate_full_logits=False,
+        **params,
+    )
+
+    with torch.device("meta"):
+        rope = Rope(args)
+        in_block = InputBlock(args)
+        out_block = OutputBlock(args)
+        transformer_blocks = []
+        for layer_id in range(args.n_layers):
+            transformer_blocks.append(AttentionBlock(layer_id, args, rope))
+            transformer_blocks.append(FeedForwardBlock(layer_id, args, rope))
+
+    checkpoint = torch.load(
+        checkpoint_path, map_location="cpu", mmap=True, weights_only=True
+    )
+    if "model" in checkpoint:
+        checkpoint = checkpoint["model"]
+
+
+    for model in [in_block, out_block]:
+        missing, unexpected = model.load_state_dict(
+            checkpoint,
+            strict=False,
+            assign=True,
+        )
+        assert len(missing) == 0
+        
+
+    for i in range(len(transformer_blocks) // 2):
+        layer_prefix = f"layers.{i}."
+        layer_checkpoint = {k[len(layer_prefix):]:v for k, v in checkpoint.items() if k.startswith(layer_prefix)}
+        missing, unexpected = transformer_blocks[2*i].load_state_dict(
+            layer_checkpoint,
+            strict=False,
+            assign=True,
+        )
+        assert len(missing) == 0
+        missing, unexpected = transformer_blocks[2*i+1].load_state_dict(
+            layer_checkpoint,
+            strict=False,
+            assign=True,
+        )
+        assert len(missing) == 0
+
+    cache_shape = (1, args.n_kv_heads, max_seq_length - seq_length, args.head_dim)
+    attn_mask_shape = (seq_length, max_seq_length)
+    freqs_shape = (seq_length, args.head_dim // 2)
+    h_shape = (1, seq_length, args.dim)
+
+    example_inputs = [
+        (torch.zeros(1, seq_length, dtype=torch.int64), torch.tensor([0], dtype=torch.long),), # InputBlock
+        ( # AttentionBlock
+            torch.zeros(h_shape, dtype=float_dtype), # h
+            torch.zeros(freqs_shape, dtype=float_dtype), # freqs_cos
+            torch.zeros(freqs_shape, dtype=float_dtype), # freqs_sin
+            torch.zeros(cache_shape, dtype=float_dtype), # k_cache
+            torch.zeros(cache_shape, dtype=float_dtype), # v_cache
+            torch.zeros(attn_mask_shape, dtype=float_dtype),
+        ),
+        ( # FeedForwardBlock
+            torch.zeros(h_shape, dtype=float_dtype), # h
+        ),
+        ( # OutputBlock
+            torch.zeros(h_shape, dtype=float_dtype), # h
+            torch.tensor([0], dtype=torch.long), # input_length
+        ),
+    ]
+
+    models = [in_block] + transformer_blocks + [out_block]
+    for i in range(len(models)):
+        models[i] = models[i].to(float_dtype)
+
+    return models, example_inputs
 
 
 class InputManager:
