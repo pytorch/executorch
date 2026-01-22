@@ -328,9 +328,7 @@ class ConvertToCortexMPass(XNNPACKPass):
         # CMSIS-NN expects: (out_channels, H, W, in_channels) = OHWI
         # Permutation: (1, 2, 3, 0)
         weight_tensor = get_param_tensor(self.exported_program, weight)
-        weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous(
-            memory_format=torch.channels_last
-        )
+        weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous()
 
         with node.graph.inserting_after(weight):
             weight_nhwc = create_constant_placeholder(
