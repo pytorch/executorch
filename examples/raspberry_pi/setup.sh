@@ -163,9 +163,9 @@ detect_host() {
         x86_64|amd64|arm64)
             HOST_ARCH="x86_64"
             ;;
-	aarch64)
-	    HOST_ARCH="aarch64"
-	    ;;
+        aarch64)
+            HOST_ARCH="aarch64"
+            ;;
         *)
             log_error "Unsupported host architecture: $HOST_ARCH"
             exit 1
