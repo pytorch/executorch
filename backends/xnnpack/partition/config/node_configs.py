@@ -9,15 +9,13 @@ import operator
 from typing import List, Optional
 
 import torch
+from executorch.backends.xnnpack._passes.decompose_batch_norm import DecomposeBatchNorm
 from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
 )
 from executorch.backends.xnnpack.utils.utils import is_param_node
-from executorch.exir.backend.canonical_partitioners.config_partitioner import (
-    format_target_name,
-)
 from executorch.exir.backend.utils import WhyNoPartition
 from torch.export import ExportedProgram
 
@@ -35,18 +33,11 @@ class BatchNormConfig(XNNPartitionerConfig):
         bn = node
         input_node = node.all_input_nodes[0]
 
-        if input_node.op != "call_function":
-            return False
-
-        input_name = format_target_name(input_node.target.__name__)  # pyre-ignore
-
-        if input_name not in ["convolution.default", "linear.default"]:
-            why(node, f"Invalid input target {input_name.split('.')[0]}")
-            return False
-
+        can_decompose = DecomposeBatchNorm.can_decompose_batch_norm(node, ep, why)
         can_fuse = FuseBatchNormPass.can_fuse(input_node, bn, ep)
-        if not can_fuse:
-            why(node, f"BatchNorm cannot be fused with {input_name.split('.')[0]}")
+
+        if not can_fuse and not can_decompose:
+            why(node, f"BatchNorm cannot be decomposed or fused with {input_node}")
             return False
 
         return True
