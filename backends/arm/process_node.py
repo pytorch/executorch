@@ -33,7 +33,7 @@ def _tensor_to_numpy_with_dim_order(
     tensor = tensor.detach().cpu().contiguous()
     if tensor.dtype == torch.bfloat16:
         try:
-            import ml_dtypes
+            import ml_dtypes  # type: ignore[import-not-found]
         except ImportError as e:
             raise RuntimeError(
                 "ml_dtypes is required to serialize bfloat16 tensors for TOSA. Have you run setup.sh?"
