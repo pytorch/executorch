@@ -331,6 +331,9 @@ class vTensor final {
   // number of elements based on the canonical sizes
   size_t numel_;
 
+  // number of elements based on the padded sizes (before packing)
+  size_t padded_numel_;
+
   // number of elements required for GPU buffer storage (with padding/packing)
   // This is pre-computed to avoid recomputing calculate_gpu_buffer_numel
   int64_t physical_numel_;
@@ -506,6 +509,10 @@ class vTensor final {
 
   inline size_t numel() const {
     return numel_;
+  }
+
+  inline size_t padded_numel() const {
+    return padded_numel_;
   }
 
   inline int64_t physical_numel() const {

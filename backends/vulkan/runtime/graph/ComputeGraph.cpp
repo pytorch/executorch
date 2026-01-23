@@ -296,6 +296,14 @@ std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
   VK_THROW("Could not get sizes of value with type ", val.type());
 }
 
+std::vector<int64_t> ComputeGraph::padded_sizes_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().padded_sizes();
+  }
+  VK_THROW("Could not get padded sizes of value with type ", val.type());
+}
+
 int64_t ComputeGraph::dim_of(const ValueRef idx) const {
   const Value& val = values_.at(idx);
   if (val.isTensor()) {
