@@ -429,6 +429,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.clamp.Tensor,
     torch.ops.aten.unflatten.int,
     torch.ops.aten.gather.default,
+    torch.ops.aten.unfold_copy.default,
     torch.ops.aten.index_select.default,
     torch.ops.aten.index.Tensor,
     # Neg operator flips the range, but keps the magnitude the same.
