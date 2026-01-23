@@ -756,7 +756,6 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
                     max_length=self.max_hidden_seq_length,
                     return_tensors="pt",
                 )
-
                 label = tokenizer(
                     target_text,
                     truncation=True,
@@ -766,7 +765,9 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
                 )
                 return {
                     "input_ids": model_input["input_ids"].squeeze(0),
-                    "attention_mask": model_input["attention_mask"].squeeze(0),
+                    "attention_mask": model_input["attention_mask"]
+                    .reshape(1, 1, -1)
+                    .to(torch.float32),
                     "decoder_input_ids": torch.tensor([0], dtype=torch.long),
                     "labels": label["input_ids"].squeeze(0),
                 }
@@ -795,7 +796,7 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
         inputs.append(
             (
                 input_ids.to(torch.long),
-                attention_mask.to(torch.long),
+                torch.where(attention_mask == 0.0, -255.0, 0.0),
                 decoder_input_ids,
             )
         )

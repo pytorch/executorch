@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -94,5 +94,47 @@ def test_maximum_vgf_quant(test_data: Tuple):
         test_data(),
         aten_op,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Maximum.test_parameters)
+def test_maximum_tosa_INT_a16w8(test_data: test_t):
+    """Test maximum with 16A8W quantization for TOSA INT."""
+    pipeline = TosaPipelineINT[test_t](
+        Maximum(),
+        test_data(),
+        aten_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Maximum.test_parameters)
+@common.XfailIfNoCorstone300
+def test_maximum_u55_INT_a16w8(test_data: test_t):
+    """Test maximum with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    pipeline = EthosU55PipelineINT[test_t](
+        Maximum(),
+        test_data(),
+        aten_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Maximum.test_parameters)
+@common.XfailIfNoCorstone320
+def test_maximum_u85_INT_a16w8(test_data: test_t):
+    """Test maximum with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    pipeline = EthosU85PipelineINT[test_t](
+        Maximum(),
+        test_data(),
+        aten_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
