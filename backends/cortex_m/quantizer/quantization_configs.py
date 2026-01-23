@@ -31,6 +31,14 @@ INT8_WEIGHT_PER_CHANNEL_QSPEC = QuantizationSpec(
     ch_axis=0,
 )
 
+# For transpose conv, output channels are at axis 1 (IOHW format vs OIHW for regular conv)
+INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC = QuantizationSpec(
+    dtype=torch.int8,
+    observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
+    qscheme=torch.per_channel_symmetric,
+    ch_axis=1,
+)
+
 INT8_ACTIVATION_PER_TENSOR_QSPEC = QuantizationSpec(
     dtype=torch.int8,
     observer_or_fake_quant_ctr=HistogramObserver,
@@ -109,6 +117,14 @@ INT8_PER_CHANNEL_CONFIG = QuantizationConfig(
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_WEIGHT_PER_CHANNEL_QSPEC,
+    _get_int32_per_channel_bias_qspec,
+)
+
+
+INT8_PER_CHANNEL_TRANSPOSE_CONFIG = QuantizationConfig(
+    INT8_ACTIVATION_PER_TENSOR_QSPEC,
+    INT8_ACTIVATION_PER_TENSOR_QSPEC,
+    INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC,
     _get_int32_per_channel_bias_qspec,
 )
 

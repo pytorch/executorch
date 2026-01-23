@@ -932,7 +932,7 @@ void ComputeGraph::maybe_cast_and_copy_into_staging(
       staging->cast_and_copy_from<double, float>(casted_data, numel);
     } else if (
         src_data_dtype == vkapi::kHalf && staging_dtype == vkapi::kFloat) {
-      const int16_t* casted_data = reinterpret_cast<const int16_t*>(data);
+      const uint16_t* casted_data = reinterpret_cast<const uint16_t*>(data);
       staging->cast_half_to_float_and_copy_from(casted_data, numel);
     } else {
       VK_THROW(
@@ -975,7 +975,7 @@ void ComputeGraph::maybe_cast_and_copy_from_staging(
       staging->cast_and_copy_to<float, double>(casted_data, numel);
     } else if (
         dst_data_dtype == vkapi::kHalf && staging_dtype == vkapi::kFloat) {
-      int16_t* casted_data = reinterpret_cast<int16_t*>(data);
+      uint16_t* casted_data = reinterpret_cast<uint16_t*>(data);
       staging->cast_float_to_half_and_copy_to(casted_data, numel);
     } else {
       VK_THROW(

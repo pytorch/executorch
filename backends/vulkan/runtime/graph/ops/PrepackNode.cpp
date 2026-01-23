@@ -82,7 +82,8 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   } else {
     // Hard-coded type conversion cases
     if (tref_dtype == vkapi::kHalf && staging_dtype == vkapi::kFloat) {
-      const int16_t* casted_data = reinterpret_cast<const int16_t*>(tref->data);
+      const uint16_t* casted_data =
+          reinterpret_cast<const uint16_t*>(tref->data);
       staging.cast_half_to_float_and_copy_from(casted_data, numel);
     } else if (tref_dtype == vkapi::kLong && staging_dtype == vkapi::kInt) {
       const int64_t* casted_data = reinterpret_cast<const int64_t*>(tref->data);

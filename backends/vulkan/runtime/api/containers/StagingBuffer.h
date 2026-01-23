@@ -90,9 +90,11 @@ class StagingBuffer final {
     }
   }
 
-  void cast_half_to_float_and_copy_from(const int16_t* src, const size_t numel);
+  void cast_half_to_float_and_copy_from(
+      const uint16_t* src,
+      const size_t numel);
 
-  void cast_float_to_half_and_copy_to(int16_t* dst, const size_t numel);
+  void cast_float_to_half_and_copy_to(uint16_t* dst, const size_t numel);
 
   inline void copy_to(void* dst, const size_t nbytes) {
     VK_CHECK_COND(nbytes <= this->nbytes());
