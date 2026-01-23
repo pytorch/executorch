@@ -6,7 +6,6 @@
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
-
 import torch
 
 from .node_visitor import NodeVisitor
@@ -27,7 +26,7 @@ class Arange(NodeVisitor):
     ) -> PyQnnManager.PyQnnOpWrapper:
         start, end = node.args[0:2]
         step = node.args[2] if len(node.args) > 2 else 1
-        out_tensor = torch.arange(start, end, step)
+        out_tensor = torch.arange(start, end, step, dtype=torch.int32)
 
         # since we can derive the constant value of current op in AoT stage
         # we only build static tensor here for consumers of current node
