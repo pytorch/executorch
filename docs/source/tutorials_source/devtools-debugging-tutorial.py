@@ -70,10 +70,8 @@ import os
 import tempfile
 
 import torch
-
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
-
 from executorch.exir import ExecutorchProgramManager, to_edge_transform_and_lower
 from torch.export import export, ExportedProgram
 from torchvision import models  # type: ignore[import-untyped]
@@ -329,15 +327,17 @@ from unittest.mock import patch
 #        serialize_from_bundled_program_to_flatbuffer,
 #    )
 #
-#    # Construct Method Test Suites using the same model and inputs from Pipeline 1
-#    m_name = "forward"
-#    inputs = [model_inputs for _ in range(2)]
+#    # Define the method name and test inputs
+#    # IMPORTANT: Use the same inputs as etrecord.update_representative_inputs()
+#    method_name = "forward"
+#    test_inputs = [model_inputs]
 #
+#    # Create test cases by running the eager model to get expected outputs
 #    method_test_suites = [
 #        MethodTestSuite(
 #            method_name=m_name,
 #            test_cases=[
-#                MethodTestCase(inputs=inp, expected_outputs=model(*inp)) for inp in inputs
+#                MethodTestCase(inputs=inp, expected_outputs=model(*inp)) for inp in test_inputs
 #            ],
 #        )
 #    ]
@@ -358,23 +358,31 @@ from unittest.mock import patch
 # Step 3: Run with CMake Example Runner
 # -------------------------------------
 #
-# Build and run the example runner with output verification and debug output enabled::
+# First, build the example runner with XNNPACK backend support:
 #
-#       cd executorch
-#       ./examples/devtools/build_example_runner.sh
-#       cmake-out/examples/devtools/example_runner \
-#           --bundled_program_path="bundled_program.bpte" \
-#           --output_verification=true \
-#           --dump_intermediate_outputs=true
+# .. code-block:: bash
+#
+#    cd /path/to/executorch
+#    ./examples/devtools/build_example_runner.sh --xnnpack
+#
+# where ``--xnnpack`` is a build flag that enables XNNPACK backend support.
+# Then run the example runner with output verification and debug output enabled:
+#
+# .. code-block:: bash
+#
+#    cmake-out/examples/devtools/example_runner \
+#        --bundled_program_path="/path/to/bundled_program.bpte" \
+#        --output_verification \
+#        --dump_intermediate_outputs \
+#        --debug_buffer_size=1073741824
 #
 # The key flags are:
 #
-# - ``--output_verification=true``: Compare runtime outputs against the expected
+# - ``--output_verification``: Compare runtime outputs against the expected
 #   outputs stored in the BundledProgram (uses rtol=1e-3, atol=1e-5)
-# - ``--dump_intermediate_outputs=true``: Capture intermediate outputs for
+# - ``--dump_intermediate_outputs``: Capture intermediate outputs for
 #   operator-level debugging
-# - ``--debug_buffer_size=<bytes>``: Size of debug buffer (default: 256KB, increase
-#   for larger models)
+# - ``--debug_buffer_size=<bytes>``: Size of debug buffer (1GB in this example)
 #
 # Example output on success:
 #
@@ -409,9 +417,9 @@ from executorch.devtools import Inspector
 inspector_patch = patch.object(Inspector, "__init__", return_value=None)
 inspector_patch.start()
 # sphinx_gallery_end_ignore
-etrecord_path = "etrecord.bin"
-etdump_path = "etdump.etdp"
-debug_buffer_path = "debug_output.bin"
+etrecord_path = "/path/to/etrecord.bin"
+etdump_path = "/path/to/etdump.etdp"
+debug_buffer_path = "/path/to/debug_output.bin"
 
 inspector = Inspector(
     etdump_path=etdump_path,
