@@ -161,6 +161,82 @@ T to_packed_dim(const GPUMemoryLayout layout) {
   return 0;
 }
 
+template <typename T>
+T to_outer_packed_dim(const GPUMemoryLayout layout) {
+  switch (layout) {
+    case kWidthPacked:
+      return 1;
+    case kHeightPacked:
+      return 0;
+    case kChannelsPacked:
+      return 0;
+    case kPackedInt8_4W:
+      return 1;
+    case kPackedInt8_4C:
+      return 0;
+    case kPackedInt8_4H:
+      return 0;
+    case kPackedInt8_4W4C:
+      return 0;
+    case kPackedInt8_4H4W:
+      return 1;
+  };
+  // Should be unreachable
+  return 1;
+}
+
+template <typename T>
+T to_packed_dim_block_size(
+    const GPUMemoryLayout layout,
+    const StorageType storage) {
+  switch (layout) {
+    case kWidthPacked:
+      return storage == kBuffer ? 1 : 4;
+    case kHeightPacked:
+      return storage == kBuffer ? 1 : 4;
+    case kChannelsPacked:
+      return storage == kBuffer ? 1 : 4;
+    case kPackedInt8_4W:
+      return storage == kBuffer ? 4 : 16;
+    case kPackedInt8_4C:
+      return storage == kBuffer ? 4 : 16;
+    case kPackedInt8_4H:
+      return storage == kBuffer ? 4 : 16;
+    case kPackedInt8_4W4C:
+      return 4;
+    case kPackedInt8_4H4W:
+      return 4;
+  };
+  // Should be unreachable
+  return 1;
+}
+
+template <typename T>
+T to_outer_packed_dim_block_size(const GPUMemoryLayout layout) {
+  switch (layout) {
+    case kWidthPacked:
+      return 1;
+    case kHeightPacked:
+      return 1;
+    case kChannelsPacked:
+      return 1;
+    case kPackedInt8_4W:
+      return 1;
+    case kPackedInt8_4C:
+      return 1;
+    case kPackedInt8_4H:
+      return 1;
+    case kPackedInt8_4W4C:
+      return 4;
+    case kPackedInt8_4H4W:
+      return 4;
+  };
+  // Should be unreachable
+  return 1;
+}
+
+bool is_block_transposed_layout(const GPUMemoryLayout layout);
+
 bool is_packed_int8_layout(const GPUMemoryLayout layout);
 
 inline std::ostream& operator<<(
