@@ -109,7 +109,7 @@ table Tensor {
 
   // Overall, a Tensor is either constant or mutable. At method load time
   //  constant tensors receive a dataptr into the serialized program. Mutable
-  //  tensors can either receive a pointer from the heirarchical allocator or a
+  //  tensors can either receive a pointer from the hierarchical allocator or a
   //  nullptr if they will receive a data pointer at execution time (inputs
   //  and control flow placeholders can be like this). Mutable tensors may or
   //  may not also have an initial value in the serialized program.
