@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -33,6 +33,19 @@ test_data_suite = {
     "rank_4_mixed_min_max_dtype": lambda: (torch.rand(1, 10, 10, 5) + 10, 8.0, 10),
     "rank_4_no_min": lambda: (torch.rand(1, 10, 10, 1) * 10, None, 5),
     "rank_4_no_max": lambda: (torch.rand(1, 10, 10, 1) - 3, -3.3, None),
+}
+
+test_data_suite_bf16 = {
+    "rank_2_bf16": lambda: (
+        torch.rand(1, 35, dtype=torch.bfloat16),
+        0.5,
+        0.8,
+    ),
+    "rank_4_no_max_bf16": lambda: (
+        torch.rand(1, 10, 10, 1, dtype=torch.bfloat16) - 3,
+        -3.3,
+        None,
+    ),
 }
 
 test_data_suite_int32 = {
@@ -70,7 +83,7 @@ class Clamp(torch.nn.Module):
         return torch.clamp(x, self.clamp_min, self.clamp_max)
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_clamp_tosa_FP(test_data):
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
@@ -80,6 +93,7 @@ def test_clamp_tosa_FP(test_data):
         (input_tensor,),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
 
     pipeline.run()
@@ -254,6 +268,19 @@ test_data_suite_tensor_FP = {
     ),
 }
 
+test_data_suite_tensor_bf16 = {
+    "rank_2_bf16": lambda: (
+        torch.rand(1, 35, dtype=torch.bfloat16),
+        torch.tensor(0.5, dtype=torch.bfloat16),
+        torch.tensor(0.8, dtype=torch.bfloat16),
+    ),
+    "rank_4_no_max_bf16": lambda: (
+        torch.rand(10, 20, 30, 40, dtype=torch.bfloat16) - 3,
+        torch.tensor(-0.1, dtype=torch.bfloat16),
+        None,
+    ),
+}
+
 test_data_suite_tensor_INT32 = {
     "int32_rank2": lambda: (
         torch.randint(-50, 50, (2, 3), dtype=torch.int32),
@@ -328,7 +355,9 @@ test_data_suite_tensor_INT64 = {
 }
 
 
-@common.parametrize("test_data", test_data_suite_tensor_FP)
+@common.parametrize(
+    "test_data", test_data_suite_tensor_FP | test_data_suite_tensor_bf16
+)
 def test_clamp_tosa_FP_tensor(test_data):
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
@@ -338,6 +367,7 @@ def test_clamp_tosa_FP_tensor(test_data):
         (input_tensor,),
         aten_op_tensor,
         exir_op_tensor,
+        tosa_extensions=["bf16"],
     )
 
     pipeline.run()

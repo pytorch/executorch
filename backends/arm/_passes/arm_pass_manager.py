@@ -82,6 +82,7 @@ from executorch.backends.arm._passes import (
     DecomposeSumPass,
     DecomposeTanPass,
     DecomposeTOSAUnsupportedClampPass,
+    DecomposeUnfoldToGatherPass,
     DecomposeVarPass,
     DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
@@ -287,6 +288,7 @@ class ArmPassManager(PassManager):
                 DecomposeGeluPass(),
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupedConvPass(),
+                DecomposeUnfoldToGatherPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
