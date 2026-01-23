@@ -177,7 +177,7 @@ class AMin(torch.nn.Module):
 
 
 class Arange(torch.nn.Module):
-    def __init__(self, start, end, step, dtype):
+    def __init__(self, start, end, step, dtype=None):
         super().__init__()
         self.start = start
         self.end = end
