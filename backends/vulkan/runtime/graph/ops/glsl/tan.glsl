@@ -8,6 +8,8 @@
 
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
@@ -16,8 +18,6 @@
 ${define_active_storage_type(STORAGE)}
 
 #include "indexing_utils.h"
-
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
