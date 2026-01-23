@@ -312,6 +312,33 @@ class SlimTensor {
     set_sizes_and_strides(sizes, makeArrayRef(contig_strides));
   }
 
+  /**
+   * Returns a copy of this tensor.
+   *
+   * @return A new SlimTensor with same content.
+   */
+  SlimTensor clone() const {
+    return _clone_impl(
+        this->sizes(), this->strides(), this->dtype(), this->device());
+  }
+
+  /**
+   * Returns a contiguous copy of this tensor.
+   * If the tensor is already contiguous, returns a copy with independent
+   * storage.
+   *
+   * @return A new contiguous SlimTensor.
+   */
+  SlimTensor clone_contiguous() const {
+    std::vector<int64_t> contig_strides =
+        compute_contiguous_strides(this->sizes());
+    return _clone_impl(
+        this->sizes(),
+        makeArrayRef(contig_strides),
+        this->dtype(),
+        this->device());
+  }
+
   // =========================================================================
   // View Operations
   // =========================================================================
@@ -362,6 +389,39 @@ class SlimTensor {
       int64_t storage_offset) {
     return as_strided_(
         makeArrayRef(sizes), makeArrayRef(strides), storage_offset);
+  }
+
+  /**
+   * Returns a new tensor with dimensions permuted according to dims.
+   * The returned tensor shares the same underlying storage.
+   *
+   * @param dims The permutation of dimensions.
+   * @return A new SlimTensor with permuted dimensions.
+   */
+  inline SlimTensor permute(IntArrayRef dims) const;
+
+  /**
+   * Overload for initializer lists.
+   */
+  inline SlimTensor permute(std::initializer_list<int64_t> dims) const {
+    return permute(makeArrayRef(dims));
+  }
+
+  /**
+   * Returns a tensor with the same data and number of elements as this tensor,
+   * but with the specified shape. If possible, returns a view; otherwise
+   * creates a contiguous copy.
+   *
+   * @param shape The target shape (may contain one -1 for inference).
+   * @return A new SlimTensor with the specified shape.
+   */
+  inline SlimTensor reshape(IntArrayRef shape) const;
+
+  /**
+   * Overload for initializer lists.
+   */
+  inline SlimTensor reshape(std::initializer_list<int64_t> shape) const {
+    return reshape(makeArrayRef(shape));
   }
 
   // =========================================================================
@@ -445,6 +505,18 @@ class SlimTensor {
   }
 
  private:
+  SlimTensor _clone_impl(
+      c10::IntArrayRef sizes,
+      c10::IntArrayRef strides,
+      c10::ScalarType dtype,
+      const c10::Device& device) const {
+    Storage storage = new_storage(sizes, strides, dtype, device);
+    SlimTensor result =
+        SlimTensor(std::move(storage), sizes, strides, dtype, 0);
+    result.copy_(*this);
+    return result;
+  }
+
   void refresh_numel() {
     numel_ = compute_numel(sizes_and_strides_.sizes_arrayref());
   }
