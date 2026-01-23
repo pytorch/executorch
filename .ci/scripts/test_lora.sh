@@ -26,10 +26,10 @@ cmake_build_llama_runner() {
 
 cleanup_files() {
   echo "Deleting downloaded and generated files"
-  rm -rf "${HF_QWEN_PATH}/"
-  rm -rf "${HF_ADAPTER_PATH}/"
-  rm -rf *.pte *.ptd
-  rm result*.txt
+  # rm -rf "${HF_QWEN_PATH}/"
+  # rm -rf "${HF_ADAPTER_PATH}/"
+  # rm -rf *.pte *.ptd
+  # rm result*.txt
 }
 
 # Hosting lora adapter in personal repo for now.
@@ -117,7 +117,7 @@ else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Test 2: Failure; results not the same"
-#   cleanup_files
+  cleanup_files
   exit 1
 fi
 
@@ -160,6 +160,11 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     +export.lora_weights_file="qwen_lora_math_q.ptd" \
     +quantization.qmode="8da4w" \
     +quantization.group_size=32
+
+echo "Check file sizes of qwen_foundation_q.ptd and qwen_foundation_lora_q.ptd"
+
+ls -la qwen_foundation_lora_q.ptd
+ls -la qwen_foundation_q.ptd
 
 # Confirm that qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are the same.
 if diff -q qwen_foundation_lora_q.ptd qwen_foundation_q.ptd > /dev/null; then
