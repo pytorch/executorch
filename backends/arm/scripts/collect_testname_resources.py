@@ -28,6 +28,7 @@ _CUSTOM_EDGE_OPS = [
     "cond.default",
     "eye.default",
     "expm1.default",
+    "gather.default",
     "vector_norm.default",
     "hardsigmoid.default",
     "hardswish.default",
