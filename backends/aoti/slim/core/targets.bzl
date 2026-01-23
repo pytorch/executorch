@@ -22,7 +22,6 @@ def define_common_targets():
         ],
     )
 
-    # Header-only library for SlimTensor (CPU-only for now)
     runtime.cxx_library(
         name = "slimtensor",
         headers = [

@@ -49,7 +49,8 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   auto execution_plans = program->execution_plan();
   for (size_t i = 0; i < execution_plans->size(); i++) {
     auto plan = execution_plans->GetMutableObject(i);
-    if (std::strcmp(plan->name()->c_str(), method_name) == 0) {
+    if (plan != nullptr && plan->name() != nullptr &&
+        std::strcmp(plan->name()->c_str(), method_name) == 0) {
       return plan;
     }
   }
