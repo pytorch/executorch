@@ -480,6 +480,12 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
        WHCN::kHeightDim,
        true,
        false},
+      {utils::kPackedInt8_4C1W,
+       vkapi::kChar,
+       WHCN::kChannelsDim,
+       WHCN::kWidthDim,
+       false,
+       true},
   };
 
   std::vector<utils::StorageType> storage_types = {
@@ -788,6 +794,35 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test_against_golden) {
        /* expected_physical_numel_buffer */ 720,
        /* expected_physical_numel_texture */ 720,
        /* expected_image_extents */ {5, 4, 9}},
+
+      // 3D tensor [9, 13, 17] with packed int8 4C1W block-transposed layout
+      // packed_dim = channels (2), outer_packed_dim = width (0)
+      // block_transposed = true, so dim_order swaps: [1, 0, 2] instead of
+      // [1, 2, 0] Channels padded to 12 (multiple of 4), width padded to 20
+      // (multiple of 4)
+      {/* sizes */ {9, 13, 17},
+       /* dtype */ vkapi::kChar,
+       /* layout */ utils::kPackedInt8_4C1W,
+       /* expected_dim_order */ {1, 0, 2},
+       /* expected_padded_sizes_buffer */ {1, 12, 13, 17},
+       /* expected_padded_sizes_texture */ {1, 16, 13, 17},
+       /* expected_strides_buffer */ {},
+       /* expected_physical_numel_buffer */ 663,
+       /* expected_physical_numel_texture */ 884,
+       /* expected_image_extents */ {17, 13, 1}},
+
+      // 4D tensor [2, 8, 12, 16] with packed int8 4C1W block-transposed layout
+      // Tests 4D case with block_transposed = true
+      {/* sizes */ {2, 8, 12, 16},
+       /* dtype */ vkapi::kChar,
+       /* layout */ utils::kPackedInt8_4C1W,
+       /* expected_dim_order */ {0, 2, 1, 3},
+       /* expected_padded_sizes_buffer */ {2, 8, 12, 16},
+       /* expected_padded_sizes_texture */ {2, 16, 12, 16},
+       /* expected_strides_buffer */ {},
+       /* expected_physical_numel_buffer */ 768,
+       /* expected_physical_numel_texture */ 1536,
+       /* expected_image_extents */ {16, 12, 2}},
   };
 
   for (size_t i = 0; i < test_cases.size(); ++i) {

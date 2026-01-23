@@ -1022,34 +1022,32 @@ vkapi::VulkanBuffer& vTensor::buffer(
 utils::GPUMemoryLayout vTensor::estimate_memory_layout() const {
   // Check for block-packed layouts (two-level packing) - only applicable for
   // kInt8x4
-  if (dtype_ == vkapi::kInt8x4 &&
-      packed_dim_info_.outer_packed_dim_block_size > 1) {
-    // For 4W4C: packed_dim = Channels, outer_packed_dim = Width
-    if (packed_dim_info_.packed_dim == WHCN::kChannelsDim &&
-        packed_dim_info_.outer_packed_dim == WHCN::kWidthDim) {
-      return utils::kPackedInt8_4W4C;
+  if (dtype_ == vkapi::kInt8x4) {
+    if (packed_dim_info_.outer_packed_dim_block_size > 1) {
+      // For 4W4C: packed_dim = Channels, outer_packed_dim = Width
+      if (packed_dim_info_.packed_dim == WHCN::kChannelsDim &&
+          packed_dim_info_.outer_packed_dim == WHCN::kWidthDim) {
+        return utils::kPackedInt8_4W4C;
+      }
+      // For 4H4W: packed_dim = Width, outer_packed_dim = Height
+      if (packed_dim_info_.packed_dim == WHCN::kWidthDim &&
+          packed_dim_info_.outer_packed_dim == WHCN::kHeightDim) {
+        return utils::kPackedInt8_4H4W;
+      }
+      VK_THROW("Invalid block-packed layout configuration for kInt8x4 dtype");
+    } else {
+      switch (packed_dim_info_.packed_dim) {
+        case WHCN::kChannelsDim:
+          return packed_dim_info_.block_transposed ? utils::kPackedInt8_4C1W
+                                                   : utils::kPackedInt8_4C;
+        case WHCN::kWidthDim:
+          return utils::kPackedInt8_4W;
+        default:
+          VK_THROW("Invalid packed dim for Tensor with kInt8x4 type");
+      }
     }
-    // For 4H4W: packed_dim = Width, outer_packed_dim = Height
-    if (packed_dim_info_.packed_dim == WHCN::kWidthDim &&
-        packed_dim_info_.outer_packed_dim == WHCN::kHeightDim) {
-      return utils::kPackedInt8_4H4W;
-    }
-    VK_THROW("Invalid block-packed layout configuration for kInt8x4 dtype");
   }
 
-  // Single-level packing layouts
-  if (dtype_ == vkapi::kInt8x4) {
-    switch (packed_dim_info_.packed_dim) {
-      case WHCN::kChannelsDim:
-        return utils::kPackedInt8_4C;
-      case WHCN::kWidthDim:
-        return utils::kPackedInt8_4W;
-      case WHCN::kHeightDim:
-        return utils::kPackedInt8_4H;
-      default:
-        VK_THROW("Invalid packed dim for Tensor with kInt8x4 type");
-    }
-  }
   switch (packed_dim_info_.packed_dim) {
     case WHCN::kWidthDim:
       return utils::kWidthPacked;
