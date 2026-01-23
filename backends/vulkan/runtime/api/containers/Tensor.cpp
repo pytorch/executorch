@@ -63,15 +63,25 @@ PackedDimInfo calculate_packed_dim_info(
 
 /*
  * For PackedInt8 memory layouts, ensure that the scalar type used for the
- * tensor is kInt8x4. Otherwise, return the original scalar type.
+ * tensor is kInt8x4.
+ *
+ * For kHalf dtype on devices that don't support float16 buffers, alias to
+ * kFloat.
+ *
+ * Otherwise, return the original scalar type.
  */
 vkapi::ScalarType get_effective_scalar_type(
+    Context* const context,
     const vkapi::ScalarType dtype,
     const utils::GPUMemoryLayout memory_layout) {
   vkapi::ScalarType effective_dtype = dtype;
   if (utils::is_packed_int8_layout(memory_layout)) {
     VK_CHECK_COND(dtype == vkapi::kInt8x4 || dtype == vkapi::kChar);
     effective_dtype = vkapi::kInt8x4;
+  } else if (
+      dtype == vkapi::kHalf &&
+      !context->adapter_ptr()->has_full_float16_buffers_support()) {
+    effective_dtype = vkapi::kFloat;
   }
   return effective_dtype;
 }
@@ -726,7 +736,7 @@ vTensor::vTensor(
     const utils::GPUMemoryLayout memory_layout,
     const bool allocate_memory,
     const utils::AxisMapLayout axis_map_layout)
-    : dtype_(get_effective_scalar_type(dtype, memory_layout)),
+    : dtype_(get_effective_scalar_type(context, dtype, memory_layout)),
       packed_dim_info_(calculate_packed_dim_info(memory_layout, storage_type)),
       // Calculate tensor metadata
       sizes_(sizes.begin(), sizes.end()),
