@@ -101,6 +101,12 @@ class OpNativeLayerNormTest : public OperatorTest {
             expected,
             1e-2,
             executorch::runtime::testing::internal::kDefaultBFloat16Atol);
+      } else if constexpr (DTYPE == ScalarType::Half) {
+        EXPECT_TENSOR_CLOSE_WITH_TOL(
+            out0,
+            expected,
+            1e-3,
+            executorch::runtime::testing::internal::kDefaultHalfAtol);
       } else {
         EXPECT_TENSOR_CLOSE(out0, expected);
       }
@@ -234,6 +240,21 @@ class OpNativeLayerNormTest : public OperatorTest {
              -kInfinity,
              1.38873,
              -0.46291}, // expected_data
+        },
+        {
+            std::string(__func__) + ": Large variance",
+            {1, 2, 3}, // sizes
+            {0.0, 1000.0, 2000.0, 3000.0, 4000.0, 5000.0}, // input_data
+            {1, 2, 3}, // normalized shape
+            {1.0, 1.0, 1.0, 1.0, 1.0, 1.0}, // weights
+            {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, // bias
+            1.0e-5, // eps
+            {-1.46385,
+             -0.87831,
+             -0.29277,
+             0.29277,
+             0.87831,
+             1.46385}, // expected_data
         },
     };
 
