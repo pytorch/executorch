@@ -1,9 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 from typing import Tuple
+
+import pytest
 
 import torch
 from executorch.backends.arm.test import common
@@ -134,10 +136,7 @@ def test_matmul_u55_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    MatMulSingleInput.test_data_generators,
-)
+@common.parametrize("test_data", MatMulSingleInput.test_data_generators)
 @common.XfailIfNoCorstone300
 def test_matmul_u55_INT_single_input(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -150,10 +149,7 @@ def test_matmul_u55_INT_single_input(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    MatMulCombo.test_data_generators,
-)
+@common.parametrize("test_data", MatMulCombo.test_data_generators)
 @common.XfailIfNoCorstone300
 def test_matmul_u55_INT_combo(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -179,10 +175,7 @@ def test_matmul_u85_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    MatMulSingleInput.test_data_generators,
-)
+@common.parametrize("test_data", MatMulSingleInput.test_data_generators)
 @common.XfailIfNoCorstone320
 def test_matmul_u85_INT_single_input(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -195,10 +188,7 @@ def test_matmul_u85_INT_single_input(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    MatMulCombo.test_data_generators,
-)
+@common.parametrize("test_data", MatMulCombo.test_data_generators)
 @common.XfailIfNoCorstone320
 def test_matmul_u85_INT_combo(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -285,5 +275,53 @@ def test_matmul_vgf_quant_combo(test_data: input_t1):
         aten_op_mm,
         exir_op_mm,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MatMulCombo.test_data_generators)
+def test_matmul_tosa_INT_a16w8(test_data: input_t1):
+    """Test matmul with 16A8W quantization for TOSA INT."""
+    pipeline = TosaPipelineINT[Tuple[torch.Tensor]](
+        MatMulCombo(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MatMulCombo.test_data_generators)
+@pytest.mark.xfail(
+    reason="Vela compilation fails with 'Non-passthrough operation' for int16 matmul operations"
+)
+@common.XfailIfNoCorstone300
+def test_matmul_u55_INT_a16w8(test_data: input_t1):
+    """Test matmul with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    pipeline = EthosU55PipelineINT[Tuple[torch.Tensor]](
+        MatMulCombo(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MatMulCombo.test_data_generators)
+@common.XfailIfNoCorstone320
+def test_matmul_u85_INT_a16w8(test_data: input_t1):
+    """Test matmul with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    pipeline = EthosU85PipelineINT[Tuple[torch.Tensor]](
+        MatMulCombo(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
