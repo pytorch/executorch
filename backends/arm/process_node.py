@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.fx
 import tosa_serializer as ts
+
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
@@ -24,6 +25,23 @@ from torch._export.utils import (
     is_param,
 )
 from torch.export.exported_program import ExportedProgram
+
+
+def _tensor_to_numpy_with_dim_order(
+    tensor: torch.Tensor, dim_order: tuple[int, ...]
+) -> np.ndarray:
+    tensor = tensor.detach().cpu().contiguous()
+    if tensor.dtype == torch.bfloat16:
+        try:
+            import ml_dtypes  # type: ignore[import-not-found]
+        except ImportError as e:
+            raise RuntimeError(
+                "ml_dtypes is required to serialize bfloat16 tensors for TOSA. Have you run setup.sh?"
+            ) from e
+        np_tensor = tensor.view(torch.uint16).numpy().view(ml_dtypes.bfloat16)
+    else:
+        np_tensor = tensor.numpy()
+    return np.transpose(np_tensor, dim_order)
 
 
 def process_call_function(
@@ -114,9 +132,9 @@ def process_inputs_to_parameters(
             f"Expected parameter '{node.name}' to be a torch.Tensor, got "
             f"{type(parameter_data).__name__}"
         )
-    parameter_values = parameter_data.detach().numpy()
-
-    parameter_values = np.transpose(parameter_values, tosa_arg.dim_order)
+    parameter_values = _tensor_to_numpy_with_dim_order(
+        parameter_data, tosa_arg.dim_order  # type: ignore[arg-type]
+    )
 
     tosa_graph.addConst(
         parameter_values.shape, tosa_arg.dtype, parameter_values, name=tosa_arg.name
@@ -144,12 +162,7 @@ def process_inputs_to_buffers(
             f"Expected buffer '{node.name}' to be a torch.Tensor, got "
             f"{type(buffer_data).__name__}"
         )
-    buffer_values = buffer_data.detach().numpy()
-
-    # TODO: fragile code for temporary fix
-    # the mean and var tensors are also stored here but they have shape (1, )
-    # we only transpose weights here
-    buffer_values = np.transpose(buffer_values, tosa_arg.dim_order)
+    buffer_values = _tensor_to_numpy_with_dim_order(buffer_data, tosa_arg.dim_order)  # type: ignore[arg-type]
 
     tosa_graph.addConst(
         buffer_values.shape, tosa_arg.dtype, buffer_values, name=tosa_arg.name
@@ -170,8 +183,10 @@ def process_inputs_to_lifted_tensor_constants(
             "Is the original torch function supported?"
         ) from e
     tensor = get_lifted_tensor_constant(edge_program, node)
-    tensor_data = tensor.detach().numpy()  # type: ignore[union-attr]
-    tensor_values = np.transpose(tensor_data, tosa_arg.dim_order)
+    tensor_values = _tensor_to_numpy_with_dim_order(
+        tensor,  # type: ignore[arg-type]
+        tosa_arg.dim_order,  # type: ignore[arg-type]
+    )
 
     tosa_graph.addConst(
         tensor_values.shape, tosa_arg.dtype, tensor_values, name=tosa_arg.name
