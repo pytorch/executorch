@@ -214,6 +214,7 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.select_scatter.default,
         exir_ops.edge.aten.scatter_reduce.two,
         exir_ops.edge.aten.scatter_add.default,
+        exir_ops.edge.aten.unfold_copy.default,  # GATHER
         exir_ops.edge.aten.upsample_nearest2d.vec,  # RESIZE
         exir_ops.edge.aten.upsample_bilinear2d.vec,  # RESIZE
         exir_ops.edge.aten.reflection_pad1d.default,  # REVERSE
