@@ -327,7 +327,7 @@ Using the ExecuTorch Developer Tools for Numerical Debugging
 #
 #    # Define the method name and test inputs
 #    # IMPORTANT: Use the same inputs as etrecord.update_representative_inputs()
-#    method_name = "forward"
+#    m_name = "forward"
 #    test_inputs = [model_inputs]
 #
 #    # Create test cases by running the eager model to get expected outputs
@@ -369,7 +369,7 @@ Using the ExecuTorch Developer Tools for Numerical Debugging
 # .. code-block:: bash
 #
 #    cmake-out/examples/devtools/example_runner \
-#        --bundled_program_path="/path/to/bundled_program.bpte" \
+#        --bundled_program_path=/path/to/bundled_program.bpte \
 #        --output_verification \
 #        --dump_intermediate_outputs \
 #        --debug_buffer_size=1073741824
