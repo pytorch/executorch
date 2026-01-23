@@ -7,6 +7,28 @@ ETDump (ExecuTorch Dump) is one of the core components of the ExecuTorch Develop
 
 Generating an ETDump is a relatively straightforward process. Users can follow the steps detailed below to integrate it into their application that uses ExecuTorch.
 
+### Build Configuration
+
+To enable ETDump support, you need to configure your CMake build with the following options:
+
+**Required CMake options:**
+```cmake
+-DEXECUTORCH_BUILD_DEVTOOLS=ON     # Builds the devtools library including ETDump
+-DEXECUTORCH_ENABLE_EVENT_TRACER=ON # Enables event tracing in the runtime
+```
+
+**Required CMake targets to link:**
+```cmake
+target_link_libraries(your_binary
+    etdump       # ETDump library
+    # ... other ExecuTorch libraries
+)
+```
+
+The `EXECUTORCH_ENABLE_EVENT_TRACER=ON` option automatically sets the `ET_EVENT_TRACER_ENABLED` preprocessor flag for the ExecuTorch runtime and all operator libraries.
+
+### Using the Low-Level Runtime API
+
 1. ***Include*** the ETDump header in your code.
 ```C++
 #include <executorch/devtools/etdump/etdump_flatcc.h>
@@ -34,15 +56,76 @@ if (result.buf != nullptr && result.size > 0) {
   }
 ```
 
-4. ***Compile*** your binary using CMake with the `ET_EVENT_TRACER_ENABLED` pre-processor flag to enable events to be traced and logged into ETDump inside the ExecuTorch runtime. This flag needs to be added to the ExecuTorch library and any operator library that you are compiling into your binary. For reference, you can take a look at `examples/sdk/CMakeLists.txt`. The lines of interest are:
-```
-target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
-target_compile_options(portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED)
+### Using the Module API (C++)
+
+For applications using the higher-level [Module API](extension-module.md), ETDump integration is simpler. Create an `ETDumpGen` instance and pass it to the `Module` constructor:
+
+```cpp
+#include <fstream>
+#include <memory>
+
+#include <executorch/extension/module/module.h>
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+
+using namespace ::executorch::extension;
+
+Module module("/path/to/model.pte", Module::LoadMode::Mmap, std::make_unique<ETDumpGen>());
+
+// Execute a method, e.g., module.forward(...); or module.execute("my_method", ...);
+
+if (auto* etdump = dynamic_cast<ETDumpGen*>(module.event_tracer())) {
+  const auto trace = etdump->get_etdump_data();
+
+  if (trace.buf && trace.size > 0) {
+    std::unique_ptr<void, decltype(&free)> guard(trace.buf, free);
+    std::ofstream file("/path/to/trace.etdump", std::ios::binary);
+
+    if (file) {
+      file.write(static_cast<const char*>(trace.buf), trace.size);
+    }
+  }
+}
 ```
 
-### Make sure ET_EVENT_TRACER_ENABLED flag is enabled or ETDump will be empty.
+### Using the Python Runtime API
 
-If the binary is not compiled with the `ET_EVENT_TRACER_ENABLED` preprocessor flag, no trace events will be recorded and the ETDump will be empty.
+For Python applications using the [Python Runtime API](runtime-python-api-reference.rst), you can enable ETDump when loading a program:
+
+```python
+from pathlib import Path
+import os
+
+import torch
+from executorch.runtime import Runtime, Program, Method
+
+# Create program with etdump generation enabled
+et_runtime: Runtime = Runtime.get()
+program: Program = et_runtime.load_program(
+    Path("/tmp/program.pte"),
+    enable_etdump=True,
+    debug_buffer_size=int(1e7),  # 10MB buffer to capture all debug info
+)
+
+# Load method and execute
+forward: Method = program.load_method("forward")
+inputs = (torch.ones(2, 2), torch.ones(2, 2))
+outputs = forward.execute(inputs)
+
+# Write etdump result to file
+etdump_file = "/tmp/etdump_output.etdp"
+debug_file = "/tmp/debug_output.bin"
+program.write_etdump_result_to_file(etdump_file, debug_file)
+
+# Check that files were created
+print(f"ETDump file created: {os.path.exists(etdump_file)}")
+print(f"Debug file created: {os.path.exists(debug_file)}")
+```
+
+**Note:** The Python Runtime API requires ExecuTorch to be built with event tracing enabled (`EXECUTORCH_ENABLE_EVENT_TRACER=ON`).
+
+### Troubleshooting: Empty ETDump
+
+If the binary is not compiled with the `ET_EVENT_TRACER_ENABLED` preprocessor flag (either by setting `EXECUTORCH_ENABLE_EVENT_TRACER=ON` in CMake or manually adding `-DET_EVENT_TRACER_ENABLED`), no trace events will be recorded and the ETDump will be empty.
 
 When this flag is missing, the following code:
 
