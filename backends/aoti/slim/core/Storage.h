@@ -231,6 +231,17 @@ class MaybeOwningStorage {
     }
   }
 
+  /// Constructs non-owning storage with external memory.
+  /// @param device The device where the data resides.
+  /// @param data Pointer to external memory (not owned by this storage).
+  /// @param nbytes Size of the external memory in bytes.
+  MaybeOwningStorage(const c10::Device& device, void* data, size_t nbytes)
+      : device_(device),
+        data_(data),
+        capacity_(nbytes),
+        deleter_(detail::noop),
+        is_owning_(false) {}
+
   /// Default constructor is deleted - storage must have a device.
   MaybeOwningStorage() = delete;
 
@@ -296,12 +307,15 @@ class MaybeOwningStorage {
       return;
     }
 
-    ET_CHECK_MSG(
-        device_.is_cpu() && src_device.is_cpu(),
-        "Only CPU-to-CPU copy is currently supported");
-
-    DeviceTraits<c10::DeviceType::CPU>::memcpy(
-        dst_data_ptr, src_data_ptr, nbytes, device_, src_device);
+    if (device_.is_cpu() && src_device.is_cpu()) {
+      // CPU to CPU copy
+      DeviceTraits<c10::DeviceType::CPU>::memcpy(
+          dst_data_ptr, src_data_ptr, nbytes, device_, src_device);
+    } else {
+      // At least one of the devices is CUDA
+      DeviceTraits<c10::DeviceType::CUDA>::memcpy(
+          dst_data_ptr, src_data_ptr, nbytes, device_, src_device);
+    }
   }
 
   /// Creates a clone of this storage on the specified device.
