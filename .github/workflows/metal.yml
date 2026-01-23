@@ -24,8 +24,10 @@ jobs:
       script: |
         set -eux
 
+        source .ci/scripts/retry_with_backoff.sh
+
         echo "::group::Test ExecuTorch Metal build"
-        PYTHON_EXECUTABLE=python CMAKE_ARGS="-DEXECUTORCH_BUILD_METAL=ON" ${CONDA_RUN} --no-capture-output ./install_executorch.sh
+        retry_with_backoff bash -c "PYTHON_EXECUTABLE=python CMAKE_ARGS='-DEXECUTORCH_BUILD_METAL=ON' ${CONDA_RUN} --no-capture-output ./install_executorch.sh"
         echo "::endgroup::"
 
   export-model-metal-artifact:
@@ -57,6 +59,8 @@ jobs:
       script: |
         set -eux
 
+        source .ci/scripts/retry_with_backoff.sh
+
         echo "::group::Setup Huggingface"
         ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0" accelerate
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
@@ -69,7 +73,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup ExecuTorch"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} ./install_executorch.sh
+        retry_with_backoff bash -c "PYTHON_EXECUTABLE=python ${CONDA_RUN} ./install_executorch.sh"
         echo "::endgroup::"
 
         echo "::group::Pip List"
@@ -128,4 +132,6 @@ jobs:
         fi
         echo "::endgroup::"
 
-        ${CONDA_RUN} bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        source .ci/scripts/retry_with_backoff.sh
+
+        retry_with_backoff ${CONDA_RUN} bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
