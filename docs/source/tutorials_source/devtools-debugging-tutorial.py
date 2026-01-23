@@ -66,48 +66,46 @@ Using the ExecuTorch Developer Tools for Numerical Debugging
 # We use ``to_edge_transform_and_lower`` with ``generate_etrecord=True`` to
 # automatically capture the ETRecord during the lowering process.
 
-import os
-import tempfile
-
-import torch
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
-from executorch.exir import ExecutorchProgramManager, to_edge_transform_and_lower
-from torch.export import export, ExportedProgram
-from torchvision import models  # type: ignore[import-untyped]
-
-# Create Vision Transformer model
-vit = models.vision_transformer.vit_b_16(weights="IMAGENET1K_V1")
-model = vit.eval()
-model_inputs = (torch.randn(1, 3, 224, 224),)
-
-temp_dir = tempfile.mkdtemp()
-
-# Export and lower model to XNNPACK delegate
-aten_model: ExportedProgram = export(model, model_inputs, strict=True)
-edge_program_manager = to_edge_transform_and_lower(
-    aten_model,
-    partitioner=[XnnpackPartitioner()],
-    compile_config=get_xnnpack_edge_compile_config(),
-    generate_etrecord=True,
-)
-
-et_program_manager: ExecutorchProgramManager = edge_program_manager.to_executorch()
-
-# Save the .pte file
-pte_path = os.path.join(temp_dir, "model.pte")
-et_program_manager.save(pte_path)
-
-# Get and save ETRecord with representative inputs
-etrecord = et_program_manager.get_etrecord()
-etrecord.update_representative_inputs(model_inputs)
-etrecord_path = os.path.join(temp_dir, "etrecord.bin")
-etrecord.save(etrecord_path)
-
-# sphinx_gallery_start_ignore
-from unittest.mock import patch
-
-# sphinx_gallery_end_ignore
+# .. code-block:: python
+#
+#    import os
+#    import tempfile
+#
+#    import torch
+#    from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+#    from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
+#    from executorch.exir import ExecutorchProgramManager, to_edge_transform_and_lower
+#    from torch.export import export, ExportedProgram
+#    from torchvision import models  # type: ignore[import-untyped]
+#
+#    # Create Vision Transformer model
+#    vit = models.vision_transformer.vit_b_16(weights="IMAGENET1K_V1")
+#    model = vit.eval()
+#    model_inputs = (torch.randn(1, 3, 224, 224),)
+#
+#    temp_dir = tempfile.mkdtemp()
+#
+#    # Export and lower model to XNNPACK delegate
+#    aten_model: ExportedProgram = export(model, model_inputs, strict=True)
+#    edge_program_manager = to_edge_transform_and_lower(
+#        aten_model,
+#        partitioner=[XnnpackPartitioner()],
+#        compile_config=get_xnnpack_edge_compile_config(),
+#        generate_etrecord=True,
+#    )
+#
+#    et_program_manager: ExecutorchProgramManager = edge_program_manager.to_executorch()
+#
+#    # Save the .pte file
+#    pte_path = os.path.join(temp_dir, "model.pte")
+#    et_program_manager.save(pte_path)
+#
+#    # Get and save ETRecord with representative inputs
+#    etrecord = et_program_manager.get_etrecord()
+#    etrecord.update_representative_inputs(model_inputs)
+#    etrecord_path = os.path.join(temp_dir, "etrecord.bin")
+#    etrecord.save(etrecord_path)
+#
 
 ######################################################################
 #
@@ -410,28 +408,21 @@ from unittest.mock import patch
 #
 # After running the model with the CMake runner, load the generated artifacts
 # back into Python for analysis using the Inspector.
-
-from executorch.devtools import Inspector
-
-# sphinx_gallery_start_ignore
-inspector_patch = patch.object(Inspector, "__init__", return_value=None)
-inspector_patch.start()
-# sphinx_gallery_end_ignore
-etrecord_path = "/path/to/etrecord.bin"
-etdump_path = "/path/to/etdump.etdp"
-debug_buffer_path = "/path/to/debug_output.bin"
-
-inspector = Inspector(
-    etdump_path=etdump_path,
-    etrecord=etrecord_path,
-    debug_buffer_path=debug_buffer_path,
-)
-
-# sphinx_gallery_start_ignore
-inspector_patch.stop()
-# sphinx_gallery_end_ignore
-
-######################################################################
+#
+# .. code-block:: python
+#
+#    from executorch.devtools import Inspector
+#
+#    etrecord_path = "/path/to/etrecord.bin"
+#    etdump_path = "/path/to/etdump.etdp"
+#    debug_buffer_path = "/path/to/debug_output.bin"
+#
+#    inspector = Inspector(
+#        etdump_path=etdump_path,
+#        etrecord=etrecord_path,
+#        debug_buffer_path=debug_buffer_path,
+#    )
+#
 # Then use the same analysis techniques as in Pipeline 1:
 #
 # .. code-block:: python
