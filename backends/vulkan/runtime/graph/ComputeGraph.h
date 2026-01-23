@@ -352,6 +352,8 @@ class ComputeGraph final {
 
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
+  vkapi::ScalarType get_staging_dtype_for(const ValueRef idx) const;
+
   inline const utils::ivec3& logical_limits_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().logical_limits();
   }
@@ -997,16 +999,18 @@ class ComputeGraph final {
   // Input/Output
   //
 
+ private:
   void
   copy_into_staging(const ValueRef idx, const void* data, const size_t numel);
 
+  void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
+
+ public:
   void maybe_cast_and_copy_into_staging(
       const ValueRef idx,
       const void* data,
       const size_t numel,
       const vkapi::ScalarType src_data_dtype);
-
-  void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
 
   void maybe_cast_and_copy_from_staging(
       const ValueRef idx,
@@ -1108,6 +1112,10 @@ class ComputeGraph final {
 
   inline bool int16_shader_types_enabled() const {
     return context_->adapter_ptr()->supports_int16_shader_types();
+  }
+
+  inline bool float16_buffers_enabled() const {
+    return context_->adapter_ptr()->has_full_float16_buffers_support();
   }
 
   inline size_t execute_count() const {
