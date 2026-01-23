@@ -138,6 +138,8 @@ jobs:
             name: "whisper-large-v3-turbo"
           - repo: "google"
             name: "gemma-3-4b-it"
+          - repo: "nvidia"
+            name: "parakeet-tdt"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -147,6 +149,15 @@ jobs:
           - model:
               repo: "google"
               name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
+          # Parakeet only supports non-quantized
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
             quant: "quantized-int4-weight-only"
     with:
       timeout: 90
@@ -165,12 +176,15 @@ jobs:
         ./install_executorch.sh
         echo "::endgroup::"
 
-        echo "::group::Setup Huggingface"
-        pip install -U "huggingface_hub[cli]<1.0" accelerate
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
-        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
-        echo "::endgroup::"
+        # Setup Huggingface only for models that need it (not parakeet)
+        if [ "${{ matrix.model.name }}" != "parakeet-tdt" ]; then
+          echo "::group::Setup Huggingface"
+          pip install -U "huggingface_hub[cli]<1.0" accelerate
+          huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+          OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+          pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+          echo "::endgroup::"
+        fi
 
         source .ci/scripts/export_model_artifact.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
@@ -193,6 +207,8 @@ jobs:
             name: "whisper-large-v3-turbo"
           - repo: "google"
             name: "gemma-3-4b-it"
+          - repo: "nvidia"
+            name: "parakeet-tdt"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -202,6 +218,15 @@ jobs:
           - model:
               repo: "google"
               name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
+          # Parakeet only supports non-quantized
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
             quant: "quantized-int4-weight-only"
     with:
       timeout: 90
