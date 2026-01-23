@@ -50,6 +50,27 @@ __attribute__((objc_subclassing_restricted))
                        configuration:(MLModelConfiguration*)configuration
                                error:(NSError* __autoreleasing*)error;
 
+/// Loads the model from the AOT data with an optional method name for multifunction model support.
+///
+/// The data is the AOT blob stored in the executorch Program. The method first parses the model
+/// metadata stored in the blob and extracts the identifier. For multifunction CoreML models,
+/// the methodName is used to populate the correct input/output names from the method's metadata,
+/// while functionName specifies the CoreML function to invoke (via MLModelConfiguration.functionName).
+/// The method/function names are NOT included in the cache key since the multifunction
+/// model contains all functions and should only be compiled once.
+///
+/// @param data The AOT blob data.
+/// @param configuration The model configuration that will be used to load the model.
+/// @param methodName Optional method name (e.g., "forward", "prefill") for metadata lookup.
+/// @param functionName Optional CoreML function name to invoke. If nil, methodName is used.
+/// @param error   On failure, error is filled with the failure information.
+/// @retval An opaque handle that points to the loaded model.
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
+                               error:(NSError* __autoreleasing*)error;
+
 /// Executes the loaded model.
 ///
 /// @param handle The handle to the loaded model.

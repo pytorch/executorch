@@ -24,6 +24,7 @@
 
 // Include SlimTensor headers for CUDA backend
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
+#include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/core/storage.h>
 #include <executorch/backends/aoti/slim/factory/empty.h>
