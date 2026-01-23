@@ -23,7 +23,7 @@ namespace executorch::backends::aoti::slim {
 /// @param sizes The sizes of each dimension.
 /// @param strides The strides of each dimension.
 /// @param dtype The scalar type of tensor elements.
-/// @param device The target device (must be CPU).
+/// @param device The target device.
 /// @return A new SlimTensor with allocated but uninitialized storage.
 inline SlimTensor empty_strided(
     IntArrayRef sizes,
@@ -41,7 +41,7 @@ inline SlimTensor empty_strided(
 ///
 /// @param sizes The sizes of each dimension.
 /// @param dtype The scalar type of tensor elements.
-/// @param device The target device (must be CPU).
+/// @param device The target device.
 /// @return A new SlimTensor with contiguous strides and uninitialized storage.
 inline SlimTensor empty(
     IntArrayRef sizes,
@@ -59,7 +59,7 @@ inline SlimTensor empty(
 ///
 /// @param sizes The sizes of each dimension as an initializer list.
 /// @param dtype The scalar type of tensor elements.
-/// @param device The target device (must be CPU).
+/// @param device The target device.
 /// @return A new SlimTensor with contiguous strides and uninitialized storage.
 inline SlimTensor empty(
     std::initializer_list<int64_t> sizes,
