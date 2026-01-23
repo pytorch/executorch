@@ -7,7 +7,6 @@ import tarfile
 import tempfile
 
 import torch
-
 import torchaudio
 from executorch.exir import (
     EdgeCompileConfig,
@@ -297,21 +296,38 @@ class PreprocessorWrapper(torch.nn.Module):
 
 
 def export_all(model):
+    """Export all model components.
+
+    The maximum audio duration is determined by the model's internal
+    max_audio_length (~50 seconds for Parakeet with max_audio_length=5000).
+    """
     programs = {}
+
+    # Get audio parameters from model config
+    sample_rate = model.preprocessor._cfg.sample_rate
+    window_stride = float(model.preprocessor._cfg.window_stride)
+
+    # Get encoder's actual limit from NeMo model
+    encoder_max_frames = model.encoder.max_audio_length  # typically 5000
+    max_audio_sec = int(encoder_max_frames * window_stride)
+
+    max_audio_samples = int(sample_rate * max_audio_sec)
+    max_mel_frames = int(max_audio_sec / window_stride)
 
     preprocessor_wrapper = PreprocessorWrapper(model.preprocessor)
     preprocessor_wrapper.eval()
-    sample_audio = torch.randn(16000 * 10)
+    sample_audio = torch.randn(max_audio_samples)
     sample_length = torch.tensor([sample_audio.shape[0]], dtype=torch.int64)
-    # The preprocessor definition changes if cuda is available (likely due to making it cuda graphable).
-    # Unfortunately that new definition is not supported by export, so we need to stop that from happening.
+    # The preprocessor uses different code paths when CUDA is available, which include
+    # data-dependent conditionals that torch.export cannot handle. Force CPU path.
     old_cuda_is_available = torch.cuda.is_available
     torch.cuda.is_available = lambda: False
     programs["preprocessor"] = export(
         preprocessor_wrapper,
         (sample_audio, sample_length),
         dynamic_shapes={
-            "audio": {0: Dim("audio_len", min=1600, max=16000 * 600)},
+            # min=1600 samples = 0.1 sec @ 16kHz, max aligned with encoder limit
+            "audio": {0: Dim("audio_len", min=1600, max=max_audio_samples)},
             "length": {},
         },
         strict=False,
@@ -319,15 +335,22 @@ def export_all(model):
     torch.cuda.is_available = old_cuda_is_available
 
     feat_in = getattr(model.encoder, "_feat_in", 128)
-    audio_signal = torch.randn(1, feat_in, 100)
-    length = torch.tensor([100], dtype=torch.int64)
+    # Use max_mel_frames as example to ensure Dim.AUTO infers the full range.
+    # Smaller examples cause Dim.AUTO to infer narrow bounds.
+    audio_signal = torch.randn(1, feat_in, max_mel_frames)
+    length = torch.tensor([max_mel_frames], dtype=torch.int64)
     encoder_with_proj = EncoderWithProjection(model.encoder, model.joint)
     encoder_with_proj.eval()
+
     programs["encoder"] = export(
         encoder_with_proj,
         (),
         kwargs={"audio_signal": audio_signal, "length": length},
-        dynamic_shapes={"audio_signal": {2: Dim.AUTO}, "length": {}},
+        dynamic_shapes={
+            # Use Dim.AUTO - explicit bounds fail due to different size guards on different devices
+            "audio_signal": {2: Dim.AUTO},
+            "length": {},
+        },
         strict=False,
     )
 
@@ -553,7 +576,7 @@ def main():
 
     et = lower_to_executorch(programs, metadata=metadata, backend=args.backend)
 
-    pte_path = os.path.join(args.output_dir, "parakeet_tdt.pte")
+    pte_path = os.path.join(args.output_dir, "model.pte")
     print(f"\nSaving ExecuTorch program to: {pte_path}")
     with open(pte_path, "wb") as f:
         et.write_to_file(f)
