@@ -999,16 +999,18 @@ class ComputeGraph final {
   // Input/Output
   //
 
+ private:
   void
   copy_into_staging(const ValueRef idx, const void* data, const size_t numel);
 
+  void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
+
+ public:
   void maybe_cast_and_copy_into_staging(
       const ValueRef idx,
       const void* data,
       const size_t numel,
       const vkapi::ScalarType src_data_dtype);
-
-  void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
 
   void maybe_cast_and_copy_from_staging(
       const ValueRef idx,
