@@ -10,8 +10,11 @@
 
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <utility>
 #include <vector>
+
+#include <c10/util/safe_numerics.h>
 
 #include <executorch/backends/aoti/slim/c10/core/Contiguity.h>
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
@@ -254,20 +257,111 @@ class SlimTensor {
   }
 
   /**
-   * Set sizes and strides together.
+   * Set sizes, strides, and storage offset together.
    */
-  void set_sizes_and_strides(IntArrayRef sizes, IntArrayRef strides) {
+  void set_sizes_and_strides(
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      std::optional<int64_t> storage_offset = std::nullopt) {
+    const size_t new_dim = sizes.size();
     ET_CHECK_MSG(
-        sizes.size() == strides.size(),
-        "sizes (%zu) and strides (%zu) must have the same length",
-        sizes.size(),
+        new_dim == strides.size(),
+        "dimensionality of sizes (%zu) must match dimensionality of strides (%zu)",
+        new_dim,
         strides.size());
 
-    sizes_and_strides_.set_sizes(sizes);
-    sizes_and_strides_.set_strides(strides);
+    std::vector<int64_t> new_sizes = toVec(sizes);
+    std::vector<int64_t> new_strides = toVec(strides);
+
+    // stride calculation logic
+    bool overflowed = false;
+    if (new_dim > 0) {
+      for (int64_t dim = new_dim - 1; dim >= 0; dim--) {
+        if (strides[dim] >= 0) {
+          new_strides[dim] = strides[dim];
+        } else {
+          // for negative strides
+          if (dim == new_dim - 1) {
+            new_strides[dim] = 1;
+          } else {
+            overflowed |= ::c10::mul_overflows(
+                new_strides[dim + 1],
+                std::max<int64_t>(new_sizes[dim + 1], 1),
+                &new_strides[dim]);
+          }
+        }
+      }
+    }
+    ET_CHECK_MSG(!overflowed, "Stride calculation overflowed");
+
+    sizes_and_strides_.set_sizes(makeArrayRef(new_sizes));
+    sizes_and_strides_.set_strides(makeArrayRef(new_strides));
+    if (storage_offset.has_value()) {
+      storage_offset_ = *storage_offset;
+    }
 
     refresh_numel();
     refresh_contiguous();
+  }
+
+  /**
+   * Set sizes to a contiguous layout (computes strides automatically).
+   */
+  void set_sizes_contiguous(IntArrayRef sizes) {
+    std::vector<int64_t> contig_strides = compute_contiguous_strides(sizes);
+    set_sizes_and_strides(sizes, makeArrayRef(contig_strides));
+  }
+
+  // =========================================================================
+  // View Operations
+  // =========================================================================
+
+  /**
+   * Returns a view of the tensor with the specified sizes, strides, and
+   * storage offset. The returned tensor shares the same underlying storage.
+   *
+   * @param sizes The sizes of the view.
+   * @param strides The strides of the view.
+   * @param storage_offset Offset into storage in number of elements.
+   * @return A new SlimTensor that is a view of this tensor.
+   */
+  inline SlimTensor as_strided(
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      int64_t storage_offset) const;
+
+  /**
+   * Overload for initializer lists.
+   */
+  inline SlimTensor as_strided(
+      std::initializer_list<int64_t> sizes,
+      std::initializer_list<int64_t> strides,
+      int64_t storage_offset) const {
+    return as_strided(
+        makeArrayRef(sizes), makeArrayRef(strides), storage_offset);
+  }
+
+  /**
+   * Modifies this tensor in-place to have the specified sizes, strides, and
+   * storage offset. The underlying storage remains unchanged.
+   *
+   * @param sizes The new sizes.
+   * @param strides The new strides.
+   * @param storage_offset New offset into storage in number of elements.
+   * @return Reference to this tensor.
+   */
+  inline SlimTensor&
+  as_strided_(IntArrayRef sizes, IntArrayRef strides, int64_t storage_offset);
+
+  /**
+   * Overload for initializer lists.
+   */
+  inline SlimTensor& as_strided_(
+      std::initializer_list<int64_t> sizes,
+      std::initializer_list<int64_t> strides,
+      int64_t storage_offset) {
+    return as_strided_(
+        makeArrayRef(sizes), makeArrayRef(strides), storage_offset);
   }
 
   // =========================================================================
@@ -278,7 +372,7 @@ class SlimTensor {
    * Copy data from another tensor to this tensor.
    *
    * Both tensors must have the same numel and dtype.
-   * Supports CPU-to-CPU and cross-device copies (CPU↔CUDA, CUDA↔CUDA).
+   * Currently only supports CPU-to-CPU copy (contiguous tensors only).
    *
    * @param other The source tensor to copy from
    * @return Reference to this tensor
@@ -371,3 +465,7 @@ class SlimTensor {
 };
 
 } // namespace executorch::backends::aoti::slim
+
+// Include view operations implementations (must be after SlimTensor class
+// definition)
+#include <executorch/backends/aoti/slim/core/SlimTensorView-incl.h>
