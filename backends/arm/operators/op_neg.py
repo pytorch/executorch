@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -66,7 +66,7 @@ class NegVisitor(NodeVisitor):
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
-            self.target, [*inputs, output], supported_dtypes, output.tosa_spec
+            self.target, [*inputs, output], supported_dtypes, self.tosa_spec
         )
 
         input_zp, output_zp = get_negate_zero_points(
