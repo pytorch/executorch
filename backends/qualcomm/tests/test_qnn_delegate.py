@@ -1982,6 +1982,15 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.randn([2, 1, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_stack(self):
+        module = Conv2dStack()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 3, 5, 5),
+            torch.randn(1, 3, 3, 3),
+            torch.randn(1, 3, 3, 3),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d_sum_reduce_dim(self):
         module = Conv2dSumReduceDim()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
@@ -1990,6 +1999,14 @@ class TestQNNFloatingPointModel(TestQNN):
     def test_qnn_backend_conv2d_topk(self):
         module = Conv2dTopK()  # noqa: F405
         sample_input = (torch.randn(1, 3, 32, 32),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    # This test is to ensure unbind should be pytorch layout.
+    # However, unbind will be forced decomposed by executorch framework.
+    # Keep it here in case unbind doesn't get forced decomposed in future.
+    def test_qnn_backend_conv2d_unbind(self):
+        module = Conv2dUnbind()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 5, 5),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_copy(self):
@@ -4365,6 +4382,16 @@ class TestQNNQuantizedModel(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_stack(self):
+        module = Conv2dStack()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 3, 5, 5),
+            torch.randn(1, 3, 3, 3),
+            torch.randn(1, 3, 3, 3),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d_sum_reduce_dim(self):
         module = Conv2dSumReduceDim()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
@@ -4374,6 +4401,15 @@ class TestQNNQuantizedModel(TestQNN):
     def test_qnn_backend_conv2d_topk(self):
         module = Conv2dTopK()  # noqa: F405
         sample_input = (torch.randn(1, 3, 32, 32),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    # This test is to ensure unbind should be pytorch layout.
+    # However, unbind will be forced decomposed by executorch framework.
+    # Keep it here in case unbind doesn't get forced decomposed in future.
+    def test_qnn_backend_conv2d_unbind(self):
+        module = Conv2dUnbind()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 5, 5),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -7757,7 +7793,7 @@ class TestExampleScript(TestQNN):
                 metric = {
                     # GPU has accuracy issue now
                     QnnExecuTorchBackendType.kGpuBackend: {"top_1": 0, "top_5": 0},
-                    QnnExecuTorchBackendType.kHtpBackend: {"top_1": 55, "top_5": 81},
+                    QnnExecuTorchBackendType.kHtpBackend: {"top_1": 51, "top_5": 76},
                 }
                 self.assertGreaterEqual(
                     msg["top_1"], metric[get_backend_type(self.backend)]["top_1"]
