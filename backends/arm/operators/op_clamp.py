@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree
@@ -6,7 +6,6 @@
 
 from typing import Any, List, Tuple
 
-import numpy as np
 import torch
 import tosa_serializer as ts
 
@@ -67,16 +66,7 @@ class ClampVisitor(NodeVisitor):
         return min_arg, max_arg
 
     def _to_bytes(self, value: int | float, dtype: torch.dtype) -> bytes:
-        if dtype == torch.float32:
-            return np.frombuffer(np.float32(value).tobytes(), dtype=np.uint8).tolist()
-        elif dtype == torch.float16:
-            return np.frombuffer(np.float16(value).tobytes(), dtype=np.uint8).tolist()
-        elif dtype == torch.int8:
-            return np.frombuffer(np.int8(value).tobytes(), dtype=np.uint8).tolist()
-        elif dtype == torch.int16:
-            return np.frombuffer(np.int16(value).tobytes(), dtype=np.uint8).tolist()
-        else:
-            raise ValueError(f"Unsupported dtype for to_bytes: {dtype}")
+        return torch.full((1,), value, dtype=dtype).view(torch.uint8).numpy().tolist()
 
     def define_node(
         self,
@@ -87,14 +77,19 @@ class ClampVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, [2, 3])
         validate_same_dtype(self.target, [inputs[0], output], ts)
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32]
+        supported_dtypes = [
+            ts.DType.INT8,
+            ts.DType.FP16,
+            ts.DType.BF16,
+            ts.DType.FP32,
+        ]
         if self.tosa_spec.support_extension("int16"):
             supported_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
             supported_dtypes,
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         node_input_dtype = node.meta["val"].dtype
