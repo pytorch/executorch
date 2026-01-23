@@ -164,7 +164,10 @@ if [ "$MODEL_NAME" = "parakeet" ]; then
       --output-dir "${OUTPUT_DIR}"
 
   test -f "${OUTPUT_DIR}/model.pte"
-  test -f "${OUTPUT_DIR}/aoti_${DEVICE}_blob.ptd"
+  # CUDA saves named data to separate .ptd file, Metal embeds in .pte
+  if [ "$DEVICE" = "cuda" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
   test -f "${OUTPUT_DIR}/tokenizer.model"
   ls -al "${OUTPUT_DIR}"
   echo "::endgroup::"
@@ -200,7 +203,10 @@ if [ -n "$PREPROCESSOR_OUTPUT" ]; then
 fi
 
 test -f model.pte
-test -f aoti_${DEVICE}_blob.ptd
+# CUDA saves named data to separate .ptd file, Metal embeds in .pte
+if [ "$DEVICE" = "cuda" ]; then
+  test -f aoti_cuda_blob.ptd
+fi
 if [ -n "$PREPROCESSOR_OUTPUT" ]; then
   test -f $PREPROCESSOR_OUTPUT
 fi
@@ -209,7 +215,10 @@ echo "::endgroup::"
 echo "::group::Store $MODEL_NAME Artifacts"
 mkdir -p "${OUTPUT_DIR}"
 mv model.pte "${OUTPUT_DIR}/"
-mv aoti_${DEVICE}_blob.ptd "${OUTPUT_DIR}/"
+# CUDA saves named data to separate .ptd file, Metal embeds in .pte
+if [ "$DEVICE" = "cuda" ]; then
+  mv aoti_cuda_blob.ptd "${OUTPUT_DIR}/"
+fi
 if [ -n "$PREPROCESSOR_OUTPUT" ]; then
   mv $PREPROCESSOR_OUTPUT "${OUTPUT_DIR}/"
 fi

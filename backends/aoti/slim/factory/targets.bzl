@@ -16,3 +16,16 @@ def define_common_targets():
             "//executorch/backends/aoti/slim/util:size_util",
         ],
     )
+
+    runtime.cxx_library(
+        name = "from_blob",
+        headers = [
+            "FromBlob.h",
+        ],
+        visibility = ["@EXECUTORCH_CLIENTS"],
+        exported_deps = [
+            "//executorch/backends/aoti/slim/core:slimtensor",
+            "//executorch/backends/aoti/slim/util:array_ref_util",
+            "//executorch/backends/aoti/slim/util:size_util",
+        ],
+    )
