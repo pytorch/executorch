@@ -200,7 +200,13 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
 class ToExecutorch(tester.ToExecutorch):
     def run_artifact(self, inputs):
         with TosaReferenceModelDispatch():
-            return super().run_artifact(inputs)
+            # Check if the model has mutable buffers
+            buffers = list(self.artifact.exported_program().buffers())
+            if len(buffers) > 0:
+                buffers.extend(inputs)
+                return self.artifact.exported_program().graph_module(*buffers)
+            else:
+                return super().run_artifact(inputs)
 
 
 class RunPasses(tester.RunPasses):
