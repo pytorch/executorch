@@ -90,6 +90,22 @@ Tensor& sum_arrayref_optional_tensor_out(
   return out;
 }
 
+std::tuple<Tensor&, Tensor&> add_constant_tuple_out(
+  const Tensor& a,
+  Tensor& out1,
+  Tensor& out2) {
+  auto a_data = a.const_data_ptr<int32_t>();
+  auto out1_data = out1.mutable_data_ptr<int32_t>();
+  auto out2_data = out2.mutable_data_ptr<int32_t>();
+
+  for (int i = 0; i < a.size(0); i++) {
+    out1_data[i] = a_data[i] + 1;
+    out2_data[i] = a_data[i] + 2;
+  }
+
+  return { out1, out2 };
+}
+
 Tensor& quantized_embedding_byte_out(
     const Tensor& weight,
     const Tensor& weight_scales,
@@ -132,6 +148,22 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestTypeMap_Tensor) {
   EXPECT_TRUE((std::is_same<
                type_map<const torch::executor::Tensor&>::type,
                const at::Tensor&>::value));
+}
+
+TEST_F(MakeATenFunctorFromETFunctorTest, TestTypeMap_Tuple_Tensor2x) {
+  EXPECT_TRUE(
+      (std::is_same<
+        type_map<std::tuple<torch::executor::Tensor, torch::executor::Tensor>>::type,
+        std::tuple<at::Tensor, at::Tensor>
+        >::value));
+}
+
+TEST_F(MakeATenFunctorFromETFunctorTest, TestTypeMap_Tuple_TensorRef3x) {
+  EXPECT_TRUE(
+      (std::is_same<
+        type_map<std::tuple<torch::executor::Tensor&, torch::executor::Tensor&, torch::executor::Tensor&>>::type,
+        std::tuple<at::Tensor&, at::Tensor&, at::Tensor&>
+        >::value));
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestTypeMap_Optionals) {
@@ -187,6 +219,33 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_Tensor) {
   torch::executor::Tensor et_in = tf.ones({3});
   auto at_out = type_convert<torch::executor::Tensor, at::Tensor>(et_in).call();
   EXPECT_TRUE((std::is_same<decltype(at_out), at::Tensor>::value));
+}
+
+TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_TupleTensor) {
+  // Convert at to et.
+  at::Tensor at_in1 = torch::tensor({1});
+  at::Tensor at_in2 = torch::tensor({2});
+  auto et = type_convert<
+      std::tuple<at::Tensor, at::Tensor>,
+      std::tuple<torch::executor::Tensor, torch::executor::Tensor>>(
+      std::make_tuple(at_in1, at_in2))
+          .call();
+  EXPECT_TRUE(
+      (std::is_same<
+          decltype(et),
+          std::tuple<torch::executor::Tensor, torch::executor::Tensor>>::value));
+
+  // Convert et to at.
+  torch::executor::testing::TensorFactory<ScalarType::Int> tf;
+  torch::executor::Tensor et_in1 = tf.ones({3});
+  torch::executor::Tensor et_in2 = tf.ones({4});
+  auto at_out = type_convert<
+      std::tuple<torch::executor::Tensor, torch::executor::Tensor>,
+      std::tuple<at::Tensor, at::Tensor>>(std::make_tuple(et_in1, et_in2))
+                    .call();
+  EXPECT_TRUE(
+      (std::is_same<decltype(at_out), std::tuple<at::Tensor, at::Tensor>>::
+           value));
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_OptionalScalar) {
@@ -306,6 +365,9 @@ TORCH_LIBRARY(my_op, m) {
   m.def("sum_arrayref_scalar.out", WRAP_TO_ATEN(sum_arrayref_scalar_out, 1));
   m.def("sum_arrayref_tensor.out", WRAP_TO_ATEN(sum_arrayref_tensor_out, 1));
   m.def(
+      "add_constant_tuple.out(Tensor a, *, Tensor(a!) out1, Tensor(b!) out2) -> (Tensor(a!), Tensor(b!))",
+      WRAP_TO_ATEN(add_constant_tuple_out, 1));
+  m.def(
       "sum_arrayref_optional_tensor.out",
       WRAP_TO_ATEN(sum_arrayref_optional_tensor_out, 1));
 };
@@ -420,6 +482,35 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_ArrayRefOptional) {
 
   EXPECT_EQ(stack.size(), 1);
   EXPECT_EQ(stack[0].toTensor().const_data_ptr<int64_t>()[0], 4);
+}
+
+TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_TupleOut) {
+  at::Tensor a =
+      torch::tensor({1, 2, 3}, torch::TensorOptions().dtype(torch::kInt32));
+  at::Tensor out1 =
+      torch::tensor({0, 0, 0}, torch::TensorOptions().dtype(torch::kInt32));
+  at::Tensor out2 =
+      torch::tensor({0, 0, 0}, torch::TensorOptions().dtype(torch::kInt32));
+
+  auto op = c10::Dispatcher::singleton().findSchema(
+      {"my_op::add_constant_tuple", "out"});
+  EXPECT_TRUE(op.has_value());
+  torch::jit::Stack stack = {a, out1, out2};
+  op.value().callBoxed(&stack);
+
+  EXPECT_EQ(stack.size(), 2);
+
+  // Verify out1 contains a + 1
+  auto result1 = stack[0].toTensor();
+  EXPECT_EQ(result1.const_data_ptr<int32_t>()[0], 2);
+  EXPECT_EQ(result1.const_data_ptr<int32_t>()[1], 3);
+  EXPECT_EQ(result1.const_data_ptr<int32_t>()[2], 4);
+
+  // Verify out2 contains a + 2
+  auto result2 = stack[1].toTensor();
+  EXPECT_EQ(result2.const_data_ptr<int32_t>()[0], 3);
+  EXPECT_EQ(result2.const_data_ptr<int32_t>()[1], 4);
+  EXPECT_EQ(result2.const_data_ptr<int32_t>()[2], 5);
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_ConstRefOptionals) {
