@@ -175,7 +175,7 @@ JNIEXPORT jlong JNICALL Java_org_pytorch_executorch_training_TrainingModule_nati
 
     auto modelLoaderRes = FileDataLoader::from(modelPathStr.c_str());
     if (modelLoaderRes.error() != Error::Ok) {
-        executorch::jni_helper::throwExecutorchException(env, "Failed to open model file");
+        executorch::jni_helper::throwExecutorchException(env, static_cast<uint32_t>(Error::Internal), "Failed to open model file");
         return 0;
     }
     auto modelLoader = std::make_unique<FileDataLoader>(std::move(modelLoaderRes.get()));
@@ -184,7 +184,7 @@ JNIEXPORT jlong JNICALL Java_org_pytorch_executorch_training_TrainingModule_nati
     if (!dataPathStr.empty()) {
         auto dataLoaderRes = FileDataLoader::from(dataPathStr.c_str());
         if (dataLoaderRes.error() != Error::Ok) {
-             executorch::jni_helper::throwExecutorchException(env, "Failed to open ptd file");
+             executorch::jni_helper::throwExecutorchException(env, static_cast<uint32_t>(Error::Internal), "Failed to open ptd file");
              return 0;
         }
         dataLoader = std::make_unique<FileDataLoader>(std::move(dataLoaderRes.get()));
@@ -215,7 +215,7 @@ JNIEXPORT jobjectArray JNICALL Java_org_pytorch_executorch_training_TrainingModu
     std::string methodNameStr(methodNamePtr);
     env->ReleaseStringUTFChars(methodName, methodNamePtr);
 
-    std::vector<runtime::EValue> evalues;
+    std::vector<executorch::runtime::EValue> evalues;
     std::vector<TensorPtr> tensorheaders; // To keep tensors alive if needed
 
     int inputCount = env->GetArrayLength(jinputs);
@@ -250,7 +250,7 @@ JNIEXPORT jobjectArray JNICALL Java_org_pytorch_executorch_training_TrainingModu
 
     auto result = module->execute_forward_backward(methodNameStr, evalues);
     if (!result.ok()) {
-        executorch::jni_helper::throwExecutorchException(env, "Execution failed");
+        executorch::jni_helper::throwExecutorchException(env, static_cast<uint32_t>(result.error()), "Execution failed");
         return nullptr;
     }
 
@@ -277,7 +277,7 @@ JNIEXPORT jobject JNICALL Java_org_pytorch_executorch_training_TrainingModule_na
     env->ReleaseStringUTFChars(methodName, methodPtr);
     
     if(!result.ok()) {
-         executorch::jni_helper::throwExecutorchException(env, "named_parameters failed");
+         executorch::jni_helper::throwExecutorchException(env, static_cast<uint32_t>(result.error()), "named_parameters failed");
          return nullptr;
     }
     
@@ -309,7 +309,7 @@ JNIEXPORT jobject JNICALL Java_org_pytorch_executorch_training_TrainingModule_na
     env->ReleaseStringUTFChars(methodName, methodPtr);
     
     if(!result.ok()) {
-         executorch::jni_helper::throwExecutorchException(env, "named_gradients failed");
+         executorch::jni_helper::throwExecutorchException(env, static_cast<uint32_t>(result.error()), "named_gradients failed");
          return nullptr;
     }
     
@@ -434,7 +434,7 @@ JNIEXPORT void JNICALL Java_org_pytorch_executorch_training_SGD_nativeStep(
     
     auto result = wrapper->sgdOptimizer_->step(cppNamedGradients);
     if (result != ::executorch::runtime::Error::Ok) {
-        executorch::jni_helper::throwExecutorchException(env, "SGD step failed");
+        executorch::jni_helper::throwExecutorchException(env, static_cast<uint32_t>(result), "SGD step failed");
     }
 }
 

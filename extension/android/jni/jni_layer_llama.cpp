@@ -220,7 +220,7 @@ JNIEXPORT jint JNICALL Java_org_pytorch_executorch_extension_llm_LlmModule_nativ
     if (result != 0) {
        // Using jni_helper to throw exception
        executorch::jni_helper::throwExecutorchException(
-           env, ss.str().c_str());
+           env, static_cast<uint32_t>(Error::Internal), ss.str().c_str());
     }
     return result; 
 }
