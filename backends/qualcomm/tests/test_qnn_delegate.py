@@ -1606,6 +1606,11 @@ class TestQNNFloatingPointOperator(TestQNN):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_reciprocal(self):
+        module = Reciprocal()  # noqa: F405
+        sample_input = (torch.randn([2, 2, 2, 2]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)

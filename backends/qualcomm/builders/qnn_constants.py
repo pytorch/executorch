@@ -281,6 +281,30 @@ class OpElementWiseSubtract:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseUnary:
+    op_name: str = "ElementWiseUnary"
+    param_operation: str = "operation"
+    @unique
+    class Operation(IntEnum):
+        ABS = 0
+        ASIN = 1
+        ATAN = 2
+        CEIL = 3
+        COS = 4
+        EXP = 5
+        FLOOR = 6
+        LOG = 7
+        NEG = 8
+        NOT = 9
+        RECIPROCAL = 10
+        ROUND = 11
+        RSQRT = 12
+        SIGN = 13
+        SIN = 14
+        SQRT = 15
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseXor:
     op_name: str = "ElementWiseXor"
 
