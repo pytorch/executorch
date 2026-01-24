@@ -1213,7 +1213,7 @@ void test_storage_buffer_type(const size_t len) {
       context(), dtype, len, vkapi::CopyDirection::DEVICE_TO_HOST);
 
   std::string kernel_name("idx_fill_buffer");
-  switch (dtype) {
+  switch (buffer.dtype()) {
     case vkapi::kFloat:
       kernel_name += "_float";
       break;
@@ -1252,7 +1252,14 @@ void test_storage_buffer_type(const size_t len) {
   submit_to_gpu();
 
   std::vector<T> data(len);
-  buffer.copy_to(data.data(), buffer.nbytes());
+
+  if (dtype == vkapi::kHalf && buffer.dtype() == vkapi::kFloat) {
+    buffer.cast_float_to_half_and_copy_to(
+        reinterpret_cast<uint16_t*>(data.data()), data.size());
+  } else {
+    VK_CHECK_COND(dtype == buffer.dtype());
+    buffer.copy_to(data.data(), buffer.nbytes());
+  }
 
   for (size_t i = 0; i < len; ++i) {
     CHECK_VALUE(data, i, T(i));
@@ -1264,9 +1271,6 @@ TEST_F(VulkanComputeAPITest, test_buffer_float) {
 }
 
 TEST_F(VulkanComputeAPITest, test_buffer_float16) {
-  if (!context()->adapter_ptr()->has_full_float16_buffers_support()) {
-    GTEST_SKIP();
-  }
   test_storage_buffer_type<executorch::aten::Half, vkapi::kHalf>(16);
 }
 
@@ -2615,8 +2619,15 @@ void run_from_gpu_test(
 
   submit_to_gpu();
 
-  std::vector<T> data_out(staging_buffer.numel());
-  staging_buffer.copy_to(data_out.data(), staging_buffer.nbytes());
+  std::vector<T> data_out(vten.staging_buffer_numel());
+
+  if (dtype == vkapi::kHalf && staging_buffer.dtype() == vkapi::kFloat) {
+    staging_buffer.cast_float_to_half_and_copy_to(
+        reinterpret_cast<uint16_t*>(data_out.data()), data_out.size());
+  } else {
+    VK_CHECK_COND(dtype == staging_buffer.dtype());
+    staging_buffer.copy_to(data_out.data(), staging_buffer.nbytes());
+  }
 
   for (int i = 0; i < vten.numel(); i++) {
     CHECK_VALUE(data_out, i, i + offset);
@@ -2639,11 +2650,18 @@ void round_trip_test(
       vten.staging_buffer_numel(),
       vkapi::CopyDirection::HOST_TO_DEVICE);
 
-  std::vector<T> data_in(staging_buffer_in.numel());
-  for (int i = 0; i < staging_buffer_in.numel(); i++) {
+  std::vector<T> data_in(vten.staging_buffer_numel());
+  for (int i = 0; i < data_in.size(); i++) {
     data_in[i] = T(i * -1);
   }
-  staging_buffer_in.copy_from(data_in.data(), vten.staging_buffer_nbytes());
+  // When float16 buffers are not supported, staging buffer uses float32
+  // storage. Use conversion methods to properly copy half data.
+  if (dtype == vkapi::kHalf && staging_buffer_in.dtype() == vkapi::kFloat) {
+    staging_buffer_in.cast_half_to_float_and_copy_from(
+        reinterpret_cast<const uint16_t*>(data_in.data()), data_in.size());
+  } else {
+    staging_buffer_in.copy_from(data_in.data(), vten.staging_buffer_nbytes());
+  }
 
   // Output staging buffer
   StagingBuffer staging_buffer_out(
@@ -2667,8 +2685,15 @@ void round_trip_test(
   submit_to_gpu();
 
   // Extract data from output staging buffer
-  std::vector<T> data_out(staging_buffer_out.numel());
-  staging_buffer_out.copy_to(data_out.data(), staging_buffer_out.nbytes());
+  std::vector<T> data_out(vten.staging_buffer_numel());
+  // When float16 buffers are not supported, staging buffer uses float32
+  // storage. Use conversion methods to properly copy out to half data.
+  if (dtype == vkapi::kHalf && staging_buffer_out.dtype() == vkapi::kFloat) {
+    staging_buffer_out.cast_float_to_half_and_copy_to(
+        reinterpret_cast<uint16_t*>(data_out.data()), data_out.size());
+  } else {
+    staging_buffer_out.copy_to(data_out.data(), staging_buffer_out.nbytes());
+  }
 
   // All indices should be equal to the input data
   for (int i = 0; i < vten.numel(); i++) {
