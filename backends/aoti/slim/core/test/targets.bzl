@@ -7,8 +7,7 @@ def get_backend_mode():
 
 def define_common_targets():
     """Define test targets for SlimTensor core module."""
-
-    # GPU storage test with CUDA support
+    # Backend mode specific tests
     for backend_mode in get_backend_mode():
         backend_suffix = "_" + backend_mode if backend_mode == "cuda" else ""
 
@@ -57,12 +56,27 @@ def define_common_targets():
             **backend_kwargs
         )
 
-    runtime.cxx_test(
-        name = "test_slimtensor_dtypes",
-        srcs = [
-            "test_slimtensor_dtypes.cpp",
-        ],
-        deps = [
-            "//executorch/backends/aoti/slim/factory:empty",
-        ],
-    )
+        runtime.cxx_test(
+            name = "test_as_strided" + backend_suffix,
+            srcs = [
+                "test_as_strided.cpp",
+            ],
+            deps = [
+                "//executorch/backends/aoti/slim/core:slimtensor",
+                "//executorch/backends/aoti/slim/factory:empty",
+            ],
+            **backend_kwargs
+        )
+
+
+        runtime.cxx_test(
+            name = "test_permute_reshape" + backend_suffix,
+            srcs = [
+                "test_permute_reshape.cpp",
+            ],
+            deps = [
+                "//executorch/backends/aoti/slim/core:slimtensor",
+                "//executorch/backends/aoti/slim/factory:empty",
+            ],
+            **backend_kwargs
+        )
