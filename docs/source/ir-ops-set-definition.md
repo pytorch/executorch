@@ -1,6 +1,6 @@
 # Definition of the Core ATen Operator Set
 
-This page provides the description and background of the Core ATen Operator Set (opset). This page is recommended reading for those developing a new kernel library or delegate for ExecuTorch. It is also recommended that one is familiar with [`torch.export`](https://pytorch.org/docs/main/export.html) as a prerequisite; in particular, the concepts of torch FX graphs, operator decomposition, and functionalization.
+This page provides the description and background of the Core ATen Operator Set (opset). This page is recommended reading for those developing a new kernel library or delegate for ExecuTorch. It is also recommended that one is familiar with [`torch.export`](https://pytorch.org/docs/main/user_guide/torch_compiler/export.html) as a prerequisite; in particular, the concepts of torch FX graphs, operator decomposition, and functionalization.
 
 The list of operators that have been identified as a Core ATen operator can be found on the [IRs page of the PyTorch documentation website](https://pytorch.org/docs/main/torch.compiler_ir.html).
 

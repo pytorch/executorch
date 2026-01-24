@@ -267,7 +267,7 @@ def get_coreml_quantizer(pt2e_quantize: str):
         from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
     except ImportError:
         raise ImportError(
-            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/backends-coreml"
+            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/backends/coreml/coreml-overview.html"
         )
 
     if pt2e_quantize == "coreml_8a_c8w":

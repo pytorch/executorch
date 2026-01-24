@@ -295,7 +295,7 @@ class OpenVINOQuantizer(Quantizer):
         """
         Identifies the earliest quantizer node ID based on the corresponding `nncf_node.node_id`
         in the given NNCFGraph. This is required by the `_get_obs_or_fq_map` function.
-        Refer to: https://github.com/pytorch/pytorch/blob/main/torch/ao/quantization/pt2e/prepare.py#L291
+        Refer to: https://github.com/pytorch/ao/blob/main/torchao/quantization/pt2e/prepare.py#L291
 
         :param nncf_graph: The NNCFGraph instance.
         :param quantizer_ids: The list of quantizer IDs to evaluate.

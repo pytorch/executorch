@@ -137,7 +137,7 @@ python3 -m examples.cadence.operators.quantized_<linear,conv1d>_op
 
 ***Small Model: RNNT predictor***:
 
-The torchaudio [RNNT-emformer](https://pytorch.org/audio/stable/tutorials/online_asr_tutorial.html) model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels: an encoder, a predictor and a joiner.
+The torchaudio [RNNT-emformer](https://github.com/pytorch/audio/tree/main/examples/asr/emformer_rnnt) model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels: an encoder, a predictor and a joiner.
 The [predictor](https://github.com/pytorch/executorch/blob/main/examples/cadence/models/rnnt_predictor.py) is a sequence of basic ops (embedding, ReLU, linear, layer norm) and can be exported using:
 
 ```bash

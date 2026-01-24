@@ -280,7 +280,7 @@ decode_ep = torch.export.export(DecodeWrapper(model), ...)
 
 ## Next Steps
 
-The PyTorch and ExecuTorch export and lowering APIs provide a high level of customizability to meet the needs of diverse hardware and models. See [torch.export](https://pytorch.org/docs/main/export.html) and [Export API Reference](export-to-executorch-api-reference.rst) for more information.
+The PyTorch and ExecuTorch export and lowering APIs provide a high level of customizability to meet the needs of diverse hardware and models. See [torch.export](https://pytorch.org/docs/main/user_guide/torch_compiler/export.html) and [Export API Reference](export-to-executorch-api-reference.rst) for more information.
 
 For advanced use cases, see the following:
 - [Quantization Overview](quantization-overview.md) for information on quantizing models to reduce inference time and memory footprint.
