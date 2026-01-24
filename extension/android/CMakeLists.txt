@@ -63,11 +63,9 @@ if(EXECUTORCH_ANDROID_PROFILING)
 endif()
 
 if(TARGET optimized_native_cpu_ops_lib)
-  list(APPEND link_libraries optimized_native_cpu_ops_lib)
-    executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,optimized_native_cpu_ops_lib>)
 else()
-  list(APPEND link_libraries portable_ops_lib portable_kernels)
-    executorch_target_link_options_shared_lib(portable_ops_lib)
+  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,portable_ops_lib> portable_kernels)
 endif()
 
 if(TARGET quantized_kernels)
