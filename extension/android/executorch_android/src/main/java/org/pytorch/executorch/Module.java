@@ -8,11 +8,10 @@
 
 package org.pytorch.executorch;
 
-import android.util.Log;
+import java.util.logging.Logger;
+import java.util.logging.Level;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
-import com.facebook.soloader.nativeloader.NativeLoader;
-import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
@@ -27,13 +26,11 @@ import org.pytorch.executorch.annotations.Experimental;
  */
 @Experimental
 public class Module {
+  private static final Logger LOGGER = Logger.getLogger(Module.class.getName());
 
   static {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
     // Loads libexecutorch.so from jniLibs
-    NativeLoader.loadLibrary("executorch");
+    System.loadLibrary("executorch");
   }
 
   /** Load mode for the module. Load the whole file as a buffer. */
@@ -139,7 +136,7 @@ public class Module {
     try {
       mLock.lock();
       if (!mHybridData.isValid()) {
-        Log.e("ExecuTorch", "Attempt to use a destroyed module");
+        LOGGER.log(Level.SEVERE, "Attempt to use a destroyed module");
         return new EValue[0];
       }
       return executeNative(methodName, inputs);
@@ -164,7 +161,7 @@ public class Module {
     try {
       mLock.lock();
       if (!mHybridData.isValid()) {
-        Log.e("ExecuTorch", "Attempt to use a destroyed module");
+        LOGGER.log(Level.SEVERE, "Attempt to use a destroyed module");
         return 0x2; // InvalidState
       }
       return loadMethodNative(methodName);
@@ -251,10 +248,7 @@ public class Module {
         mLock.unlock();
       }
     } else {
-      Log.w(
-          "ExecuTorch",
-          "Destroy was called while the module was in use. Resources will not be immediately"
-              + " released.");
+      LOGGER.log(Level.WARNING, "Destroy was called while the module was in use. Resources will not be immediately released.");
     }
   }
 }

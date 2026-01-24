@@ -8,7 +8,8 @@
 
 package org.pytorch.executorch;
 
-import android.util.Log;
+import java.util.logging.Logger;
+import java.util.logging.Level;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import java.nio.Buffer;
@@ -44,6 +45,7 @@ import org.pytorch.executorch.annotations.Experimental;
  */
 @Experimental
 public abstract class Tensor {
+  private static final Logger LOGGER = Logger.getLogger(Tensor.class.getName());
   private static final String ERROR_MSG_DATA_BUFFER_NOT_NULL = "Data buffer must be not null";
   private static final String ERROR_MSG_DATA_ARRAY_NOT_NULL = "Data array must be not null";
   private static final String ERROR_MSG_SHAPE_NOT_NULL = "Shape must be not null";
@@ -846,9 +848,7 @@ public abstract class Tensor {
       super(shape);
       this.data = data;
       this.mDtype = dtype;
-      Log.e(
-          "ExecuTorch",
-          toString() + " in Java. Please consider re-export the model with proper return type");
+      LOGGER.log(Level.SEVERE, toString() + " in Java. Please consider re-export the model with proper return type");
     }
 
     @Override

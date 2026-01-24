@@ -10,8 +10,6 @@ package org.pytorch.executorch.training;
 
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
-import com.facebook.soloader.nativeloader.NativeLoader;
-import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.util.Map;
 import org.pytorch.executorch.Tensor;
 import org.pytorch.executorch.annotations.Experimental;
@@ -25,11 +23,8 @@ import org.pytorch.executorch.annotations.Experimental;
 public class SGD {
 
   static {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
     // Loads libexecutorch.so from jniLibs
-    NativeLoader.loadLibrary("executorch");
+    System.loadLibrary("executorch");
   }
 
   private final HybridData mHybridData;

@@ -437,7 +437,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
     return ret;
 #else
-    return facebook::jni::JArrayClass<String>::newArray(0);
+    return facebook::jni::JArrayClass<jstring>::newArray(0);
 #endif
   }
 

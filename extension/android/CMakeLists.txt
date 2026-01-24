@@ -12,8 +12,8 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(NOT ANDROID)
-  message(FATAL_ERROR "This directory is for Android build only")
+if(NOT ANDROID AND NOT EXECUTORCH_BUILD_HOST_JAVA)
+  message(STATUS "Note: Compiling extension/android for host build (EXECUTORCH_BUILD_HOST_JAVA=ON)")
 endif()
 
 set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
@@ -22,7 +22,7 @@ set(_common_compile_options
     $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
 )
-if(NOT ANDROID_PLATFORM)
+if(NOT ANDROID_PLATFORM AND ANDROID)
   set(ANDROID_PLATFORM android-30)
 endif()
 
@@ -36,39 +36,53 @@ if(NOT FBJNI_VERSION)
   set(FBJNI_VERSION 0.7.0)
 endif()
 
-set(FBJNI_AAR_URL
-    https://repo1.maven.org/maven2/com/facebook/fbjni/fbjni/${FBJNI_VERSION}/fbjni-${FBJNI_VERSION}.aar
-)
-set(FBJNI_DOWNLOAD_PATH ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/fbjni.aar)
+if (ANDROID)
+  # Android Build: Use Prebuilt AAR
+  set(FBJNI_AAR_URL
+      https://repo1.maven.org/maven2/com/facebook/fbjni/fbjni/${FBJNI_VERSION}/fbjni-${FBJNI_VERSION}.aar
+  )
+  set(FBJNI_DOWNLOAD_PATH ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/fbjni.aar)
 
-if(NOT EXISTS "${FBJNI_DOWNLOAD_PATH}")
-  file(DOWNLOAD "${FBJNI_AAR_URL}" "${FBJNI_DOWNLOAD_PATH}")
+  if(NOT EXISTS "${FBJNI_DOWNLOAD_PATH}")
+    file(DOWNLOAD "${FBJNI_AAR_URL}" "${FBJNI_DOWNLOAD_PATH}")
+  endif()
+
+  add_custom_command(
+    OUTPUT
+      "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/"
+      "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
+    COMMAND unzip -o ${FBJNI_DOWNLOAD_PATH} -d
+            ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni
+    DEPENDS "${FBJNI_DOWNLOAD_PATH}"
+  )
+
+  add_custom_target(
+    fbjni_prefab
+    DEPENDS
+      "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/"
+      "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
+  )
+
+  add_library(fbjni SHARED IMPORTED)
+  add_dependencies(fbjni fbjni_prefab)
+  set_target_properties(
+    fbjni
+    PROPERTIES
+      IMPORTED_LOCATION
+      "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
+  )
+  set(FBJNI_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/")
+else()
+  # Linux/Host Build: Build from Source
+  include(FetchContent)
+  FetchContent_Declare(
+    fbjni
+    GIT_REPOSITORY https://github.com/facebookincubator/fbjni.git
+    GIT_TAG        v${FBJNI_VERSION}
+  )
+  FetchContent_MakeAvailable(fbjni)
+  # FetchContent for fbjni usually exposes the 'fbjni' target and headers automatically.
 endif()
-
-add_custom_command(
-  OUTPUT
-    "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/"
-    "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
-  COMMAND unzip -o ${FBJNI_DOWNLOAD_PATH} -d
-          ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni
-  DEPENDS "${FBJNI_DOWNLOAD_PATH}"
-)
-
-add_custom_target(
-  fbjni_prefab
-  DEPENDS
-    "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/"
-    "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
-)
-
-add_library(fbjni SHARED IMPORTED)
-add_dependencies(fbjni fbjni_prefab)
-set_target_properties(
-  fbjni
-  PROPERTIES
-    IMPORTED_LOCATION
-    "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
-)
 
 executorch_target_link_options_shared_lib(executorch)
 
@@ -100,15 +114,15 @@ endif()
 
 if(TARGET optimized_native_cpu_ops_lib)
   list(APPEND link_libraries optimized_native_cpu_ops_lib)
-  executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+    executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
-  executorch_target_link_options_shared_lib(portable_ops_lib)
+    executorch_target_link_options_shared_lib(portable_ops_lib)
 endif()
 
 if(TARGET quantized_kernels)
   list(APPEND link_libraries quantized_kernels quantized_ops_lib)
-  executorch_target_link_options_shared_lib(quantized_ops_lib)
+    executorch_target_link_options_shared_lib(quantized_ops_lib)
 endif()
 
 if(TARGET qnn_executorch_backend)
@@ -116,7 +130,7 @@ if(TARGET qnn_executorch_backend)
 endif()
 
 if(TARGET xnnpack_backend)
-  executorch_target_link_options_shared_lib(xnnpack_backend)
+    executorch_target_link_options_shared_lib(xnnpack_backend)
   list(
     APPEND
     link_libraries
@@ -132,7 +146,7 @@ if(TARGET xnnpack_backend)
 endif()
 
 if(TARGET vulkan_backend)
-  executorch_target_link_options_shared_lib(vulkan_backend)
+    executorch_target_link_options_shared_lib(vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
 endif()
 
@@ -224,13 +238,22 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   endif()
 endif()
 
-target_include_directories(
-  executorch_jni
-  PRIVATE
-    ${_common_include_directories}
-    "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/"
-)
+if (ANDROID)
+    target_include_directories(
+      executorch_jni
+      PRIVATE
+        ${_common_include_directories}
+        "${FBJNI_INCLUDE_DIR}"
+    )
+    target_link_libraries(executorch_jni ${link_libraries} log)
+else()
+    target_include_directories(
+      executorch_jni
+      PRIVATE
+        ${_common_include_directories}
+    )
+    # On linux we don't need 'log' library usually, or we might need to link against a standard one/shim if used.
+    target_link_libraries(executorch_jni ${link_libraries})
+endif()
 
 target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
-
-target_link_libraries(executorch_jni ${link_libraries} log)
