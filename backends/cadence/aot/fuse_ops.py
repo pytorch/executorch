@@ -819,68 +819,86 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseMulScalarIntoDequantPass(ExportPass):
+class FuseMulScalarIntoDequantPass(RemoveOrReplacePassInterface):
     """
     Looks for the pattern where aten.mul.Scalar is multiplying the
      outputs of dequantize. If found, updates the dequant scale
     to reflect the multiplication and removes the mul node.
     """
 
-    def attempt_fusion(
-        self, graph_module: torch.fx.GraphModule, node: torch.fx.Node
-    ) -> None:
-        if node.target not in {
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.mul.Scalar]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # Ensure that the single user of dequant is aten.mul.Scalar
+        mul_node = node
+        input_nodes = mul_node.all_input_nodes
+        if len(input_nodes) != 1 or len(input_nodes[0].users) != 1:
+            return False
+
+        dequant_node = input_nodes[0]
+
+        if dequant_node.target not in [
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
             exir_ops.edge.cadence.dequantize_per_tensor.default,
-        }:
-            return
+        ]:
+            return False
 
-        # ensure that the single user of dequant is aten.mul.Scalar
-        user = list(node.users.keys())[0]
-        if len(node.users) != 1 or user.target != exir_ops.edge.aten.mul.Scalar:
-            return
+        if len(mul_node.args) <= 1 or isinstance(mul_node.args[1], torch.fx.Node):
+            return False
 
-        # ensure that the other arg to mul is a node (i.e. not a constant)
-        if len(user.args) > 1 and isinstance(user.args[1], torch.fx.Node):
-            return
-
-        new_deq_args = list(node.args)
-        assert isinstance(node.args[1], Number)
-        assert isinstance(user.args[1], Number)
+        new_deq_args = list(dequant_node.args)
+        assert isinstance(dequant_node.args[1], Number)
+        assert isinstance(mul_node.args[1], Number)
         # pyre-ignore[58]: Unsupported operand *
-        new_deq_args[1] = node.args[1] * user.args[1]
+        new_deq_args[1] = dequant_node.args[1] * mul_node.args[1]
+
+        # Replace all uses of mul with the dequant node
+        mul_node.replace_all_uses_with(dequant_node)
+        # Update the dequant node's args with the new scale
+        dequant_node.args = tuple(new_deq_args)
+
+        # Erase the mul node
+        mul_node.graph.erase_node(mul_node)
 
         logging.debug(
-            f"Fused {node} and {user} into {node}. Updated scale from {node.args[1]} to {new_deq_args[1]}"
+            f"Fused {dequant_node} and {mul_node} into {dequant_node}. Updated scale from {dequant_node.args[1]} to {new_deq_args[1]}"
         )
-
-        user.replace_all_uses_with(node)
-        node.args = tuple(new_deq_args)
-
-        graph_module.graph.erase_node(user)
-
-        graph_module.recompile()
-
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        for node in graph_module.graph.nodes:
-            self.attempt_fusion(graph_module, node)
-        result = super().call(graph_module)
-        return result
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseMulTensorIntoQuantPass(ExportPass):
+class FuseMulTensorIntoQuantPass(RemoveOrReplacePassInterface):
     """
     Looks for the pattern where aten.mul.Tensor is followed by quant node.
     If found, updates the quant scale to reflect the multiplication and
     removes the mul node.
     """
 
-    def attempt_fusion(
-        self, graph_module: torch.fx.GraphModule, mul_node: torch.fx.Node
-    ) -> None:
-        if len(mul_node.args) != 2 or len(mul_node.users) != 1:
-            return
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.mul.Tensor]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+
+        mul_node = node
+        if len(mul_node.users) != 1:
+            return False
+
+        user = next(iter(mul_node.users))
+        user_input_nodes = user.all_input_nodes
+        if len(user_input_nodes) != 1:
+            return False
+
+        if user.target not in [
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+        ]:
+            return False
+
+        # Alias for readability.
+        quant_node = user
 
         first_arg = cast(torch.fx.Node, mul_node.args[0])
         second_arg = cast(torch.fx.Node, mul_node.args[1])
@@ -896,22 +914,11 @@ class FuseMulTensorIntoQuantPass(ExportPass):
             input_node = second_arg
         else:
             # Full node is not found, skip.
-            return
+            return False
 
         # Ensure that the mul op does not do any broadcasting.
-        if input_node.meta["val"].shape != mul_node.meta["val"].shape:
-            return
-
-        mul_user = list(mul_node.users.keys())[0]
-
-        # Ensure only the expected quant ops are using the current mul op.
-        if mul_user.target not in {
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            exir_ops.edge.cadence.quantize_per_tensor.default,
-        }:
-            return
-
-        quant_node = mul_user
+        if input_node.meta["val"].shape != node.meta["val"].shape:
+            return False
 
         # Calculate the new scale value.
         old_scale = quant_node.args[1]
@@ -925,42 +932,41 @@ class FuseMulTensorIntoQuantPass(ExportPass):
             new_scale = old_scale / mul_scalar
             q = zp + x / new_scale
         """
+
+        # Cannot fuse if either value is zero:
+        # - mul_scalar == 0 would cause division by zero computing new_scale
+        # - old_scale == 0 would result in new_scale = 0, causing division by zero during quantization
+        if mul_scalar == 0 or old_scale == 0:
+            return False
         new_scale = float(old_scale) / float(mul_scalar)
 
         logging.debug(
-            f"Fused {mul_node} and {full_node} into {quant_node}. Updated scale from {quant_node.args[1]} to {new_scale}"
+            f"Fused {node} and {full_node} into {quant_node}. Updated scale from {quant_node.args[1]} to {new_scale}"
         )
 
         # Update quant node input and scale.
         old_quant_input = cast(torch.fx.Node, quant_node.args[0])
-        new_quant_input = cast(torch.fx.Node, mul_node.args[0])
+        new_quant_input = input_node
         quant_node.replace_input_with(old_quant_input, new_quant_input)
         quant_node.update_arg(1, new_scale)
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        for node in graph_module.graph.find_nodes(
-            op="call_function", target=exir_ops.edge.aten.mul.Tensor
-        ):
-            self.attempt_fusion(graph_module, node)
-        graph_module.graph.eliminate_dead_code()
-        return super().call(graph_module)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseMulTensorIntoDequantPass(ExportPass):
+class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
     """
     Looks for the pattern where aten.mul is multiplying the outputs of dequantize
     and aten.full, or vice versa. If found, updates the dequant scale to reflect
     the multiplication and removes the full and mul nodes.
     """
 
-    def attempt_fusion(
-        self, graph_module: torch.fx.GraphModule, node: torch.fx.Node
-    ) -> None:
-        if node.target != exir_ops.edge.aten.mul.Tensor:
-            return
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.mul.Tensor]
 
-        # ensure that one of the args to mul is dequantize and the other is aten.full
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # Ensure that one of the args to mul is dequantize and the other is aten.full
         dequant_nodes = [
             arg
             for arg in node.args
@@ -980,14 +986,14 @@ class FuseMulTensorIntoDequantPass(ExportPass):
         ]
 
         if len(dequant_nodes) != 1 or len(multiplier_nodes) != 1:
-            return
+            return False
 
         deq_node = dequant_nodes[0]
         mplier_node = multiplier_nodes[0]
 
-        # ensure that dequant and full don't have any other users
+        # Ensure that dequant and full don't have any other users
         if len(deq_node.users) > 1 or len(mplier_node.users) > 1:
-            return
+            return False
 
         new_deq_args = list(deq_node.args)
         assert isinstance(deq_node.args[1], Number)
@@ -999,18 +1005,16 @@ class FuseMulTensorIntoDequantPass(ExportPass):
             f"Fused {node} and {mplier_node} into {deq_node}. Updated scale from {deq_node.args[1]} to {new_deq_args[1]}"
         )
 
+        # Replace all uses of the mul node with the dequant node
         node.replace_all_uses_with(deq_node)
+        # Update the dequant node's args with the new scale
         deq_node.args = tuple(new_deq_args)
 
-        graph_module.graph.erase_node(node)
-        graph_module.graph.erase_node(mplier_node)
-        graph_module.recompile()
+        # Erase the mul and full nodes
+        node.graph.erase_node(node)
+        node.graph.erase_node(mplier_node)
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        for node in graph_module.graph.nodes:
-            self.attempt_fusion(graph_module, node)
-        result = super().call(graph_module)
-        return result
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
