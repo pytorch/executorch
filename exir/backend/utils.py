@@ -11,7 +11,7 @@ import logging
 import operator
 from collections import defaultdict, OrderedDict
 from functools import lru_cache
-from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union, Any
 
 import torch
 from executorch.exir.backend.backend_details import ExportedProgram
@@ -21,6 +21,9 @@ from executorch.exir.backend.canonical_partitioners.duplicate_constant_node_pass
 from executorch.exir.common import setting_python_recursive_limit
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
+
+# get Executorch
+from executorch.exir import ExecutorchProgram
 
 from executorch.exir.lowered_backend_module import create_submodule_from_nodes
 from tabulate import tabulate
@@ -429,6 +432,23 @@ def is_shape_dynamic(node: torch.fx.Node) -> bool:
     """
 
     return has_free_symbols(node.meta["val"].shape)
+
+
+def get_delegated_payload(exec_program: ExecutorchProgram) -> Dict[str, Any]:
+    """
+    Get the payload of the executorch program which contains all the delegated modules.
+    """
+    delegated_payload_list = {}
+    for delegate in exec_program.executorch_program.execution_plan[0].delegates:
+        backend_id = delegate.id
+        delegate_index = delegate.processed.index
+        # delegate_data_size[delegate_index] = (delegate.id, len(data))
+        delegated_payload_list[delegate_index] = (
+            backend_id,
+            delegate.compile_specs,
+            exec_program.executorch_program.backend_delegate_data[delegate_index].data,
+        )
+    return delegated_payload_list
 
 
 # TODO - style: use templated types
