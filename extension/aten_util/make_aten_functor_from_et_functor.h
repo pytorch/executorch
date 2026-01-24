@@ -249,28 +249,29 @@ struct type_convert<std::tuple<F...>, std::tuple<T...>> final {
  public:
   // We need to remove references from the output type because converters expect
   // to return by value. For example, the tensor converter creates a temporary
-  // tensor and returns it by value - so we can't return an lvalue reference to it.
+  // tensor and returns it by value - so we can't return an lvalue reference to
+  // it.
   using InType = std::tuple<F...>;
   using OutType = std::tuple<std::remove_reference_t<T>...>;
 
   std::tuple<type_convert<F, std::remove_reference_t<T>>...> converters;
 
-  explicit type_convert(std::tuple<F...> value) :
-    converters(make_converters(value, std::index_sequence_for<F...>{})) {}
+  explicit type_convert(std::tuple<F...> value)
+      : converters(make_converters(value, std::index_sequence_for<F...>{})) {}
 
   template <size_t... Is>
   static decltype(converters) make_converters(
-    std::tuple<F...> value,
-    std::index_sequence<Is...>) {
+      std::tuple<F...> value,
+      std::index_sequence<Is...>) {
     return std::make_tuple(
-      // For each element in the input/output tuple, create a type_convert struct.
-      type_convert<
-        // Get the type of Ith element of the input and output.
-        std::tuple_element_t<Is, InType>,
-        std::tuple_element_t<Is, OutType>
-        // Instantiate the converter with the Ith element of the input.
-      >(std::get<Is>(value))...
-    );
+        // For each element in the input/output tuple, create a type_convert
+        // struct.
+        type_convert<
+            // Get the type of Ith element of the input and output.
+            std::tuple_element_t<Is, InType>,
+            std::tuple_element_t<Is, OutType>
+            // Instantiate the converter with the Ith element of the input.
+            >(std::get<Is>(value))...);
   }
 
   template <size_t... Is>
@@ -290,7 +291,8 @@ template <class... Args>
 struct is_tuple<std::tuple<Args...>> : std::true_type {};
 
 // A utility struct to extract the out arguments from a function.
-// Returns a tuple of Args[N...], where N is the index of the first out argument.
+// Returns a tuple of Args[N...], where N is the index of the first out
+// argument.
 template <size_t N, typename... Args>
 struct extract_out_args;
 
@@ -302,11 +304,13 @@ struct extract_out_args {
 
   template <size_t... I>
   static auto get_impl(tuple_type&& t, std::index_sequence<I...>) {
-    return std::forward_as_tuple(std::get<N + I>(std::forward<tuple_type>(t))...);
+    return std::forward_as_tuple(
+        std::get<N + I>(std::forward<tuple_type>(t))...);
   }
 
   static auto get(tuple_type&& t) {
-    return get_impl(std::forward<tuple_type>(t), std::make_index_sequence<n_out>{});
+    return get_impl(
+        std::forward<tuple_type>(t), std::make_index_sequence<n_out>{});
   }
 };
 
@@ -326,14 +330,17 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
   static constexpr size_t num_args = sizeof...(Args);
   static constexpr size_t num_out_args = sizeof...(Args) - N;
   static constexpr bool is_output_tuple = is_tuple<ReturnType>::value;
-  static_assert(N < num_args, "The index of the out tensor can't be greater or equal to num_args.");
   static_assert(
-       is_output_tuple ||
-       std::is_same_v<
-           executorch::extension::kernel_util_internal::element_t<
-               N,
-               executorch::extension::kernel_util_internal::typelist<Args...>>,
-           R> ||
+      N < num_args,
+      "The index of the out tensor can't be greater or equal to num_args.");
+  static_assert(
+      is_output_tuple ||
+          std::is_same_v<
+              executorch::extension::kernel_util_internal::element_t<
+                  N,
+                  executorch::extension::kernel_util_internal::typelist<
+                      Args...>>,
+              R> ||
           N == -1,
       "The Nth argument type has to be the same as the return type.");
 
@@ -350,12 +357,14 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
     if constexpr (N == -1) {
       return converted_result;
     } else if constexpr (is_output_tuple) {
-      auto out_args = extract_out_args<N, typename type_map<Args>::type...>::get(std::move(args_tuple));
+      auto out_args =
+          extract_out_args<N, typename type_map<Args>::type...>::get(
+              std::move(args_tuple));
 
-       return resize_and_copy_outputs(
-        std::move(converted_result),
-        std::move(out_args),
-        std::make_index_sequence<num_out_args>{});
+      return resize_and_copy_outputs(
+          std::move(converted_result),
+          std::move(out_args),
+          std::make_index_sequence<num_out_args>{});
     } else { // Non-tuple return type.
       static_assert(
           std::is_same_v<
@@ -377,9 +386,8 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
 
   template <class A>
   static at::Tensor& resize_and_copy_output(
-    A converted_result,
-    at::Tensor& out
-  ) {
+      A converted_result,
+      at::Tensor& out) {
     at::native::resize_output(out, converted_result.sizes());
     out.copy_(converted_result);
     return out;
@@ -387,16 +395,12 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
 
   template <class A, class B, size_t... Is>
   static ReturnType resize_and_copy_outputs(
-    A&& converted_result,
-    B&& out,
-    std::index_sequence<Is...>
-  ) {
-    return std::forward_as_tuple(
-      resize_and_copy_output(
+      A&& converted_result,
+      B&& out,
+      std::index_sequence<Is...>) {
+    return std::forward_as_tuple(resize_and_copy_output(
         std::get<Is>(std::forward<A>(converted_result)),
-        std::get<Is>(std::forward<B>(out))
-      )...
-    );
+        std::get<Is>(std::forward<B>(out)))...);
   }
 };
 

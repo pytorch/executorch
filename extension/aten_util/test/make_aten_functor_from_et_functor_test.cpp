@@ -90,10 +90,8 @@ Tensor& sum_arrayref_optional_tensor_out(
   return out;
 }
 
-std::tuple<Tensor&, Tensor&> add_constant_tuple_out(
-  const Tensor& a,
-  Tensor& out1,
-  Tensor& out2) {
+std::tuple<Tensor&, Tensor&>
+add_constant_tuple_out(const Tensor& a, Tensor& out1, Tensor& out2) {
   auto a_data = a.const_data_ptr<int32_t>();
   auto out1_data = out1.mutable_data_ptr<int32_t>();
   auto out2_data = out2.mutable_data_ptr<int32_t>();
@@ -103,7 +101,7 @@ std::tuple<Tensor&, Tensor&> add_constant_tuple_out(
     out2_data[i] = a_data[i] + 2;
   }
 
-  return { out1, out2 };
+  return {out1, out2};
 }
 
 Tensor& quantized_embedding_byte_out(
@@ -153,17 +151,19 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestTypeMap_Tensor) {
 TEST_F(MakeATenFunctorFromETFunctorTest, TestTypeMap_Tuple_Tensor2x) {
   EXPECT_TRUE(
       (std::is_same<
-        type_map<std::tuple<torch::executor::Tensor, torch::executor::Tensor>>::type,
-        std::tuple<at::Tensor, at::Tensor>
-        >::value));
+          type_map<
+              std::tuple<torch::executor::Tensor, torch::executor::Tensor>>::
+              type,
+          std::tuple<at::Tensor, at::Tensor>>::value));
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestTypeMap_Tuple_TensorRef3x) {
-  EXPECT_TRUE(
-      (std::is_same<
-        type_map<std::tuple<torch::executor::Tensor&, torch::executor::Tensor&, torch::executor::Tensor&>>::type,
-        std::tuple<at::Tensor&, at::Tensor&, at::Tensor&>
-        >::value));
+  EXPECT_TRUE((std::is_same<
+               type_map<std::tuple<
+                   torch::executor::Tensor&,
+                   torch::executor::Tensor&,
+                   torch::executor::Tensor&>>::type,
+               std::tuple<at::Tensor&, at::Tensor&, at::Tensor&>>::value));
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestTypeMap_Optionals) {
@@ -226,23 +226,24 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_TupleTensor) {
   at::Tensor at_in1 = torch::tensor({1});
   at::Tensor at_in2 = torch::tensor({2});
   auto et = type_convert<
-      std::tuple<at::Tensor, at::Tensor>,
-      std::tuple<torch::executor::Tensor, torch::executor::Tensor>>(
-      std::make_tuple(at_in1, at_in2))
-          .call();
-  EXPECT_TRUE(
-      (std::is_same<
-          decltype(et),
-          std::tuple<torch::executor::Tensor, torch::executor::Tensor>>::value));
+                std::tuple<at::Tensor, at::Tensor>,
+                std::tuple<torch::executor::Tensor, torch::executor::Tensor>>(
+                std::make_tuple(at_in1, at_in2))
+                .call();
+  EXPECT_TRUE((std::is_same<
+               decltype(et),
+               std::tuple<torch::executor::Tensor, torch::executor::Tensor>>::
+                   value));
 
   // Convert et to at.
   torch::executor::testing::TensorFactory<ScalarType::Int> tf;
   torch::executor::Tensor et_in1 = tf.ones({3});
   torch::executor::Tensor et_in2 = tf.ones({4});
-  auto at_out = type_convert<
-      std::tuple<torch::executor::Tensor, torch::executor::Tensor>,
-      std::tuple<at::Tensor, at::Tensor>>(std::make_tuple(et_in1, et_in2))
-                    .call();
+  auto at_out =
+      type_convert<
+          std::tuple<torch::executor::Tensor, torch::executor::Tensor>,
+          std::tuple<at::Tensor, at::Tensor>>(std::make_tuple(et_in1, et_in2))
+          .call();
   EXPECT_TRUE(
       (std::is_same<decltype(at_out), std::tuple<at::Tensor, at::Tensor>>::
            value));
