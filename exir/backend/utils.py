@@ -11,7 +11,7 @@ import logging
 import operator
 from collections import defaultdict, OrderedDict
 from functools import lru_cache
-from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.exir.backend.backend_details import ExportedProgram
@@ -659,3 +659,53 @@ class ReportRejected(OperatorSupportBase):
         if not is_supported:
             self.reporter.report_reject(node, self.message)
         return is_supported
+
+
+def get_delegated_payload(
+    graph_module: torch.fx.GraphModule,
+) -> Dict[str, Tuple[str, List[Any], bytes]]:
+    """
+    Extracts the payload for delegates from a graph module that has been lowered
+    to one or more backends.
+
+    This function iterates through all lowered modules (delegates) in the graph
+    and returns a dictionary mapping each delegate's name to a tuple containing:
+    - backend_id: The name/identifier of the backend
+    - compile_specs: A list of backend-specific compilation specifications
+    - processed_bytes: The delegate blob created by the backend's preprocess method
+
+    Args:
+        graph_module: A torch.fx.GraphModule that may contain lowered backend modules.
+            This is typically obtained from an EdgeProgramManager or ExecutorchProgram
+            via `.exported_program().graph_module`.
+
+    Returns:
+        Dict[str, Tuple[str, List[Any], bytes]]: A dictionary where:
+            - Keys are the delegate names (e.g., "lowered_module_0", "lowered_module_1")
+            - Values are tuples of (backend_id, compile_specs, processed_bytes)
+
+    Example:
+        >>> edge = to_edge(export(model, inputs))
+        >>> edge = edge.to_backend(MyPartitioner())
+        >>> payloads = get_delegated_payload(edge.exported_program().graph_module)
+        >>> for name, (backend_id, specs, data) in payloads.items():
+        ...     print(f"{name}: backend={backend_id}, data_size={len(data)}")
+    """
+    from executorch.exir.lowered_backend_module import LoweredBackendModule
+
+    delegate_payloads: Dict[str, Tuple[str, List[Any], bytes]] = {}
+
+    # Find all lowered modules in the graph
+    for node in graph_module.graph.nodes:
+        if node.op == "get_attr" and node.name.startswith("lowered_module_"):
+            lowered_module = getattr(graph_module, node.name, None)
+            if lowered_module is not None and isinstance(
+                lowered_module, LoweredBackendModule
+            ):
+                delegate_payloads[node.name] = (
+                    lowered_module.backend_id,
+                    lowered_module.compile_specs,
+                    lowered_module.processed_bytes,
+                )
+
+    return delegate_payloads
