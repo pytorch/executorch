@@ -7,32 +7,38 @@
  */
 
 #include "jni_helper.h"
+#include <executorch/extension/android/jni/log.h>
 
 namespace executorch::jni_helper {
 
-void throwExecutorchException(uint32_t errorCode, const std::string& details) {
-  // Get the current JNI environment
-  auto env = facebook::jni::Environment::current();
+void throwExecutorchException(JNIEnv* env, uint32_t errorCode, const char* details) {
   if (!env) {
+    ET_LOG(Error, "JNIEnv is null, cannot throw exception");
     return;
   }
 
-  // stable/global class ref — safe to cache
-  static const auto exceptionClass =
-      JExecutorchRuntimeException::javaClassStatic();
+  jclass exceptionClass = env->FindClass("org/pytorch/executorch/ExecutorchRuntimeException");
+  if (!exceptionClass) {
+    ET_LOG(Error, "Could not find ExecutorchRuntimeException class");
+    return;
+  }
 
-  // Find the static factory method: makeExecutorchException(int, String)
-  static auto makeExceptionMethod =
-      exceptionClass
-          ->getStaticMethod<facebook::jni::local_ref<facebook::jni::JThrowable>(
-              int, facebook::jni::alias_ref<facebook::jni::JString>)>(
-              "makeExecutorchException",
-              "(ILjava/lang/String;)Ljava/lang/RuntimeException;");
+  jmethodID makeExceptionMethod = env->GetStaticMethodID(
+      exceptionClass,
+      "makeExecutorchException",
+      "(ILjava/lang/String;)Ljava/lang/RuntimeException;");
+  
+  if (!makeExceptionMethod) {
+    ET_LOG(Error, "Could not find makeExecutorchException method");
+    return;
+  }
 
-  auto jDetails = facebook::jni::make_jstring(details);
-  // Call the factory method to create the exception object
-  auto exception = makeExceptionMethod(exceptionClass, errorCode, jDetails);
-  facebook::jni::throwNewJavaException(exception.get());
+  jstring jDetails = env->NewStringUTF(details);
+  jobject exception = env->CallStaticObjectMethod(exceptionClass, makeExceptionMethod, (jint)errorCode, jDetails);
+  
+  if (exception) {
+    env->Throw(static_cast<jthrowable>(exception));
+  }
 }
 
 } // namespace executorch::jni_helper

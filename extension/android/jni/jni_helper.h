@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <fbjni/fbjni.h>
+#include <jni.h>
 #include <string>
 
 namespace executorch::jni_helper {
@@ -18,16 +18,10 @@ namespace executorch::jni_helper {
  * code and details. Uses the Java factory method
  * ExecutorchRuntimeException.makeExecutorchException(int, String).
  *
+ * @param env The JNI environment pointer.
  * @param errorCode The error code from the C++ Executorch runtime.
  * @param details Additional details to include in the exception message.
  */
-void throwExecutorchException(uint32_t errorCode, const std::string& details);
-
-// Define the JavaClass wrapper
-struct JExecutorchRuntimeException
-    : public facebook::jni::JavaClass<JExecutorchRuntimeException> {
-  static constexpr auto kJavaDescriptor =
-      "Lorg/pytorch/executorch/ExecutorchRuntimeException;";
-};
+void throwExecutorchException(JNIEnv* env, uint32_t errorCode, const char* details);
 
 } // namespace executorch::jni_helper

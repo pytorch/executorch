@@ -8,8 +8,7 @@
 
 package org.pytorch.executorch;
 
-import com.facebook.jni.annotations.DoNotStrip;
-import com.facebook.jni.annotations.DoNotStrip;
+
 
 /** Class for entire ExecuTorch Runtime related functions. */
 public class ExecuTorchRuntime {
@@ -29,10 +28,10 @@ public class ExecuTorchRuntime {
   }
 
   /** Get all registered ops. */
-  @DoNotStrip
+
   public static native String[] getRegisteredOps();
 
   /** Get all registered backends. */
-  @DoNotStrip
+
   public static native String[] getRegisteredBackends();
 }

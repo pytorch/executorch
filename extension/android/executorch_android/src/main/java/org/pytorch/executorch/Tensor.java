@@ -10,8 +10,6 @@ package org.pytorch.executorch;
 
 import java.util.logging.Logger;
 import java.util.logging.Level;
-import com.facebook.jni.HybridData;
-import com.facebook.jni.annotations.DoNotStrip;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -55,7 +53,7 @@ public abstract class Tensor {
   private static final String ERROR_MSG_DATA_BUFFER_MUST_BE_DIRECT =
       "Data buffer must be direct (java.nio.ByteBuffer#allocateDirect)";
 
-  @DoNotStrip final long[] shape;
+  final long[] shape;
 
   private static final int BYTE_SIZE_BYTES = 1;
   private static final int INT_SIZE_BYTES = 4;
@@ -470,7 +468,7 @@ public abstract class Tensor {
     }
   }
 
-  @DoNotStrip private HybridData mHybridData;
+  private long mNativeHandle;
 
   private Tensor(long[] shape) {
     checkShape(shape);
@@ -503,7 +501,7 @@ public abstract class Tensor {
   public abstract DType dtype();
 
   // Called from native
-  @DoNotStrip
+
   int dtypeJniCode() {
     return dtype().jniCode;
   }
@@ -574,7 +572,7 @@ public abstract class Tensor {
         "Tensor of type " + getClass().getSimpleName() + " cannot return data as double array.");
   }
 
-  @DoNotStrip
+
   Buffer getRawDataBuffer() {
     throw new IllegalStateException(
         "Tensor of type " + getClass().getSimpleName() + " cannot " + "return raw data buffer.");
@@ -889,9 +887,9 @@ public abstract class Tensor {
   // endregion checks
 
   // Called from native
-  @DoNotStrip
+
   private static Tensor nativeNewTensor(
-      ByteBuffer data, long[] shape, int dtype, HybridData hybridData) {
+      ByteBuffer data, long[] shape, int dtype, long nativeHandle) {
     Tensor tensor = null;
 
     if (DType.FLOAT.jniCode == dtype) {
@@ -911,7 +909,7 @@ public abstract class Tensor {
     } else {
       tensor = new Tensor_unsupported(data, shape, DType.fromJniCode(dtype));
     }
-    tensor.mHybridData = hybridData;
+    tensor.mNativeHandle = nativeHandle;
     return tensor;
   }
 

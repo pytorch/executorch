@@ -30,29 +30,9 @@ popd
 ROOT_BUILD_DIR="$EXECUTORCH_ROOT/cmake-out"
 ln -sf "$ROOT_BUILD_DIR/extension/android/libexecutorch_jni.so" "$BUILD_DIR/libexecutorch.so"
 
-# Finding fbjni in the root build tree can be tricky depending on how FetchContent put it.
-# Usually it's in _deps/fbjni-build
-FBJNI_LIB=$(find "$ROOT_BUILD_DIR" -name "libfbjni.so" | head -n 1)
-ln -sf "$FBJNI_LIB" "$BUILD_DIR/libfbjni.so"
 
-# 2. Compile FBJNI Java Sources
-echo "Compiling FBJNI Java Sources..."
-FBJNI_SRC_DIR="$ROOT_BUILD_DIR/_deps/fbjni-src/java"
-if [ -d "$FBJNI_SRC_DIR" ]; then
-    # Patch FBJNI sources to remove Nullable annotation usage since we don't have the dependency
-    echo "Patching FBJNI sources..."
-    find "$FBJNI_SRC_DIR" -name "*.java" -exec sed -i '/import javax.annotation.Nullable;/d' {} \;
-    find "$FBJNI_SRC_DIR" -name "*.java" -exec sed -i 's/@Nullable//g' {} \;
-    
-    # Patch FBJNI to use System.loadLibrary instead of NativeLoader
-    find "$FBJNI_SRC_DIR" -name "*.java" -exec sed -i '/import com.facebook.soloader.nativeloader.NativeLoader;/d' {} \;
-    find "$FBJNI_SRC_DIR" -name "*.java" -exec sed -i 's/NativeLoader.loadLibrary/System.loadLibrary/g' {} \;
 
-    find "$FBJNI_SRC_DIR" -name "*.java" > "$BUILD_DIR/fbjni_sources.txt"
-    javac -d "$BUILD_DIR/classes" -cp "$BUILD_DIR/classes" @"$BUILD_DIR/fbjni_sources.txt"
-else
-    echo "Warning: FBJNI source directory not found at $FBJNI_SRC_DIR"
-fi
+
 
 # 3. Compile Executorch Java Sources
 echo "Compiling Executorch Java Sources..."

@@ -26,63 +26,10 @@ if(NOT ANDROID_PLATFORM AND ANDROID)
   set(ANDROID_PLATFORM android-30)
 endif()
 
-# We need to download fbjni library from maven, and use its "prefab" library and
-# headers, and link executorch library against that fbjni library. We don't know
-# which NDK is used to compile fbjni, and we need to link our executorch library
-# to the version which Android APK links against for runtime to ensure the
-# libc++ dependencies are consistent. WARNING # Users need to use the SAME fbjni
-# version here and in app gradle dependency for runtime compatibility!
-if(NOT FBJNI_VERSION)
-  set(FBJNI_VERSION 0.7.0)
-endif()
 
-if (ANDROID)
-  # Android Build: Use Prebuilt AAR
-  set(FBJNI_AAR_URL
-      https://repo1.maven.org/maven2/com/facebook/fbjni/fbjni/${FBJNI_VERSION}/fbjni-${FBJNI_VERSION}.aar
-  )
-  set(FBJNI_DOWNLOAD_PATH ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/fbjni.aar)
 
-  if(NOT EXISTS "${FBJNI_DOWNLOAD_PATH}")
-    file(DOWNLOAD "${FBJNI_AAR_URL}" "${FBJNI_DOWNLOAD_PATH}")
-  endif()
 
-  add_custom_command(
-    OUTPUT
-      "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/"
-      "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
-    COMMAND unzip -o ${FBJNI_DOWNLOAD_PATH} -d
-            ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni
-    DEPENDS "${FBJNI_DOWNLOAD_PATH}"
-  )
-
-  add_custom_target(
-    fbjni_prefab
-    DEPENDS
-      "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/"
-      "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
-  )
-
-  add_library(fbjni SHARED IMPORTED)
-  add_dependencies(fbjni fbjni_prefab)
-  set_target_properties(
-    fbjni
-    PROPERTIES
-      IMPORTED_LOCATION
-      "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
-  )
-  set(FBJNI_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/")
-else()
-  # Linux/Host Build: Build from Source
-  include(FetchContent)
-  FetchContent_Declare(
-    fbjni
-    GIT_REPOSITORY https://github.com/facebookincubator/fbjni.git
-    GIT_TAG        v${FBJNI_VERSION}
-  )
-  FetchContent_MakeAvailable(fbjni)
-  # FetchContent for fbjni usually exposes the 'fbjni' target and headers automatically.
-endif()
+find_package(JNI REQUIRED)
 
 executorch_target_link_options_shared_lib(executorch)
 
@@ -90,6 +37,10 @@ add_library(
   executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp
                         jni/jni_helper.cpp
 )
+
+target_include_directories(executorch_jni PRIVATE ${JNI_INCLUDE_DIRS})
+target_link_libraries(executorch_jni ${JNI_LIBRARIES})
+
 
 set(link_libraries)
 list(
@@ -102,7 +53,6 @@ list(
   extension_runner_util
   extension_tensor
   extension_threadpool
-  fbjni
 )
 
 if(EXECUTORCH_ANDROID_PROFILING)
@@ -243,7 +193,6 @@ if (ANDROID)
       executorch_jni
       PRIVATE
         ${_common_include_directories}
-        "${FBJNI_INCLUDE_DIR}"
     )
     target_link_libraries(executorch_jni ${link_libraries} log)
 else()
