@@ -6,6 +6,7 @@
 
 # pyre-strict
 import copy
+import itertools
 import os
 import tempfile
 import unittest
@@ -41,6 +42,7 @@ from executorch.exir.emit import emit_program
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import (
+    convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     DebugPass,
     HintBasedSymShapeEvalPass,
@@ -2330,3 +2332,155 @@ class TestPasses(unittest.TestCase):
             prop_tensor.is_contiguous(),
             f"Propagated tensor is not contiguous: {prop_tensor.stride()}",
         )
+
+    class AddConstant(torch.nn.Module):
+        def __init__(self, constant: torch.Tensor, use_buffer: bool = False):
+            super().__init__()
+            if use_buffer:
+                self.register_buffer("constant", constant)
+            else:
+                self.constant = constant
+
+        def forward(self, x):
+            return x + self.constant
+
+    def test_convert_constant_dim_order_noop(self):
+        """
+        Verify that the convert_constant_dim_order_pass does not modify
+        constant tensors in contiguous or channels last format.
+        """
+
+        memory_formats = [
+            torch.contiguous_format,
+            torch.channels_last,
+        ]
+
+        use_buffer_options = [False, True]
+
+        for memory_format, use_buffer in itertools.product(
+            memory_formats, use_buffer_options
+        ):
+            constant = torch.randn(2, 3, 4, 5).to(memory_format=memory_format)
+            model = self.AddConstant(constant, use_buffer=use_buffer)
+            inputs = (torch.randn(2, 3, 4, 5).to(memory_format=memory_format),)
+
+            ep = torch.export.export(model, inputs)
+            modified_ep = (
+                convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                    copy.deepcopy(ep)
+                )
+            )
+
+            # Check the outputs - they should match in both data and dim order.
+            original_outputs = ep.module()(*inputs)
+            modified_outputs = modified_ep.module()(*inputs)
+
+            torch.testing.assert_close(
+                original_outputs, modified_outputs, check_stride=True
+            )
+
+            # Verify that the constant/buffer tensor is not modified. The interface for
+            # constants and buffers is just different enough to make it hard to unify the
+            # below logic.
+            if use_buffer:
+                original_buffers = dict(ep.named_buffers())
+                modified_buffers = dict(modified_ep.named_buffers())
+
+                self.assertEqual(len(original_buffers), 1)
+                self.assertEqual(len(modified_buffers), 1)
+
+                buffer_key = next(iter(original_buffers.keys()))
+                original_buffer = original_buffers[buffer_key]
+                modified_buffer = modified_buffers[buffer_key]
+
+                torch.testing.assert_close(
+                    original_buffer, modified_buffer, check_stride=True
+                )
+            else:
+                self.assertEqual(len(ep.constants), 1)
+                self.assertEqual(len(modified_ep.constants), 1)
+
+                const_key = next(iter(ep.constants.keys()))
+                original_const = ep.constants[const_key]
+                modified_const = modified_ep.constants[const_key]
+
+                torch.testing.assert_close(
+                    original_const, modified_const, check_stride=True
+                )
+
+    def test_convert_constant_dim_order_to_contiguous(self):
+        """
+        Verify that the convert_constant_dim_order_pass converts constant/buffer
+        tensors with dim orders / memory formats outside the allowed list
+        (contiguous and channels_last) to contiguous.
+        """
+
+        # Test cases using transpose/permute to create non-contiguous tensors.
+        # Each case is (base_shape, permutation, description) where we create a
+        # contiguous tensor of base_shape and then permute/transpose it.
+        test_cases = [
+            # Rank 2 - transposed matrix (non-contiguous strides)
+            ((5, 4), (1, 0), "2D transposed"),
+            # Rank 3 - permuted dimensions
+            ((4, 3, 2), (2, 0, 1), "3D permuted"),
+            # Rank 3 - another permutation
+            ((2, 4, 3), (1, 2, 0), "3D permuted v2"),
+            # Rank 4 - permuted (not contiguous, not channels_last)
+            ((5, 4, 3, 2), (3, 1, 0, 2), "4D permuted"),
+            # Rank 5 - permuted
+            ((6, 5, 4, 3, 2), (4, 2, 0, 3, 1), "5D permuted"),
+        ]
+
+        use_buffer_options = [False, True]
+
+        for (base_shape, permutation, description), use_buffer in itertools.product(
+            test_cases, use_buffer_options
+        ):
+            with self.subTest(description=description, use_buffer=use_buffer):
+                # Create a contiguous tensor and permute it to make it non-contiguous
+                base_tensor = torch.randn(base_shape)
+                constant = base_tensor.permute(permutation)
+
+                # Sanity check the tensor construction
+                self.assertFalse(
+                    constant.is_contiguous(),
+                    "Test setup error: tensor should be non-contiguous",
+                )
+
+                model = self.AddConstant(constant, use_buffer=use_buffer)
+                inputs = (torch.randn(constant.shape),)
+
+                ep = torch.export.export(model, inputs)
+                modified_ep = (
+                    convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                        copy.deepcopy(ep)
+                    )
+                )
+
+                # Check the outputs - they should match in data.
+                original_outputs = ep.module()(*inputs)
+                modified_outputs = modified_ep.module()(*inputs)
+                torch.testing.assert_close(original_outputs, modified_outputs)
+
+                # Verify that the constant/buffer tensor is now contiguous.
+                if use_buffer:
+                    modified_buffers = dict(modified_ep.named_buffers())
+                    self.assertEqual(len(modified_buffers), 1)
+
+                    buffer_key = next(iter(modified_buffers.keys()))
+                    modified_buffer = modified_buffers[buffer_key]
+
+                    self.assertTrue(
+                        modified_buffer.is_contiguous(),
+                        f"Buffer should be contiguous after pass, got strides {modified_buffer.stride()}",
+                    )
+                else:
+                    self.assertEqual(len(modified_ep.constants), 1)
+
+                    const_key = next(iter(modified_ep.constants.keys()))
+                    modified_const = modified_ep.constants[const_key]
+
+                    self.assertTrue(
+                        modified_const.is_contiguous(),
+                        f"Constant should be contiguous after pass, got strides {modified_const.stride()}",
+                    )

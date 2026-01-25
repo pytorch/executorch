@@ -8,6 +8,13 @@
 
 #version 450 core
 
+// For input/output tensors
+${define_required_extensions(IO_STORAGE, DTYPE)}
+// For int8 input scales/zps
+${define_required_extensions("texture3d", "int8")}
+// For weight scales and bias
+${define_required_extensions("buffer", DTYPE)}
+
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, IO_STORAGE)}
 #define T ${texel_load_component_type(DTYPE, IO_STORAGE)}
@@ -29,9 +36,6 @@ $if WEIGHT_STORAGE == "buffer":
 #define TILE_M ${TILE_M4 * 4}
 #define TILE_K ${TILE_K4 * 4}
 #define TILE_N ${TILE_N8 * 8}
-
-${define_required_extensions(DTYPE)}
-${define_required_extensions("int8")}
 
 layout(std430) buffer;
 
