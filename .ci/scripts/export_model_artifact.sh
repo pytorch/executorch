@@ -21,6 +21,7 @@ Arguments:
                  - mistralai/Voxtral-Mini-3B-2507
                  - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                  - google/gemma-3-4b-it
+                 - nvidia/parakeet-tdt
 
   quant_name   Quantization type (optional, default: non-quantized)
                Options:
@@ -34,6 +35,7 @@ Examples:
   export_model_artifact.sh metal "openai/whisper-small"
   export_model_artifact.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed"
   export_model_artifact.sh cuda "google/gemma-3-4b-it" "non-quantized" "./output"
+  export_model_artifact.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./output"
 EOF
 }
 
@@ -101,9 +103,21 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  nvidia/parakeet-tdt)
+    if [ "$DEVICE" = "metal" ]; then
+      echo "Error: Export for device 'metal' is not yet tested for model '$HF_MODEL'"
+      exit 1
+    fi
+    MODEL_NAME="parakeet"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, nvidia/parakeet-tdt"
     exit 1
     ;;
 esac
@@ -141,6 +155,25 @@ if [ -n "$EXTRA_PIP" ]; then
 fi
 pip list
 
+# Parakeet uses a custom export script
+if [ "$MODEL_NAME" = "parakeet" ]; then
+  pip install -r examples/models/parakeet/install_requirements.txt
+
+  python examples/models/parakeet/export_parakeet_tdt.py \
+      --backend "$DEVICE" \
+      --output-dir "${OUTPUT_DIR}"
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  # CUDA saves named data to separate .ptd file, Metal embeds in .pte
+  if [ "$DEVICE" = "cuda" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
+  test -f "${OUTPUT_DIR}/tokenizer.model"
+  ls -al "${OUTPUT_DIR}"
+  echo "::endgroup::"
+  exit 0
+fi
+
 MAX_SEQ_LEN_ARG=""
 if [ -n "$MAX_SEQ_LEN" ]; then
   MAX_SEQ_LEN_ARG="--max_seq_len $MAX_SEQ_LEN"
@@ -170,7 +203,10 @@ if [ -n "$PREPROCESSOR_OUTPUT" ]; then
 fi
 
 test -f model.pte
-test -f aoti_${DEVICE}_blob.ptd
+# CUDA saves named data to separate .ptd file, Metal embeds in .pte
+if [ "$DEVICE" = "cuda" ]; then
+  test -f aoti_cuda_blob.ptd
+fi
 if [ -n "$PREPROCESSOR_OUTPUT" ]; then
   test -f $PREPROCESSOR_OUTPUT
 fi
@@ -179,7 +215,10 @@ echo "::endgroup::"
 echo "::group::Store $MODEL_NAME Artifacts"
 mkdir -p "${OUTPUT_DIR}"
 mv model.pte "${OUTPUT_DIR}/"
-mv aoti_${DEVICE}_blob.ptd "${OUTPUT_DIR}/"
+# CUDA saves named data to separate .ptd file, Metal embeds in .pte
+if [ "$DEVICE" = "cuda" ]; then
+  mv aoti_cuda_blob.ptd "${OUTPUT_DIR}/"
+fi
 if [ -n "$PREPROCESSOR_OUTPUT" ]; then
   mv $PREPROCESSOR_OUTPUT "${OUTPUT_DIR}/"
 fi

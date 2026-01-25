@@ -8,9 +8,9 @@
 
 #version 450 core
 
-#define PRECISION ${PRECISION}
+${define_required_extensions(STORAGE, DTYPE)}
 
-${define_required_extensions(DTYPE)}
+#define PRECISION ${PRECISION}
 
 #include "broadcasting_utils.h"
 #include "indexing_utils.h"

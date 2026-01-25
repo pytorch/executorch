@@ -38,40 +38,36 @@ python export_parakeet_tdt.py --backend metal --output-dir ./parakeet_metal
 ```
 
 This generates:
-- `parakeet_tdt.pte` - The compiled model
-- `aoti_metal_blob.ptd` - Metal kernel blob required at runtime
+- `model.pte` - The compiled Parakeet TDT model (includes Metal kernel blob)
+- `tokenizer.model` - SentencePiece tokenizer
+
+### CUDA Export (Linux)
+
+```bash
+python export_parakeet_tdt.py --backend cuda --output-dir ./parakeet_cuda
+```
+
+This generates:
+- `model.pte` - The compiled Parakeet TDT model
+- `aoti_cuda_blob.ptd` - CUDA kernel blob required at runtime
 - `tokenizer.model` - SentencePiece tokenizer
 
 ## C++ Runner
 
 ### Building
 
-First, build ExecuTorch with the appropriate preset from the executorch root directory:
+From the executorch root directory:
 
 ```bash
-# For CPU/XNNPACK
-cmake --workflow --preset llm-release
-
-# For Metal (macOS)
-cmake --workflow --preset llm-release-metal
-```
-
-Then build the parakeet runner:
-
-```bash
-cd examples/models/parakeet
-
 # CPU/XNNPACK build
-cmake --workflow --preset parakeet-cpu
+make parakeet-cpu
 
-# Metal build
-cmake --workflow --preset parakeet-metal
+# Metal build (macOS)
+make parakeet-metal
+
+# CUDA build (Linux)
+make parakeet-cuda
 ```
-
-Available presets:
-- `parakeet-cpu` - CPU-only build
-- `parakeet-cuda` - CUDA acceleration (Linux/Windows)
-- `parakeet-metal` - Metal acceleration (macOS)
 
 ### Running
 
@@ -80,16 +76,22 @@ From the executorch root directory:
 ```bash
 # CPU/XNNPACK
 ./cmake-out/examples/models/parakeet/parakeet_runner \
-  --model_path examples/models/parakeet/parakeet_tdt_exports/parakeet_tdt.pte \
+  --model_path examples/models/parakeet/parakeet_tdt_exports/model.pte \
   --audio_path /path/to/audio.wav \
   --tokenizer_path examples/models/parakeet/parakeet_tdt_exports/tokenizer.model
 
-# Metal (include .ptd data file)
+# Metal
 DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner \
-  --model_path examples/models/parakeet/parakeet_metal/parakeet_tdt.pte \
-  --data_path examples/models/parakeet/parakeet_metal/aoti_metal_blob.ptd \
+  --model_path examples/models/parakeet/parakeet_metal/model.pte \
   --audio_path /path/to/audio.wav \
   --tokenizer_path examples/models/parakeet/parakeet_metal/tokenizer.model
+
+# CUDA (include .ptd data file)
+./cmake-out/examples/models/parakeet/parakeet_runner \
+  --model_path examples/models/parakeet/parakeet_cuda/model.pte \
+  --data_path examples/models/parakeet/parakeet_cuda/aoti_cuda_blob.ptd \
+  --audio_path /path/to/audio.wav \
+  --tokenizer_path examples/models/parakeet/parakeet_cuda/tokenizer.model
 ```
 
 ### Runner Arguments
@@ -99,5 +101,5 @@ DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner 
 | `--model_path` | Path to Parakeet model (.pte) |
 | `--audio_path` | Path to input audio file (.wav) |
 | `--tokenizer_path` | Path to tokenizer file (default: `tokenizer.json`) |
-| `--data_path` | Path to data file (.ptd) for delegate data (optional, required for Metal/CUDA) |
+| `--data_path` | Path to data file (.ptd) for delegate data (required for CUDA) |
 | `--timestamps`     | Timestamp output mode: `none\|token\|word\|segment\|all` (default: `segment`) |
