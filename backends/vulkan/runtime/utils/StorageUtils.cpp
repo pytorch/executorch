@@ -24,5 +24,9 @@ bool is_packed_int8_layout(const GPUMemoryLayout layout) {
   }
 }
 
+bool is_block_transposed_layout(const GPUMemoryLayout layout) {
+  return false;
+}
+
 } // namespace utils
 } // namespace vkcompute
