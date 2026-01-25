@@ -709,6 +709,7 @@ vTensor::vTensor(
       axis_map_(calculate_axis_map(sizes_, axis_map_layout)),
       strides_(calculate_strides(sizes.size(), padded_sizes_, dim_order_)),
       numel_(utils::multiply_integers(sizes_)),
+      padded_numel_(utils::multiply_integers(padded_sizes_)),
       physical_numel_(calculate_gpu_buffer_numel(dtype_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
           dim_order_,
@@ -761,6 +762,7 @@ vTensor::vTensor(
       axis_map_(calculate_axis_map(sizes_, axis_map_layout)),
       strides_(),
       numel_(utils::multiply_integers(sizes_)),
+      padded_numel_(utils::multiply_integers(padded_sizes_)),
       physical_numel_(calculate_gpu_buffer_numel(dtype_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
           dim_order_,
@@ -793,6 +795,7 @@ vTensor::vTensor(vTensor& other)
       axis_map_(other.axis_map_.begin(), other.axis_map_.end()),
       strides_(other.strides_.begin(), other.strides_.end()),
       numel_(other.numel_),
+      padded_numel_(other.padded_numel_),
       physical_numel_(other.physical_numel_),
       hashed_layout_(other.hashed_layout_),
       min_nbytes_per_ubo_{other.min_nbytes_per_ubo_},
@@ -817,6 +820,7 @@ vTensor::vTensor(
       axis_map_(calculate_axis_map(sizes_, utils::kDefaultAxisMap)),
       strides_(calculate_strides(sizes_.size(), padded_sizes_, dim_order_)),
       numel_(utils::multiply_integers(sizes_)),
+      padded_numel_(utils::multiply_integers(padded_sizes_)),
       physical_numel_(calculate_gpu_buffer_numel(dtype_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
           dim_order_,
@@ -1076,7 +1080,7 @@ const vkapi::BufferBindInfo vTensor::numel_ubo() {
 const vkapi::BufferBindInfo vTensor::buffer_meta_ubo() {
   size_t ubo_nbytes = sizeof(BufferMetadata);
   if (!buffer_meta_.buffer()) {
-    BufferMetadata data(sizes_, dim_order_, strides_, numel_);
+    BufferMetadata data(sizes_, dim_order_, strides_, padded_numel_);
     buffer_meta_ = ParamsBuffer(storage_->context_, data);
   }
   return vkapi::BufferBindInfo(buffer_meta_.buffer(), 0, ubo_nbytes);
@@ -1139,6 +1143,7 @@ void vTensor::acquire_allocation(vkapi::Allocation&& allocation) {
 
 void vTensor::update_metadata() {
   numel_ = utils::multiply_integers(sizes_);
+  padded_numel_ = utils::multiply_integers(padded_sizes_);
   physical_numel_ = calculate_gpu_buffer_numel(dtype_, padded_sizes_);
   strides_ = calculate_strides(sizes_.size(), padded_sizes_, dim_order_);
 
@@ -1150,7 +1155,7 @@ void vTensor::update_metadata() {
     uniform_data_->dim_order_v =
         flip_and_unsqueeze_ivec4(dim_order_, kTensorDimOrder, numel_);
     uniform_data_->strides_v =
-        flip_and_unsqueeze_ivec4(strides_, kTensorStrides, numel_);
+        flip_and_unsqueeze_ivec4(strides_, kTensorStrides, padded_numel_);
     uniform_data_->logical_limits.limits = calculate_logical_limits(
         dtype_, packed_dim_info_, padded_sizes_, axis_map_);
 
@@ -1173,7 +1178,7 @@ void vTensor::update_metadata() {
   }
 
   if (buffer_meta_.buffer()) {
-    BufferMetadata data(sizes_, dim_order_, strides_, numel_);
+    BufferMetadata data(sizes_, dim_order_, strides_, padded_numel_);
     buffer_meta_.update(data);
   }
 
