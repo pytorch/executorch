@@ -38,6 +38,7 @@ class DecomposeReciprocal(ExportPass):
                     # Create get_attr node for the ones tensor
                     ones_node = graph.get_attr(buffer_name)
                     ones_node.meta = copy_meta(reciprocal_node.meta)
+                    ones_node.meta["val"] = reciprocal_node_input.meta["val"].clone()
 
                     with graph_module.graph.inserting_after(ones_node):
                         # Create division node: ones / input

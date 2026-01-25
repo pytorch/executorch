@@ -216,6 +216,10 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
         self.add_pass(DecomposeGlu())
+        # HTP and GPU doesn't support ElementWiseUnary with operation=reciprocal
+        # Decompose Reciprocal into Div for these 2 backend
+        # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
+        self.add_pass(DecomposeReciprocal())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(ReplaceInfValues())
         self.add_pass(LiftConstantScalarOperands())
@@ -239,12 +243,10 @@ class QnnPassManager(PassManager):
         # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
         self.add_pass(DecomposeFloorDivide())
         self.add_pass(DecomposeWrapWithAutocast())
-
         # HTP and GPU doesn't support ElementWiseUnary with operation=reciprocal
         # Decompose Reciprocal into Div for these 2 backend
         # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
         self.add_pass(DecomposeReciprocal())
-
         # this pass will rewrite state_dict, it needs to be accomplished before
         # to_edge_transform_and_lower
         self.add_pass(CanonicalizeConv(exported_program))
