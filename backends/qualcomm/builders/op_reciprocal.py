@@ -6,10 +6,10 @@
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnWrapper
-from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
@@ -60,7 +60,7 @@ class Reciprocal(NodeVisitor):
         reciprocal_op.AddScalarParam(
             OpElementWiseUnary.param_operation,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {QCOM_DATA: np.uint32(OpElementWiseUnary.Operation.RECIPROCAL)}
+            {QCOM_DATA: np.uint32(OpElementWiseUnary.Operation.RECIPROCAL)},
         )
 
         return reciprocal_op

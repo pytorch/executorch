@@ -284,6 +284,7 @@ class OpElementWiseSubtract:
 class OpElementWiseUnary:
     op_name: str = "ElementWiseUnary"
     param_operation: str = "operation"
+
     @unique
     class Operation(IntEnum):
         ABS = 0

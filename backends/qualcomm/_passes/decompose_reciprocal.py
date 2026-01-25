@@ -10,6 +10,7 @@ from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 from .utils import copy_meta
 
+
 class DecomposeReciprocal(ExportPass):
     def __init__(self):
         super(DecomposeReciprocal, self).__init__()
