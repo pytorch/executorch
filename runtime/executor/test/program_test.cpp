@@ -780,3 +780,50 @@ TEST_F(ProgramTest, GetOutputFlatteningEncodingWithMissingEncodedOutStr) {
 
   EXPECT_EQ(encoding.error(), Error::InvalidProgram);
 }
+
+TEST_F(ProgramTest, NullPlanNameDoesNotCrash) {
+  flatbuffers::FlatBufferBuilder builder(1024);
+
+  // Create dummy execution_plan with null plan_name.
+  auto execution_plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      0,
+      0, // name=null, container_meta_type=null
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>{}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{}),
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{}),
+      builder.CreateVector(std::vector<int64_t>{0}));
+
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      0,
+      builder.CreateVector({execution_plan}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Buffer>>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<
+              executorch_flatbuffer::BackendDelegateInlineData>>{}),
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{}));
+
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+
+  alignas(16) uint8_t buf[2048];
+  std::memcpy(buf, builder.GetBufferPointer(), builder.GetSize());
+  BufferDataLoader loader(buf, builder.GetSize());
+
+  Result<Program> p = Program::load(&loader, Program::Verification::Minimal);
+  ASSERT_EQ(p.error(), Error::Ok);
+
+  // Should return error, not crash
+  EXPECT_EQ(p->method_meta("forward").error(), Error::InvalidArgument);
+}

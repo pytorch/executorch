@@ -20,5 +20,6 @@ from . import (  # noqa
     slice_copy_support,
     to_dim_order_copy_support,
     tosa_supported_operators,
+    unfold_copy_support,
     where_support,
 )

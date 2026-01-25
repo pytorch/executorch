@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -49,7 +49,7 @@ class Add2(torch.nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         return x + y
 
-    test_data: list[input_t2] = {
+    test_data = {
         "5d_float": lambda: (
             torch.FloatTensor([1, 2, 3, 5, 7]),
             (torch.FloatTensor([2, 1, 2, 1, 10])),
@@ -70,6 +70,12 @@ class Add2(torch.nn.Module):
             torch.randn(1, 10, 20, 30),
         ),
     }
+    test_data_bf16 = {
+        "4d_big_small_bf16": lambda: (
+            (10e10) * torch.randn(1, 10, 20, 30, dtype=torch.bfloat16),
+            torch.randn(1, 10, 20, 30, dtype=torch.bfloat16),
+        ),
+    }
 
 
 class Add3(torch.nn.Module):
@@ -86,6 +92,15 @@ class Add3(torch.nn.Module):
 @common.parametrize("test_data", Add.test_data)
 def test_add_tensor_tosa_FP(test_data: input_t1):
     pipeline = TosaPipelineFP[input_t1](Add(), test_data(), aten_op, exir_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
+def test_add_tensor_tosa_FP_bf16(test_data: input_t1):
+    x = test_data()[0].to(torch.bfloat16)
+    pipeline = TosaPipelineFP[input_t1](
+        Add(), (x,), aten_op, exir_op, tosa_extensions=["bf16"]
+    )
     pipeline.run()
 
 
@@ -152,9 +167,11 @@ def test_add_tensor_u85_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add2.test_data)
+@common.parametrize("test_data", Add2.test_data | Add2.test_data_bf16)
 def test_add_tensor_tosa_FP_2(test_data: input_t2):
-    pipeline = TosaPipelineFP[input_t2](Add2(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t2](
+        Add2(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
+    )
     pipeline.run()
 
 

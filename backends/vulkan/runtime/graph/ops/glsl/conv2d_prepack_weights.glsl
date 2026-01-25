@@ -8,16 +8,16 @@
 
 #version 450 core
 
+${define_required_extensions("texture3d", DTYPE)}
+${define_required_extensions("buffer", BUF_DTYPE)}
+
 #define PRECISION ${PRECISION}
 
-#define BUF_T ${buffer_scalar_type(DTYPE)}
+#define BUF_T ${buffer_scalar_type(BUF_DTYPE)}
 #define VEC4_T ${texel_type(DTYPE)}
 #define SCALAR_T ${texel_component_type(DTYPE)}
 
 #include "indexing_utils.h"
-
-$if DTYPE == "half":
-  #extension GL_EXT_shader_16bit_storage : require
 
 layout(std430) buffer;
 

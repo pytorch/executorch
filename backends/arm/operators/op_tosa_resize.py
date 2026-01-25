@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,7 +46,7 @@ class ResizeVisitor(NodeVisitor):
             self.target,
             [inputs[0]],
             supported_input_dtypes,
-            output.tosa_spec,
+            self.tosa_spec,
         )
         supported_output_dtypes = [ts.DType.FP32]
         if node.kwargs.get("resize_mode") == "bilinear":
@@ -63,7 +63,7 @@ class ResizeVisitor(NodeVisitor):
             if self.tosa_spec.support_extension("int16"):
                 supported_output_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
-            self.target, [output], supported_output_dtypes, output.tosa_spec
+            self.target, [output], supported_output_dtypes, self.tosa_spec
         )
         # tosa_shape output is NHWC, take HW
         input_size_yx = tuple([inputs[0].shape[dim] for dim in inputs[0].dim_order])[
