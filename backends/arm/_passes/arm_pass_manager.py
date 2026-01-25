@@ -56,6 +56,7 @@ from executorch.backends.arm._passes import (
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
+    DecomposeIndexSelectToGatherPass,
     DecomposeIntPowPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -289,6 +290,8 @@ class ArmPassManager(PassManager):
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupedConvPass(),
                 DecomposeUnfoldToGatherPass(),
+                DecomposeEmbeddingPass(),
+                DecomposeIndexSelectToGatherPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
@@ -314,7 +317,6 @@ class ArmPassManager(PassManager):
                 RewriteIndexPutPass(),
                 DecomposeRemainderPass(),
                 DecomposeDivTensorModePass(),
-                DecomposeEmbeddingPass(),
                 FuseBatchNorm2dPass(exported_program),
                 ConvertMmToBmmPass(),
                 DecomposeGluPass(),
