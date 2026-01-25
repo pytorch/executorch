@@ -327,6 +327,8 @@ class ComputeGraph final {
 
   std::vector<int64_t> sizes_of(const ValueRef idx) const;
 
+  std::vector<int64_t> padded_sizes_of(const ValueRef idx) const;
+
   /*
    * Returns the size of the tensor at `idx` along the specified dimension.
    * Negative indexing is allowed.
@@ -355,7 +357,13 @@ class ComputeGraph final {
   }
 
   inline int32_t numel_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().numel();
+    return utils::safe_downcast<int32_t>(
+        values_.at(idx).toConstTensor().numel());
+  }
+
+  inline int32_t padded_numel_of(const ValueRef idx) const {
+    return utils::safe_downcast<int32_t>(
+        values_.at(idx).toConstTensor().padded_numel());
   }
 
   inline size_t staging_buffer_numel_of(const ValueRef idx) const {
