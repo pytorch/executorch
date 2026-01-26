@@ -117,7 +117,7 @@ else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Test 2: Failure; results not the same"
-#   cleanup_files
+  cleanup_files
   exit 1
 fi
 
@@ -166,6 +166,8 @@ if diff -q qwen_foundation_lora_q.ptd qwen_foundation_q.ptd > /dev/null; then
     echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are identical."
 else
     echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are not identical."
+    ls -la qwen_foundation_lora_q.ptd
+    ls -la qwen_foundation_q.ptd
     cleanup_files
     exit 1
 fi
