@@ -301,7 +301,7 @@ jobs:
         model: ["gemma3-4b"]  # llava gives segfault so not covering.
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.24xlarge
+      runner: linux.24xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -919,8 +919,9 @@ jobs:
 
   test-samsung-quantmodels-linux:
     name: test-samsung-quantmodels-linux
-    # Skip this job if the pull request is from a fork (secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    # Temporarily disabled - api key invalid
+    if: false
+    # if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -961,8 +962,10 @@ jobs:
 
   test-samsung-models-linux:
     name: test-samsung-models-linux
-    # Skip this job if the pull request is from a fork (secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    # Temporarily disabled - edb (Exynos device bridge) failures and device reservation issues
+    # See: https://github.com/pytorch/executorch/issues/16678
+    if: false
+    # if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -1086,6 +1089,37 @@ jobs:
         # route in the future.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+
+  test-coreml-bc-macos:
+    name: test-coreml-bc-macos (${{ matrix.runner }})
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        runner: [macos-m1-stable, macos-m2-stable]
+      fail-fast: false
+    with:
+      runner: ${{ matrix.runner }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 180
+      script: |
+        set -eux
+
+        # Set up Python environment
+        eval "$(conda shell.bash hook)"
+        conda activate
+
+        echo "::group::Run CoreML Backward Compatibility Test"
+        # Copy script to temp location since it will checkout old commits
+        # which would overwrite the script itself
+        TEMP_SCRIPT=$(mktemp)
+        cp .ci/scripts/test_coreml_bc.sh "${TEMP_SCRIPT}"
+        bash "${TEMP_SCRIPT}" "$(pwd)"
+        rm -f "${TEMP_SCRIPT}"
+        echo "::endgroup::"
 
   nxp-build-test:
     name: nxp-build-test

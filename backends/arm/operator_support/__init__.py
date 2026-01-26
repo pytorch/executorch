@@ -11,6 +11,7 @@ from . import (  # noqa
     convolution_support,
     embedding_support,
     ethos_u55_support,
+    gather_support,
     index_select_support,
     index_tensor_support,
     minmax_support,
@@ -20,5 +21,6 @@ from . import (  # noqa
     slice_copy_support,
     to_dim_order_copy_support,
     tosa_supported_operators,
+    unfold_copy_support,
     where_support,
 )

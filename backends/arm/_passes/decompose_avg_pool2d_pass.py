@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -51,6 +51,7 @@ class DecomposeAvgPool2dPass(ArmPass):
         full_op, cat_op, avgpool_op, mul_op = get_decomposition(op)
 
         x = args[0]
+        full_kwargs = {"device": x.data.device, "dtype": x.data.dtype}
         kernel_h, kernel_w = args[1]
         kernel_size = kernel_h * kernel_w
         if len(args) > 2 and args[2] is not None:
@@ -75,7 +76,7 @@ class DecomposeAvgPool2dPass(ArmPass):
         if count_include_pad and pad_w > 0:
             pre_pad_shape = [n, c, h, pad_w]
             pre_pad = super().call_operator(
-                full_op, (pre_pad_shape, 0.0), kwargs, meta, updated=True
+                full_op, (pre_pad_shape, 0.0), full_kwargs, meta, updated=True
             )
 
             if ceil_mode and divisor_override is None:
@@ -88,7 +89,7 @@ class DecomposeAvgPool2dPass(ArmPass):
             if post_pad_w > 0:
                 post_pad_shape = [n, c, h, post_pad_w]
                 post_pad = super().call_operator(
-                    full_op, (post_pad_shape, 0.0), kwargs, meta, updated=True
+                    full_op, (post_pad_shape, 0.0), full_kwargs, meta, updated=True
                 )
                 cat_nodes = [pre_pad, x, post_pad]
             else:
@@ -103,7 +104,7 @@ class DecomposeAvgPool2dPass(ArmPass):
         if count_include_pad and pad_h > 0:
             pre_pad_shape = [n, c, pad_h, w + pad_w + post_pad_w]
             pre_pad = super().call_operator(
-                full_op, (pre_pad_shape, 0.0), kwargs, meta, updated=True
+                full_op, (pre_pad_shape, 0.0), full_kwargs, meta, updated=True
             )
 
             if ceil_mode and divisor_override is None:
@@ -116,7 +117,7 @@ class DecomposeAvgPool2dPass(ArmPass):
             if post_pad_h > 0:
                 post_pad_shape = [n, c, post_pad_h, w + pad_w + post_pad_w]
                 post_pad = super().call_operator(
-                    full_op, (post_pad_shape, 0.0), kwargs, meta, updated=True
+                    full_op, (post_pad_shape, 0.0), full_kwargs, meta, updated=True
                 )
                 cat_nodes = [pre_pad, x, post_pad]
             else:
@@ -142,7 +143,7 @@ class DecomposeAvgPool2dPass(ArmPass):
             override_multiplier = super().call_operator(
                 full_op,
                 ([1, 1, 1, 1], kernel_size / divisor_override),
-                kwargs,
+                full_kwargs,
                 meta,
                 updated=True,
             )

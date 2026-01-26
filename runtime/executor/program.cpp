@@ -49,7 +49,8 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   auto execution_plans = program->execution_plan();
   for (size_t i = 0; i < execution_plans->size(); i++) {
     auto plan = execution_plans->GetMutableObject(i);
-    if (std::strcmp(plan->name()->c_str(), method_name) == 0) {
+    if (plan != nullptr && plan->name() != nullptr &&
+        std::strcmp(plan->name()->c_str(), method_name) == 0) {
       return plan;
     }
   }
@@ -425,7 +426,17 @@ Result<const char*> Program::get_output_flattening_encoding(
   if (!plan.ok()) {
     return plan.error();
   }
-  return plan.get()->container_meta_type()->encoded_out_str()->c_str();
+  auto* container_meta_type = plan.get()->container_meta_type();
+  ET_CHECK_OR_RETURN_ERROR(
+      container_meta_type != nullptr,
+      InvalidProgram,
+      "Missing container_meta_type in execution plan");
+  auto* encoded_out_str = container_meta_type->encoded_out_str();
+  ET_CHECK_OR_RETURN_ERROR(
+      encoded_out_str != nullptr,
+      InvalidProgram,
+      "Missing encoded_out_str in container_meta_type");
+  return encoded_out_str->c_str();
 }
 
 Error Program::get_backend_delegate_data(

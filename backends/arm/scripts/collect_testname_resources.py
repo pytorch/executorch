@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,6 +28,7 @@ _CUSTOM_EDGE_OPS = [
     "cond.default",
     "eye.default",
     "expm1.default",
+    "gather.default",
     "vector_norm.default",
     "hardsigmoid.default",
     "hardswish.default",
@@ -46,6 +47,7 @@ _CUSTOM_EDGE_OPS = [
     "sum.default",
     "unbind.int",
     "unflatten.int",
+    "unfold_copy.default",
     "_native_batch_norm_legit_no_training.default",
     "_native_batch_norm_legit.no_stats",
     "alias_copy.default",
@@ -55,6 +57,7 @@ _CUSTOM_EDGE_OPS = [
     "matmul.default",
     "upsample_bilinear2d.vec",
     "upsample_nearest2d.vec",
+    "index_put.default",
 ]
 _ALL_EDGE_OPS = _SAMPLE_INPUT.keys() | _CUSTOM_EDGE_OPS
 
@@ -129,34 +132,19 @@ def _collect_arm_models(models_md: pathlib.Path) -> set[str]:
     return models
 
 
-def _collect_arm_ops() -> set[str]:
-    """
-    Returns a mapping from names on the form to be used in unittests to edge op:
-    1. Names are in lowercase.
-    2. Overload is ignored if 'default', otherwise it's appended with an underscore.
-    3. Overly verbose name are shortened by removing certain prefixes/suffixes.
+def _normalize_op_name(edge_name: str) -> str:
+    op, overload = edge_name.split(".")
 
-    Examples:
-        abs.default -> abs
-        split_copy.Tensor -> split_tensor
-    """
-    ops: set[str] = set()
-    for edge_name in _ALL_EDGE_OPS:
-        op, overload = edge_name.split(".")
+    op = op.lower()
+    op = op.removeprefix("_")
+    op = op.removesuffix("_copy")
+    op = op.removesuffix("_with_indices")
 
-        # Normalize names
-        op = op.lower()
-        op = op.removeprefix("_")
-        op = op.removesuffix("_copy")
-        op = op.removesuffix("_with_indices")
-        overload = overload.lower()
-
-        if overload == "default":
-            ops.add(op)
-        else:
-            ops.add(f"{op}_{overload}")
-
-    return ops
+    overload = overload.lower()
+    if overload == "default":
+        return op
+    else:
+        return f"{op}_{overload}"
 
 
 def _split_model_entry(entry: str) -> tuple[str, str | None, bool]:
@@ -187,7 +175,8 @@ def _camel_to_snake(name: str) -> str:
     return _CAMEL_BOUNDARY.sub("_", name).lower()
 
 
-OP_LIST = sorted(_collect_arm_ops())
+OP_NAME_MAP = {_normalize_op_name(edge_name): edge_name for edge_name in _ALL_EDGE_OPS}
+OP_LIST = sorted({_normalize_op_name(edge_name) for edge_name in _ALL_EDGE_OPS})
 PASS_LIST = sorted(
     _collect_arm_passes(pathlib.Path("backends/arm/_passes/__init__.py"))
 )
