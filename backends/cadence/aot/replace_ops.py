@@ -29,7 +29,6 @@ from executorch.backends.cadence.aot.pass_utils import (
     register_cadence_pass,
     RemoveOrReplacePassInterface,
 )
-from executorch.backends.cadence.aot.remove_ops import RemoveNopSelectOpPass
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
@@ -2503,7 +2502,6 @@ class CadenceReplaceOpsInGraph:
         ReplacePermuteWithTransposePass,
         ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
         ReplaceAddMMWithLinearPass,
-        RemoveNopSelectOpPass,
         ReplacePadWithCatPass,
         ReplaceConstantPadNdWithSlicePass,
         ReplaceConvWithChannelLastConvPass,

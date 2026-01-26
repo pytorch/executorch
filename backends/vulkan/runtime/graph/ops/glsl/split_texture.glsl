@@ -8,15 +8,15 @@
 
 #version 450 core
 
+${define_required_extensions("texture3d", DTYPE)}
+#extension GL_EXT_control_flow_attributes : require
+
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_load_type(DTYPE, "texture3d")}
 #define T ${texel_load_component_type(DTYPE, "texture3d")}
 
 ${define_active_storage_type("texture3d")}
-${define_required_extensions(DTYPE)}
-
-#extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
 
