@@ -432,6 +432,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.unfold_copy.default,
     torch.ops.aten.index_select.default,
     torch.ops.aten.index.Tensor,
+    torch.ops.aten.as_strided_copy.default,
     # Neg operator flips the range, but keps the magnitude the same.
     # That is why we force it to use the same qparams and avoid
     # dequant -> neg -> requant chain.
