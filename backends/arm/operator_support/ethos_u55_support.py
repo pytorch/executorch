@@ -153,10 +153,10 @@ class EthosU55DtypeSupport(OperatorSupportBase):
         ):
             for input_node in node.all_input_nodes:
                 dtype = _try_determine_dtype(input_node)
-                if dtype is not None and dtype != torch.int8:
+                if dtype is not None and dtype not in (torch.int8, torch.int16):
                     self.reporter.report_reject(
                         input_node,
-                        f"Input {input_node.name} has unsupported dtype {dtype} (Supports i8).",
+                        f"Input {input_node.name} has unsupported dtype {dtype} (Supports i8, i16).",
                     )
                     return False
 
@@ -204,6 +204,7 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.ne.Tensor,
         exir_ops.edge.aten.ne.Scalar,
         exir_ops.edge.aten.flip.default,  # REVERSE
+        exir_ops.edge.aten.gather.default,  # GATHER
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
         exir_ops.edge.aten.index.Tensor,  # GATHER
         exir_ops.edge.aten.index_select.default,  # GATHER
@@ -213,6 +214,7 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.select_scatter.default,
         exir_ops.edge.aten.scatter_reduce.two,
         exir_ops.edge.aten.scatter_add.default,
+        exir_ops.edge.aten.unfold_copy.default,  # GATHER
         exir_ops.edge.aten.upsample_nearest2d.vec,  # RESIZE
         exir_ops.edge.aten.upsample_bilinear2d.vec,  # RESIZE
         exir_ops.edge.aten.reflection_pad1d.default,  # REVERSE
