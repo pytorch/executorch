@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -107,6 +107,7 @@ def test_le_tensor_tosa_INT(test_module):
         test_module().get_inputs(),
         LessEqual.aten_op_tensor,
         LessEqual.exir_op,
+        frobenius_threshold=0.5,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
     )
     pipeline.run()
 
@@ -118,6 +119,7 @@ def test_le_scalar_tosa_INT(test_module):
         test_module().get_inputs(),
         LessEqual.aten_op_tensor,
         LessEqual.exir_op,
+        frobenius_threshold=0.5,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
     )
     pipeline.run()
 
