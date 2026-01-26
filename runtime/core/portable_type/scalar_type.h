@@ -126,6 +126,19 @@ struct alignas(1) Float8_e4m3fnuz {
   _(uint32_t, UInt32) /* 28 */                                               \
   _(uint64_t, UInt64) /* 29 */
 
+
+  #define ET_FORALL_FLOAT_INT_BOOL_TYPES(_)                                                 \
+  _(uint8_t, Byte)                                                                          \
+  _(int8_t, Char)                                                                           \
+  _(int16_t, Short)                                                                         \
+  _(int, Int)                                                                               \
+  _(int64_t, Long)                                                                          \
+  _(::executorch::runtime::etensor::Half, Half)                                             \
+  _(float, Float)                                                                           \
+  _(double, Double)                                                                         \
+  _(bool, Bool)                                                                             \
+  _(::executorch::runtime::etensor::BFloat16, BFloat16)
+
 /**
  * Data types (dtypes) that can be used as element types in ETensors.
  */
