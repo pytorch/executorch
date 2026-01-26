@@ -161,7 +161,7 @@ After verifying your model works correctly, deploy it to device:
 
 ## Performance
 
-For performance benchmarks and on-device metrics, see the [Optimum ExecuTorch benchmarks](https://github.com/huggingface/optimum-executorch#-benchmarks-on-mobile-devices) and the [ExecuTorch Benchmark Dashboard](https://hud.pytorch.org/benchmark/llms?repoName=pytorch%2Fexecutorch).
+For performance benchmarks and on-device metrics, see the [Optimum ExecuTorch benchmarks](https://github.com/huggingface/optimum-executorch#-benchmarks-on-mobile-devices) and the [ExecuTorch Benchmark Dashboard](https://hud.pytorch.org/benchmark/llms?repoName=pytorch%2Fexecutorch). <!-- @lint-ignore -->
 
 ## Additional Resources
 
