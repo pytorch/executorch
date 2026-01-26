@@ -37,7 +37,6 @@ find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 executorch_target_link_options_shared_lib(executorch)
 
 set(link_libraries executorch gflags)
-set(_srcs e2e_runner.cpp)
 
 list(
   APPEND
@@ -109,7 +108,8 @@ endif()
 # Add tokenizers
 list(APPEND link_libraries tokenizers::tokenizers)
 
-add_executable(gemma3_e2e_runner ${_srcs})
+# Executable for multimodal e2e runner (with image support)
+add_executable(gemma3_e2e_runner e2e_runner.cpp)
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(gemma3_e2e_runner)
   if(NOT APPLE)
@@ -122,3 +122,18 @@ target_include_directories(
 )
 target_link_libraries(gemma3_e2e_runner PUBLIC ${link_libraries})
 target_compile_options(gemma3_e2e_runner PUBLIC ${_common_compile_options})
+
+# Executable for text-only runner (no image support)
+add_executable(gemma3_text_runner text_runner.cpp)
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(gemma3_text_runner)
+  if(NOT APPLE)
+    target_link_options(gemma3_text_runner PRIVATE "LINKER:-s")
+  endif()
+endif()
+
+target_include_directories(
+  gemma3_text_runner PUBLIC ${_common_include_directories}
+)
+target_link_libraries(gemma3_text_runner PUBLIC ${link_libraries})
+target_compile_options(gemma3_text_runner PUBLIC ${_common_compile_options})

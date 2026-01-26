@@ -88,7 +88,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cpu parakeet-metal llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cpu parakeet-metal llama-cpu llava-cpu gemma3-cuda gemma3-cpu gemma3-text-cpu clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -106,6 +106,7 @@ help:
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
 	@echo "  gemma3-cpu          - Build Gemma3 runner with CPU backend"
+	@echo "  gemma3-text-cpu     - Build Gemma3 text-only runner with CPU backend"
 	@echo "  clean               - Clean build artifacts"
 
 voxtral-cuda:
@@ -233,6 +234,15 @@ gemma3-cpu:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/gemma3/gemma3_e2e_runner"
+
+gemma3-text-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Gemma3 text runner (CPU)..."
+	cd examples/models/gemma3 && cmake --workflow --preset gemma3-text-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/gemma3/gemma3_text_runner"
 
 clean:
 	rm -rf cmake-out \
