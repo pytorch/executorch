@@ -257,4 +257,71 @@ public class Module {
               + " released.");
     }
   }
+
+  /**
+   * Write ETDump profiling data to a specific path.
+   *
+   * <p>This allows writing profiling data to custom locations such as app cache directory or
+   * external storage. No root access required.
+   *
+   * <p>Example:
+   *
+   * <pre>{@code
+   * Module module = Module.load("model.pte");
+   * module.forward(inputs);
+   * module.writeETDumpToPath(getCacheDir() + "/profile.etdump");
+   * }</pre>
+   *
+   * @param outputPath The file path where ETDump data will be written. Must be a writable location.
+   * @return true if the data was successfully written, false otherwise
+   */
+  @DoNotStrip
+  public boolean writeETDumpToPath(String outputPath) {
+    if (outputPath == null || outputPath.isEmpty()) {
+      android.util.Log.e("ExecuTorch-Module", "Output path cannot be null or empty");
+      return false;
+    }
+
+    // Validate that parent directory exists
+    java.io.File file = new java.io.File(outputPath);
+    java.io.File parentDir = file.getParentFile();
+    if (parentDir != null && !parentDir.exists()) {
+      if (!parentDir.mkdirs()) {
+        android.util.Log.e("ExecuTorch-Module", "Failed to create parent directory: " + parentDir);
+        return false;
+      }
+    }
+
+    return nativeWriteETDumpToPath(outputPath);
+  }
+
+  /**
+   * Get ETDump profiling data as a byte array.
+   *
+   * <p>This is useful for custom handling of profiling data, such as uploading to a server or
+   * processing in-memory without writing to disk.
+   *
+   * <p>Example:
+   *
+   * <pre>{@code
+   * Module module = Module.load("model.pte");
+   * module.forward(inputs);
+   * byte[] profileData = module.getETDumpData();
+   * if (profileData != null) {
+   *   uploadToServer(profileData);
+   * }
+   * }</pre>
+   *
+   * @return byte array containing the ETDump data, or null if no data is available
+   */
+  @DoNotStrip
+  public byte[] getETDumpData() {
+    return nativeGetETDumpData();
+  }
+
+  @DoNotStrip
+  private native boolean nativeWriteETDumpToPath(String outputPath);
+
+  @DoNotStrip
+  private native byte[] nativeGetETDumpData();
 }

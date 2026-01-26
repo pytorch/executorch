@@ -91,11 +91,31 @@ list(
   fbjni
 )
 
+# =============================================================================
+# Android ETDump Profiling with Runtime Control
+# =============================================================================
 if(EXECUTORCH_ANDROID_PROFILING)
-  list(APPEND link_libraries etdump flatccrt)
-  target_compile_definitions(
-    executorch_jni PUBLIC EXECUTORCH_ANDROID_PROFILING=1
+  # Add ETDump JNI implementation
+  target_sources(executorch_jni PRIVATE jni/jni_etdump.cpp)
+
+  # Add SDK include directories for ETDump headers
+  target_include_directories(
+    executorch_jni PRIVATE ${EXECUTORCH_ROOT}/sdk
+                           ${EXECUTORCH_ROOT}/third-party/flatcc/include
   )
+
+  # Add compile definitions
+  target_compile_definitions(
+    executorch_jni PUBLIC ET_EVENT_TRACER_ENABLED
+                          EXECUTORCH_ANDROID_PROFILING=1
+  )
+
+  # Link ETDump libraries
+  list(APPEND link_libraries etdump flatccrt)
+
+  message(STATUS "Android ETDump profiling with runtime control: ENABLED")
+else()
+  message(STATUS "Android ETDump profiling: DISABLED")
 endif()
 
 if(TARGET optimized_native_cpu_ops_lib)
