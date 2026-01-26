@@ -14,7 +14,7 @@ from install_utils import determine_torch_url, is_intel_mac_os, python_is_compat
 
 # The pip repository that hosts torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
-TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
+TORCH_URL_BASE = "https://download.pytorch.org/whl/"
 
 # Supported CUDA versions - modify this to add/remove supported versions
 # Format: tuple of (major, minor) version numbers
@@ -118,25 +118,6 @@ def install_requirements(use_pytorch_nightly):
 def install_optional_example_requirements(use_pytorch_nightly):
     # Determine the appropriate PyTorch URL based on CUDA delegate status
     torch_url = determine_torch_url(TORCH_URL_BASE, SUPPORTED_CUDA_VERSIONS)
-
-    print("Installing torch domain libraries")
-    DOMAIN_LIBRARIES = [
-        ("torchvision==0.25.0" if use_pytorch_nightly else "torchvision"),
-        ("torchaudio==2.10.0" if use_pytorch_nightly else "torchaudio"),
-    ]
-    # Then install domain libraries
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            *DOMAIN_LIBRARIES,
-            "--extra-index-url",
-            torch_url,
-        ],
-        check=True,
-    )
 
     print("Installing packages in requirements-examples.txt")
     subprocess.run(
