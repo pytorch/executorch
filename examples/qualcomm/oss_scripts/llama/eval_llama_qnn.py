@@ -337,7 +337,7 @@ def eval_llm(args):
         logging.info("Observers added, starting calibration...")
         graph_module_inference(
             use_kv_cache=False,
-            get_example_inputs=lambda use_kv_cache=False: inputs,
+            get_example_inputs=lambda: inputs,
             module=model,
             tokenizer=tokenizer,
             ar_len=args.max_seq_len,
@@ -358,7 +358,7 @@ def eval_llm(args):
 
         # graph_module_inference(
         #     use_kv_cache=False,
-        #     get_example_inputs=lambda use_kv_cache=False: inputs,
+        #     get_example_inputs=lambda: inputs,
         #     module=model,
         #     tokenizer=tokenizer,
         #     ar_len=args.max_seq_len,
