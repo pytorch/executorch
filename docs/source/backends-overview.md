@@ -24,7 +24,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 | [CUDA](backends/cuda/cuda-overview.md)                       | Linux/Windows | GPU           | NVIDIA GPU acceleration         |
 | [Core ML](backends/coreml/coreml-overview.md)                | iOS, macOS    | NPU/GPU/CPU   | Apple devices, high performance |
 | [Metal Performance Shaders](backends/mps/mps-overview.md)    | iOS, macOS    | GPU           | Apple GPU acceleration          |
-| [Vulkan ](backends/vulkan/vulkan-overview.md)                | Android       | GPU           | Android GPU acceleration        |
+| [Vulkan](backends/vulkan/vulkan-overview.md)                 | Android       | GPU           | Android GPU acceleration        |
 | [Qualcomm](backends-qualcomm)                                | Android       | NPU           | Qualcomm SoCs                   |
 | [MediaTek](backends-mediatek)                                | Android       | NPU           | MediaTek SoCs                   |
 | [Arm Ethos-U](backends/arm-ethos-u/arm-ethos-u-overview.md)  | Embedded      | NPU           | Arm MCUs                        |
