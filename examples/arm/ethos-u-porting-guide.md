@@ -1,6 +1,6 @@
 # Introduction
 
-As you have seen in in the [Arm&reg; Ethos&trade;-U NPU backend tutorial](../../docs/source/backends-arm-ethos-u.md), ExecuTorch has two distinct parts:
+As you have seen in in the [Arm&reg; Ethos&trade;-U NPU backend tutorial](../../docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md), ExecuTorch has two distinct parts:
 - Ahead-of-time(AoT) compile flow
 - Ethos-U on-device runtime
 
