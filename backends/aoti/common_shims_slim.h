@@ -27,6 +27,8 @@ using Tensor = executorch::backends::aoti::slim::SlimTensor;
 using AOTIRuntimeError = Error;
 using AOTITorchError = Error;
 
+extern "C" {
+
 // ============================================================
 // Basic Property Getters - Declarations
 // ============================================================
@@ -46,6 +48,8 @@ aoti_torch_get_dtype(Tensor* tensor, int32_t* ret_dtype);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
 
+AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();
+
 // ============================================================
 // Storage & Device Property Getters - Declarations
 // ============================================================
@@ -61,6 +65,7 @@ aoti_torch_get_device_type(Tensor* tensor, int32_t* ret_device_type);
 
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_device_index(Tensor* tensor, int32_t* ret_device_index);
+
 
 // ============================================================
 // DType Constants - Declarations
@@ -87,6 +92,8 @@ AOTI_SHIM_EXPORT int32_t aoti_torch_device_type_cuda();
 
 AOTI_SHIM_EXPORT bool aoti_torch_grad_mode_is_enabled();
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_grad_mode_set_enabled(bool enabled);
+
+} // extern "C"
 
 } // namespace aoti
 } // namespace backends

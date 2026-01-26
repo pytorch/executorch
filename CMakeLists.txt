@@ -123,6 +123,10 @@ if(EXECUTORCH_ENABLE_BUNDLE_IO)
   add_definitions(-DET_BUNDLE_IO_ENABLED)
 endif()
 
+if(EXECUTORCH_BUILD_CUDA)
+  add_definitions(-DCUDA_AVAILABLE=1)
+endif()
+
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol.
 if(WIN32)

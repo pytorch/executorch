@@ -232,9 +232,12 @@ class AotiBackend(ABC):
             method_name + "_weights_blob", blob_data, 1, weights_blob_data_type
         )
 
-        # Clean up the generated files
-        os.remove(so_path)
-        os.remove(blob_path)
+        print("so_path:", so_path)
+        print("blob_path:", blob_path)
+
+        # # Clean up the generated files
+        # os.remove(so_path)
+        # os.remove(blob_path)
 
         return PreprocessResult(
             processed_bytes=b"",

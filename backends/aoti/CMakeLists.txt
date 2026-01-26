@@ -50,7 +50,6 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
-
 # ==============================================================================
 # AOTI common shims using SlimTensor (for CUDA backend)
 # Uses SlimTensor for all tensor operations
@@ -70,6 +69,16 @@ target_compile_options(
 target_compile_definitions(
   aoti_common_shims_slim PUBLIC $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
 )
+
+# Add CUDA include directories and link CUDA runtime when building with CUDA
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  target_include_directories(
+    aoti_common_shims_slim PUBLIC ${CUDAToolkit_INCLUDE_DIRS}
+  )
+  target_link_libraries(aoti_common_shims_slim PUBLIC CUDA::cudart)
+endif()
+
 target_link_libraries(
   aoti_common_shims_slim PUBLIC slimtensor extension_tensor ${CMAKE_DL_LIBS}
 )
