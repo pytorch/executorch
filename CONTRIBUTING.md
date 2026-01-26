@@ -26,7 +26,7 @@ executorch
 │   ├── <a href="backends/apple">apple</a> - Apple-specific backends.
 │   │   ├── <a href="backends/apple/coreml">coreml</a> - CoreML backend for Apple devices. See <a href="docs/source/backends/coreml/coreml-overview.md">doc</a>.
 │   │   └── <a href="backends/apple/mps">mps</a> - Metal Performance Shaders backend for Apple devices. See <a href="docs/source/backends/mps/mps-overview.md">doc</a>.
-│   ├── <a href="backends/arm">arm</a> - ARM architecture backends. See <a href="docs/source/backends-arm-ethos-u.md">doc</a>.
+│   ├── <a href="backends/arm">arm</a> - ARM architecture backends. See <a href="docs/source/backends/arm-ethos-u/arm-ethos-u-overview.md">doc</a>.
 │   ├── <a href="backends/cadence">cadence</a> - Cadence-specific backends. See <a href="docs/source/backends-cadence.md">doc</a>.
 │   ├── <a href="backends/example">example</a> - Example backend implementations.
 │   ├── <a href="backends/mediatek">mediatek</a> - MediaTek-specific backends. See <a href="docs/source/backends-mediatek.md">doc</a>.
