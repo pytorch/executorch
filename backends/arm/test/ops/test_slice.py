@@ -277,7 +277,7 @@ class SliceWithStep(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_step_fp)
-def test_slice_tensor_step_tosa_FP(test_data: Tuple):
+def test_slice_tensor_tosa_FP_step(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t_step](
         SliceWithStep(),
         test_data(),
@@ -288,7 +288,7 @@ def test_slice_tensor_step_tosa_FP(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_step_int | test_data_step_fp)
-def test_slice_tensor_step_tosa_INT(test_data: Tuple):
+def test_slice_tensor_tosa_INT_step(test_data: Tuple):
     pipeline = TosaPipelineINT[input_t_step](
         SliceWithStep(),
         test_data(),
@@ -306,7 +306,7 @@ def test_slice_tensor_step_tosa_INT(test_data: Tuple):
     },
 )
 @common.XfailIfNoCorstone300
-def test_slice_tensor_step_u55_INT(test_data: Tuple):
+def test_slice_tensor_u55_INT_step(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         SliceWithStep(),
         test_data(),
@@ -318,7 +318,7 @@ def test_slice_tensor_step_u55_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_step_int | test_data_step_fp)
 @common.XfailIfNoCorstone320
-def test_slice_tensor_step_u85_INT(test_data: Tuple):
+def test_slice_tensor_u85_INT_step(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         SliceWithStep(),
         test_data(),
@@ -330,7 +330,7 @@ def test_slice_tensor_step_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_step_int | test_data_step_fp)
 @common.SkipIfNoModelConverter
-def test_slice_tensor_step_vgf_no_quant(test_data: Tuple):
+def test_slice_tensor_vgf_no_quant_step(test_data: Tuple):
     pipeline = VgfPipeline[input_t_step](
         SliceWithStep(),
         test_data(),
@@ -343,7 +343,7 @@ def test_slice_tensor_step_vgf_no_quant(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_step_int | test_data_step_fp)
 @common.SkipIfNoModelConverter
-def test_slice_tensor_step_vgf_quant(test_data: Tuple):
+def test_slice_tensor_vgf_quant_step(test_data: Tuple):
     pipeline = VgfPipeline[input_t_step](
         SliceWithStep(),
         test_data(),
