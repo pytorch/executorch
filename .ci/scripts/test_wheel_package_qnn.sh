@@ -139,25 +139,12 @@ run_core_tests () {
   echo "=== [$LABEL] Installing wheel & deps ==="
   "$PIPBIN" install --upgrade pip
   "$PIPBIN" install "$WHEEL_FILE"
-  TORCH_VERSION=$(
-  "$PYBIN" - <<'PY'
-import runpy
-module_vars = runpy.run_path("torch_pin.py")
-print(module_vars["TORCH_VERSION"])
-PY
-)
+  TORCH_VERSION=2.10.0
 
-  NIGHTLY_VERSION=$(
-  "$PYBIN" - <<'PY'
-import runpy
-module_vars = runpy.run_path("torch_pin.py")
-print(module_vars["NIGHTLY_VERSION"])
-PY
-)
-  echo "=== [$LABEL] Install torch==${TORCH_VERSION}.${NIGHTLY_VERSION} ==="
+  echo "=== [$LABEL] Install torch==${TORCH_VERSION} ==="
 
   # Install torchao based on the pinned PyTorch version
-  "$PIPBIN" install torch=="${TORCH_VERSION}.${NIGHTLY_VERSION}" --index-url "https://download.pytorch.org/whl/nightly/cpu"
+  "$PIPBIN" install torch=="${TORCH_VERSION}"
   "$PIPBIN" install wheel
 
   # Install torchao based on the pinned commit from third-party/ao submodule
