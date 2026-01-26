@@ -152,47 +152,46 @@ def inference(
     is_modality = hasattr(decoder_model_config, VISION_ENCODER) or hasattr(
         decoder_model_config, AUDIO_ENCODER
     )
-    pte_path = (
+    decoder_pte_path = (
         f"{args.pre_gen_pte}/{pte_filenames[TEXT_DECODER]}.pte"
         if args.pre_gen_pte
         else f"{args.artifact}/{pte_filenames[TEXT_DECODER]}.pte"
     )
+    pte_paths = {TEXT_DECODER: decoder_pte_path}
+    eval_results = {
+        "pte_size": os.path.getsize(decoder_pte_path),
+    }
 
-    # TODO: support multimodal runtime, we only check pte size for now
     if is_modality:
-        if args.ip and args.port != -1:
-            encoder_pte_path = (
-                f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
-                if args.pre_gen_pte
-                else f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
-            )
-            text_embedding_pte_path = (
-                f"{args.pre_gen_pte}/{pte_filenames[TEXT_EMBEDDING]}.pte"
-                if args.pre_gen_pte
-                else f"{args.artifact}/{pte_filenames[TEXT_EMBEDDING]}.pte"
-            )
-            # Prepare validation results for CI system
-            validation_results = {
-                "pte_size": os.path.getsize(pte_path),
-                "encoder_pte_size": os.path.getsize(encoder_pte_path),
+        vision_encoder_pte_path = (
+            f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
+            if args.pre_gen_pte
+            else f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
+        )
+        text_embedding_pte_path = (
+            f"{args.pre_gen_pte}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+            if args.pre_gen_pte
+            else f"{args.artifact}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+        )
+        eval_results.update(
+            {
+                "encoder_pte_size": os.path.getsize(vision_encoder_pte_path),
                 "text_embedding_pte_size": os.path.getsize(text_embedding_pte_path),
             }
-            with Client((args.ip, args.port)) as conn:
-                conn.send(json.dumps(validation_results))
-        else:
-            logging.info("Multimodal runtime support is currently under development.")
-            logging.info(
-                "Detected vision/audio encoder in model config. Exiting process safely."
-            )
-            exit(0)
-        return None
+        )
+        pte_paths.update(
+            {
+                VISION_ENCODER: vision_encoder_pte_path,
+                TEXT_EMBEDDING: text_embedding_pte_path,
+            }
+        )
 
-    eval_results = {
-        "pte_size": os.path.getsize(pte_path),
-    }
     if PROMPT_EVAL in args.eval_methods:
         prompt_evaluator = DefaultEval(
-            args=args, pte_path=pte_path, runtime_tokenizer_path=runtime_tokenizer_path
+            args=args,
+            pte_paths=pte_paths,
+            runtime_tokenizer_path=runtime_tokenizer_path,
+            is_modality=is_modality,
         )
         output_prompt = prompt_evaluator.run(prompt=args.prompt)
         eval_results.update(
@@ -205,6 +204,7 @@ def inference(
             logging.info(f"Device Inference Results[{idx}]:\n{output}")
 
     if SQNR_EVAL in args.eval_methods:
+        assert not is_modality, "Modality Model does not support SQNR_EVAL."
         tokenizer_wrapper = TokenizerWrapper(
             args,
             decoder_model_config,
@@ -222,11 +222,12 @@ def inference(
         source_model = multi_modal_mgr.text_decoder.decode.decoder
         sqnr_evaluator = SqnrEval(
             source_model=source_model,
-            example_input=source_model.get_example_inputs(),
+            get_example_inputs=source_model.get_example_inputs,
             args=args,
-            pte_path=pte_path,
+            pte_paths=pte_paths,
             tokenizer=tokenizer,
             runtime_tokenizer_path=runtime_tokenizer_path,
+            is_modality=is_modality,
         )
         sqnr, golden_logits, _ = sqnr_evaluator.run(prompt=prompt)
         logging.info(f"SQNR Eval Score between FP32 nn.Module and QNN: {sqnr}")
@@ -246,11 +247,12 @@ def inference(
             qdq_ep = torch.export.load(qdq_ep_path)
             qdq_sqnr_evaluator = SqnrEval(
                 source_model=qdq_ep.module(),
-                example_input=source_model.get_example_inputs(),
+                get_example_inputs=source_model.get_example_inputs,
                 args=args,
-                pte_path=pte_path,
+                pte_paths=pte_paths,
                 tokenizer=tokenizer,
                 runtime_tokenizer_path=runtime_tokenizer_path,
+                is_modality=is_modality,
             )
             qdq_sqnr, cpu_qdq_logits, _ = qdq_sqnr_evaluator.run(prompt=prompt)
             eval_results["qdq_sqnr"] = qdq_sqnr
@@ -264,12 +266,14 @@ def inference(
             )
 
     if TASKS_EVAL in args.eval_methods:
+        assert not is_modality, "Modality Model does not support TASKS_EVAL."
         # Generate the eval wrapper
         ppl_evaluator = TaskEval(
             args=args,
-            pte_path=pte_path,
+            pte_paths=pte_paths,
             tokenizer=tokenizer,
             runtime_tokenizer_path=runtime_tokenizer_path,
+            is_modality=is_modality,
         )
         ppl_eval_result = ppl_evaluator.run()
         eval_results["inference_speed"] = ppl_evaluator.inference_speed
@@ -427,7 +431,7 @@ def _build_parser():
         default=None,
         type=str,
     )
-    
+
     parser.add_argument(
         "--eval_methods",
         choices=[PROMPT_EVAL, TASKS_EVAL, SQNR_EVAL],

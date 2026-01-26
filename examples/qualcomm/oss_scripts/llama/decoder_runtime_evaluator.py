@@ -4,13 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import getpass
 import logging
 import os
 import subprocess
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Any, final, List, Optional, Union
+from typing import Any, Callable, Dict, final, List, Optional, Union
 
 import numpy as np
 import torch
@@ -18,6 +19,10 @@ from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrappe
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     DECODER_MODEL_VERSION,
     EVAL_MODE,
+    TEXT_DECODER,
+    TEXT_EMBEDDING,
+    VISION_ENCODER,
+    VISION_ENCODER_INPUT_FILENAME,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
     INFERENCE_REGISTRY,
@@ -71,16 +76,25 @@ def post_process_logits(
 class EvalBase(ABC):
     _adb: Optional[SimpleADB] = None  # ADB shared across all instances
 
-    def __init__(self, args, pte_path, runtime_tokenizer_path):
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        pte_paths: Dict,
+        runtime_tokenizer_path: str,
+        is_modality: bool,
+    ):
         self.args = args
-        self.pte_path = pte_path
+        self.pte_paths = pte_paths
         self.runtime_tokenizer_path = runtime_tokenizer_path
         self.qnn_sdk = os.getenv("QNN_SDK_ROOT")
+        self.is_modality = is_modality
 
         self.device_workspace = (
             f"/data/local/tmp/{getpass.getuser()}/executorch/static_llm"
         )
-
+        self.runner = (
+            "qnn_multimodal_runner" if self.is_modality else "qnn_llama_runner"
+        )
         device_output_path = self._get_adb().output_folder
         if args.enable_x86_64:
             logging.warning(
@@ -95,6 +109,7 @@ class EvalBase(ABC):
         self.host_performance_path = f"{args.artifact}/outputs/inference_speed.txt"
         self.host_logits_path = f"{args.artifact}/outputs/all_logits.raw"
         make_output_dir(f"{args.artifact}/outputs")
+
         self.runner_base_cmd = self._init_runner_base_cmd()
 
     def _init_runner_base_cmd(self):
@@ -107,27 +122,61 @@ class EvalBase(ABC):
             base_cmd = " ".join(
                 [
                     f"export LD_LIBRARY_PATH={self.qnn_sdk}/lib/x86_64-linux-clang/:{args.build_folder}/lib &&",
-                    f"./{args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+                    f"./{args.build_folder}/examples/qualcomm/oss_scripts/llama/{self.runner}",
                     f"--decoder_model_version {DECODER_MODEL_VERSION[args.decoder_model]}",
                     f"--tokenizer_path {self.runtime_tokenizer_path}",
-                    f"--model_path {self.pte_path}",
                     f"--output_path {self.device_output_response_path}",
                     f"--performance_output_path {self.device_performance_path}",
                 ]
             )
+            if self.is_modality:
+                base_cmd = " ".join(
+                    [
+                        base_cmd,
+                        f"--decoder_path {self.pte_paths[TEXT_DECODER]}",
+                        f"--encoder_path {self.pte_paths[VISION_ENCODER]}",
+                        f"--embedding_path {self.pte_paths[TEXT_EMBEDDING]}",
+                        f"--image_path {args.artifact}/{VISION_ENCODER_INPUT_FILENAME}.raw",
+                    ]
+                )
+            else:
+                base_cmd = " ".join(
+                    [
+                        base_cmd,
+                        f"--model_path {self.pte_paths[TEXT_DECODER]}",
+                    ]
+                )
         else:
             base_cmd = " ".join(
                 [
                     f"cd {self.device_workspace} &&",
-                    "./qnn_llama_runner",
+                    f"./{self.runner}",
                     f"--decoder_model_version {DECODER_MODEL_VERSION[args.decoder_model]}",
                     f"--tokenizer_path {os.path.basename(self.runtime_tokenizer_path)}",
-                    f"--model_path {os.path.basename(self.pte_path)}",
                     f"--output_path {self.device_output_response_path}",
                     f"--performance_output_path {self.device_performance_path}",
                     "--shared_buffer",
                 ]
             )
+
+            if self.is_modality:
+                base_cmd = " ".join(
+                    [
+                        base_cmd,
+                        f"--decoder_path {os.path.basename(self.pte_paths[TEXT_DECODER])}",
+                        f"--encoder_path {os.path.basename(self.pte_paths[VISION_ENCODER])}",
+                        f"--embedding_path {os.path.basename(self.pte_paths[TEXT_EMBEDDING])}",
+                        f"--image_path {VISION_ENCODER_INPUT_FILENAME}.raw",
+                    ]
+                )
+            else:
+                base_cmd = " ".join(
+                    [
+                        base_cmd,
+                        f"--model_path {os.path.basename(self.pte_paths[TEXT_DECODER])}",
+                    ]
+                )
+
         return base_cmd
 
     @final
@@ -137,12 +186,12 @@ class EvalBase(ABC):
             EvalBase._adb = SimpleADB(
                 qnn_sdk=self.qnn_sdk,
                 build_path=f"{args.build_folder}",
-                pte_path=self.pte_path,
+                pte_path=list(self.pte_paths.values()),
                 workspace=self.device_workspace,
                 device_id=args.device,
                 host_id=args.host,
                 soc_model=args.model,
-                runner="examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+                runner=f"examples/qualcomm/oss_scripts/llama/{self.runner}",
                 target=args.target,
             )
         return EvalBase._adb
@@ -158,8 +207,8 @@ class EvalBase(ABC):
 
 
 class DefaultEval(EvalBase):
-    def __init__(self, args, pte_path, runtime_tokenizer_path):
-        super().__init__(args, pte_path, runtime_tokenizer_path)
+    def __init__(self, args, pte_paths, runtime_tokenizer_path, is_modality):
+        super().__init__(args, pte_paths, runtime_tokenizer_path, is_modality)
         self.adb = self._get_adb()
         self.inference_speed = 0
 
@@ -220,7 +269,13 @@ class DefaultEval(EvalBase):
             runner_cmd = " ".join(
                 [self.runner_cmd, multi_prompts, f"--seq_len {self.args.max_seq_len}"]
             )
-            self.adb.push(inputs=[], files=[self.runtime_tokenizer_path])
+
+            extra_files = [self.runtime_tokenizer_path]
+            if self.is_modality:
+                extra_files = extra_files + [
+                    f"{self.args.artifact}/{VISION_ENCODER_INPUT_FILENAME}.raw"
+                ]
+            self.adb.push(inputs=[], files=extra_files)
             self.adb.execute(custom_runner_cmd=runner_cmd)
             self.adb.pull(
                 host_output_path=self.host_output_response_path,
@@ -253,22 +308,23 @@ class SqnrEval(EvalBase):
     def __init__(
         self,
         source_model,
-        example_input,
+        get_example_inputs: Callable,
         args,
-        pte_path,
+        pte_paths,
         tokenizer,
         runtime_tokenizer_path,
+        is_modality,
     ):
-        super().__init__(args, pte_path, runtime_tokenizer_path)
+        super().__init__(args, pte_paths, runtime_tokenizer_path, is_modality)
         self.inference_speed = 0
         self.source_model = source_model
-        self.example_input = example_input
+        self.get_example_inputs = get_example_inputs
         self.adb = self._get_adb()
         self.tokenizer = tokenizer
         self.enable_x86_64 = args.enable_x86_64
         self.max_seq_length = args.max_seq_len
 
-        pte_meta_info = retrieve_info_from_pte(pte_path=pte_path)
+        pte_meta_info = retrieve_info_from_pte(pte_path=pte_paths[TEXT_DECODER])
         self.output_vocab_size = pte_meta_info["output_vocab_size"]
         pte_max_seq_len = pte_meta_info["pte_max_seq_len"]
         self.logits_scale = pte_meta_info["logits_scale"]
@@ -277,7 +333,7 @@ class SqnrEval(EvalBase):
 
         if args.model_mode != "kv":
             logging.warning(
-                f"Current SqnrEval does not support {args.model_mode}, switching to kv mode."
+                f"Current Sqnr Eval does not support {args.model_mode}, switching to kv mode."
             )
 
         if pte_max_seq_len != self.max_seq_length:
@@ -292,7 +348,7 @@ class SqnrEval(EvalBase):
 
     def run(self, prompt):
         golden_logits = INFERENCE_REGISTRY[True](
-            example_input=self.example_input,
+            get_example_inputs=self.get_example_inputs,
             prompt=prompt,
             module=self.source_model,
             tokenizer=self.tokenizer,
@@ -428,7 +484,7 @@ class TaskEval(EvalBase):
 
             self.enable_x86_64 = args.enable_x86_64
             self.max_seq_length = args.max_seq_len
-            pte_meta_info = retrieve_info_from_pte(pte_path=pte_path)
+            pte_meta_info = retrieve_info_from_pte(pte_path=self.pte_path)
             self.output_vocab_size = pte_meta_info["output_vocab_size"]
             pte_max_seq_len = pte_meta_info["pte_max_seq_len"]
             self.logits_scale = pte_meta_info["logits_scale"]
@@ -535,9 +591,12 @@ class TaskEval(EvalBase):
             self.inference_speed = output_performance_holder[0]
             return output_logits_holder[0]
 
-    def __init__(self, args, pte_path, tokenizer, runtime_tokenizer_path):
+    def __init__(self, args, pte_paths, tokenizer, runtime_tokenizer_path, is_modality):
         super().__init__(
-            args=args, pte_path=pte_path, runtime_tokenizer_path=runtime_tokenizer_path
+            args=args,
+            pte_paths=pte_paths,
+            runtime_tokenizer_path=runtime_tokenizer_path,
+            is_modality=is_modality,
         )
         self.inference_speed = None
         self.tasks = args.tasks
@@ -548,7 +607,7 @@ class TaskEval(EvalBase):
             args=args,
             runner_base_cmd=self.runner_base_cmd,
             adb=adb,
-            pte_path=self.pte_path,
+            pte_path=self.pte_paths[TEXT_DECODER],
             device_performance_path=self.device_performance_path,
             device_logits_path=self.device_logits_path,
             host_performance_path=self.host_performance_path,
