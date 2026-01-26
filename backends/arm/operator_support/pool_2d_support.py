@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -90,6 +90,8 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
+        TosaSpecification.create_from_string("TOSA-1.1+INT"),
+        TosaSpecification.create_from_string("TOSA-1.1+FP"),
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
@@ -180,6 +182,8 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
+        TosaSpecification.create_from_string("TOSA-1.1+INT"),
+        TosaSpecification.create_from_string("TOSA-1.1+FP"),
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):

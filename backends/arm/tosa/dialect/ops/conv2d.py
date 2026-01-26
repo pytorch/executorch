@@ -87,6 +87,8 @@ def validate_conv2d_args_dtypes(
     (
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        TosaSpecification.create_from_string("TOSA-1.1+FP"),
+        TosaSpecification.create_from_string("TOSA-1.1+INT"),
     ),  # target TOSA specifications
 )
 def CONV2D(
