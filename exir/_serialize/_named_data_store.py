@@ -113,11 +113,7 @@ class NamedDataStore:
             buffer_idx != -1
             and self.data_hash_to_buffer_idx.get(hashed, -1) != buffer_idx
         ):
-            raise ValueError(
-                f"Duplicate key {key} with different data. "
-                f"Existing data: {self.buffers[buffer_idx]}. "
-                f"New data: {data}."
-            )
+            raise ValueError(f"Duplicate key {key} with different data. ")
         else:
             # Key doesn't exist; check if the data exists.
             buffer_idx = self.data_hash_to_buffer_idx.get(hashed, -1)
