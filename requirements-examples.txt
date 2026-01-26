@@ -4,4 +4,4 @@ datasets == 3.6.0 # 4.0.0 deprecates trust_remote_code and load scripts. For now
 timm == 1.0.7
 torchsr == 1.0.4
 torchtune >= 0.6.1
-transformers == 5.0.0rc1
+transformers >= 5.0.0
