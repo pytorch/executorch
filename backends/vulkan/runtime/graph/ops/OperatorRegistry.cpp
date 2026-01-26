@@ -11,7 +11,7 @@
 namespace vkcompute {
 
 bool OperatorRegistry::has_op(const std::string& name) {
-  return table_.count(name) > 0;
+  return table_.contains(name);
 }
 
 OperatorRegistry::OpFunction& OperatorRegistry::get_op_fn(
