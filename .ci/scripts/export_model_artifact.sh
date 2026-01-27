@@ -161,7 +161,8 @@ if [ "$MODEL_NAME" = "parakeet" ]; then
 
   python examples/models/parakeet/export_parakeet_tdt.py \
       --backend "$DEVICE" \
-      --output-dir "${OUTPUT_DIR}"
+      --output-dir "${OUTPUT_DIR}" \
+      --dtype bf16
 
   test -f "${OUTPUT_DIR}/model.pte"
   # CUDA saves named data to separate .ptd file, Metal embeds in .pte

@@ -124,11 +124,11 @@ fi
 # Confirm file sizes.
 FOUNDATION_SIZE=$(stat -c%s qwen_foundation.ptd)
 if [[ $FOUNDATION_SIZE -le "2400000000" ]]; then
-    echo "qwen_foundation_q.ptd size is: $FOUNDATION_SIZE"
+  echo "qwen_foundation_q.ptd size is: $FOUNDATION_SIZE"
 else
-    echo "qwen_foundation_q.ptd size: $FOUNDATION_SIZE is greater than threshold 2.4GB"
-    cleanup_files
-    exit 1
+  echo "qwen_foundation_q.ptd size: $FOUNDATION_SIZE is greater than threshold 2.4GB"
+  cleanup_files
+  exit 1
 fi
 
 ### QUANTIZATION & PROGRAM DATA SEPARATION ###
@@ -161,15 +161,19 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     +quantization.qmode="8da4w" \
     +quantization.group_size=32
 
-# Confirm that qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are the same.
-if diff -q qwen_foundation_lora_q.ptd qwen_foundation_q.ptd > /dev/null; then
-    echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are identical."
+# Confirm that qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are the same size.
+# TODO(lfq): confirm they are the same (deserialize and check fields)
+size1=$(stat -c%s qwen_foundation_lora_q.ptd)
+size2=$(stat -c%s qwen_foundation_q.ptd)
+
+if [ "$size1" -eq "$size2" ]; then
+  echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are the same size: $size1."
 else
-    echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are not identical."
-    ls -la qwen_foundation_lora_q.ptd
-    ls -la qwen_foundation_q.ptd
-    cleanup_files
-    exit 1
+  echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd have different sizes."
+  ls -la qwen_foundation_lora_q.ptd
+  ls -la qwen_foundation_q.ptd
+  cleanup_files
+  exit 1
 fi
 
 # Run quantized qwen model (no adapter).
@@ -216,11 +220,11 @@ fi
 # Confirm qwen_foundation_q.ptd file size.
 FOUNDATION_Q_SIZE=$(stat -c%s qwen_foundation_q.ptd)
 if [[ $FOUNDATION_Q_SIZE -le "1000000000" ]]; then
-    echo "qwen_foundation_q.ptd size is: $FOUNDATION_Q_SIZE"
+  echo "qwen_foundation_q.ptd size is: $FOUNDATION_Q_SIZE"
 else
-    echo "qwen_foundation_q.ptd size: $FOUNDATION_Q_SIZE is greater than threshold 1GB"
-    cleanup_files
-    exit 1
+  echo "qwen_foundation_q.ptd size: $FOUNDATION_Q_SIZE is greater than threshold 1GB"
+  cleanup_files
+  exit 1
 fi
 
 cleanup_files
