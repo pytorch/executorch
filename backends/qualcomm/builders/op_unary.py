@@ -17,7 +17,7 @@ from .qnn_constants import OpElementWiseUnary, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class Reciprocal(NodeVisitor):
+class Unary(NodeVisitor):
     target = ["aten.reciprocal.default"]
 
     def __init__(self, *args) -> None:
