@@ -106,6 +106,7 @@ AOTITorchError aoti_torch_get_device_index(
   return Error::Ok;
 }
 
+
 // ============================================================
 // DType Constants - Implementations
 // ============================================================
@@ -168,7 +169,6 @@ AOTITorchError aoti_torch_grad_mode_set_enabled(bool enabled) {
 }
 
 } // extern "C"
-
 } // namespace aoti
 } // namespace backends
 } // namespace executorch

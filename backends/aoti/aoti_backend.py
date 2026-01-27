@@ -75,6 +75,19 @@ class AotiBackend(ABC):
         pass
 
     @classmethod
+    def save_data_externally(cls) -> bool:
+        """
+        Return whether to save the named data map to an external .ptd file.
+
+        If True, the SO blob and weights blob will be saved to a separate .ptd file
+        (e.g., aoti_cuda_blob.ptd) that must be provided at runtime.
+        If False, the data will be merged into the .pte file.
+
+        Default is False (merge with .pte file). Subclasses can override this.
+        """
+        return False
+
+    @classmethod
     def get_extra_aoti_compile_context_manager(cls):
         """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager."""
         return contextlib.nullcontext()
@@ -225,19 +238,20 @@ class AotiBackend(ABC):
         named_data_store = NamedDataStore()
         method_name = cls.method_name_from_compile_specs(compile_specs)
 
-        # Add SO and weights blob separately
         named_data_store.add_named_data(method_name + "_so_blob", so_data, 1, None)
-        weights_blob_data_type = f"aoti_{device_name}_blob"
-        named_data_store.add_named_data(
-            method_name + "_weights_blob", blob_data, 1, weights_blob_data_type
+        # Determine whether to save named data externally based on backend setting
+        # External: save to separate .ptd file, otherwise merge with .pte file
+        external_tag = (
+            f"aoti_{device_name}_blob" if cls.save_data_externally() else None
         )
 
-        print("so_path:", so_path)
-        print("blob_path:", blob_path)
+        named_data_store.add_named_data(
+            method_name + "_weights_blob", blob_data, 1, external_tag
+        )
 
-        # # Clean up the generated files
-        # os.remove(so_path)
-        # os.remove(blob_path)
+        # Clean up the generated files
+        os.remove(so_path)
+        os.remove(blob_path)
 
         return PreprocessResult(
             processed_bytes=b"",

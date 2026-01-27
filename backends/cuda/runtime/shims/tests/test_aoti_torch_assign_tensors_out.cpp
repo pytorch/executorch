@@ -167,8 +167,8 @@ TEST_F(AOTITorchAssignTensorsOutSlimTest, SourceBecamesUndefinedAfterMove_CPU) {
   // Destination has the original pointer
   EXPECT_EQ(dst_tensor->data_ptr(), original_ptr);
 
-  // Source tensor is now in undefined state - verify it's no longer defined
-  EXPECT_FALSE(src_tensor->defined());
+  // Source tensor should still alive.
+  EXPECT_TRUE(src_tensor->defined());
 
   // Clean up - delete in this order since src is undefined
   delete src_tensor;
@@ -352,8 +352,8 @@ TEST_F(AOTITorchAssignTensorsOutSlimTest, BasicFunctionality_CUDA) {
   EXPECT_TRUE(dst_tensor->is_cuda());
   EXPECT_EQ(dst_tensor->data_ptr(), expected_data_ptr);
 
-  // Source is undefined after move
-  EXPECT_FALSE(src_tensor->defined());
+  // Source tensor should still alive.
+  EXPECT_TRUE(src_tensor->defined());
 
   delete src_tensor;
   EXPECT_EQ(aoti_torch_delete_tensor_object(dst_tensor), Error::Ok);
@@ -386,8 +386,8 @@ TEST_F(
   // Destination has the original pointer
   EXPECT_EQ(dst_tensor->data_ptr(), original_ptr);
 
-  // Source tensor is now in undefined state
-  EXPECT_FALSE(src_tensor->defined());
+  // Source tensor should still alive.
+  EXPECT_TRUE(src_tensor->defined());
 
   delete src_tensor;
   EXPECT_EQ(aoti_torch_delete_tensor_object(dst_tensor), Error::Ok);

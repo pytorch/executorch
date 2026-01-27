@@ -17,6 +17,8 @@ namespace executorch {
 namespace backends {
 namespace aoti {
 
+extern "C" {
+
 // Common using declarations for ExecuTorch types
 using executorch::runtime::Error;
 
@@ -26,8 +28,6 @@ using Tensor = executorch::backends::aoti::slim::SlimTensor;
 // Common AOTI type aliases
 using AOTIRuntimeError = Error;
 using AOTITorchError = Error;
-
-extern "C" {
 
 // ============================================================
 // Basic Property Getters - Declarations
@@ -93,7 +93,6 @@ AOTI_SHIM_EXPORT bool aoti_torch_grad_mode_is_enabled();
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_grad_mode_set_enabled(bool enabled);
 
 } // extern "C"
-
 } // namespace aoti
 } // namespace backends
 } // namespace executorch

@@ -280,6 +280,7 @@ class ET_EXPERIMENTAL CudaBackend final
     cudaStream_t cuda_stream;
     ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamCreate(&cuda_stream));
     handle->cuda_stream = static_cast<void*>(cuda_stream);
+
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
