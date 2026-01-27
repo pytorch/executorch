@@ -1025,7 +1025,7 @@ def _get_dtype_distribution(
             placeholder_dtypes.append(str(node.meta["val"].dtype))
         if node.op == "call_function":
             if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
-                dtype, _, _ = extract_tensor_meta(node.meta, tosa_spec)
+                dtype, _, _ = extract_tensor_meta(node.meta)
                 call_function_dtypes.append(ts.DTypeNames[dtype])
     return Counter(placeholder_dtypes), Counter(call_function_dtypes)
 

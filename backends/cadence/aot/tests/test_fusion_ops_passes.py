@@ -650,6 +650,42 @@ class TestFusionPasses(TestFusionPassesBase):
                 deq_scale = node.args[1]
         self.assertEqual(deq_scale, DEQUANT_SCALE * FULL_VALUE)
 
+    def test_fuse_mul_into_dequant_no_match(self) -> None:
+        """
+        Test that FuseMulTensorIntoDequantPass does NOT modify the graph
+        when the mul node's inputs are not dequant + full.
+        """
+        INPUT_SHAPE: Final[List[int]] = [4, 32]
+
+        builder = GraphBuilder()
+        # Create two regular placeholder inputs (not dequant outputs)
+        x_input = torch.randn(*INPUT_SHAPE, dtype=torch.float32)
+        y_input = torch.randn(*INPUT_SHAPE, dtype=torch.float32)
+        x = builder.placeholder("x", x_input)
+        y = builder.placeholder("y", y_input)
+
+        # Mul of two placeholders - no dequant node involved
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor,
+            args=(x, y),
+        )
+        builder.output([mul])
+        original_graph = builder.get_graph_module()
+
+        p = FuseMulTensorIntoDequantPass()
+        result = cast(PassResult, p(original_graph))
+
+        # The pass should NOT modify the graph since there's no dequant node
+        self.assertFalse(result.modified)
+
+        # Verify that the mul op is still present
+        self.check_op_counts(
+            result.graph_module,
+            expected_op_counts={
+                exir_ops.edge.aten.mul.Tensor: 1,
+            },
+        )
+
     def test_fuse_mul_scalar_into_dequant(self) -> None:
         dequant_scale = 0.006
         mul_value = 0.3
