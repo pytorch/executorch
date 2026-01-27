@@ -71,4 +71,5 @@ def define_common_targets():
     cuda_shim_cpp_unittest("aoti_torch_assign_tensors_out")
 
     # SlimTensor-based shim tests
+    cuda_shim_slim_cpp_unittest("aoti_torch_empty_strided")
     cuda_shim_slim_cpp_unittest("aoti_torch_create_tensor_from_blob_v2")
