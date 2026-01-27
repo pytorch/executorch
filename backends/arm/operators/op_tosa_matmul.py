@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -58,7 +58,7 @@ class MatmulVisitor(NodeVisitor):
             self.target,
             [*inputs],
             supported_input_dtypes,
-            output.tosa_spec,
+            self.tosa_spec,
         )
         supported_output_dtypes = [ts.DType.INT32, ts.DType.FP32]
         if self.tosa_spec.support_extension("int16"):
@@ -67,7 +67,7 @@ class MatmulVisitor(NodeVisitor):
             self.target,
             [output],
             supported_output_dtypes,
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         # We need to get the zero points and add an intermediate tensor for INT16 case
