@@ -117,10 +117,12 @@ jobs:
         fi
         echo "Target Folder: ${TARGET_FOLDER}"
 
-        mkdir -p "${TARGET_FOLDER}"
         # Clean up target folder if exists and copy html output to the
         # Target folder
-        rm -rf "${TARGET_FOLDER}"/*
+        if [ -d "${TARGET_FOLDER}" ]; then
+          rm -rf "${TARGET_FOLDER}"
+        fi
+        mkdir -p "${TARGET_FOLDER}"
         mv "${RUNNER_ARTIFACT_DIR}"/html/* "${TARGET_FOLDER}"
         git add "${TARGET_FOLDER}" || true
 
