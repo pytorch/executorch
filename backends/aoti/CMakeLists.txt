@@ -29,33 +29,44 @@ find_package_torch()
 # AOTI common shims using ETensor (for Metal backend)
 # TODO(gasoonjia): Remove this after metal migration
 # ==============================================================================
-add_library(aoti_common_shims STATIC common_shims.cpp)
+set(_aoti_common_sources common_shims.cpp)
+add_library(aoti_common STATIC ${_aoti_common_sources})
 target_include_directories(
-  aoti_common_shims
+  aoti_common
   PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
          $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
 )
 target_compile_options(
-  aoti_common_shims
+  aoti_common
   PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
          $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
 )
 target_compile_definitions(
-  aoti_common_shims PUBLIC $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
+  aoti_common PRIVATE $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
 )
-target_link_libraries(
-  aoti_common_shims PUBLIC extension_tensor ${CMAKE_DL_LIBS}
-)
+# Ensure symbols are exported properly
+if(APPLE)
+  target_link_options(aoti_common PUBLIC -Wl,-export_dynamic)
+else()
+  target_link_options(
+    aoti_common PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
+  )
+endif()
+
+# Link against ExecuTorch libraries and standard libraries
+target_link_libraries(aoti_common PUBLIC extension_tensor ${CMAKE_DL_LIBS})
+executorch_target_link_options_shared_lib(aoti_common)
 
 install(
-  TARGETS aoti_common_shims
+  TARGETS aoti_common
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+
 # ==============================================================================
 # AOTI common shims using SlimTensor (for CUDA backend) Uses SlimTensor for all
 # tensor operations
-# TODO(gasoonjia): Replace aoti_common_shims with this one after metal migration
+# TODO(gasoonjia): Replace aoti_common with this one after metal migration
 # ==============================================================================
 add_library(aoti_common_shims_slim STATIC common_shims_slim.cpp)
 target_include_directories(
