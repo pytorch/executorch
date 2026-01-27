@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -42,8 +42,19 @@ test_data = {
     "ceil_ramp": lambda: (Ceil(), ramp),
 }
 
+test_data_bf16 = {
+    "ceil_rand_bf16": lambda: (
+        Ceil(),
+        (torch.rand(4, 4, dtype=torch.bfloat16) - 0.5),
+    ),
+    "ceil_ramp_bf16": lambda: (
+        Ceil(),
+        torch.arange(-8, 8, 0.25, dtype=torch.bfloat16),
+    ),
+}
 
-@common.parametrize("test_data", test_data)
+
+@common.parametrize("test_data", test_data | test_data_bf16)
 def test_ceil_tosa_FP(test_data: input_t1):
     module, data = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -51,6 +62,7 @@ def test_ceil_tosa_FP(test_data: input_t1):
         (data,),
         module.aten_op,
         module.exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 

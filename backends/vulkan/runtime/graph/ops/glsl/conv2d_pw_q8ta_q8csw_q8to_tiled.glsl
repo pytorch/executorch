@@ -8,6 +8,8 @@
 
 #version 450 core
 
+${define_required_extensions("buffer", DTYPE)}
+
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, "buffer")}
 #define T ${texel_load_component_type(DTYPE, "buffer")}
@@ -28,8 +30,6 @@ $if WEIGHT_STORAGE == "buffer":
 #define TILE_M 4
 #define TILE_K 4
 #define TILE_N 8
-
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
