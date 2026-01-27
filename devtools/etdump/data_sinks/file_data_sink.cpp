@@ -44,20 +44,34 @@ Result<size_t> FileDataSink::write(const void* ptr, size_t size) {
     return Error::AccessFailed;
   }
 
+  bool inPlaceTensor = false;
+
+  if (size != 0 && ptr == nullptr) {
+    inPlaceTensor = true;
+  } else if (size == 0 || ptr == nullptr) {
+    ET_LOG(Info, "Invalid data to write to file");
+    return total_written_bytes_;
+  }
+
   size_t offset = total_written_bytes_;
 
-  if (size == 0) {
-    // No data to write, return current offset
-    return offset;
+  if (inPlaceTensor) {
+    std::vector<uint8_t> zeros(size, 0);
+    size_t written = fwrite(zeros.data(), 1, size, file_);
+    if (written != size) {
+      ET_LOG(Error, "Write failed: wrote %zu bytes of %zu", written, size);
+      return Error::Internal;
+    }
+    total_written_bytes_ += written;
+  } else {
+    size_t written = fwrite(ptr, 1, size, file_);
+    if (written != size) {
+      ET_LOG(Error, "Write failed: wrote %zu bytes of %zu", written, size);
+      return Error::Internal;
+    }
+    total_written_bytes_ += written;
   }
 
-  size_t written = fwrite(ptr, 1, size, file_);
-  if (written != size) {
-    ET_LOG(Error, "Write failed: wrote %zu bytes of %zu", written, size);
-    return Error::Internal;
-  }
-
-  total_written_bytes_ += written;
   return offset;
 }
 
