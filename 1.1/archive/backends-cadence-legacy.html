@@ -1252,7 +1252,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.cadence.operat
 </pre></div>
 </div>
 <p><em><strong>Small Model: RNNT predictor</strong></em>:</p>
-<p>The torchaudio <a class="reference external" href="https://pytorch.org/audio/stable/tutorials/online_asr_tutorial.html">RNNT-emformer</a> model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels: an encoder, a predictor and a joiner.
+<p>The torchaudio <a class="reference external" href="https://docs.pytorch.org/audio/stable/generated/torchaudio.pipelines.EMFORMER_RNNT_BASE_LIBRISPEECH.html">RNNT-emformer</a> model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels: an encoder, a predictor and a joiner.
 The <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/models/rnnt_predictor.py">predictor</a> is a sequence of basic ops (embedding, ReLU, linear, layer norm) and can be exported using:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
 python3<span class="w"> </span>-m<span class="w"> </span>examples.cadence.models.rnnt_predictor

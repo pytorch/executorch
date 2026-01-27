@@ -1026,7 +1026,7 @@ document.write(`
 <li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorials</a></li>
 </ul>
 </div>
 </nav></div>
@@ -1135,6 +1135,25 @@ document.write(`
 <section id="generating-an-etdump">
 <h2>Generating an ETDump<a class="headerlink" href="#generating-an-etdump" title="Link to this heading">#</a></h2>
 <p>Generating an ETDump is a relatively straightforward process. Users can follow the steps detailed below to integrate it into their application that uses ExecuTorch.</p>
+<section id="build-configuration">
+<h3>Build Configuration<a class="headerlink" href="#build-configuration" title="Link to this heading">#</a></h3>
+<p>To enable ETDump support, you need to configure your CMake build with the following options:</p>
+<p><strong>Required CMake options:</strong></p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="err">-DEXECUTORCH_BUILD_DEVTOOLS=ON</span><span class="w">     </span><span class="c"># Builds the devtools library including ETDump</span>
+<span class="err">-DEXECUTORCH_ENABLE_EVENT_TRACER=ON</span><span class="w"> </span><span class="c"># Enables event tracing in the runtime</span>
+</pre></div>
+</div>
+<p><strong>Required CMake targets to link:</strong></p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">your_binary</span>
+<span class="w">    </span><span class="s">etdump</span><span class="w">       </span><span class="c"># ETDump library</span>
+<span class="w">    </span><span class="c"># ... other ExecuTorch libraries</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_ENABLE_EVENT_TRACER=ON</span></code> option automatically sets the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> preprocessor flag for the ExecuTorch runtime and all operator libraries.</p>
+</section>
+<section id="using-the-low-level-runtime-api">
+<h3>Using the Low-Level Runtime API<a class="headerlink" href="#using-the-low-level-runtime-api" title="Link to this heading">#</a></h3>
 <ol class="arabic simple">
 <li><p><em><strong>Include</strong></em> the ETDump header in your code.</p></li>
 </ol>
@@ -1163,16 +1182,74 @@ document.write(`
 <span class="w">  </span><span class="p">}</span>
 </pre></div>
 </div>
-<ol class="arabic simple" start="4">
-<li><p><em><strong>Compile</strong></em> your binary using CMake with the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> pre-processor flag to enable events to be traced and logged into ETDump inside the ExecuTorch runtime. This flag needs to be added to the ExecuTorch library and any operator library that you are compiling into your binary. For reference, you can take a look at <code class="docutils literal notranslate"><span class="pre">examples/sdk/CMakeLists.txt</span></code>. The lines of interest are:</p></li>
-</ol>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">target_compile_options</span><span class="p">(</span><span class="n">executorch</span> <span class="n">INTERFACE</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
-<span class="n">target_compile_options</span><span class="p">(</span><span class="n">portable_ops_lib</span> <span class="n">INTERFACE</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
+</section>
+<section id="using-the-module-api-c">
+<h3>Using the Module API (C++)<a class="headerlink" href="#using-the-module-api-c" title="Link to this heading">#</a></h3>
+<p>For applications using the higher-level <a class="reference internal" href="extension-module.html"><span class="std std-doc">Module API</span></a>, ETDump integration is simpler. Create an <code class="docutils literal notranslate"><span class="pre">ETDumpGen</span></code> instance and pass it to the <code class="docutils literal notranslate"><span class="pre">Module</span></code> constructor:</p>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;fstream&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;memory&gt;</span>
+
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/devtools/etdump/etdump_flatcc.h&gt;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="o">::</span><span class="nn">executorch</span><span class="o">::</span><span class="nn">extension</span><span class="p">;</span>
+
+<span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Module</span><span class="o">::</span><span class="n">LoadMode</span><span class="o">::</span><span class="n">Mmap</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="p">());</span>
+
+<span class="c1">// Execute a method, e.g., module.forward(...); or module.execute(&quot;my_method&quot;, ...);</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">etdump</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">dynamic_cast</span><span class="o">&lt;</span><span class="n">ETDumpGen</span><span class="o">*&gt;</span><span class="p">(</span><span class="k">module</span><span class="p">.</span><span class="n">event_tracer</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">trace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump</span><span class="o">-&gt;</span><span class="n">get_etdump_data</span><span class="p">();</span>
+
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">trace</span><span class="p">.</span><span class="n">buf</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">trace</span><span class="p">.</span><span class="n">size</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">unique_ptr</span><span class="o">&lt;</span><span class="kt">void</span><span class="p">,</span><span class="w"> </span><span class="k">decltype</span><span class="p">(</span><span class="o">&amp;</span><span class="n">free</span><span class="p">)</span><span class="o">&gt;</span><span class="w"> </span><span class="n">guard</span><span class="p">(</span><span class="n">trace</span><span class="p">.</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="n">free</span><span class="p">);</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">ofstream</span><span class="w"> </span><span class="n">file</span><span class="p">(</span><span class="s">&quot;/path/to/trace.etdump&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">ios</span><span class="o">::</span><span class="n">binary</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">file</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="n">file</span><span class="p">.</span><span class="n">write</span><span class="p">(</span><span class="k">static_cast</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*&gt;</span><span class="p">(</span><span class="n">trace</span><span class="p">.</span><span class="n">buf</span><span class="p">),</span><span class="w"> </span><span class="n">trace</span><span class="p">.</span><span class="n">size</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
 </pre></div>
 </div>
-<section id="make-sure-et-event-tracer-enabled-flag-is-enabled-or-etdump-will-be-empty">
-<h3>Make sure ET_EVENT_TRACER_ENABLED flag is enabled or ETDump will be empty.<a class="headerlink" href="#make-sure-et-event-tracer-enabled-flag-is-enabled-or-etdump-will-be-empty" title="Link to this heading">#</a></h3>
-<p>If the binary is not compiled with the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> preprocessor flag, no trace events will be recorded and the ETDump will be empty.</p>
+</section>
+<section id="using-the-python-runtime-api">
+<h3>Using the Python Runtime API<a class="headerlink" href="#using-the-python-runtime-api" title="Link to this heading">#</a></h3>
+<p>For Python applications using the <a class="reference internal" href="runtime-python-api-reference.html"><span class="std std-doc">Python Runtime API</span></a>, you can enable ETDump when loading a program:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span><span class="p">,</span> <span class="n">Program</span><span class="p">,</span> <span class="n">Method</span>
+
+<span class="c1"># Create program with etdump generation enabled</span>
+<span class="n">et_runtime</span><span class="p">:</span> <span class="n">Runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+<span class="n">program</span><span class="p">:</span> <span class="n">Program</span> <span class="o">=</span> <span class="n">et_runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span>
+    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/tmp/program.pte&quot;</span><span class="p">),</span>
+    <span class="n">enable_etdump</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">debug_buffer_size</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="mf">1e7</span><span class="p">),</span>  <span class="c1"># 10MB buffer to capture all debug info</span>
+<span class="p">)</span>
+
+<span class="c1"># Load method and execute</span>
+<span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">forward</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+
+<span class="c1"># Write etdump result to file</span>
+<span class="n">etdump_file</span> <span class="o">=</span> <span class="s2">&quot;/tmp/etdump_output.etdp&quot;</span>
+<span class="n">debug_file</span> <span class="o">=</span> <span class="s2">&quot;/tmp/debug_output.bin&quot;</span>
+<span class="n">program</span><span class="o">.</span><span class="n">write_etdump_result_to_file</span><span class="p">(</span><span class="n">etdump_file</span><span class="p">,</span> <span class="n">debug_file</span><span class="p">)</span>
+
+<span class="c1"># Check that files were created</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ETDump file created: </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">etdump_file</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Debug file created: </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">debug_file</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Note:</strong> The Python Runtime API requires ExecuTorch to be built with event tracing enabled (<code class="docutils literal notranslate"><span class="pre">EXECUTORCH_ENABLE_EVENT_TRACER=ON</span></code>).</p>
+</section>
+<section id="troubleshooting-empty-etdump">
+<h3>Troubleshooting: Empty ETDump<a class="headerlink" href="#troubleshooting-empty-etdump" title="Link to this heading">#</a></h3>
+<p>If the binary is not compiled with the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> preprocessor flag (either by setting <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_ENABLE_EVENT_TRACER=ON</span></code> in CMake or manually adding <code class="docutils literal notranslate"><span class="pre">-DET_EVENT_TRACER_ENABLED</span></code>), no trace events will be recorded and the ETDump will be empty.</p>
 <p>When this flag is missing, the following code:</p>
 <div class="highlight-C++ notranslate"><div class="highlight"><pre><span></span><span class="n">ETDumpResult</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump_gen</span><span class="p">.</span><span class="n">get_etdump_data</span><span class="p">();</span>
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="k">nullptr</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">size</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
@@ -1312,7 +1389,11 @@ document.write(`
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#generating-an-etdump">Generating an ETDump</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#make-sure-et-event-tracer-enabled-flag-is-enabled-or-etdump-will-be-empty">Make sure ET_EVENT_TRACER_ENABLED flag is enabled or ETDump will be empty.</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#build-configuration">Build Configuration</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-low-level-runtime-api">Using the Low-Level Runtime API</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-module-api-c">Using the Module API (C++)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-python-runtime-api">Using the Python Runtime API</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#troubleshooting-empty-etdump">Troubleshooting: Empty ETDump</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-an-etdump">Using an ETDump</a></li>
@@ -1541,7 +1622,7 @@ document.write(`
        "headline": "Prerequisite | ETDump - ExecuTorch Dump",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/etdump.html",
-       "articleBody": "Prerequisite | ETDump - ExecuTorch Dump# ETDump (ExecuTorch Dump) is one of the core components of the ExecuTorch Developer Tools. It is the mechanism through which all forms of profiling and debugging data is extracted from the runtime. Users can\u2019t parse ETDump directly; instead, they should pass it into the Inspector API, which deserializes the data, offering interfaces for flexible analysis and debugging. Generating an ETDump# Generating an ETDump is a relatively straightforward process. Users can follow the steps detailed below to integrate it into their application that uses ExecuTorch. Include the ETDump header in your code. #include \u003cexecutorch/devtools/etdump/etdump_flatcc.h\u003e Create an Instance of the ETDumpGen class and pass it into the load_method call that is invoked in the runtime. executorch::etdump::ETDumpGen etdump_gen; Result\u003cMethod\u003e method = program-\u003eload_method(method_name, \u0026memory_manager, \u0026etdump_gen); Dump Out the ETDump Buffer - after the inference iterations have been completed, users can dump out the ETDump buffer. If users are on a device which has a filesystem, they could just write it out to the filesystem. For more constrained embedded devices, users will have to extract the ETDump buffer from the device through a mechanism that best suits them (e.g. UART, JTAG etc.) etdump_result result = etdump_gen.get_etdump_data(); if (result.buf != nullptr \u0026\u0026 result.size \u003e 0) { // On a device with a file system users can just write it out // to the file-system. FILE* f = fopen(FLAGS_etdump_path.c_str(), \"w+\"); fwrite((uint8_t*)result.buf, 1, result.size, f); fclose(f); free(result.buf); } Compile your binary using CMake with the ET_EVENT_TRACER_ENABLED pre-processor flag to enable events to be traced and logged into ETDump inside the ExecuTorch runtime. This flag needs to be added to the ExecuTorch library and any operator library that you are compiling into your binary. For reference, you can take a look at examples/sdk/CMakeLists.txt. The lines of interest are: target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED) target_compile_options(portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED) Make sure ET_EVENT_TRACER_ENABLED flag is enabled or ETDump will be empty.# If the binary is not compiled with the ET_EVENT_TRACER_ENABLED preprocessor flag, no trace events will be recorded and the ETDump will be empty. When this flag is missing, the following code: ETDumpResult result = etdump_gen.get_etdump_data(); if (result.buf != nullptr \u0026\u0026 result.size \u003e 0) { ... } will always return: result.buf == nullptr result.size == 0 This indicates that no ETDump data was collected, and therefore nothing can be analyzed through the Inspector API. Using an ETDump# Pass this ETDump into the Inspector API to access this data and do post-run analysis.",
+       "articleBody": "Prerequisite | ETDump - ExecuTorch Dump# ETDump (ExecuTorch Dump) is one of the core components of the ExecuTorch Developer Tools. It is the mechanism through which all forms of profiling and debugging data is extracted from the runtime. Users can\u2019t parse ETDump directly; instead, they should pass it into the Inspector API, which deserializes the data, offering interfaces for flexible analysis and debugging. Generating an ETDump# Generating an ETDump is a relatively straightforward process. Users can follow the steps detailed below to integrate it into their application that uses ExecuTorch. Build Configuration# To enable ETDump support, you need to configure your CMake build with the following options: Required CMake options: -DEXECUTORCH_BUILD_DEVTOOLS=ON # Builds the devtools library including ETDump -DEXECUTORCH_ENABLE_EVENT_TRACER=ON # Enables event tracing in the runtime Required CMake targets to link: target_link_libraries(your_binary etdump # ETDump library # ... other ExecuTorch libraries ) The EXECUTORCH_ENABLE_EVENT_TRACER=ON option automatically sets the ET_EVENT_TRACER_ENABLED preprocessor flag for the ExecuTorch runtime and all operator libraries. Using the Low-Level Runtime API# Include the ETDump header in your code. #include \u003cexecutorch/devtools/etdump/etdump_flatcc.h\u003e Create an Instance of the ETDumpGen class and pass it into the load_method call that is invoked in the runtime. executorch::etdump::ETDumpGen etdump_gen; Result\u003cMethod\u003e method = program-\u003eload_method(method_name, \u0026memory_manager, \u0026etdump_gen); Dump Out the ETDump Buffer - after the inference iterations have been completed, users can dump out the ETDump buffer. If users are on a device which has a filesystem, they could just write it out to the filesystem. For more constrained embedded devices, users will have to extract the ETDump buffer from the device through a mechanism that best suits them (e.g. UART, JTAG etc.) etdump_result result = etdump_gen.get_etdump_data(); if (result.buf != nullptr \u0026\u0026 result.size \u003e 0) { // On a device with a file system users can just write it out // to the file-system. FILE* f = fopen(FLAGS_etdump_path.c_str(), \"w+\"); fwrite((uint8_t*)result.buf, 1, result.size, f); fclose(f); free(result.buf); } Using the Module API (C++)# For applications using the higher-level Module API, ETDump integration is simpler. Create an ETDumpGen instance and pass it to the Module constructor: #include \u003cfstream\u003e #include \u003cmemory\u003e #include \u003cexecutorch/extension/module/module.h\u003e #include \u003cexecutorch/devtools/etdump/etdump_flatcc.h\u003e using namespace ::executorch::extension; Module module(\"/path/to/model.pte\", Module::LoadMode::Mmap, std::make_unique\u003cETDumpGen\u003e()); // Execute a method, e.g., module.forward(...); or module.execute(\"my_method\", ...); if (auto* etdump = dynamic_cast\u003cETDumpGen*\u003e(module.event_tracer())) { const auto trace = etdump-\u003eget_etdump_data(); if (trace.buf \u0026\u0026 trace.size \u003e 0) { std::unique_ptr\u003cvoid, decltype(\u0026free)\u003e guard(trace.buf, free); std::ofstream file(\"/path/to/trace.etdump\", std::ios::binary); if (file) { file.write(static_cast\u003cconst char*\u003e(trace.buf), trace.size); } } } Using the Python Runtime API# For Python applications using the Python Runtime API, you can enable ETDump when loading a program: from pathlib import Path import os import torch from executorch.runtime import Runtime, Program, Method # Create program with etdump generation enabled et_runtime: Runtime = Runtime.get() program: Program = et_runtime.load_program( Path(\"/tmp/program.pte\"), enable_etdump=True, debug_buffer_size=int(1e7), # 10MB buffer to capture all debug info ) # Load method and execute forward: Method = program.load_method(\"forward\") inputs = (torch.ones(2, 2), torch.ones(2, 2)) outputs = forward.execute(inputs) # Write etdump result to file etdump_file = \"/tmp/etdump_output.etdp\" debug_file = \"/tmp/debug_output.bin\" program.write_etdump_result_to_file(etdump_file, debug_file) # Check that files were created print(f\"ETDump file created: {os.path.exists(etdump_file)}\") print(f\"Debug file created: {os.path.exists(debug_file)}\") Note: The Python Runtime API requires ExecuTorch to be built with event tracing enabled (EXECUTORCH_ENABLE_EVENT_TRACER=ON). Troubleshooting: Empty ETDump# If the binary is not compiled with the ET_EVENT_TRACER_ENABLED preprocessor flag (either by setting EXECUTORCH_ENABLE_EVENT_TRACER=ON in CMake or manually adding -DET_EVENT_TRACER_ENABLED), no trace events will be recorded and the ETDump will be empty. When this flag is missing, the following code: ETDumpResult result = etdump_gen.get_etdump_data(); if (result.buf != nullptr \u0026\u0026 result.size \u003e 0) { ... } will always return: result.buf == nullptr result.size == 0 This indicates that no ETDump data was collected, and therefore nothing can be analyzed through the Inspector API. Using an ETDump# Pass this ETDump into the Inspector API to access this data and do post-run analysis.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",

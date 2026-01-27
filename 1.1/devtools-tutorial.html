@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Developer Tools Usage Tutorial &#8212; ExecuTorch 1.1 documentation</title>
+    <title>Developer Tools Usage Tutorials &#8212; ExecuTorch 1.1 documentation</title>
   
   
   
@@ -1026,7 +1026,7 @@ document.write(`
 <li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
-<li class="toctree-l1 current active"><a class="current reference internal" href="#">Developer Tools Usage Tutorial</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Developer Tools Usage Tutorials</a></li>
 </ul>
 </div>
 </nav></div>
@@ -1115,7 +1115,7 @@ document.write(`
       </div>
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <meta itemprop="name" content="Developer Tools Usage Tutorial">
+        <meta itemprop="name" content="Developer Tools Usage Tutorials">
         <meta itemprop="position" content="2">
       </div>
     </div>
@@ -1129,9 +1129,28 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="developer-tools-usage-tutorial">
-<h1>Developer Tools Usage Tutorial<a class="headerlink" href="#developer-tools-usage-tutorial" title="Link to this heading">#</a></h1>
-<p>Please refer to the <a class="reference internal" href="tutorials/devtools-integration-tutorial.html"><span class="doc std std-doc">Developer Tools tutorial</span></a> <!-- @lint-ignore --> for a walkthrough on how to profile a model in ExecuTorch using the Developer Tools.</p>
+  <section id="developer-tools-usage-tutorials">
+<h1>Developer Tools Usage Tutorials<a class="headerlink" href="#developer-tools-usage-tutorials" title="Link to this heading">#</a></h1>
+<p>The ExecuTorch Developer Tools provide capabilities for profiling and debugging your models. We provide step-by-step tutorials for common workflows:</p>
+<section id="profiling-tutorial">
+<h2>Profiling Tutorial<a class="headerlink" href="#profiling-tutorial" title="Link to this heading">#</a></h2>
+<p>Please refer to the <a class="reference internal" href="tutorials/devtools-integration-tutorial.html"><span class="doc std std-doc">Profiling Tutorial</span></a> <!-- @lint-ignore --> for a walkthrough on how to profile a model in ExecuTorch using the Developer Tools. This tutorial covers:</p>
+<ul class="simple">
+<li><p>Generating ETRecord and ETDump artifacts</p></li>
+<li><p>Using the Inspector API to analyze performance data</p></li>
+<li><p>Identifying slow operators and bottlenecks</p></li>
+</ul>
+</section>
+<section id="debugging-tutorial">
+<h2>Debugging Tutorial<a class="headerlink" href="#debugging-tutorial" title="Link to this heading">#</a></h2>
+<p>Please refer to the <a class="reference internal" href="tutorials/devtools-debugging-tutorial.html"><span class="doc std std-doc">Debugging Tutorial</span></a> <!-- @lint-ignore --> for a walkthrough on how to debug numerical discrepancies in ExecuTorch models. This tutorial covers:</p>
+<ul class="simple">
+<li><p>Capturing intermediate outputs with debug buffers</p></li>
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">calculate_numeric_gap</span></code> to identify precision issues</p></li>
+<li><p>Debugging delegated models (e.g., XNNPACK)</p></li>
+<li><p>Comparing runtime outputs with eager model references</p></li>
+</ul>
+</section>
 </section>
 
 
@@ -1242,6 +1261,19 @@ document.write(`
               
                 <div class="bd-sidebar-secondary bd-toc">
 <div class="sidebar-secondary-items sidebar-secondary__inner">
+    
+       <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#profiling-tutorial">Profiling Tutorial</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#debugging-tutorial">Debugging Tutorial</a></li>
+</ul>
+  </nav></div>
     
        <div class="sidebar-secondary-item">
 
@@ -1461,11 +1493,11 @@ document.write(`
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Developer Tools Usage Tutorial",
-       "headline": "Developer Tools Usage Tutorial",
+       "name": "Developer Tools Usage Tutorials",
+       "headline": "Developer Tools Usage Tutorials",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/devtools-tutorial.html",
-       "articleBody": "Developer Tools Usage Tutorial# Please refer to the Developer Tools tutorial for a walkthrough on how to profile a model in ExecuTorch using the Developer Tools.",
+       "articleBody": "Developer Tools Usage Tutorials# The ExecuTorch Developer Tools provide capabilities for profiling and debugging your models. We provide step-by-step tutorials for common workflows: Profiling Tutorial# Please refer to the Profiling Tutorial for a walkthrough on how to profile a model in ExecuTorch using the Developer Tools. This tutorial covers: Generating ETRecord and ETDump artifacts Using the Inspector API to analyze performance data Identifying slow operators and bottlenecks Debugging Tutorial# Please refer to the Debugging Tutorial for a walkthrough on how to debug numerical discrepancies in ExecuTorch models. This tutorial covers: Capturing intermediate outputs with debug buffers Using calculate_numeric_gap to identify precision issues Debugging delegated models (e.g., XNNPACK) Comparing runtime outputs with eager model references",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",

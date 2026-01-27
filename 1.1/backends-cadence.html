@@ -59,8 +59,8 @@
     <link rel="icon" href="_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Samsung Exynos Backend (TBD)" href="backends-samsung-exynos.html" />
-    <link rel="prev" title="&lt;no title&gt;" href="backends-nxp.html" />
+    <link rel="next" title="LLMs" href="llm/working-with-llms.html" />
+    <link rel="prev" title="NXP eIQ Dim Order Support" href="backends/nxp/nxp-dim-order.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -1018,6 +1018,14 @@ document.write(`
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
   <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Backend Overview</span></p>
 <ul class="current nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="backends/xnnpack/xnnpack-overview.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="backends/xnnpack/xnnpack-partitioner.html">Partitioner API</a></li>
+
+<li class="toctree-l2"><a class="reference internal" href="backends/xnnpack/xnnpack-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/xnnpack/xnnpack-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/xnnpack/xnnpack-arch-internals.html">Architecture and Internals</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1"><a class="reference internal" href="backends/cuda/cuda-overview.html">CUDA Backend</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="backends/coreml/coreml-overview.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="backends/coreml/coreml-troubleshooting.html">Troubleshooting</a></li>
@@ -1026,11 +1034,60 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="backends/coreml/coreml-op-support.html">Op support</a></li>
 </ul>
 </details></li>
+<li class="toctree-l1"><a class="reference internal" href="backends/mps/mps-overview.html">MPS Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="backends/vulkan/vulkan-overview.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="backends/vulkan/vulkan-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/vulkan/vulkan-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/vulkan/vulkan-op-support.html">Operator Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/vulkan/vulkan-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="backends/vulkan/tutorials/vulkan-tutorials.html">Vulkan Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="backends/vulkan/tutorials/etvk-profiling-tutorial.html">Executing and profiling an ExecuTorch Vulkan model on device</a></li>
+<li class="toctree-l3"><a class="reference internal" href="backends/vulkan/tutorials/etvk-llama-tutorial.html">Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">Arm Ethos-U Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-troubleshooting.html">Arm Ethos-U Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="backends/arm-ethos-u/tutorials/arm-ethos-u-tutorials.html">Arm Ethos-U Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="backends/arm-ethos-u/tutorials/ethos-u-getting-started.html">Getting Started Tutorial</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="backends/arm-vgf/arm-vgf-overview.html">Arm VGF Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-vgf/arm-vgf-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-vgf/arm-vgf-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-vgf/arm-vgf-troubleshooting.html">Arm VGF Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="backends/arm-vgf/tutorials/arm-vgf-tutorials.html">Arm VGF Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="backends/arm-vgf/tutorials/vgf-getting-started.html">Getting Started Tutorial</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="backends/nxp/nxp-overview.html">NXP eIQ Neutron Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="backends/nxp/nxp-partitioner.html">Partitioner API</a></li>
+
+<li class="toctree-l2"><a class="reference internal" href="backends/nxp/nxp-quantization.html">NXP eIQ Neutron Quantization</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="backends/nxp/tutorials/nxp-tutorials.html">NXP Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="backends/nxp/tutorials/nxp-basic-tutorial.html">Preparing a Model for NXP eIQ Neutron Backend</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/nxp/nxp-dim-order.html">NXP eIQ Dim Order Support</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 current active"><a class="current reference internal" href="#">Cadence Xtensa Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-samsung-exynos.html">Samsung Exynos Backend (TBD)</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="backends/samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="backends/samsung/samsung-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/samsung/samsung-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/samsung/samsung-op-support.html">Operator Support</a></li>
+</ul>
+</details></li>
 </ul>
 </div>
 </nav></div>
@@ -1343,7 +1400,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.portable.scrip
 </ul>
 <p>In all cases the generated file is called <code class="docutils literal notranslate"><span class="pre">CadenceDemoModel.pte</span></code>.</p>
 <p><em><strong>Speech/Audio Models</strong></em>:</p>
-<p>The torchaudio <a class="reference external" href="https://pytorch.org/audio/stable/tutorials/online_asr_tutorial.html">RNNT-emformer</a> model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels:</p>
+<p>The torchaudio <a class="reference external" href="https://docs.pytorch.org/audio/stable/generated/torchaudio.pipelines.EMFORMER_RNNT_BASE_LIBRISPEECH.html">RNNT-emformer</a> model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels:</p>
 <ul>
 <li><p><strong>RNNT Predictor</strong>: Sequence of basic ops (embedding, ReLU, linear, layer norm)</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.cadence.models.rnnt_predictor
@@ -1539,20 +1596,20 @@ First<span class="w"> </span><span class="m">20</span><span class="w"> </span>el
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="backends-nxp.html"
+       href="backends/nxp/nxp-dim-order.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">&lt;no title&gt;</p>
+        <p class="prev-next-title">NXP eIQ Dim Order Support</p>
       </div>
     </a>
     <a class="right-next"
-       href="backends-samsung-exynos.html"
+       href="llm/working-with-llms.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Samsung Exynos Backend (TBD)</p>
+        <p class="prev-next-title">LLMs</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1578,20 +1635,20 @@ First<span class="w"> </span><span class="m">20</span><span class="w"> </span>el
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="backends-nxp.html"
+       href="backends/nxp/nxp-dim-order.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">&lt;no title&gt;</p>
+        <p class="prev-next-title">NXP eIQ Dim Order Support</p>
       </div>
     </a>
     <a class="right-next"
-       href="backends-samsung-exynos.html"
+       href="llm/working-with-llms.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Samsung Exynos Backend (TBD)</p>
+        <p class="prev-next-title">LLMs</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
