@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,7 +46,7 @@ class CommonIndexTensorVisitor(NodeVisitor):
 
         """
         if isinstance(tensor, Node):
-            dtype, shape, _ = extract_tensor_meta(tensor.meta, self.tosa_spec)
+            dtype, shape, _ = extract_tensor_meta(tensor.meta)
             return tensor.name, dtype, shape
         else:
             return tensor.name, tensor.dtype, tensor.shape
@@ -133,9 +133,7 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
         index_nodes = indices.special
 
         # Broadcast indices
-        broadcasted_tensors = tutils.broadcast_tensors(
-            tosa_graph, index_nodes, self.tosa_spec
-        )
+        broadcasted_tensors = tutils.broadcast_tensors(tosa_graph, index_nodes)
 
         # Calculate strides so we can shift indices down the line.
         values_strides = self._calculate_value_strides(values.shape)

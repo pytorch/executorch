@@ -833,10 +833,20 @@ class FuseMulScalarIntoDequantPass(RemoveOrReplacePassInterface):
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Ensure that the single user of dequant is aten.mul.Scalar
         mul_node = node
-        if len(node.all_input_nodes) != 1 or len(node.all_input_nodes[0].users) != 1:
+        input_nodes = mul_node.all_input_nodes
+        if len(input_nodes) != 1 or len(input_nodes[0].users) != 1:
             return False
 
-        dequant_node = mul_node.all_input_nodes[0]
+        dequant_node = input_nodes[0]
+
+        if dequant_node.target not in [
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+        ]:
+            return False
+
+        if len(mul_node.args) <= 1 or isinstance(mul_node.args[1], torch.fx.Node):
+            return False
 
         new_deq_args = list(dequant_node.args)
         assert isinstance(dequant_node.args[1], Number)
@@ -869,7 +879,6 @@ class FuseMulTensorIntoQuantPass(RemoveOrReplacePassInterface):
     @property
     def targets(self) -> list[EdgeOpOverload]:
         return [exir_ops.edge.aten.mul.Tensor]
-        # return [exir_ops.edge.quantized_decomposed.quantize_per_tensor.default, exir_ops.edge.cadence.quantize_per_tensor.default]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
 
@@ -878,7 +887,8 @@ class FuseMulTensorIntoQuantPass(RemoveOrReplacePassInterface):
             return False
 
         user = next(iter(mul_node.users))
-        if len(user.all_input_nodes) != 1:
+        user_input_nodes = user.all_input_nodes
+        if len(user_input_nodes) != 1:
             return False
 
         if user.target not in [
