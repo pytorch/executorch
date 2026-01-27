@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -55,7 +55,7 @@ class ConstantPadNDVisitor(NodeVisitor):
                 ts.DType.FP32,
                 ts.DType.BOOL,
             ],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         if inputs[0].dtype == ts.DType.INT8:

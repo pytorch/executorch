@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -52,7 +52,7 @@ def binary_operator_factory(
                     self.target,
                     [*inputs, output],
                     [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
-                    output.tosa_spec,
+                    self.tosa_spec,
                 )
             if self.target in [
                 "aten.logical_and.default",
@@ -63,7 +63,7 @@ def binary_operator_factory(
                     self.target,
                     [*inputs, output],
                     [ts.DType.BOOL],
-                    output.tosa_spec,
+                    self.tosa_spec,
                 )
             attr = ts.TosaSerializerAttribute()
             attr_builder(attr)
