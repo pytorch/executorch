@@ -46,12 +46,7 @@ class NodeVisitor:
     # a specific TOSA version.
     # When all node_visitors has been refactored to target a specific
     # version, this list should be removed.
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.1+INT"),
-        TosaSpecification.create_from_string("TOSA-1.1+FP"),
-    ]
+    tosa_specs = TosaSpecification.all_versions_and_profiles()
 
     def __init__(
         self,

@@ -17,10 +17,7 @@ from executorch.backends.arm.tosa.specification import (
 
 @register_fake_tosa_op(
     "RESCALE(Tensor input1, ScalarType dtype, float[] scale, int in_zp, int out_zp) -> Tensor",  # schema
-    (
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.1+INT"),
-    ),  # target TOSA specifications
+    TosaSpecification.all_versions_for_profile("INT"),  # target TOSA specifications
 )
 def RESCALE(
     x: torch.Tensor, dtype: torch.dtype, scales: List[float], in_zp: int, out_zp: int

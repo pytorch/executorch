@@ -19,12 +19,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 # Add kwarg instead?
 @register_fake_tosa_op(
     "RESIZE(Tensor input, SymInt[]? output_size, bool align_corners, float[]? scale_factors, *, str resize_mode) -> Tensor",  # schema
-    (
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.1+INT"),
-        TosaSpecification.create_from_string("TOSA-1.1+FP"),
-    ),  # target TOSA specifications
+    TosaSpecification.all_versions_and_profiles(),  # target TOSA specifications
 )
 def RESIZE(
     x: torch.Tensor,

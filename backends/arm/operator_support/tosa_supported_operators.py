@@ -86,7 +86,7 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
         self.reporter = reporter
 
     # Class attributes populated by subclasses
-    tosa_specs: list[TosaSpecification] = []
+    tosa_specs: list[TosaSpecification] = TosaSpecification.all_versions_and_profiles()
     targets: list[str] = []
 
     @final

@@ -87,13 +87,6 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
         exir_ops.edge.aten.avg_pool2d.default,
     ]
 
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.1+INT"),
-        TosaSpecification.create_from_string("TOSA-1.1+FP"),
-    ]
-
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
         """Return True if ``avg_pool2d`` satisfies U55 constraints.
 
@@ -177,13 +170,6 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
 
     targets = [
         exir_ops.edge.aten.max_pool2d_with_indices.default,
-    ]
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.1+INT"),
-        TosaSpecification.create_from_string("TOSA-1.1+FP"),
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
