@@ -101,16 +101,18 @@ enum class GPUMemoryLayout : uint8_t {
    * 16 element block is loaded, rather than 4 elements along one dimension.
    */
 
-  // "vector" packed layouts - single level of packing (4 elements along packed
-  // dim per int32)
-  TENSOR_PACKED_INT8_4W = 5u,
-  TENSOR_PACKED_INT8_4C = 6u,
-  TENSOR_PACKED_INT8_4H = 7u,
-
   // Block packed layouts - two levels of packing (4x4 block composed of
   // elements from two packed dims per ivec4)
   TENSOR_PACKED_INT8_4W4C = 3u,
   TENSOR_PACKED_INT8_4H4W = 4u,
+
+  // "vector" packed layouts - single level of packing (4 elements along packed
+  // dim per int32)
+  TENSOR_PACKED_INT8_4W = 5u,
+  TENSOR_PACKED_INT8_4C = 6u,
+
+  // Block transposed layouts
+  TENSOR_PACKED_INT8_4C1W = 8u,
 };
 
 static constexpr GPUMemoryLayout kWidthPacked =
@@ -128,14 +130,14 @@ static constexpr GPUMemoryLayout kPackedInt8_4W =
 static constexpr GPUMemoryLayout kPackedInt8_4C =
     GPUMemoryLayout::TENSOR_PACKED_INT8_4C;
 
-static constexpr GPUMemoryLayout kPackedInt8_4H =
-    GPUMemoryLayout::TENSOR_PACKED_INT8_4H;
-
 static constexpr GPUMemoryLayout kPackedInt8_4W4C =
     GPUMemoryLayout::TENSOR_PACKED_INT8_4W4C;
 
 static constexpr GPUMemoryLayout kPackedInt8_4H4W =
     GPUMemoryLayout::TENSOR_PACKED_INT8_4H4W;
+
+static constexpr GPUMemoryLayout kPackedInt8_4C1W =
+    GPUMemoryLayout::TENSOR_PACKED_INT8_4C1W;
 
 template <typename T>
 T to_packed_dim(const GPUMemoryLayout layout) {
@@ -150,16 +152,92 @@ T to_packed_dim(const GPUMemoryLayout layout) {
       return 0;
     case kPackedInt8_4C:
       return 2;
-    case kPackedInt8_4H:
-      return 1;
     case kPackedInt8_4W4C:
       return 2;
     case kPackedInt8_4H4W:
       return 0;
+    case kPackedInt8_4C1W:
+      return 2;
   };
   // Should be unreachable
   return 0;
 }
+
+template <typename T>
+T to_outer_packed_dim(const GPUMemoryLayout layout) {
+  switch (layout) {
+    case kWidthPacked:
+      return 1;
+    case kHeightPacked:
+      return 0;
+    case kChannelsPacked:
+      return 0;
+    case kPackedInt8_4W:
+      return 1;
+    case kPackedInt8_4C:
+      return 0;
+    case kPackedInt8_4W4C:
+      return 0;
+    case kPackedInt8_4H4W:
+      return 1;
+    case kPackedInt8_4C1W:
+      return 0;
+  };
+  // Should be unreachable
+  return 1;
+}
+
+template <typename T>
+T to_packed_dim_block_size(
+    const GPUMemoryLayout layout,
+    const StorageType storage) {
+  switch (layout) {
+    case kWidthPacked:
+      return storage == kBuffer ? 1 : 4;
+    case kHeightPacked:
+      return storage == kBuffer ? 1 : 4;
+    case kChannelsPacked:
+      return storage == kBuffer ? 1 : 4;
+    case kPackedInt8_4W:
+      return storage == kBuffer ? 4 : 16;
+    case kPackedInt8_4C:
+      return storage == kBuffer ? 4 : 16;
+    case kPackedInt8_4W4C:
+      return 4;
+    case kPackedInt8_4H4W:
+      return 4;
+    case kPackedInt8_4C1W:
+      return storage == kBuffer ? 4 : 16;
+  };
+  // Should be unreachable
+  return 1;
+}
+
+template <typename T>
+T to_outer_packed_dim_block_size(const GPUMemoryLayout layout) {
+  switch (layout) {
+    case kWidthPacked:
+      return 1;
+    case kHeightPacked:
+      return 1;
+    case kChannelsPacked:
+      return 1;
+    case kPackedInt8_4W:
+      return 1;
+    case kPackedInt8_4C:
+      return 1;
+    case kPackedInt8_4W4C:
+      return 4;
+    case kPackedInt8_4H4W:
+      return 4;
+    case kPackedInt8_4C1W:
+      return 1;
+  };
+  // Should be unreachable
+  return 1;
+}
+
+bool is_block_transposed_layout(const GPUMemoryLayout layout);
 
 bool is_packed_int8_layout(const GPUMemoryLayout layout);
 
@@ -199,14 +277,14 @@ inline std::ostream& operator<<(
     case kPackedInt8_4C:
       os << "TENSOR_PACKED_INT8_4C";
       break;
-    case kPackedInt8_4H:
-      os << "TENSOR_PACKED_INT8_4H";
-      break;
     case kPackedInt8_4W4C:
       os << "TENSOR_PACKED_INT8_4W4C";
       break;
     case kPackedInt8_4H4W:
       os << "TENSOR_PACKED_INT8_4H4W";
+      break;
+    case kPackedInt8_4C1W:
+      os << "TENSOR_PACKED_INT8_4C1W";
       break;
   }
   return os;
