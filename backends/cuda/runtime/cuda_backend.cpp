@@ -304,9 +304,9 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         args.size())
 
-    // NOTE: ExecuTorch tensors maybe on CPU or GPU due to the skip-copy
-    // optimization We need to create GPU copies for CUDA kernel execution using
-    // SlimTensor
+    // NOTE: ExecuTorch tensors may be on CPU or GPU due to the skip-copy
+    // optimization. We need to create GPU copies for CUDA kernel execution
+    // using SlimTensor.
     std::vector<SlimTensor*> gpu_inputs(n_inputs);
     std::vector<SlimTensor*> gpu_outputs(n_outputs);
 
@@ -362,10 +362,11 @@ class ET_EXPERIMENTAL CudaBackend final
           DEFAULT_CUDA_DEVICE));
     }
 
-    // Run AOTI container with GPU SlimTensors
-    // NOTE: The AOTI model may REPLACE the output tensor pointers during run().
-    // Our pre-allocated tensors might be deleted by the model, and gpu_outputs
-    // will contain pointers to NEW tensors that the model allocated.
+    // Run the AOTI container with SlimTensors.
+    //
+    // NOTE: The handle->run function (defined in aoti_delegate_handle.h) expects
+    // ETensor* as input/output. We avoid changing its signature since it's shared
+    // with the Metal backend. Instead, we reinterpret_cast SlimTensor* to Tensor*
     AOTIRuntimeError error = handle->run(
         handle->container_handle,
         reinterpret_cast<Tensor**>(gpu_inputs.data()),
@@ -385,8 +386,7 @@ class ET_EXPERIMENTAL CudaBackend final
     const bool copy_outputs = !should_skip_copy_for_method(handle->method_name);
 
     if (copy_outputs) {
-      // ET_LOG(Info, "copy_outputs = true -- copying outputs back to CPU");
-      // Copy GPU SlimTensor results back to CPU ETensors
+      // Deep copy GPU SlimTensor results back to CPU ETensors
       for (size_t i = 0; i < n_outputs; i++) {
         auto* cpu_output_tensor = &(args[i + n_inputs]->toTensor());
         ET_CHECK_OK_OR_RETURN_ERROR(
@@ -395,15 +395,16 @@ class ET_EXPERIMENTAL CudaBackend final
             i);
       }
     } else {
-      // Skip-copy optimization: point ETensor directly to GPU data
-      // The caller is responsible for handling GPU data directly
-      // We store these NEW tensors for next cycle usage and delete
-      // out-of-date tensors for lifetime management.
+      // Skip-copy optimization: point ETensor directly to GPU data.
+      // The caller is responsible for handling GPU data directly.
+      //
+      // Lifetime management: We cache the newly created GPU tensors and delete
+      // the previous round's tensors, since they are no longer needed.
       {
         std::lock_guard<std::mutex> guard(cached_outputs_mutex_);
         auto& cached_outputs = cached_outputs_[handle];
 
-        // Delete the PREVIOUS round's tensors for life management since they will never be used.
+        // Delete the previous round's tensors since they are no longer in use.
         for (auto* tensor : cached_outputs) {
           if (tensor != nullptr) {
             delete tensor;
@@ -412,9 +413,7 @@ class ET_EXPERIMENTAL CudaBackend final
         cached_outputs.clear();
 
         for (size_t i = 0; i < n_outputs; i++) {
-          // gpu_outputs[i] now points to a tensor allocated by the AOTI model
-          // (it may have replaced our pre-allocated tensor during handle->run).
-          // Store this pointer for lifetime management.
+          // Cache this output tensor to keep the underlying GPU data alive.
           cached_outputs.push_back(gpu_outputs[i]);
 
           // Wrap the GPU SlimTensor data into the ETensor (zero-copy).
@@ -499,9 +498,9 @@ class ET_EXPERIMENTAL CudaBackend final
   std::string skip_copy_method_;
 
   // Cached output tensors for skip-copy optimization.
-  // When copy-skip is enabled, output SlimTensors are cached here to keep
-  // GPU memory alive while the caller processes the results.
-  // Maps from AOTIDelegateHandle* to its cached outputs.
+  // When skip-copy is enabled, output SlimTensors are cached here to keep
+  // the underlying GPU memory alive while the caller processes the results.
+  // Maps each AOTIDelegateHandle* to its vector of cached output tensors.
   mutable std::mutex cached_outputs_mutex_;
   mutable std::unordered_map<AOTIDelegateHandle*, std::vector<SlimTensor*>>
       cached_outputs_;
