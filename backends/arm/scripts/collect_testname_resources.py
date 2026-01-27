@@ -47,6 +47,7 @@ _CUSTOM_EDGE_OPS = [
     "sum.default",
     "unbind.int",
     "unflatten.int",
+    "unfold_copy.default",
     "_native_batch_norm_legit_no_training.default",
     "_native_batch_norm_legit.no_stats",
     "alias_copy.default",

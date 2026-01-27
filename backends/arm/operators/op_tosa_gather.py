@@ -52,7 +52,7 @@ class GatherVisitor(NodeVisitor):
             self.target,
             [indices],
             [ts.DType.INT32],
-            output.tosa_spec,
+            self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
@@ -64,7 +64,7 @@ class GatherVisitor(NodeVisitor):
                 ts.DType.FP16,
                 ts.DType.FP32,
             ],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()
