@@ -14,7 +14,7 @@ from install_utils import determine_torch_url, is_intel_mac_os, python_is_compat
 
 # The pip repository that hosts torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
-TORCH_URL_BASE = "https://download.pytorch.org/whl/"
+TORCH_URL_BASE = "https://download.pytorch.org/whl"
 
 # Supported CUDA versions - modify this to add/remove supported versions
 # Format: tuple of (major, minor) version numbers
