@@ -180,3 +180,175 @@ def test_slice_tensor_16a8w_u85_INT(test_data: torch.Tensor):
         get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
+
+
+####################################
+## Non-unit step / stride slicing ##
+####################################
+
+input_t_step = Tuple[torch.Tensor, int, int, int, int]  # (x, dim, start, end, step)
+
+
+test_data_step_fp = {
+    # x[0:10:2] == x[::2]
+    "arange_fp32_1d_step2": lambda: (
+        torch.arange(10, dtype=torch.float32),
+        0,
+        0,
+        10,
+        2,
+    ),
+    # x[:, 1:10:4]
+    "arange_fp32_2d_step4": lambda: (
+        torch.arange(40, dtype=torch.float32).reshape(4, 10),
+        1,
+        1,
+        10,
+        4,
+    ),
+    # x[:, 0:4:2, :]
+    "arange_fp32_3d_dim1_step2": lambda: (
+        torch.arange(2 * 4 * 17, dtype=torch.float32).reshape(2, 4, 17),
+        1,
+        0,
+        4,
+        2,
+    ),
+    # x[:, :, :, 0:17:4]
+    "arange_fp32_4d_dim3_step4": lambda: (
+        torch.arange(2 * 3 * 5 * 17, dtype=torch.float32).reshape(2, 3, 5, 17),
+        3,
+        0,
+        17,
+        4,
+    ),
+    # x[:, 0:12:4]
+    "bool_2d_step4": lambda: (
+        (torch.rand((2, 12)) < 0.5),  # [2,12], dtype=bool
+        1,
+        0,
+        12,
+        4,
+    ),
+}
+
+test_data_step_int = {
+    # x[:, 0:9:3]
+    "rand_int8_2d_step3": lambda: (
+        torch.randint(-8, 8, size=(3, 9), dtype=torch.int8),
+        1,
+        0,
+        9,
+        3,
+    ),
+    # x[:, 0:6:2, :]
+    "arange_int32_3d_step2_dim1": lambda: (
+        torch.arange(2 * 6 * 4, dtype=torch.int32).reshape(2, 6, 4),
+        1,
+        0,
+        6,
+        2,
+    ),
+    # x[:, :, :, 0:19:4]
+    "arange_int8_4d_dim3_step4": lambda: (
+        torch.arange(2 * 2 * 4 * 19, dtype=torch.int8).reshape(2, 2, 4, 19),
+        3,
+        0,
+        19,
+        4,
+    ),
+    # x[:, 0:12:4]
+    "bool_2d_step4": lambda: (
+        (torch.rand((2, 12)) < 0.5),  # [2,12], dtype=bool
+        1,
+        0,
+        12,
+        4,
+    ),
+}
+
+
+class SliceWithStep(torch.nn.Module):
+    def forward(
+        self, x: torch.Tensor, dim_: int, start_: int, end_: int, step_: int
+    ) -> torch.Tensor:
+        # Use aten.slice to generate a slice_copy in Edge for lowering.
+        return torch.ops.aten.slice.Tensor(x, dim_, start_, end_, step_)
+
+
+@common.parametrize("test_data", test_data_step_fp)
+def test_slice_tensor_tosa_FP_step(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t_step](
+        SliceWithStep(),
+        test_data(),
+        aten_op=aten_op,
+        exir_op=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_step_int | test_data_step_fp)
+def test_slice_tensor_tosa_INT_step(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t_step](
+        SliceWithStep(),
+        test_data(),
+        aten_op=aten_op,
+        exir_op=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_data_step_int | test_data_step_fp,
+    xfails={
+        "bool_2d_step4": "MLETORCH-1744: bool test fails",
+    },
+)
+@common.XfailIfNoCorstone300
+def test_slice_tensor_u55_INT_step(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
+        SliceWithStep(),
+        test_data(),
+        aten_ops=aten_op,
+        exir_ops=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_step_int | test_data_step_fp)
+@common.XfailIfNoCorstone320
+def test_slice_tensor_u85_INT_step(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
+        SliceWithStep(),
+        test_data(),
+        aten_ops=aten_op,
+        exir_ops=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_step_int | test_data_step_fp)
+@common.SkipIfNoModelConverter
+def test_slice_tensor_vgf_no_quant_step(test_data: Tuple):
+    pipeline = VgfPipeline[input_t_step](
+        SliceWithStep(),
+        test_data(),
+        aten_op=aten_op,
+        exir_op=exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_step_int | test_data_step_fp)
+@common.SkipIfNoModelConverter
+def test_slice_tensor_vgf_quant_step(test_data: Tuple):
+    pipeline = VgfPipeline[input_t_step](
+        SliceWithStep(),
+        test_data(),
+        aten_op=aten_op,
+        exir_op=exir_op,
+        quantize=True,
+    )
+    pipeline.run()

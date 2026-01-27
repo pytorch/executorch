@@ -78,18 +78,18 @@ class SliceVisitor(NodeVisitor):
                 ts.DType.INT8,
                 ts.DType.INT16,
                 ts.DType.INT32,
+                ts.DType.BF16,
                 ts.DType.FP32,
             ],
             self.tosa_spec,
         )
 
-        # See slice_copy_support.py
+        # TOSA.SLICE has no stride parameter. Any non-unit-step slice_copy must have been
+        # rewritten earlier (e.g. by DecomposeStridedSliceCopyPass), so only step=1 is legal here.
         if not (len(inputs) == 4 or (len(inputs) == 5 and inputs[4].number == 1)):
             raise ValueError("Unsupported combination of inputs")
 
-        # aten.slice_copy supports slicing in 1d at a time.
-        # The arguments are the actual input, dimension of slicing, start index, end index and optinal step or stride.
-        input_node, dim, start, end = inputs
+        input_node, dim, start, end = inputs[:4]
 
         # Translate and check parameters in Pytorch dim order.
         shape = input_node.shape
