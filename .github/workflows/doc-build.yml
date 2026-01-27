@@ -13,6 +13,10 @@ on:
   schedule:
     - cron: '0 0 * * *'
 
+concurrency:
+  group: docs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main

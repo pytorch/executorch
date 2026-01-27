@@ -64,6 +64,7 @@ from . import (  # noqa
     op_tosa_scatter,
     op_tosa_table,
     op_tosa_transpose,
+    op_tosa_transpose_conv2d,
     op_view,
     op_where,
     op_while,

@@ -35,6 +35,7 @@ _CUSTOM_EDGE_OPS = [
     "linear.default",
     "maximum.default",
     "mean.default",
+    "log1p.default",
     "multihead_attention.default",
     "adaptive_avg_pool2d.default",
     "bitwise_right_shift.Tensor",

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -277,6 +277,27 @@ class SharedQspecSub(torch.nn.Module):
         return torch.clone(x - y)
 
 
+class SharedQspecCompetingQspecs(torch.nn.Module):
+    ops_before_transforms = {}
+    ops_after_transforms = {}
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 3, 1)
+
+    def forward(self, x):
+        return torch.cat([self.conv(x), x], dim=1)
+
+
+class SharedQspecNoQspecs(torch.nn.Module):
+    ops_before_transforms = {}
+    ops_after_transforms = {}
+
+    def forward(self, x):
+        z = torch.clone(x - x)
+        return z - z
+
+
 test_cases = {
     "multiple_clusters": McuTestCase(
         SharedQspecMulipleClusters(),
@@ -326,15 +347,10 @@ test_cases = {
         SharedQspecManyForks(),
         (ramp_tensor(-20, 2, (4, 4)),),
     ),
-    "non-quantized_op": McuTestCase(
-        SharedQspecSub(),
-        (ramp_tensor(0, 10, (5, 5)), ramp_tensor(0, 1, (5, 5))),
-    ),
 }
 
 xfails = {
     "surrounded_quantized_op_constant": "Numerical error since the add is forced to have non-correct qparams.",
-    "non-quantized_op": "Non-quantized ops are not currently supported in SharedQspecQuantizer.",
 }
 
 
@@ -357,3 +373,30 @@ def test_shared_qspec_quantizer(test_case):
             continue
 
         assert get_first_fake_tensor(node).dtype == torch.int8, f"{node.name}"
+
+
+float_test_cases = {
+    "non-quantized_op": McuTestCase(
+        SharedQspecSub(),
+        (ramp_tensor(0, 10, (5, 5)), ramp_tensor(0, 1, (5, 5))),
+    ),
+    "competing_qspecs": McuTestCase(
+        SharedQspecCompetingQspecs(),
+        (ramp_tensor(0, 10, (1, 3, 5, 5)).to(memory_format=torch.channels_last),),
+    ),
+    "no_qspecs": McuTestCase(
+        SharedQspecNoQspecs(),
+        (ramp_tensor(0, 10, (1, 3, 5, 5)),),
+    ),
+}
+
+
+@parametrize("test_case", float_test_cases)
+def test_shared_qspec_quantizer_no_qspecs(test_case):
+    """
+    Test that ops which does not change dynamic range are able to use int8 portable kernels.
+    """
+    tester = CortexMTester(test_case.model, test_case.example_inputs)
+    tester.test_dialect(
+        test_case.model.ops_before_transforms, test_case.model.ops_after_transforms
+    )
