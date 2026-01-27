@@ -30,6 +30,20 @@
             }
         },
         {
+            "name": "parakeet-cuda-debug",
+            "displayName": "Parakeet runner (CUDA, Debug)",
+            "inherits": ["parakeet-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        },
+        {
             "name": "parakeet-metal",
             "displayName": "Parakeet runner (Metal)",
             "inherits": ["parakeet-base"],
@@ -54,6 +68,12 @@
             "name": "parakeet-cuda",
             "displayName": "Build Parakeet runner (CUDA)",
             "configurePreset": "parakeet-cuda",
+            "targets": ["parakeet_runner"]
+        },
+        {
+            "name": "parakeet-cuda-debug",
+            "displayName": "Build Parakeet runner (CUDA, Debug)",
+            "configurePreset": "parakeet-cuda-debug",
             "targets": ["parakeet_runner"]
         },
         {
@@ -89,6 +109,20 @@
                 {
                     "type": "build",
                     "name": "parakeet-cuda"
+                }
+            ]
+        },
+        {
+            "name": "parakeet-cuda-debug",
+            "displayName": "Configure and build Parakeet runner (CUDA, Debug)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "parakeet-cuda-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "parakeet-cuda-debug"
                 }
             ]
         },
