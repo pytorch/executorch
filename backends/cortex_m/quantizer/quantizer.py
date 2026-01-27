@@ -17,6 +17,10 @@ from executorch.backends.cortex_m.passes.passes_utils import (
     is_channel_broadcast,
     is_channels_last,
 )
+from executorch.backends.cortex_m.quantizer.node_finders import (
+    GlobalNodeFinder,
+    NodeFinder,
+)
 from executorch.backends.cortex_m.quantizer.operator_configs import (
     BINARY_OP_PATTERNS,
     CONV_OP_PATTERNS,
@@ -27,10 +31,7 @@ from executorch.backends.cortex_m.quantizer.operator_configs import (
     INT8_SOFTMAX_OPERATOR_CONFIG,
     SOFTMAX_OP_PATTERNS,
 )
-from executorch.backends.cortex_m.quantizer.quantization_configs import (
-    INT8_PER_TENSOR_CONFIG,
-    QuantizationSpec,
-)
+from executorch.backends.cortex_m.quantizer.quantization_configs import QuantizationSpec
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.quantizer import (
@@ -215,13 +216,19 @@ class CortexMQuantizer(ComposableQuantizer):
         return False
 
     def __init__(self) -> None:
+        global_node_finder = GlobalNodeFinder()
+
         quantizers: List[Quantizer] = [
             OperatorConfigQuantizer(
-                INT8_BINARY_OPS_OPERATOR_CONFIG, filter_fn=self.broadcasting_filter
+                INT8_BINARY_OPS_OPERATOR_CONFIG,
+                global_node_finder,
+                filter_fn=self.broadcasting_filter,
             ),
-            OperatorConfigQuantizer(INT8_LINEAR_OPERATOR_CONFIG),
+            OperatorConfigQuantizer(INT8_LINEAR_OPERATOR_CONFIG, global_node_finder),
             OperatorConfigQuantizer(
-                INT8_CONV_OPERATOR_CONFIG, filter_fn=self.nchw_filter
+                INT8_CONV_OPERATOR_CONFIG,
+                global_node_finder,
+                filter_fn=self.nchw_filter,
             ),
             OperatorConfigQuantizer(
                 INT8_CONV_TRANSPOSE_OPERATOR_CONFIG,
@@ -229,10 +236,9 @@ class CortexMQuantizer(ComposableQuantizer):
             ),
             OperatorConfigQuantizer(
                 INT8_SOFTMAX_OPERATOR_CONFIG,
+                global_node_finder,
                 filter_fn=self.softmax_memory_format_filter,
             ),
-            InputQuantizer(INT8_PER_TENSOR_CONFIG),
-            OutputQuantizer(INT8_PER_TENSOR_CONFIG),
             SharedQspecQuantizer(),
         ]
         super().__init__(quantizers)
@@ -260,9 +266,11 @@ class OperatorConfigQuantizer(Quantizer):
     def __init__(
         self,
         operator_config: QuantizationConfig,
+        node_finder: NodeFinder,
         filter_fn: Callable[[Node], bool] = lambda node: False,
     ) -> None:
         self.operator_config = operator_config
+        self.node_finder = node_finder
         self.filter_fn = filter_fn
 
     def check_node(self, node: Optional[Node], target: str) -> bool:
@@ -314,9 +322,12 @@ class OperatorConfigQuantizer(Quantizer):
         for p in sorted(patterns, key=len, reverse=True):
             patterns_by_first[p[0]].append(p)
 
-        for node in model.graph.nodes:
+        for node in self.node_finder.find_nodes(model):
             if node.meta.get(OperatorConfigQuantizer.Q_PATTERN_MATCHED_KEY, False):
                 continue
+            if node.op == "placeholder" or node.op == "output":
+                node.meta["quantizer_matched"] = True
+                yield [node]
             for pattern in patterns_by_first.get(node.target, []):
                 match_or_none = self.check_pattern(node, pattern)
                 if match_or_none is not None:
@@ -389,59 +400,6 @@ class OperatorConfigQuantizer(Quantizer):
         matches = self.match_patterns(model, self.operator_config.operators)
         for match in matches:
             self.annotate_match(match, self.operator_config.config, model)
-
-    def validate(self, model: GraphModule) -> bool:
-        return True
-
-
-class InputQuantizer(Quantizer):
-    """
-    Quantizes only the input activations of the graph.
-    """
-
-    def __init__(
-        self,
-        quantization_config: QuantizationConfig,
-        filter_fn: Callable[[Node], bool] = lambda node: False,
-    ) -> None:
-        self.quantization_config = quantization_config
-        self.filter_fn = filter_fn
-
-    def annotate(self, model: GraphModule) -> None:
-        for node in model.graph.nodes:
-            is_placeholder = node.op == "placeholder"
-            is_filtered = self.filter_fn(node)
-            if is_placeholder and not is_filtered:
-                mark_node_as_annotated(
-                    node, {}, self.quantization_config.output_activation
-                )
-
-    def validate(self, model: GraphModule) -> bool:
-        return True
-
-
-class OutputQuantizer(Quantizer):
-    """
-    Quantizes only the output activations of the graph.
-    """
-
-    def __init__(
-        self,
-        quantization_config: QuantizationConfig,
-        filter_fn: Callable[[Node], bool] = lambda node: False,
-    ) -> None:
-        self.quantization_config = quantization_config
-        self.filter_fn = filter_fn
-
-    def annotate(self, model: GraphModule) -> None:
-        output_node = model.graph.output_node()
-        input_qspec_map = {
-            n: self.quantization_config.input_activation
-            for n in output_node.all_input_nodes
-            if not self.filter_fn(n)
-        }
-        output_qspec = self.quantization_config.output_activation
-        mark_node_as_annotated(output_node, input_qspec_map, output_qspec)
 
     def validate(self, model: GraphModule) -> bool:
         return True
