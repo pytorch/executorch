@@ -11,6 +11,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <executorch/backends/vulkan/runtime/api/containers/StagingBuffer.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
@@ -296,6 +298,14 @@ std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
   VK_THROW("Could not get sizes of value with type ", val.type());
 }
 
+std::vector<int64_t> ComputeGraph::padded_sizes_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().padded_sizes();
+  }
+  VK_THROW("Could not get padded sizes of value with type ", val.type());
+}
+
 int64_t ComputeGraph::dim_of(const ValueRef idx) const {
   const Value& val = values_.at(idx);
   if (val.isTensor()) {
@@ -340,6 +350,11 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
     return vkapi::ScalarType::Int;
   }
   VK_THROW("Could not get dtype of value with type ", val.type());
+}
+
+vkapi::ScalarType ComputeGraph::get_staging_dtype_for(
+    const ValueRef idx) const {
+  return api::get_staging_dtype(context_.get(), dtype_of(idx));
 }
 
 bool ComputeGraph::is_contiguous_buffer_tensor(const ValueRef idx) const {
@@ -915,6 +930,10 @@ void ComputeGraph::maybe_cast_and_copy_into_staging(
         src_data_dtype == vkapi::kDouble && staging_dtype == vkapi::kFloat) {
       const double* casted_data = reinterpret_cast<const double*>(data);
       staging->cast_and_copy_from<double, float>(casted_data, numel);
+    } else if (
+        src_data_dtype == vkapi::kHalf && staging_dtype == vkapi::kFloat) {
+      const uint16_t* casted_data = reinterpret_cast<const uint16_t*>(data);
+      staging->cast_half_to_float_and_copy_from(casted_data, numel);
     } else {
       VK_THROW(
           "Unsupported type conversion from ",
@@ -954,6 +973,10 @@ void ComputeGraph::maybe_cast_and_copy_from_staging(
         dst_data_dtype == vkapi::kDouble && staging_dtype == vkapi::kFloat) {
       double* casted_data = reinterpret_cast<double*>(data);
       staging->cast_and_copy_to<float, double>(casted_data, numel);
+    } else if (
+        dst_data_dtype == vkapi::kHalf && staging_dtype == vkapi::kFloat) {
+      uint16_t* casted_data = reinterpret_cast<uint16_t*>(data);
+      staging->cast_float_to_half_and_copy_to(casted_data, numel);
     } else {
       VK_THROW(
           "Unsupported type conversion from staging dtype ",
