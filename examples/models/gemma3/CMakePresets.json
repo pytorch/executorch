@@ -37,6 +37,12 @@
             "targets": ["gemma3_e2e_runner"]
         },
         {
+            "name": "gemma3-text-cpu",
+            "displayName": "Build Gemma3 text runner (CPU)",
+            "configurePreset": "gemma3-cpu",
+            "targets": ["gemma3_text_runner"]
+        },
+        {
             "name": "gemma3-cuda",
             "displayName": "Build Gemma3 runner (CUDA)",
             "configurePreset": "gemma3-cuda",
@@ -55,6 +61,20 @@
                 {
                     "type": "build",
                     "name": "gemma3-cpu"
+                }
+            ]
+        },
+        {
+            "name": "gemma3-text-cpu",
+            "displayName": "Configure and build Gemma3 text runner (CPU)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "gemma3-cpu"
+                },
+                {
+                    "type": "build",
+                    "name": "gemma3-text-cpu"
                 }
             ]
         },
