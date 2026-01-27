@@ -10,7 +10,7 @@ $if OUTPUT_STORAGE == "buffer":
 $if INPUT_STORAGE == "buffer":
   #define INPUT_BUFFER
 
-${define_required_extensions(DTYPE)}
+${define_required_extensions(INPUT_STORAGE, DTYPE)}
 
 layout(std430) buffer;
 
