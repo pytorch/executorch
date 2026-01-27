@@ -1,8 +1,10 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
-// AUTO-GENERATED from ops_schema.py - regenerate with: python generate.py
 //
-// FlatBuffer schema for MLX delegate
+// FlatBuffer schema for MLX delegate - THIS IS THE SOURCE OF TRUTH
 // Defines the IR that gets serialized into the .pte file and executed by MLX runtime
+//
+// After editing this file, regenerate dependent files with:
+//     python backends/apple/mlx/serialization/generate.py
 
 namespace mlx_delegate;
 

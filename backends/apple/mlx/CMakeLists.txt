@@ -24,38 +24,65 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 set(_common_compile_options -Wno-deprecated-declarations)
 
 # -----------------------------------------------------------------------------
-# FlatBuffer schema generation
+# Code generation from schema.fbs
+# -----------------------------------------------------------------------------
+# 
+# The generate.py script generates all code from schema.fbs:
+#   - Python: mlx_graph_schema.py, _generated_serializers.py, _generated/
+#   - C++: MLXLoader.h, MLXLoader.cpp, schema_generated.h
+#
+# We run generate.py at build time so these files don't need to be checked in.
 # -----------------------------------------------------------------------------
 
-set(_mlx_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
-set(_mlx_schema__srcs
-    ${CMAKE_CURRENT_SOURCE_DIR}/serialization/schema.fbs
+set(_mlx_generate_script "${CMAKE_CURRENT_SOURCE_DIR}/serialization/generate.py")
+set(_mlx_schema_fbs "${CMAKE_CURRENT_SOURCE_DIR}/serialization/schema.fbs")
+
+# Generated C++ files that we need for compilation
+set(_mlx_generated_cpp_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/schema_generated.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXLoader.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXLoader.cpp"
 )
 
-# Paths to headers generated from the .fbs files.
-set(_mlx_schema__outputs
-    "${_mlx_schema__include_dir}/executorch/backends/apple/mlx/serialization/schema_generated.h"
+# Generated Python files (tracked for dependency purposes)
+set(_mlx_generated_python_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/serialization/mlx_graph_schema.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/serialization/_generated_serializers.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/serialization/_generated_parsers.py"
 )
 
-# Generate the headers from the .fbs files.
+# Run generate.py to create all generated files from schema.fbs
+# Find Python - prefer Python3_EXECUTABLE if set (from FindPython3), otherwise use PYTHON_EXECUTABLE
+if(Python3_EXECUTABLE)
+    set(_python_executable ${Python3_EXECUTABLE})
+elseif(PYTHON_EXECUTABLE)
+    set(_python_executable ${PYTHON_EXECUTABLE})
+else()
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    set(_python_executable ${Python3_EXECUTABLE})
+endif()
+
 add_custom_command(
-  OUTPUT ${_mlx_schema__outputs}
-  COMMAND
-    flatc --cpp --cpp-std c++11 --scoped-enums -o
-    "${_mlx_schema__include_dir}/executorch/backends/apple/mlx/serialization"
-    ${_mlx_schema__srcs}
+  OUTPUT ${_mlx_generated_cpp_files} ${_mlx_generated_python_files}
+  COMMAND ${_python_executable} ${_mlx_generate_script}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
-  DEPENDS flatc ${_mlx_schema__srcs}
-  COMMENT "Generating mlx_schema headers"
+  DEPENDS ${_mlx_schema_fbs} ${_mlx_generate_script}
+  COMMENT "Generating MLX delegate code from schema.fbs"
   VERBATIM
 )
 
-add_library(mlx_schema INTERFACE ${_mlx_schema__outputs})
-set_target_properties(mlx_schema PROPERTIES LINKER_LANGUAGE CXX)
+# Custom target to trigger generation
+add_custom_target(mlx_generate_code
+  DEPENDS ${_mlx_generated_cpp_files} ${_mlx_generated_python_files}
+)
+
+# Interface library for schema includes
+add_library(mlx_schema INTERFACE)
+add_dependencies(mlx_schema mlx_generate_code)
 target_include_directories(
   mlx_schema
   INTERFACE
-    $<BUILD_INTERFACE:${_mlx_schema__include_dir}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime>
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
 )
 

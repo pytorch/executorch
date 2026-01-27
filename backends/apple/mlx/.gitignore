@@ -1,0 +1,18 @@
+# Auto-generated files from generate.py
+# These are regenerated at build time from schema.fbs
+# Do not edit manually - edit schema.fbs and run generate.py
+
+# Python generated files
+serialization/_generated/
+serialization/mlx_graph_schema.py
+serialization/_generated_serializers.py
+serialization/_generated_parsers.py
+
+# C++ generated files
+runtime/schema_generated.h
+runtime/MLXLoader.h
+runtime/MLXLoader.cpp
+
+# Python cache
+__pycache__/
+*.pyc
