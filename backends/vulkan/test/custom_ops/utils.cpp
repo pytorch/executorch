@@ -1175,7 +1175,8 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
       }
 
       // Copy data into staging buffer
-      graph.copy_into_staging(input_ref.staging, data_ptr, data_numel);
+      graph.maybe_cast_and_copy_into_staging(
+          input_ref.staging, data_ptr, data_numel, input_spec.dtype);
     }
   }
 
@@ -1242,7 +1243,8 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
 
       if (data_ptr != nullptr) {
         // Copy data from staging buffer to output spec
-        graph.copy_from_staging(output_ref.staging, data_ptr, data_numel);
+        graph.maybe_cast_and_copy_from_staging(
+            output_ref.staging, data_ptr, data_numel, output_spec.dtype);
       }
 
       // Print output tensor data if output printing is enabled

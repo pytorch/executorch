@@ -46,7 +46,7 @@ class ScatterVisitor(NodeVisitor):
                 ts.DType.FP32,
                 ts.DType.FP16,
             ],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()
