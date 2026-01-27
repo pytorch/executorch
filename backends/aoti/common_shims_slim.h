@@ -17,6 +17,8 @@ namespace executorch {
 namespace backends {
 namespace aoti {
 
+extern "C" {
+
 // Common using declarations for ExecuTorch types
 using executorch::runtime::Error;
 
@@ -45,6 +47,10 @@ aoti_torch_get_dtype(Tensor* tensor, int32_t* ret_dtype);
 
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
+
+AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();
+
+} // extern "C"
 
 } // namespace aoti
 } // namespace backends
