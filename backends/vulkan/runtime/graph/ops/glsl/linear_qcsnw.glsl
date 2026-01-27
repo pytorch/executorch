@@ -8,16 +8,16 @@
 
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+$if STORAGE == "buffer":
+  ${define_required_extensions("buffer", "int8")}
+
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
 #define FLOAT_T ${buffer_scalar_type(DTYPE)}
 
 ${define_active_storage_type(STORAGE)}
-
-${define_required_extensions(DTYPE)}
-$if STORAGE == "buffer":
-  ${define_required_extensions("int8")}
 
 #include "indexing_utils.h"
 
