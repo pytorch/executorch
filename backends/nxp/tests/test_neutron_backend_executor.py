@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -165,7 +165,7 @@ def test_delegating_format_related_transpose_operators__supported_case(mocker):
     # Make sure the output channels (channels for the trailing Transpose), and the last input dimension (channels for
     #  the leading Transpose) are multiples of `num_macs``.
 
-    num_macs = NeutronTargetSpec("imxrt700", "SDK_25_09").get_num_macs()
+    num_macs = NeutronTargetSpec("imxrt700", "SDK_25_12").get_num_macs()
     model = Conv2dModule(
         in_channels=num_macs, out_channels=num_macs, padding=1, stride=1
     )
@@ -222,7 +222,7 @@ def test_delegating_format_related_transpose_operators__supported_case(mocker):
 def test_delegating_format_related_transpose_operators__supported_output__unsupported_input(
     mocker,
 ):
-    num_macs = NeutronTargetSpec("imxrt700", "SDK_25_09").get_num_macs()
+    num_macs = NeutronTargetSpec("imxrt700", "SDK_25_12").get_num_macs()
     model = Conv2dModule(
         in_channels=num_macs,
         out_channels=num_macs,  # The output `Transpose` will be supported.
@@ -278,7 +278,7 @@ def test_delegating_format_related_transpose_operators__supported_output__unsupp
 def test_delegating_format_related_transpose_operators__supported_input__unsupported_output(
     mocker,
 ):
-    num_macs = NeutronTargetSpec("imxrt700", "SDK_25_09").get_num_macs()
+    num_macs = NeutronTargetSpec("imxrt700", "SDK_25_12").get_num_macs()
     model = Conv2dModule(
         in_channels=num_macs,
         out_channels=3,  # The output `Transpose` will NOT be supported.
