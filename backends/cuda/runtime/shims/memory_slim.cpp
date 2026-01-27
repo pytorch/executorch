@@ -230,10 +230,12 @@ AOTITorchError aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst) {
       InvalidArgument,
       "aoti_torch_assign_tensors_out: ret_dst is null");
 
-  // Move the source tensor into the destination. After this operation,
-  // the source tensor will be left in an undefined state (reset).
-  // This differs from aoti_torch_new_tensor_handle which copies the tensor.
-  *ret_dst = new Tensor(std::move(*src));
+  // Create a shallow copy of the source tensor that shares the same underlying
+  // storage. The source tensor remains valid after this operation.
+  // This matches ATen's behavior where the copy constructor shares storage
+  // via reference counting.
+  Tensor dst_tensor = *src;
+  *ret_dst = new Tensor(std::move(dst_tensor));
 
   return Error::Ok;
 }
