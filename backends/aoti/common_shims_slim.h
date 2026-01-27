@@ -66,7 +66,6 @@ aoti_torch_get_device_type(Tensor* tensor, int32_t* ret_device_type);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_device_index(Tensor* tensor, int32_t* ret_device_index);
 
-
 // ============================================================
 // DType Constants - Declarations
 // ============================================================

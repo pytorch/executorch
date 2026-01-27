@@ -59,8 +59,8 @@ AOTITorchError aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim) {
 }
 
 int32_t aoti_torch_layout_strided() {
-  // Slimtensor only support strided layout, the return value will always be 0, a.k.a
-  // at::Layout::Strided;
+  // Slimtensor only support strided layout, the return value will always be 0,
+  // a.k.a at::Layout::Strided;
   return 0;
 }
 

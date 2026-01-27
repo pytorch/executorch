@@ -19,42 +19,30 @@
 
 namespace executorch::backends::cuda {
 
-/**
- * Copies data from a SlimTensor to an ETensor.
- *
- * This function converts a SlimTensor back to an ETensor. The ETensor is
- * assumed to always reside on CPU, so this handles both CPU→CPU and GPU→CPU
- * copies. The function will resize the ETensor if needed and copy the data.
- *
- * @param slim_tensor Pointer to the source SlimTensor (must not be null).
- * @param etensor Pointer to the destination ETensor (must not be null).
- * @return Error::Ok on success, or an appropriate error code on failure.
- */
-inline executorch::runtime::Error copy_slimtensor_to_etensor(
+namespace {
+inline executorch::runtime::Error _check_tensor_metadata(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
     executorch::runtime::etensor::Tensor* etensor) {
   ET_CHECK_OR_RETURN_ERROR(
       slim_tensor != nullptr,
       InvalidArgument,
-      "copy_slimtensor_to_etensor: slim_tensor pointer cannot be nullptr");
+      "slim_tensor pointer cannot be nullptr");
 
   ET_CHECK_OR_RETURN_ERROR(
-      etensor != nullptr,
-      InvalidArgument,
-      "copy_slimtensor_to_etensor: etensor pointer cannot be nullptr");
+      etensor != nullptr, InvalidArgument, "etensor pointer cannot be nullptr");
 
   // Check storage_offset is 0 (ETensor does not support storage offset)
   ET_CHECK_OR_RETURN_ERROR(
       slim_tensor->storage_offset() == 0,
       InvalidArgument,
-      "copy_slimtensor_to_etensor: SlimTensor storage_offset must be 0, got %ld",
+      "SlimTensor storage_offset must be 0, got %ld",
       static_cast<long>(slim_tensor->storage_offset()));
 
   // Check that SlimTensor is contiguous
   ET_CHECK_OR_RETURN_ERROR(
       slim_tensor->is_contiguous(),
       InvalidArgument,
-      "copy_slimtensor_to_etensor: SlimTensor must be contiguous");
+      "SlimTensor must be contiguous");
 
   // Check dtype matches
   executorch::backends::aoti::slim::c10::ScalarType slim_dtype =
@@ -64,7 +52,7 @@ inline executorch::runtime::Error copy_slimtensor_to_etensor(
   ET_CHECK_OR_RETURN_ERROR(
       static_cast<int>(slim_dtype) == static_cast<int>(etensor_dtype),
       InvalidArgument,
-      "copy_slimtensor_to_etensor: dtype mismatch, SlimTensor dtype %d != ETensor dtype %d",
+      "dtype mismatch, SlimTensor dtype %d != ETensor dtype %d",
       static_cast<int>(slim_dtype),
       static_cast<int>(etensor_dtype));
 
@@ -72,7 +60,7 @@ inline executorch::runtime::Error copy_slimtensor_to_etensor(
   ET_CHECK_OR_RETURN_ERROR(
       static_cast<ssize_t>(slim_tensor->dim()) == etensor->dim(),
       InvalidArgument,
-      "copy_slimtensor_to_etensor: dimension mismatch, SlimTensor dim %zu != ETensor dim %zd",
+      "dimension mismatch, SlimTensor dim %zu != ETensor dim %zd",
       slim_tensor->dim(),
       etensor->dim());
 
@@ -94,8 +82,27 @@ inline executorch::runtime::Error copy_slimtensor_to_etensor(
           executorch::runtime::ArrayRef<
               executorch::runtime::etensor::TensorImpl::SizesType>(
               new_sizes.data(), new_sizes.size()));
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      resize_err, "copy_slimtensor_to_etensor: failed to resize ETensor");
+  ET_CHECK_OK_OR_RETURN_ERROR(resize_err, "failed to resize ETensor");
+
+  return executorch::runtime::Error::Ok;
+}
+} // namespace
+
+/**
+ * Copies data from a SlimTensor to an ETensor.
+ *
+ * This function converts a SlimTensor back to an ETensor. The ETensor is
+ * assumed to always reside on CPU, so this handles both CPU→CPU and GPU→CPU
+ * copies. The function will resize the ETensor if needed and copy the data.
+ *
+ * @param slim_tensor Pointer to the source SlimTensor (must not be null).
+ * @param etensor Pointer to the destination ETensor (must not be null).
+ * @return Error::Ok on success, or an appropriate error code on failure.
+ */
+inline executorch::runtime::Error copy_slimtensor_to_etensor(
+    const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
+    executorch::runtime::etensor::Tensor* etensor) {
+  _check_tensor_metadata(slim_tensor, etensor);
 
   // Copy data from SlimTensor to ETensor
   // SlimTensor may be on GPU or CPU, ETensor is always on CPU
@@ -119,6 +126,33 @@ inline executorch::runtime::Error copy_slimtensor_to_etensor(
               slim_tensor->device());
     }
   }
+
+  return executorch::runtime::Error::Ok;
+}
+
+/**
+ * Wraps a SlimTensor's data into an existing ETensor (zero-copy).
+ *
+ * This function resizes the ETensor to match the SlimTensor's shape and
+ * sets its data pointer to point directly to the SlimTensor's data buffer.
+ * No data is copied - the ETensor becomes a view of the SlimTensor's data.
+ *
+ * IMPORTANT: The caller must ensure the SlimTensor remains alive as long
+ * as the ETensor is in use, since the ETensor will reference the SlimTensor's
+ * data directly.
+ *
+ * @param slim_tensor Pointer to the source SlimTensor (must not be null).
+ * @param etensor Pointer to the destination ETensor (must not be null).
+ * @return Error::Ok on success, or an appropriate error code on failure.
+ */
+inline executorch::runtime::Error wrap_slimtensor_to_etensor(
+    const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
+    executorch::runtime::etensor::Tensor* etensor) {
+  _check_tensor_metadata(slim_tensor, etensor);
+
+  // Set data pointer to point directly to SlimTensor's data (zero-copy)
+  etensor->unsafeGetTensorImpl()->set_data(
+      const_cast<void*>(slim_tensor->data_ptr()));
 
   return executorch::runtime::Error::Ok;
 }

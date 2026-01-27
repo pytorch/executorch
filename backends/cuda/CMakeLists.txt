@@ -99,12 +99,13 @@ install(
 
 # CUDA-specific AOTI shim symbols (dynamically linked) Uses
 # common_shims_slim.cpp for SlimTensor-based shim implementations
- set(_aoti_cuda_shim_sources
-     runtime/shims/memory.cpp runtime/shims/cuda_guard.cpp
-     runtime/shims/int4mm.cu
-     ${EXECUTORCH_ROOT}/backends/aoti/common_shims_slim.cpp
-     ${EXECUTORCH_ROOT}/backends/aoti/slim/cuda/guard.cpp
- )
+set(_aoti_cuda_shim_sources
+    runtime/shims/memory.cpp
+    runtime/shims/cuda_guard.cpp
+    runtime/shims/int4mm.cu
+    ${EXECUTORCH_ROOT}/backends/aoti/common_shims_slim.cpp
+    ${EXECUTORCH_ROOT}/backends/aoti/slim/cuda/guard.cpp
+)
 
 add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
 

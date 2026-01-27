@@ -43,7 +43,9 @@ target_compile_options(
 target_compile_definitions(
   aoti_common_shims PUBLIC $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
 )
-target_link_libraries(aoti_common_shims PUBLIC extension_tensor ${CMAKE_DL_LIBS})
+target_link_libraries(
+  aoti_common_shims PUBLIC extension_tensor ${CMAKE_DL_LIBS}
+)
 
 install(
   TARGETS aoti_common_shims
@@ -51,8 +53,8 @@ install(
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 # ==============================================================================
-# AOTI common shims using SlimTensor (for CUDA backend)
-# Uses SlimTensor for all tensor operations
+# AOTI common shims using SlimTensor (for CUDA backend) Uses SlimTensor for all
+# tensor operations
 # TODO(gasoonjia): Replace aoti_common_shims with this one after metal migration
 # ==============================================================================
 add_library(aoti_common_shims_slim STATIC common_shims_slim.cpp)
