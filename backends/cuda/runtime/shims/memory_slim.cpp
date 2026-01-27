@@ -21,9 +21,9 @@ using c10::DeviceIndex;
 using c10::DeviceType;
 using c10::ScalarType;
 using executorch::backends::aoti::slim::empty_strided;
-using executorch::backends::aoti::slim::makeArrayRef;
 using executorch::backends::aoti::slim::from_blob;
 using executorch::backends::aoti::slim::IntArrayRef;
+using executorch::backends::aoti::slim::makeArrayRef;
 
 extern "C" {
 
