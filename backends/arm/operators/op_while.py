@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -76,9 +76,7 @@ class WhileLoopVisitor(NodeVisitor):
             ) in zip(outputs_needing_tensors, output_dim_orders, strict=True):
                 tensor_name = output_needing_tensor.name + "_dummy"
                 shape = output_needing_tensor.meta["val"].shape
-                dtype = map_dtype(
-                    output_needing_tensor.meta["val"].dtype, self.tosa_spec
-                )
+                dtype = map_dtype(output_needing_tensor.meta["val"].dtype)
 
                 tosa_graph.currRegion.currBasicBlock.addTensor(
                     tensor_name,
