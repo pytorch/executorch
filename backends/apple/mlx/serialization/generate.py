@@ -523,18 +523,16 @@ class GeneratedOpBuilders:
 
     def _build_int_or_vid(self, builder: flatbuffers.Builder, iov: IntOrVid) -> int:
         """Build an IntOrVid table."""
-        from executorch.backends.apple.mlx.serialization._generated import (
-            IntOrVid as FBIntOrVid,
-        )
+        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import IntOrVid as FBIntOrVidModule
         from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Vid import CreateVid
 
-        FBIntOrVid.Start(builder)
-        FBIntOrVid.AddLiteral(builder, iov.literal)
-        FBIntOrVid.AddIsVid(builder, iov.is_vid)
+        FBIntOrVidModule.Start(builder)
+        FBIntOrVidModule.AddLiteral(builder, iov.literal)
+        FBIntOrVidModule.AddIsVid(builder, iov.is_vid)
         if iov.vid is not None:
             # Vid is an inline struct - must be added last for proper FlatBuffer layout
-            FBIntOrVid.AddVid(builder, CreateVid(builder, iov.vid.idx))
-        return FBIntOrVid.End(builder)
+            FBIntOrVidModule.AddVid(builder, CreateVid(builder, iov.vid.idx))
+        return FBIntOrVidModule.End(builder)
 
     def _build_int_or_vid_vector(
         self, builder: flatbuffers.Builder, vec: List[IntOrVid]
@@ -561,17 +559,16 @@ class GeneratedOpBuilders:
 def _generate_op_builder_method(table: FBSTable) -> str:
     """Generate a _build_XxxNode method for the serializer class."""
     class_name = table.name
-    fb_class_name = f"FB{class_name}"
+    fb_module_name = f"FB{class_name}Module"
 
     lines = [
         f"    def _build_{class_name}(",
         f"        self, builder: flatbuffers.Builder, op: {class_name}",
         f"    ) -> Tuple[int, int]:",
         f'        """Auto-generated builder for {class_name}."""',
-        f"        from executorch.backends.apple.mlx.serialization._generated import (",
-        f"            {class_name} as {fb_class_name},",
-        f"            OpNode as FBOpNode,",
-        f"        )",
+        f"        # Import the MODULE (not class) to access builder functions like Start(), Add*(), End()",
+        f"        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import {class_name} as {fb_module_name}",
+        f"        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import OpNode as FBOpNodeModule",
         f"        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Tid import CreateTid",
         f"        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Vid import CreateVid",
         "",
@@ -610,7 +607,7 @@ def _generate_op_builder_method(table: FBSTable) -> str:
         lines.append("")
 
     # Start the FlatBuffer table
-    lines.append(f"        {fb_class_name}.Start(builder)")
+    lines.append(f"        {fb_module_name}.Start(builder)")
 
     # Add each field
     for fld in table.fields:
@@ -621,72 +618,72 @@ def _generate_op_builder_method(table: FBSTable) -> str:
 
         if kind == "tid":
             lines.append(
-                f"        {fb_class_name}.Add{fb_field_name}(builder, CreateTid(builder, op.{fld.name}.idx))"
+                f"        {fb_module_name}.Add{fb_field_name}(builder, CreateTid(builder, op.{fld.name}.idx))"
             )
         elif kind == "vid":
             lines.append(
-                f"        {fb_class_name}.Add{fb_field_name}(builder, CreateVid(builder, op.{fld.name}.idx))"
+                f"        {fb_module_name}.Add{fb_field_name}(builder, CreateVid(builder, op.{fld.name}.idx))"
             )
         elif kind in ("int", "float", "bool"):
             lines.append(
-                f"        {fb_class_name}.Add{fb_field_name}(builder, op.{fld.name})"
+                f"        {fb_module_name}.Add{fb_field_name}(builder, op.{fld.name})"
             )
         elif kind == "str":
             lines.append(
-                f"        {fb_class_name}.Add{fb_field_name}(builder, {fld.name}_off)"
+                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_off)"
             )
         elif kind == "dtype":
             lines.append(
-                f"        {fb_class_name}.Add{fb_field_name}(builder, op.{fld.name})"
+                f"        {fb_module_name}.Add{fb_field_name}(builder, op.{fld.name})"
             )
         elif kind == "list_int":
             lines.append(
-                f"        {fb_class_name}.Add{fb_field_name}(builder, {fld.name}_vec)"
+                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_vec)"
             )
         elif kind == "list_int_or_vid":
             lines.append(
-                f"        {fb_class_name}.Add{fb_field_name}(builder, {fld.name}_vec)"
+                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_vec)"
             )
         elif kind == "int_or_vid":
             lines.append(
-                f"        {fb_class_name}.Add{fb_field_name}(builder, {fld.name}_off)"
+                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_off)"
             )
         elif kind == "optional_tid":
             lines.append(f"        if op.{fld.name} is not None:")
             lines.append(
-                f"            {fb_class_name}.Add{fb_field_name}(builder, CreateTid(builder, op.{fld.name}.idx))"
+                f"            {fb_module_name}.Add{fb_field_name}(builder, CreateTid(builder, op.{fld.name}.idx))"
             )
         elif kind == "optional_vid":
             lines.append(f"        if op.{fld.name} is not None:")
             lines.append(
-                f"            {fb_class_name}.Add{fb_field_name}(builder, CreateVid(builder, op.{fld.name}.idx))"
+                f"            {fb_module_name}.Add{fb_field_name}(builder, CreateVid(builder, op.{fld.name}.idx))"
             )
         elif kind == "optional_float":
             # Check for _is_set pattern
             lines.append(f"        if op.{fld.name} is not None:")
             lines.append(
-                f"            {fb_class_name}.Add{fb_field_name}(builder, op.{fld.name})"
+                f"            {fb_module_name}.Add{fb_field_name}(builder, op.{fld.name})"
             )
             lines.append(
-                f"            {fb_class_name}.Add{fb_field_name}IsSet(builder, True)"
+                f"            {fb_module_name}.Add{fb_field_name}IsSet(builder, True)"
             )
         elif kind == "optional_dtype":
             lines.append(f"        if op.{fld.name} is not None:")
             lines.append(
-                f"            {fb_class_name}.Add{fb_field_name}(builder, op.{fld.name})"
+                f"            {fb_module_name}.Add{fb_field_name}(builder, op.{fld.name})"
             )
             lines.append(
-                f"            {fb_class_name}.Add{fb_field_name}IsSet(builder, True)"
+                f"            {fb_module_name}.Add{fb_field_name}IsSet(builder, True)"
             )
         elif kind == "optional_str":
             lines.append(f"        if {fld.name}_off is not None:")
             lines.append(
-                f"            {fb_class_name}.Add{fb_field_name}(builder, {fld.name}_off)"
+                f"            {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_off)"
             )
 
-    # End the table and return
-    lines.append(f"        offset = {fb_class_name}.End(builder)")
-    lines.append(f"        return offset, FBOpNode.OpNode.{class_name}")
+    # End the FlatBuffer table and return offset + union type
+    lines.append(f"        offset = {fb_module_name}.End(builder)")
+    lines.append(f"        return offset, FBOpNodeModule.OpNode.{class_name}")
     lines.append("")
 
     return '\n'.join(lines)
@@ -1466,14 +1463,13 @@ def _generate_loader_case(table: FBSTable) -> List[str]:
             lines.append(f'      }}')
         elif kind == "int_or_vid":
             lines.append(f'      node.{fld.name} = convert_int_or_vid(fb->{fb_field_name}());')
-        elif kind == "int_vector":
+        elif kind == "int_vector" or kind == "list_int":
             lines.append(f'      node.{fld.name} = to_vector(fb->{fb_field_name}());')
-        elif kind == "int_or_vid_vector":
+        elif kind == "list_int_or_vid":
             lines.append(f'      if (fb->{fb_field_name}()) {{')
             lines.append(f'        for (size_t i = 0; i < fb->{fb_field_name}()->size(); ++i) {{')
             lines.append(f'          node.{fld.name}.push_back(convert_int_or_vid(fb->{fb_field_name}()->Get(i)));')
             lines.append(f'        }}')
-            lines.append(f'      }}')
             lines.append(f'      }}')
 
     lines.extend([
@@ -1611,12 +1607,33 @@ def main():
         with open(LOADER_CPP, 'w') as f:
             f.write(cpp_cpp)
 
-    # Create __init__.py for _generated package
+    # Create __init__.py for _generated package that re-exports from mlx_delegate
     init_file = GENERATED_DIR / "__init__.py"
     if not args.dry_run:
-        if not init_file.exists():
-            init_file.parent.mkdir(parents=True, exist_ok=True)
-            init_file.write_text("# Auto-generated FlatBuffer bindings\n")
+        init_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Get all the exports from mlx_delegate (tables, enums, structs, and unions)
+        exports = []
+        for table in schema.tables:
+            exports.append(table.name)
+        for enum in schema.enums:
+            exports.append(enum.name)
+        for struct in schema.structs:
+            exports.append(struct.name)
+        for union in schema.unions:
+            exports.append(union.name)
+        
+        # Create __init__.py with re-exports
+        init_content = '''# Auto-generated FlatBuffer bindings
+# Re-exports from mlx_delegate namespace for convenient imports
+
+'''
+        # Add imports from mlx_delegate
+        for export in sorted(exports):
+            init_content += f"from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.{export} import {export}\n"
+        
+        init_content += f"\n__all__ = {sorted(exports)!r}\n"
+        init_file.write_text(init_content)
 
     print("Done!")
     print("")

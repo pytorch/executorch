@@ -476,16 +476,21 @@ def parse_op_node(instr, op_type: int, op_name: str) -> Optional[Dict[str, Any]]
 
         for field_name, method_name, extractor in field_extractors:
             try:
-                method = getattr(node, method_name)
-                value = method()
-                # If extractor takes the node, pass it; otherwise pass the value
+                # Check if extractor is a lambda that takes the node directly
+                # (indicated by parameter name 'n')
                 if callable(extractor) and extractor.__code__.co_argcount == 1:
                     if extractor.__code__.co_varnames[0] == 'n':
+                        # Extractor handles the node directly (e.g., for vector fields)
                         result[field_name] = extractor(node)
-                    else:
-                        result[field_name] = extractor(value)
+                        continue
+
+                # Otherwise, call the method and pass result to extractor
+                method = getattr(node, method_name)
+                value = method()
+                if callable(extractor):
+                    result[field_name] = extractor(value)
                 else:
-                    result[field_name] = extractor(value) if callable(extractor) else value
+                    result[field_name] = value
             except Exception as e:
                 result[field_name] = {"error": str(e)}
 
