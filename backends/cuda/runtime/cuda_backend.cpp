@@ -12,6 +12,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <cstdio>
 
 #include <array>
@@ -75,6 +76,124 @@ using slim::c10::DeviceType;
 namespace {
 constexpr char kSkipCopyOutputToCpuForMethod[] =
     "skip_copy_output_to_cpu_for_method";
+
+/**
+ * Print SlimTensor debug information in a formatted style.
+ *
+ * Output format:
+ * SlimTensor {
+ *   data_ptr: 0x...
+ *   sizes: [d0, d1, ...]
+ *   strides: [s0, s1, ...]
+ *   n_dim: X
+ *   numel: Y
+ *   dtype: TypeName
+ * }
+ */
+void print_tensor(const SlimTensor* tensor, const char* name = nullptr) {
+  if (tensor == nullptr) {
+    ET_LOG(Info, "SlimTensor%s%s: nullptr", name ? " " : "", name ? name : "");
+    return;
+  }
+
+  auto sizes = tensor->sizes();
+  auto strides = tensor->strides();
+
+  std::string sizes_str = "[";
+  for (size_t i = 0; i < sizes.size(); ++i) {
+    if (i > 0)
+      sizes_str += ", ";
+    sizes_str += std::to_string(sizes[i]);
+  }
+  sizes_str += "]";
+
+  std::string strides_str = "[";
+  for (size_t i = 0; i < strides.size(); ++i) {
+    if (i > 0)
+      strides_str += ", ";
+    strides_str += std::to_string(strides[i]);
+  }
+  strides_str += "]";
+
+  ET_LOG(
+      Info,
+      "SlimTensor%s%s {\n"
+      "  data_ptr: %p\n"
+      "  sizes: %s\n"
+      "  strides: %s\n"
+      "  n_dim: %zu\n"
+      "  numel: %zu\n"
+      "  dtype: %s\n"
+      "}",
+      name ? " " : "",
+      name ? name : "",
+      tensor->data_ptr(),
+      sizes_str.c_str(),
+      strides_str.c_str(),
+      tensor->dim(),
+      tensor->numel(),
+      slim::c10::toString(tensor->dtype()));
+}
+
+/**
+ * Print ETensor (executorch::runtime::etensor::Tensor) debug information
+ * in a formatted style.
+ *
+ * Output format:
+ * ETensor {
+ *   data_ptr: 0x...
+ *   sizes: [d0, d1, ...]
+ *   strides: [s0, s1, ...]
+ *   n_dim: X
+ *   numel: Y
+ *   dtype: TypeName
+ * }
+ */
+void print_tensor(const Tensor* tensor, const char* name = nullptr) {
+  if (tensor == nullptr) {
+    ET_LOG(Info, "ETensor%s%s: nullptr", name ? " " : "", name ? name : "");
+    return;
+  }
+
+  auto sizes = tensor->sizes();
+  auto strides = tensor->strides();
+
+  std::string sizes_str = "[";
+  for (size_t i = 0; i < sizes.size(); ++i) {
+    if (i > 0)
+      sizes_str += ", ";
+    sizes_str += std::to_string(sizes[i]);
+  }
+  sizes_str += "]";
+
+  std::string strides_str = "[";
+  for (size_t i = 0; i < strides.size(); ++i) {
+    if (i > 0)
+      strides_str += ", ";
+    strides_str += std::to_string(strides[i]);
+  }
+  strides_str += "]";
+
+  ET_LOG(
+      Info,
+      "ETensor%s%s {\n"
+      "  data_ptr: %p\n"
+      "  sizes: %s\n"
+      "  strides: %s\n"
+      "  n_dim: %zu\n"
+      "  numel: %zu\n"
+      "  dtype: %s\n"
+      "}",
+      name ? " " : "",
+      name ? name : "",
+      tensor->const_data_ptr(),
+      sizes_str.c_str(),
+      strides_str.c_str(),
+      static_cast<size_t>(tensor->dim()),
+      static_cast<size_t>(tensor->numel()),
+      executorch::runtime::toString(tensor->scalar_type()));
+}
+
 } // anonymous namespace
 
 class ET_EXPERIMENTAL CudaBackend final
@@ -320,6 +439,7 @@ class ET_EXPERIMENTAL CudaBackend final
     // Process input tensors: convert ETensor (CPU) to SlimTensor (GPU)
     for (size_t i = 0; i < n_inputs; i++) {
       auto* cpu_tensor = &(args[i]->toTensor());
+      print_tensor(cpu_tensor, "cpu_tensor[0]");
 
       // Check if input data is already on GPU (skip-copy optimization for
       // inputs) This can happen when the caller has pre-staged data on GPU
@@ -342,6 +462,9 @@ class ET_EXPERIMENTAL CudaBackend final
               DEFAULT_CUDA_DEVICE,
               0 // storage_offset
           ));
+
+          print_tensor(gpu_inputs[i], "gpu_input[0]");
+
           continue;
         }
       }
@@ -349,6 +472,7 @@ class ET_EXPERIMENTAL CudaBackend final
       // Data is on CPU - use from_etensor to copy to GPU
       gpu_inputs[i] =
           new SlimTensor(from_etensor(*cpu_tensor, CPU_DEVICE, DEFAULT_CUDA_DEVICE));
+      print_tensor(gpu_inputs[i], "gpu_input[0]");
     }
 
     // Process output tensors: create GPU SlimTensors for kernel output
@@ -368,9 +492,12 @@ class ET_EXPERIMENTAL CudaBackend final
           DEFAULT_CUDA_DEVICE));
     }
 
-        ET_LOG(Info, "line 374");
+    ET_LOG(Info, "line 374");
 
     // Run AOTI container with GPU SlimTensors
+    // NOTE: The AOTI model may REPLACE the output tensor pointers during run().
+    // Our pre-allocated tensors might be deleted by the model, and gpu_outputs
+    // will contain pointers to NEW tensors that the model allocated.
     AOTIRuntimeError error = handle->run(
         handle->container_handle,
         reinterpret_cast<Tensor**>(gpu_inputs.data()),
@@ -380,8 +507,7 @@ class ET_EXPERIMENTAL CudaBackend final
         handle->cuda_stream,
         nullptr);
 
-            ET_LOG(Info, "line 387");
-
+    ET_LOG(Info, "line 387");
 
     ET_CHECK_OR_RETURN_ERROR(
         error == Error::Ok,
@@ -389,11 +515,26 @@ class ET_EXPERIMENTAL CudaBackend final
         "AOTInductorModelContainerRun failed with error code %d",
         error);
 
+    print_tensor(gpu_outputs[0], "gpu_output[0]");
+
+    // Synchronize CUDA stream to ensure all GPU operations are complete
+    // before reading output tensor metadata and copying data back to CPU.
+    // Without this, the GPU operations are asynchronous and the output
+    // tensor data/metadata may not be ready yet.
+    cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
+    cudaError_t sync_err = cudaStreamSynchronize(cuda_stream);
+    ET_CHECK_OR_RETURN_ERROR(
+        sync_err == cudaSuccess,
+        Internal,
+        "Failed to synchronize CUDA stream: %s",
+        cudaGetErrorString(sync_err));
+
     const bool copy_outputs = !should_skip_copy_for_method(handle->method_name);
 
     ET_LOG(Info, "line 398");
 
     if (copy_outputs) {
+      ET_LOG(Info, "copy_outputs = true -- copying outputs back to CPU");
       // Copy GPU SlimTensor results back to CPU ETensors
       for (size_t i = 0; i < n_outputs; i++) {
         auto* cpu_output_tensor = &(args[i + n_inputs]->toTensor());
@@ -403,20 +544,39 @@ class ET_EXPERIMENTAL CudaBackend final
             i);
       }
     } else {
+      ET_LOG(Info, "copy_outputs = false -- keep gpu tensor on gpu");
       // Skip-copy optimization: wrap GPU data as ETensor using from_blob
       // The caller is responsible for handling GPU data directly
+      //
+      // IMPORTANT: The AOTI model may replace the output tensor pointers during
+      // handle->run(). The tensors we pre-allocated might have been deleted by
+      // the model, and gpu_outputs now contains pointers to NEW tensors that
+      // the model allocated. We store these NEW tensors for lifetime management.
       {
         std::lock_guard<std::mutex> guard(cached_outputs_mutex_);
         auto& cached_outputs = cached_outputs_[handle];
+        auto& cached_tensor_ptrs = cached_tensor_ptrs_[handle];
 
-        // Clear cached outputs for previous round
+        // Delete the PREVIOUS round's tensors (allocated by AOTI model in the
+        // previous run). We must delete them because the AOTI model expects us
+        // to manage lifetimes of outputs it returns.
+        for (auto* tensor : cached_outputs) {
+          if (tensor != nullptr) {
+            delete tensor;
+          }
+        }
         cached_outputs.clear();
+        cached_tensor_ptrs.clear();
+
         for (size_t i = 0; i < n_outputs; i++) {
-          // Move output SlimTensors to cached_outputs for lifetime management
-          cached_outputs.push_back(std::move(gpu_outputs[i]));
+          // gpu_outputs[i] now points to a tensor allocated by the AOTI model
+          // (it may have replaced our pre-allocated tensor during handle->run).
+          // Store this pointer for lifetime management.
+          cached_outputs.push_back(gpu_outputs[i]);
+
+          print_tensor(cached_outputs[i], "cached_outputs[0]");
 
           // Create an ETensor wrapper pointing to the GPU data
-          // The data stays on GPU and the caller handles it
           SlimTensor* cached = cached_outputs.back();
           auto slim_sizes = cached->sizes();
           auto slim_strides = cached->strides();
@@ -430,8 +590,9 @@ class ET_EXPERIMENTAL CudaBackend final
                 static_cast<executorch::aten::StridesType>(slim_strides[d]);
           }
 
-          // Use tensor_ptr_maker to create a non-owning ETensor wrapper
-          // Note: This creates a view into the SlimTensor's GPU memory
+          // Create TensorPtr wrapper - MUST be stored to keep TensorImpl alive!
+          // The TensorImpl owns the sizes/strides arrays. If TensorPtr is
+          // destroyed, the ETensor in args will have dangling pointers.
           auto tensor_ptr = executorch::extension::from_blob(
               cached->data_ptr(),
               std::move(et_sizes),
@@ -440,6 +601,11 @@ class ET_EXPERIMENTAL CudaBackend final
 
           // Assign the wrapped tensor to the output EValue
           args[i + n_inputs]->toTensor() = *tensor_ptr;
+
+          print_tensor(&args[i + n_inputs]->toTensor(), "args[i + n_inputs]->toTensor()");
+
+          // Store TensorPtr to keep TensorImpl alive until next execution
+          cached_tensor_ptrs.push_back(std::move(tensor_ptr));
         }
       }
     }
@@ -454,6 +620,23 @@ class ET_EXPERIMENTAL CudaBackend final
       return;
     }
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
+
+    // Clean up cached output tensors and TensorPtrs for this handle
+    {
+      std::lock_guard<std::mutex> guard(cached_outputs_mutex_);
+      auto it = cached_outputs_.find(handle);
+      if (it != cached_outputs_.end()) {
+        for (auto* tensor : it->second) {
+          if (tensor != nullptr) {
+            delete tensor;
+          }
+        }
+        cached_outputs_.erase(it);
+      }
+      // Also clean up cached TensorPtrs (they will be destroyed automatically
+      // when erased, releasing the TensorImpl ownership)
+      cached_tensor_ptrs_.erase(handle);
+    }
 
     // Destroy the CUDA stream if it exists
     if (handle->cuda_stream != nullptr) {
@@ -508,6 +691,13 @@ class ET_EXPERIMENTAL CudaBackend final
   mutable std::mutex cached_outputs_mutex_;
   mutable std::unordered_map<AOTIDelegateHandle*, std::vector<SlimTensor*>>
       cached_outputs_;
+  // TensorPtr wrappers must be kept alive so the ETensor's TensorImpl
+  // (which owns sizes/strides arrays) isn't destroyed when TensorPtr goes
+  // out of scope. Store them alongside cached SlimTensors.
+  mutable std::unordered_map<
+      AOTIDelegateHandle*,
+      std::vector<executorch::extension::TensorPtr>>
+      cached_tensor_ptrs_;
 };
 
 } // namespace executorch::backends::cuda
