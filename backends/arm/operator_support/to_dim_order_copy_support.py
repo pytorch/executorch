@@ -45,13 +45,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     ]
 
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.1+INT"),
-        TosaSpecification.create_from_string("TOSA-1.1+FP"),
-    ]
-
     @staticmethod
     def _merge_supported_types(
         dtypes1: SupportedTypeDict,

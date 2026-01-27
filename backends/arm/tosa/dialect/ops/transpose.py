@@ -12,12 +12,7 @@ from executorch.backends.arm.tosa.specification import TosaSpecification
 
 @register_fake_tosa_op(
     "TRANSPOSE(Tensor input, int[] perms) -> Tensor",  # schema
-    (
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.1+FP"),
-        TosaSpecification.create_from_string("TOSA-1.1+INT"),
-    ),  # target TOSA specifications
+    TosaSpecification.all_versions_and_profiles(),  # target TOSA specifications
 )
 def TRANSPOSE(a, perms):
     # The TOSA TRANSPOSE only do the transpose in the TOSA serialized world,

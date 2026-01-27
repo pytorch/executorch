@@ -18,10 +18,7 @@ R = TypeVar("R")
 
 # The list of registered ops are not yet used, except for registration
 _tosa_registered_ops: dict[TosaSpecification, list[Callable]] = {
-    TosaSpecification.create_from_string("TOSA-1.0+FP"): [],
-    TosaSpecification.create_from_string("TOSA-1.0+INT"): [],
-    TosaSpecification.create_from_string("TOSA-1.1+FP"): [],
-    TosaSpecification.create_from_string("TOSA-1.1+INT"): [],
+    spec: [] for spec in TosaSpecification.all_versions_and_profiles()
 }
 
 # Mapping to ensure we only register a given function once.

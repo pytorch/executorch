@@ -379,12 +379,7 @@ class ArmPassManager(PassManager):
 
         if not tosa_spec_in_set(
             self.tosa_spec,
-            {
-                TosaSpecification.create_from_string("TOSA-1.0+FP"),
-                TosaSpecification.create_from_string("TOSA-1.0+INT"),
-                TosaSpecification.create_from_string("TOSA-1.1+FP"),
-                TosaSpecification.create_from_string("TOSA-1.1+INT"),
-            },
+            set(TosaSpecification.all_versions_and_profiles()),
         ):
             raise RuntimeError(
                 f"No pass pipeline found for TOSA specification: {self.tosa_spec}"

@@ -96,6 +96,8 @@ class TosaSpecification:
     version: Version
     is_U55_subset: bool
     extensions: List[str]
+    _SUPPORTED_VERSIONS = [Version("1.0"), Version("1.1")]
+    _SUPPORTED_PROFILES = ["INT", "FP"]
 
     def support_integer(self) -> bool:
         """Return True if integer operations are supported."""
@@ -131,6 +133,52 @@ class TosaSpecification:
         self.is_U55_subset = "u55" in extras
         if self.is_U55_subset:
             extras.remove("u55")
+
+    @classmethod
+    def _normalize_version(cls, version: Version | str) -> Version:
+        if isinstance(version, Version):
+            parsed = version
+        else:
+            version_str = str(version)
+            if version_str.startswith("TOSA-"):
+                version_str = version_str[len("TOSA-") :]
+            parsed = Version(version_str)
+
+        return Version(f"{parsed.major}.{parsed.minor}")
+
+    @classmethod
+    def all_versions_and_profiles(cls) -> List["TosaSpecification"]:
+        """Return specs for all supported versions and profiles."""
+        specs: List["TosaSpecification"] = []
+        for version in cls._SUPPORTED_VERSIONS:
+            for profile in cls._SUPPORTED_PROFILES:
+                specs.append(cls.create_from_string(f"TOSA-{version}+{profile}"))
+        return specs
+
+    @classmethod
+    def all_versions_for_profile(cls, profile: str) -> List["TosaSpecification"]:
+        """Return specs for all supported versions of a given profile."""
+        normalized = profile.upper()
+        if normalized not in cls._SUPPORTED_PROFILES:
+            raise ValueError(f"Unsupported TOSA profile: {profile}")
+        return [
+            cls.create_from_string(f"TOSA-{version}+{normalized}")
+            for version in cls._SUPPORTED_VERSIONS
+        ]
+
+    @classmethod
+    def all_profiles_for_version(
+        cls, version: Version | str
+    ) -> List["TosaSpecification"]:
+        """Return specs for all supported profiles for a given version."""
+        normalized = cls._normalize_version(version)
+        supported = {(v.major, v.minor) for v in cls._SUPPORTED_VERSIONS}
+        if (normalized.major, normalized.minor) not in supported:
+            raise ValueError(f"Unsupported TOSA version: {version}")
+        return [
+            cls.create_from_string(f"TOSA-{normalized}+{profile}")
+            for profile in cls._SUPPORTED_PROFILES
+        ]
 
     @staticmethod
     def create_from_string(repr: str) -> "TosaSpecification":

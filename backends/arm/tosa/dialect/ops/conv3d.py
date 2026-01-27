@@ -37,12 +37,7 @@ def validate_conv3d_args_dtypes(
     "int[3] stride, "
     "int[6] pad, "
     "int[3] dilation) -> Tensor",
-    (
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.1+FP"),
-        TosaSpecification.create_from_string("TOSA-1.1+INT"),
-    ),
+    TosaSpecification.all_versions_and_profiles(),
 )
 def CONV3D(
     x: torch.Tensor,
