@@ -30,7 +30,7 @@ Arguments:
                 - quantized-int4-weight-only
 
   model_dir   Directory containing model artifacts (optional, default: current directory)
-              Expected files: model.pte, aoti_cuda_blob.ptd/aoti_metal_blob.ptd
+              Expected files: model.pte, aoti_cuda_blob.ptd (CUDA only)
               Tokenizers and test files will be downloaded to this directory
 
 Examples:
@@ -67,13 +67,14 @@ MODEL_DIR="${4:-.}"
 
 echo "Testing model: $HF_MODEL (quantization: $QUANT_NAME)"
 
-# Make sure model.pte and aoti_${DEVICE}_blob.ptd exist
+# Make sure model.pte exists
 if [ ! -f "$MODEL_DIR/model.pte" ]; then
   echo "Error: model.pte not found in $MODEL_DIR"
   exit 1
 fi
-if [ ! -f "$MODEL_DIR/aoti_${DEVICE}_blob.ptd" ]; then
-  echo "Error: aoti_${DEVICE}_blob.ptd not found in $MODEL_DIR"
+# For CUDA, also check for aoti_cuda_blob.ptd (Metal embeds data in .pte)
+if [ "$DEVICE" = "cuda" ] && [ ! -f "$MODEL_DIR/aoti_cuda_blob.ptd" ]; then
+  echo "Error: aoti_cuda_blob.ptd not found in $MODEL_DIR"
   exit 1
 fi
 # Locate EXECUTORCH_ROOT from the directory of this script
@@ -190,7 +191,11 @@ fi
 
 # Build runner command with common arguments
 RUNNER_BIN="cmake-out/examples/models/$RUNNER_PATH/$RUNNER_TARGET"
-RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --data_path ${MODEL_DIR}/aoti_${DEVICE}_blob.ptd --temperature 0"
+RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --temperature 0"
+# For CUDA, add data_path argument (Metal embeds data in .pte)
+if [ "$DEVICE" = "cuda" ]; then
+  RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+fi
 
 # Add model-specific arguments
 case "$MODEL_NAME" in
@@ -204,7 +209,11 @@ case "$MODEL_NAME" in
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --image_path $IMAGE_PATH"
     ;;
   parakeet)
-    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --data_path ${MODEL_DIR}/aoti_${DEVICE}_blob.ptd --audio_path ${MODEL_DIR}/$AUDIO_FILE --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE"
+    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --audio_path ${MODEL_DIR}/$AUDIO_FILE --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE"
+    # For CUDA, add data_path argument (Metal embeds data in .pte)
+    if [ "$DEVICE" = "cuda" ]; then
+      RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+    fi
     ;;
 esac
 
