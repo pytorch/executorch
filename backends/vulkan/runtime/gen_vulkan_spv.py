@@ -422,7 +422,32 @@ def define_active_storage_type(storage_type: str):
         raise AssertionError(f"Invalid storage type: {storage_type}")
 
 
-def define_required_extensions(dtypes: Union[str, List[str]]):
+def define_explicit_type_extensions(dtypes: Union[str, List[str]]):
+    out_str = "\n"
+    dtype_list = dtypes if isinstance(dtypes, list) else [dtypes]
+
+    for dtype in dtype_list:
+        glsl_type = None
+        if dtype == "half":
+            glsl_type = "float16"
+        elif dtype == "double":
+            # We only need to allow float64_t type usage
+            glsl_type = "float64"
+        elif dtype in ["int8", "uint8", "bool"]:
+            glsl_type = "int8"
+        elif dtype in ["int16", "uint16"]:
+            glsl_type = "int16"
+        elif dtype in ["int64", "uint64"]:
+            # We only need to allow int64_t and uint64_t type usage
+            glsl_type = "int64"
+
+        if glsl_type is not None:
+            out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
+
+    return out_str
+
+
+def define_required_extensions(storage_type: str, dtypes: Union[str, List[str]]):
     out_str = "\n"
     dtype_list = dtypes if isinstance(dtypes, list) else [dtypes]
 
@@ -445,10 +470,11 @@ def define_required_extensions(dtypes: Union[str, List[str]]):
             # We only need to allow int64_t and uint64_t type usage
             glsl_type = "int64"
 
-        if nbit is not None:
-            out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
-        if glsl_type is not None:
-            out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
+        if storage_type.lower() == "buffer":
+            if nbit is not None:
+                out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
+            if glsl_type is not None:
+                out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
 
     return out_str
 
@@ -476,6 +502,7 @@ UTILITY_FNS: Dict[str, Any] = {
     "layout_declare_spec_const": layout_declare_spec_const,
     "define_active_storage_type": define_active_storage_type,
     "define_required_extensions": define_required_extensions,
+    "define_explicit_type_extensions": define_explicit_type_extensions,
 }
 
 
@@ -996,6 +1023,7 @@ class SPVGenerator:
             with codecs.open(template_file_path, "r", encoding="utf-8") as input_file:
                 input_text = input_file.read()
                 input_text = self.maybe_replace_u16vecn(input_text)
+                print(f"template_file_path: {template_file_path}")
                 output_text = preprocess(input_text, codegen_params)
 
             included_files = get_glsl_includes(output_text)
