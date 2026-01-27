@@ -12,6 +12,8 @@ namespace executorch {
 namespace backends {
 namespace aoti {
 
+extern "C" {
+
 // ============================================================
 // Basic Property Getters - Implementations
 // ============================================================
@@ -56,6 +58,12 @@ AOTITorchError aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim) {
   return Error::Ok;
 }
 
+int32_t aoti_torch_layout_strided() {
+  // Slimtensor only support strided layout, the return value will always be 0,
+  // a.k.a at::Layout::Strided;
+  return 0;
+}
+
 // ============================================================
 // Storage & Device Property Getters - Implementations
 // ============================================================
@@ -97,6 +105,8 @@ AOTITorchError aoti_torch_get_device_index(
   *ret_device_index = static_cast<int32_t>(tensor->device_index());
   return Error::Ok;
 }
+
+} // extern "C"
 
 } // namespace aoti
 } // namespace backends
