@@ -27,11 +27,16 @@
  * to select optimized code paths suited for a particular memory layout.
  *
  * Currently the following information is packed into the layout integer:
- * - bits 0-15: first 4 elements of the dim order array
- *   - bits 0-3: dim_order[0]
- *   - bits 4-7: dim_order[1]
- *   - bits 8-11: dim_order[2]
- *   - bits 12-15: dim_order[3]
+ * - bits  0-15: layout_id: dim order (buffer) or axis_map (texture)
+ *   - bits  0- 3: dim_order[0] / axis_map[0]
+ *   - bits  4- 7: dim_order[1] / axis_map[1]
+ *   - bits  8-11: dim_order[2] / axis_map[2]
+ *   - bits 12-15: dim_order[3] / axis_map[3]
+ * - bits 16-31: packed_dim_info
+ *   - bits 16-19: packed_dim
+ *   - bits 20-23: outer_packed_dim
+ *   - bits 24-27: packed_dim_block_size
+ *   - bits 28-31: outer_packed_dim_block_size
  */
 
 // Extracts the 4-bit packed value at the given position (0..7) from a 32-bit
@@ -43,13 +48,13 @@ int extract_4b(const int packed, const int pos) {
 
 
 // Corresponds to dim_order[:4] = [0, 1, 2, 3]
-#define CONTIGUOUS_BUFFER_LAYOUT_ID 12816
+#define CONTIGUOUS_BUFFER_LAYOUT_ID 0x3210
 // Corresponds to dim_order[:4] = [2, 0, 1, 3]
-#define CHANNELS_LAST_BUFFER_LAYOUT_ID 12546
+#define CHANNELS_LAST_BUFFER_LAYOUT_ID 0x3102
 
 // Used as a default value for hashed layout ints, representing the most common
 // layout used for buffer-backed tensors (i.e. contiguous buffers)
-#define CONTIG_LAYOUT_INT 12816
+#define CONTIG_LAYOUT_INT 0x11103210
 
 int layout_id(const int hashed_layout) {
   // Extract the first 16 bits
