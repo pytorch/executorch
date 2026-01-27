@@ -26,7 +26,7 @@ executorch
 │   ├── <a href="backends/apple">apple</a> - Apple-specific backends.
 │   │   ├── <a href="backends/apple/coreml">coreml</a> - CoreML backend for Apple devices. See <a href="docs/source/backends/coreml/coreml-overview.md">doc</a>.
 │   │   └── <a href="backends/apple/mps">mps</a> - Metal Performance Shaders backend for Apple devices. See <a href="docs/source/backends/mps/mps-overview.md">doc</a>.
-│   ├── <a href="backends/arm">arm</a> - ARM architecture backends. See <a href="docs/source/backends-arm-ethos-u.md">doc</a>.
+│   ├── <a href="backends/arm">arm</a> - ARM architecture backends. See <a href="docs/source/backends/arm-ethos-u/arm-ethos-u-overview.md">doc</a>.
 │   ├── <a href="backends/cadence">cadence</a> - Cadence-specific backends. See <a href="docs/source/backends-cadence.md">doc</a>.
 │   ├── <a href="backends/example">example</a> - Example backend implementations.
 │   ├── <a href="backends/mediatek">mediatek</a> - MediaTek-specific backends. See <a href="docs/source/backends-mediatek.md">doc</a>.
@@ -324,7 +324,8 @@ the code you're modifying and find an author who has more context. Ask them
 for their help in the PR comments.
 
 ### Continuous Integration
-See https://hud.pytorch.org/hud/pytorch/executorch/main for the current state of
+
+See https://hud.pytorch.org/hud/pytorch/executorch/main for the current state of <!-- @lint-ignore -->
 the CI (continuous integration) jobs. If `main` is broken, consider rebasing
 your PR onto the `release/1.1` branch, which points to the most recent
 all-green commit.
