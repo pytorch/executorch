@@ -813,16 +813,3 @@ def annotate_graph(  # type: ignore[return]
             _annotate_output(node, quant_properties.quant_output)
 
         mark_node_as_annotated(node)  # type: ignore[attr-defined]
-
-        # Quantization does not allow kwargs for some reason.
-        # Remove from ops we know have and where we know it does not break anything.
-        if node.target in [
-            torch.ops.aten.full_like.default,
-            torch.ops.aten.full.default,
-            torch.ops.aten.full,
-            torch.ops.aten.fill_.Scalar,
-            torch.ops.aten.scalar_tensor.default,
-            torch.ops.aten.zeros.default,
-            torch.ops.aten.ones.default,
-        ]:
-            node.kwargs = {}
