@@ -31,7 +31,6 @@ from . import (  # noqa
     op_floor,
     op_ge,
     op_gt,
-    op_index_select,
     op_index_tensor,
     op_le,
     op_log,
