@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -34,14 +34,20 @@ class Abs(torch.nn.Module):
         "randn_4d": lambda: (torch.randn(1, 2, 3, 4),),
         "torch_normal": lambda: (torch.normal(mean=0, std=10, size=(2, 3, 4)),),
     }
+    test_parameters_bf16 = {
+        "randn_1d_bf16": lambda: (torch.randn(8, dtype=torch.bfloat16),),
+        "randn_4d_bf16": lambda: (torch.randn(1, 2, 3, 4, dtype=torch.bfloat16),),
+    }
 
     def forward(self, x):
         return torch.abs(x)
 
 
-@common.parametrize("test_data", Abs.test_parameters)
+@common.parametrize("test_data", Abs.test_parameters | Abs.test_parameters_bf16)
 def test_abs_tosa_FP(test_data: torch.Tensor):
-    pipeline = TosaPipelineFP[input_t1](Abs(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t1](
+        Abs(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
+    )
     pipeline.run()
 
 
