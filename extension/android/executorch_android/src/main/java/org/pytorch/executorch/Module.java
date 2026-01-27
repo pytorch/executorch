@@ -8,11 +8,8 @@
 
 package org.pytorch.executorch;
 
-import android.util.Log;
-import com.facebook.jni.HybridData;
-import com.facebook.jni.annotations.DoNotStrip;
-import com.facebook.soloader.nativeloader.NativeLoader;
-import com.facebook.soloader.nativeloader.SystemDelegate;
+import java.util.logging.Logger;
+import java.util.logging.Level;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
@@ -27,13 +24,11 @@ import org.pytorch.executorch.annotations.Experimental;
  */
 @Experimental
 public class Module {
+  private static final Logger LOGGER = Logger.getLogger(Module.class.getName());
 
   static {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
     // Loads libexecutorch.so from jniLibs
-    NativeLoader.loadLibrary("executorch");
+    System.loadLibrary("executorch");
   }
 
   /** Load mode for the module. Load the whole file as a buffer. */
@@ -48,19 +43,14 @@ public class Module {
   /** Load mode for the module. Use memory locking and ignore errors. */
   public static final int LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS = 3;
 
-  private final HybridData mHybridData;
-
+  private final long mNativeHandle;
   private final Map<String, MethodMetadata> mMethodMetadata;
 
-  @DoNotStrip
-  private static native HybridData initHybrid(
-      String moduleAbsolutePath, int loadMode, int initHybrid);
+  private static native long nativeInit(String moduleAbsolutePath, int loadMode, int initHybrid);
 
   private Module(String moduleAbsolutePath, int loadMode, int numThreads) {
     ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
-
-    mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads);
-
+    mNativeHandle = nativeInit(moduleAbsolutePath, loadMode, numThreads);
     mMethodMetadata = populateMethodMeta();
   }
 
@@ -71,11 +61,10 @@ public class Module {
       String name = methods[i];
       metadata.put(name, new MethodMetadata().setName(name));
     }
-
     return metadata;
   }
 
-  /** Lock protecting the non-thread safe methods in mHybridData. */
+  /** Lock protecting the non-thread safe methods. */
   private Lock mLock = new ReentrantLock();
 
   /**
@@ -138,66 +127,38 @@ public class Module {
   public EValue[] execute(String methodName, EValue... inputs) {
     try {
       mLock.lock();
-      if (!mHybridData.isValid()) {
-        Log.e("ExecuTorch", "Attempt to use a destroyed module");
-        return new EValue[0];
-      }
-      return executeNative(methodName, inputs);
+      return nativeExecute(mNativeHandle, methodName, inputs);
     } finally {
       mLock.unlock();
     }
   }
 
-  @DoNotStrip
-  private native EValue[] executeNative(String methodName, EValue... inputs);
+  private native EValue[] nativeExecute(long handle, String methodName, EValue... inputs);
 
   /**
-   * Load a method on this module. This might help with the first time inference performance,
-   * because otherwise the method is loaded lazily when it's execute. Note: this function is
-   * synchronous, and will block until the method is loaded. Therefore, it is recommended to call
-   * this on a background thread. However, users need to make sure that they don't execute before
-   * this function returns.
-   *
-   * @return the Error code if there was an error loading the method
+   * Load a method on this module.
    */
   public int loadMethod(String methodName) {
     try {
       mLock.lock();
-      if (!mHybridData.isValid()) {
-        Log.e("ExecuTorch", "Attempt to use a destroyed module");
-        return 0x2; // InvalidState
-      }
-      return loadMethodNative(methodName);
+      return nativeLoadMethod(mNativeHandle, methodName);
     } finally {
       mLock.unlock();
     }
   }
 
-  @DoNotStrip
-  private native int loadMethodNative(String methodName);
+  private native int nativeLoadMethod(long handle, String methodName);
 
-  /**
-   * Returns the names of the backends in a certain method.
-   *
-   * @param methodName method name to query
-   * @return an array of backend name
-   */
-  @DoNotStrip
-  private native String[] getUsedBackends(String methodName);
+  private native String[] nativeGetUsedBackends(long handle, String methodName);
 
-  /**
-   * Returns the names of methods.
-   *
-   * @return name of methods in this Module
-   */
-  @DoNotStrip
-  public native String[] getMethods();
+  public native String[] nativeGetMethods(long handle);
+
+  public String[] getMethods() {
+      return nativeGetMethods(mNativeHandle);
+  }
 
   /**
    * Get the corresponding @MethodMetadata for a method
-   *
-   * @param name method name
-   * @return @MethodMetadata for this method
    */
   public MethodMetadata getMethodMetadata(String name) {
     if (!mMethodMetadata.containsKey(name)) {
@@ -206,55 +167,47 @@ public class Module {
 
     MethodMetadata methodMetadata = mMethodMetadata.get(name);
     if (methodMetadata != null) {
-      methodMetadata.setBackends(getUsedBackends(name));
+      methodMetadata.setBackends(nativeGetUsedBackends(mNativeHandle, name));
     }
     return methodMetadata;
   }
 
-  @DoNotStrip
-  private static native String[] readLogBufferStaticNative();
+  private static native String[] nativeReadLogBufferStatic();
 
   public static String[] readLogBufferStatic() {
-    return readLogBufferStaticNative();
+    return nativeReadLogBufferStatic();
   }
 
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
   public String[] readLogBuffer() {
-    return readLogBufferNative();
+    return nativeReadLogBuffer(mNativeHandle);
   }
 
-  @DoNotStrip
-  private native String[] readLogBufferNative();
+  private native String[] nativeReadLogBuffer(long handle);
 
   /**
    * Dump the ExecuTorch ETRecord file to /data/local/tmp/result.etdump.
-   *
-   * <p>Currently for internal (minibench) use only.
-   *
-   * @return true if the etdump was successfully written, false otherwise.
    */
   @Experimental
-  @DoNotStrip
-  public native boolean etdump();
+  public boolean etdump() {
+      return nativeEtDump(mNativeHandle);
+  }
+  private native boolean nativeEtDump(long handle);
 
   /**
-   * Explicitly destroys the native Module object. Calling this method is not required, as the
-   * native object will be destroyed when this object is garbage-collected. However, the timing of
-   * garbage collection is not guaranteed, so proactively calling {@code destroy} can free memory
-   * more quickly. See {@link com.facebook.jni.HybridData#resetNative}.
+   * Explicitly destroys the native Module object.
    */
   public void destroy() {
     if (mLock.tryLock()) {
       try {
-        mHybridData.resetNative();
+        nativeDestroy(mNativeHandle);
       } finally {
         mLock.unlock();
       }
     } else {
-      Log.w(
-          "ExecuTorch",
-          "Destroy was called while the module was in use. Resources will not be immediately"
-              + " released.");
+      LOGGER.log(Level.WARNING, "Destroy was called while the module was in use. Resources will not be immediately released.");
     }
   }
+
+  private native void nativeDestroy(long handle);
 }

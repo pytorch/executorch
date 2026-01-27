@@ -8,11 +8,8 @@
 
 package org.pytorch.executorch.training;
 
-import android.util.Log;
-import com.facebook.jni.HybridData;
-import com.facebook.jni.annotations.DoNotStrip;
-import com.facebook.soloader.nativeloader.NativeLoader;
-import com.facebook.soloader.nativeloader.SystemDelegate;
+import java.util.logging.Logger;
+import java.util.logging.Level;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
@@ -27,22 +24,19 @@ import org.pytorch.executorch.annotations.Experimental;
  */
 @Experimental
 public class TrainingModule {
+  private static final Logger LOGGER = Logger.getLogger(TrainingModule.class.getName());
 
   static {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
     // Loads libexecutorch.so from jniLibs
-    NativeLoader.loadLibrary("executorch");
+    System.loadLibrary("executorch");
   }
 
-  private final HybridData mHybridData;
+  private final long mNativeHandle;
 
-  @DoNotStrip
-  private static native HybridData initHybrid(String moduleAbsolutePath, String dataAbsolutePath);
+  private static native long nativeInit(String moduleAbsolutePath, String dataAbsolutePath);
 
   private TrainingModule(String moduleAbsolutePath, String dataAbsolutePath) {
-    mHybridData = initHybrid(moduleAbsolutePath, dataAbsolutePath);
+    mNativeHandle = nativeInit(moduleAbsolutePath, dataAbsolutePath);
   }
 
   /**
@@ -87,35 +81,37 @@ public class TrainingModule {
    * @return return value(s) from the method.
    */
   public EValue[] executeForwardBackward(String methodName, EValue... inputs) {
-    if (!mHybridData.isValid()) {
-      Log.e("ExecuTorch", "Attempt to use a destroyed module");
+    if (mNativeHandle == 0) {
+      LOGGER.log(Level.SEVERE, "Attempt to use a destroyed module");
       return new EValue[0];
     }
-    return executeForwardBackwardNative(methodName, inputs);
+    return nativeExecuteForwardBackward(mNativeHandle, methodName, inputs);
   }
 
-  @DoNotStrip
-  private native EValue[] executeForwardBackwardNative(String methodName, EValue... inputs);
+  private native EValue[] nativeExecuteForwardBackward(long handle, String methodName, EValue... inputs);
 
   public Map<String, Tensor> namedParameters(String methodName) {
-    if (!mHybridData.isValid()) {
-      Log.e("ExecuTorch", "Attempt to use a destroyed module");
+    if (mNativeHandle == 0) {
+      LOGGER.log(Level.SEVERE, "Attempt to use a destroyed module");
       return new HashMap<String, Tensor>();
     }
-    return namedParametersNative(methodName);
+    return nativeNamedParameters(mNativeHandle, methodName);
   }
 
-  @DoNotStrip
-  private native Map<String, Tensor> namedParametersNative(String methodName);
+  private native Map<String, Tensor> nativeNamedParameters(long handle, String methodName);
 
   public Map<String, Tensor> namedGradients(String methodName) {
-    if (!mHybridData.isValid()) {
-      Log.e("ExecuTorch", "Attempt to use a destroyed module");
+    if (mNativeHandle == 0) {
+      LOGGER.log(Level.SEVERE, "Attempt to use a destroyed module");
       return new HashMap<String, Tensor>();
     }
-    return namedGradientsNative(methodName);
+    return nativeNamedGradients(mNativeHandle, methodName);
   }
 
-  @DoNotStrip
-  private native Map<String, Tensor> namedGradientsNative(String methodName);
+  private native Map<String, Tensor> nativeNamedGradients(long handle, String methodName);
+
+  public void destroy() {
+      nativeDestroy(mNativeHandle);
+  }
+  private native void nativeDestroy(long handle);
 }

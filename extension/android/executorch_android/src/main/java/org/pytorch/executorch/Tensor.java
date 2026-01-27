@@ -8,9 +8,8 @@
 
 package org.pytorch.executorch;
 
-import android.util.Log;
-import com.facebook.jni.HybridData;
-import com.facebook.jni.annotations.DoNotStrip;
+import java.util.logging.Logger;
+import java.util.logging.Level;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -44,6 +43,7 @@ import org.pytorch.executorch.annotations.Experimental;
  */
 @Experimental
 public abstract class Tensor {
+  private static final Logger LOGGER = Logger.getLogger(Tensor.class.getName());
   private static final String ERROR_MSG_DATA_BUFFER_NOT_NULL = "Data buffer must be not null";
   private static final String ERROR_MSG_DATA_ARRAY_NOT_NULL = "Data array must be not null";
   private static final String ERROR_MSG_SHAPE_NOT_NULL = "Shape must be not null";
@@ -53,7 +53,7 @@ public abstract class Tensor {
   private static final String ERROR_MSG_DATA_BUFFER_MUST_BE_DIRECT =
       "Data buffer must be direct (java.nio.ByteBuffer#allocateDirect)";
 
-  @DoNotStrip final long[] shape;
+  final long[] shape;
 
   private static final int BYTE_SIZE_BYTES = 1;
   private static final int INT_SIZE_BYTES = 4;
@@ -468,7 +468,7 @@ public abstract class Tensor {
     }
   }
 
-  @DoNotStrip private HybridData mHybridData;
+  private long mNativeHandle;
 
   private Tensor(long[] shape) {
     checkShape(shape);
@@ -501,7 +501,7 @@ public abstract class Tensor {
   public abstract DType dtype();
 
   // Called from native
-  @DoNotStrip
+
   int dtypeJniCode() {
     return dtype().jniCode;
   }
@@ -572,7 +572,7 @@ public abstract class Tensor {
         "Tensor of type " + getClass().getSimpleName() + " cannot return data as double array.");
   }
 
-  @DoNotStrip
+
   Buffer getRawDataBuffer() {
     throw new IllegalStateException(
         "Tensor of type " + getClass().getSimpleName() + " cannot " + "return raw data buffer.");
@@ -846,9 +846,7 @@ public abstract class Tensor {
       super(shape);
       this.data = data;
       this.mDtype = dtype;
-      Log.e(
-          "ExecuTorch",
-          toString() + " in Java. Please consider re-export the model with proper return type");
+      LOGGER.log(Level.SEVERE, toString() + " in Java. Please consider re-export the model with proper return type");
     }
 
     @Override
@@ -889,9 +887,9 @@ public abstract class Tensor {
   // endregion checks
 
   // Called from native
-  @DoNotStrip
+
   private static Tensor nativeNewTensor(
-      ByteBuffer data, long[] shape, int dtype, HybridData hybridData) {
+      ByteBuffer data, long[] shape, int dtype, long nativeHandle) {
     Tensor tensor = null;
 
     if (DType.FLOAT.jniCode == dtype) {
@@ -911,7 +909,7 @@ public abstract class Tensor {
     } else {
       tensor = new Tensor_unsupported(data, shape, DType.fromJniCode(dtype));
     }
-    tensor.mHybridData = hybridData;
+    tensor.mNativeHandle = nativeHandle;
     return tensor;
   }
 

@@ -8,10 +8,6 @@
 
 package org.pytorch.executorch.training;
 
-import com.facebook.jni.HybridData;
-import com.facebook.jni.annotations.DoNotStrip;
-import com.facebook.soloader.nativeloader.NativeLoader;
-import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.util.Map;
 import org.pytorch.executorch.Tensor;
 import org.pytorch.executorch.annotations.Experimental;
@@ -25,17 +21,13 @@ import org.pytorch.executorch.annotations.Experimental;
 public class SGD {
 
   static {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
     // Loads libexecutorch.so from jniLibs
-    NativeLoader.loadLibrary("executorch");
+    System.loadLibrary("executorch");
   }
 
-  private final HybridData mHybridData;
+  private final long mNativeHandle;
 
-  @DoNotStrip
-  private static native HybridData initHybrid(
+  private static native long nativeInit(
       Map<String, Tensor> namedParameters,
       double learningRate,
       double momentum,
@@ -50,8 +42,8 @@ public class SGD {
       double dampening,
       double weightDecay,
       boolean nesterov) {
-    mHybridData =
-        initHybrid(namedParameters, learningRate, momentum, dampening, weightDecay, nesterov);
+    mNativeHandle =
+        nativeInit(namedParameters, learningRate, momentum, dampening, weightDecay, nesterov);
   }
 
   /**
@@ -92,12 +84,16 @@ public class SGD {
    * @param namedGradients Map of parameter names to gradient tensors
    */
   public void step(Map<String, Tensor> namedGradients) {
-    if (!mHybridData.isValid()) {
+    if (mNativeHandle == 0) {
       throw new RuntimeException("Attempt to use a destroyed SGD optimizer");
     }
-    stepNative(namedGradients);
+    nativeStep(mNativeHandle, namedGradients);
   }
 
-  @DoNotStrip
-  private native void stepNative(Map<String, Tensor> namedGradients);
+  private native void nativeStep(long handle, Map<String, Tensor> namedGradients);
+
+  public void destroy() {
+      nativeDestroy(mNativeHandle);
+  }
+  private native void nativeDestroy(long handle);
 }

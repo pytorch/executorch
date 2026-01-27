@@ -8,19 +8,14 @@
 
 package org.pytorch.executorch;
 
-import com.facebook.jni.annotations.DoNotStrip;
-import com.facebook.soloader.nativeloader.NativeLoader;
-import com.facebook.soloader.nativeloader.SystemDelegate;
+
 
 /** Class for entire ExecuTorch Runtime related functions. */
 public class ExecuTorchRuntime {
 
   static {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
     // Loads libexecutorch.so from jniLibs
-    NativeLoader.loadLibrary("executorch");
+    System.loadLibrary("executorch");
   }
 
   private static final ExecuTorchRuntime sInstance = new ExecuTorchRuntime();
@@ -33,10 +28,10 @@ public class ExecuTorchRuntime {
   }
 
   /** Get all registered ops. */
-  @DoNotStrip
+
   public static native String[] getRegisteredOps();
 
   /** Get all registered backends. */
-  @DoNotStrip
+
   public static native String[] getRegisteredBackends();
 }
