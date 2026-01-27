@@ -6,7 +6,6 @@
 
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
-from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 from .utils import copy_meta
 
