@@ -32,7 +32,7 @@ input_params = Tuple[torch.Tensor, int, torch.Tensor]
 
 # FP profile: only float inputs.
 test_data_fp: dict[str, input_params] = {
-    "test_fp32": (
+    "test_fp32_2d": (
         torch.tensor(
             [[0.1, 0.2, 0.3], [1.1, 1.2, 1.3], [2.1, 2.2, 2.3], [3.1, 3.2, 3.3]],
             dtype=torch.float32,
@@ -43,13 +43,32 @@ test_data_fp: dict[str, input_params] = {
             dtype=torch.int64,
         ),  # Shape: [N=4, W=2]
     ),
+    "test_fp32_3d": (
+        torch.tensor(
+            [
+                [[0.1, 0.2, 0.3], [1.1, 1.2, 1.3], [2.1, 2.2, 2.3]],
+                [[3.1, 3.2, 3.1], [4.1, 4.2, 4.3], [5.1, 5.2, 5.3]],
+                [[6.1, 6.2, 6.3], [7.1, 7.2, 7.3], [8.1, 8.2, 8.3]],
+            ],
+            dtype=torch.float32,
+        ),  # Shape: [N=3, K=3, C=3]
+        1,
+        torch.tensor(
+            [
+                [[0, 1, 2], [1, 2, 1], [2, 0, 1]],
+                [[1, 1, 2], [2, 2, 1], [0, 0, 1]],
+                [[2, 1, 2], [0, 2, 1], [1, 0, 1]],
+            ],
+            dtype=torch.int64,
+        ),  # Shape: [N=3, W=3, C=3]
+    ),
 }
 
 
 # INT profile: integer inputs + bool (bool is supported via casts in
 # CanonicalizeGatherPass: bool -> int8 -> bool).
 test_data_int: dict[str, input_params] = {
-    "test_int32": (
+    "test_int32_2d": (
         torch.tensor(
             [[1, 2, 3], [11, 12, 13], [21, 22, 23], [31, 32, 33]],
             dtype=torch.int32,
@@ -60,7 +79,7 @@ test_data_int: dict[str, input_params] = {
             dtype=torch.int64,
         ),  # Shape: [N=4, W=2]
     ),
-    "test_int8": (
+    "test_int8_2d": (
         torch.randint(5, size=(5, 10), dtype=torch.int8),  # Shape: [N=5, K=10]
         1,
         torch.tensor(
@@ -68,7 +87,7 @@ test_data_int: dict[str, input_params] = {
             dtype=torch.int64,
         ),  # Shape: [N=5, W=3]
     ),
-    "test_bool": (
+    "test_bool_2d": (
         torch.tensor(
             [
                 [True, False, True],

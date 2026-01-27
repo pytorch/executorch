@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -124,8 +124,19 @@ test_modules = {
     "becomes_mean_rank5": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 2, 8, 8),)),
 }
 
+test_modules_bf16 = {
+    "rand_bf16": lambda: (
+        AvgPool2d(4, 2, 0, False),
+        (torch.rand(1, 16, 50, 32, dtype=torch.bfloat16),),
+    ),
+    "kernel_3x3_stride_1_pad_1_bf16": lambda: (
+        AvgPool2d((3, 3), (1, 1), 1),
+        (torch.rand(1, 4, 12, 12, dtype=torch.bfloat16),),
+    ),
+}
 
-@common.parametrize("test_module", test_modules)
+
+@common.parametrize("test_module", test_modules | test_modules_bf16)
 def test_avg_pool2d_tosa_FP(test_module):
     model, input_tensor = test_module()
 
@@ -134,6 +145,7 @@ def test_avg_pool2d_tosa_FP(test_module):
         input_tensor,
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
         run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

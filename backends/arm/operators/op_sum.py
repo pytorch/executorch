@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -44,7 +44,7 @@ class SumVisitor(NodeVisitor):
             self.target,
             [inputs[0], output],
             [ts.DType.INT32, ts.DType.FP32],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         tensor = inputs[0]
