@@ -1,0 +1,33 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load(
+    "@fbsource//tools/build_defs:default_platform_defs.bzl",
+    "ANDROID",
+)
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.cxx_library(
+    name = "neuron_backend",
+    srcs = [
+        "NeuronBackend.cpp",
+        "NeuronBufferAllocator.cpp",
+        "NeuronExecutor.cpp",
+    ],
+    headers = glob([
+        "include/**/*.h",
+    ]),
+    include_directories = ["include"],
+    deps = [
+        "fbsource//third-party/mediatek/neuropilot-express-sdk:runtime_api",
+        "//executorch/runtime/backend:interface",
+        "//executorch/runtime/core:memory_allocator",
+        "//executorch/runtime/executor:pte_data_map",
+    ],
+    define_static_target = True,
+    link_whole = True,
+    platforms = [ANDROID],
+    visibility = ["PUBLIC"],
+)
