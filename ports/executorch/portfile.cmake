@@ -1,0 +1,84 @@
+vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
+
+vcpkg_from_github(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO pytorch/executorch
+    REF "v${VERSION}"
+    SHA512 0
+    HEAD_REF main
+)
+
+# Set CMake options based on features
+set(FEATURE_OPTIONS "")
+
+if("xnnpack" IN_LIST FEATURES)
+    list(APPEND FEATURE_OPTIONS -DEXECUTORCH_BUILD_XNNPACK=ON)
+endif()
+
+if("coreml" IN_LIST FEATURES)
+    list(APPEND FEATURE_OPTIONS -DEXECUTORCH_BUILD_COREML=ON)
+endif()
+
+if("mps" IN_LIST FEATURES)
+    list(APPEND FEATURE_OPTIONS -DEXECUTORCH_BUILD_MPS=ON)
+endif()
+
+if("vulkan" IN_LIST FEATURES)
+    list(APPEND FEATURE_OPTIONS -DEXECUTORCH_BUILD_VULKAN=ON)
+endif()
+
+if("qnn" IN_LIST FEATURES)
+    list(APPEND FEATURE_OPTIONS -DEXECUTORCH_BUILD_QNN=ON)
+endif()
+
+if("portable-ops" IN_LIST FEATURES)
+    list(APPEND FEATURE_OPTIONS -DEXECUTORCH_BUILD_PORTABLE_OPS=ON)
+endif()
+
+if("optimized-ops" IN_LIST FEATURES)
+    list(APPEND FEATURE_OPTIONS -DEXECUTORCH_BUILD_OPTIMIZED_OPS=ON)
+endif()
+
+if("quantized-ops" IN_LIST FEATURES)
+    list(APPEND FEATURE_OPTIONS -DEXECUTORCH_BUILD_QUANTIZED_OPS=ON)
+endif()
+
+if("pybind" IN_LIST FEATURES)
+    list(APPEND FEATURE_OPTIONS -DEXECUTORCH_BUILD_PYBIND=ON)
+endif()
+
+if("tests" IN_LIST FEATURES)
+    list(APPEND FEATURE_OPTIONS -DEXECUTORCH_BUILD_TESTS=ON)
+else()
+    list(APPEND FEATURE_OPTIONS -DEXECUTORCH_BUILD_TESTS=OFF)
+endif()
+
+vcpkg_cmake_configure(
+    SOURCE_PATH "${SOURCE_PATH}"
+    OPTIONS
+        ${FEATURE_OPTIONS}
+        -DEXECUTORCH_ENABLE_LOGGING=ON
+        -DEXECUTORCH_ENABLE_PROGRAM_VERIFICATION=ON
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON
+        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON
+)
+
+vcpkg_cmake_build()
+
+if("tests" IN_LIST FEATURES)
+    vcpkg_cmake_test()
+endif()
+
+vcpkg_cmake_install()
+
+vcpkg_cmake_config_fixup(CONFIG_PATH lib/cmake/ExecuTorch)
+
+file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include")
+file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/share")
+
+# Handle copyright
+vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/LICENSE")
+
+# Create usage file
+file(INSTALL "${CMAKE_CURRENT_LIST_DIR}/usage" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}")

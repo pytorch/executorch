@@ -60,11 +60,17 @@ Learn more: [How ExecuTorch Works](https://docs.pytorch.org/executorch/main/intr
 
 ### Installation
 
+**Python (via pip):**
 ```bash
 pip install executorch
 ```
 
-For platform-specific setup (Android, iOS, embedded systems), see the [Quick Start](https://docs.pytorch.org/executorch/main/quick-start-section.html) documentation for additional info.
+**C++ (via VCPKG):**
+```bash
+vcpkg install executorch
+```
+
+For platform-specific setup (Android, iOS, embedded systems), see the [Quick Start](https://docs.pytorch.org/executorch/main/quick-start-section.html) documentation for additional info. For VCPKG port details and features, see the [ports/README.md](ports/README.md).
 
 ### Export and Deploy in 3 Steps
 
