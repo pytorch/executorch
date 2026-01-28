@@ -394,6 +394,37 @@ init_command = [
 ]
 
 [[linter]]
+code = 'BANDIT'
+include_patterns = [
+    'backends/arm/**/*.py',
+    'examples/arm/**/*.py',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'bandit_linter',
+    '--configfile',
+    '.bandit.yaml',
+    '--',
+    '@{{PATHSFILE}}',
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
 code = 'LICENSELINT'
 include_patterns = [
     '**/*',
