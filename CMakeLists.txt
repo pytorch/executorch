@@ -811,6 +811,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       torch
   )
 
+  # Build common AOTI functionality if needed by CUDA or Metal backends
+  if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_METAL)
+    list(APPEND _dep_libs aoti_common)
+  endif()
+
+  if(EXECUTORCH_BUILD_CUDA)
+    list(APPEND _dep_libs aoti_cuda_backend)
+  endif()
+
   # RPATH for _portable_lib.so
   set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
 
