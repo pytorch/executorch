@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,6 +9,7 @@
 
 import copy
 import json
+import logging
 import math
 import re
 
@@ -21,6 +23,7 @@ from executorch.exir._serialize._flatbuffer import (
     _program_flatbuffer_to_json,
     _program_json_to_flatbuffer,
 )
+from executorch.exir._serialize._flatbuffer_program import _program_to_flatbuffer
 from executorch.exir._serialize._named_data_store import (
     NamedDataStore,
     NamedDataStoreOutput,
@@ -47,6 +50,8 @@ from executorch.exir.tensor import ALIGNMENT
 # regardless of the host system, since all commonly-used modern CPUs are little
 # endian.
 _HEADER_BYTEORDER: Literal["little"] = "little"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -418,6 +423,37 @@ def _extract_named_data(
     program.named_data = named_data
 
 
+def _program_to_flatbuffer_with_fallback(
+    program: Program,
+    *,
+    constant_tensor_alignment: int,
+    delegate_alignment: Optional[int],
+) -> _FlatbufferResult:
+    """
+    Serializes the Program into a FlatBuffer, with a JSON fallback for robustness.
+
+    The FlatBuffer serialization path is the preferred fast path, offering
+    significantly better runtime performance and lower memory usage in benchmarks.
+    The JSON path is retained solely as a fallback to ensure robustness in cases
+    where FlatBuffer serialization fails.
+    """
+    try:
+        return _program_to_flatbuffer(
+            program,
+            constant_tensor_alignment=constant_tensor_alignment,
+            delegate_alignment=delegate_alignment,
+        )
+    except Exception as exc:
+        logger.error(
+            f"Failed to serialize Program to flatbuffer; trying JSON fallback due to: {exc}"
+        )
+        return _program_json_to_flatbuffer(
+            _program_to_json(program),
+            constant_tensor_alignment=constant_tensor_alignment,
+            delegate_alignment=delegate_alignment,
+        )
+
+
 def serialize_pte_binary(
     pte_file: PTEFile,
     *,
@@ -523,8 +559,8 @@ def serialize_pte_binary(
         segments_data.append(segment.data)
 
     # Convert to a standard flatbuffer binary.
-    result: _FlatbufferResult = _program_json_to_flatbuffer(
-        _program_to_json(program),
+    result: _FlatbufferResult = _program_to_flatbuffer_with_fallback(
+        program,
         constant_tensor_alignment=constant_tensor_alignment,
         delegate_alignment=delegate_alignment,
     )
