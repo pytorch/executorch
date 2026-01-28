@@ -51,7 +51,7 @@ class Conv2dVisitor(NodeVisitor):
 
         valid_input_dtypes = []
         if self.tosa_spec.support_float():
-            valid_input_dtypes.append(ts.DType.FP32)
+            valid_input_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
         if self.tosa_spec.support_integer():
             valid_input_dtypes.append(ts.DType.INT8)
 
@@ -82,8 +82,8 @@ class Conv2dVisitor(NodeVisitor):
 
         conv2d_output_name = output.name
         acc_type = output.dtype
-        if output.dtype == ts.DType.BF16:
-            # Accumulate BF16 inputs in FP32 for better precision per TOSA BF16 extension.
+        if output.dtype in [ts.DType.BF16, ts.DType.FP16]:
+            # Accumulate BF16, FP16 inputs in FP32 for better precision.
             acc_type = ts.DType.FP32
 
         input_zp_name, weight_zp_name = add_input_weight_zp_consts(
