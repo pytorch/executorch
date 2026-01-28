@@ -74,6 +74,20 @@ void as_strided_copy(
   if (size.empty()) {
     out_data[0] = in_data[0];
   } else {
+    // Validate that all strided accesses will be within bounds.
+    // The maximum index accessed is: offset + sum((size[i] - 1) * stride[i])
+    int64_t max_index = offset;
+    for (size_t i = 0; i < size.size(); i++) {
+      if (size[i] > 0) {
+        max_index += (size[i] - 1) * stride[i];
+      }
+    }
+    ET_CHECK_MSG(
+        offset >= 0 && max_index < in.numel(),
+        "as_strided_copy: access out of bounds (offset=%ld, max_index=%ld, numel=%zd)",
+        static_cast<long>(offset),
+        static_cast<long>(max_index),
+        static_cast<size_t>(in.numel()));
     _as_strided_copy<CTYPE>(in_data, out_data, out, size, stride, 0);
   }
 }
