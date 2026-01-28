@@ -8,6 +8,8 @@
 
 package org.pytorch.executorch.extension.asr
 
+import org.pytorch.executorch.annotations.Experimental
+
 /**
  * Callback interface for ASR (Automatic Speech Recognition) module.
  * Users can implement this interface to receive the transcribed tokens
@@ -15,6 +17,7 @@ package org.pytorch.executorch.extension.asr
  *
  * Warning: These APIs are experimental and subject to change without notice
  */
+@Experimental
 interface AsrCallback {
     /**
      * Called when a new token is available from JNI.

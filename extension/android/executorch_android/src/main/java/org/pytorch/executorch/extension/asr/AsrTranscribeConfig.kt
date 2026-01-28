@@ -8,6 +8,8 @@
 
 package org.pytorch.executorch.extension.asr
 
+import org.pytorch.executorch.annotations.Experimental
+
 /**
  * Configuration for ASR transcription.
  *
@@ -17,6 +19,7 @@ package org.pytorch.executorch.extension.asr
  * @property temperature Temperature for sampling. 0.0 means greedy decoding
  * @property decoderStartTokenId The token ID to start decoding with (e.g., language token for Whisper)
  */
+@Experimental
 data class AsrTranscribeConfig(
     val maxNewTokens: Long = 128,
     val temperature: Float = 0.0f,

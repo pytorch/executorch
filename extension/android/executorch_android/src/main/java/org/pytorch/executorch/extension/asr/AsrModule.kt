@@ -10,6 +10,7 @@ package org.pytorch.executorch.extension.asr
 
 import java.io.Closeable
 import java.io.File
+import org.pytorch.executorch.annotations.Experimental
 
 /**
  * AsrModule is a wrapper around the ExecuTorch ASR Runner. It provides a simple interface to
@@ -24,6 +25,7 @@ import java.io.File
  * @param tokenizerPath Path to the tokenizer file
  * @param dataPath Optional path to additional data file (e.g., for delegate data)
  */
+@Experimental
 class AsrModule(
     modelPath: String,
     tokenizerPath: String,
