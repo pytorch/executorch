@@ -9,6 +9,7 @@
 #include <jni.h>
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -253,8 +254,19 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
   }
 
   // Validate that dimensions match the array length
-  jsize expectedLen =
-      static_cast<jsize>(batchSize) * timeSteps * featureDim;
+  // Use int64_t to detect overflow before casting to jsize
+  int64_t expectedLen64 =
+      static_cast<int64_t>(batchSize) * timeSteps * featureDim;
+  if (expectedLen64 > std::numeric_limits<jsize>::max()) {
+    env->ThrowNew(
+        env->FindClass("java/lang/IllegalArgumentException"),
+        ("Dimensions overflow: " + std::to_string(batchSize) + " x " +
+         std::to_string(timeSteps) + " x " + std::to_string(featureDim) +
+         " exceeds maximum array size")
+            .c_str());
+    return -1;
+  }
+  jsize expectedLen = static_cast<jsize>(expectedLen64);
   if (featuresLen != expectedLen) {
     env->ThrowNew(
         env->FindClass("java/lang/IllegalArgumentException"),
