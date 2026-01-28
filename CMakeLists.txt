@@ -460,6 +460,10 @@ target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 executorch_target_link_options_shared_lib(executorch)
 
+file(READ version.txt EXECUTORCH_VERSION)
+# Strip trailing newline
+string(REGEX REPLACE "\n$" "" EXECUTORCH_VERSION "${EXECUTORCH_VERSION}")
+
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
 # see kernels/portable/CMakeLists.txt.
