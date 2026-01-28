@@ -183,6 +183,8 @@ fi
 DEVICE_ARG=""
 if [ "$DEVICE" = "cuda" ]; then
   DEVICE_ARG="--device cuda"
+elif [ "$DEVICE" = "metal" ]; then
+  DEVICE_ARG="--device mps"
 fi
 
 optimum-cli export executorch \
