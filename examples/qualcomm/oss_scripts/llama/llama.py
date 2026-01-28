@@ -36,6 +36,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     TEXT_EMBEDDING_GRAPH_NAMES,
     TEXT_ENCODER,
     VISION_ENCODER,
+    VISION_ENCODER_INPUT_FILENAME,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
     QnnRunnerEvalWrapper,
@@ -45,13 +46,11 @@ from executorch.examples.qualcomm.oss_scripts.llama.wrappers import (
     MultiModalManager,
     next_power_of_two,
 )
-
 from executorch.examples.qualcomm.utils import (
     make_output_dir,
     setup_common_args_and_variables,
     SimpleADB,
 )
-
 
 try:
     from lm_eval.evaluator import simple_evaluate
@@ -163,38 +162,9 @@ def inference(
         else f"{args.artifact}/{pte_filenames[TEXT_DECODER]}.pte"
     )
 
-    # TODO: support multimodal runtime, we only check pte size for now
-    if is_modality:
-        if args.ip and args.port != -1:
-            encoder_pte_path = (
-                f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
-                if args.pre_gen_pte
-                else f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
-            )
-            text_embedding_pte_path = (
-                f"{args.pre_gen_pte}/{pte_filenames[TEXT_EMBEDDING]}.pte"
-                if args.pre_gen_pte
-                else f"{args.artifact}/{pte_filenames[TEXT_EMBEDDING]}.pte"
-            )
-            # Prepare validation results for CI system
-            validation_results = {
-                "pte_size": os.path.getsize(pte_path),
-                "encoder_pte_size": os.path.getsize(encoder_pte_path),
-                "text_embedding_pte_size": os.path.getsize(text_embedding_pte_path),
-            }
-            with Client((args.ip, args.port)) as conn:
-                conn.send(json.dumps(validation_results))
-        else:
-            logging.info("Multimodal runtime support is currently under development.")
-            logging.info(
-                "Detected vision/audio encoder in model config. Exiting process safely."
-            )
-            exit(0)
-        return None
-
     # For decoder-only models, enable accuracy evaluation using perplexity
     # TODO: Add support for multimodal accuracy evaluation (e.g., VLM)
-    if args.run_lm_eval:
+    if not is_modality and args.run_lm_eval:
         # Generate the eval wrapper
         eval_wrapper = QnnRunnerEvalWrapper(
             args=args,
@@ -291,19 +261,51 @@ def inference(
 
         qnn_sdk = os.getenv("QNN_SDK_ROOT")
         target = "x86_64-linux-clang"
-        runner_cmd = " ".join(
-            [
-                f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
-                f"./{args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
-                f"--decoder_model_version {decoder_model_config.decoder_model_version}",
-                f"--tokenizer_path {runtime_tokenizer_path}",
-                f"--model_path {pte_path}",
-                f"--seq_len {seq_len}",
-                f"--output_path {args.artifact}/outputs/outputs.txt",
-                f"--performance_output_path {args.artifact}/{performance_output_path}",
-                runner_args,
-            ]
-        )
+        if not is_modality:
+            runner_cmd = " ".join(
+                [
+                    f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
+                    f"./{args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+                    f"--decoder_model_version {decoder_model_config.decoder_model_version}",
+                    f"--tokenizer_path {runtime_tokenizer_path}",
+                    f"--model_path {pte_path}",
+                    f"--seq_len {seq_len}",
+                    f"--output_path {args.artifact}/outputs/outputs.txt",
+                    f"--performance_output_path {args.artifact}/{performance_output_path}",
+                    runner_args,
+                ]
+            )
+        else:
+            # x86 emulator is intended for CI and not performance. Check only the first few tokens.
+            # For multimodal models, use 128 tokens (vs 16 for text-only) due to longer sequence length required for modality embeddings.
+            seq_len = min(seq_len, 128)
+            encoder_pte_path = (
+                f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
+                if args.pre_gen_pte
+                else f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
+            )
+            text_embedding_pte_path = (
+                f"{args.pre_gen_pte}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+                if args.pre_gen_pte
+                else f"{args.artifact}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+            )
+            runner_cmd = " ".join(
+                [
+                    f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
+                    f"./{args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_multimodal_runner",
+                    f"--decoder_model_version {decoder_model_config.decoder_model_version}",
+                    f"--tokenizer_path {runtime_tokenizer_path}",
+                    f"--decoder_path {pte_path}",
+                    f"--encoder_path {encoder_pte_path}",
+                    f"--embedding_path {text_embedding_pte_path}",
+                    f"--image_path {args.artifact}/{VISION_ENCODER_INPUT_FILENAME}.raw",
+                    f"--seq_len {seq_len}",
+                    f"--output_path {args.artifact}/outputs/outputs.txt",
+                    f"--performance_output_path {args.artifact}/{performance_output_path}",
+                    runner_args,
+                ]
+            )
+
         subprocess.run(
             runner_cmd,
             shell=True,
@@ -312,36 +314,80 @@ def inference(
         )
         post_process()
     else:
-        runner_cmd = " ".join(
-            [
-                f"cd {workspace} &&",
-                f"./qnn_llama_runner",
-                f"--decoder_model_version {decoder_model_config.decoder_model_version}",
-                f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
-                f"--model_path {pte_filenames[TEXT_DECODER]}.pte",
-                f"--seq_len {seq_len}",
-                "--output_path outputs/outputs.txt",
-                f"--performance_output_path {performance_output_path}",
-                "--shared_buffer",
-                runner_args,
-            ]
-        )
+        if not is_modality:
+            runner_cmd = " ".join(
+                [
+                    f"cd {workspace} &&",
+                    f"./qnn_llama_runner",
+                    f"--decoder_model_version {decoder_model_config.decoder_model_version}",
+                    f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
+                    f"--model_path {pte_filenames[TEXT_DECODER]}.pte",
+                    f"--seq_len {seq_len}",
+                    "--output_path outputs/outputs.txt",
+                    f"--performance_output_path {performance_output_path}",
+                    "--shared_buffer",
+                    runner_args,
+                ]
+            )
+        else:
+            encoder_pte_path = (
+                f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
+                if args.pre_gen_pte
+                else f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
+            )
+            text_embedding_pte_path = (
+                f"{args.pre_gen_pte}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+                if args.pre_gen_pte
+                else f"{args.artifact}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+            )
+            runner_cmd = " ".join(
+                [
+                    f"cd {workspace} &&",
+                    f"./qnn_multimodal_runner",
+                    f"--decoder_model_version {decoder_model_config.decoder_model_version}",
+                    f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
+                    f"--decoder_path {pte_filenames[TEXT_DECODER]}.pte",
+                    f"--encoder_path {pte_filenames[VISION_ENCODER]}.pte",
+                    f"--embedding_path {pte_filenames[TEXT_EMBEDDING]}.pte",
+                    f"--image_path {VISION_ENCODER_INPUT_FILENAME}.raw",
+                    f"--seq_len {seq_len}",
+                    "--output_path outputs/outputs.txt",
+                    f"--performance_output_path {performance_output_path}",
+                    "--shared_buffer",
+                    runner_args,
+                ]
+            )
+
         adb = SimpleADB(
             qnn_sdk=os.getenv("QNN_SDK_ROOT"),
             build_path=f"{args.build_folder}",
-            pte_path=pte_path,
+            pte_path=(
+                pte_path
+                if not is_modality
+                else [pte_path, encoder_pte_path, text_embedding_pte_path]
+            ),
             workspace=workspace,
             device_id=args.device,
             host_id=args.host,
             soc_model=args.model,
             shared_buffer=True,
             target=args.target,
-            runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+            runner=(
+                f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner"
+                if not is_modality
+                else f"examples/qualcomm/oss_scripts/llama/qnn_multimodal_runner"
+            ),
         )
 
         # No pregen inputs, input_list is not required
         if not args.skip_push:
-            adb.push(inputs=[], files=[runtime_tokenizer_path])
+            # Always use image from artifact folder since that's where it's saved during preprocessing
+            # regardless of whether pre_gen_pte is used (pre_gen_pte only applies to .pte model files)
+            image_path = f"{args.artifact}/{VISION_ENCODER_INPUT_FILENAME}.raw"
+            adb.push(
+                inputs=[],
+                files=[runtime_tokenizer_path] + ([image_path] if is_modality else []),
+            )
         adb.execute(custom_runner_cmd=runner_cmd)
         adb.pull(output_path=args.artifact, callback=post_process)
 
@@ -358,6 +404,16 @@ def inference(
             "inference_speed": inference_speed,
             "pte_size": os.path.getsize(pte_path),
         }
+
+        # Add multimodal-specific metrics if applicable
+        if is_modality:
+            validation_results.update(
+                {
+                    "encoder_pte_size": os.path.getsize(encoder_pte_path),
+                    "text_embedding_pte_size": os.path.getsize(text_embedding_pte_path),
+                }
+            )
+
         with Client((args.ip, args.port)) as conn:
             conn.send(json.dumps(validation_results))
     else:
@@ -526,6 +582,13 @@ def _build_parser():
         type=int,
     )
 
+    parser.add_argument(
+        "--image_path",
+        help="Path to the image file for multimodal language models (MLLM). If not specified, the default image from encoder/encoder_config.py will be used. The image should be preprocessed and saved in raw binary format.",
+        default=None,
+        type=str,
+    )
+
     parser.add_argument("-v", "--verbose", action="store_true")
 
     return parser
@@ -586,6 +649,17 @@ def export_llama(args) -> None:
     dataset_builder = DatasetBuilder(args, decoder_model_config, tokenizer_wrapper)
     calibration_data = dataset_builder.prepare_calibration_dataset(
         args.prompt, chat_template
+    )
+
+    # TODO: Implement multi-turn conversation support for multimodal models (vision/audio).
+    assert (
+        not (
+            hasattr(decoder_model_config, VISION_ENCODER)
+            or hasattr(decoder_model_config, AUDIO_ENCODER)
+        )
+    ) or (len(args.prompt) <= 1), (
+        "Multimodal models currently do not support multi-turn. "
+        "Please set `--prompt` to 1 or switch to a unimodal (text-only) decoder."
     )
 
     if args.pre_gen_pte:
