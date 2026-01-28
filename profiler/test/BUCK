@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 
 oncall("executorch")
@@ -7,7 +8,7 @@ oncall("executorch")
 # -c executorch.prof_enabled=true. So we instead define this as a
 # binary and run this on diffs via a Skycastle job.
 
-python_binary(
+fbcode_target(_kind = python_binary,
     # @autodeps-skip
     name = "test_profiler_e2e",
     srcs = [
