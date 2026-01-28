@@ -386,6 +386,31 @@ test_data_FP = {
     "groups_bias": lambda: conv2d_groups_bias,
 }
 
+test_data_FP_bf16 = {
+    "bf16_3x3": lambda: Conv2d(
+        height=12,
+        width=12,
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3),
+        stride=(1, 1),
+        padding=(1, 1),
+        bias=True,
+        dtype=torch.bfloat16,
+    ),
+    "bf16_1x1": lambda: Conv2d(
+        height=8,
+        width=8,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=(1, 1),
+        stride=(2, 1),
+        padding=(0, 3),
+        bias=False,
+        dtype=torch.bfloat16,
+    ),
+}
+
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -406,7 +431,7 @@ def _get_dtype_count(model: torch.nn.Module):
     }
 
 
-@common.parametrize("test_data", test_data_FP)
+@common.parametrize("test_data", test_data_FP | test_data_FP_bf16)
 def test_convolution_2d_tosa_FP(test_data):
     model = test_data()
     pipeline = TosaPipelineFP[input_t](
@@ -414,6 +439,7 @@ def test_convolution_2d_tosa_FP(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
