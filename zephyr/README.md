@@ -15,11 +15,13 @@ source .zephyr_venv/bin/activate
 ```
 
 Install requirements
+<!-- RUN install_reqs -->
 ```
 pip install west cmake==3.29 pyelftools ninja jsonschema
 ```
 
 Setup zephyr repo
+<!-- RUN west_init -->
 ```
 west init --manifest-rev v4.3.0
 ```
@@ -51,6 +53,7 @@ manifest:
 ## Run west config and update:
 
 Add ExecuTorch to Zephyr
+<!-- RUN west_config -->
 ```
 west config manifest.project-filter -- -.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u
 west update
@@ -59,6 +62,7 @@ west update
 ## Setup and install ExecuTorch
 
 Setup ExecuTorch
+<!-- RUN install_executorch -->
 ```
 cd modules/lib/executorch/
 git submodule sync
@@ -74,6 +78,7 @@ This is needed to convert python models to PTE files for Ethos&trade;-Ux5 and al
 Make sure to read and agree to the Corstone&trade; eula
 
 Install TOSA, vela and FVPs
+<!-- RUN install_arm_tools -->
 ```
 modules/lib/executorch/examples/arm/setup.sh --i-agree-to-the-contained-eula
 . modules/lib/executorch/examples/arm/arm-scratch/setup_path.sh
@@ -91,6 +96,7 @@ To run you need to point of the path to the installed Corstone&trade; FVP and yo
 Set up FVP paths and macs used, this will also set shutdown_on_eot so the FVP auto stops after it has run the example.
 
 Config Zephyr Corstone300 FVP
+<!-- RUN setup_corstone300_fvp -->
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone300
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
@@ -102,6 +108,7 @@ export ARMFVP_EXTRA_FLAGS="-C mps3_board.uart0.shutdown_on_eot=1 -C ethosu.num_m
 #### Prepare a PTE model file
 
 Prepare the Ethos-U55 PTE model
+<!-- RUN test_ethos-u55_generate_pte -->
 ```
 python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/examples/arm/example_modules/add.py --quantize --delegate -t ethos-u55-128 --output=add_u55_128.pte
 ```
@@ -111,6 +118,7 @@ python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modu
 #### Build and run
 
 Run the Ethos-U55 PTE model
+<!-- RUN test_ethos-u55_build_and_run -->
 ```
 west build -b mps3/corstone300/fvp modules/lib/executorch/examples/arm/zephyr -t run -- -DET_PTE_FILE_PATH=add_u55_128.pte
 ```
@@ -120,6 +128,7 @@ west build -b mps3/corstone300/fvp modules/lib/executorch/examples/arm/zephyr -t
 #### Prepare a PTE model file
 
 Prepare the Cortex-M55 PTE model
+<!-- RUN test_cortex-m55_generate_pte -->
 ```
 python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/examples/arm/example_modules/add.py --quantize --output=add_m55.pte
 ```
@@ -127,6 +136,7 @@ python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modu
 #### Build and run
 
 Run the Cortex-M55 PTE model
+<!-- RUN test_cortex-m55_build_and_run -->
 ```
 west build -b mps3/corstone300/fvp modules/lib/executorch/examples/arm/zephyr -t run -- -DET_PTE_FILE_PATH=add_m55.pte
 ```
@@ -138,10 +148,11 @@ west build -b mps3/corstone300/fvp modules/lib/executorch/examples/arm/zephyr -t
 Set up FVP paths, libs and macs used, this will also set shutdown_on_eot so the FVP auto stops after it has run the example.
 
 Config Zephyr Corstone320 FVP
+<!-- RUN setup_corstone320_fvp -->
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320
-export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH}
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
+export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH}
 export ARMFVP_EXTRA_FLAGS="-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.subsystem.ethosu.num_macs=256"
 ```
 
@@ -150,6 +161,7 @@ export ARMFVP_EXTRA_FLAGS="-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.s
 #### Prepare a PTE model file
 
 Prepare the Ethos-U85 PTE model
+<!-- RUN test_ethos-u85_generate_pte -->
 ```
 python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/examples/arm/example_modules/add.py --quantize --delegate -t ethos-u85-256 --output=add_u85_256.pte
 ```
@@ -159,6 +171,7 @@ python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modu
 #### Build and run
 
 Run the Ethos-U85 PTE model
+<!-- RUN test_ethos-u85_build_and_run -->
 ```
 west build -b mps4/corstone320/fvp modules/lib/executorch/examples/arm/zephyr -t run -- -DET_PTE_FILE_PATH=add_u85_256.pte
 ```

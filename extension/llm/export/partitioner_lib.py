@@ -61,7 +61,7 @@ def get_mps_partitioner(use_kv_cache: bool = False):
         )
     except ImportError:
         raise ImportError(
-            "Please install the MPS backend follwing https://pytorch.org/executorch/main/backends-mps"
+            "Please install the MPS backend following https://docs.pytorch.org/executorch/main/backends/mps/mps-overview.html"
         )
 
     compile_specs = [CompileSpec("use_fp16", bytes([True]))]
@@ -98,7 +98,7 @@ def get_coreml_partitioner(
         )
     except ImportError:
         raise ImportError(
-            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/backends-coreml"
+            "Please install the CoreML backend following https://docs.pytorch.org/executorch/main/backends/coreml/coreml-overview.html"
             + "; for buck users, please add example dependancies: //executorch/backends/apple/coreml:backend, and etc"
         )
 

@@ -1,0 +1,26 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+runtime.python_library(
+    name = "preprocess",
+    srcs = [
+        "preprocess.py"
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/passes:lib",
+        "fbsource//third-party/mediatek/neuropilot-express-sdk:sdk",
+    ],
+)
+
+runtime.python_library(
+    name = "partitioner",
+    srcs = [
+        "partitioner.py"
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":preprocess",
+    ],
+)
