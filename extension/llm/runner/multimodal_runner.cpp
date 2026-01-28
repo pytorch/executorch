@@ -194,6 +194,9 @@ Error MultimodalRunner::generate(
       "Max new tokens %d is less than or equal to 0",
       max_new_tokens);
 
+  // Set ignore_eos based on config
+  text_token_generator_->set_ignore_eos(config.ignore_eos);
+
   // Generate tokens using the text token generator
   std::vector<uint64_t> prompt_tokens = {prefill_next_token};
   auto generate_result = text_token_generator_->generate(

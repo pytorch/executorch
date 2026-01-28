@@ -67,6 +67,11 @@ DEFINE_int32(
 
 DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 
+DEFINE_bool(
+    ignore_eos,
+    false,
+    "Whether to ignore EOS token and continue generating until max_new_tokens is reached.");
+
 DEFINE_string(
     etdump_path,
     "etdump.in",
@@ -164,6 +169,8 @@ int32_t main(int32_t argc, char** argv) {
   // generate
   executorch::extension::llm::GenerationConfig config{
       .temperature = temperature};
+
+  config.ignore_eos = FLAGS_ignore_eos;
 
   if (FLAGS_max_new_tokens != -1) {
     config.max_new_tokens = FLAGS_max_new_tokens;
