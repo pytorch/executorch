@@ -206,12 +206,12 @@ def save_result(output_image):
 
 
 def inference(args, compiler_specs, pte_files):
-    # Loading a pretrained EulerDiscreteScheduler from the https://huggingface.co/stabilityai/stable-diffusion-2-1-base.
+    # Loading a pretrained EulerDiscreteScheduler from the https://huggingface.co/stabilityai/stable-diffusion-2-1-base.  # @lint-ignore
     scheduler = EulerDiscreteScheduler.from_pretrained(
         "stabilityai/stable-diffusion-2-1-base", subfolder="scheduler", revision="main"
     )
 
-    #  Loading a pretrained UNet2DConditionModel (which includes the time embedding) from the https://huggingface.co/stabilityai/stable-diffusion-2-1-base.
+    #  Loading a pretrained UNet2DConditionModel (which includes the time embedding) from the https://huggingface.co/stabilityai/stable-diffusion-2-1-base.  # @lint-ignore
     time_embedding = UNet2DConditionModel.from_pretrained(
         "stabilityai/stable-diffusion-2-1-base", subfolder="unet", revision="main"
     ).time_embedding

@@ -295,11 +295,15 @@ class PreprocessorWrapper(torch.nn.Module):
         return mel, mel_len
 
 
-def export_all(model):
+def export_all(model, dtype=torch.float):
     """Export all model components.
 
     The maximum audio duration is determined by the model's internal
     max_audio_length (~50 seconds for Parakeet with max_audio_length=5000).
+
+    Args:
+        model: The NeMo ASR model to export.
+        dtype: Data type for floating-point tensors (default: torch.float).
     """
     programs = {}
 
@@ -316,7 +320,8 @@ def export_all(model):
 
     preprocessor_wrapper = PreprocessorWrapper(model.preprocessor)
     preprocessor_wrapper.eval()
-    sample_audio = torch.randn(max_audio_samples)
+
+    sample_audio = torch.randn(max_audio_samples, dtype=torch.float)
     sample_length = torch.tensor([sample_audio.shape[0]], dtype=torch.int64)
     # The preprocessor uses different code paths when CUDA is available, which include
     # data-dependent conditionals that torch.export cannot handle. Force CPU path.
@@ -337,7 +342,7 @@ def export_all(model):
     feat_in = getattr(model.encoder, "_feat_in", 128)
     # Use max_mel_frames as example to ensure Dim.AUTO infers the full range.
     # Smaller examples cause Dim.AUTO to infer narrow bounds.
-    audio_signal = torch.randn(1, feat_in, max_mel_frames)
+    audio_signal = torch.randn(1, feat_in, max_mel_frames, dtype=dtype)
     length = torch.tensor([max_mel_frames], dtype=torch.int64)
     encoder_with_proj = EncoderWithProjection(model.encoder, model.joint)
     encoder_with_proj.eval()
@@ -359,8 +364,8 @@ def export_all(model):
     decoder_step = DecoderStep(model.decoder, model.joint)
     decoder_step.eval()
     token = torch.tensor([[0]], dtype=torch.long)
-    h = torch.zeros(num_layers, 1, pred_hidden)
-    c = torch.zeros(num_layers, 1, pred_hidden)
+    h = torch.zeros(num_layers, 1, pred_hidden, dtype=dtype)
+    c = torch.zeros(num_layers, 1, pred_hidden, dtype=dtype)
     programs["decoder_step"] = export(
         decoder_step,
         (token, h, c),
@@ -371,8 +376,8 @@ def export_all(model):
     joint_hidden = model.joint.joint_hidden
     num_token_classes = model.tokenizer.vocab_size + 1  # +1 for blank
 
-    f_proj = torch.randn(1, 1, joint_hidden)
-    g_proj = torch.randn(1, 1, joint_hidden)
+    f_proj = torch.randn(1, 1, joint_hidden, dtype=dtype)
+    g_proj = torch.randn(1, 1, joint_hidden, dtype=dtype)
     programs["joint"] = export(
         JointWithArgmax(model.joint, num_token_classes),
         (f_proj, g_proj),
@@ -551,9 +556,9 @@ def main():
     )
     args = parser.parse_args()
 
-    # Validate dtype for Metal backend
-    if args.backend == "metal" and args.dtype == "fp16":
-        parser.error("Metal backend only supports fp32 and bf16, not fp16")
+    # Validate dtype
+    if args.dtype == "fp16":
+        parser.error("fp16 is not yet supported")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -572,7 +577,8 @@ def main():
         model = model.to(torch.float16)
 
     print("\nExporting components...")
-    programs, metadata = export_all(model)
+    export_dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float
+    programs, metadata = export_all(model, dtype=export_dtype)
 
     et = lower_to_executorch(programs, metadata=metadata, backend=args.backend)
 
