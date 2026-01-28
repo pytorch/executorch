@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import warnings
 from typing import Callable, List, Optional
 
 from executorch.examples.qualcomm.oss_scripts.llama import LLMModelConfig
@@ -18,7 +19,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
 )
 
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config import (
-    LateFusionModalityConfig,
+    MultiModalityConfig,
     VisionModalityConfig,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.tokenizer import TokenizerWrapper
@@ -54,10 +55,16 @@ class DatasetBuilder:
         Returns:
             tuple of pixel values tensors
         """
-        # Load image from the specified URL
-        # Currently only supports loading image from URL
-        # TODO: allow user-specified image path
-        image = load_image(config.img_url)
+        # Load image from user-specified path (URL or local file)
+        # fall back to the default image URL if no image is provided.
+        image_path = self.control_args.image_path or config.img_url
+        if not self.control_args.image_path:
+            warnings.warn(
+                f"No image path/URL provided, using default image URL: {config.img_url}",
+                UserWarning,
+                stacklevel=1,
+            )
+        image = load_image(image_path)
 
         # Process image with text prompt using HuggingFace processor
         # Some HF processors (e.g. InternVL3) need to pass text arg or it will cause error and process failed
@@ -81,7 +88,7 @@ class DatasetBuilder:
 
     def _build_dataset_for_encoder(
         self,
-        config: LateFusionModalityConfig,
+        config: MultiModalityConfig,
         prompt: str,
     ) -> Optional[tuple]:
         if issubclass(config, VisionModalityConfig):

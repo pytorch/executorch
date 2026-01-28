@@ -6,7 +6,7 @@
 
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config import (
     InternVL3Encoder,
-    LateFusionModalityConfig,
+    MultiModalityConfig,
     SmolVLMEncoder,
     VisionModalityConfig,
 )
@@ -20,7 +20,7 @@ __all__ = [
     "EncoderQuantRecipe",
     "InternVL3Encoder",
     "InternVL3_Encoder_QuantRecipe",
-    "LateFusionModalityConfig",
+    "MultiModalityConfig",
     "SmolVLMEncoder",
     "SmolVLM_Encoder_QuantRecipe",
     "VisionModalityConfig",
