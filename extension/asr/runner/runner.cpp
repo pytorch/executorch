@@ -27,6 +27,7 @@ namespace {
 
 constexpr const char* kEncoderMethodName = "encoder";
 constexpr const char* kDecoderMethodName = "text_decoder";
+constexpr const char* kSamplerMethodName = "sampler";
 
 } // namespace
 
@@ -47,7 +48,8 @@ AsrRunner::AsrRunner(
 
 bool AsrRunner::is_loaded() const {
   return module_ && encoder_method_loaded_ && decoder_method_loaded_ &&
-      tokenizer_ && tokenizer_->is_loaded() && !eos_token_ids_.empty();
+      (!sampler_method_present_ || sampler_method_loaded_) && tokenizer_ &&
+      tokenizer_->is_loaded() && !eos_token_ids_.empty();
 }
 
 Error AsrRunner::load_tokenizer() {
@@ -96,6 +98,8 @@ Error AsrRunner::load() {
   ET_CHECK_OK_OR_RETURN_ERROR(method_names_result.error());
   const auto& method_names = method_names_result.get();
 
+  sampler_method_present_ = method_names.count(kSamplerMethodName);
+
   ET_CHECK_OR_RETURN_ERROR(
       method_names.count(kEncoderMethodName) &&
           method_names.count(kDecoderMethodName),
@@ -109,13 +113,21 @@ Error AsrRunner::load() {
 
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kDecoderMethodName));
   decoder_method_loaded_ = true;
+
+  if (sampler_method_present_) {
+    ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kSamplerMethodName));
+    sampler_method_loaded_ = true;
+  }
 #ifdef CUDA_AVAILABLE
+  // Skip copying outputs to CPU. When a sampler exists, keep both encoder and
+  // decoder outputs on device and pass decoder logits directly into sampler.
   executorch::runtime::BackendOptions<1> backend_options;
-  // For decoder still copy output from GPU to CPU for sampling.
-  // TODO: change sampler to use a CUDA kernel to sample and then skip copying
-  // decoder output as well
+  std::string skip_methods = kEncoderMethodName;
+  if (sampler_method_present_) {
+    skip_methods.append(",").append(kDecoderMethodName);
+  }
   ET_CHECK_OK_OR_RETURN_ERROR(backend_options.set_option(
-      "skip_copy_output_to_cpu_for_method", kEncoderMethodName));
+      "skip_copy_output_to_cpu_for_method", skip_methods.c_str()));
   const auto opt_err =
       executorch::runtime::set_option("CudaBackend", backend_options.view());
   if (opt_err != ::executorch::runtime::Error::Ok) {
@@ -264,6 +276,7 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
   decoder_inputs.emplace_back(cache_position_ptr);
   // Add some green coloring for the first generated token
   // token_callback("\033[1;32m");
+  const bool use_sampler_method = sampler_method_loaded_;
   while (generated_tokens < config.max_new_tokens) {
     input_id = tokens.back();
     auto decoder_result = module_->execute(kDecoderMethodName, decoder_inputs);
@@ -276,15 +289,36 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
         "Decoder returned %zu outputs; expected a single tensor.",
         decoder_outputs.size());
 
-    ::executorch::aten::Tensor logits_tensor =
-        std::move(decoder_outputs[0]).toTensor();
-    const int64_t vocab_size = logits_tensor.numel();
-    ET_CHECK_OR_RETURN_ERROR(
-        vocab_size > 0, Internal, "Decoder logits tensor is empty.");
+    int64_t next_token = 0;
+    if (!use_sampler_method || config.temperature != 0.0f) {
+      ::executorch::aten::Tensor logits_tensor =
+          std::move(decoder_outputs[0]).toTensor();
+      const int64_t vocab_size = logits_tensor.numel();
+      ET_CHECK_OR_RETURN_ERROR(
+          vocab_size > 0, Internal, "Decoder logits tensor is empty.");
+      next_token =
+          static_cast<int64_t>(::executorch::extension::llm::logits_to_token(
+              logits_tensor, config.temperature));
+    } else {
+      auto sampler_result =
+          module_->execute(kSamplerMethodName, decoder_outputs);
+      ET_CHECK_OK_OR_RETURN_ERROR(sampler_result.error());
 
-    const int64_t next_token =
-        static_cast<int64_t>(::executorch::extension::llm::logits_to_token(
-            logits_tensor, config.temperature));
+      auto sampler_outputs = std::move(*sampler_result);
+      ET_CHECK_OR_RETURN_ERROR(
+          sampler_outputs.size() == 1 && sampler_outputs[0].isTensor(),
+          Internal,
+          "Sampler returned %zu outputs; expected a single tensor.",
+          sampler_outputs.size());
+
+      ::executorch::aten::Tensor token_tensor =
+          std::move(sampler_outputs[0]).toTensor();
+      ET_CHECK_OR_RETURN_ERROR(
+          token_tensor.numel() > 0,
+          Internal,
+          "Sampler logits tensor is empty.");
+      next_token = token_tensor.mutable_data_ptr<int64_t>()[0];
+    }
 
     if (!first_token_generated) {
       stats_.first_token_ms = ::executorch::extension::llm::time_in_ms();

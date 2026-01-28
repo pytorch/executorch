@@ -35,5 +35,5 @@ class TextEmbedding(nn.Module):
             ),
         )
 
-    def forward(self, input_ids):
-        return self.input_embedding_module(input_ids)
+    def forward(self, tokens):
+        return self.input_embedding_module(tokens)
