@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -69,6 +69,17 @@ test_data_tensor = {
     "eq_tensor_rank4_randn": lambda: op_eq_tensor_rank4_randn,
 }
 
+test_data_tensor_bf16 = {
+    "eq_tensor_rank2_rand_bf16": lambda: Equal(
+        torch.rand(4, 5, dtype=torch.bfloat16),
+        torch.rand(1, 5, dtype=torch.bfloat16),
+    ),
+    "eq_tensor_rank3_randn_bf16": lambda: Equal(
+        torch.randn(2, 3, 4, dtype=torch.bfloat16),
+        torch.randn(2, 3, 4, dtype=torch.bfloat16),
+    ),
+}
+
 test_data_scalar = {
     "eq_scalar_rank1_ones": lambda: op_eq_scalar_rank1_ones,
     "eq_scalar_rank2_rand": lambda: op_eq_scalar_rank2_rand,
@@ -76,25 +87,34 @@ test_data_scalar = {
     "eq_scalar_rank4_randn": lambda: op_eq_scalar_rank4_randn,
 }
 
+test_data_scalar_bf16 = {
+    "eq_scalar_rank2_bf16": lambda: Equal(torch.rand(4, 5, dtype=torch.bfloat16), 0.2),
+    "eq_scalar_rank3_bf16": lambda: Equal(
+        torch.randn(2, 3, 4, dtype=torch.bfloat16), -0.1
+    ),
+}
 
-@common.parametrize("test_module", test_data_tensor)
+
+@common.parametrize("test_module", test_data_tensor | test_data_tensor_bf16)
 def test_eq_scalar_tosa_FP_tensor(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
         test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_scalar)
+@common.parametrize("test_module", test_data_scalar | test_data_scalar_bf16)
 def test_eq_scalar_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
         test_module().get_inputs(),
         Equal.aten_op_Scalar,
         Equal.exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
