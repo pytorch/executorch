@@ -10,6 +10,7 @@ package org.pytorch.executorch.extension.asr
 
 import java.io.Closeable
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 import org.pytorch.executorch.annotations.Experimental
 
 /**
@@ -28,7 +29,7 @@ import org.pytorch.executorch.annotations.Experimental
 @Experimental
 class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = null) : Closeable {
 
-  private var nativeHandle: Long
+  private val nativeHandle = AtomicLong(0L)
 
   init {
     val modelFile = File(modelPath)
@@ -38,10 +39,11 @@ class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = nu
       "Cannot load tokenizer path $tokenizerPath"
     }
 
-    nativeHandle = nativeCreate(modelPath, tokenizerPath, dataPath)
-    if (nativeHandle == 0L) {
+    val handle = nativeCreate(modelPath, tokenizerPath, dataPath)
+    if (handle == 0L) {
       throw RuntimeException("Failed to create native AsrModule")
     }
+    nativeHandle.set(handle)
   }
 
   companion object {
@@ -78,27 +80,25 @@ class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = nu
 
   /** Check if the native handle is valid. */
   val isValid: Boolean
-    get() = nativeHandle != 0L
+    get() = nativeHandle.get() != 0L
 
   /** Check if the module is loaded and ready for inference. */
   val isLoaded: Boolean
-    get() = nativeHandle != 0L && nativeIsLoaded(nativeHandle)
+    get() {
+      val handle = nativeHandle.get()
+      return handle != 0L && nativeIsLoaded(handle)
+    }
 
   /** Releases native resources. Call this when done with the module. */
   fun destroy() {
-    if (nativeHandle != 0L) {
-      nativeDestroy(nativeHandle)
-      nativeHandle = 0L
+    val handle = nativeHandle.getAndSet(0L)
+    if (handle != 0L) {
+      nativeDestroy(handle)
     }
   }
 
   /** Closeable implementation for use with use {} blocks. */
   override fun close() {
-    destroy()
-  }
-
-  @Throws(Throwable::class)
-  protected fun finalize() {
     destroy()
   }
 
@@ -109,8 +109,9 @@ class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = nu
    * @throws IllegalStateException if the module has been destroyed
    */
   fun load(): Int {
-    checkNotDestroyed()
-    return nativeLoad(nativeHandle)
+    val handle = nativeHandle.get()
+    check(handle != 0L) { "AsrModule has been destroyed" }
+    return nativeLoad(handle)
   }
 
   /**
@@ -152,9 +153,10 @@ class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = nu
       config: AsrTranscribeConfig,
       callback: AsrCallback? = null,
   ): Int {
-    checkNotDestroyed()
+    val handle = nativeHandle.get()
+    check(handle != 0L) { "AsrModule has been destroyed" }
     return nativeTranscribe(
-        nativeHandle,
+        handle,
         features,
         batchSize,
         timeSteps,
@@ -211,9 +213,5 @@ class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = nu
     }
 
     return result.toString()
-  }
-
-  private fun checkNotDestroyed() {
-    check(nativeHandle != 0L) { "AsrModule has been destroyed" }
   }
 }

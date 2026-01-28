@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -68,32 +69,42 @@ bool utf8_check_validity(const char* str, size_t length) {
 // Thread-local token buffer for UTF-8 accumulation
 thread_local std::string asr_token_buffer;
 
-// Cached JNI references for callback
+// Global cached JNI references for callback (shared across threads)
 struct AsrCallbackCache {
   jclass callbackClass = nullptr;
   jmethodID onTokenMethod = nullptr;
   jmethodID onCompleteMethod = nullptr;
-  bool initialized = false;
+};
 
-  void init(JNIEnv* env) {
-    if (initialized) {
-      return;
-    }
+AsrCallbackCache callbackCache;
+std::once_flag callbackCacheInitFlag;
+
+void initCallbackCache(JNIEnv* env) {
+  std::call_once(callbackCacheInitFlag, [env]() {
     jclass localClass =
         env->FindClass("org/pytorch/executorch/extension/asr/AsrCallback");
     if (localClass != nullptr) {
-      callbackClass = (jclass)env->NewGlobalRef(localClass);
-      onTokenMethod =
-          env->GetMethodID(callbackClass, "onToken", "(Ljava/lang/String;)V");
-      onCompleteMethod = env->GetMethodID(
-          callbackClass, "onComplete", "(Ljava/lang/String;)V");
+      callbackCache.callbackClass = (jclass)env->NewGlobalRef(localClass);
+      callbackCache.onTokenMethod = env->GetMethodID(
+          callbackCache.callbackClass, "onToken", "(Ljava/lang/String;)V");
+      callbackCache.onCompleteMethod = env->GetMethodID(
+          callbackCache.callbackClass, "onComplete", "(Ljava/lang/String;)V");
       env->DeleteLocalRef(localClass);
-      initialized = true;
     }
-  }
-};
+  });
+}
 
-thread_local AsrCallbackCache callbackCache;
+// Helper to create a unique_ptr for JNI global references
+auto make_scoped_global_ref(JNIEnv* env, jobject obj) {
+  auto deleter = [env](jobject ref) {
+    if (ref != nullptr) {
+      env->DeleteGlobalRef(ref);
+    }
+  };
+  jobject globalRef = obj ? env->NewGlobalRef(obj) : nullptr;
+  return std::unique_ptr<std::remove_pointer_t<jobject>, decltype(deleter)>(
+      globalRef, deleter);
+}
 
 } // namespace
 
@@ -222,6 +233,17 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
     return -1;
   }
 
+  // Validate dimension parameters are positive
+  if (batchSize <= 0 || timeSteps <= 0 || featureDim <= 0) {
+    env->ThrowNew(
+        env->FindClass("java/lang/IllegalArgumentException"),
+        ("Dimensions must be positive: batchSize=" + std::to_string(batchSize) +
+         ", timeSteps=" + std::to_string(timeSteps) +
+         ", featureDim=" + std::to_string(featureDim))
+            .c_str());
+    return -1;
+  }
+
   auto* runner = reinterpret_cast<asr::AsrRunner*>(nativeHandle);
 
   // Get features from Java array
@@ -233,11 +255,27 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
     return -1;
   }
 
-  // Copy feature data
+  // Validate that dimensions match the array length
+  jsize expectedLen =
+      static_cast<jsize>(batchSize) * timeSteps * featureDim;
+  if (featuresLen != expectedLen) {
+    env->ThrowNew(
+        env->FindClass("java/lang/IllegalArgumentException"),
+        ("Features array length (" + std::to_string(featuresLen) +
+         ") does not match dimensions: " + std::to_string(batchSize) + " x " +
+         std::to_string(timeSteps) + " x " + std::to_string(featureDim) +
+         " = " + std::to_string(expectedLen))
+            .c_str());
+    return -1;
+  }
+
+  // Copy feature data - this vector must remain in scope for the duration of
+  // transcribe() since from_blob creates a non-owning view over the data.
   std::vector<float> featuresData(featuresLen);
   env->GetFloatArrayRegion(features, 0, featuresLen, featuresData.data());
 
-  // Create tensor from features
+  // Create tensor from features. Note: from_blob does NOT copy the data,
+  // it creates a view. featuresData must outlive the tensor and transcribe().
   auto featuresTensor = ::executorch::extension::from_blob(
       featuresData.data(),
       {static_cast<::executorch::aten::SizesType>(batchSize),
@@ -254,17 +292,16 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
   // Set up callback
   std::function<void(const std::string&)> tokenCallback = nullptr;
 
-  // We need to keep a global ref to the callback for the duration of
-  // transcription
-  jobject globalCallback = nullptr;
-  if (callback != nullptr) {
-    globalCallback = env->NewGlobalRef(callback);
-    callbackCache.init(env);
+  // Use unique_ptr with custom deleter to ensure global ref is released
+  auto scopedCallback = make_scoped_global_ref(env, callback);
+  if (scopedCallback) {
+    initCallbackCache(env);
 
     // Reset token buffer
     asr_token_buffer.clear();
 
-    tokenCallback = [env, globalCallback](const std::string& token) {
+    jobject callbackRef = scopedCallback.get();
+    tokenCallback = [env, callbackRef](const std::string& token) {
       asr_token_buffer += token;
       if (!utf8_check_validity(
               asr_token_buffer.c_str(), asr_token_buffer.size())) {
@@ -277,7 +314,11 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
       asr_token_buffer.clear();
 
       jstring jToken = env->NewStringUTF(completeToken.c_str());
-      env->CallVoidMethod(globalCallback, callbackCache.onTokenMethod, jToken);
+      env->CallVoidMethod(callbackRef, callbackCache.onTokenMethod, jToken);
+      if (env->ExceptionCheck()) {
+        ET_LOG(Error, "Exception occurred in AsrCallback.onToken");
+        env->ExceptionClear();
+      }
       env->DeleteLocalRef(jToken);
     };
   }
@@ -286,12 +327,15 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
   auto result = runner->transcribe(featuresTensor, config, tokenCallback);
 
   // Call onComplete if callback provided
-  if (globalCallback != nullptr) {
+  if (scopedCallback) {
     jstring emptyStr = env->NewStringUTF("");
     env->CallVoidMethod(
-        globalCallback, callbackCache.onCompleteMethod, emptyStr);
+        scopedCallback.get(), callbackCache.onCompleteMethod, emptyStr);
+    if (env->ExceptionCheck()) {
+      ET_LOG(Error, "Exception occurred in AsrCallback.onComplete");
+      env->ExceptionClear();
+    }
     env->DeleteLocalRef(emptyStr);
-    env->DeleteGlobalRef(globalCallback);
   }
 
   if (!result.ok()) {
