@@ -17,45 +17,45 @@ import org.pytorch.executorch.annotations.Experimental
  *
  * @property maxNewTokens Maximum number of new tokens to generate (must be positive)
  * @property temperature Temperature for sampling. 0.0 means greedy decoding
- * @property decoderStartTokenId The token ID to start decoding with (e.g., language token for Whisper)
+ * @property decoderStartTokenId The token ID to start decoding with (e.g., language token for
+ *   Whisper)
  */
 @Experimental
 data class AsrTranscribeConfig(
     val maxNewTokens: Long = 128,
     val temperature: Float = 0.0f,
-    val decoderStartTokenId: Long = 0
+    val decoderStartTokenId: Long = 0,
 ) {
-    init {
-        require(maxNewTokens > 0) { "maxNewTokens must be positive" }
-        require(temperature >= 0) { "temperature must be non-negative" }
+  init {
+    require(maxNewTokens > 0) { "maxNewTokens must be positive" }
+    require(temperature >= 0) { "temperature must be non-negative" }
+  }
+
+  /** Builder class for AsrTranscribeConfig for Java interoperability. */
+  class Builder {
+    private var maxNewTokens: Long = 128
+    private var temperature: Float = 0.0f
+    private var decoderStartTokenId: Long = 0
+
+    fun setMaxNewTokens(maxNewTokens: Long) = apply {
+      require(maxNewTokens > 0) { "maxNewTokens must be positive" }
+      this.maxNewTokens = maxNewTokens
     }
 
-    /**
-     * Builder class for AsrTranscribeConfig for Java interoperability.
-     */
-    class Builder {
-        private var maxNewTokens: Long = 128
-        private var temperature: Float = 0.0f
-        private var decoderStartTokenId: Long = 0
+    fun setTemperature(temperature: Float) = apply {
+      require(temperature >= 0) { "temperature must be non-negative" }
+      this.temperature = temperature
+    }
 
-        fun setMaxNewTokens(maxNewTokens: Long) = apply {
-            require(maxNewTokens > 0) { "maxNewTokens must be positive" }
-            this.maxNewTokens = maxNewTokens
-        }
+    fun setDecoderStartTokenId(decoderStartTokenId: Long) = apply {
+      this.decoderStartTokenId = decoderStartTokenId
+    }
 
-        fun setTemperature(temperature: Float) = apply {
-            require(temperature >= 0) { "temperature must be non-negative" }
-            this.temperature = temperature
-        }
-
-        fun setDecoderStartTokenId(decoderStartTokenId: Long) = apply {
-            this.decoderStartTokenId = decoderStartTokenId
-        }
-
-        fun build() = AsrTranscribeConfig(
+    fun build() =
+        AsrTranscribeConfig(
             maxNewTokens = maxNewTokens,
             temperature = temperature,
-            decoderStartTokenId = decoderStartTokenId
+            decoderStartTokenId = decoderStartTokenId,
         )
-    }
+  }
 }

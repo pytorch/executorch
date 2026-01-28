@@ -277,8 +277,7 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
       asr_token_buffer.clear();
 
       jstring jToken = env->NewStringUTF(completeToken.c_str());
-      env->CallVoidMethod(
-          globalCallback, callbackCache.onTokenMethod, jToken);
+      env->CallVoidMethod(globalCallback, callbackCache.onTokenMethod, jToken);
       env->DeleteLocalRef(jToken);
     };
   }
