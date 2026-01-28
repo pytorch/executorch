@@ -34,6 +34,8 @@ void quantized_softmax_per_tensor_(
     const Tensor& input,
     ET_UNUSED const Tensor& mask,
     int64_t dim,
+    ET_UNUSED int64_t mask_type,
+    ET_UNUSED const Tensor& pos,
     const float in_scale,
     const int64_t in_zero_point,
     const float out_scale,
@@ -121,6 +123,8 @@ void quantized_softmax_(
     const Tensor& input,
     const Tensor& mask,
     const int64_t dim,
+    int64_t mask_type,
+    const Tensor& pos,
     const Tensor& in_scale,
     const Tensor& in_zero_point,
     const Tensor& out_scale,
@@ -135,6 +139,8 @@ void quantized_softmax_(
       input,
       mask,
       dim,
+      mask_type,
+      pos,
       input_scale,
       input_zero_point,
       output_scale,
@@ -149,6 +155,8 @@ Tensor& quantized_softmax_out(
     const Tensor& input,
     const Tensor& mask,
     int64_t dim,
+    int64_t mask_type,
+    const Tensor& pos,
     const Tensor& in_scale,
     const Tensor& in_zero_point,
     const Tensor& out_scale,
@@ -160,6 +168,8 @@ Tensor& quantized_softmax_out(
         input,                                \
         mask,                                 \
         dim,                                  \
+        mask_type,                            \
+        pos,                                  \
         in_scale,                             \
         in_zero_point,                        \
         out_scale,                            \
@@ -185,6 +195,8 @@ Tensor& quantized_softmax_per_tensor_out(
     const Tensor& input,
     const Tensor& mask,
     int64_t dim,
+    int64_t mask_type,
+    const Tensor& pos,
     double in_scale,
     int64_t in_zero_point,
     double out_scale,
@@ -196,6 +208,8 @@ Tensor& quantized_softmax_per_tensor_out(
         input,                                \
         mask,                                 \
         dim,                                  \
+        mask_type,                            \
+        pos,                                  \
         in_scale,                             \
         in_zero_point,                        \
         out_scale,                            \
