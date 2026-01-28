@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,6 +14,7 @@
 
 import logging
 import os  # nosec B404 - used alongside subprocess for tool invocation
+import shutil
 import subprocess  # nosec B404 - required to drive external converter CLI
 import tempfile
 from typing import final, List
@@ -143,19 +144,25 @@ def vgf_compile(
         with open(tosa_path, "wb") as f:
             f.write(tosa_flatbuffer)
 
-        additional_flags = " ".join(compile_flags)
+        compile_flags = [f for f in compile_flags if f and f.strip()]
         converter_binary = require_model_converter_binary()
         vgf_path = tosa_path + ".vgf"
-        conversion_command = (
-            f"{converter_binary} {additional_flags} -i {tosa_path} -o {vgf_path}"
-        )
+        conversion_command = [
+            converter_binary,
+            *compile_flags,
+            "-i",
+            tosa_path,
+            "-o",
+            vgf_path,
+        ]
         try:
-            subprocess.run(  # nosec B602 - shell invocation constrained to trusted converter binary
-                [conversion_command], shell=True, check=True, capture_output=True
+            subprocess.run(  # nosec B602, B603 - shell invocation constrained to trusted converter binary with trusted inputs
+                conversion_command, shell=False, check=True, capture_output=True
             )
         except subprocess.CalledProcessError as process_error:
+            conversion_command_str = " ".join(conversion_command)
             raise RuntimeError(
-                f"Vgf compiler ('{conversion_command}') failed with error:\n \
+                f"Vgf compiler ('{conversion_command_str}') failed with error:\n \
                 {process_error.stderr.decode()}\n \
                 Stdout:\n{process_error.stdout.decode()}"
             )
@@ -163,10 +170,7 @@ def vgf_compile(
         if artifact_path:
             logger.info(f"Emitting debug output to: {vgf_path=}")
             os.makedirs(artifact_path, exist_ok=True)
-            cp = f"cp {vgf_path} {artifact_path}"
-            subprocess.run(  # nosec B602 - shell copy of trusted artifact for debugging
-                cp, shell=True, check=True, capture_output=False
-            )
+            shutil.copy2(vgf_path, artifact_path)
 
         vgf_bytes = open(vgf_path, "rb").read()
         return vgf_bytes
