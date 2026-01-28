@@ -1,8 +1,9 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("ai_infra_mobile_platform")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "lib",
     srcs = [
         "runner.py",
