@@ -15,8 +15,6 @@ non_fbcode_target(_kind = fb_android_library,
         "executorch_android/src/main/java/org/pytorch/executorch/Module.java",
         "executorch_android/src/main/java/org/pytorch/executorch/Tensor.java",
         "executorch_android/src/main/java/org/pytorch/executorch/annotations/Experimental.java",
-        "executorch_android/src/main/java/org/pytorch/executorch/training/TrainingModule.java",
-        "executorch_android/src/main/java/org/pytorch/executorch/training/SGD.java",
     ],
     autoglob = False,
     language = "JAVA",
@@ -26,6 +24,19 @@ non_fbcode_target(_kind = fb_android_library,
     ] + ([
         "//xplat/executorch/backends/vulkan:vulkan_backend_lib_static",
     ] if read_config("executorch", "minimal_jni", "false") == "false" else []),
+)
+
+non_fbcode_target(_kind = fb_android_library,
+    name = "executorch_training",
+    srcs = [
+        "executorch_android/src/main/java/org/pytorch/executorch/training/SGD.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/training/TrainingModule.java",
+    ],
+    autoglob = False,
+    language = "JAVA",
+    deps = [
+        ":executorch",
+    ],
 )
 
 non_fbcode_target(_kind = fb_android_library,
