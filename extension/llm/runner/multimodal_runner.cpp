@@ -149,7 +149,13 @@ Error MultimodalRunner::generate(
     if (config.echo && i == inputs.size() - 1 && input.is_text()) {
       wrapped_callback(input.get_text());
     }
-    auto prefill_result = multimodal_prefiller_->prefill(input, pos_);
+    int32_t bos = 0;
+    int32_t eos = 0;
+    if (i == 0 && input.is_text()) {
+      bos = config.num_bos;
+      eos = config.num_eos;
+    }
+    auto prefill_result = multimodal_prefiller_->prefill(input, pos_, bos, eos);
     if (!prefill_result.ok()) {
       return prefill_result.error();
     }
