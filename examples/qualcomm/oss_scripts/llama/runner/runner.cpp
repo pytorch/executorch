@@ -214,7 +214,6 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|user|>", 0, 0).get()[0]);
   }
 
-  // Try avoid getMetadataHelper as it is time consuming.
   Result<MethodMeta> method_meta =
       module_->method_meta(token_generator_method_name);
 
