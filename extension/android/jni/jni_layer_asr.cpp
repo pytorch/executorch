@@ -66,9 +66,6 @@ bool utf8_check_validity(const char* str, size_t length) {
   return true;
 }
 
-// Thread-local token buffer for UTF-8 accumulation
-thread_local std::string asr_token_buffer;
-
 // Global cached JNI references for callback (shared across threads)
 struct AsrCallbackCache {
   jclass callbackClass = nullptr;
@@ -294,24 +291,24 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
 
   // Use unique_ptr with custom deleter to ensure global ref is released
   auto scopedCallback = make_scoped_global_ref(env, callback);
+
+  // Local token buffer for UTF-8 accumulation (per-call, not shared)
+  std::string tokenBuffer;
+
   if (scopedCallback) {
     initCallbackCache(env);
 
-    // Reset token buffer
-    asr_token_buffer.clear();
-
     jobject callbackRef = scopedCallback.get();
-    tokenCallback = [env, callbackRef](const std::string& token) {
-      asr_token_buffer += token;
-      if (!utf8_check_validity(
-              asr_token_buffer.c_str(), asr_token_buffer.size())) {
+    tokenCallback = [env, callbackRef, &tokenBuffer](const std::string& token) {
+      tokenBuffer += token;
+      if (!utf8_check_validity(tokenBuffer.c_str(), tokenBuffer.size())) {
         ET_LOG(
             Info, "Current token buffer is not valid UTF-8. Waiting for more.");
         return;
       }
 
-      std::string completeToken = asr_token_buffer;
-      asr_token_buffer.clear();
+      std::string completeToken = tokenBuffer;
+      tokenBuffer.clear();
 
       jstring jToken = env->NewStringUTF(completeToken.c_str());
       env->CallVoidMethod(callbackRef, callbackCache.onTokenMethod, jToken);
