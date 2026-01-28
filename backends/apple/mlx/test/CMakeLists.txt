@@ -10,17 +10,10 @@
 add_executable(op_test_runner op_test_runner.cpp)
 
 target_link_libraries(
-  op_test_runner
-  PRIVATE
-    extension_module
-    extension_tensor
-    executorch
-    mlxdelegate
+  op_test_runner PRIVATE extension_module extension_tensor executorch
+                         mlxdelegate
 )
 
 target_include_directories(
-  op_test_runner
-  PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/..
+  op_test_runner PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/..
 )

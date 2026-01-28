@@ -20,7 +20,6 @@ from typing import Any, Callable, Dict, List, Tuple, Union
 
 import torch
 from executorch.backends.apple.mlx.preprocess import MLXBackend
-from executorch.backends.apple.mlx.program_builder import REGISTRY
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
@@ -31,7 +30,6 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
-from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -324,7 +322,7 @@ class MLXPartitioner(Partitioner):
 #
 # Attention:
 #   - aten.scaled_dot_product_attention (via SDPA pattern)
-#   - mlx.apply_rope (custom op)
+#   - mlx.rope (custom op)
 #
 # Quantized ops (via patterns):
 #   - Quantized linear (torchao.dequantize_affine + aten.linear)

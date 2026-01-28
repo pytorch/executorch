@@ -17,32 +17,38 @@ This pattern is needed because:
 
 The pattern eliminates the transposes by operating directly on dim=2.
 
-NOTE: Runtime output comparison is disabled because ExecutorTorch's
-llama.update_cache custom op has a bug where it doesn't work with
-non-contiguous (transposed view) tensors. When you pass cache.transpose(1,2)
-as the destination, the update silently fails. The MLX SliceUpdateNode
-correctly implements the operation, so MLX outputs are correct but don't
-match the (buggy) PyTorch expected outputs.
+NOTE: Some tests skip output comparison because ExecutorTorch's llama.update_cache
+custom op has a bug where it doesn't work with non-contiguous (transposed view)
+tensors. When you pass cache.transpose(1,2) as the destination, the update silently
+fails. The MLX SliceUpdateNode correctly implements the operation, so MLX outputs
+are correct but don't match the (buggy) PyTorch expected outputs.
 
 Usage:
-    python -m executorch.backends.apple.mlx.test.test_kv_cache run --verbose
+    # Run via run_all_tests (recommended):
+    python -m executorch.backends.apple.mlx.test.run_all_tests kv_cache
+
+    # Run specific variant:
+    python -m executorch.backends.apple.mlx.test.run_all_tests kv_cache_direct
+
+    # Run directly with custom args:
+    python -m executorch.backends.apple.mlx.test.test_kv_cache run --test direct
 """
 
-import argparse
-import sys
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 
 # Import custom ops to register llama.update_cache
 from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+from torch.export import Dim
 
 from .test_utils import (
     OpTestCase,
     print_mlx_graph_summary,
-    rebuild_op_test_runner,
+    register_test,
     run_cpp_test_runner,
+    run_op_test_main,
 )
 
 
@@ -384,17 +390,29 @@ class KVCacheUpdateModelPatternFullyDynamic(nn.Module):
         return self.k_cache.clone(), self.v_cache.clone()
 
 
-class KVCacheTestPatternVerify(OpTestCase):
-    """Test case for verifying UpdateCacheHandler produces correct outputs.
+@register_test
+class KVCacheTest(OpTestCase):
+    """Test case for KV cache update operations.
 
-    This test uses KVCacheUpdateModel (with transposes) for export/lowering
-    but computes expected outputs using direct slice assignment to avoid
-    the ExecutorTorch llama.update_cache bug with non-contiguous tensors.
+    Supports multiple variants:
+    - pattern: Uses transpose -> update_cache -> transpose pattern (axis=2)
+    - pattern_verify: Same as pattern but uses direct slice assignment for expected outputs
+    - direct: Uses update_cache directly without transposes (axis=1)
+    - dynamic_pos: Uses dynamic start_pos input
+    - fully_dynamic: Uses both dynamic start_pos and dynamic seq_len
+    - pattern_fully_dynamic: Pattern variant with dynamic shapes
+
+    Note: Pattern tests (kv_cache, kv_cache_pattern_fully_dynamic) skip output comparison
+    because ExecutorTorch's llama.update_cache custom op has a bug with non-contiguous
+    (transposed view) tensors. MLX correctly implements the operation.
     """
 
-    name = "kv_cache_pattern_verify"
+    name = "kv_cache"
     rtol = 1e-5
     atol = 1e-5
+
+    # Tests that skip output comparison due to ExecutorTorch bug
+    _SKIP_COMPARISON_TESTS = {"kv_cache", "kv_cache_pattern_fully_dynamic"}
 
     def __init__(
         self,
@@ -403,66 +421,208 @@ class KVCacheTestPatternVerify(OpTestCase):
         max_seq_len: int = 128,
         seq_step: int = 8,
         start_pos: int = 0,
+        test_start_pos: int = 16,
+        export_seq_step: int = 8,
+        test_seq_step: int = 4,
+        variant: str = "pattern",
     ):
         self.num_heads = num_heads
         self.head_dim = head_dim
         self.max_seq_len = max_seq_len
         self.seq_step = seq_step
         self.start_pos = start_pos
-        self.name = "kv_cache_pattern_verify"
-        # Store fixed test inputs for reproducibility
+        self.test_start_pos = test_start_pos
+        self.export_seq_step = export_seq_step
+        self.test_seq_step = test_seq_step
+        self.variant = variant
+
+        # Store test inputs for pattern_verify
         self._test_k_val = None
         self._test_v_val = None
 
+        # Set name based on variant
+        variant_names = {
+            "pattern": "kv_cache",
+            "pattern_verify": "kv_cache_pattern_verify",
+            "direct": "kv_cache_direct",
+            "dynamic_pos": "kv_cache_dynamic_pos",
+            "fully_dynamic": "kv_cache_fully_dynamic",
+            "pattern_fully_dynamic": "kv_cache_pattern_fully_dynamic",
+        }
+        self.name = variant_names.get(variant, "kv_cache")
+
+        # Create dynamic dimension for fully_dynamic variants
+        if variant in ("fully_dynamic", "pattern_fully_dynamic"):
+            self.seq_dim = Dim("seq_step", min=1, max=max_seq_len)
+        else:
+            self.seq_dim = None
+
+    @classmethod
+    def get_test_configs(cls) -> List["KVCacheTest"]:
+        """Return all test configurations to run."""
+        return [
+            cls(variant="pattern"),
+            cls(variant="pattern_verify"),
+            cls(variant="direct"),
+            cls(variant="dynamic_pos"),
+            cls(variant="fully_dynamic"),
+            cls(variant="pattern_fully_dynamic"),
+        ]
+
     def create_model(self) -> nn.Module:
-        """Create the model with transposes (uses UpdateCacheHandler)."""
-        return KVCacheUpdateModel(
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            max_seq_len=self.max_seq_len,
-            start_pos=self.start_pos,
-        )
+        if self.variant == "pattern":
+            return KVCacheUpdateModel(
+                num_heads=self.num_heads,
+                head_dim=self.head_dim,
+                max_seq_len=self.max_seq_len,
+                start_pos=self.start_pos,
+            )
+        elif self.variant == "pattern_verify":
+            return KVCacheUpdateModel(
+                num_heads=self.num_heads,
+                head_dim=self.head_dim,
+                max_seq_len=self.max_seq_len,
+                start_pos=self.start_pos,
+            )
+        elif self.variant == "direct":
+            return KVCacheUpdateModelDirect(
+                num_heads=self.num_heads,
+                head_dim=self.head_dim,
+                max_seq_len=self.max_seq_len,
+                start_pos=self.start_pos,
+            )
+        elif self.variant == "dynamic_pos":
+            return KVCacheUpdateModelDynamicPos(
+                num_heads=self.num_heads,
+                head_dim=self.head_dim,
+                max_seq_len=self.max_seq_len,
+            )
+        elif self.variant == "fully_dynamic":
+            return KVCacheUpdateModelFullyDynamic(
+                num_heads=self.num_heads,
+                head_dim=self.head_dim,
+                max_seq_len=self.max_seq_len,
+            )
+        elif self.variant == "pattern_fully_dynamic":
+            return KVCacheUpdateModelPatternFullyDynamic(
+                num_heads=self.num_heads,
+                head_dim=self.head_dim,
+                max_seq_len=self.max_seq_len,
+            )
+        else:
+            raise ValueError(f"Unknown variant: {self.variant}")
+
+    def _is_sdpa_layout(self) -> bool:
+        """Return True if this variant uses SDPA layout [B, H, S, D]."""
+        return self.variant in ("pattern", "pattern_verify", "pattern_fully_dynamic")
+
+    def _has_start_pos_input(self) -> bool:
+        """Return True if this variant takes start_pos as input."""
+        return self.variant in ("dynamic_pos", "fully_dynamic", "pattern_fully_dynamic")
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for export."""
-        k_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
-        v_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
+        """Create inputs for export (tracing)."""
+        if self._is_sdpa_layout():
+            # [B, H, S, D] layout
+            if self.variant == "pattern_fully_dynamic":
+                k_val = torch.randn(
+                    1, self.num_heads, self.export_seq_step, self.head_dim
+                )
+                v_val = torch.randn(
+                    1, self.num_heads, self.export_seq_step, self.head_dim
+                )
+            else:
+                k_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
+                v_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
+        else:
+            # [B, S, H, D] layout
+            if self.variant == "fully_dynamic":
+                k_val = torch.randn(
+                    1, self.export_seq_step, self.num_heads, self.head_dim
+                )
+                v_val = torch.randn(
+                    1, self.export_seq_step, self.num_heads, self.head_dim
+                )
+            else:
+                k_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
+                v_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
+
+        if self._has_start_pos_input():
+            start_pos = torch.tensor(0, dtype=torch.int64)
+            return (k_val, v_val, start_pos)
         return (k_val, v_val)
 
     def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create fixed test inputs."""
-        if self._test_k_val is None:
-            self._test_k_val = torch.randn(
-                1, self.num_heads, self.seq_step, self.head_dim
-            )
-            self._test_v_val = torch.randn(
-                1, self.num_heads, self.seq_step, self.head_dim
-            )
-        return (self._test_k_val, self._test_v_val)
+        """Create inputs for testing."""
+        # For pattern_verify, return cached test inputs for reproducibility
+        if self.variant == "pattern_verify":
+            if self._test_k_val is None:
+                self._test_k_val = torch.randn(
+                    1, self.num_heads, self.seq_step, self.head_dim
+                )
+                self._test_v_val = torch.randn(
+                    1, self.num_heads, self.seq_step, self.head_dim
+                )
+            return (self._test_k_val, self._test_v_val)
 
-    def create_expected_outputs(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute expected outputs using direct slice assignment (correct behavior)."""
-        k_val, v_val = self.create_test_inputs()
+        if self._is_sdpa_layout():
+            # [B, H, S, D] layout
+            if self.variant == "pattern_fully_dynamic":
+                k_val = torch.randn(
+                    1, self.num_heads, self.test_seq_step, self.head_dim
+                )
+                v_val = torch.randn(
+                    1, self.num_heads, self.test_seq_step, self.head_dim
+                )
+            else:
+                k_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
+                v_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
+        else:
+            # [B, S, H, D] layout
+            if self.variant == "fully_dynamic":
+                k_val = torch.randn(
+                    1, self.test_seq_step, self.num_heads, self.head_dim
+                )
+                v_val = torch.randn(
+                    1, self.test_seq_step, self.num_heads, self.head_dim
+                )
+            else:
+                k_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
+                v_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
 
-        # Create verification model that uses direct slice assignment
-        verify_model = KVCacheUpdateModelPatternVerify(
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            max_seq_len=self.max_seq_len,
-            start_pos=self.start_pos,
-        )
-        verify_model.eval()
-
-        with torch.no_grad():
-            return verify_model(k_val, v_val)
+        if self._has_start_pos_input():
+            start_pos = torch.tensor(self.test_start_pos, dtype=torch.int64)
+            return (k_val, v_val, start_pos)
+        return (k_val, v_val)
 
     def get_dynamic_shapes(self) -> Optional[Dict]:
+        """Return dynamic shapes specification for torch.export."""
+        if self.variant == "fully_dynamic":
+            return {
+                "k_val": {1: self.seq_dim},
+                "v_val": {1: self.seq_dim},
+                "start_pos": None,
+            }
+        elif self.variant == "pattern_fully_dynamic":
+            return {
+                "k_val": {2: self.seq_dim},
+                "v_val": {2: self.seq_dim},
+                "start_pos": None,
+            }
         return None
 
     def generate_test_files(self, verbose: bool = False) -> Tuple:
-        """Generate test files with correct expected outputs."""
-        from pathlib import Path
+        """Generate test files with correct expected outputs.
 
+        For pattern_verify variant, uses direct slice assignment for expected
+        outputs to avoid ExecutorTorch's llama.update_cache bug.
+        """
+        if self.variant != "pattern_verify":
+            # Use default implementation for other variants
+            return super().generate_test_files(verbose=verbose)
+
+        # Special handling for pattern_verify: compute expected outputs using
+        # direct slice assignment instead of buggy llama.update_cache
         from .test_utils import export_model_to_pte, save_tensors_to_bin
 
         test_dir = self.get_test_dir()
@@ -471,14 +631,27 @@ class KVCacheTestPatternVerify(OpTestCase):
         input_path = test_dir / "input.bin"
         expected_path = test_dir / "expected_output.bin"
 
+        # Set seed for reproducibility
+        self._set_seed()
+
         # Create model and inputs
         model = self.create_model()
         export_inputs = self.create_inputs()
+
+        # Set seed again before creating test inputs
+        self._set_seed()
         test_inputs = self.create_test_inputs()
 
         # Get expected outputs using CORRECT method (direct slice assignment)
-        expected_outputs = self.create_expected_outputs()
-        expected_outputs = list(expected_outputs)
+        verify_model = KVCacheUpdateModelPatternVerify(
+            num_heads=self.num_heads,
+            head_dim=self.head_dim,
+            max_seq_len=self.max_seq_len,
+            start_pos=self.start_pos,
+        )
+        verify_model.eval()
+        with torch.no_grad():
+            expected_outputs = list(verify_model(*test_inputs))
 
         # Export model with export inputs
         print(f"Exporting model to {pte_path}")
@@ -494,353 +667,90 @@ class KVCacheTestPatternVerify(OpTestCase):
 
         # Save test inputs
         print(f"Saving inputs to {input_path}")
-        test_inputs = list(test_inputs)
-        save_tensors_to_bin(test_inputs, input_path)
+        save_tensors_to_bin(list(test_inputs), input_path)
 
-        # Save expected outputs (from direct slice assignment, not buggy llama.update_cache)
+        # Save expected outputs
         print(f"Saving expected outputs to {expected_path}")
         save_tensors_to_bin(expected_outputs, expected_path)
 
         return pte_path, input_path, expected_path
 
+    def run_test(self, verbose: bool = False) -> bool:
+        """Run the full test with special handling for pattern tests.
 
-class KVCacheTest(OpTestCase):
-    """Test case for KV cache update op with pattern handler (axis=2)."""
+        Pattern tests (kv_cache, kv_cache_pattern_fully_dynamic) skip output
+        comparison because ExecutorTorch's llama.update_cache has a bug with
+        non-contiguous tensors.
+        """
+        print(f"\n{'='*60}")
+        print(f"Running test: {self.name}")
+        print(f"{'='*60}\n")
 
-    name = "kv_cache"
-    rtol = 1e-5
-    atol = 1e-5
+        # Generate test files
+        print("Step 1: Generating test files...")
+        pte_path, input_path, expected_path = self.generate_test_files(verbose=verbose)
 
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        seq_step: int = 8,  # Number of new tokens per step
-        start_pos: int = 0,  # Starting position
-    ):
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.seq_step = seq_step
-        self.start_pos = start_pos
-        self.name = "kv_cache"
+        # Print MLX graph summary
+        print_mlx_graph_summary(pte_path)
 
-    def create_model(self) -> nn.Module:
-        return KVCacheUpdateModel(
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            max_seq_len=self.max_seq_len,
-            start_pos=self.start_pos,
-        )
+        # Run C++ binary
+        print("Step 2: Running C++ binary...")
+        actual_path = self.get_test_dir() / "actual_output.bin"
+        if not run_cpp_test_runner(pte_path, input_path, actual_path, verbose=verbose):
+            return False
 
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for export (tracing)."""
-        # Inputs in [B, H, S, D] layout (MLX convention)
-        k_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
-        v_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
-        return (k_val, v_val)
+        # Compare outputs
+        print("\nStep 3: Comparing outputs...")
 
-    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for testing."""
-        k_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
-        v_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
-        return (k_val, v_val)
-
-    def get_dynamic_shapes(self) -> Optional[Dict]:
-        """No dynamic shapes for basic test."""
-        return None
-
-
-class KVCacheTestDirect(OpTestCase):
-    """Test case for KV cache update op with standalone handler (axis=1)."""
-
-    name = "kv_cache_direct"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        seq_step: int = 8,  # Number of new tokens per step
-        start_pos: int = 0,  # Starting position
-    ):
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.seq_step = seq_step
-        self.start_pos = start_pos
-        self.name = "kv_cache_direct"
-
-    def create_model(self) -> nn.Module:
-        return KVCacheUpdateModelDirect(
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            max_seq_len=self.max_seq_len,
-            start_pos=self.start_pos,
-        )
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for export (tracing)."""
-        # Inputs in [B, S, H, D] layout (ExecutorTorch convention)
-        k_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
-        v_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
-        return (k_val, v_val)
-
-    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for testing."""
-        k_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
-        v_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
-        return (k_val, v_val)
-
-    def get_dynamic_shapes(self) -> Optional[Dict]:
-        """No dynamic shapes for basic test."""
-        return None
-
-
-class KVCacheTestDynamicPos(OpTestCase):
-    """Test case for KV cache update with dynamic start_pos."""
-
-    name = "kv_cache_dynamic_pos"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        seq_step: int = 8,  # Number of new tokens per step
-        test_start_pos: int = 16,  # Position to test at runtime
-    ):
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.seq_step = seq_step
-        self.test_start_pos = test_start_pos
-        self.name = "kv_cache_dynamic_pos"
-
-    def create_model(self) -> nn.Module:
-        return KVCacheUpdateModelDynamicPos(
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            max_seq_len=self.max_seq_len,
-        )
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for export (tracing)."""
-        # Inputs in [B, S, H, D] layout (ExecutorTorch convention)
-        k_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
-        v_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
-        # start_pos as scalar tensor - use 0 for export, different value for test
-        start_pos = torch.tensor(0, dtype=torch.int64)
-        return (k_val, v_val, start_pos)
-
-    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for testing with a different start_pos."""
-        k_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
-        v_val = torch.randn(1, self.seq_step, self.num_heads, self.head_dim)
-        # Use test_start_pos for runtime test
-        start_pos = torch.tensor(self.test_start_pos, dtype=torch.int64)
-        return (k_val, v_val, start_pos)
-
-    def get_dynamic_shapes(self) -> Optional[Dict]:
-        """No dynamic shapes needed - start_pos becomes SymInt via .item()."""
-        return None
-
-
-class KVCacheTestFullyDynamic(OpTestCase):
-    """Test case for KV cache update with both dynamic start_pos and dynamic seq_len."""
-
-    name = "kv_cache_fully_dynamic"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        export_seq_step: int = 8,  # Sequence length for export
-        test_seq_step: int = 4,  # Different sequence length for testing
-        test_start_pos: int = 16,  # Position to test at runtime
-    ):
-        from torch.export import Dim
-
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.export_seq_step = export_seq_step
-        self.test_seq_step = test_seq_step
-        self.test_start_pos = test_start_pos
-        self.name = "kv_cache_fully_dynamic"
-
-        # Create dynamic dimension for seq_step (shared across k_val and v_val)
-        self.seq_dim = Dim("seq_step", min=1, max=max_seq_len)
-
-    def create_model(self) -> nn.Module:
-        return KVCacheUpdateModelFullyDynamic(
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            max_seq_len=self.max_seq_len,
-        )
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for export (tracing)."""
-        # Inputs in [B, S, H, D] layout (ExecutorTorch convention)
-        k_val = torch.randn(1, self.export_seq_step, self.num_heads, self.head_dim)
-        v_val = torch.randn(1, self.export_seq_step, self.num_heads, self.head_dim)
-        # start_pos as scalar tensor - use 0 for export
-        start_pos = torch.tensor(0, dtype=torch.int64)
-        return (k_val, v_val, start_pos)
-
-    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for testing with different seq_step and start_pos."""
-        # Use test_seq_step (different from export) to test dynamic seq_len
-        k_val = torch.randn(1, self.test_seq_step, self.num_heads, self.head_dim)
-        v_val = torch.randn(1, self.test_seq_step, self.num_heads, self.head_dim)
-        # start_pos as scalar tensor
-        start_pos = torch.tensor(self.test_start_pos, dtype=torch.int64)
-        return (k_val, v_val, start_pos)
-
-    def get_dynamic_shapes(self) -> Optional[Dict]:
-        """Return dynamic shapes for seq_step dimension."""
-        return {
-            "k_val": {1: self.seq_dim},
-            "v_val": {1: self.seq_dim},
-            "start_pos": None,  # Scalar, not dynamic
-        }
-
-
-class KVCacheTestPatternFullyDynamic(OpTestCase):
-    """Test case for KV cache UPDATE_CACHE pattern with both dynamic start_pos and dynamic seq_len.
-
-    This tests the pattern handler (transpose -> update_cache -> transpose) with dynamic shapes,
-    as opposed to KVCacheTestFullyDynamic which tests the direct handler (axis=1).
-    """
-
-    name = "kv_cache_pattern_fully_dynamic"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        export_seq_step: int = 8,  # Sequence length for export
-        test_seq_step: int = 4,  # Different sequence length for testing
-        test_start_pos: int = 16,  # Position to test at runtime
-    ):
-        from torch.export import Dim
-
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.export_seq_step = export_seq_step
-        self.test_seq_step = test_seq_step
-        self.test_start_pos = test_start_pos
-        self.name = "kv_cache_pattern_fully_dynamic"
-
-        # Create dynamic dimension for seq_step (shared across k_val and v_val)
-        # Note: S_step is dim 2 in [B, H, S_step, D] for pattern handler
-        self.seq_dim = Dim("seq_step", min=1, max=max_seq_len)
-
-    def create_model(self) -> nn.Module:
-        return KVCacheUpdateModelPatternFullyDynamic(
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            max_seq_len=self.max_seq_len,
-        )
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for export (tracing)."""
-        # Inputs in [B, H, S, D] layout (SDPA convention)
-        k_val = torch.randn(1, self.num_heads, self.export_seq_step, self.head_dim)
-        v_val = torch.randn(1, self.num_heads, self.export_seq_step, self.head_dim)
-        # start_pos as scalar tensor - use 0 for export
-        start_pos = torch.tensor(0, dtype=torch.int64)
-        return (k_val, v_val, start_pos)
-
-    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for testing with different seq_step and start_pos."""
-        # Use test_seq_step (different from export) to test dynamic seq_len
-        k_val = torch.randn(1, self.num_heads, self.test_seq_step, self.head_dim)
-        v_val = torch.randn(1, self.num_heads, self.test_seq_step, self.head_dim)
-        # start_pos as scalar tensor
-        start_pos = torch.tensor(self.test_start_pos, dtype=torch.int64)
-        return (k_val, v_val, start_pos)
-
-    def get_dynamic_shapes(self) -> Optional[Dict]:
-        """Return dynamic shapes for seq_step dimension."""
-        # S_step is dim 2 in [B, H, S_step, D]
-        return {
-            "k_val": {2: self.seq_dim},
-            "v_val": {2: self.seq_dim},
-            "start_pos": None,  # Scalar, not dynamic
-        }
-
-
-def run_kv_cache_test(test: OpTestCase, verbose: bool = False) -> bool:
-    """
-    Run a KV cache test with special handling for the pattern test.
-
-    The pattern test (kv_cache) needs special handling because ExecutorTorch's
-    llama.update_cache has a bug with non-contiguous tensors.
-    """
-    print(f"\n{'='*60}")
-    print(f"Running test: {test.name}")
-    print(f"{'='*60}\n")
-
-    # Generate test files
-    print("Step 1: Generating test files...")
-    pte_path, input_path, expected_path = test.generate_test_files(verbose=verbose)
-
-    # Print MLX graph summary
-    print_mlx_graph_summary(pte_path)
-
-    # Run C++ binary
-    print("Step 2: Running C++ binary...")
-    actual_path = test.get_test_dir() / "actual_output.bin"
-    if not run_cpp_test_runner(pte_path, input_path, actual_path, verbose=verbose):
-        return False
-
-    # Compare outputs
-    print("\nStep 3: Comparing outputs...")
-
-    # For the pattern test (kv_cache), skip comparison due to ExecutorTorch bug
-    # with non-contiguous tensors. The direct test (kv_cache_direct) uses
-    # contiguous tensors and should work correctly.
-    if test.name in ["kv_cache", "kv_cache_pattern_fully_dynamic"]:
-        print(
-            "NOTE: Output comparison disabled for pattern test because ExecutorTorch's"
-        )
-        print("      llama.update_cache custom op doesn't work with non-contiguous")
-        print(
-            "      (transposed view) tensors. MLX correctly implements the operation,"
-        )
-        print("      but PyTorch expected outputs are wrong.")
-        print("✓ PASSED (runtime execution succeeded)")
-        return True
-    else:
-        # Direct test - compare outputs
-        passed, message = test.compare_with_actual(actual_path)
-        if passed:
-            print(f"✓ PASSED: {message}")
+        # For pattern tests, skip comparison due to ExecutorTorch bug
+        if self.name in self._SKIP_COMPARISON_TESTS:
+            print(
+                "NOTE: Output comparison disabled for pattern test because ExecutorTorch's"
+            )
+            print("      llama.update_cache custom op doesn't work with non-contiguous")
+            print(
+                "      (transposed view) tensors. MLX correctly implements the operation,"
+            )
+            print("      but PyTorch expected outputs are wrong.")
+            print("✓ PASSED (runtime execution succeeded)")
+            return True
         else:
-            print(f"✗ FAILED: {message}")
-        return passed
+            # Compare outputs
+            passed, message = self.compare_with_actual(actual_path)
+            if passed:
+                print(f"✓ PASSED: {message}")
+            else:
+                print(f"✗ FAILED: {message}")
+            return passed
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Test KV cache update on MLX delegate")
-    parser.add_argument(
-        "action",
-        choices=["generate", "compare", "run"],
-        help="Action to perform",
+# Factory for CLI usage
+def _create_from_args(args) -> KVCacheTest:
+    if args is None:
+        return KVCacheTest()
+
+    # Map CLI test names to variants
+    variant_map = {
+        "pattern": "pattern",
+        "pattern_verify": "pattern_verify",
+        "direct": "direct",
+        "dynamic_pos": "dynamic_pos",
+        "fully_dynamic": "fully_dynamic",
+        "pattern_fully_dynamic": "pattern_fully_dynamic",
+    }
+    variant = variant_map.get(args.test, "pattern")
+
+    return KVCacheTest(
+        num_heads=args.num_heads,
+        head_dim=args.head_dim,
+        max_seq_len=args.max_seq_len,
+        seq_step=args.seq_step,
+        start_pos=args.start_pos,
+        variant=variant,
     )
+
+
+def _add_args(parser):
     parser.add_argument(
         "--test",
         choices=[
@@ -850,10 +760,9 @@ def main():
             "dynamic_pos",
             "fully_dynamic",
             "pattern_fully_dynamic",
-            "all",
         ],
-        default="all",
-        help="Which test to run: pattern (axis=2), pattern_verify (axis=2 with correct expected), direct (axis=1), dynamic_pos (dynamic start_pos), fully_dynamic (dynamic start_pos + seq_len), pattern_fully_dynamic (pattern with dynamic seq_len), or all (default: all)",
+        default="pattern",
+        help="Which test variant to run",
     )
     parser.add_argument(
         "--num-heads",
@@ -885,124 +794,9 @@ def main():
         default=0,
         help="Start position (default: 0)",
     )
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="Verbose output",
-    )
-    parser.add_argument(
-        "--rebuild",
-        action="store_true",
-        help="Rebuild the C++ test runner before running",
-    )
-    args = parser.parse_args()
-
-    # Rebuild if requested
-    if args.rebuild:
-        if not rebuild_op_test_runner(verbose=args.verbose):
-            sys.exit(1)
-
-    # Create test cases based on --test argument
-    tests = []
-    if args.test in ["pattern", "all"]:
-        tests.append(
-            KVCacheTest(
-                num_heads=args.num_heads,
-                head_dim=args.head_dim,
-                max_seq_len=args.max_seq_len,
-                seq_step=args.seq_step,
-                start_pos=args.start_pos,
-            )
-        )
-    if args.test in ["pattern_verify", "all"]:
-        tests.append(
-            KVCacheTestPatternVerify(
-                num_heads=args.num_heads,
-                head_dim=args.head_dim,
-                max_seq_len=args.max_seq_len,
-                seq_step=args.seq_step,
-                start_pos=args.start_pos,
-            )
-        )
-    if args.test in ["direct", "all"]:
-        tests.append(
-            KVCacheTestDirect(
-                num_heads=args.num_heads,
-                head_dim=args.head_dim,
-                max_seq_len=args.max_seq_len,
-                seq_step=args.seq_step,
-                start_pos=args.start_pos,
-            )
-        )
-    if args.test in ["dynamic_pos", "all"]:
-        tests.append(
-            KVCacheTestDynamicPos(
-                num_heads=args.num_heads,
-                head_dim=args.head_dim,
-                max_seq_len=args.max_seq_len,
-                seq_step=args.seq_step,
-                test_start_pos=16,  # Test with a non-zero position
-            )
-        )
-    if args.test in ["fully_dynamic", "all"]:
-        tests.append(
-            KVCacheTestFullyDynamic(
-                num_heads=args.num_heads,
-                head_dim=args.head_dim,
-                max_seq_len=args.max_seq_len,
-                export_seq_step=args.seq_step,
-                test_seq_step=max(
-                    1, args.seq_step // 2
-                ),  # Use different seq_len for test
-                test_start_pos=16,  # Test with a non-zero position
-            )
-        )
-    if args.test in ["pattern_fully_dynamic", "all"]:
-        tests.append(
-            KVCacheTestPatternFullyDynamic(
-                num_heads=args.num_heads,
-                head_dim=args.head_dim,
-                max_seq_len=args.max_seq_len,
-                export_seq_step=args.seq_step,
-                test_seq_step=max(
-                    1, args.seq_step // 2
-                ),  # Use different seq_len for test
-                test_start_pos=16,  # Test with a non-zero position
-            )
-        )
-
-    all_passed = True
-
-    for test in tests:
-        if args.action == "generate":
-            pte_path, input_path, expected_path = test.generate_test_files()
-            print(f"\nGenerated files for {test.name}:")
-            print(f"  PTE:      {pte_path}")
-            print(f"  Input:    {input_path}")
-            print(f"  Expected: {expected_path}")
-
-        elif args.action == "compare":
-            actual_path = test.get_test_dir() / "actual_output.bin"
-            if not actual_path.exists():
-                print(f"Error: {actual_path} not found. Run the C++ binary first.")
-                all_passed = False
-                continue
-
-            passed, message = test.compare_with_actual(actual_path)
-            if passed:
-                print(f"✓ PASSED: {message}")
-            else:
-                print(f"✗ FAILED: {message}")
-                all_passed = False
-
-        elif args.action == "run":
-            passed = run_kv_cache_test(test, verbose=args.verbose)
-            if not passed:
-                all_passed = False
-
-    sys.exit(0 if all_passed else 1)
 
 
 if __name__ == "__main__":
-    main()
+    run_op_test_main(
+        _create_from_args, "Test KV cache update on MLX delegate", _add_args
+    )

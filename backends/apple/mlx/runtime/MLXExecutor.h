@@ -10,10 +10,10 @@
 
 #include "MLXLoader.h"
 
-#include <mlx/mlx.h>
 #include <mlx/array.h>
-#include <mlx/ops.h>
 #include <mlx/fast.h>
+#include <mlx/mlx.h>
+#include <mlx/ops.h>
 
 #include <executorch/runtime/core/error.h>
 
@@ -54,8 +54,8 @@ struct ConstantData {
 };
 
 // =============================================================================
-// MutableBufferData - storage for delegate-owned mutable buffers (e.g., KV cache)
-// These persist across execute() calls, avoiding per-execution copies.
+// MutableBufferData - storage for delegate-owned mutable buffers (e.g., KV
+// cache) These persist across execute() calls, avoiding per-execution copies.
 // =============================================================================
 
 struct MutableBufferData {
@@ -168,7 +168,8 @@ struct ExecutionState {
     const auto& opt = tensors[id.idx - program->num_constant_tensors];
     if (!opt) {
       throw std::runtime_error(
-          "const_tensor_ref: uninitialized tensor idx=" + std::to_string(id.idx));
+          "const_tensor_ref: uninitialized tensor idx=" +
+          std::to_string(id.idx));
     }
     return *opt;
   }
@@ -281,7 +282,8 @@ inline ::mlx::core::Shape to_shape(const std::vector<int32_t>& dims) {
   return ::mlx::core::Shape(dims.begin(), dims.end());
 }
 
-// Overload for static shapes (used when loading constants where all dims must be literals)
+// Overload for static shapes (used when loading constants where all dims must
+// be literals)
 inline ::mlx::core::Shape to_shape(
     const std::vector<std::variant<int64_t, Vid<int32_t>>>& dims) {
   ::mlx::core::Shape out;
@@ -300,9 +302,7 @@ inline ::mlx::core::Shape to_shape(
 // Constant loading from raw bytes
 // =============================================================================
 
-inline void load_constants(
-    const MLXProgram& program,
-    ConstantData& store) {
+inline void load_constants(const MLXProgram& program, ConstantData& store) {
   using namespace ::mlx::core;
 
   store.tensors.clear();
@@ -320,7 +320,8 @@ inline void load_constants(
     // Get metadata
     if (tid >= program.tensor_meta.size() || !program.tensor_meta[tid]) {
       throw std::runtime_error(
-          "load_constants: missing metadata for constant " + std::to_string(tid));
+          "load_constants: missing metadata for constant " +
+          std::to_string(tid));
     }
 
     const auto& meta = *program.tensor_meta[tid];
@@ -367,7 +368,8 @@ inline void load_constants(
           return array(static_cast<const bool*>(src_ptr), shape, dtype);
         default:
           throw std::runtime_error(
-              "load_constants: unsupported dtype " + std::to_string(static_cast<int>(dtype.val())));
+              "load_constants: unsupported dtype " +
+              std::to_string(static_cast<int>(dtype.val())));
       }
     };
 
@@ -390,42 +392,41 @@ inline void load_mutable_buffers(
   store.clear();
 
   if (program.mutable_buffer_map.empty()) {
-    ET_LOG(Info, "load_mutable_buffers: no mutable buffers to load");
     return;
   }
 
-  ET_LOG(Info, "load_mutable_buffers: loading %zu mutable buffers",
-         program.mutable_buffer_map.size());
-
   for (const auto& slot : program.mutable_buffer_map) {
     if (slot.slot_type != SlotType::TensorSlot) {
-      ET_LOG(Info, "load_mutable_buffers: skipping non-tensor slot");
       continue;
     }
 
     Tid tid{slot.idx};
-    ET_LOG(Info, "load_mutable_buffers: loading mutable buffer tid=%u", tid.idx);
 
     // Get metadata for this tensor
     if (tid.idx >= program.tensor_meta.size()) {
-      ET_LOG(Error, "load_mutable_buffers: tid %u >= tensor_meta.size() %zu",
-             tid.idx, program.tensor_meta.size());
+      ET_LOG(
+          Error,
+          "load_mutable_buffers: tid %u >= tensor_meta.size() %zu",
+          tid.idx,
+          program.tensor_meta.size());
       throw std::runtime_error(
-          "load_mutable_buffers: tensor index out of range for tensor " + std::to_string(tid.idx));
+          "load_mutable_buffers: tensor index out of range for tensor " +
+          std::to_string(tid.idx));
     }
 
     if (!program.tensor_meta[tid.idx]) {
-      ET_LOG(Error, "load_mutable_buffers: missing metadata for tensor %u", tid.idx);
+      ET_LOG(
+          Error,
+          "load_mutable_buffers: missing metadata for tensor %u",
+          tid.idx);
       throw std::runtime_error(
-          "load_mutable_buffers: missing metadata for tensor " + std::to_string(tid.idx));
+          "load_mutable_buffers: missing metadata for tensor " +
+          std::to_string(tid.idx));
     }
 
     const auto& meta = *program.tensor_meta[tid.idx];
     auto shape = to_shape(meta.shape);
     auto dtype = to_mlx_dtype(meta.dtype);
-
-    ET_LOG(Info, "load_mutable_buffers: tid=%u shape_size=%zu dtype=%d",
-           tid.idx, shape.size(), static_cast<int>(dtype.val()));
 
     // Initialize mutable buffer to zeros
     // This matches the typical initialization of KV cache buffers
@@ -435,10 +436,9 @@ inline void load_mutable_buffers(
     eval(arr);
 
     store.set(tid, std::move(arr));
-    ET_LOG(Info, "load_mutable_buffers: successfully loaded tid=%u", tid.idx);
   }
 }
 
-}  // namespace mlx
-}  // namespace backends
-}  // namespace executorch
+} // namespace mlx
+} // namespace backends
+} // namespace executorch

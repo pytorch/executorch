@@ -24,12 +24,84 @@ import numpy as np
 import torch
 
 
+# =============================================================================
+# Timeout Support
+# =============================================================================
+
+DEFAULT_TEST_TIMEOUT = 300  # 5 minutes default timeout
+
+
+class TestTimeoutError(Exception):
+    """Raised when a test exceeds its timeout."""
+
+    pass
+
+
 # DType enum values matching C++ op_test_runner
 DTYPE_FLOAT32 = 0
 DTYPE_FLOAT16 = 1
 DTYPE_INT32 = 2
 DTYPE_INT64 = 3
 DTYPE_BFLOAT16 = 4
+
+
+# =============================================================================
+# Tolerance Presets by DType
+# =============================================================================
+
+# Default tolerance presets for different data types.
+# These are based on the precision characteristics of each dtype:
+# - FP32: ~7 decimal digits of precision
+# - FP16: ~3-4 decimal digits of precision
+# - BF16: ~2-3 decimal digits of precision (same exponent range as FP32)
+TOLERANCE_PRESETS = {
+    torch.float32: {"rtol": 1e-5, "atol": 1e-5},
+    torch.float16: {"rtol": 1e-3, "atol": 1e-3},
+    torch.bfloat16: {"rtol": 1e-2, "atol": 1e-2},
+    # Integer types should match exactly
+    torch.int32: {"rtol": 0, "atol": 0},
+    torch.int64: {"rtol": 0, "atol": 0},
+}
+
+
+def get_tolerance_for_dtype(dtype: torch.dtype) -> Tuple[float, float]:
+    """
+    Get appropriate (rtol, atol) tolerances for a given dtype.
+
+    Args:
+        dtype: The torch dtype to get tolerances for.
+
+    Returns:
+        (rtol, atol) tuple with appropriate tolerances for the dtype.
+    """
+    if dtype in TOLERANCE_PRESETS:
+        preset = TOLERANCE_PRESETS[dtype]
+        return preset["rtol"], preset["atol"]
+    # Default to FP32 tolerances for unknown types
+    return 1e-5, 1e-5
+
+
+def get_tolerance_for_dtypes(dtypes: List[torch.dtype]) -> Tuple[float, float]:
+    """
+    Get tolerances that work for a list of dtypes (uses the loosest tolerances).
+
+    Args:
+        dtypes: List of torch dtypes.
+
+    Returns:
+        (rtol, atol) tuple with tolerances that accommodate all dtypes.
+    """
+    if not dtypes:
+        return 1e-5, 1e-5
+
+    max_rtol = 0.0
+    max_atol = 0.0
+    for dtype in dtypes:
+        rtol, atol = get_tolerance_for_dtype(dtype)
+        max_rtol = max(max_rtol, rtol)
+        max_atol = max(max_atol, atol)
+
+    return max_rtol, max_atol
 
 
 def torch_dtype_to_bin_dtype(dtype: torch.dtype) -> int:
@@ -257,7 +329,7 @@ def inspect_pte_file(pte_path: Union[str, Path]) -> Dict:
     return mlx_data
 
 
-def print_mlx_graph_summary(pte_path: Union[str, Path]) -> None:
+def print_mlx_graph_summary(pte_path: Union[str, Path]) -> None:  # noqa: C901
     """
     Print a human-readable summary of the MLX graph in a PTE file.
     """
@@ -464,7 +536,7 @@ def find_op_test_runner() -> Path:
             return candidate
 
     raise FileNotFoundError(
-        f"Could not find op_test_runner binary. Tried:\n"
+        "Could not find op_test_runner binary. Tried:\n"
         + "\n".join(f"  - {c}" for c in candidates)
         + "\n\nBuild with: cd cmake-out && cmake --build . --target op_test_runner"
     )
@@ -516,6 +588,7 @@ def run_cpp_test_runner(
     input_path: Path,
     output_path: Path,
     verbose: bool = False,
+    timeout: Optional[int] = None,
 ) -> bool:
     """
     Run the C++ op_test_runner binary.
@@ -525,10 +598,14 @@ def run_cpp_test_runner(
         input_path: Path to input .bin file.
         output_path: Path to write output .bin file.
         verbose: Whether to print verbose output.
+        timeout: Timeout in seconds. None means use DEFAULT_TEST_TIMEOUT.
 
     Returns:
         True if execution succeeded, False otherwise.
     """
+    if timeout is None:
+        timeout = DEFAULT_TEST_TIMEOUT
+
     runner = find_op_test_runner()
 
     cmd = [
@@ -544,7 +621,16 @@ def run_cpp_test_runner(
         cmd.append("--verbose")
 
     print(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"TIMEOUT: C++ runner exceeded {timeout}s timeout")
+        return False
 
     if result.returncode != 0:
         print(f"FAILED: {result.stderr}")
@@ -553,6 +639,180 @@ def run_cpp_test_runner(
 
     print(f"C++ binary output: {result.stdout.strip()}")
     return True
+
+
+# =============================================================================
+# Cleanup Utilities
+# =============================================================================
+
+# Files that are generated during tests and can be safely cleaned up
+GENERATED_TEST_FILES = [
+    "model.pte",
+    "input.bin",
+    "expected_output.bin",
+    "actual_output.bin",
+]
+
+
+def clean_test_outputs(
+    test_names: Optional[List[str]] = None, verbose: bool = False
+) -> int:
+    """
+    Clean up generated test output files.
+
+    Args:
+        test_names: Optional list of test names to clean. If None, cleans all tests.
+        verbose: Whether to print verbose output.
+
+    Returns:
+        Number of files removed.
+    """
+    test_dir = Path(__file__).parent / "op_tests"
+    if not test_dir.exists():
+        if verbose:
+            print(f"Test directory does not exist: {test_dir}")
+        return 0
+
+    files_removed = 0
+
+    # Get directories to clean
+    if test_names:
+        dirs_to_clean = [
+            test_dir / name for name in test_names if (test_dir / name).exists()
+        ]
+    else:
+        dirs_to_clean = [d for d in test_dir.iterdir() if d.is_dir()]
+
+    for subdir in dirs_to_clean:
+        for filename in GENERATED_TEST_FILES:
+            filepath = subdir / filename
+            if filepath.exists():
+                if verbose:
+                    print(f"Removing: {filepath}")
+                filepath.unlink()
+                files_removed += 1
+
+        # Remove empty directories
+        if subdir.exists() and not any(subdir.iterdir()):
+            if verbose:
+                print(f"Removing empty directory: {subdir}")
+            subdir.rmdir()
+
+    return files_removed
+
+
+def get_test_output_size(test_names: Optional[List[str]] = None) -> int:
+    """
+    Get total size of generated test output files in bytes.
+
+    Args:
+        test_names: Optional list of test names to check. If None, checks all tests.
+
+    Returns:
+        Total size in bytes.
+    """
+    test_dir = Path(__file__).parent / "op_tests"
+    if not test_dir.exists():
+        return 0
+
+    total_size = 0
+
+    # Get directories to check
+    if test_names:
+        dirs_to_check = [
+            test_dir / name for name in test_names if (test_dir / name).exists()
+        ]
+    else:
+        dirs_to_check = [d for d in test_dir.iterdir() if d.is_dir()]
+
+    for subdir in dirs_to_check:
+        for filename in GENERATED_TEST_FILES:
+            filepath = subdir / filename
+            if filepath.exists():
+                total_size += filepath.stat().st_size
+
+    return total_size
+
+
+# =============================================================================
+# Test Registry
+# =============================================================================
+
+# Global registry: maps base_name -> (test_class, get_test_configs method)
+# Tests are instantiated lazily when actually run, not at import time
+_TEST_REGISTRY: Dict[str, type] = {}
+
+
+def register_test(test_class: type) -> type:
+    """
+    Class decorator to register a test class.
+
+    The test class must have:
+    - A class attribute `name` (str) - the base test name
+    - A class method `get_test_configs()` that returns a list of OpTestCase instances
+
+    Test instances are created LAZILY when tests are actually run, not at import time.
+    This avoids creating random tensors at import time and keeps memory usage low.
+
+    Example:
+        @register_test
+        class AddTest(OpTestCase):
+            name = "add"
+
+            @classmethod
+            def get_test_configs(cls) -> List["OpTestCase"]:
+                return [
+                    cls(),  # default config
+                    cls(scalar=2.5),  # scalar variant
+                ]
+    """
+    if not hasattr(test_class, "name"):
+        raise ValueError(
+            f"Test class {test_class.__name__} must have a 'name' attribute"
+        )
+
+    base_name = test_class.name
+    _TEST_REGISTRY[base_name] = test_class
+
+    return test_class
+
+
+def get_registered_tests() -> Dict[str, List[Tuple[str, "OpTestCase"]]]:
+    """
+    Get all registered tests with their configurations.
+
+    Returns dict mapping base_name -> list of (config_name, test_instance).
+    Test instances are created fresh each time this is called.
+    """
+    result = {}
+    for base_name, test_class in _TEST_REGISTRY.items():
+        if hasattr(test_class, "get_test_configs"):
+            configs = test_class.get_test_configs()
+        else:
+            configs = [test_class()]
+        result[base_name] = [(cfg.name, cfg) for cfg in configs]
+    return result
+
+
+def get_test_names() -> List[str]:
+    """Get list of registered base test names."""
+    return list(_TEST_REGISTRY.keys())
+
+
+def get_all_test_configs() -> List[Tuple[str, "OpTestCase"]]:
+    """
+    Get flat list of all (config_name, test_instance) tuples.
+
+    Test instances are created fresh each time this is called.
+    """
+    result = []
+    for _base_name, test_class in _TEST_REGISTRY.items():
+        if hasattr(test_class, "get_test_configs"):
+            configs = test_class.get_test_configs()
+        else:
+            configs = [test_class()]
+        result.extend((cfg.name, cfg) for cfg in configs)
+    return result
 
 
 class OpTestCase:
@@ -573,6 +833,14 @@ class OpTestCase:
     rtol: float = 1e-5
     atol: float = 1e-5
     use_fp16: bool = False
+    seed: int = 42  # Default seed for reproducibility
+    timeout: int = DEFAULT_TEST_TIMEOUT  # Timeout in seconds
+    skip_comparison: bool = False  # Skip output comparison (for pattern-only tests)
+    skip_comparison_reason: str = ""  # Reason for skipping comparison
+
+    def _set_seed(self) -> None:
+        """Set random seed for reproducibility."""
+        torch.manual_seed(self.seed)
 
     def create_model(self) -> torch.nn.Module:
         raise NotImplementedError
@@ -611,9 +879,15 @@ class OpTestCase:
         input_path = test_dir / "input.bin"
         expected_path = test_dir / "expected_output.bin"
 
+        # Set seed for reproducibility
+        self._set_seed()
+
         # Create model and inputs
         model = self.create_model()
         export_inputs = self.create_inputs()
+
+        # Set seed again before creating test inputs (in case they differ)
+        self._set_seed()
         test_inputs = self.create_test_inputs()
 
         # Get expected outputs using test inputs
@@ -660,10 +934,15 @@ class OpTestCase:
         return pte_path, input_path, expected_path
 
     def compare_with_actual(
-        self, actual_output_path: Union[str, Path]
+        self, actual_output_path: Union[str, Path], use_dtype_tolerances: bool = False
     ) -> Tuple[bool, str]:
         """
         Compare actual outputs with expected outputs.
+
+        Args:
+            actual_output_path: Path to the actual output file.
+            use_dtype_tolerances: If True, uses tolerance presets based on output dtypes
+                instead of the test's rtol/atol values.
         """
         test_dir = self.get_test_dir()
         expected_path = test_dir / "expected_output.bin"
@@ -671,22 +950,37 @@ class OpTestCase:
         expected = load_tensors_from_bin(expected_path)
         actual = load_tensors_from_bin(actual_output_path)
 
-        return compare_outputs(expected, actual, rtol=self.rtol, atol=self.atol)
+        # Determine tolerances
+        if use_dtype_tolerances:
+            # Use dtype-based tolerances (loosest tolerance across all output dtypes)
+            output_dtypes = [t.dtype for t in expected]
+            rtol, atol = get_tolerance_for_dtypes(output_dtypes)
+        else:
+            rtol, atol = self.rtol, self.atol
 
-    def run_test(self, verbose: bool = False) -> bool:
+        return compare_outputs(expected, actual, rtol=rtol, atol=atol)
+
+    def run_test(self, verbose: bool = False, timeout: Optional[int] = None) -> bool:
         """
         Run the full test: generate files, run C++, compare outputs.
+
+        Args:
+            verbose: Whether to print verbose output.
+            timeout: Timeout in seconds. None means use self.timeout.
 
         Returns:
             True if test passed, False otherwise.
         """
+        if timeout is None:
+            timeout = self.timeout
+
         print(f"\n{'='*60}")
         print(f"Running test: {self.name}")
         print(f"{'='*60}\n")
 
         # Generate test files
         print("Step 1: Generating test files...")
-        pte_path, input_path, expected_path = self.generate_test_files()
+        pte_path, input_path, expected_path = self.generate_test_files(verbose=verbose)
 
         # Print MLX graph summary
         print_mlx_graph_summary(pte_path)
@@ -694,11 +988,19 @@ class OpTestCase:
         # Run C++ binary
         print("Step 2: Running C++ binary...")
         actual_path = self.get_test_dir() / "actual_output.bin"
-        if not run_cpp_test_runner(pte_path, input_path, actual_path, verbose=verbose):
+        if not run_cpp_test_runner(
+            pte_path, input_path, actual_path, verbose=verbose, timeout=timeout
+        ):
             return False
 
-        # Compare outputs
+        # Compare outputs (or skip if configured)
         print("\nStep 3: Comparing outputs...")
+        if self.skip_comparison:
+            reason = self.skip_comparison_reason or "skip_comparison=True"
+            print(f"NOTE: Output comparison skipped ({reason})")
+            print("✓ PASSED (runtime execution succeeded)")
+            return True
+
         passed, message = self.compare_with_actual(actual_path)
 
         if passed:
@@ -707,3 +1009,84 @@ class OpTestCase:
             print(f"✗ FAILED: {message}")
 
         return passed
+
+
+# =============================================================================
+# Common CLI helper for op tests
+# =============================================================================
+
+
+def run_op_test_main(
+    test_factory,
+    description: str,
+    add_args_fn=None,
+):
+    """
+    Common main() function for op tests.
+
+    This handles the common argparse setup, rebuild logic, and generate/compare/run
+    action handling that is shared across all op tests.
+
+    Args:
+        test_factory: A callable that takes parsed args (argparse.Namespace) and
+            returns an OpTestCase instance.
+        description: Description for the argparse help message.
+        add_args_fn: Optional callable that takes a parser and adds test-specific
+            arguments. Signature: add_args_fn(parser) -> None
+    """
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        "action",
+        choices=["generate", "compare", "run"],
+        help="Action to perform: generate (create test files), compare (compare outputs), run (full test)",
+    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Rebuild the C++ test runner before running",
+    )
+
+    # Add test-specific arguments
+    if add_args_fn is not None:
+        add_args_fn(parser)
+
+    args = parser.parse_args()
+
+    # Rebuild if requested
+    if args.rebuild:
+        if not rebuild_op_test_runner(verbose=args.verbose):
+            sys.exit(1)
+
+    # Create test case from factory
+    test = test_factory(args)
+
+    if args.action == "generate":
+        pte_path, input_path, expected_path = test.generate_test_files(
+            verbose=args.verbose
+        )
+        print("\nGenerated files:")
+        print(f"  PTE:      {pte_path}")
+        print(f"  Input:    {input_path}")
+        print(f"  Expected: {expected_path}")
+        print_mlx_graph_summary(pte_path)
+
+    elif args.action == "compare":
+        actual_path = test.get_test_dir() / "actual_output.bin"
+        if not actual_path.exists():
+            print(f"Error: {actual_path} not found. Run the C++ binary first.")
+            sys.exit(1)
+
+        passed, message = test.compare_with_actual(actual_path)
+        if passed:
+            print(f"✓ PASSED: {message}")
+        else:
+            print(f"✗ FAILED: {message}")
+        sys.exit(0 if passed else 1)
+
+    elif args.action == "run":
+        passed = test.run_test(verbose=args.verbose)
+        sys.exit(0 if passed else 1)

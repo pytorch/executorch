@@ -170,7 +170,7 @@ def main():
 
     if args.action == "generate":
         pte_path, input_path, expected_path = test.generate_test_files()
-        print(f"\nGenerated files:")
+        print("\nGenerated files:")
         print(f"  PTE:      {pte_path}")
         print(f"  Input:    {input_path}")
         print(f"  Expected: {expected_path}")
