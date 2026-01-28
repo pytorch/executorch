@@ -139,4 +139,8 @@ from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass 
 from .replace_inf_and_limit_values_pass import (  # noqa  # usort: skip
     ReplaceInfAndLimitValuesPass,
 )
-from .arm_pass_manager import ArmPassManager  # noqa  # usort: skip
+
+try:
+    from .fb import ArmPassManager  # noqa
+except ImportError:
+    from .arm_pass_manager import ArmPassManager  # noqa

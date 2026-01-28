@@ -1,11 +1,54 @@
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 runtime.python_library(
-    name = "passes",
-    srcs = glob(["*.py"]),
+    name = "core",
+    srcs = [
+        "arm_pass.py",
+        "arm_pass_utils.py",
+        "quant_args.py",
+    ],
     deps = [
         "//executorch/backends/arm:common",
         "//executorch/backends/arm:constants",
+        "//executorch/backends/arm/tosa:utils",
+        "//executorch/backends/arm/tosa/dialect:lib",
+        "//executorch/backends/transforms:utils",
+        "//executorch/exir:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "arm_pass_manager_base",
+    srcs = ["arm_pass_manager.py"],
+    deps = [
+        ":core",
+        "//executorch/backends/arm:common",
+        "//executorch/backends/arm/tosa:utils",
+        "//executorch/backends/arm/tosa/dialect:lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "arm_pass_manager_fb",
+    srcs = [],
+    deps = [
+        ":arm_pass_manager_base",
+        "//executorch/backends/arm/_passes/fb:fb",
+    ],
+)
+
+runtime.python_library(
+    name = "passes",
+    srcs = glob(["*.py"], exclude = [
+        "arm_pass.py",
+        "arm_pass_utils.py",
+        "quant_args.py",
+    ]),
+    deps = [
+        ":core",
+        ":arm_pass_manager_fb" if is_fbcode else ":arm_pass_manager_base",
         "//executorch/backends/arm/tosa:utils",
         "//executorch/backends/arm/tosa/dialect:lib",
         "//executorch/backends/transforms:fuse_view_copy",
