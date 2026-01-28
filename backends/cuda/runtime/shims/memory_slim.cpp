@@ -136,6 +136,28 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_new_tensor_handle(
+    Tensor* orig_handle,
+    Tensor** new_handle) {
+  ET_CHECK_OR_RETURN_ERROR(
+      orig_handle != nullptr,
+      InvalidArgument,
+      "aoti_torch_new_tensor_handle: orig_handle is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      new_handle != nullptr,
+      InvalidArgument,
+      "aoti_torch_new_tensor_handle: new_handle is null");
+
+  // Create a new SlimTensor that shares the same underlying storage.
+  // SlimTensor's copy constructor shares the SharedPtr<Storage>, so both
+  // tensors will reference the same memory. When the last tensor is deleted,
+  // the storage will be freed.
+  *new_handle = new Tensor(*orig_handle);
+
+  return Error::Ok;
+}
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
