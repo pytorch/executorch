@@ -417,6 +417,33 @@ test_data_FP = {
     "3x3_1x3x28x28_st2_pd1": lambda: conv3d_3x3_1x3x28x28_st2_pd1,
 }
 
+test_data_FP_bf16 = {
+    "bf16_3x3": lambda: Conv3d(
+        height=10,
+        width=10,
+        depth=6,
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3, 3),
+        stride=(1, 1, 1),
+        padding=(1, 1, 1),
+        bias=True,
+        dtype=torch.bfloat16,
+    ),
+    "bf16_1x1": lambda: Conv3d(
+        height=6,
+        width=6,
+        depth=4,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=(1, 1, 1),
+        stride=(1, 1, 1),
+        padding=(0, 0, 0),
+        bias=False,
+        dtype=torch.bfloat16,
+    ),
+}
+
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -462,10 +489,14 @@ def get_symmetric_a16w8_conv3d_quantizer(per_channel_quantization: bool = False)
 input_t = Tuple[torch.Tensor]
 
 
-@common.parametrize("test_data", test_data_FP)
+@common.parametrize("test_data", test_data_FP | test_data_FP_bf16)
 def test_convolution_3d_tosa_FP(test_data):
     pipeline = TosaPipelineFP[input_t](
-        test_data(), test_data().get_inputs(), aten_op, exir_op
+        test_data(),
+        test_data().get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
