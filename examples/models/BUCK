@@ -1,0 +1,53 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+fbcode_target(_kind = python_library,
+    name = "models",
+    srcs = [
+        "__init__.py",
+        "model_factory.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models:model_base",  # @manual
+        "//executorch/examples/models/deeplab_v3:dl3_model",  # @manual
+        "//executorch/examples/models/edsr:edsr_model",  # @manual
+        "//executorch/examples/models/emformer_rnnt:emformer_rnnt_model",  # @manual
+        "//executorch/examples/models/inception_v3:ic3_model",  # @manual
+        "//executorch/examples/models/inception_v4:ic4_model",  # @manual
+        "//executorch/examples/models/llama:llama2_model",  # @manual
+        "//executorch/examples/models/mobilebert:mobilebert_model",  # @manual
+        "//executorch/examples/models/mobilenet_v2:mv2_model",  # @manual
+        "//executorch/examples/models/mobilenet_v3:mv3_model",  # @manual
+        "//executorch/examples/models/resnet:resnet_model",  # @manual
+        "//executorch/examples/models/torchvision_vit:vit_model",  # @manual
+        "//executorch/examples/models/toy_model:toy_model",  # @manual
+        "//executorch/examples/models/wav2letter:w2l_model",  # @manual
+        "//executorch/examples/models/llama3_2_vision:multimodal_lib",  # @manual
+        "//executorch/examples/models/gemma3:gemma3",  # @manual
+        "//executorch/examples/models/qwen2_5:qwen2_5",  # @manual
+        "//executorch/examples/models/qwen3:qwen3",  # @manual
+        "//executorch/examples/models/phi_4_mini:phi_4_mini",  # @manual
+        "//executorch/examples/models/smollm2:smollm2",  # @manual
+        "//executorch/examples/models/smollm3:smollm3",  # @manual
+    ],
+)
+
+fbcode_target(_kind = python_library,
+    name = "checkpoint",
+    srcs = [
+        "checkpoint.py",
+    ],
+)
+
+fbcode_target(_kind = python_library,
+    name = "model_base",
+    srcs = [
+        "model_base.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
