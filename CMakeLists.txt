@@ -52,6 +52,30 @@ project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
+# --- ExecuTorch Version ---
+# Parse version from version.txt (single source of truth)
+file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
+string(STRIP "${ET_VERSION_STRING}" ET_VERSION_STRING)
+
+# Extract major.minor.patch (handles formats like "1.2.0a0")
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" ET_VERSION_MATCH
+             "${ET_VERSION_STRING}"
+)
+set(ET_VERSION_MAJOR "${CMAKE_MATCH_1}")
+set(ET_VERSION_MINOR "${CMAKE_MATCH_2}")
+set(ET_VERSION_PATCH "${CMAKE_MATCH_3}")
+
+message(
+  STATUS
+    "ExecuTorch version: ${ET_VERSION_MAJOR}.${ET_VERSION_MINOR}.${ET_VERSION_PATCH}"
+)
+
+# Generate version.h from template
+configure_file(
+  "${EXECUTORCH_ROOT}/runtime/core/version.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/include/executorch/runtime/core/version.h" @ONLY
+)
+
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Codegen.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
@@ -492,6 +516,11 @@ install(
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core
   FILES_MATCHING
   PATTERN "*.h"
+)
+# Install generated version.h
+install(
+  FILES "${CMAKE_CURRENT_BINARY_DIR}/include/executorch/runtime/core/version.h"
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core
 )
 install(
   DIRECTORY runtime/executor/
