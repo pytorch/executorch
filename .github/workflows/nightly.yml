@@ -8,7 +8,8 @@ on:
       - ciflow/nightly/*
   pull_request:
     paths:
-      .github/workflows/nightly.yml
+      - .github/workflows/nightly.yml
+      - .ci/scripts/test_qnn_static_llm.sh
   workflow_dispatch:
 
 concurrency:
@@ -45,7 +46,7 @@ jobs:
       contents: read
     strategy:
       matrix:
-        task: [smollm2_135m]
+        task: [smollm2_135m, stories_110m]
       fail-fast: false
     with:
       runner: linux.24xlarge
@@ -53,6 +54,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
+      upload-artifact: qnn-llama-pte-${{ matrix.task }}
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")

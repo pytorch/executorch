@@ -15,6 +15,10 @@ if [[ -z "${TASK_NAME:-}" ]]; then
   exit 1
 fi
 
+# Artifact directory for uploading .pte files (set by CI runner)
+ARTIFACT_DIR="${RUNNER_ARTIFACT_DIR:-./artifacts}"
+mkdir -p "${ARTIFACT_DIR}"
+
 
 # Download QNN_SDK. If already downloaded, export environment path
 source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/install_qnn_sdk.sh"
@@ -65,6 +69,11 @@ if [[ "${TASK_NAME}" == "stories_110m" ]]; then
     if [ $exit_code1 -ne 0 ] || [ $exit_code2 -ne 0 ]; then
         exit 1
     else
+        # Copy .pte files to artifact directory for upload
+        echo "Copying .pte files to ${ARTIFACT_DIR}"
+        find ./stories_110m_pte_size -name "*.pte" -exec cp {} "${ARTIFACT_DIR}/" \; 2>/dev/null || true
+        find ./stories_110m_accuracy -name "*.pte" -exec cp {} "${ARTIFACT_DIR}/" \; 2>/dev/null || true
+        ls -la "${ARTIFACT_DIR}/"
         exit 0
     fi
 
@@ -85,6 +94,10 @@ elif [[ "${TASK_NAME}" == "smollm2_135m" ]]; then
     if [ $exit_code1 -ne 0 ]; then
         exit 1
     else
+        # Copy .pte files to artifact directory for upload
+        echo "Copying .pte files to ${ARTIFACT_DIR}"
+        find ./static_smollm2 -name "*.pte" -exec cp {} "${ARTIFACT_DIR}/" \; 2>/dev/null || true
+        ls -la "${ARTIFACT_DIR}/"
         exit 0
     fi
 else
