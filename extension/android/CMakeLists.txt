@@ -224,6 +224,11 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   endif()
 endif()
 
+if(EXECUTORCH_BUILD_ASR_JNI)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_asr.cpp)
+  list(APPEND link_libraries extension_asr_runner)
+endif()
+
 target_include_directories(
   executorch_jni
   PRIVATE
