@@ -256,11 +256,25 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    // Count regular inputs (excluding mutable buffers which are delegate-owned)
-    size_t num_regular_inputs = num_inputs - num_mutable_buffers;
+    // Count regular inputs by type (excluding mutable buffers which are
+    // delegate-owned)
+    size_t num_regular_tensor_inputs = 0;
+    size_t num_regular_int_inputs = 0;
+    for (size_t i = 0; i < num_inputs; ++i) {
+      const auto& slot = program.input_map[i];
+      if (slot.slot_type == SlotType::TensorSlot) {
+        // Skip if this is a mutable buffer
+        if (mutable_buffer_tids.find(slot.idx) == mutable_buffer_tids.end()) {
+          num_regular_tensor_inputs++;
+        }
+      } else if (slot.slot_type == SlotType::IntValueSlot) {
+        num_regular_int_inputs++;
+      }
+    }
 
     // Collect tensor and int args from ExecuTorch
     std::vector<const ETTensor*> input_tensors;
+    std::vector<int64_t> input_ints;
     std::vector<ETTensor*> output_tensors;
     std::vector<EValue*> output_ints;
 
@@ -270,21 +284,22 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       }
 
       if (args[i]->isTensor()) {
-        if (input_tensors.size() < num_regular_inputs) {
+        if (input_tensors.size() < num_regular_tensor_inputs) {
           input_tensors.push_back(&args[i]->toTensor());
         } else if (output_tensors.size() < num_tensor_outputs) {
           output_tensors.push_back(&args[i]->toTensor());
         }
       } else if (args[i]->isInt()) {
-        // Int args after inputs should be int outputs
-        if (input_tensors.size() >= num_regular_inputs &&
-            output_ints.size() < num_int_outputs) {
+        // Int args: first num_regular_int_inputs are inputs, rest are outputs
+        if (input_ints.size() < num_regular_int_inputs) {
+          input_ints.push_back(args[i]->toInt());
+        } else if (output_ints.size() < num_int_outputs) {
           output_ints.push_back(args[i]);
         }
       } else if (args[i]->isTensorList()) {
         auto tensor_list = args[i]->toTensorList();
         for (auto& tensor : tensor_list) {
-          if (input_tensors.size() < num_regular_inputs) {
+          if (input_tensors.size() < num_regular_tensor_inputs) {
             input_tensors.push_back(&tensor);
           } else if (output_tensors.size() < num_tensor_outputs) {
             output_tensors.push_back(const_cast<ETTensor*>(&tensor));
@@ -293,12 +308,20 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    if (input_tensors.size() != num_regular_inputs) {
+    if (input_tensors.size() != num_regular_tensor_inputs) {
       ET_LOG(
           Error,
-          "Expected %zu regular inputs, got %zu",
-          num_regular_inputs,
+          "Expected %zu regular tensor inputs, got %zu",
+          num_regular_tensor_inputs,
           input_tensors.size());
+      return Error::InvalidArgument;
+    }
+    if (input_ints.size() != num_regular_int_inputs) {
+      ET_LOG(
+          Error,
+          "Expected %zu int inputs, got %zu",
+          num_regular_int_inputs,
+          input_ints.size());
       return Error::InvalidArgument;
     }
     if (output_tensors.size() != num_tensor_outputs) {
@@ -322,7 +345,9 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     // Then, bind regular inputs from ExecuTorch
-    size_t regular_input_idx = 0;
+    size_t regular_tensor_idx = 0;
+    size_t regular_int_idx = 0;
+
     for (size_t i = 0; i < num_inputs; ++i) {
       const auto& slot = program.input_map[i];
       if (slot.slot_type == SlotType::TensorSlot) {
@@ -332,11 +357,26 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
           continue;
         }
         // Bind regular input from ExecuTorch
-        array arr = tensor_to_mlx(*input_tensors[regular_input_idx]);
+        array arr = tensor_to_mlx(*input_tensors[regular_tensor_idx]);
         state.set_tensor(tid, std::move(arr));
-        regular_input_idx++;
+        regular_tensor_idx++;
+      } else if (slot.slot_type == SlotType::IntValueSlot) {
+        // Bind int value input from ExecuTorch
+        Vid<int32_t> vid{slot.idx};
+        if (regular_int_idx < input_ints.size()) {
+          state.set_value(
+              vid, static_cast<int32_t>(input_ints[regular_int_idx]));
+          regular_int_idx++;
+        } else {
+          ET_LOG(Error, "Missing int input for slot %zu", i);
+          return Error::InvalidArgument;
+        }
       } else {
-        ET_LOG(Error, "Input slot %zu is not a TensorSlot", i);
+        ET_LOG(
+            Error,
+            "Input slot %zu has unsupported type %d",
+            i,
+            static_cast<int>(slot.slot_type));
         return Error::InvalidProgram;
       }
     }

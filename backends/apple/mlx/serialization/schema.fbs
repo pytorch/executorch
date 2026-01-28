@@ -170,9 +170,9 @@ table GeluNode {
 
 table ARangeNode {
     out: Tid (required);
-    start: int32;
-    stop: int32;
-    step: int32 = 1;
+    start: IntOrVid (required);  // Can be literal or dynamic (from item())
+    stop: IntOrVid (required);   // Can be literal or dynamic (from item())
+    step: IntOrVid (required);   // Can be literal or dynamic
     dtype: DTypeId = null;  // optional - None means infer from context
 }
 
