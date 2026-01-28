@@ -1,8 +1,9 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     # @autodeps-skip pybindings don't work well with autodeps
     name = "test_program",
     srcs = [
