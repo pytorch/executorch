@@ -11,7 +11,7 @@ import com.vanniktech.maven.publish.SonatypeHost
 
 plugins {
     id "com.android.library" version "8.9.0"
-    id "com.vanniktech.maven.publish" version "0.31.0"
+    id "com.vanniktech.maven.publish" version "0.34.0"
     id 'com.diffplug.spotless' version '8.0.0'
     alias(libs.plugins.jetbrains.kotlin.android)
 }
