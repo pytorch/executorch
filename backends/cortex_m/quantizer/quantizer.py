@@ -232,6 +232,7 @@ class CortexMQuantizer(ComposableQuantizer):
             ),
             OperatorConfigQuantizer(
                 INT8_CONV_TRANSPOSE_OPERATOR_CONFIG,
+                global_node_finder,
                 filter_fn=self._transpose_conv_group_filter,
             ),
             OperatorConfigQuantizer(
