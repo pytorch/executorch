@@ -689,6 +689,10 @@ def _layer_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
 @REGISTRY.register(target=[torch.ops.aten.arange.default])
 def _arange_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle arange with just stop, or (start, stop) or (start, stop, step).
+
+    Supports both static (literal int) and dynamic (Slot from item()) values.
+    """
     args = P.args(n)
     if len(args) == 1:
         start = 0
@@ -697,18 +701,45 @@ def _arange_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         start, stop = args[0:2]
     step = args[2] if len(args) > 2 else 1
 
-    dtype = n.kwargs.get("dtype", None)
-    dtype_id = None
-    if dtype is not None:
-        dtype_id = _torch_dtype_to_dtypeid(dtype)
+    # arange defaults to int64 when dtype is not specified (like torch.arange)
+    dtype = n.kwargs.get("dtype", torch.int64)
+    dtype_id = _torch_dtype_to_dtypeid(dtype)
 
     out = P.make_or_get_slot(n)
     P._emit(
         ARangeNode(
             out=P._slot_to_tid(out),
-            start=int(start),
-            stop=int(stop),
-            step=int(step),
+            start=P._to_int_or_vid(start),
+            stop=P._to_int_or_vid(stop),
+            step=P._to_int_or_vid(step),
+            dtype=dtype_id,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.arange.start_step])
+def _arange_start_step_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle arange with start, end, and step arguments.
+
+    Supports both static (literal int) and dynamic (Slot from item()) start/stop/step.
+    """
+    args = P.args(n)
+    start = args[0]
+    stop = args[1]
+    step = args[2] if len(args) > 2 else 1
+
+    # arange defaults to int64 when dtype is not specified (like torch.arange)
+    dtype = n.kwargs.get("dtype", torch.int64)
+    dtype_id = _torch_dtype_to_dtypeid(dtype)
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        ARangeNode(
+            out=P._slot_to_tid(out),
+            start=P._to_int_or_vid(start),
+            stop=P._to_int_or_vid(stop),
+            step=P._to_int_or_vid(step),
             dtype=dtype_id,
         )
     )

@@ -495,9 +495,19 @@ def parse_executorch_program(pte_data: bytes) -> Dict[str, Any]:  # noqa: C901
 
 
 def extract_delegate_payload(  # noqa: C901
-    pte_data: bytes, delegate_id: str
+    pte_data: bytes, delegate_id: str, delegate_index: Optional[int] = None
 ) -> Optional[bytes]:
-    """Extract a delegate payload from a PTE file."""
+    """Extract a delegate payload from a PTE file.
+
+    Args:
+        pte_data: Raw bytes of the PTE file.
+        delegate_id: ID substring to match (e.g., 'mlx' matches 'MLXBackend').
+        delegate_index: If specified, extract the Nth matching delegate (0-based).
+                       If None, extracts the first match.
+
+    Returns:
+        Delegate payload bytes, or None if not found.
+    """
     try:
         from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
 
@@ -515,11 +525,17 @@ def extract_delegate_payload(  # noqa: C901
                 pass
 
         # Look for the delegate in execution plans
+        match_count = 0
         for plan in program_data.get("execution_plan", []):
             for delegate in plan.get("delegates", []):
                 delegate_name = delegate.get("id", "")
                 # Match by ID containing the search string (case-insensitive)
                 if delegate_id.lower() in delegate_name.lower():
+                    # Check if this is the delegate we want
+                    if delegate_index is not None and match_count != delegate_index:
+                        match_count += 1
+                        continue
+
                     processed = delegate.get("processed", {})
 
                     # Check for inline data
@@ -567,6 +583,8 @@ def extract_delegate_payload(  # noqa: C901
                                 + extended_header.segment_data_size
                             ]
 
+                    match_count += 1
+
         return None
 
     except Exception as e:
@@ -575,6 +593,175 @@ def extract_delegate_payload(  # noqa: C901
 
         traceback.print_exc()
         return None
+
+
+def show_mlx_summary(pte_data: bytes) -> None:  # noqa: C901
+    """Show summary of all MLX delegates in a PTE file."""
+    try:
+        from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
+
+        program_json = _program_flatbuffer_to_json(pte_data)
+        program_data = json.loads(program_json)
+
+        # Parse extended header
+        extended_header = None
+        if len(pte_data) > 40:
+            try:
+                header = PTEHeader.from_bytes(pte_data[8:])
+                if header.is_valid():
+                    extended_header = header
+            except:
+                pass
+
+        # Find all MLX delegates
+        mlx_delegates = []
+        for plan in program_data.get("execution_plan", []):
+            for i, delegate in enumerate(plan.get("delegates", [])):
+                if "mlx" in delegate.get("id", "").lower():
+                    mlx_delegates.append((i, delegate))
+
+        if not mlx_delegates:
+            print("No MLX delegates found in this PTE file.")
+            return
+
+        print(f"\n{'='*70}")
+        print("MLX DELEGATE SUMMARY")
+        print(f"{'='*70}")
+        print(f"File contains {len(mlx_delegates)} MLX delegate(s)\n")
+
+        segments = program_data.get("segments", [])
+
+        for idx, (delegate_idx, delegate) in enumerate(mlx_delegates):
+            print(f"\n--- Delegate {idx} (plan index {delegate_idx}) ---")
+            print(f"ID: {delegate.get('id', 'unknown')}")
+
+            processed = delegate.get("processed", {})
+            location = processed.get("location", 0)
+            is_segment = location == 1 or location == "SEGMENT"
+
+            if is_segment and extended_header:
+                seg_index = processed.get("index", 0)
+                if seg_index < len(segments):
+                    segment = segments[seg_index]
+                    seg_offset = segment.get("offset", 0)
+                    seg_size = segment.get("size", 0)
+                    print(
+                        f"Segment: index={seg_index}, offset={seg_offset}, size={seg_size:,} bytes"
+                    )
+
+                    # Extract and parse the MLX payload
+                    data_offset = extended_header.segment_base_offset + seg_offset
+                    payload = pte_data[data_offset : data_offset + seg_size]
+
+                    if len(payload) >= MLX_HEADER_LENGTH:
+                        mlx_header = MLXHeader.from_bytes(payload)
+                        if mlx_header.is_valid():
+                            # Parse the flatbuffer
+                            fb_start = MLX_HEADER_LENGTH
+                            fb_end = mlx_header.data_segment_offset
+                            fb_data = payload[fb_start:fb_end]
+
+                            graph_info = parse_mlx_flatbuffer(fb_data)
+
+                            print("\nMLX Graph Info:")
+                            print(
+                                f"  num_constant_tensors:     {graph_info.get('num_constant_tensors', '?')}"
+                            )
+                            print(
+                                f"  num_non_constant_tensors: {graph_info.get('num_non_constant_tensors', '?')}"
+                            )
+                            print(
+                                f"  num_non_constant_values:  {graph_info.get('num_non_constant_values', '?')}"
+                            )
+                            print(
+                                f"  num_instructions:         {graph_info.get('num_instructions', '?')}"
+                            )
+
+                            print("\nI/O Maps:")
+                            print(
+                                f"  input_map length:          {graph_info.get('input_map_length', '?')}"
+                            )
+                            print(
+                                f"  output_map length:         {graph_info.get('output_map_length', '?')}"
+                            )
+                            print(
+                                f"  mutable_buffer_map length: {graph_info.get('mutable_buffer_map_length', '?')}"
+                            )
+
+                            # Calculate expected regular inputs
+                            input_len = graph_info.get("input_map_length", 0)
+                            mutable_len = graph_info.get("mutable_buffer_map_length", 0)
+                            if input_len and mutable_len is not None:
+                                regular_inputs = input_len - mutable_len
+                                print(
+                                    f"  => regular inputs expected: {regular_inputs} (input_map - mutable_buffer_map)"
+                                )
+
+                            # Show input_map details
+                            if "input_map" in graph_info:
+                                print("\n  Input Map Details:")
+                                for i, slot in enumerate(graph_info["input_map"]):
+                                    slot_type_name = {
+                                        0: "Tensor",
+                                        1: "Int",
+                                        2: "Float",
+                                        3: "Bool",
+                                    }.get(slot.get("slot_type", 0), "Unknown")
+                                    print(
+                                        f"    [{i}]: idx={slot.get('idx')}, type={slot_type_name}"
+                                    )
+
+                            # Show mutable_buffer_map details
+                            if (
+                                "mutable_buffer_map" in graph_info
+                                and graph_info["mutable_buffer_map"]
+                            ):
+                                print("\n  Mutable Buffer Map Details:")
+                                for i, slot in enumerate(
+                                    graph_info["mutable_buffer_map"]
+                                ):
+                                    slot_type_name = {
+                                        0: "Tensor",
+                                        1: "Int",
+                                        2: "Float",
+                                        3: "Bool",
+                                    }.get(slot.get("slot_type", 0), "Unknown")
+                                    print(
+                                        f"    [{i}]: idx={slot.get('idx')}, type={slot_type_name}"
+                                    )
+
+                            # Show output_map details
+                            if "output_map" in graph_info:
+                                print("\n  Output Map Details:")
+                                for i, slot in enumerate(graph_info["output_map"]):
+                                    slot_type_name = {
+                                        0: "Tensor",
+                                        1: "Int",
+                                        2: "Float",
+                                        3: "Bool",
+                                    }.get(slot.get("slot_type", 0), "Unknown")
+                                    print(
+                                        f"    [{i}]: idx={slot.get('idx')}, type={slot_type_name}"
+                                    )
+
+                            # Show constant data size
+                            if mlx_header.data_segment_size > 0:
+                                print(
+                                    f"\n  Constant data size: {mlx_header.data_segment_size:,} bytes"
+                                )
+
+                        else:
+                            print(f"  Invalid MLX magic: {mlx_header.magic!r}")
+            else:
+                print("  Location: inline or unknown")
+
+        print(f"\n{'='*70}\n")
+
+    except Exception as e:
+        print(f"Error showing MLX summary: {e}", file=sys.stderr)
+        import traceback
+
+        traceback.print_exc()
 
 
 # =============================================================================
@@ -597,9 +784,21 @@ def main():  # noqa: C901
         help="Extract delegate payload by ID (e.g., 'mlx')",
     )
     parser.add_argument(
+        "--delegate-index",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Index of delegate to extract (0-based). If not specified, extracts first matching delegate.",
+    )
+    parser.add_argument(
         "--parse-mlx",
         action="store_true",
         help="Parse extracted MLX payload (use with --extract-delegate mlx)",
+    )
+    parser.add_argument(
+        "--mlx-summary",
+        action="store_true",
+        help="Show summary of all MLX delegates (input/output/mutable buffer counts)",
     )
     parser.add_argument(
         "--format",
@@ -623,6 +822,11 @@ def main():  # noqa: C901
 
     pte_data = args.pte_file.read_bytes()
     print(f"Loaded {len(pte_data)} bytes from {args.pte_file}", file=sys.stderr)
+
+    # Handle MLX summary
+    if args.mlx_summary:
+        show_mlx_summary(pte_data)
+        return
 
     # Handle delegate extraction
     if args.extract_delegate:
