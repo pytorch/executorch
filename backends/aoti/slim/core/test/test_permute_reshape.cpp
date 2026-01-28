@@ -9,7 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
-#include <executorch/backends/aoti/slim/core/slim_tensor_view_incl.h>
+
 #include <executorch/backends/aoti/slim/factory/empty.h>
 
 #ifdef CUDA_AVAILABLE
