@@ -50,6 +50,22 @@ aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
 
 AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();
 
+// ============================================================
+// Storage & Device Property Getters - Declarations
+// ============================================================
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_storage_offset(Tensor* tensor, int64_t* ret_storage_offset);
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_storage_size(Tensor* tensor, int64_t* ret_size);
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_device_type(Tensor* tensor, int32_t* ret_device_type);
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_device_index(Tensor* tensor, int32_t* ret_device_index);
+
 } // extern "C"
 
 } // namespace aoti
