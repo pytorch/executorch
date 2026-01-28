@@ -16,6 +16,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_im2row_out.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_add.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_atan2.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_bitwise_and.cpp"
@@ -52,6 +53,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_sigmoid.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_sub.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_tanh.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_transpose_copy.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_where.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
@@ -96,6 +98,10 @@ add_library(
   "op_quantize_per_tensor.cpp"
   "op_quantized_relu_out.cpp"
   "op_dequantize_per_tensor.cpp"
+  "op_quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor_out"
+  "op_quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor_out"
+  "op_quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_out"
+  "op_quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_out"
   "op_quantized_conv2d_nchw_out.cpp"
   "op_quantized_conv2d_nhwc_out.cpp"
   "op_quantized_fully_connected_out"
