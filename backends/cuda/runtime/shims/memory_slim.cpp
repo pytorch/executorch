@@ -122,6 +122,20 @@ AOTITorchError aoti_torch_empty_strided(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_delete_tensor_object: tensor is null");
+
+  // SlimTensor uses SharedPtr for storage, so simply deleting the tensor
+  // will automatically handle reference counting and free the underlying
+  // storage when no more references exist.
+  delete tensor;
+
+  return Error::Ok;
+}
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
