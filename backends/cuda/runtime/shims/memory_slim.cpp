@@ -23,6 +23,7 @@ using c10::ScalarType;
 using executorch::backends::aoti::slim::empty_strided;
 using executorch::backends::aoti::slim::from_blob;
 using executorch::backends::aoti::slim::IntArrayRef;
+using executorch::backends::aoti::slim::makeArrayRef;
 
 extern "C" {
 
@@ -72,6 +73,51 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
           static_cast<DeviceType>(device_type),
           static_cast<DeviceIndex>(device_index)),
       storage_offset));
+
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_empty_strided(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    Tensor** ret_new_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_empty_strided: ret_new_tensor is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      !(sizes_ptr == nullptr && ndim > 0),
+      InvalidArgument,
+      "aoti_torch_empty_strided: sizes_ptr is null but ndim > 0");
+
+  IntArrayRef sizes(sizes_ptr, static_cast<size_t>(ndim));
+
+  // Handle nullptr strides by computing contiguous strides
+  if (strides_ptr == nullptr) {
+    std::vector<int64_t> contig_strides =
+        executorch::backends::aoti::slim::compute_contiguous_strides(sizes);
+    *ret_new_tensor = new Tensor(empty_strided(
+        sizes,
+        makeArrayRef(contig_strides),
+        static_cast<ScalarType>(dtype),
+        Device(
+            static_cast<DeviceType>(device_type),
+            static_cast<DeviceIndex>(device_index))));
+  } else {
+    IntArrayRef strides(strides_ptr, static_cast<size_t>(ndim));
+    *ret_new_tensor = new Tensor(empty_strided(
+        sizes,
+        strides,
+        static_cast<ScalarType>(dtype),
+        Device(
+            static_cast<DeviceType>(device_type),
+            static_cast<DeviceIndex>(device_index))));
+  }
 
   return Error::Ok;
 }
