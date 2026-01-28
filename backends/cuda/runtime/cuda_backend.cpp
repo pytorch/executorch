@@ -12,6 +12,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <cctype>
 #include <cstdio>
 
 #include <array>
@@ -19,6 +20,7 @@
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // Include our shim layer headers
@@ -60,6 +62,41 @@ constexpr char kSkipCopyOutputToCpuForMethod[] =
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
+  // Trim leading/trailing whitespace from a view of the string.
+  static std::string_view trim(std::string_view s) {
+    size_t start = 0;
+    while (start < s.size() &&
+           std::isspace(static_cast<unsigned char>(s[start]))) {
+      ++start;
+    }
+    size_t end = s.size();
+    while (end > start &&
+           std::isspace(static_cast<unsigned char>(s[end - 1]))) {
+      --end;
+    }
+    return s.substr(start, end - start);
+  }
+
+  // Check if method_name appears in a comma-separated list.
+  static bool method_in_csv(
+      const std::string& method_name,
+      const std::string& csv) {
+    size_t pos = 0;
+    while (pos <= csv.size()) {
+      const size_t comma = csv.find(',', pos);
+      const std::string_view token =
+          trim(std::string_view(csv).substr(pos, comma - pos));
+      if (!token.empty() && token == method_name) {
+        return true;
+      }
+      if (comma == std::string::npos) {
+        break;
+      }
+      pos = comma + 1;
+    }
+    return false;
+  }
+
   void set_skip_copy_method(
       const std::array<char, kMaxOptionValueLength>& raw) {
     std::lock_guard<std::mutex> guard(skip_copy_method_mutex_);
@@ -83,7 +120,7 @@ class ET_EXPERIMENTAL CudaBackend final
       return false;
     }
     std::lock_guard<std::mutex> guard(skip_copy_method_mutex_);
-    return method_name == skip_copy_method_;
+    return method_in_csv(method_name, skip_copy_method_);
   }
 
   Error load_function_pointers_into_handle(
@@ -316,7 +353,7 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_CHECK_OR_RETURN_ERROR(
           create_err == Error::Ok,
           Internal,
-          "Failed to create GPU tensor for input %d",
+          "Failed to create GPU tensor for input %" ET_PRIsize_t,
           i);
 
       gpu_inputs[i] = gpu_input_handle;
@@ -325,7 +362,7 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_CHECK_OR_RETURN_ERROR(
           aoti_torch_copy_(gpu_inputs[i], cpu_tensor, 0) == Error::Ok,
           Internal,
-          "Failed to copy input %d from CPU to GPU",
+          "Failed to copy input %" ET_PRIsize_t " from CPU to GPU",
           i);
     }
     // Process output tensors: create GPU counterparts for ExecuTorch CPU
@@ -352,7 +389,7 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_CHECK_OR_RETURN_ERROR(
           create_err == Error::Ok,
           Internal,
-          "Failed to create GPU tensor for output %d",
+          "Failed to create GPU tensor for output %" ET_PRIsize_t,
           i);
 
       gpu_outputs[i] = gpu_output_handle;
@@ -382,11 +419,11 @@ class ET_EXPERIMENTAL CudaBackend final
         // For DYNAMIC_BOUND tensors we try to resize
         ET_CHECK_OK_OR_RETURN_ERROR(
             resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
-            "Error resizing tensor at output index %d",
+            "Error resizing tensor at output index %" ET_PRIsize_t,
             i);
         ET_CHECK_OK_OR_RETURN_ERROR(
             aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
-            "Failed to copy GPU output %d back to CPU",
+            "Failed to copy GPU output %" ET_PRIsize_t " back to CPU",
             i);
       }
     } else {
