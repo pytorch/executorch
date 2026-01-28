@@ -1,6 +1,7 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_delegate_aten_mode",
     srcs = [
         "test_delegate_aten_mode.py",
