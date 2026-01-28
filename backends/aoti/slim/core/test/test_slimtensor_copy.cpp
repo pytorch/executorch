@@ -11,7 +11,6 @@
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/core/storage.h>
 
-
 namespace executorch::backends::aoti::slim {
 
 // Helper function to create a CPU storage with given size
