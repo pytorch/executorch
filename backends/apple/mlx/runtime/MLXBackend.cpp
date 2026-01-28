@@ -6,9 +6,9 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-#include "MLXLoader.h"
 #include "MLXExecutor.h"
 #include "MLXInterpreter.h"
+#include "MLXLoader.h"
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -27,7 +27,8 @@ namespace backends {
 namespace mlx {
 
 // Note: We use fully qualified executorch::aten::Tensor because MLXExecutor.h
-// defines Tensor as mlx::core::array in the executorch::backends::mlx namespace.
+// defines Tensor as mlx::core::array in the executorch::backends::mlx
+// namespace.
 using ETTensor = ::executorch::aten::Tensor;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::Backend;
@@ -35,8 +36,8 @@ using ::executorch::runtime::BackendExecutionContext;
 using ::executorch::runtime::BackendInitContext;
 using ::executorch::runtime::CompileSpec;
 using ::executorch::runtime::DelegateHandle;
-using ::executorch::runtime::EValue;
 using ::executorch::runtime::Error;
+using ::executorch::runtime::EValue;
 using ::executorch::runtime::FreeableBuffer;
 using ::executorch::runtime::Result;
 using ::executorch::runtime::Span;
@@ -102,9 +103,11 @@ array tensor_to_mlx(const ETTensor& t) {
     case ::mlx::core::float32:
       return array(static_cast<const float*>(data_ptr), shape, dtype);
     case ::mlx::core::float16:
-      return array(static_cast<const ::mlx::core::float16_t*>(data_ptr), shape, dtype);
+      return array(
+          static_cast<const ::mlx::core::float16_t*>(data_ptr), shape, dtype);
     case ::mlx::core::bfloat16:
-      return array(static_cast<const ::mlx::core::bfloat16_t*>(data_ptr), shape, dtype);
+      return array(
+          static_cast<const ::mlx::core::bfloat16_t*>(data_ptr), shape, dtype);
     case ::mlx::core::int32:
       return array(static_cast<const int32_t*>(data_ptr), shape, dtype);
     case ::mlx::core::int64:
@@ -127,7 +130,8 @@ void mlx_to_tensor(const array& arr, ETTensor& out) {
   array contiguous_arr = ::mlx::core::contiguous(arr);
   eval(contiguous_arr);
 
-  // Update output tensor shape to match actual MLX output shape (for dynamic shapes)
+  // Update output tensor shape to match actual MLX output shape (for dynamic
+  // shapes)
   const auto& mlx_shape = contiguous_arr.shape();
   auto out_sizes = out.sizes();
 
@@ -144,8 +148,12 @@ void mlx_to_tensor(const array& arr, ETTensor& out) {
 
   if (!shape_matches) {
     // Create new sizes array for resize
-    std::vector<executorch::aten::SizesType> new_sizes(mlx_shape.begin(), mlx_shape.end());
-    auto err = resize_tensor(out, ArrayRef<executorch::aten::SizesType>(new_sizes.data(), new_sizes.size()));
+    std::vector<executorch::aten::SizesType> new_sizes(
+        mlx_shape.begin(), mlx_shape.end());
+    auto err = resize_tensor(
+        out,
+        ArrayRef<executorch::aten::SizesType>(
+            new_sizes.data(), new_sizes.size()));
     if (err != Error::Ok) {
       ET_LOG(Error, "Failed to resize output tensor for dynamic shape");
       // Fall through - will copy what we can
@@ -157,7 +165,7 @@ void mlx_to_tensor(const array& arr, ETTensor& out) {
   std::memcpy(out_ptr, contiguous_arr.data<void>(), nbytes);
 }
 
-}  // namespace
+} // namespace
 
 struct MLXHandle {
   MLXProgram program;
@@ -184,8 +192,8 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-
-    auto* handle = context.get_runtime_allocator()->allocateInstance<MLXHandle>();
+    auto* handle =
+        context.get_runtime_allocator()->allocateInstance<MLXHandle>();
     if (handle == nullptr) {
       return Error::MemoryAllocationFailed;
     }
@@ -194,16 +202,15 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
 
     try {
       handle->program = loader::load_program(
-          static_cast<const uint8_t*>(processed->data()),
-          processed->size());
+          static_cast<const uint8_t*>(processed->data()), processed->size());
 
       load_constants(handle->program, handle->constants);
       load_mutable_buffers(handle->program, handle->mutable_buffers);
     } catch (const std::exception& e) {
-        ET_LOG(Error, "Failed to load MLX program: %s", e.what());
-        handle->~MLXHandle();
-        return Error::InvalidProgram;
-      }
+      ET_LOG(Error, "Failed to load MLX program: %s", e.what());
+      handle->~MLXHandle();
+      return Error::InvalidProgram;
+    }
 
     processed->Free();
 
@@ -214,7 +221,6 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
-
     auto* mlx_handle = static_cast<MLXHandle*>(handle);
     const auto& program = mlx_handle->program;
 
@@ -240,7 +246,8 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       const auto& slot = program.output_map[i];
       if (slot.slot_type == SlotType::TensorSlot) {
         // Check if this is a mutable buffer (BUFFER_MUTATION output)
-        // Mutable buffer outputs don't need ExecuTorch output tensors - they're updated in-place
+        // Mutable buffer outputs don't need ExecuTorch output tensors - they're
+        // updated in-place
         if (mutable_buffer_tids.find(slot.idx) == mutable_buffer_tids.end()) {
           num_tensor_outputs++;
         }
@@ -270,7 +277,8 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
         }
       } else if (args[i]->isInt()) {
         // Int args after inputs should be int outputs
-        if (input_tensors.size() >= num_regular_inputs && output_ints.size() < num_int_outputs) {
+        if (input_tensors.size() >= num_regular_inputs &&
+            output_ints.size() < num_int_outputs) {
           output_ints.push_back(args[i]);
         }
       } else if (args[i]->isTensorList()) {
@@ -286,11 +294,19 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     if (input_tensors.size() != num_regular_inputs) {
-      ET_LOG(Error, "Expected %zu regular inputs, got %zu", num_regular_inputs, input_tensors.size());
+      ET_LOG(
+          Error,
+          "Expected %zu regular inputs, got %zu",
+          num_regular_inputs,
+          input_tensors.size());
       return Error::InvalidArgument;
     }
     if (output_tensors.size() != num_tensor_outputs) {
-      ET_LOG(Error, "Expected %zu tensor outputs, got %zu", num_tensor_outputs, output_tensors.size());
+      ET_LOG(
+          Error,
+          "Expected %zu tensor outputs, got %zu",
+          num_tensor_outputs,
+          output_tensors.size());
       return Error::InvalidArgument;
     }
 
@@ -301,7 +317,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
         Tid tid{slot.idx};
         // Get the delegate-owned MLX array (persists across executions)
         array& arr = mlx_handle->mutable_buffers.get(tid);
-        state.set_tensor(tid, arr);  // Copy to state
+        state.set_tensor(tid, arr); // Copy to state
       }
     }
 
@@ -352,7 +368,8 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       const auto& slot = program.output_map[i];
       if (slot.slot_type == SlotType::TensorSlot) {
         Tid tid{slot.idx};
-        // Skip mutable buffer outputs - they don't have ExecuTorch output tensors
+        // Skip mutable buffer outputs - they don't have ExecuTorch output
+        // tensors
         if (mutable_buffer_tids.find(slot.idx) != mutable_buffer_tids.end()) {
           continue;
         }
@@ -374,7 +391,8 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       const auto& slot = program.output_map[i];
       if (slot.slot_type == SlotType::IntValueSlot) {
         Vid<int32_t> vid{slot.idx};
-        int64_t int_val = static_cast<int64_t>(state.const_value_ref<int32_t>(vid));
+        int64_t int_val =
+            static_cast<int64_t>(state.const_value_ref<int32_t>(vid));
         *output_ints[int_idx] = EValue(int_val);
         int_idx++;
       }
@@ -395,8 +413,8 @@ namespace {
 auto cls = MLXBackend();
 Backend backend{"MLXBackend", &cls};
 static auto success_with_compiler = register_backend(backend);
-}  // namespace
+} // namespace
 
-}  // namespace mlx
-}  // namespace backends
-}  // namespace executorch
+} // namespace mlx
+} // namespace backends
+} // namespace executorch

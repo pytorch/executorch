@@ -28,7 +28,13 @@ Requirements:
 import argparse
 import logging
 import os
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from transformers import AutoModelForCausalLM
+
+# Import custom MLX ops for rms_norm and apply_rope
+import executorch.backends.apple.mlx.ops  # noqa: F401
 
 import torch
 import torch.nn as nn
@@ -36,9 +42,6 @@ import torch.nn.functional as F
 
 # Import custom ops to register llama.update_cache
 from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
-
-# Import custom MLX ops for rms_norm and apply_rope
-import executorch.backends.apple.mlx.ops  # noqa: F401
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -72,10 +75,10 @@ class CustomRMSNorm(nn.Module):
 def kv_update_and_window(
     k_cache: torch.Tensor,  # [B, Hkv, T_max, D]
     v_cache: torch.Tensor,  # [B, Hkv, T_max, D]
-    k_step: torch.Tensor,   # [B, Hkv, T_step, D]
-    v_step: torch.Tensor,   # [B, Hkv, T_step, D]
+    k_step: torch.Tensor,  # [B, Hkv, T_step, D]
+    v_step: torch.Tensor,  # [B, Hkv, T_step, D]
     input_pos: int,  # Position as int (SymInt during tracing from .item())
-    seq_len: int,    # Sequence length as int (backed from tensor.size())
+    seq_len: int,  # Sequence length as int (backed from tensor.size())
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Update KV cache using llama.update_cache and return cache for SDPA.
@@ -224,8 +227,12 @@ class KVCacheAttention(nn.Module):
         self.rope_base = rope_base
 
         # Initialize KV cache buffers
-        k0 = torch.zeros((1, self.num_key_value_heads, self.T_max, self.head_dim), dtype=dtype)
-        v0 = torch.zeros((1, self.num_key_value_heads, self.T_max, self.head_dim), dtype=dtype)
+        k0 = torch.zeros(
+            (1, self.num_key_value_heads, self.T_max, self.head_dim), dtype=dtype
+        )
+        v0 = torch.zeros(
+            (1, self.num_key_value_heads, self.T_max, self.head_dim), dtype=dtype
+        )
         self.register_buffer("k_cache", k0, persistent=False)
         self.register_buffer("v_cache", v0, persistent=False)
 
@@ -250,17 +257,25 @@ class KVCacheAttention(nn.Module):
         k_bhtd = k_bthd.permute(0, 2, 1, 3).contiguous()  # [B,Hkv,T,D]
         v_bhtd = v_bthd.permute(0, 2, 1, 3).contiguous()  # [B,Hkv,T,D]
 
-        # 4) Apply RoPE using custom mlx::apply_rope op
+        # 4) Apply RoPE using custom mlx::rope op (once for Q, once for K)
         # This op is preserved through lowering and handled by MLX backend
-        q_bhtd, k_bhtd = torch.ops.mlx.apply_rope(
-            q_bhtd,         # [B,H,T,D]
-            k_bhtd,         # [B,Hkv,T,D]
+        q_bhtd = torch.ops.mlx.rope(
+            q_bhtd,  # [B,H,T,D]
             self.head_dim,
-            pos_int,        # int from .item() at top level
-            False,          # traditional
-            self.rope_base, # base
-            1.0,            # scale
-            None,           # freqs
+            pos_int,  # int from .item() at top level
+            False,  # traditional
+            self.rope_base,  # base
+            1.0,  # scale
+            None,  # freqs
+        )
+        k_bhtd = torch.ops.mlx.rope(
+            k_bhtd,  # [B,Hkv,T,D]
+            self.head_dim,
+            pos_int,  # int from .item() at top level
+            False,  # traditional
+            self.rope_base,  # base
+            1.0,  # scale
+            None,  # freqs
         )
 
         # 5) Update KV cache
@@ -271,13 +286,13 @@ class KVCacheAttention(nn.Module):
             k_bhtd,
             v_bhtd,
             pos_int,  # int (unbacked from .item() at top level)
-            T,        # int (backed from hidden_states.size())
+            T,  # int (backed from hidden_states.size())
         )
 
         # 6) Prepare for SDPA
-        q_ = q_bhtd                    # [B,H,T,D]
-        k_ = k_win                     # [B,Hkv,T,D]
-        v_ = v_win                     # [B,Hkv,T,D]
+        q_ = q_bhtd  # [B,H,T,D]
+        k_ = k_win  # [B,Hkv,T,D]
+        v_ = v_win  # [B,Hkv,T,D]
 
         B_, Hq_, T_, Dh_ = q_.shape
         _, Hkv_, Tk_, Dhk_ = k_.shape
@@ -316,9 +331,7 @@ class KVCacheAttention(nn.Module):
 
         # 8) Reshape back and output projection
         attn_out = (
-            attn_out.permute(0, 2, 1, 3)   # [B,T,H,D]
-            .contiguous()
-            .view(B, T, H * Dh)
+            attn_out.permute(0, 2, 1, 3).contiguous().view(B, T, H * Dh)  # [B,T,H,D]
         )
         out = self.o_proj(attn_out)
         return out
@@ -350,14 +363,18 @@ class LlamaWithFunctionalKV(nn.Module):
         # Swap RMSNorm modules with custom op version
         for layer in self.model.model.layers:
             layer.input_layernorm = CustomRMSNorm(layer.input_layernorm)
-            layer.post_attention_layernorm = CustomRMSNorm(layer.post_attention_layernorm)
+            layer.post_attention_layernorm = CustomRMSNorm(
+                layer.post_attention_layernorm
+            )
         self.model.model.norm = CustomRMSNorm(self.model.model.norm)
 
         # Get config for attention dimensions
         cfg = base.config
-        fallback_hidden_size = int(getattr(cfg, "hidden_size"))
-        fallback_num_heads = int(getattr(cfg, "num_attention_heads"))
-        fallback_num_kv_heads = int(getattr(cfg, "num_key_value_heads", fallback_num_heads))
+        fallback_hidden_size = int(cfg.hidden_size)
+        fallback_num_heads = int(cfg.num_attention_heads)
+        fallback_num_kv_heads = int(
+            getattr(cfg, "num_key_value_heads", fallback_num_heads)
+        )
         T_max = max_seq_len
         dtype = base.model.embed_tokens.weight.dtype
 
@@ -456,30 +473,38 @@ def export_llama_to_mlx(
     if quantize:
         logger.info(f"Applying {quantize} quantization...")
         try:
-            from torchao.quantization.quant_api import quantize_, IntxWeightOnlyConfig
             from torchao.quantization.granularity import PerGroup
+            from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 
             if quantize == "int4":
                 # Quantize embeddings with group size 32
                 quantize_(
                     model,
-                    IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+                    IntxWeightOnlyConfig(
+                        weight_dtype=torch.int4, granularity=PerGroup(32)
+                    ),
                     lambda m, fqn: isinstance(m, torch.nn.Embedding),
                 )
                 # Quantize linear layers with group size 64
                 quantize_(
                     model,
-                    IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(64)),
+                    IntxWeightOnlyConfig(
+                        weight_dtype=torch.int4, granularity=PerGroup(64)
+                    ),
                 )
             elif quantize == "int8":
                 quantize_(
                     model,
-                    IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerGroup(32)),
+                    IntxWeightOnlyConfig(
+                        weight_dtype=torch.int8, granularity=PerGroup(32)
+                    ),
                     lambda m, fqn: isinstance(m, torch.nn.Embedding),
                 )
                 quantize_(
                     model,
-                    IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerGroup(64)),
+                    IntxWeightOnlyConfig(
+                        weight_dtype=torch.int8, granularity=PerGroup(64)
+                    ),
                 )
             else:
                 logger.warning(f"Unknown quantization method: {quantize}")
@@ -492,7 +517,6 @@ def export_llama_to_mlx(
 
     # Prepare example inputs for export
     # input_pos is a [1] tensor, we call input_pos[0].item() to get the SymInt
-    example_seq_len = 3
     token_ids = torch.tensor([[1, 2, 3]], dtype=torch.long)
     input_pos = torch.tensor([0], dtype=torch.long)  # Rank-1 tensor [1]
     example_inputs = (token_ids, input_pos)
@@ -500,7 +524,9 @@ def export_llama_to_mlx(
     # Set up dynamic shapes for variable sequence length
     dynamic_shapes = {
         "token_ids": {1: torch.export.Dim.AUTO(min=1, max=2048)},
-        "input_pos": {0: torch.export.Dim.AUTO(min=1, max=max_seq_len)},  # Dynamic length
+        "input_pos": {
+            0: torch.export.Dim.AUTO(min=1, max=max_seq_len)
+        },  # Dynamic length
     }
 
     logger.info("Exporting model with torch.export...")
@@ -511,9 +537,9 @@ def export_llama_to_mlx(
     logger.info("Delegating to MLX backend...")
     import executorch.exir as exir
     from executorch.backends.apple.mlx import MLXPartitioner
+    from executorch.exir import EdgeCompileConfig
     from executorch.exir.backend.backend_details import CompileSpec
     from executorch.exir.capture._config import ExecutorchBackendConfig
-    from executorch.exir import EdgeCompileConfig
 
     compile_specs = [CompileSpec("use_fp16", bytes([False]))]
 
@@ -553,9 +579,7 @@ def export_llama_to_mlx(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Export Llama model to MLX delegate"
-    )
+    parser = argparse.ArgumentParser(description="Export Llama model to MLX delegate")
     parser.add_argument(
         "--model-id",
         type=str,

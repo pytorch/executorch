@@ -26,15 +26,17 @@ set(_common_compile_options -Wno-deprecated-declarations)
 # -----------------------------------------------------------------------------
 # Code generation from schema.fbs
 # -----------------------------------------------------------------------------
-# 
-# The generate.py script generates all code from schema.fbs:
-#   - Python: mlx_graph_schema.py, _generated_serializers.py, _generated/
-#   - C++: MLXLoader.h, MLXLoader.cpp, schema_generated.h
+#
+# The generate.py script generates all code from schema.fbs: - Python:
+# mlx_graph_schema.py, _generated_serializers.py, _generated/ - C++:
+# MLXLoader.h, MLXLoader.cpp, schema_generated.h
 #
 # We run generate.py at build time so these files don't need to be checked in.
 # -----------------------------------------------------------------------------
 
-set(_mlx_generate_script "${CMAKE_CURRENT_SOURCE_DIR}/serialization/generate.py")
+set(_mlx_generate_script
+    "${CMAKE_CURRENT_SOURCE_DIR}/serialization/generate.py"
+)
 set(_mlx_schema_fbs "${CMAKE_CURRENT_SOURCE_DIR}/serialization/schema.fbs")
 
 # Generated C++ files that we need for compilation
@@ -51,15 +53,20 @@ set(_mlx_generated_python_files
     "${CMAKE_CURRENT_SOURCE_DIR}/serialization/_generated_parsers.py"
 )
 
-# Run generate.py to create all generated files from schema.fbs
-# Find Python - prefer Python3_EXECUTABLE if set (from FindPython3), otherwise use PYTHON_EXECUTABLE
+# Run generate.py to create all generated files from schema.fbs Find Python -
+# prefer Python3_EXECUTABLE if set (from FindPython3), otherwise use
+# PYTHON_EXECUTABLE
 if(Python3_EXECUTABLE)
-    set(_python_executable ${Python3_EXECUTABLE})
+  set(_python_executable ${Python3_EXECUTABLE})
 elseif(PYTHON_EXECUTABLE)
-    set(_python_executable ${PYTHON_EXECUTABLE})
+  set(_python_executable ${PYTHON_EXECUTABLE})
 else()
-    find_package(Python3 COMPONENTS Interpreter REQUIRED)
-    set(_python_executable ${Python3_EXECUTABLE})
+  find_package(
+    Python3
+    COMPONENTS Interpreter
+    REQUIRED
+  )
+  set(_python_executable ${Python3_EXECUTABLE})
 endif()
 
 add_custom_command(
@@ -72,8 +79,9 @@ add_custom_command(
 )
 
 # Custom target to trigger generation
-add_custom_target(mlx_generate_code
-  DEPENDS ${_mlx_generated_cpp_files} ${_mlx_generated_python_files}
+add_custom_target(
+  mlx_generate_code DEPENDS ${_mlx_generated_cpp_files}
+                            ${_mlx_generated_python_files}
 )
 
 # Interface library for schema includes
@@ -93,35 +101,70 @@ target_include_directories(
 include(FetchContent)
 
 # MLX build options - we only need the C++ library
-set(MLX_BUILD_PYTHON_BINDINGS OFF CACHE BOOL "" FORCE)
-set(MLX_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(MLX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(MLX_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
-set(MLX_BUILD_CPU OFF CACHE BOOL "" FORCE)
-set(MLX_BUILD_METAL ON CACHE BOOL "" FORCE)
-set(MLX_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(MLX_BUILD_GGUF OFF CACHE BOOL "" FORCE)
-set(MLX_BUILD_SAFETENSORS OFF CACHE BOOL "" FORCE)
-set(MLX_METAL_JIT OFF CACHE BOOL "" FORCE)
+set(MLX_BUILD_PYTHON_BINDINGS
+    OFF
+    CACHE BOOL "" FORCE
+)
+set(MLX_BUILD_TESTS
+    OFF
+    CACHE BOOL "" FORCE
+)
+set(MLX_BUILD_EXAMPLES
+    OFF
+    CACHE BOOL "" FORCE
+)
+set(MLX_BUILD_BENCHMARKS
+    OFF
+    CACHE BOOL "" FORCE
+)
+set(MLX_BUILD_CPU
+    OFF
+    CACHE BOOL "" FORCE
+)
+set(MLX_BUILD_METAL
+    ON
+    CACHE BOOL "" FORCE
+)
+set(MLX_BUILD_SHARED_LIBS
+    OFF
+    CACHE BOOL "" FORCE
+)
+set(MLX_BUILD_GGUF
+    OFF
+    CACHE BOOL "" FORCE
+)
+set(MLX_BUILD_SAFETENSORS
+    OFF
+    CACHE BOOL "" FORCE
+)
+set(MLX_METAL_JIT
+    OFF
+    CACHE BOOL "" FORCE
+)
 
-# MLX uses FetchContent for json. When FetchContent_MakeAvailable(json) is called,
-# it will run add_subdirectory on the json source. ExecuTorch already adds json via
-# add_subdirectory(third-party/json) BEFORE this backend is processed.
+# MLX uses FetchContent for json. When FetchContent_MakeAvailable(json) is
+# called, it will run add_subdirectory on the json source. ExecuTorch already
+# adds json via add_subdirectory(third-party/json) BEFORE this backend is
+# processed.
 #
 # To prevent the conflict, we patch MLX's CMakeLists.txt to wrap the json fetch
 # in a target check. The patch file is in backends/apple/mlx/patches/
 
-# Ensure CMAKE_OSX_DEPLOYMENT_TARGET is set for MLX's version check.
-# MLX requires macOS >= 14.0. If not set, default to 14.0.
+# Ensure CMAKE_OSX_DEPLOYMENT_TARGET is set for MLX's version check. MLX
+# requires macOS >= 14.0. If not set, default to 14.0.
 if(NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version" FORCE)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET
+      "14.0"
+      CACHE STRING "Minimum macOS version" FORCE
+  )
 endif()
 
 FetchContent_Declare(
   mlx
   GIT_REPOSITORY https://github.com/ml-explore/mlx.git
   GIT_TAG v0.30.3
-  PATCH_COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch || true
+  PATCH_COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch ||
+                true
 )
 
 message(STATUS "Fetching MLX...")
@@ -131,9 +174,8 @@ FetchContent_MakeAvailable(mlx)
 # MLX Backend library
 # -----------------------------------------------------------------------------
 
-set(_mlx_backend__srcs
-    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXLoader.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXBackend.cpp
+set(_mlx_backend__srcs ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXLoader.cpp
+                       ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXBackend.cpp
 )
 
 add_library(mlxdelegate ${_mlx_backend__srcs})
@@ -142,21 +184,12 @@ add_library(mlxdelegate ${_mlx_backend__srcs})
 add_dependencies(mlxdelegate mlx_schema flatc)
 
 target_include_directories(
-  mlxdelegate
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/runtime
-    ${_mlx_schema__include_dir}
-    ${mlx_SOURCE_DIR}
+  mlxdelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime
+                      ${_mlx_schema__include_dir} ${mlx_SOURCE_DIR}
 )
 
 # Link against MLX and executorch
-target_link_libraries(
-  mlxdelegate
-  PRIVATE
-    mlx_schema
-    executorch_core
-    mlx
-)
+target_link_libraries(mlxdelegate PRIVATE mlx_schema executorch_core mlx)
 
 executorch_target_link_options_shared_lib(mlxdelegate)
 target_compile_options(mlxdelegate PUBLIC ${_common_compile_options})
