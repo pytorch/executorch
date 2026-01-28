@@ -10,10 +10,10 @@
 
 #include "MLXExecutor.h"
 
-#include <mlx/mlx.h>
 #include <mlx/array.h>
-#include <mlx/ops.h>
 #include <mlx/fast.h>
+#include <mlx/mlx.h>
+#include <mlx/ops.h>
 
 namespace executorch {
 namespace backends {
@@ -54,18 +54,29 @@ inline array gelu_impl(const array& x, StreamOrDevice s = {}) {
 }
 
 // ----- Noop -----
-inline void exec_noop(
-    const NoopNode&,
-    ExecutionState&,
-    StreamOrDevice) {
+inline void exec_noop(const NoopNode&, ExecutionState&, StreamOrDevice) {
   // Do nothing
 }
 
+// ----- Addmm -----
+inline void
+exec_addmm(const AddmmNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& mat1 = st.const_tensor_ref(n.mat1);
+  const auto& mat2 = st.const_tensor_ref(n.mat2);
+
+  array Y = matmul(mat1, mat2, s);
+
+  if (n.bias) {
+    const auto& b = st.const_tensor_ref(*n.bias);
+    Y = add(Y, b, s);
+  }
+
+  st.set_tensor(n.out, std::move(Y));
+}
+
 // ----- Linear -----
-inline void exec_linear(
-    const LinearNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_linear(const LinearNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& X = st.const_tensor_ref(n.x);
   auto W = st.const_tensor_ref(n.weight);
   W = transpose(W, {1, 0}, s);
@@ -81,10 +92,8 @@ inline void exec_linear(
 }
 
 // ----- Item Int -----
-inline void exec_item_int(
-    const ItemIntNode& n,
-    ExecutionState& st,
-    StreamOrDevice) {
+inline void
+exec_item_int(const ItemIntNode& n, ExecutionState& st, StreamOrDevice) {
   int item = st.const_tensor_ref(n.x).item<int>();
   st.set_value(n.out, item);
 }
@@ -98,10 +107,7 @@ inline void exec_expand_dims(
 }
 
 // ----- Tile -----
-inline void exec_tile(
-    const TileNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void exec_tile(const TileNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, tile(st.const_tensor_ref(n.x), n.reps, s));
 }
 
@@ -113,27 +119,20 @@ inline void exec_take_along_axis(
   st.set_tensor(
       n.out,
       take_along_axis(
-          st.const_tensor_ref(n.x),
-          st.const_tensor_ref(n.indices),
-          n.axis,
-          s));
+          st.const_tensor_ref(n.x), st.const_tensor_ref(n.indices), n.axis, s));
 }
 
 // ----- RMS Norm -----
-inline void exec_rms_norm(
-    const RMSNormNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_rms_norm(const RMSNormNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   const auto& w = st.const_tensor_ref(n.weight);
   st.set_tensor(n.out, fast::rms_norm(x, w, n.eps, s));
 }
 
 // ----- Layer Norm -----
-inline void exec_layer_norm(
-    const LayerNormNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_layer_norm(const LayerNormNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
 
   std::optional<array> w = std::nullopt;
@@ -148,13 +147,8 @@ inline void exec_layer_norm(
 }
 
 // ----- RoPE -----
-inline void exec_rope(
-    const RopeNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
-  const array& Q = st.const_tensor_ref(n.q_in);
-  const array& K = st.const_tensor_ref(n.k_in);
-
+inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
+  const array& x = st.const_tensor_ref(n.x);
   const int offset = st.const_value_ref<int32_t>(n.pos);
 
   std::optional<array> freqs_arr = std::nullopt;
@@ -162,18 +156,14 @@ inline void exec_rope(
     freqs_arr = st.const_tensor_ref(*n.freqs);
   }
 
-  array Qr = fast::rope(Q, n.head_dim, n.traditional, n.base, n.scale, offset, freqs_arr, s);
-  array Kr = fast::rope(K, n.head_dim, n.traditional, n.base, n.scale, offset, freqs_arr, s);
+  array out = fast::rope(
+      x, n.head_dim, n.traditional, n.base, n.scale, offset, freqs_arr, s);
 
-  st.set_tensor(n.q_out, std::move(Qr));
-  st.set_tensor(n.k_out, std::move(Kr));
+  st.set_tensor(n.out, std::move(out));
 }
 
 // ----- SDPA -----
-inline void exec_sdpa(
-    const SdpaNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   array Q = st.const_tensor_ref(n.q);
   array K = st.const_tensor_ref(n.k);
   array V = st.const_tensor_ref(n.v);
@@ -199,30 +189,22 @@ inline void exec_sdpa(
 }
 
 // ----- Add -----
-inline void exec_add(
-    const AddNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void exec_add(const AddNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
-      n.out,
-      add(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+      n.out, add(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
 // ----- Add Scalar -----
-inline void exec_add_scalar(
-    const AddScalarNode& n,
-    ExecutionState& st,
-    StreamOrDevice) {
+inline void
+exec_add_scalar(const AddScalarNode& n, ExecutionState& st, StreamOrDevice) {
   int32_t a = resolve_int(n.a, st);
   int32_t b = resolve_int(n.b, st);
   st.set_value(n.out, a + b);
 }
 
 // ----- Sym Size -----
-inline void exec_sym_size(
-    const SymSizeNode& n,
-    ExecutionState& st,
-    StreamOrDevice) {
+inline void
+exec_sym_size(const SymSizeNode& n, ExecutionState& st, StreamOrDevice) {
   const array& a = st.const_tensor_ref(n.a);
   int rank = static_cast<int>(a.ndim());
   int dim = n.dim;
@@ -237,20 +219,14 @@ inline void exec_sym_size(
 }
 
 // ----- Mul -----
-inline void exec_mul(
-    const MulNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void exec_mul(const MulNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
-      n.out,
-      multiply(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+      n.out, multiply(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
 // ----- Conv1D -----
-inline void exec_conv1d(
-    const Conv1DNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_conv1d(const Conv1DNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   const auto& w = st.const_tensor_ref(n.w);
   auto out = conv1d(x, w, n.stride, n.padding, n.dilation, n.groups, s);
@@ -258,89 +234,71 @@ inline void exec_conv1d(
 }
 
 // ----- GELU -----
-inline void exec_gelu(
-    const GeluNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void exec_gelu(const GeluNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, gelu_impl(x, s));
 }
 
 // ----- ARange -----
-inline void exec_arange(
-    const ARangeNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_arange(const ARangeNode& n, ExecutionState& st, StreamOrDevice s) {
   // dtype uses _is_set pattern, but the value will be serialized with default
   // if not explicitly set by user. Python serializer handles defaults.
-  st.set_tensor(n.out, arange(n.start, n.stop, n.step, to_mlx_dtype(n.dtype), s));
+  st.set_tensor(
+      n.out, arange(n.start, n.stop, n.step, to_mlx_dtype(n.dtype), s));
 }
 
 // ----- SiLU -----
-inline void exec_silu(
-    const SiluNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void exec_silu(const SiluNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, multiply(x, sigmoid(x, s), s));
 }
 
 // ----- Reshape -----
-inline void exec_reshape(
-    const ReshapeNode& n,
-    ExecutionState& st,
-    StreamOrDevice) {
+inline void
+exec_reshape(const ReshapeNode& n, ExecutionState& st, StreamOrDevice) {
   auto new_shape = to_shape(n.shape, st);
   st.set_tensor(n.out, reshape(st.const_tensor_ref(n.x), new_shape));
 }
 
 // ----- Transpose -----
-inline void exec_transpose(
-    const TransposeNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_transpose(const TransposeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, transpose(st.const_tensor_ref(n.x), n.perm, s));
 }
 
 // ----- Contiguous -----
-inline void exec_contiguous(
-    const ContiguousNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_contiguous(const ContiguousNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, contiguous(st.const_tensor_ref(n.x), false, s));
 }
 
 // ----- Id Copy -----
-inline void exec_id_copy(
-    const IdCopyNode& n,
-    ExecutionState& st,
-    StreamOrDevice) {
+inline void
+exec_id_copy(const IdCopyNode& n, ExecutionState& st, StreamOrDevice) {
   st.set_tensor(n.out, st.const_tensor_ref(n.x));
 }
 
 // ----- Gather -----
-inline void exec_gather(
-    const GatherNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_gather(const GatherNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out,
       take(st.const_tensor_ref(n.table_), st.const_tensor_ref(n.ids), 0, s));
 }
 
 // ----- Slice -----
-inline void exec_slice(
-    const SliceNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   const array& x = st.const_tensor_ref(n.x);
   const int rank = static_cast<int>(x.ndim());
 
   int axis = resolve_int(n.axis, st);
   int start = resolve_int(n.start, st);
-  int stop = resolve_int(n.end, st);
+  int stop = resolve_int(n.stop, st);
 
-  if (axis < 0) axis += rank;
+  if (axis < 0)
+    axis += rank;
   if (axis < 0 || axis >= rank) {
     throw std::out_of_range("Slice: axis out of range");
   }
@@ -354,9 +312,11 @@ inline void exec_slice(
   }
 
   const int dim = vstop[axis];
-  if (start < 0) start += dim;
+  if (start < 0)
+    start += dim;
   start = std::max(0, std::min(start, dim));
-  if (stop < 0) stop += dim;
+  if (stop < 0)
+    stop += dim;
   stop = std::max(0, std::min(stop, dim));
 
   vstart[axis] = start;
@@ -366,13 +326,9 @@ inline void exec_slice(
 }
 
 // ----- Cast -----
-inline void exec_cast(
-    const CastNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void exec_cast(const CastNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
-      n.out,
-      astype(st.const_tensor_ref(n.x), to_mlx_dtype(n.dtype), s));
+      n.out, astype(st.const_tensor_ref(n.x), to_mlx_dtype(n.dtype), s));
 }
 
 // ----- Quantized Linear -----
@@ -413,47 +369,33 @@ inline void exec_quantized_linear(
 }
 
 // ----- Concat -----
-inline void exec_concat(
-    const ConcatNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_concat(const ConcatNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out,
       concatenate(
-          {st.const_tensor_ref(n.a), st.const_tensor_ref(n.b)},
-          n.axis,
-          s));
+          {st.const_tensor_ref(n.a), st.const_tensor_ref(n.b)}, n.axis, s));
 }
 
 // ----- Full -----
-inline void exec_full(
-    const FullNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void exec_full(const FullNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, full(to_shape(n.shape), n.v, to_mlx_dtype(n.dtype), s));
 }
 
 // ----- Zeros -----
-inline void exec_zeros(
-    const ZerosNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_zeros(const ZerosNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, zeros(to_shape(n.shape), to_mlx_dtype(n.dtype), s));
 }
 
 // ----- Ones -----
-inline void exec_ones(
-    const OnesNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void exec_ones(const OnesNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, ones(to_shape(n.shape), to_mlx_dtype(n.dtype), s));
 }
 
 // ----- Argmax -----
-inline void exec_argmax(
-    const ArgmaxNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_argmax(const ArgmaxNode& n, ExecutionState& st, StreamOrDevice s) {
   array idx = argmax(st.const_tensor_ref(n.x), n.axis, s);
   st.set_tensor(n.out, std::move(idx));
 }
@@ -472,7 +414,8 @@ inline void exec_slice_update(
   int start = resolve_int(n.start, st);
   int stop = resolve_int(n.stop, st);
 
-  if (axis < 0) axis += rank;
+  if (axis < 0)
+    axis += rank;
   if (axis < 0 || axis >= rank) {
     throw std::out_of_range("SliceUpdate: axis out of range");
   }
@@ -487,9 +430,11 @@ inline void exec_slice_update(
 
   const int dst_dim = vstop[axis];
 
-  if (start < 0) start += dst_dim;
+  if (start < 0)
+    start += dst_dim;
   start = std::max(0, std::min(start, dst_dim));
-  if (stop < 0) stop += dst_dim;
+  if (stop < 0)
+    stop += dst_dim;
   stop = std::max(0, std::min(stop, dst_dim));
 
   vstart[axis] = start;
@@ -526,7 +471,7 @@ inline void exec_quantized_gather(
       n.group_size,
       n.bits,
       n.mode,
-      std::nullopt,  // dtype - let MLX infer
+      std::nullopt, // dtype - let MLX infer
       s);
 
   if (to_mlx_dtype(n.out_dtype) != Y.dtype()) {
@@ -536,7 +481,7 @@ inline void exec_quantized_gather(
   st.set_tensor(n.out, std::move(Y));
 }
 
-}  // namespace ops
+} // namespace ops
 
 // =============================================================================
 // Interpreter - dispatch loop
@@ -554,13 +499,14 @@ class Interpreter {
   }
 
  private:
-  void dispatch(
-      const Instruction& instr,
-      ExecutionState& st,
-      StreamOrDevice s) const {
+  void dispatch(const Instruction& instr, ExecutionState& st, StreamOrDevice s)
+      const {
     switch (instr.op) {
       case OpCode::NOOP:
         ops::exec_noop(std::get<NoopNode>(instr.node), st, s);
+        break;
+      case OpCode::ADDMM:
+        ops::exec_addmm(std::get<AddmmNode>(instr.node), st, s);
         break;
       case OpCode::LINEAR:
         ops::exec_linear(std::get<LinearNode>(instr.node), st, s);
@@ -575,7 +521,8 @@ class Interpreter {
         ops::exec_tile(std::get<TileNode>(instr.node), st, s);
         break;
       case OpCode::TAKE_ALONG_AXIS:
-        ops::exec_take_along_axis(std::get<TakeAlongAxisNode>(instr.node), st, s);
+        ops::exec_take_along_axis(
+            std::get<TakeAlongAxisNode>(instr.node), st, s);
         break;
       case OpCode::RMS_NORM:
         ops::exec_rms_norm(std::get<RMSNormNode>(instr.node), st, s);
@@ -635,7 +582,8 @@ class Interpreter {
         ops::exec_cast(std::get<CastNode>(instr.node), st, s);
         break;
       case OpCode::QUANTIZED_LINEAR:
-        ops::exec_quantized_linear(std::get<QuantizedLinearNode>(instr.node), st, s);
+        ops::exec_quantized_linear(
+            std::get<QuantizedLinearNode>(instr.node), st, s);
         break;
       case OpCode::CONCAT:
         ops::exec_concat(std::get<ConcatNode>(instr.node), st, s);
@@ -656,7 +604,8 @@ class Interpreter {
         ops::exec_slice_update(std::get<SliceUpdateNode>(instr.node), st, s);
         break;
       case OpCode::QUANTIZED_GATHER:
-        ops::exec_quantized_gather(std::get<QuantizedGatherNode>(instr.node), st, s);
+        ops::exec_quantized_gather(
+            std::get<QuantizedGatherNode>(instr.node), st, s);
         break;
       case OpCode::SENTINEL:
         break;
@@ -664,6 +613,6 @@ class Interpreter {
   }
 };
 
-}  // namespace mlx
-}  // namespace backends
-}  // namespace executorch
+} // namespace mlx
+} // namespace backends
+} // namespace executorch

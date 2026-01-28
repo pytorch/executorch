@@ -9,28 +9,19 @@
 Test for mul op using the MLX delegate.
 
 Usage:
-    # Run tensor * tensor test:
-    python -m executorch.backends.apple.mlx.test.test_mul run
+    # Run via run_all_tests (recommended):
+    python -m executorch.backends.apple.mlx.test.run_all_tests mul
 
-    # Run tensor * scalar test:
+    # Run directly with custom args:
     python -m executorch.backends.apple.mlx.test.test_mul run --scalar 2.5
-
-    # Test with dynamic batch dimension:
-    python -m executorch.backends.apple.mlx.test.test_mul run --dynamic-batch
-
-    # Tensor * scalar with dynamic batch:
-    python -m executorch.backends.apple.mlx.test.test_mul run --scalar 2.5 --dynamic-batch
 """
 
-import argparse
-import sys
-from typing import Dict, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
-from torch.export import Dim
 
-from .test_utils import OpTestCase, print_mlx_graph_summary, rebuild_op_test_runner
+from .test_utils import OpTestCase, register_test, run_op_test_main
 
 
 class MulTensorModel(nn.Module):
@@ -51,6 +42,7 @@ class MulScalarModel(nn.Module):
         return x * self.scalar
 
 
+@register_test
 class MulTest(OpTestCase):
     """Test case for mul op."""
 
@@ -62,23 +54,23 @@ class MulTest(OpTestCase):
         self,
         shape: Tuple[int, ...] = (2, 16, 64),
         scalar: Optional[float] = None,
-        dynamic_batch: bool = False,
-        test_batch_size: Optional[int] = None,
     ):
         self.shape = shape
-        self.scalar = scalar  # If set, test tensor * scalar instead of tensor * tensor
-        self.dynamic_batch = dynamic_batch
-        self.test_batch_size = (
-            test_batch_size if test_batch_size is not None else shape[0]
-        )
+        self.scalar = scalar
 
-        # Build the name
-        name_parts = ["mul"]
+        # Build unique test name
         if scalar is not None:
-            name_parts.append("scalar")
-        if dynamic_batch:
-            name_parts.append("dynamic_batch")
-        self.name = "_".join(name_parts)
+            self.name = "mul_scalar"
+        else:
+            self.name = "mul"
+
+    @classmethod
+    def get_test_configs(cls) -> List["MulTest"]:
+        """Return all test configurations to run."""
+        return [
+            cls(),  # tensor * tensor
+            cls(scalar=2.5),  # tensor * scalar
+        ]
 
     def create_model(self) -> nn.Module:
         if self.scalar is not None:
@@ -87,7 +79,6 @@ class MulTest(OpTestCase):
             return MulTensorModel()
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for export (tracing)."""
         x = torch.randn(self.shape)
         if self.scalar is not None:
             return (x,)
@@ -95,105 +86,26 @@ class MulTest(OpTestCase):
             y = torch.randn(self.shape)
             return (x, y)
 
-    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for testing - may use different batch size for dynamic tests."""
-        test_shape = (self.test_batch_size,) + self.shape[1:]
-        x = torch.randn(test_shape)
-        if self.scalar is not None:
-            return (x,)
-        else:
-            y = torch.randn(test_shape)
-            return (x, y)
-
-    def get_dynamic_shapes(self) -> Optional[Dict]:
-        """Return dynamic shapes specification for torch.export."""
-        if not self.dynamic_batch:
-            return None
-
-        batch_dim = Dim("batch", min=1, max=32)
-        if self.scalar is not None:
-            return {"x": {0: batch_dim}}
-        else:
-            return {"x": {0: batch_dim}, "y": {0: batch_dim}}
+    def get_dynamic_shapes(self):
+        return None
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Test mul op on MLX delegate")
-    parser.add_argument(
-        "action",
-        choices=["generate", "compare", "run"],
-        help="Action to perform",
-    )
-    parser.add_argument(
-        "--shape",
-        type=str,
-        default="2,16,64",
-        help="Tensor shape as comma-separated values (default: 2,16,64)",
-    )
-    parser.add_argument(
-        "--scalar",
-        type=float,
-        default=None,
-        help="If provided, test tensor * scalar instead of tensor * tensor",
-    )
-    parser.add_argument(
-        "--dynamic-batch", action="store_true", help="Test with dynamic batch dimension"
-    )
-    parser.add_argument(
-        "--test-batch-size",
-        type=int,
-        default=None,
-        help="Batch size for testing (default: same as shape[0])",
-    )
-    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    parser.add_argument(
-        "--rebuild",
-        action="store_true",
-        help="Rebuild the C++ test runner before running",
-    )
-    args = parser.parse_args()
-
-    # Rebuild if requested
-    if args.rebuild:
-        if not rebuild_op_test_runner(verbose=args.verbose):
-            sys.exit(1)
-
-    # Parse shape
+# Factory for CLI usage
+def _create_from_args(args) -> MulTest:
+    if args is None:
+        return MulTest()
     shape = tuple(int(x) for x in args.shape.split(","))
+    return MulTest(shape=shape, scalar=args.scalar)
 
-    # Create test case
-    test = MulTest(
-        shape=shape,
-        scalar=args.scalar,
-        dynamic_batch=args.dynamic_batch,
-        test_batch_size=args.test_batch_size,
+
+def _add_args(parser):
+    parser.add_argument(
+        "--shape", type=str, default="2,16,64", help="Tensor shape (default: 2,16,64)"
     )
-
-    if args.action == "generate":
-        pte_path, input_path, expected_path = test.generate_test_files()
-        print(f"\nGenerated files:")
-        print(f"  PTE:      {pte_path}")
-        print(f"  Input:    {input_path}")
-        print(f"  Expected: {expected_path}")
-        print_mlx_graph_summary(pte_path)
-
-    elif args.action == "compare":
-        actual_path = test.get_test_dir() / "actual_output.bin"
-        if not actual_path.exists():
-            print(f"Error: {actual_path} not found. Run the C++ binary first.")
-            sys.exit(1)
-
-        passed, message = test.compare_with_actual(actual_path)
-        if passed:
-            print(f"✓ PASSED: {message}")
-        else:
-            print(f"✗ FAILED: {message}")
-        sys.exit(0 if passed else 1)
-
-    elif args.action == "run":
-        passed = test.run_test(verbose=args.verbose)
-        sys.exit(0 if passed else 1)
+    parser.add_argument(
+        "--scalar", type=float, default=None, help="Test tensor * scalar"
+    )
 
 
 if __name__ == "__main__":
-    main()
+    run_op_test_main(_create_from_args, "Test mul op on MLX delegate", _add_args)

@@ -27,7 +27,18 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import auto, Enum
-from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Type, Union
+from typing import (
+    Any,
+    Callable,
+    DefaultDict,
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    Union,
+)
 
 import torch
 from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
@@ -59,66 +70,121 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 # =============================================================================
 
 
-def get_aten_target(target, strip_copy_suffix: bool = False):
+def get_aten_target(target):
     """
-    Normalize a target to its underlying ATen op.
+    Unwrap EdgeOpOverload to get the underlying ATen op.
 
     In Edge IR, ops are wrapped in EdgeOpOverload. This extracts the
     underlying ATen op for consistent comparison.
+    """
+    if hasattr(target, "_op") and "EdgeOpOverload" in type(target).__name__:
+        return target._op
+    return target
+
+
+# Mapping from _copy variants to their non-copy equivalents.
+# Edge IR uses _copy variants for certain ops, but for pattern matching
+# we want to compare against the semantic operation.
+_COPY_TO_NON_COPY = {
+    torch.ops.aten.slice_copy.Tensor: torch.ops.aten.slice.Tensor,
+    torch.ops.aten.transpose_copy.int: torch.ops.aten.transpose.int,
+    torch.ops.aten.view_copy.default: torch.ops.aten.view.default,
+    torch.ops.aten.permute_copy.default: torch.ops.aten.permute.default,
+}
+
+
+def get_aten_target_normalized(target):
+    """
+    Get ATen target, mapping _copy variants to their non-copy equivalents.
+
+    Use this for pattern matching where Edge IR uses _copy variants but
+    we want to match the semantic operation.
+
+    E.g., aten.transpose_copy.int -> aten.transpose.int
+    """
+    target = get_aten_target(target)
+    return _COPY_TO_NON_COPY.get(target, target)
+
+
+def emit_stop_position(
+    P: "MLXProgramBuilder",
+    start: "Union[int, Slot]",
+    length_tensor: "Slot",
+    length_dim: int,
+    length_meta: "Optional[torch.Tensor]" = None,
+) -> "Union[int, Slot]":
+    """
+    Emit nodes to compute stop = start + length for slice operations.
+
+    May emit SymSizeNode and/or AddScalarNode depending on whether
+    start and length are static or dynamic.
 
     Args:
-        target: The op target (could be ATen op or EdgeOpOverload)
-        strip_copy_suffix: If True, also strips _copy suffix from op names.
-            E.g., aten.transpose_copy.int -> aten.transpose.int
-            This is useful for pattern matching where Edge IR uses _copy
-            variants but we want to match the semantic operation.
+        P: The program builder
+        start: Start position (int or Slot)
+        length_tensor: The tensor slot whose dimension gives the length
+        length_dim: Which dimension of length_tensor contains the length
+        length_meta: Optional tensor metadata for static length extraction
 
     Returns:
-        The normalized ATen op target
+        stop position as int (if fully static) or Slot (if any dynamic)
     """
-    # Extract underlying ATen op from EdgeOpOverload
-    # EdgeOpOverload has _op that points to the ATen OpOverload
-    # Regular ATen OpOverload also has _op but it points to a pybind method (don't use that!)
-    # We can distinguish by checking the type name
-    if hasattr(target, "_op") and "EdgeOpOverload" in type(target).__name__:
-        target = target._op
+    from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
+        AddScalarNode,
+        IntOrVid,
+        SymSizeNode,
+    )
 
-    # Optionally strip _copy suffix
-    if strip_copy_suffix and hasattr(target, "_name"):
-        name = target._name  # e.g., "aten::transpose_copy.int"
-        if "_copy" in name:
-            # Try to find the non-copy variant
-            # e.g., aten::transpose_copy.int -> aten::transpose.int
-            non_copy_name = name.replace("_copy", "")  # "aten::transpose.int"
-            try:
-                # Parse "namespace::op_name.overload" format
-                # e.g., "aten::transpose.int" -> namespace="aten", op="transpose", overload="int"
-                if "::" not in non_copy_name:
-                    return target  # Can't parse, return as-is
-                ns_part, rest = non_copy_name.split(
-                    "::", 1
-                )  # ["aten", "transpose.int"]
-                op_overload = rest.split(
-                    ".", 1
-                )  # ["transpose", "int"] or ["transpose"]
-                op_name = op_overload[0]
-                overload = op_overload[1] if len(op_overload) > 1 else "default"
+    # Check if seq_len is symbolic (dynamic)
+    seq_len_is_symbolic = False
+    seq_len_concrete = None
 
-                # Navigate torch.ops namespace to find the op
-                # torch.ops.aten.transpose.int
-                ns = getattr(torch.ops, ns_part, None)  # torch.ops.aten
-                if ns is not None:
-                    op_pkg = getattr(ns, op_name, None)  # torch.ops.aten.transpose
-                    if op_pkg is not None:
-                        result = getattr(
-                            op_pkg, overload, None
-                        )  # torch.ops.aten.transpose.int
-                        if result is not None:
-                            return result
-            except (AttributeError, TypeError, ValueError) as e:
-                logging.debug(f"get_aten_target: Failed to strip _copy suffix: {e}")
+    if length_meta is not None:
+        seq_len_dim = length_meta.shape[length_dim]
+        if hasattr(seq_len_dim, "node"):
+            seq_len_is_symbolic = True
+        else:
+            seq_len_concrete = int(seq_len_dim)
 
-    return target
+    if seq_len_is_symbolic or length_meta is None:
+        # Dynamic seq_len: emit SymSizeNode to get length at runtime
+        _, seq_len_slot = P.slot_manager.make_tmp_value_slot()
+        P._emit(
+            SymSizeNode(
+                a=P._slot_to_tid(length_tensor),
+                dim=length_dim,
+                out=P._slot_to_vid(seq_len_slot),
+            )
+        )
+        _, stop_slot = P.slot_manager.make_tmp_value_slot()
+        if isinstance(start, Slot):
+            start_iov = P._to_int_or_vid(start)
+        else:
+            start_iov = IntOrVid.from_literal(int(start))
+        P._emit(
+            AddScalarNode(
+                a=start_iov,
+                b=IntOrVid.from_vid(P._slot_to_vid(seq_len_slot)),
+                out=P._slot_to_vid(stop_slot),
+            )
+        )
+        return stop_slot
+    else:
+        # Static seq_len
+        if isinstance(start, Slot):
+            # Dynamic start + static length
+            _, stop_slot = P.slot_manager.make_tmp_value_slot()
+            P._emit(
+                AddScalarNode(
+                    a=P._to_int_or_vid(start),
+                    b=IntOrVid.from_literal(seq_len_concrete),
+                    out=P._slot_to_vid(stop_slot),
+                )
+            )
+            return stop_slot
+        else:
+            # Both static - just return the sum
+            return start + seq_len_concrete
 
 
 # =============================================================================
@@ -268,11 +334,20 @@ class SlotManager:
         self.name_to_slot[name] = slot
         return name, slot
 
-    def make_or_get_slot(
+    def make_or_get_slots(
         self, node: Node, id_space: IdSpace = IdSpace.Temp
-    ) -> Union[Slot, Tuple[Slot, ...]]:
+    ) -> Tuple[Slot, ...]:
+        """
+        Get or create slots for a node. Always returns a tuple of slots.
+
+        Use this for multi-output ops (e.g., rope returns (q_out, k_out)).
+        For single-output ops, prefer make_or_get_slot() which returns a single Slot.
+        """
         if node.name in self.name_to_slot:
             slot = self.name_to_slot[node.name]
+            # Normalize to tuple for consistent return type
+            if not isinstance(slot, tuple):
+                return (slot,)
             return slot
 
         val = node.meta.get("val", None)
@@ -291,11 +366,26 @@ class SlotManager:
             slots.append(Slot(id_type=id_type, id_space=id_space, idx=idx))
         slots = tuple(slots)
 
+        # Store in the format that matches the node's output structure
         if len(slots) == 1:
-            slots = slots[0]
-
-        self.set_slot(node, slots)
+            self.set_slot(node, slots[0])
+        else:
+            self.set_slot(node, slots)
         return slots
+
+    def make_or_get_slot(self, node: Node, id_space: IdSpace = IdSpace.Temp) -> Slot:
+        """
+        Get or create a slot for a single-output node. Returns a single Slot.
+
+        Use this for single-output ops (the common case).
+        For multi-output ops, use make_or_get_slots() instead.
+        """
+        slots = self.make_or_get_slots(node, id_space)
+        assert len(slots) == 1, (
+            f"Expected single output for node {node.name}, got {len(slots)}. "
+            f"Use make_or_get_slots() for multi-output ops."
+        )
+        return slots[0]
 
 
 # =============================================================================
@@ -304,7 +394,9 @@ class SlotManager:
 
 # Handler type: takes (builder, node) and returns optional slot(s)
 # Returns None for no-ops, Slot for single outputs, Tuple[Slot, ...] for multiple outputs
-Handler = Callable[["MLXProgramBuilder", Node], Optional[Union["Slot", Tuple["Slot", ...]]]]
+Handler = Callable[
+    ["MLXProgramBuilder", Node], Optional[Union["Slot", Tuple["Slot", ...]]]
+]
 
 
 class PatternHandler:
@@ -364,6 +456,57 @@ class NodeInfo:
 
 
 # =============================================================================
+# Pattern matching
+# =============================================================================
+
+
+class PatternMatcher:
+    """
+    Discovers and applies pattern handlers to an FX graph.
+
+    Pattern handlers match multi-node subgraphs and lower them to optimized
+    MLX operations. This class orchestrates the pattern discovery process:
+
+    1. Iterates through all registered pattern types
+    2. For each pattern, tries to match it against every node in the graph
+    3. When a match is found, assigns handlers to the head and body nodes
+
+    The ordering matters: patterns are matched before dead code elimination
+    because some pattern body nodes (e.g., update_cache) have no users
+    since they mutate in-place, but they're not dead.
+    """
+
+    def __init__(self, ep: ExportedProgram, registry: "MLXOpRegistry"):
+        self.ep = ep
+        self.registry = registry
+        self._matches: List[PatternHandler] = []
+
+    def find_patterns(self) -> List[PatternHandler]:
+        """
+        Find all pattern matches in the graph.
+
+        Returns a list of PatternHandler instances, one for each match found.
+        Patterns are tried in registration order.
+        """
+        self._matches = []
+        for name in self.registry.patterns():
+            self._find_pattern(name)
+        return self._matches
+
+    def _find_pattern(self, name: str) -> None:
+        """Try to match a single pattern type against all nodes."""
+        pattern_cls = self.registry.get_pattern_cls(name)
+        if pattern_cls is None:
+            return
+
+        for n in self.ep.graph.nodes:
+            handler = pattern_cls.maybe_create(self.ep, n)
+            if handler is not None:
+                logging.debug(f"Pattern {name} matched at node {n.name}")
+                self._matches.append(handler)
+
+
+# =============================================================================
 # Op registry
 # =============================================================================
 
@@ -382,6 +525,7 @@ class MLXOpRegistry:
 
     def register(self, target: Union[str, Callable, list, tuple]):
         """Decorator to register a handler for one or more op targets."""
+
         def deco(fn: Handler):
             targets = target if isinstance(target, (list, tuple)) else [target]
             for t in targets:
@@ -412,6 +556,7 @@ class MLXOpRegistry:
 
     def register_pattern(self, name: str):
         """Decorator to register a pattern handler class."""
+
         def deco(cls: Type[PatternHandler]):
             if not issubclass(cls, PatternHandler):
                 raise TypeError(
@@ -490,8 +635,14 @@ class MLXProgramBuilder:
         new_leaves = []
         for a in leaves:
             if isinstance(a, Node):
-                slot = self.make_or_get_slot(a)
-                new_leaves.append(slot)
+                # Use make_or_get_slots which handles both single and multi-output nodes.
+                # For single-output nodes, returns a 1-tuple; for multi-output, returns n-tuple.
+                # We unwrap single-element tuples for convenience.
+                slots = self.make_or_get_slots(a)
+                if len(slots) == 1:
+                    new_leaves.append(slots[0])
+                else:
+                    new_leaves.append(slots)
             else:
                 new_leaves.append(a)
 
@@ -503,9 +654,14 @@ class MLXProgramBuilder:
 
         return pytree.tree_unflatten(new_leaves, spec)
 
-    def make_or_get_slot(
+    def make_or_get_slots(
         self, node: Node, id_space: IdSpace = IdSpace.Temp
-    ) -> Union[Slot, Tuple[Slot, ...]]:
+    ) -> Tuple[Slot, ...]:
+        """Get or create slots for a multi-output node. Always returns a tuple."""
+        return self.slot_manager.make_or_get_slots(node, id_space)
+
+    def make_or_get_slot(self, node: Node, id_space: IdSpace = IdSpace.Temp) -> Slot:
+        """Get or create a slot for a single-output node. Returns a single Slot."""
         return self.slot_manager.make_or_get_slot(node, id_space)
 
     def set_slot(self, node: Node, slot: Slot):
@@ -534,7 +690,6 @@ class MLXProgramBuilder:
     def get_placeholder_target_and_tensor(self, node: Node) -> Tuple[str, torch.Tensor]:
         assert node.op == "placeholder"
         placeholder_name = node.name
-        from torch.export.graph_signature import InputKind
 
         sig = self.ep.graph_signature
         sd = self.ep.state_dict
@@ -674,7 +829,7 @@ class MLXProgramBuilder:
     # I/O slot creation
     # -------------------------------------------------------------------------
 
-    def _make_io_slots(self):
+    def _make_io_slots(self):  # noqa: C901
         from torch.export.graph_signature import (
             InputKind,
             OutputKind,
@@ -772,23 +927,16 @@ class MLXProgramBuilder:
                 self.node_info[n].handler = noop_handler
                 dead.add(n)
 
-    def _mark_pattern(self, name: str):
-        pattern_cls = REGISTRY.get_pattern_cls(name)
-        if pattern_cls is None:
-            return
-        for n in self.ep.graph.nodes:
-            handler: PatternHandler | None = pattern_cls.maybe_create(self.ep, n)
-            if handler is None:
-                # Debug: log why pattern didn't match for slice_scatter nodes
-                underlying = get_aten_target(n.target) if hasattr(n, "target") else None
-                if underlying == torch.ops.aten.slice_scatter.default:
-                    logging.debug(
-                        f"Pattern {name} did NOT match slice_scatter node {n.name}. "
-                        f"buffers_to_mutate={self.ep.graph_signature.buffers_to_mutate}, "
-                        f"user_inputs_to_mutate={self.ep.graph_signature.user_inputs_to_mutate}"
-                    )
-                continue
-            logging.debug(f"Pattern {name} matched at node {n.name}")
+    def _apply_patterns(self) -> None:
+        """
+        Find and apply pattern handlers to the graph.
+
+        Uses PatternMatcher to discover multi-node patterns and assigns
+        handlers to matched nodes. This must run BEFORE _mark_noop so
+        pattern body nodes don't get incorrectly marked as dead.
+        """
+        matcher = PatternMatcher(self.ep, REGISTRY)
+        for handler in matcher.find_patterns():
             handler.set_handlers(self)
 
     def _process_nodes(self) -> None:
@@ -807,11 +955,10 @@ class MLXProgramBuilder:
         """
         self._make_io_slots()
 
-        # Mark patterns BEFORE _mark_noop so pattern body nodes don't get
+        # Apply patterns BEFORE _mark_noop so pattern body nodes don't get
         # incorrectly marked as dead (e.g., update_cache nodes have no users
         # since they mutate in-place, but they're not dead)
-        for pattern in REGISTRY.patterns():
-            self._mark_pattern(pattern)
+        self._apply_patterns()
         self._mark_noop()
 
         for n in self.ep.graph.nodes:
@@ -895,35 +1042,26 @@ class MLXProgramBuilder:
                     self.slot_manager.get_slot(n) is not None
                 ), f"Expected slot for node {n}"
 
-    def _build_mlx_graph(self) -> MLXGraph:
-        # Check support
-        for node, info in self.node_info.items():
-            if not info.supported:
-                raise ValueError(
-                    f"Found unsupported node: {node}\nReason: {info.unsupported_reason}"
-                )
+    def _collect_used_slots(
+        self,
+    ) -> Tuple[Set[Slot], Dict[IdSpace, int], Dict[IdSpace, int]]:
+        """
+        Collect all used slots and count tensors/values per IdSpace.
 
-        # Find used slots
-        used_slots: set[Slot] = set()
-        for instr in self._instrs:
-            flat_args, spec = pytree.tree_flatten(instr.op)
-            for a in flat_args:
-                if isinstance(a, (Tid, Vid)):
-                    # These are already converted, need to reverse lookup
-                    pass
-
-        # Actually, walk the node_info to find used slots
-        for n, slot in self.slot_manager.name_to_slot.items():
+        Returns:
+            (used_slots, num_tensors, num_values)
+        """
+        used_slots: Set[Slot] = set()
+        for _n, slot in self.slot_manager.name_to_slot.items():
             if not isinstance(slot, tuple):
                 slot = (slot,)
             for s in slot:
                 used_slots.add(s)
 
-        # Count used tensors/values per IdSpace
         num_tensors: Dict[IdSpace, int] = defaultdict(int)
         num_values: Dict[IdSpace, int] = defaultdict(int)
-        seen: set[Slot] = set()
-        for n, slot in self.slot_manager.name_to_slot.items():
+        seen: Set[Slot] = set()
+        for _n, slot in self.slot_manager.name_to_slot.items():
             if not isinstance(slot, tuple):
                 slot = (slot,)
             for s in slot:
@@ -935,6 +1073,17 @@ class MLXProgramBuilder:
                 else:
                     num_values[s.id_space] += 1
 
+        return used_slots, num_tensors, num_values
+
+    def _create_slot_mappings(
+        self, used_slots: Set[Slot]
+    ) -> Tuple[Dict[Slot, int], Dict[Slot, int]]:
+        """
+        Create slot→Tid and slot→Vid mappings, and remap existing references.
+
+        Returns:
+            (slot_to_tid, slot_to_vid)
+        """
         id_space_order = {
             IdSpace.Constant: 0,
             IdSpace.Input: 1,
@@ -958,8 +1107,6 @@ class MLXProgramBuilder:
         slot_to_vid = {s: idx for idx, s in enumerate(slot_to_vid)}
 
         # Remap all Tid/Vid values in instructions to use global indices
-        # The _tid_slot_map and _vid_slot_map contain (tid, slot) pairs
-        # where tid.idx still contains the local slot.idx
         if hasattr(self, "_tid_slot_map"):
             for tid, slot in self._tid_slot_map:
                 if slot in slot_to_tid:
@@ -974,26 +1121,46 @@ class MLXProgramBuilder:
                 else:
                     logging.warning(f"Slot {slot} not found in slot_to_vid mapping")
 
-        # Helper to convert slot to SlotVariant
-        def to_slot_variant(slot: Slot) -> SlotVariant:
-            if slot.id_type == IdType.Tensor:
-                idx = slot_to_tid[slot]
-                slot_type = SlotType.TensorSlot
-            elif slot.id_type == IdType.SymInt:
-                idx = slot_to_vid[slot]
-                slot_type = SlotType.IntValueSlot
-            elif slot.id_type == IdType.SymBool:
-                idx = slot_to_vid[slot]
-                slot_type = SlotType.BoolValueSlot
-            else:
-                raise NotImplementedError(f"Unsupported slot type {slot.id_type}")
-            return SlotVariant(idx=idx, slot_type=slot_type)
+        return slot_to_tid, slot_to_vid
 
-        # Build I/O maps
-        input_map = []
-        output_map = []
-        mutable_buffer_map = []
-        name_to_slot_dict = {}
+    def _to_slot_variant(
+        self,
+        slot: Slot,
+        slot_to_tid: Dict[Slot, int],
+        slot_to_vid: Dict[Slot, int],
+    ) -> SlotVariant:
+        """Convert a Slot to a SlotVariant using the provided mappings."""
+        if slot.id_type == IdType.Tensor:
+            idx = slot_to_tid[slot]
+            slot_type = SlotType.TensorSlot
+        elif slot.id_type == IdType.SymInt:
+            idx = slot_to_vid[slot]
+            slot_type = SlotType.IntValueSlot
+        elif slot.id_type == IdType.SymBool:
+            idx = slot_to_vid[slot]
+            slot_type = SlotType.BoolValueSlot
+        else:
+            raise NotImplementedError(f"Unsupported slot type {slot.id_type}")
+        return SlotVariant(idx=idx, slot_type=slot_type)
+
+    def _build_io_maps(
+        self,
+        used_slots: Set[Slot],
+        slot_to_tid: Dict[Slot, int],
+        slot_to_vid: Dict[Slot, int],
+    ) -> Tuple[
+        List[SlotVariant], List[SlotVariant], List[SlotVariant], List[NamedSlot]
+    ]:
+        """
+        Build input/output/mutable_buffer maps and named slots.
+
+        Returns:
+            (input_map, output_map, mutable_buffer_map, named_slots)
+        """
+        input_map: List[SlotVariant] = []
+        output_map: List[SlotVariant] = []
+        mutable_buffer_map: List[SlotVariant] = []
+        name_to_slot_dict: Dict[str, Slot] = {}
 
         for ispec in self.ep.graph_signature.input_specs:
             slot = self.slot_manager.get_slot(ispec.arg.name)
@@ -1002,13 +1169,14 @@ class MLXProgramBuilder:
             assert isinstance(slot, Slot)
             name = ispec.target if ispec.target is not None else ispec.arg.name
             if slot.id_space == IdSpace.Input:
-                input_map.append(to_slot_variant(slot))
+                input_map.append(self._to_slot_variant(slot, slot_to_tid, slot_to_vid))
                 name_to_slot_dict[name] = slot
             elif slot.id_space == IdSpace.MutableBuffer:
                 # Mutable buffers are also inputs to the delegate
-                # They get passed in by ExecuTorch runtime
-                input_map.append(to_slot_variant(slot))
-                mutable_buffer_map.append(to_slot_variant(slot))
+                input_map.append(self._to_slot_variant(slot, slot_to_tid, slot_to_vid))
+                mutable_buffer_map.append(
+                    self._to_slot_variant(slot, slot_to_tid, slot_to_vid)
+                )
                 name_to_slot_dict[name] = slot
             else:
                 if slot in used_slots:
@@ -1021,13 +1189,12 @@ class MLXProgramBuilder:
                 continue
             assert isinstance(slot, Slot)
             if slot.id_space == IdSpace.Output:
-                output_map.append(to_slot_variant(slot))
+                output_map.append(self._to_slot_variant(slot, slot_to_tid, slot_to_vid))
                 name = ospec.target if ospec.target is not None else ospec.arg.name
                 name_to_slot_dict[name] = slot
             elif slot.id_space == IdSpace.MutableBuffer:
                 # Mutable buffer mutations are also outputs from the delegate
-                # ExecuTorch runtime expects them to be written back
-                output_map.append(to_slot_variant(slot))
+                output_map.append(self._to_slot_variant(slot, slot_to_tid, slot_to_vid))
                 name = ospec.target if ospec.target is not None else ospec.arg.name
                 name_to_slot_dict[name] = slot
 
@@ -1037,23 +1204,31 @@ class MLXProgramBuilder:
             if slot in used_slots:
                 name_to_slot_dict[name] = slot
 
-        # Build named slots
         named_slots = [
-            NamedSlot(name=n, slot=to_slot_variant(s))
+            NamedSlot(name=n, slot=self._to_slot_variant(s, slot_to_tid, slot_to_vid))
             for n, s in name_to_slot_dict.items()
         ]
 
-        # Build tensor metadata
-        # For dynamic shapes, we track symbolic dimensions as IntOrVid references.
-        # This allows the runtime to resolve actual sizes dynamically.
+        return input_map, output_map, mutable_buffer_map, named_slots
 
+    def _build_tensor_meta(  # noqa: C901
+        self,
+        used_slots: Set[Slot],
+        slot_to_tid: Dict[Slot, int],
+        slot_to_vid: Dict[Slot, int],
+        num_tensors: Dict[IdSpace, int],
+    ) -> List[TensorMeta]:
+        """
+        Build tensor metadata list with shape/dtype information.
+
+        For dynamic shapes, symbolic dimensions are tracked as IntOrVid references
+        so the runtime can resolve actual sizes dynamically.
+        """
         # Build a mapping from SymInt symbol names to their Slots
-        # SymInt values are produced by sym_size and item ops
         symint_symbol_to_slot: Dict[str, Slot] = {}
         for n in self.node_info:
             val = n.meta.get("val", None)
             if isinstance(val, torch.SymInt):
-                # This node produces a SymInt - record the mapping
                 symbol_name = str(val.node) if hasattr(val, "node") else str(val)
                 slot = self.slot_manager.get_slot(n)
                 if slot is not None and not isinstance(slot, tuple):
@@ -1061,9 +1236,8 @@ class MLXProgramBuilder:
 
         def to_tensor_meta(t: torch.Tensor) -> TensorMeta:
             shape: List[IntOrVid] = []
-            for i, dim in enumerate(t.shape):
+            for _i, dim in enumerate(t.shape):
                 if isinstance(dim, torch.SymInt):
-                    # Try to find the corresponding Slot for this SymInt
                     symbol_name = str(dim.node) if hasattr(dim, "node") else str(dim)
                     if symbol_name in symint_symbol_to_slot:
                         slot = symint_symbol_to_slot[symbol_name]
@@ -1081,12 +1255,8 @@ class MLXProgramBuilder:
                         else:
                             shape.append(IntOrVid.from_literal(upper))
                 else:
-                    # Concrete dimension
                     shape.append(IntOrVid.from_literal(int(dim)))
 
-            # NOTE: We skip strides because:
-            # 1. MLX runtime doesn't use them (tensors are always contiguous)
-            # 2. Strides can contain SymInts which would complicate things
             return TensorMeta(
                 shape=shape,
                 dtype=_torch_dtype_to_dtypeid(t.dtype),
@@ -1120,8 +1290,29 @@ class MLXProgramBuilder:
                 tensor_meta[idx] = to_tensor_meta(t)
 
         num_non_temp_tensors = sum(num_tensors.values()) - num_tensors[IdSpace.Temp]
-        tensor_meta_list = [tensor_meta.get(i) for i in range(num_non_temp_tensors)]
+        return [tensor_meta.get(i) for i in range(num_non_temp_tensors)]
 
+    def _build_mlx_graph(self) -> MLXGraph:
+        # Check support
+        for node, info in self.node_info.items():
+            if not info.supported:
+                raise ValueError(
+                    f"Found unsupported node: {node}\nReason: {info.unsupported_reason}"
+                )
+
+        # Collect slots and create mappings
+        used_slots, num_tensors, num_values = self._collect_used_slots()
+        slot_to_tid, slot_to_vid = self._create_slot_mappings(used_slots)
+
+        # Build I/O maps and metadata
+        input_map, output_map, mutable_buffer_map, named_slots = self._build_io_maps(
+            used_slots, slot_to_tid, slot_to_vid
+        )
+        tensor_meta_list = self._build_tensor_meta(
+            used_slots, slot_to_tid, slot_to_vid, num_tensors
+        )
+
+        # Compute final counts
         num_constant_tensors = num_tensors[IdSpace.Constant]
         num_non_constant_tensors = sum(num_tensors.values()) - num_constant_tensors
         num_non_constant_values = sum(num_values.values())
@@ -1140,7 +1331,7 @@ class MLXProgramBuilder:
             constant_segment=DataSegment(offset=0, size=0),
         )
 
-    def get_constant_data(self) -> Tuple[bytes, Dict[str, int]]:
+    def get_constant_data(self) -> Tuple[bytes, Dict[str, int]]:  # noqa: C901
         """
         Extract constant tensor data.
 
@@ -1207,7 +1398,4 @@ class MLXProgramBuilder:
 
 # These imports register the handlers with the REGISTRY
 # They must come after REGISTRY is defined
-from executorch.backends.apple.mlx import (  # noqa: F401, E402
-    ops,
-    patterns,
-)
+from executorch.backends.apple.mlx import ops, patterns  # noqa: F401, E402

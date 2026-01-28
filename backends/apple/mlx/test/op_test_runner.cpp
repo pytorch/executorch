@@ -168,11 +168,9 @@ void write_tensors_to_bin(
     file.write(reinterpret_cast<const char*>(&ndim), sizeof(ndim));
 
     file.write(
-        reinterpret_cast<const char*>(t.shape.data()),
-        ndim * sizeof(int32_t));
+        reinterpret_cast<const char*>(t.shape.data()), ndim * sizeof(int32_t));
 
-    file.write(
-        reinterpret_cast<const char*>(t.data.data()), t.data.size());
+    file.write(reinterpret_cast<const char*>(t.data.data()), t.data.size());
   }
 }
 
@@ -252,8 +250,9 @@ int main(int argc, char* argv[]) {
       std::cout << "Read " << input_tensors.size() << " input tensors"
                 << std::endl;
       for (size_t i = 0; i < input_tensors.size(); ++i) {
-        std::cout << "  Input " << i << ": dtype="
-                  << static_cast<int>(input_tensors[i].dtype) << ", shape=[";
+        std::cout << "  Input " << i
+                  << ": dtype=" << static_cast<int>(input_tensors[i].dtype)
+                  << ", shape=[";
         for (size_t j = 0; j < input_tensors[i].shape.size(); ++j) {
           std::cout << input_tensors[i].shape[j];
           if (j < input_tensors[i].shape.size() - 1)
@@ -278,11 +277,13 @@ int main(int argc, char* argv[]) {
         std::memcpy(data.data(), t.data.data(), t.data.size());
         tensor_ptr = make_tensor_ptr(sizes, std::move(data));
       } else if (t.dtype == DType::Float16) {
-        std::vector<exec_aten::Half> data(t.data.size() / sizeof(exec_aten::Half));
+        std::vector<exec_aten::Half> data(
+            t.data.size() / sizeof(exec_aten::Half));
         std::memcpy(data.data(), t.data.data(), t.data.size());
         tensor_ptr = make_tensor_ptr(sizes, std::move(data));
       } else if (t.dtype == DType::BFloat16) {
-        std::vector<exec_aten::BFloat16> data(t.data.size() / sizeof(exec_aten::BFloat16));
+        std::vector<exec_aten::BFloat16> data(
+            t.data.size() / sizeof(exec_aten::BFloat16));
         std::memcpy(data.data(), t.data.data(), t.data.size());
         tensor_ptr = make_tensor_ptr(sizes, std::move(data));
       } else if (t.dtype == DType::Int32) {

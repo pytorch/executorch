@@ -20,27 +20,25 @@ them to optimized MLX operations. Examples include:
 
 from __future__ import annotations
 
-import logging
 from typing import Any, List, Optional, Tuple
 
 import torch
 from executorch.backends.apple.mlx.program_builder import (
     _torch_dtype_to_dtypeid,
-    get_aten_target,
+    emit_stop_position,
+    get_aten_target_normalized,
     MLXProgramBuilder,
     PatternHandler,
     REGISTRY,
     Slot,
 )
 from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
-    AddScalarNode,
     IdCopyNode,
     IntOrVid,
     QuantizedGatherNode,
     QuantizedLinearNode,
     SdpaNode,
     SliceUpdateNode,
-    SymSizeNode,
 )
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
@@ -78,14 +76,14 @@ class SliceUpdateHandler(PatternHandler):
         self.stop = stop
 
     @classmethod
-    def maybe_create(
+    def maybe_create(  # noqa: C901
         cls, ep: ExportedProgram, head: Node
     ) -> Optional["SliceUpdateHandler"]:
         _op_namespace = torch.ops.aten
 
         slice_scatter_node = head
         if (
-            get_aten_target(slice_scatter_node.target)
+            get_aten_target_normalized(slice_scatter_node.target)
             != _op_namespace.slice_scatter.default
         ):
             return None
@@ -103,7 +101,7 @@ class SliceUpdateHandler(PatternHandler):
         ss_dst, ss_src, ss_axis, ss_start, ss_end = slice_scatter_node.args
 
         copy_node = ss_src
-        if get_aten_target(copy_node.target) != _op_namespace.copy.default:
+        if get_aten_target_normalized(copy_node.target) != _op_namespace.copy.default:
             return None
         if copy_node.users != {slice_scatter_node: None}:
             return None
@@ -113,8 +111,8 @@ class SliceUpdateHandler(PatternHandler):
 
         slice_node = c_dst
         # In Edge IR, slice.Tensor becomes slice_copy.Tensor
-        # Use strip_copy_suffix to normalize both to slice.Tensor for comparison
-        slice_target = get_aten_target(slice_node.target, strip_copy_suffix=True)
+        # Use get_aten_target_normalized to normalize both to slice.Tensor for comparison
+        slice_target = get_aten_target_normalized(slice_node.target)
         if slice_target != _op_namespace.slice.Tensor:
             return None
         if slice_node.users != {copy_node: None}:
@@ -141,11 +139,9 @@ class SliceUpdateHandler(PatternHandler):
                 return None
 
         if s_src.name in ep.graph_signature.user_inputs:
-            inp_mut = ep.graph_signature.user_inputs_to_mutate.get(
-                slice_scatter_node.name, None
-            )
             # If there's mutation tracking, verify consistency
             # If not (partitioned subgraph), allow the pattern
+            pass
 
         if (
             (s_src != ss_dst)
@@ -268,7 +264,7 @@ class UpdateCacheHandler(PatternHandler):
             auto_func = auto_functionalized_v2(llama.update_cache, value=transpose_in, ...)
             getitem = getitem(auto_func, 1)  <-- HEAD
 
-        Uses get_aten_target with strip_copy_suffix=True to handle both ATen IR
+        Uses get_aten_target_normalized to handle both ATen IR
         (transpose.int) and Edge IR (transpose_copy.int).
         """
         _op_ns = torch.ops.aten
@@ -308,8 +304,9 @@ class UpdateCacheHandler(PatternHandler):
         if not isinstance(value_node, Node) or value_node.op != "call_function":
             return None
 
-        # Check for transpose - use get_aten_target with strip_copy_suffix=True
-        value_target = get_aten_target(value_node.target, strip_copy_suffix=True)
+        # Check for transpose - use get_aten_target_normalized to handle both
+        # ATen IR (transpose.int) and Edge IR (transpose_copy.int)
+        value_target = get_aten_target_normalized(value_node.target)
 
         if value_target != _op_ns.transpose.int:
             return None
@@ -355,56 +352,16 @@ class UpdateCacheHandler(PatternHandler):
         # The head is getitem, which outputs the mutated cache [B, H, S, D]
         out_slot = P.make_or_get_slot(n)
 
-        # Calculate stop position
+        # Calculate stop = start + seq_len
         # update is [B, H, S_step, D], so seq_len is dim 2
         update_meta = self.update.meta.get("val")
-        seq_len_is_symbolic = False
-        seq_len_concrete = None
-
-        if update_meta is not None:
-            seq_len_dim = update_meta.shape[2]  # S_step dimension
-            # Check if it's a SymInt (dynamic) by checking if it has a node
-            if hasattr(seq_len_dim, "node"):
-                seq_len_is_symbolic = True
-            else:
-                seq_len_concrete = int(seq_len_dim)
-
-        if seq_len_is_symbolic or update_meta is None:
-            # Dynamic seq_len: emit SymSizeNode to get seq_len at runtime
-            _, seq_len_slot = P.slot_manager.make_tmp_value_slot()
-            P._emit(
-                SymSizeNode(
-                    a=P._slot_to_tid(update_slot),
-                    dim=2,  # S_step is dim 2 in [B, H, S_step, D]
-                    out=P._slot_to_vid(seq_len_slot),
-                )
-            )
-            _, stop_slot = P.slot_manager.make_tmp_value_slot()
-            if isinstance(start_slot, Slot):
-                start_iov = P._to_int_or_vid(start_slot)
-            else:
-                start_iov = IntOrVid.from_literal(int(start_slot))
-            P._emit(
-                AddScalarNode(
-                    a=start_iov,
-                    b=IntOrVid.from_vid(P._slot_to_vid(seq_len_slot)),
-                    out=P._slot_to_vid(stop_slot),
-                )
-            )
-        else:
-            # Static seq_len
-            if isinstance(start_slot, Slot):
-                # Dynamic start_pos with static seq_len
-                _, stop_slot = P.slot_manager.make_tmp_value_slot()
-                P._emit(
-                    AddScalarNode(
-                        a=P._to_int_or_vid(start_slot),
-                        b=IntOrVid.from_literal(seq_len_concrete),
-                        out=P._slot_to_vid(stop_slot),
-                    )
-                )
-            else:
-                stop_slot = start_slot + seq_len_concrete
+        stop_slot = emit_stop_position(
+            P,
+            start=start_slot,
+            length_tensor=update_slot,
+            length_dim=2,  # S_step is dim 2 in [B, H, S_step, D]
+            length_meta=update_meta,
+        )
 
         # SliceUpdateNode on axis=2
         # cache is [B, H, S, D], update is [B, H, S_step, D]
@@ -476,7 +433,7 @@ class SDPAHandler(PatternHandler):
 
         sdpa_node = head
         if (
-            get_aten_target(sdpa_node.target)
+            get_aten_target_normalized(sdpa_node.target)
             != _op_namespace.scaled_dot_product_attention.default
         ):
             return None
@@ -488,11 +445,13 @@ class SDPAHandler(PatternHandler):
         k_base = k
         v_base = v
         if (
-            get_aten_target(k.target) == _op_namespace.repeat_interleave.self_int
+            get_aten_target_normalized(k.target)
+            == _op_namespace.repeat_interleave.self_int
             and (k.users == {sdpa_node: None})
             and (len(k.args) == 3)
             and (len(k.kwargs) == 0)
-            and get_aten_target(v.target) == _op_namespace.repeat_interleave.self_int
+            and get_aten_target_normalized(v.target)
+            == _op_namespace.repeat_interleave.self_int
             and (v.users == {sdpa_node: None})
             and (len(v.args) == 3)
             and (len(v.kwargs) == 0)
@@ -638,13 +597,16 @@ class QuantizedLinearHandler(PatternHandler):
         _op_namespace = torch.ops.aten
 
         linear_node = head
-        if get_aten_target(linear_node.target) != _op_namespace.linear.default:
+        if (
+            get_aten_target_normalized(linear_node.target)
+            != _op_namespace.linear.default
+        ):
             return None
 
         x, w = linear_node.args[0:2]
         dequant_node = w
         if (
-            get_aten_target(dequant_node.target)
+            get_aten_target_normalized(dequant_node.target)
             != torch.ops.torchao.dequantize_affine.default
         ):
             return None
@@ -745,14 +707,17 @@ class QuantizedEmbeddingHandler(PatternHandler):
         _op_namespace = torch.ops.aten
 
         embedding_node = head
-        if get_aten_target(embedding_node.target) != _op_namespace.embedding.default:
+        if (
+            get_aten_target_normalized(embedding_node.target)
+            != _op_namespace.embedding.default
+        ):
             return None
 
         w, x = embedding_node.args[0:2]
 
         dequant_node = w
         if (
-            get_aten_target(dequant_node.target)
+            get_aten_target_normalized(dequant_node.target)
             != torch.ops.torchao.dequantize_affine.default
         ):
             return None

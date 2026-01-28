@@ -28,7 +28,6 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_serialize import (
     serialize_mlx_graph,
 )
 
-from executorch.exir._serialize._program import Cord
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
@@ -104,7 +103,9 @@ class MLXBackend(BackendDetails):
         # Log graph info
         logging.info(f"MLX Graph: {len(mlx_graph.instructions)} instructions")
         logging.info(f"  num_constant_tensors: {mlx_graph.num_constant_tensors}")
-        logging.info(f"  num_non_constant_tensors: {mlx_graph.num_non_constant_tensors}")
+        logging.info(
+            f"  num_non_constant_tensors: {mlx_graph.num_non_constant_tensors}"
+        )
         logging.info(f"  num_non_constant_values: {mlx_graph.num_non_constant_values}")
         logging.info(f"  constant_data_size: {len(constant_data)} bytes")
 
@@ -136,4 +137,6 @@ def pretty_print_mlx_graph(mlx_graph) -> None:
     for i, tm in enumerate(mlx_graph.tensor_meta):
         if tm is not None:
             logging.info(f"    [{i}]: shape={tm.shape}, dtype={tm.dtype}")
-    logging.info(f"  constant_segment: offset={mlx_graph.constant_segment.offset}, size={mlx_graph.constant_segment.size}")
+    logging.info(
+        f"  constant_segment: offset={mlx_graph.constant_segment.offset}, size={mlx_graph.constant_segment.size}"
+    )

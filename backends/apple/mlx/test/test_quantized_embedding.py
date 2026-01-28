@@ -6,14 +6,17 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Test for TorchAO int4 quantized nn.Linear using the MLX delegate.
+Test for TorchAO int4 quantized nn.Embedding using the MLX delegate.
+
+This tests the QuantizedEmbeddingHandler pattern which fuses dequantize_affine
+with embedding lookup for efficient quantized embedding tables.
 
 Usage:
     # Run via run_all_tests (recommended):
-    python -m executorch.backends.apple.mlx.test.run_all_tests quantized_linear
+    python -m executorch.backends.apple.mlx.test.run_all_tests quantized_embedding
 
     # Run directly with custom args:
-    python -m executorch.backends.apple.mlx.test.test_quantized_linear run --group-size 64
+    python -m executorch.backends.apple.mlx.test.test_quantized_embedding run --group-size 64
 """
 
 from typing import List, Tuple
@@ -24,73 +27,74 @@ import torch.nn as nn
 from .test_utils import OpTestCase, register_test, run_op_test_main
 
 
-class QuantizedLinearModel(nn.Module):
-    """Simple linear layer that will be quantized."""
+class QuantizedEmbeddingModel(nn.Module):
+    """Simple embedding layer that will be quantized."""
 
     def __init__(
-        self, in_features: int = 64, out_features: int = 128, bias: bool = True
+        self,
+        num_embeddings: int = 1000,
+        embedding_dim: int = 64,
     ):
         super().__init__()
-        self.linear = nn.Linear(in_features, out_features, bias=bias)
+        self.embedding = nn.Embedding(num_embeddings, embedding_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.linear(x)
+        return self.embedding(x)
 
 
 @register_test
-class QuantizedLinearTest(OpTestCase):
-    """Test case for TorchAO int4 quantized nn.Linear."""
+class QuantizedEmbeddingTest(OpTestCase):
+    """Test case for TorchAO int4 quantized nn.Embedding."""
 
-    name = "quantized_linear"
+    name = "quantized_embedding"
     rtol = 0.1  # Higher tolerance for quantized ops
     atol = 0.1
 
     def __init__(
         self,
-        in_features: int = 64,
-        out_features: int = 128,
+        num_embeddings: int = 1000,
+        embedding_dim: int = 64,
         batch_size: int = 2,
         seq_len: int = 16,
-        bias: bool = True,
         group_size: int = 32,
         dtype: torch.dtype = torch.bfloat16,
     ):
-        self.in_features = in_features
-        self.out_features = out_features
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
         self.batch_size = batch_size
         self.seq_len = seq_len
-        self.bias = bias
         self.group_size = group_size
         self.dtype = dtype
 
         # Build unique test name
-        parts = ["quantized_linear", f"g{group_size}"]
-        if not bias:
-            parts.append("no_bias")
+        parts = ["quantized_embedding", f"g{group_size}"]
         self.name = "_".join(parts)
 
     @classmethod
-    def get_test_configs(cls) -> List["QuantizedLinearTest"]:
+    def get_test_configs(cls) -> List["QuantizedEmbeddingTest"]:
         """Return all test configurations to run."""
         return [
-            cls(),  # default (group_size=32, with bias)
+            cls(),  # default (group_size=32)
         ]
 
     def create_model(self) -> nn.Module:
-        model = QuantizedLinearModel(
-            self.in_features, self.out_features, bias=self.bias
-        )
+        model = QuantizedEmbeddingModel(self.num_embeddings, self.embedding_dim)
         model = model.to(self.dtype)
 
         try:
             from torchao.quantization.granularity import PerGroup
             from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 
+            # Filter function to only quantize embedding layers
+            def embedding_filter(module: nn.Module, fqn: str) -> bool:
+                return isinstance(module, nn.Embedding)
+
             quantize_(
                 model,
                 IntxWeightOnlyConfig(
                     weight_dtype=torch.int4, granularity=PerGroup(self.group_size)
                 ),
+                embedding_filter,
             )
         except ImportError:
             raise RuntimeError("TorchAO not installed. Run: pip install torchao")
@@ -98,9 +102,8 @@ class QuantizedLinearTest(OpTestCase):
         return model
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(
-            self.batch_size, self.seq_len, self.in_features, dtype=self.dtype
-        )
+        # Random token indices
+        x = torch.randint(0, self.num_embeddings, (self.batch_size, self.seq_len))
         return (x,)
 
     def get_dynamic_shapes(self):
@@ -108,25 +111,25 @@ class QuantizedLinearTest(OpTestCase):
 
 
 # Factory for CLI usage
-def _create_from_args(args) -> QuantizedLinearTest:
+def _create_from_args(args) -> QuantizedEmbeddingTest:
     if args is None:
-        return QuantizedLinearTest()
-    return QuantizedLinearTest(
-        in_features=args.in_features,
-        out_features=args.out_features,
+        return QuantizedEmbeddingTest()
+    return QuantizedEmbeddingTest(
+        num_embeddings=args.vocab_size,
+        embedding_dim=args.embedding_dim,
         batch_size=args.batch_size,
         seq_len=args.seq_len,
-        bias=not args.no_bias,
         group_size=args.group_size,
     )
 
 
 def _add_args(parser):
-    parser.add_argument("--in-features", type=int, default=64, help="Input features")
-    parser.add_argument("--out-features", type=int, default=128, help="Output features")
+    parser.add_argument("--vocab-size", type=int, default=1000, help="Vocabulary size")
+    parser.add_argument(
+        "--embedding-dim", type=int, default=64, help="Embedding dimension"
+    )
     parser.add_argument("--batch-size", type=int, default=2, help="Batch size")
     parser.add_argument("--seq-len", type=int, default=16, help="Sequence length")
-    parser.add_argument("--no-bias", action="store_true", help="Test without bias")
     parser.add_argument(
         "--group-size", type=int, default=32, help="Quantization group size"
     )
@@ -134,5 +137,5 @@ def _add_args(parser):
 
 if __name__ == "__main__":
     run_op_test_main(
-        _create_from_args, "Test quantized nn.Linear on MLX delegate", _add_args
+        _create_from_args, "Test quantized nn.Embedding on MLX delegate", _add_args
     )

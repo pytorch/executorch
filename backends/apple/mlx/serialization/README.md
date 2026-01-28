@@ -132,14 +132,16 @@ FlatBuffer fields without `(required)` are optional. In the generated Python
 dataclasses, these become `Optional[T]` with default `None`.
 
 For optional scalar fields that need a sentinel (to distinguish None from 0),
-use the `_is_set` pattern:
+use the `= null` default:
 
 ```flatbuffers
 table MyNode {
-    value: float;
-    value_is_set: bool = false;
+    value: float = null;  // None by default, distinguishes None from 0.0
 }
 ```
+
+This requires FlatBuffers 2.0+ (ExecuTorch uses 24.3.25). The generated Python
+dataclass will have `value: Optional[float] = None`.
 
 ## Troubleshooting
 

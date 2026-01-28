@@ -15,9 +15,9 @@ This package provides:
 
 from executorch.backends.apple.mlx.examples.llama.export_llama import (
     CustomRMSNorm,
+    export_llama_to_mlx,
     KVCacheAttention,
     LlamaWithFunctionalKV,
-    export_llama_to_mlx,
 )
 
 __all__ = [

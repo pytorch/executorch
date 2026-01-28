@@ -49,11 +49,16 @@
 # https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
 cmake_minimum_required(VERSION 3.29)
 
-# Set minimum macOS deployment target for Apple platforms.
-# This must be set before the project() call and before any subdirectory processing.
-# MLX requires macOS >= 14.0, so we default to 14.0 if not set.
-if(APPLE AND (NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL ""))
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version" FORCE)
+# Set minimum macOS deployment target for Apple platforms. This must be set
+# before the project() call and before any subdirectory processing. MLX requires
+# macOS >= 14.0, so we default to 14.0 if not set.
+if(APPLE AND (NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET
+                                                 STREQUAL "")
+)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET
+      "14.0"
+      CACHE STRING "Minimum macOS version" FORCE
+  )
 endif()
 project(executorch)
 

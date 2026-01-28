@@ -55,6 +55,13 @@ table FloatOrVid {
 
 table NoopNode {}
 
+table AddmmNode {
+    mat1: Tid (required);      // First matrix
+    mat2: Tid (required);      // Second matrix
+    out: Tid (required);
+    bias: Tid;                 // optional - added to result
+}
+
 table LinearNode {
     x: Tid (required);
     weight: Tid (required);
@@ -102,16 +109,13 @@ table LayerNormNode {
 }
 
 table RopeNode {
-    q_in: Tid (required);
-    k_in: Tid (required);
-    q_out: Tid (required);
-    k_out: Tid (required);
+    x: Tid (required);
+    out: Tid (required);
     head_dim: int32;
     pos: Vid (required);
     freqs: Tid;  // optional
     traditional: bool = false;
-    base: float;
-    base_is_set: bool = false;  // to distinguish None from 0.0
+    base: float = 500000.0;  // Llama 3 default
     scale: float = 1.0;
 }
 
@@ -169,8 +173,7 @@ table ARangeNode {
     start: int32;
     stop: int32;
     step: int32 = 1;
-    dtype: DTypeId;
-    dtype_is_set: bool = false;
+    dtype: DTypeId = null;  // optional - None means infer from context
 }
 
 table SiluNode {
@@ -211,7 +214,7 @@ table SliceNode {
     out: Tid (required);
     axis: IntOrVid (required);
     start: IntOrVid (required);
-    end: IntOrVid (required);
+    stop: IntOrVid (required);
 }
 
 table CastNode {
@@ -291,6 +294,7 @@ table QuantizedGatherNode {
 
 union OpNode {
     NoopNode,
+    AddmmNode,
     LinearNode,
     ItemIntNode,
     ExpandDimsNode,

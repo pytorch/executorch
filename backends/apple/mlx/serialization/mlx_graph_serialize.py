@@ -26,12 +26,16 @@ Layout:
 from __future__ import annotations
 
 import struct
-from dataclasses import fields, is_dataclass
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, List, Tuple
 
 import flatbuffers
 
-from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
+# Import auto-generated serializers
+from executorch.backends.apple.mlx.serialization._generated_serializers import (
+    GeneratedOpBuilders,
+)
+
+from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (  # noqa: F401
     AddNode,
     AddScalarNode,
     ARangeNode,
@@ -81,11 +85,6 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
 )
 from executorch.exir._serialize._program import Cord
 
-# Import auto-generated serializers
-from executorch.backends.apple.mlx.serialization._generated_serializers import (
-    GeneratedOpBuilders,
-)
-
 # =============================================================================
 # Constants
 # =============================================================================
@@ -121,8 +120,12 @@ def _build_vid(builder: flatbuffers.Builder, vid: Vid) -> int:
 def _build_int_or_vid(builder: flatbuffers.Builder, iov: IntOrVid) -> int:
     """Build an IntOrVid table."""
     # Import the MODULE (not class) to access builder functions
-    from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import IntOrVid as FBIntOrVidModule
-    from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Vid import CreateVid
+    from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import (
+        IntOrVid as FBIntOrVidModule,
+    )
+    from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Vid import (
+        CreateVid,
+    )
 
     FBIntOrVidModule.Start(builder)
     FBIntOrVidModule.AddLiteral(builder, iov.literal)
@@ -239,20 +242,29 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         version_off = builder.CreateString(self.graph.version)
 
         # Build DataSegment table first (it's a table, not a struct)
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import DataSegment as FBDataSegmentModule
+        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import (
+            DataSegment as FBDataSegmentModule,
+        )
+
         FBDataSegmentModule.Start(builder)
         FBDataSegmentModule.AddOffset(builder, self.graph.constant_segment.offset)
         FBDataSegmentModule.AddSize(builder, self.graph.constant_segment.size)
         data_segment_off = FBDataSegmentModule.End(builder)
 
         # 6. Build the root MLXGraph table
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import MLXGraph as FBMLXGraphModule
+        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import (
+            MLXGraph as FBMLXGraphModule,
+        )
 
         FBMLXGraphModule.Start(builder)
         FBMLXGraphModule.AddVersion(builder, version_off)
         FBMLXGraphModule.AddNumConstantTensors(builder, self.graph.num_constant_tensors)
-        FBMLXGraphModule.AddNumNonConstantTensors(builder, self.graph.num_non_constant_tensors)
-        FBMLXGraphModule.AddNumNonConstantValues(builder, self.graph.num_non_constant_values)
+        FBMLXGraphModule.AddNumNonConstantTensors(
+            builder, self.graph.num_non_constant_tensors
+        )
+        FBMLXGraphModule.AddNumNonConstantValues(
+            builder, self.graph.num_non_constant_values
+        )
         FBMLXGraphModule.AddInstructions(builder, instructions_vec)
         FBMLXGraphModule.AddInputMap(builder, input_map_vec)
         FBMLXGraphModule.AddOutputMap(builder, output_map_vec)
@@ -271,7 +283,9 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         """Build an Instruction table containing an op."""
         op_offset, op_type = self._build_op_node(builder, instr.op)
 
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import Instruction as FBInstructionModule
+        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import (
+            Instruction as FBInstructionModule,
+        )
 
         FBInstructionModule.Start(builder)
         FBInstructionModule.AddOpType(builder, op_type)
@@ -325,28 +339,30 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         self, builder: flatbuffers.Builder, slot: SlotVariant
     ) -> int:
         """Build a SlotVariant table."""
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import SlotVariant as FBSlotVariantModule
+        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import (
+            SlotVariant as FBSlotVariantModule,
+        )
+
         FBSlotVariantModule.Start(builder)
         FBSlotVariantModule.AddIdx(builder, slot.idx)
         FBSlotVariantModule.AddSlotType(builder, slot.slot_type)
         return FBSlotVariantModule.End(builder)
 
-    def _build_named_slot(
-        self, builder: flatbuffers.Builder, ns: NamedSlot
-    ) -> int:
+    def _build_named_slot(self, builder: flatbuffers.Builder, ns: NamedSlot) -> int:
         """Build a NamedSlot table."""
         name_off = builder.CreateString(ns.name)
         slot_off = self._build_slot_variant(builder, ns.slot)
 
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import NamedSlot as FBNamedSlotModule
+        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import (
+            NamedSlot as FBNamedSlotModule,
+        )
+
         FBNamedSlotModule.Start(builder)
         FBNamedSlotModule.AddName(builder, name_off)
         FBNamedSlotModule.AddSlot(builder, slot_off)
         return FBNamedSlotModule.End(builder)
 
-    def _build_tensor_meta(
-        self, builder: flatbuffers.Builder, tm: TensorMeta
-    ) -> int:
+    def _build_tensor_meta(self, builder: flatbuffers.Builder, tm: TensorMeta) -> int:
         """Build a TensorMeta table."""
         # Shape is now a vector of IntOrVid tables
         shape_offsets = []
@@ -362,7 +378,10 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         if tm.strides:
             strides_vec = _build_int_vector(builder, tm.strides)
 
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import TensorMeta as FBTensorMetaModule
+        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import (
+            TensorMeta as FBTensorMetaModule,
+        )
+
         FBTensorMetaModule.Start(builder)
         FBTensorMetaModule.AddShape(builder, shape_vec)
         FBTensorMetaModule.AddDtype(builder, tm.dtype)
@@ -431,7 +450,9 @@ def deserialize_to_json(data: bytes) -> dict:
     fb_data = data[fb_off : fb_off + fb_size]
 
     # Parse using generated FlatBuffer code
-    from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.MLXGraph import MLXGraph as FBMLXGraphClass
+    from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.MLXGraph import (
+        MLXGraph as FBMLXGraphClass,
+    )
 
     graph = FBMLXGraphClass.GetRootAs(fb_data, 0)
 
