@@ -1176,15 +1176,3 @@ class VgfPipeline(BasePipeline, Generic[T]):
                 inputs=self.test_data,
             )
         self.run_on_vulkan_runtime = run_on_vulkan_runtime
-
-    # TODO: Remove once CI fully working
-    def run(self):
-        import pytest
-
-        if self.run_on_vulkan_runtime:
-            try:
-                super().run()
-            except FileNotFoundError as e:
-                pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
-        else:
-            super().run()
