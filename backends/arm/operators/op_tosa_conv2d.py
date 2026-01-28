@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,10 +10,6 @@ import tosa_serializer as ts
 from typing import Any, List
 
 import torch
-
-from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
-    get_input_qparams,
-)
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -22,6 +18,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_valid_dtype,
 )
+from executorch.backends.arm.operators.ops_quant_utils import add_input_weight_zp_consts
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
 
@@ -74,6 +71,8 @@ class Conv2dVisitor(NodeVisitor):
                 validate_valid_dtype(
                     self.target, [inputs[2]], [ts.DType.INT48], self.tosa_spec
                 )
+        if self.tosa_spec.support_extension("bf16"):
+            valid_input_dtypes.append(ts.DType.BF16)
 
         validate_valid_dtype(
             self.target,
@@ -87,29 +86,14 @@ class Conv2dVisitor(NodeVisitor):
         stride_attr = stride.special
         dilation_attr = dilation.special
 
-        input_zp = 0
-        if inputs[0].dtype in (ts.DType.INT8, ts.DType.INT16):
-            # int8 and int16 input requires quantization information
-            input_qparams = get_input_qparams(node)
-            input_zp = input_qparams[0].get_zp_per_tensor()
-
-        weight_zp = 0
-        if inputs[1].dtype == ts.DType.INT8:
-            # int8 weights requires quantization information
-            input_qparams = get_input_qparams(node)
-            weight_zp = input_qparams[1].zp  # type: ignore[assignment]
-
         conv2d_output_name = output.name
         acc_type = output.dtype
+        if output.dtype == ts.DType.BF16:
+            # Accumulate BF16 inputs in FP32 for better precision per TOSA BF16 extension.
+            acc_type = ts.DType.FP32
 
-        tosa_graph.addConst(
-            [1], inputs[0].dtype, [input_zp], name=f"{conv2d_output_name}_input_zp"
-        )
-        tosa_graph.addConst(
-            [1],
-            inputs[1].dtype,
-            weight_zp,
-            name=f"{conv2d_output_name}_weight_zp",
+        input_zp_name, weight_zp_name = add_input_weight_zp_consts(
+            tosa_graph, node, inputs, conv2d_output_name
         )
 
         tosa_op = self._get_tosa_op()
@@ -131,8 +115,8 @@ class Conv2dVisitor(NodeVisitor):
                 input.name,
                 weight.name,
                 bias.name,
-                f"{conv2d_output_name}_input_zp",
-                f"{conv2d_output_name}_weight_zp",
+                input_zp_name,
+                weight_zp_name,
             ],
             [conv2d_output_name],
             attr,
