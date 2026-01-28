@@ -675,7 +675,7 @@ class KVCacheTest(OpTestCase):
 
         return pte_path, input_path, expected_path
 
-    def run_test(self, verbose: bool = False) -> bool:
+    def run_test(self, verbose: bool = False, timeout: Optional[int] = None) -> bool:
         """Run the full test with special handling for pattern tests.
 
         Pattern tests (kv_cache, kv_cache_pattern_fully_dynamic) skip output

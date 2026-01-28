@@ -242,10 +242,13 @@ inline void exec_gelu(const GeluNode& n, ExecutionState& st, StreamOrDevice s) {
 // ----- ARange -----
 inline void
 exec_arange(const ARangeNode& n, ExecutionState& st, StreamOrDevice s) {
-  // dtype uses _is_set pattern, but the value will be serialized with default
-  // if not explicitly set by user. Python serializer handles defaults.
+  // Get start, stop, step - may be literal int64 or dynamic Vid
+  int start_val = resolve_int(n.start, st);
+  int stop_val = resolve_int(n.stop, st);
+  int step_val = resolve_int(n.step, st);
+
   st.set_tensor(
-      n.out, arange(n.start, n.stop, n.step, to_mlx_dtype(n.dtype), s));
+      n.out, arange(start_val, stop_val, step_val, to_mlx_dtype(n.dtype), s));
 }
 
 // ----- SiLU -----
