@@ -106,7 +106,6 @@ AOTITorchError aoti_torch_get_device_index(
   return Error::Ok;
 }
 
-
 // ============================================================
 // DType Constants - Implementations
 // ============================================================

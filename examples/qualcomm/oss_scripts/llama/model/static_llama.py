@@ -739,24 +739,30 @@ class MultiScopeAwareLlamaModel(LlamaModel):
             output_new_cache_only=output_new_cache_only,
             output_cache=output_cache,
             use_i64_token=use_i64_token,
+            **kwargs,
         )
-
-        for key in ["layer_types", "sliding_window", "rope_local_base_freq"]:
-            assert key in kwargs, f"Missing required argument: '{key}' in kwargs"
-
-        # Get attention type for each layer
-        self.layer_types = kwargs["layer_types"]
-        # Get sliding window size (used in local/global attention)
-        self.sliding_window = kwargs["sliding_window"]
-        # Get local freq base for sliding attention
-        rope_freq_base = kwargs["rope_local_base_freq"]
         # Parameter final_logit_softcapping is not necessary for all
-        self.final_logit_softcapping = kwargs.get("final_logit_softcapping")
+        self.final_logit_softcapping = config.final_logit_softcapping
 
+        # Gemma2/Gemma3 requires additional configuration parameters:
+        # - layer_types: Specifies the type of each layer (e.g., full vs. sliding attention)
+        # - local_rope_theta: Base frequency for local RoPE
+        # - sliding_window: Size of the sliding window for local attention
+        self.layer_types = config.layer_types
+        if self.layer_types is not None:
+            assert len(self.layer_types) == self.n_layers, (
+                f"Length of layer_types ({len(self.layer_types)}) must match "
+                f"n_layers ({self.n_layers})"
+            )
+        assert (
+            config.local_rope_theta is not None
+        ), "local_rope_theta should not be None, please set it explicitly in config."
+
+        self.sliding_window = config.sliding_window
         local_freqs_cos, local_freqs_sin = hf_precompute_freqs_cis(
             config.head_dim,
             config.max_seq_len,
-            rope_freq_base,
+            config.local_rope_theta,
             config.partial_rotary_factor,
         )
         local_freqs_cos = local_freqs_cos[:, : local_freqs_cos.shape[-1] // 2]
