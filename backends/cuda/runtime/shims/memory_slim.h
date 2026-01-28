@@ -106,6 +106,28 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_new_tensor_handle(Tensor* orig_handle, Tensor** new_handle);
 
+/**
+ * Creates a reinterpreted view of a tensor with new sizes, strides, and offset.
+ *
+ * This is equivalent to torch.as_strided() - it creates a new tensor that
+ * shares the same underlying storage but with different view parameters.
+ *
+ * @param self Original tensor to reinterpret (must not be null)
+ * @param ndim Number of dimensions for the new view
+ * @param sizes_ptr Pointer to array of dimension sizes
+ * @param strides_ptr Pointer to array of strides for each dimension
+ * @param storage_offset Storage offset in number of elements
+ * @param ret_new_tensor Output parameter for the reinterpreted tensor view
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
+    Tensor* self,
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int64_t storage_offset,
+    Tensor** ret_new_tensor);
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
