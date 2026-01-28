@@ -219,6 +219,27 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking) {
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst) {
+  ET_CHECK_OR_RETURN_ERROR(
+      src != nullptr,
+      InvalidArgument,
+      "aoti_torch_assign_tensors_out: src is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_dst != nullptr,
+      InvalidArgument,
+      "aoti_torch_assign_tensors_out: ret_dst is null");
+
+  // Create a shallow copy of the source tensor that shares the same underlying
+  // storage. The source tensor remains valid after this operation.
+  // This matches ATen's behavior where the copy constructor shares storage
+  // via reference counting.
+  Tensor dst_tensor = *src;
+  *ret_dst = new Tensor(std::move(dst_tensor));
+
+  return Error::Ok;
+}
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
