@@ -97,8 +97,7 @@ install(
   DESTINATION lib
 )
 
-# CUDA-specific AOTI shim symbols (dynamically linked) Uses
-# common_shims_slim.cpp for SlimTensor-based shim implementations
+# CUDA-specific AOTI shim symbols (dynamically linked)
 set(_aoti_cuda_shim_sources
     runtime/shims/memory.cpp
     runtime/shims/cuda_guard.cpp
