@@ -297,7 +297,8 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
         {static_cast<::executorch::aten::SizesType>(audioData.size())},
         ::executorch::aten::ScalarType::Float);
 
-    auto processedResult = handle->preprocessor->execute("forward", audioTensor);
+    auto processedResult =
+        handle->preprocessor->execute("forward", audioTensor);
     if (processedResult.error() != Error::Ok) {
       env->ThrowNew(
           env->FindClass("java/lang/RuntimeException"),
@@ -326,9 +327,7 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
     // This is for models that expect raw waveform input
     featuresTensor = from_blob(
         audioData.data(),
-        {1,
-         static_cast<::executorch::aten::SizesType>(audioData.size()),
-         1},
+        {1, static_cast<::executorch::aten::SizesType>(audioData.size()), 1},
         ::executorch::aten::ScalarType::Float);
   }
 
@@ -360,56 +359,57 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
     if (env->GetJavaVM(&jvm) != JNI_OK || jvm == nullptr) {
       ET_LOG(Error, "Failed to get JavaVM for ASR token callback.");
     } else {
-      tokenCallback =
-          [jvm, callbackRef, &tokenBuffer](const std::string& token) {
-            JNIEnv* envLocal = nullptr;
-            jint getEnvResult =
-                jvm->GetEnv(reinterpret_cast<void**>(&envLocal), JNI_VERSION_1_6);
-            if (getEnvResult == JNI_EDETACHED) {
+      tokenCallback = [jvm, callbackRef, &tokenBuffer](
+                           const std::string& token) {
+        JNIEnv* envLocal = nullptr;
+        jint getEnvResult =
+            jvm->GetEnv(reinterpret_cast<void**>(&envLocal), JNI_VERSION_1_6);
+        if (getEnvResult == JNI_EDETACHED) {
 #if defined(__ANDROID__) || defined(ANDROID)
-              if (jvm->AttachCurrentThread(&envLocal, nullptr) != JNI_OK)
+          if (jvm->AttachCurrentThread(&envLocal, nullptr) != JNI_OK)
 #else
-              if (jvm->AttachCurrentThread(reinterpret_cast<void**>(&envLocal), nullptr) !=
-                  JNI_OK)
+          if (jvm->AttachCurrentThread(
+                  reinterpret_cast<void**>(&envLocal), nullptr) != JNI_OK)
 #endif
-              {
-                ET_LOG(
-                    Error,
-                    "Failed to attach current thread to JVM for ASR token callback.");
-                return;
-              }
-            } else if (getEnvResult != JNI_OK || envLocal == nullptr) {
-              ET_LOG(
-                  Error,
-                  "Failed to get JNIEnv for ASR token callback (GetEnv error).");
-              return;
-            }
+          {
+            ET_LOG(
+                Error,
+                "Failed to attach current thread to JVM for ASR token callback.");
+            return;
+          }
+        } else if (getEnvResult != JNI_OK || envLocal == nullptr) {
+          ET_LOG(
+              Error,
+              "Failed to get JNIEnv for ASR token callback (GetEnv error).");
+          return;
+        }
 
-            tokenBuffer += token;
-            if (!utf8_check_validity(tokenBuffer.c_str(), tokenBuffer.size())) {
-              ET_LOG(
-                  Info,
-                  "Current token buffer is not valid UTF-8. Waiting for more.");
-              return;
-            }
+        tokenBuffer += token;
+        if (!utf8_check_validity(tokenBuffer.c_str(), tokenBuffer.size())) {
+          ET_LOG(
+              Info,
+              "Current token buffer is not valid UTF-8. Waiting for more.");
+          return;
+        }
 
-            std::string completeToken = tokenBuffer;
-            tokenBuffer.clear();
+        std::string completeToken = tokenBuffer;
+        tokenBuffer.clear();
 
-            jstring jToken = envLocal->NewStringUTF(completeToken.c_str());
-            envLocal->CallVoidMethod(
-                callbackRef, callbackCache.onTokenMethod, jToken);
-            if (envLocal->ExceptionCheck()) {
-              ET_LOG(Error, "Exception occurred in AsrCallback.onToken");
-              envLocal->ExceptionClear();
-            }
-            envLocal->DeleteLocalRef(jToken);
-          };
+        jstring jToken = envLocal->NewStringUTF(completeToken.c_str());
+        envLocal->CallVoidMethod(
+            callbackRef, callbackCache.onTokenMethod, jToken);
+        if (envLocal->ExceptionCheck()) {
+          ET_LOG(Error, "Exception occurred in AsrCallback.onToken");
+          envLocal->ExceptionClear();
+        }
+        envLocal->DeleteLocalRef(jToken);
+      };
     }
   }
 
   // Run transcription
-  auto result = handle->runner->transcribe(featuresTensor, config, tokenCallback);
+  auto result =
+      handle->runner->transcribe(featuresTensor, config, tokenCallback);
 
   // Call onComplete if callback provided
   if (scopedCallback) {
