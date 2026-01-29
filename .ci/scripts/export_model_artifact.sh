@@ -106,10 +106,6 @@ case "$HF_MODEL" in
     PREPROCESSOR_OUTPUT=""
     ;;
   nvidia/parakeet-tdt)
-    if [ "$DEVICE" = "metal" ]; then
-      echo "Error: Export for device 'metal' is not yet tested for model '$HF_MODEL'"
-      exit 1
-    fi
     MODEL_NAME="parakeet"
     TASK=""
     MAX_SEQ_LEN=""
