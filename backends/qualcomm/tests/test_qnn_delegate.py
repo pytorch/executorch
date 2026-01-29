@@ -8131,15 +8131,8 @@ class TestUtilsScript(TestQNN):
                 self.build_folder,
                 "--input_list",
                 f"{tmp_dir}/input_list",
-                "--model",
-                self.model,
-                "--host",
-                self.host,
-                "--target",
-                self.target,
-                "--device",
-                self.device,
             ]
+            self.add_default_cmds(cmds)
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
             self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/Result_0/output_0.pt"))
 
