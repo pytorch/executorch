@@ -1,6 +1,7 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "schemas",
     srcs = ["schemas/__init__.py"],
     resources = [
@@ -9,7 +10,7 @@ runtime.python_library(
     visibility = ["PUBLIC"],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "mapping",
     srcs = [
         "mapping.py",
@@ -20,7 +21,7 @@ runtime.python_library(
         ":specification",
     ],
 )
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "specification",
     srcs = [
         "specification.py",
@@ -30,7 +31,7 @@ runtime.python_library(
         "//executorch/exir/backend:compile_spec_schema",
     ],
 )
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "utils",
     srcs = [
         "utils.py",
@@ -40,7 +41,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "tosa",
     srcs = [
         "__init__.py",
@@ -50,7 +51,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "compile_spec",
     srcs = [
         "compile_spec.py",
@@ -62,7 +63,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "partitioner",
     srcs = [
         "backend.py",

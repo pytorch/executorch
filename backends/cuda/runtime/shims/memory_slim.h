@@ -144,6 +144,19 @@ AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
 
 /**
+ * Extracts a boolean scalar value from a single-element tensor.
+ *
+ * The tensor must contain exactly one element and have Bool dtype.
+ * For CUDA tensors, this will synchronize to copy the value to CPU.
+ *
+ * @param tensor Single-element boolean tensor (must not be null)
+ * @param ret_value Output parameter for the extracted boolean value
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_bool(Tensor* tensor, bool* ret_value);
+
+/**
  * Moves a tensor into a new handle and assigns it to the output parameter.
  *
  * Unlike aoti_torch_new_tensor_handle which copies, this function moves the

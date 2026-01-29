@@ -1,8 +1,9 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 
-python_binary(
+fbcode_target(_kind = python_binary,
     name = "export",
     srcs = [
         "export.py",
