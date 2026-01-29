@@ -24,10 +24,11 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 @register_node_visitor
 class TransposeVisitor(NodeVisitor):
-    """
-    This node visitor targets the tosa::TRANSPOSE op defined in the
-    TOSA backend dialect. Used when switching between tosa_dim_orders.
-    Inserts a TOSA TRANSPOSE.
+    """Lower the TOSA TRANSPOSE op when switching dim orders.
+
+    Targets the tosa::TRANSPOSE op in the TOSA backend dialect and inserts a
+    TOSA TRANSPOSE.
+
     """
 
     target = "tosa.TRANSPOSE.default"

@@ -23,14 +23,14 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def permutation_vector_to_matrix(permutation_vector: list[int]) -> torch.Tensor:
-    """
-    Converts a permutation vector of length N to a NxN matrix that describes the same permutation.
-    for example:
-    (1,0,2)
-    ->
-    [0 1 0]
-    |1 0 0|
-    [0 0 1]
+    """Convert a permutation vector of length N to an N x N matrix.
+
+    Example:
+        (1, 0, 2) ->
+        [0 1 0]
+        [1 0 0]
+        [0 0 1]
+
     """
     N = len(permutation_vector)
     P = torch.zeros(N, N)
@@ -40,13 +40,14 @@ def permutation_vector_to_matrix(permutation_vector: list[int]) -> torch.Tensor:
 
 
 def permutation_matrix_to_vector(permutation_matrix: torch.Tensor) -> list[int]:
-    """
-    Converts a NxN permutation matrix to a permutation vector of length N that describes the same permutation.
-    [0 1 0]
-    |1 0 0|
-    [0 0 1]
-    ->
-    (1,0,2)
+    """Convert an N x N permutation matrix to a permutation vector of length N.
+
+    Example:
+        [0 1 0]
+        [1 0 0]
+        [0 0 1]
+        -> (1, 0, 2)
+
     """
     N = len(permutation_matrix)
     if N != len(permutation_matrix[0]):

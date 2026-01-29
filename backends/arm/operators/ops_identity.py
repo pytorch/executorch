@@ -24,9 +24,8 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def identity_operator_factory(identity_target: str):
-    """
-    Creates and registers NodeVisitors for operators that map directly
-    to a TOSA IDENTITY op.
+    """Creates and registers NodeVisitors for operators that map directly to a
+    TOSA IDENTITY op.
     """
 
     class IdentityOperatorVisitor(NodeVisitor):
