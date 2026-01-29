@@ -24,8 +24,6 @@ from torch.fx import Node
 class ScatterVisitor(NodeVisitor):
     target = "tosa.SCATTER.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def define_node(
         self,
         node: Node,

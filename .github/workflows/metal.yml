@@ -44,6 +44,8 @@ jobs:
             name: "whisper-small"
           - repo: "openai"
             name: "whisper-large-v3-turbo"
+          - repo: "nvidia"
+            name: "parakeet-tdt"
         quant:
           - "non-quantized"
     with:
@@ -92,6 +94,8 @@ jobs:
             name: "whisper-small"
           - repo: "openai"
             name: "whisper-large-v3-turbo"
+          - repo: "nvidia"
+            name: "parakeet-tdt"
         quant:
           - "non-quantized"
     with:

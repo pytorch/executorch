@@ -32,8 +32,6 @@ def identity_operator_factory(identity_target: str):
     class IdentityOperatorVisitor(NodeVisitor):
         target = identity_target
 
-        tosa_specs = NodeVisitor.tosa_specs
-
         def define_node(
             self,
             node: torch.fx.Node,

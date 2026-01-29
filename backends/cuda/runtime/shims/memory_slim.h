@@ -11,8 +11,8 @@
 #include <cstdint>
 
 #include <executorch/backends/aoti/export.h>
-#include <executorch/backends/aoti/slim/core/SlimTensor.h>
-#include <executorch/backends/aoti/slim/core/SlimTensorView-incl.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor_view_incl.h>
 #include <executorch/runtime/core/error.h>
 
 namespace executorch::backends::cuda {
@@ -78,6 +78,97 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
     int32_t device_type,
     int32_t device_index,
     Tensor** ret_new_tensor);
+
+/**
+ * Deletes a tensor object and frees associated resources.
+ *
+ * For SlimTensor, the underlying storage uses SharedPtr-based reference
+ * counting. When the last tensor referencing the storage is deleted,
+ * the memory is automatically freed.
+ *
+ * @param tensor Pointer to the tensor to delete (must not be null)
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
+
+/**
+ * Creates a new tensor handle that shares storage with the original tensor.
+ *
+ * The new handle is a copy of the original tensor's metadata (sizes, strides,
+ * dtype, device) and shares the same underlying storage via SharedPtr.
+ * Both tensors will reference the same memory, and the memory will only be
+ * freed when all references are deleted.
+ *
+ * @param orig_handle Pointer to the original tensor (must not be null)
+ * @param new_handle Output parameter for the new tensor handle
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_new_tensor_handle(Tensor* orig_handle, Tensor** new_handle);
+
+/**
+ * Creates a reinterpreted view of a tensor with new sizes, strides, and offset.
+ *
+ * This is equivalent to torch.as_strided() - it creates a new tensor that
+ * shares the same underlying storage but with different view parameters.
+ *
+ * @param self Original tensor to reinterpret (must not be null)
+ * @param ndim Number of dimensions for the new view
+ * @param sizes_ptr Pointer to array of dimension sizes
+ * @param strides_ptr Pointer to array of strides for each dimension
+ * @param storage_offset Storage offset in number of elements
+ * @param ret_new_tensor Output parameter for the reinterpreted tensor view
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
+    Tensor* self,
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int64_t storage_offset,
+    Tensor** ret_new_tensor);
+
+/**
+ * Copies data from source tensor to destination tensor.
+ *
+ * Handles all device combinations (CPU-CPU, CPU-CUDA, CUDA-CPU, CUDA-CUDA)
+ * and supports tensors with different strides. The destination tensor must
+ * already be allocated with sufficient storage.
+ *
+ * @param self Destination tensor (must not be null)
+ * @param src Source tensor to copy from (must not be null)
+ * @param non_blocking If true, the copy may be asynchronous (currently ignored)
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
+
+/**
+ * Extracts a boolean scalar value from a single-element tensor.
+ *
+ * The tensor must contain exactly one element and have Bool dtype.
+ * For CUDA tensors, this will synchronize to copy the value to CPU.
+ *
+ * @param tensor Single-element boolean tensor (must not be null)
+ * @param ret_value Output parameter for the extracted boolean value
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_bool(Tensor* tensor, bool* ret_value);
+
+/**
+ * Moves a tensor into a new handle and assigns it to the output parameter.
+ *
+ * Unlike aoti_torch_new_tensor_handle which copies, this function moves the
+ * source tensor into the destination. After this operation, the source tensor
+ * is left in an undefined/reset state and should not be used.
+ *
+ * @param src Source tensor to move from (must not be null, will be reset)
+ * @param ret_dst Output parameter for the new tensor handle
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst);
 
 } // extern "C"
 
