@@ -1,9 +1,10 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:native_rules.bzl", "buck_filegroup", "buck_sh_test")
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 
 oncall("executorch")
 
-python_binary(
+fbcode_target(_kind = python_binary,
     name = "sphinx",
     main_module = "sphinx.cmd.build",
     par_style = "xar",
@@ -30,12 +31,12 @@ python_binary(
     ],
 )
 
-buck_filegroup(
+fbcode_target(_kind = buck_filegroup,
     name = "source",
     srcs = glob(["source/**/*"]),
 )
 
-buck_sh_test(
+fbcode_target(_kind = buck_sh_test,
     name = "doctest",
     args = [
         "-M",
