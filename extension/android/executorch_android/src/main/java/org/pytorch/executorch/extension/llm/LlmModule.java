@@ -233,6 +233,18 @@ public class LlmModule {
    * @param seqLen sequence length
    * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
+   */
+  public int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
+    return generate(prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param prompt Input prompt
+   * @param seqLen sequence length
+   * @param llmCallback callback object to receive results
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    * @param temperature temperature for sampling (use negative value to use module default)
    * @param numBos number of BOS tokens to prepend
    * @param numEos number of EOS tokens to append

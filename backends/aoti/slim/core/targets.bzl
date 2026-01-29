@@ -18,7 +18,7 @@ def define_common_targets():
             "//executorch/backends/aoti/slim/util:size_util",
             "//executorch/runtime/platform:platform",
             "//executorch/backends/aoti/slim/c10/cuda:exception",
-            "//executorch/backends/cuda/runtime:guard",
+            "//executorch/backends/aoti/slim/cuda:guard",
         ],
     )
 
