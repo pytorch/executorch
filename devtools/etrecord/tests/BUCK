@@ -1,9 +1,10 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "etrecord_test",
     srcs = ["etrecord_test.py"],
     deps = [
@@ -11,7 +12,7 @@ python_unittest(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "etrecord_test_library",
     srcs = ["etrecord_test.py"],
     deps = [
