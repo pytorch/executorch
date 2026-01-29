@@ -17,14 +17,25 @@
 
 #include <executorch/runtime/core/error.h>
 
+#include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <variant>
 #include <vector>
 
+// =============================================================================
+// Op Logging - Enable via CMake: -DET_MLX_ENABLE_OP_LOGGING=1
+// =============================================================================
+#ifndef ET_MLX_ENABLE_OP_LOGGING
+#define ET_MLX_ENABLE_OP_LOGGING 0
+#endif
+
 namespace executorch {
 namespace backends {
 namespace mlx {
+
+// Compile-time logging flag
+constexpr bool kEnableOpLogging = ET_MLX_ENABLE_OP_LOGGING;
 
 // =============================================================================
 // Type aliases
@@ -111,11 +122,27 @@ struct ExecutionState {
   // Non-constant values (SymInt, etc.)
   std::vector<std::optional<Value>> values;
 
+  // Logging context
+  size_t current_op_idx{0};
+  const char* current_op_name{nullptr};
+
+  // Tensor ID range boundaries for O(1) type lookup (computed at bind time)
+  uint32_t input_end{0};
+  uint32_t output_end{0};
+  uint32_t mutable_buffer_end{0};
+
   void bind(const MLXProgram& prog, const ConstantData& const_data) {
     program = &prog;
     constants = &const_data;
     tensors.assign(prog.num_non_constant_tensors, std::nullopt);
     values.assign(prog.num_non_constant_values, std::nullopt);
+
+    // Compute tensor ID range boundaries for fast type lookup
+    // ID assignment order: Constant -> Input -> Output -> MutableBuffer -> Temp
+    uint32_t constant_end = prog.num_constant_tensors;
+    input_end = constant_end + prog.num_input_tensors;
+    output_end = input_end + prog.num_output_tensors;
+    mutable_buffer_end = output_end + prog.num_mutable_buffer_tensors;
   }
 
   void reset() {
@@ -129,10 +156,104 @@ struct ExecutionState {
   }
 
   // --------------------------
+  // Logging helpers
+  // --------------------------
+
+  static inline const char* dtype_str(::mlx::core::Dtype dtype) {
+    using namespace ::mlx::core;
+    switch (dtype.val()) {
+      case float32.val():
+        return "f32";
+      case float16.val():
+        return "f16";
+      case bfloat16.val():
+        return "bf16";
+      case int32.val():
+        return "i32";
+      case int64.val():
+        return "i64";
+      case int16.val():
+        return "i16";
+      case int8.val():
+        return "i8";
+      case uint32.val():
+        return "u32";
+      case uint8.val():
+        return "u8";
+      case bool_.val():
+        return "bool";
+      default:
+        return "?";
+    }
+  }
+
+  static inline std::string format_shape(const ::mlx::core::Shape& shape) {
+    std::ostringstream ss;
+    ss << "(";
+    for (size_t i = 0; i < shape.size(); ++i) {
+      if (i > 0)
+        ss << ",";
+      ss << shape[i];
+    }
+    ss << ")";
+    return ss.str();
+  }
+
+  static inline std::string format_tensor_info(const Tensor& t) {
+    std::ostringstream ss;
+    ss << dtype_str(t.dtype());
+    ss << "(";
+    const auto& shape = t.shape();
+    for (size_t i = 0; i < shape.size(); ++i) {
+      if (i > 0)
+        ss << ",";
+      ss << shape[i];
+    }
+    ss << ")";
+    return ss.str();
+  }
+
+  // Get tensor type prefix for logging: "c", "i", "o", "b", "t"
+  inline const char* tensor_type_prefix(Tid id) const {
+    if (!program)
+      return "?";
+
+    uint32_t tid = id.idx;
+
+    // Check each range in order (mutually exclusive ranges)
+    if (tid < program->num_constant_tensors)
+      return "c"; // Constant
+    if (tid < input_end)
+      return "i"; // User Input
+    if (tid < output_end)
+      return "o"; // User Output
+    if (tid < mutable_buffer_end)
+      return "b"; // Mutable Buffer
+    return "t"; // Temp
+  }
+
+  inline void begin_op(size_t idx, const char* name) {
+    current_op_idx = idx;
+    current_op_name = name;
+    if constexpr (kEnableOpLogging) {
+      std::cout << "[" << idx << "] " << name << "\n";
+    }
+  }
+
+  inline void end_op() {
+    if constexpr (kEnableOpLogging) {
+      std::cout << "----\n";
+    }
+  }
+
+  // --------------------------
   // Tensor accessors
   // --------------------------
 
   inline Tensor& tensor_ref(Tid id) {
+    if constexpr (kEnableOpLogging) {
+      std::cout << "  ref  " << tensor_type_prefix(id) << id.idx << std::flush;
+    }
     if (!program) {
       throw std::runtime_error("tensor_ref: Program not bound");
     }
@@ -147,10 +268,17 @@ struct ExecutionState {
       throw std::runtime_error(
           "tensor_ref: uninitialized tensor idx=" + std::to_string(id.idx));
     }
+    if constexpr (kEnableOpLogging) {
+      std::cout << "  " << format_tensor_info(*opt) << "\n";
+    }
     return *opt;
   }
 
   inline const Tensor& const_tensor_ref(Tid id) const {
+    const bool is_const = program && program->is_constant_tensor(id);
+    if constexpr (kEnableOpLogging) {
+      std::cout << "  in   " << tensor_type_prefix(id) << id.idx << std::flush;
+    }
     if (!program) {
       throw std::runtime_error("const_tensor_ref: Program not bound");
     }
@@ -158,24 +286,34 @@ struct ExecutionState {
       throw std::out_of_range("const_tensor_ref: id out of range");
     }
 
-    if (program->is_constant_tensor(id)) {
+    const Tensor* t = nullptr;
+    if (is_const) {
       if (!constants) {
         throw std::runtime_error("const_tensor_ref: constants not bound");
       }
-      return constants->get(id);
+      t = &constants->get(id);
+    } else {
+      const auto& opt = tensors[id.idx - program->num_constant_tensors];
+      if (!opt) {
+        throw std::runtime_error(
+            "const_tensor_ref: uninitialized tensor idx=" +
+            std::to_string(id.idx));
+      }
+      t = &*opt;
     }
 
-    const auto& opt = tensors[id.idx - program->num_constant_tensors];
-    if (!opt) {
-      throw std::runtime_error(
-          "const_tensor_ref: uninitialized tensor idx=" +
-          std::to_string(id.idx));
+    if constexpr (kEnableOpLogging) {
+      std::cout << "  " << format_tensor_info(*t) << "\n";
     }
-    return *opt;
+    return *t;
   }
 
   // Set a tensor output
   inline void set_tensor(Tid id, Tensor arr) {
+    if constexpr (kEnableOpLogging) {
+      std::cout << "  out  " << tensor_type_prefix(id) << id.idx << "  "
+                << format_tensor_info(arr) << "\n";
+    }
     if (!program) {
       throw std::runtime_error("set_tensor: Program not bound");
     }
@@ -195,6 +333,9 @@ struct ExecutionState {
 
   template <typename T>
   inline T& value_ref(Vid<T> id) {
+    if constexpr (kEnableOpLogging) {
+      std::cout << "  ref  v" << id.idx << std::flush;
+    }
     if (id.idx >= values.size()) {
       throw std::out_of_range("value_ref: id out of range");
     }
@@ -203,11 +344,17 @@ struct ExecutionState {
       throw std::runtime_error(
           "value_ref: uninitialized value idx=" + std::to_string(id.idx));
     }
+    if constexpr (kEnableOpLogging) {
+      std::cout << "  " << std::get<T>(*opt) << "\n";
+    }
     return std::get<T>(*opt);
   }
 
   template <typename T>
   inline const T& const_value_ref(Vid<T> id) const {
+    if constexpr (kEnableOpLogging) {
+      std::cout << "  in   v" << id.idx << std::flush;
+    }
     if (id.idx >= values.size()) {
       throw std::out_of_range("const_value_ref: id out of range");
     }
@@ -216,11 +363,17 @@ struct ExecutionState {
       throw std::runtime_error(
           "const_value_ref: uninitialized value idx=" + std::to_string(id.idx));
     }
+    if constexpr (kEnableOpLogging) {
+      std::cout << "  " << std::get<T>(*opt) << "\n";
+    }
     return std::get<T>(*opt);
   }
 
   template <typename T>
   inline void set_value(Vid<T> id, T val) {
+    if constexpr (kEnableOpLogging) {
+      std::cout << "  out  v" << id.idx << "  " << val << "\n";
+    }
     if (id.idx >= values.size()) {
       throw std::out_of_range("set_value: id out of range");
     }
