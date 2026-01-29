@@ -31,6 +31,7 @@ public class LlmModule {
   private final HybridData mHybridData;
   private static final int DEFAULT_SEQ_LEN = 128;
   private static final boolean DEFAULT_ECHO = true;
+  private static final float DEFAULT_TEMPERATURE = -1.0f;
 
   @DoNotStrip
   private static native HybridData initHybrid(
@@ -117,7 +118,7 @@ public class LlmModule {
    * @param llmCallback callback object to receive results.
    */
   public int generate(String prompt, LlmCallback llmCallback) {
-    return generate(prompt, DEFAULT_SEQ_LEN, llmCallback, DEFAULT_ECHO);
+    return generate(prompt, DEFAULT_SEQ_LEN, llmCallback, DEFAULT_ECHO, DEFAULT_TEMPERATURE);
   }
 
   /**
@@ -128,7 +129,7 @@ public class LlmModule {
    * @param llmCallback callback object to receive results.
    */
   public int generate(String prompt, int seqLen, LlmCallback llmCallback) {
-    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, DEFAULT_ECHO);
+    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, DEFAULT_ECHO, DEFAULT_TEMPERATURE);
   }
 
   /**
@@ -139,7 +140,7 @@ public class LlmModule {
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
   public int generate(String prompt, LlmCallback llmCallback, boolean echo) {
-    return generate(null, 0, 0, 0, prompt, DEFAULT_SEQ_LEN, llmCallback, echo);
+    return generate(null, 0, 0, 0, prompt, DEFAULT_SEQ_LEN, llmCallback, echo, DEFAULT_TEMPERATURE);
   }
 
   /**
@@ -150,7 +151,21 @@ public class LlmModule {
    * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public native int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo);
+  public int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
+    return generate(prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param prompt Input prompt
+   * @param seqLen sequence length
+   * @param llmCallback callback object to receive results
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
+   * @param temperature temperature for sampling (use negative value to use module default)
+   */
+  public native int generate(
+      String prompt, int seqLen, LlmCallback llmCallback, boolean echo, float temperature);
 
   /**
    * Start generating tokens from the module.
@@ -162,7 +177,8 @@ public class LlmModule {
   public int generate(String prompt, LlmGenerationConfig config, LlmCallback llmCallback) {
     int seqLen = config.getSeqLen();
     boolean echo = config.isEcho();
-    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo);
+    float temperature = config.getTemperature();
+    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo, temperature);
   }
 
   /**
@@ -186,11 +202,38 @@ public class LlmModule {
       int seqLen,
       LlmCallback llmCallback,
       boolean echo) {
+    return generate(
+        image, width, height, channels, prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param image Input image as a byte array
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
+   * @param prompt Input prompt
+   * @param seqLen sequence length
+   * @param llmCallback callback object to receive results.
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
+   * @param temperature temperature for sampling (use negative value to use module default)
+   */
+  public int generate(
+      int[] image,
+      int width,
+      int height,
+      int channels,
+      String prompt,
+      int seqLen,
+      LlmCallback llmCallback,
+      boolean echo,
+      float temperature) {
     prefillPrompt(prompt);
     if (image != null) {
       prefillImages(image, width, height, channels);
     }
-    return generate(prompt, seqLen, llmCallback, echo);
+    return generate(prompt, seqLen, llmCallback, echo, temperature);
   }
 
   /**

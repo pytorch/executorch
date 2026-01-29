@@ -20,12 +20,9 @@ from executorch.examples.qualcomm.oss_scripts.llama.model.vision_encoder import 
 
 
 @dataclass(init=False, frozen=True)
-class LateFusionModalityConfig(ABC):
+class MultiModalityConfig(ABC):
     """
     Base configuration class for late fusion modality encoders.
-
-    Late fusion refers to the approach where different modalities (vision, audio, text)
-    are processed separately by their respective encoders and then fused at a later stage.
 
     Attributes:
         encoder_class: The encoder class that implements the modality processing.
@@ -41,7 +38,7 @@ class LateFusionModalityConfig(ABC):
 
 
 @dataclass(init=False, frozen=True)
-class VisionModalityConfig(LateFusionModalityConfig):
+class VisionModalityConfig(MultiModalityConfig):
     """
     Base config for vision modality encoders.
 

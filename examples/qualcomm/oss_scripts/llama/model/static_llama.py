@@ -102,6 +102,9 @@ class LlamaAttention(nn.Module):
             else 1.0 / config.attention_multiplier
         )
 
+        # gemma 2 uses soft-capping on attention and logits
+        self.attn_logit_softcapping = config.attn_logit_softcapping
+
         if getattr(config, "enable_r3", False):
             self.register_buffer(
                 "r3_weight",
@@ -276,6 +279,11 @@ class LlamaAttention(nn.Module):
         vh = repeat_kv(vh, self.num_key_value_groups)
 
         attn = q @ kh
+        # gemma2-2b
+        if self.attn_logit_softcapping is not None:
+            attn = attn / self.attn_logit_softcapping
+            attn = torch.tanh(attn)
+            attn = attn * self.attn_logit_softcapping
         attn = attn / self.scale
         if self.enable_masked_softmax:
             attn_min = torch.amin(attn, dim=-1, keepdim=True)
@@ -731,22 +739,30 @@ class MultiScopeAwareLlamaModel(LlamaModel):
             output_new_cache_only=output_new_cache_only,
             output_cache=output_cache,
             use_i64_token=use_i64_token,
+            **kwargs,
         )
+        # Parameter final_logit_softcapping is not necessary for all
+        self.final_logit_softcapping = config.final_logit_softcapping
 
-        for key in ["layer_types", "sliding_window", "rope_local_base_freq"]:
-            assert key in kwargs, f"Missing required argument: '{key}' in kwargs"
+        # Gemma2/Gemma3 requires additional configuration parameters:
+        # - layer_types: Specifies the type of each layer (e.g., full vs. sliding attention)
+        # - local_rope_theta: Base frequency for local RoPE
+        # - sliding_window: Size of the sliding window for local attention
+        self.layer_types = config.layer_types
+        if self.layer_types is not None:
+            assert len(self.layer_types) == self.n_layers, (
+                f"Length of layer_types ({len(self.layer_types)}) must match "
+                f"n_layers ({self.n_layers})"
+            )
+        assert (
+            config.local_rope_theta is not None
+        ), "local_rope_theta should not be None, please set it explicitly in config."
 
-        # Get attention type for each layer
-        self.layer_types = kwargs["layer_types"]
-        # Get sliding window size (used in local/global attention)
-        self.sliding_window = kwargs["sliding_window"]
-        # Get local freq base for sliding attention
-        rope_freq_base = kwargs["rope_local_base_freq"]
-
+        self.sliding_window = config.sliding_window
         local_freqs_cos, local_freqs_sin = hf_precompute_freqs_cis(
             config.head_dim,
             config.max_seq_len,
-            rope_freq_base,
+            config.local_rope_theta,
             config.partial_rotary_factor,
         )
         local_freqs_cos = local_freqs_cos[:, : local_freqs_cos.shape[-1] // 2]
@@ -817,6 +833,11 @@ class MultiScopeAwareLlamaModel(LlamaModel):
 
         hidden_states = self.norm(hidden_states)
         logits = self.output(hidden_states)
+        if self.final_logit_softcapping:
+            logits = logits / self.final_logit_softcapping
+            logits = torch.tanh(logits)
+            logits = logits * self.final_logit_softcapping
+
         if self.output_cache:
             return logits, output_k_cache, output_v_cache
         return logits

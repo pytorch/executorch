@@ -113,6 +113,12 @@ class ProgramTestFriend final {
       const Program* program) {
     return program->internal_program_;
   }
+  static Result<const void*> get_constant_buffer_data(
+      const Program* program,
+      size_t buffer_index,
+      size_t nbytes) {
+    return program->get_constant_buffer_data(buffer_index, nbytes);
+  }
 };
 } // namespace testing
 } // namespace runtime
@@ -187,6 +193,14 @@ TEST_F(ProgramTest, BadMagicFailsToLoad) {
   }
 }
 
+// These tests require ET_ENABLE_PROGRAM_VERIFICATION to be enabled.
+// In Release builds, verification is disabled by default to save binary size.
+#ifndef ET_ENABLE_PROGRAM_VERIFICATION
+#define ET_ENABLE_PROGRAM_VERIFICATION 1
+#endif
+
+#if ET_ENABLE_PROGRAM_VERIFICATION
+
 TEST_F(ProgramTest, VerificationCatchesTruncation) {
   // Get the program data.
   size_t full_data_len = add_loader_->size().get();
@@ -233,6 +247,8 @@ TEST_F(ProgramTest, VerificationCatchesCorruption) {
       Program::load(&data_loader, Program::Verification::InternalConsistency);
   ASSERT_EQ(program.error(), Error::InvalidProgram);
 }
+
+#endif // ET_ENABLE_PROGRAM_VERIFICATION
 
 TEST_F(ProgramTest, UnalignedProgramDataFails) {
   // Make a local copy of the data, on an odd alignment.
@@ -508,32 +524,47 @@ TEST_F(ProgramTest, LoadFromMutableSegment) {
   Result<Program> program = Program::load(&training_loader.get());
   ASSERT_EQ(program.error(), Error::Ok);
 
-  // dummy buffers to load into
-  uint8_t buffer[1] = {0};
-  uint8_t buffer2[1] = {0};
+  // The linear layer weight tensor is 3x3 floats = 36 bytes.
+  // Load the full weight data to verify the loading mechanism works correctly.
+  constexpr size_t kWeightSize = 36;
+  uint8_t buffer[kWeightSize] = {0};
+  uint8_t buffer2[kWeightSize] = {0};
 
-  // Load some mutable segment data
+  // Load the mutable segment data (linear.weight at offset_index 1)
   Error err = ProgramTestFriend::load_mutable_subsegment_into(
-      &program.get(), 0, 1, 1, buffer);
+      &program.get(), 0, 1, kWeightSize, buffer);
   EXPECT_EQ(err, Error::Ok);
 
-  // Check that the data loaded correctly, and then mutate it
-  EXPECT_EQ(buffer[0], 232); // 232 comes from inspecting the file itself. The
-                             // file is seeded so this value should be stable.
-  buffer[0] = 0;
-
-  // Load the same mutable segment data from file into a different buffer.
+  // Load the same data into a second buffer
   err = ProgramTestFriend::load_mutable_subsegment_into(
-      &program.get(),
-      0, // mutable_data_segments_index
-      1, // offset_index
-      1, // size
-      buffer2);
+      &program.get(), 0, 1, kWeightSize, buffer2);
   EXPECT_EQ(err, Error::Ok);
 
-  // Check that new data loaded from the file does not reflect the change to
-  // buffer.
-  EXPECT_EQ(buffer2[0], 232);
+  // Verify both loads return identical data
+  EXPECT_EQ(std::memcmp(buffer, buffer2, kWeightSize), 0)
+      << "Loading the same segment twice should return identical data";
+
+  // Verify that the loaded data is non-trivial (not all zeros).
+  bool has_nonzero = false;
+  for (size_t i = 0; i < kWeightSize; ++i) {
+    if (buffer[i] != 0) {
+      has_nonzero = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_nonzero)
+      << "Loaded mutable segment data should not be all zeros";
+
+  // Mutate the local buffer and reload to verify source immutability
+  std::memset(buffer, 0xFF, kWeightSize);
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 1, kWeightSize, buffer);
+  EXPECT_EQ(err, Error::Ok);
+
+  // Verify the reloaded data matches the original (local mutation didn't
+  // affect the file source)
+  EXPECT_EQ(std::memcmp(buffer, buffer2, kWeightSize), 0)
+      << "Reloading after local mutation should return original data";
 
   const executorch_flatbuffer::Program* flatbuffer_program =
       ProgramTestFriend::GetInternalProgram(&program.get());
@@ -592,4 +623,229 @@ TEST_F(ProgramTest, LoadAndCheckPTESize) {
       BufferDataLoader(truncated_file->data(), 200);
   Result<Program> truncated_program = Program::load(&truncated_loader);
   ASSERT_EQ(truncated_program.error(), Error::InvalidProgram);
+}
+
+// Regression test for null pointer dereference in
+// get_output_flattening_encoding when container_meta_type is missing from the
+// ExecutionPlan.
+TEST_F(ProgramTest, GetOutputFlatteningEncodingWithMissingContainerMetaType) {
+  // Build a minimal valid Program with an ExecutionPlan that has NO
+  // container_meta_type. This would previously crash with a null pointer
+  // dereference.
+  flatbuffers::FlatBufferBuilder builder(1024);
+
+  // Create a minimal ExecutionPlan with name but NO container_meta_type
+  auto plan_name = builder.CreateString("forward");
+
+  // Create empty vectors for required fields
+  auto empty_values = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>{});
+  auto empty_inputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_outputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_chains = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{});
+  auto empty_operators = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{});
+  auto empty_delegates = builder.CreateVector(
+      std::vector<
+          flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{});
+  auto buffer_sizes = builder.CreateVector(std::vector<int64_t>{0});
+
+  // Build ExecutionPlan WITHOUT container_meta_type (it will be null)
+  auto execution_plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      plan_name,
+      0, // container_meta_type = null (this is the vulnerability trigger)
+      empty_values,
+      empty_inputs,
+      empty_outputs,
+      empty_chains,
+      empty_operators,
+      empty_delegates,
+      buffer_sizes);
+
+  auto execution_plans = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>>{
+          execution_plan});
+
+  // Create empty segment info
+  auto empty_constant_buffer = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Buffer>>{});
+  auto empty_backend_data = builder.CreateVector(
+      std::vector<flatbuffers::Offset<
+          executorch_flatbuffer::BackendDelegateInlineData>>{});
+  auto empty_segments = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{});
+
+  // Build the Program
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      0, // version
+      execution_plans,
+      empty_constant_buffer,
+      empty_backend_data,
+      empty_segments);
+
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+
+  // Copy to 16-byte aligned buffer (required by Program::load)
+  alignas(16) uint8_t aligned_buffer[2048];
+  ASSERT_LE(builder.GetSize(), sizeof(aligned_buffer));
+  std::memcpy(aligned_buffer, builder.GetBufferPointer(), builder.GetSize());
+
+  // Load the malformed program
+  BufferDataLoader data_loader(aligned_buffer, builder.GetSize());
+  Result<Program> loaded_program =
+      Program::load(&data_loader, Program::Verification::Minimal);
+
+  // Program should load successfully (the malformed data is valid FlatBuffer)
+  ASSERT_EQ(loaded_program.error(), Error::Ok);
+
+  // Calling get_output_flattening_encoding should return an error,
+  // NOT crash with null pointer dereference
+  Result<const char*> encoding =
+      loaded_program->get_output_flattening_encoding("forward");
+
+  // Should return InvalidProgram error due to missing container_meta_type
+  EXPECT_EQ(encoding.error(), Error::InvalidProgram);
+}
+
+// Test that get_output_flattening_encoding handles missing encoded_out_str
+TEST_F(ProgramTest, GetOutputFlatteningEncodingWithMissingEncodedOutStr) {
+  flatbuffers::FlatBufferBuilder builder(2048);
+
+  // Create ContainerMetadata with encoded_inp_str but NO encoded_out_str
+  auto inp_str = builder.CreateString("test_input");
+  auto container_meta = executorch_flatbuffer::CreateContainerMetadata(
+      builder,
+      inp_str,
+      0); // encoded_out_str = null
+
+  auto plan_name = builder.CreateString("forward");
+  auto empty_values = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>{});
+  auto empty_inputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_outputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_chains = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{});
+  auto empty_operators = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{});
+  auto empty_delegates = builder.CreateVector(
+      std::vector<
+          flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{});
+  auto buffer_sizes = builder.CreateVector(std::vector<int64_t>{0});
+
+  auto execution_plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      plan_name,
+      container_meta, // container_meta_type exists
+      empty_values,
+      empty_inputs,
+      empty_outputs,
+      empty_chains,
+      empty_operators,
+      empty_delegates,
+      buffer_sizes);
+
+  auto execution_plans = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>>{
+          execution_plan});
+
+  auto empty_constant_buffer = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Buffer>>{});
+  auto empty_backend_data = builder.CreateVector(
+      std::vector<flatbuffers::Offset<
+          executorch_flatbuffer::BackendDelegateInlineData>>{});
+  auto empty_segments = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{});
+
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      0,
+      execution_plans,
+      empty_constant_buffer,
+      empty_backend_data,
+      empty_segments);
+
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+
+  // Copy to 16-byte aligned buffer (required by Program::load)
+  alignas(16) uint8_t aligned_buffer[2048];
+  ASSERT_LE(builder.GetSize(), sizeof(aligned_buffer));
+  std::memcpy(aligned_buffer, builder.GetBufferPointer(), builder.GetSize());
+
+  BufferDataLoader data_loader(aligned_buffer, builder.GetSize());
+  Result<Program> loaded_program =
+      Program::load(&data_loader, Program::Verification::Minimal);
+
+  ASSERT_EQ(loaded_program.error(), Error::Ok);
+
+  // Should return error for missing encoded_out_str, not crash
+  Result<const char*> encoding =
+      loaded_program->get_output_flattening_encoding("forward");
+
+  EXPECT_EQ(encoding.error(), Error::InvalidProgram);
+}
+
+TEST_F(ProgramTest, NullPlanNameDoesNotCrash) {
+  flatbuffers::FlatBufferBuilder builder(1024);
+
+  // Create dummy execution_plan with null plan_name.
+  auto execution_plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      0,
+      0, // name=null, container_meta_type=null
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>{}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{}),
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{}),
+      builder.CreateVector(std::vector<int64_t>{0}));
+
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      0,
+      builder.CreateVector({execution_plan}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Buffer>>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<
+              executorch_flatbuffer::BackendDelegateInlineData>>{}),
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{}));
+
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+
+  alignas(16) uint8_t buf[2048];
+  std::memcpy(buf, builder.GetBufferPointer(), builder.GetSize());
+  BufferDataLoader loader(buf, builder.GetSize());
+
+  Result<Program> p = Program::load(&loader, Program::Verification::Minimal);
+  ASSERT_EQ(p.error(), Error::Ok);
+
+  // Should return error, not crash
+  EXPECT_EQ(p->method_meta("forward").error(), Error::InvalidArgument);
+}
+
+TEST_F(ProgramTest, GetConstantBufferDataRejectsOversizedRequest) {
+  const char* path =
+      std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
+  Result<FileDataLoader> loader = FileDataLoader::from(path);
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Request way more bytes than any buffer could contain
+  Result<const void*> data = ProgramTestFriend::get_constant_buffer_data(
+      &program.get(), /*buffer_index=*/0, /*nbytes=*/SIZE_MAX);
+
+  EXPECT_EQ(data.error(), Error::InvalidArgument);
 }

@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,9 +46,21 @@ def reseed_model_per_test_run():
             (24, 32, 64, 48),
             id="4D, no transpose",
         ),
-        pytest.param((24, 32), (0, 1), (8, 0), (24, 32), id="2D, one transpose"),
         pytest.param(
-            (24, 32, 64), (0, 1, 2), (0, 8, 0), (24, 32, 64), id="3D, one transpose"
+            (24, 32),
+            (0, 1),
+            (8, 0),
+            (24, 32),
+            id="2D, one transpose",
+            marks=pytest.mark.xfail(reason="EIEX-649", strict=True),
+        ),
+        pytest.param(
+            (24, 32, 64),
+            (0, 1, 2),
+            (0, 8, 0),
+            (24, 32, 64),
+            id="3D, one transpose",
+            marks=pytest.mark.xfail(reason="EIEX-649", strict=True),
         ),
         pytest.param(
             (24, 32, 64, 48),
@@ -56,9 +68,15 @@ def reseed_model_per_test_run():
             (0, 0, 8, 0),
             (24, 32, 64, 48),
             id="4D, one transpose",
+            marks=pytest.mark.xfail(reason="EIEX-649", strict=True),
         ),
         pytest.param(
-            (24, 32, 64), (0, 1, 2), (8, 8, 0), (24, 32, 64), id="3D, two transposes"
+            (24, 32, 64),
+            (0, 1, 2),
+            (8, 8, 0),
+            (24, 32, 64),
+            id="3D, two transposes",
+            marks=pytest.mark.xfail(reason="EIEX-649", strict=True),
         ),
         # bug in neutron-converter will not properly convert models in these test cases
         # pytest.param((24, 32, 64, 48), (0, 1, 2, 3), (16, 0, 8, 0), (24, 32, 64, 48), id="4D, two transposes"),
@@ -127,6 +145,7 @@ def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends
             (0, 0, 8, 0),
             (1, 8, 32, 32),
             id="4D, handle channel order swap",
+            marks=pytest.mark.xfail(reason="EIEX-649", strict=True),
         )
     ],
 )

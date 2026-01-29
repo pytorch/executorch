@@ -457,6 +457,30 @@ class Conv2dReLUMaxPoolModule(torch.nn.Module):
         return self.pool(x)
 
 
+class ConvBNModule(torch.nn.Module):
+    def __init__(self, conv_module, conv_bias, bn_affine):
+        super().__init__()
+
+        if conv_module == "conv1d":
+            self.conv = torch.nn.Conv1d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm1d(64, affine=bn_affine)
+        elif conv_module == "conv2d":
+            self.conv = torch.nn.Conv2d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm2d(64, affine=bn_affine)
+        elif conv_module == "conv1d_t":
+            self.conv = torch.nn.ConvTranspose1d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm1d(64, affine=bn_affine)
+        elif conv_module == "conv2d_t":
+            self.conv = torch.nn.ConvTranspose2d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm2d(64, affine=bn_affine)
+        else:
+            raise ValueError(f"Unknown conv_module: {conv_module}")
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.bn(x)
+
+
 class MulTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -631,6 +655,38 @@ class ConvActivationModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return self.activation(x)
+
+
+class GRUModel(nn.Module):
+    def __init__(self, num_layers=1):
+        super().__init__()
+        self.gru = torch.nn.GRU(8, 8, num_layers=num_layers)
+
+    def forward(self, input_):
+        # `input_` has shape [sequence_length, batch_size, input_size] ([8, 1, 8])
+        return self.gru(
+            input_, None
+        )  # The initial hidden is `None`, which will result in a `Zeros` node being added.
+
+
+class SplitWithSize(torch.nn.Module):
+    def __init__(self, split_size, dim):
+        super().__init__()
+        self.split_size = split_size
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor]:
+        return torch.split(x, self.split_size, self.dim)
+
+
+class SplitWithSections(torch.nn.Module):
+    def __init__(self, sections, dim):
+        super().__init__()
+        self.sections = sections
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor]:
+        return torch.split(x, self.sections, self.dim)
 
 
 class MiniConvNetWithRegressionHead(torch.nn.Module):

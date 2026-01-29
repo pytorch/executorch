@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,9 +11,11 @@ from collections.abc import Sequence
 
 import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
+    AccumulateIndexPutPass,
     AnnotateDecomposedMatmulPass,
     AnnotateOutputDimOrderPass,
     BroadcastArgsPass,
+    CanonicalizeGatherPass,
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
@@ -36,6 +38,7 @@ from executorch.backends.arm._passes import (
     DecomposeAnyPass,
     DecomposeAsinAndAcosPass,
     DecomposeAsinhPass,
+    DecomposeAsStridedCopyPass,
     DecomposeAtanhPass,
     DecomposeAtanPass,
     DecomposeAvgPool2dPass,
@@ -54,6 +57,7 @@ from executorch.backends.arm._passes import (
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
+    DecomposeIndexSelectToGatherPass,
     DecomposeIntPowPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -78,7 +82,9 @@ from executorch.backends.arm._passes import (
     DecomposeSoftmaxUnstablePass,
     DecomposeSqrtPass,
     DecomposeSumPass,
+    DecomposeTanPass,
     DecomposeTOSAUnsupportedClampPass,
+    DecomposeUnfoldToGatherPass,
     DecomposeVarPass,
     DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
@@ -106,6 +112,7 @@ from executorch.backends.arm._passes import (
     RewriteBoolBitwiseNotToLogicalNotPass,
     RewriteBoolToFp32CastViaInt8Pass,
     RewriteConvPass,
+    RewriteIndexPutPass,
     RewriteMatmulPass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
@@ -225,6 +232,7 @@ class ArmPassManager(PassManager):
                 FuseQuantizedActivationPass(),
                 RewriteBoolBitwiseNotToLogicalNotPass(),
                 RewriteBoolToFp32CastViaInt8Pass(),
+                CanonicalizeGatherPass(),
                 ConvertToClampPass(),
                 DecomposeTOSAUnsupportedClampPass(),
                 DecomposeGroupNormPass(),
@@ -269,6 +277,7 @@ class ArmPassManager(PassManager):
                 DecomposeSqrtPass(),
                 DecomposeAtanPass(),
                 DecomposeAtanhPass(),
+                DecomposeTanPass(),
                 DecomposeAddmmPass(),
                 DecomposeEluPass(),
                 DecomposeExpm1Pass(),
@@ -281,6 +290,9 @@ class ArmPassManager(PassManager):
                 DecomposeGeluPass(),
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupedConvPass(),
+                DecomposeUnfoldToGatherPass(),
+                DecomposeEmbeddingPass(),
+                DecomposeIndexSelectToGatherPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
@@ -302,9 +314,10 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post scalar-removal)
         self.add_passes(
             [
+                AccumulateIndexPutPass(),
+                RewriteIndexPutPass(),
                 DecomposeRemainderPass(),
                 DecomposeDivTensorModePass(),
-                DecomposeEmbeddingPass(),
                 FuseBatchNorm2dPass(exported_program),
                 ConvertMmToBmmPass(),
                 DecomposeGluPass(),
@@ -321,6 +334,7 @@ class ArmPassManager(PassManager):
                 ConvertExpandCopyToRepeatPass(),
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
+                DecomposeAsStridedCopyPass(),
                 DecomposeMaxPool2dPass(),
                 SizeAdjustInputPass(),
                 DecomposeSelectPass(),
@@ -429,6 +443,7 @@ class ArmPassManager(PassManager):
                 DecomposeSoftmaxUnstablePass(tfa_pass=True),
                 DecomposeSoftmaxPass(tfa_pass=True),
                 ConvertMinMaxPass(tfa_pass=True),
+                AccumulateIndexPutPass(tfa_pass=True),
             ]
         )
 

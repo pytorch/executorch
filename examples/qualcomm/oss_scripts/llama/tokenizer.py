@@ -83,36 +83,22 @@ class TokenizerWrapper:
         )
         tokenizer_artifacts = tokenizer.save_pretrained(self.artifact)
         tokenizer_config = tokenizer_artifacts[0]
-        if self.decoder_model == "gemma-2b":
-            # For Gemma, use tokenizer.model as it doesn't provide pre_tokenizer in tokenizer.json.
-            runtime_tokenizer_path = tokenizer_artifacts[-3]
-        else:
-            if self.decoder_model == "glm-1_5b":
-                with open(tokenizer_config, "r+") as file:
-                    data = json.load(file)
-                    # Verified with HF flow and it uses <|user|> as eos condition
-                    data["bos_token"] = "<|user|>"
-                    data["eos_token"] = "<|user|>"
-                    file.seek(0)
-                    json.dump(data, file, indent=4)
-                    file.truncate()
-            runtime_tokenizer_path = tokenizer_artifacts[-1]
+        if self.decoder_model == "glm-1_5b":
+            with open(tokenizer_config, "r+") as file:
+                data = json.load(file)
+                # Verified with HF flow and it uses <|user|> as eos condition
+                data["bos_token"] = "<|user|>"
+                data["eos_token"] = "<|user|>"
+                file.seek(0)
+                json.dump(data, file, indent=4)
+                file.truncate()
 
+        runtime_tokenizer_path = tokenizer_artifacts[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path, tokenizer_config)
-
         if self.decoder_model == "codegen2_1b":
             # Override the default BOS and EOS token IDs for codegen2_1b
             tokenizer.bos_id = 1
             tokenizer.eos_id = 2
-        elif self.decoder_model == "phi_4_mini":
-            with open(runtime_tokenizer_path, "r+") as file:
-                data = json.load(file)
-                # TODO: Encountered the following error during runtime, so switched behavior for now.
-                # Error: libc++abi: terminating due to uncaught exception of type std::runtime_error: invert=true is not supported for Split PreTokenizer. Only invert=false is supported.
-                data["pre_tokenizer"]["pretokenizers"][-2]["invert"] = False
-                file.seek(0)
-                json.dump(data, file, indent=4)
-                file.truncate()
 
         return runtime_tokenizer_path, tokenizer, chat_template
 

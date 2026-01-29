@@ -49,7 +49,7 @@ def define_common_targets():
         supports_python_dlopen = True,
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors"],
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/core:core",
             "//executorch/runtime/core/exec_aten:lib",
@@ -67,7 +67,7 @@ def define_common_targets():
         supports_python_dlopen = True,
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors"],
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
@@ -80,9 +80,27 @@ def define_common_targets():
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
         supports_python_dlopen = True,
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         exported_deps = [
             ":common_shims",
             ":delegate_handle",
+        ],
+    )
+
+    # SlimTensor-based common shims library
+    # Uses SlimTensor for all tensor operations
+    runtime.cxx_library(
+        name = "common_shims_slim",
+        srcs = [
+            "common_shims_slim.cpp",
+        ],
+        headers = [
+            "common_shims_slim.h",
+            "export.h",
+        ],
+        visibility = ["@EXECUTORCH_CLIENTS"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/backends/aoti/slim/core:slimtensor",
         ],
     )

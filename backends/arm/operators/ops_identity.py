@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -49,15 +49,17 @@ def identity_operator_factory(identity_target: str):
                 ts.DType.INT16,
                 ts.DType.INT32,
             ]
-            if output.tosa_spec.support_float():
+            if self.tosa_spec.support_float():
                 supported_dtypes += [ts.DType.FP32]
             if self.tosa_spec.support_extension("int16"):
                 supported_dtypes += [ts.DType.INT48]
+            if self.tosa_spec.support_extension("int4"):
+                supported_dtypes += [ts.DType.INT4]
             validate_valid_dtype(
                 self.target,
                 [inputs[0], output],
                 supported_dtypes,
-                output.tosa_spec,
+                self.tosa_spec,
             )
 
             # Simply add an identityOp

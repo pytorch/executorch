@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -24,12 +24,20 @@ from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm._passes.remove_noop_pass import RemoveNoopPass
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
+
+
+def _get_special_dtype(qspec: QuantArgs) -> TosaSpecialDtype | None:
+    if qspec.dtype == torch.int8:
+        if qspec.qmax == 7 and qspec.qmin == -7:
+            return TosaSpecialDtype.INT4
+    return None
 
 
 def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
@@ -157,6 +165,11 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 node.replace_input_with(n, cast(Node, n.args[0]))
                 if len(n.users) == 0:
                     graph_module.graph.erase_node(n)
+            special_dtype = _get_special_dtype(input_qparams)
+            if special_dtype:
+                node.all_input_nodes[i].meta[
+                    TosaSpecialDtype.meta_key()
+                ] = special_dtype
 
     def _handle_control_flow_node(self, node: Node, graph_module: GraphModule):
         """Fold outmost quant nodes inside submodule.
