@@ -92,38 +92,17 @@ array tensor_to_mlx(const ETTensor& t) {
     shape.push_back(static_cast<int>(t.size(i)));
   }
 
-  // Create MLX array from raw CPU data
-  // MLX will copy the data to Metal-aligned memory
-  const void* data_ptr = t.const_data_ptr();
-  size_t nbytes = t.nbytes();
+  // Try zero-copy constructor with external memory
+  // On Apple Silicon with unified memory, this will wrap the pointer directly
+  // If it fails, MLX will automatically fall back to copying the data
+  void* data_ptr = const_cast<void*>(t.const_data_ptr());
 
-  // Create an MLX array by copying data from the CPU pointer
-  // We need to use the appropriate typed constructor based on dtype
-  switch (dtype) {
-    case ::mlx::core::float32:
-      return array(static_cast<const float*>(data_ptr), shape, dtype);
-    case ::mlx::core::float16:
-      return array(
-          static_cast<const ::mlx::core::float16_t*>(data_ptr), shape, dtype);
-    case ::mlx::core::bfloat16:
-      return array(
-          static_cast<const ::mlx::core::bfloat16_t*>(data_ptr), shape, dtype);
-    case ::mlx::core::int32:
-      return array(static_cast<const int32_t*>(data_ptr), shape, dtype);
-    case ::mlx::core::int64:
-      return array(static_cast<const int64_t*>(data_ptr), shape, dtype);
-    case ::mlx::core::int16:
-      return array(static_cast<const int16_t*>(data_ptr), shape, dtype);
-    case ::mlx::core::int8:
-      return array(static_cast<const int8_t*>(data_ptr), shape, dtype);
-    case ::mlx::core::uint8:
-      return array(static_cast<const uint8_t*>(data_ptr), shape, dtype);
-    case ::mlx::core::bool_:
-      return array(static_cast<const bool*>(data_ptr), shape, dtype);
-    default:
-      // Fallback: treat as float
-      return array(static_cast<const float*>(data_ptr), shape, dtype);
-  }
+  // No-op deleter: ExecuTorch owns and manages the tensor memory
+  auto deleter = [](void*) {
+    // ExecuTorch tensor lifetime is managed externally
+  };
+
+  return array(data_ptr, shape, dtype, deleter);
 }
 
 void mlx_to_tensor(const array& arr, ETTensor& out) {
@@ -173,8 +152,17 @@ struct MLXHandle {
   MutableBufferData mutable_buffers;
   Interpreter interpreter;
 
+  // Keep the constant buffer alive for zero-copy constants
+  // The buffer must outlive the MLX arrays that reference it
+  FreeableBuffer* constant_buffer{nullptr};
+
   MLXHandle() = default;
-  ~MLXHandle() = default;
+  ~MLXHandle() {
+    // Free the constant buffer when handle is destroyed
+    if (constant_buffer != nullptr) {
+      constant_buffer->Free();
+    }
+  }
 
   MLXHandle(const MLXHandle&) = delete;
   MLXHandle& operator=(const MLXHandle&) = delete;
@@ -205,14 +193,29 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
           static_cast<const uint8_t*>(processed->data()), processed->size());
 
       load_constants(handle->program, handle->constants);
+
+      if constexpr (kEnableConstantZeroCopy) {
+        // Zero-copy enabled: keep buffer alive for constant lifetimes
+        // If MLX falls back to copying, there may be temporary memory overhead
+        // but this is rare and only occurs on non-unified memory systems
+        handle->constant_buffer = processed;
+      } else {
+        // Zero-copy disabled: constants were copied, buffer no longer needed
+        processed->Free();
+      }
+
       load_mutable_buffers(handle->program, handle->mutable_buffers);
     } catch (const std::exception& e) {
       ET_LOG(Error, "Failed to load MLX program: %s", e.what());
       handle->~MLXHandle();
+      // Free buffer if we still own it
+      if (kEnableConstantZeroCopy && handle->constant_buffer != nullptr) {
+        handle->constant_buffer->Free();
+      } else if (!kEnableConstantZeroCopy) {
+        processed->Free();
+      }
       return Error::InvalidProgram;
     }
-
-    processed->Free();
 
     return handle;
   }
