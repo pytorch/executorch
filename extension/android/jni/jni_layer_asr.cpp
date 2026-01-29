@@ -360,7 +360,7 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
       ET_LOG(Error, "Failed to get JavaVM for ASR token callback.");
     } else {
       tokenCallback = [jvm, callbackRef, &tokenBuffer](
-                           const std::string& token) {
+                          const std::string& token) {
         JNIEnv* envLocal = nullptr;
         jint getEnvResult =
             jvm->GetEnv(reinterpret_cast<void**>(&envLocal), JNI_VERSION_1_6);
