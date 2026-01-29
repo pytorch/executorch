@@ -81,3 +81,60 @@ target_compile_options(qnn_llama_runner PUBLIC ${_common_compile_options})
 set_target_properties(
   qnn_llama_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )
+
+# build qnn multimodal runner preprocess qnn runner src files for multimodal
+set(_multimodal_runner__srcs ${_llama_runner__srcs})
+list(FILTER _multimodal_runner__srcs EXCLUDE REGEX ".*qnn_llama_runner.*")
+list(FILTER _multimodal_runner__srcs EXCLUDE REGEX ".*runner/runner\.(cpp|h)")
+list(
+  PREPEND
+  _multimodal_runner__srcs
+  ${CMAKE_CURRENT_LIST_DIR}/qnn_multimodal_runner.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_runner.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_runner.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/encoder.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/encoder.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/embedding_runner.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/embedding_runner.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/embedding_processor.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/embedding_processor.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_prompt_processor.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_prompt_processor.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_token_generator.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_token_generator.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_lhd_token_generator.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_lhd_token_generator.h
+)
+
+list(APPEND _multimodal_runner__srcs)
+
+# build qnn multimodal runner
+add_executable(qnn_multimodal_runner ${_multimodal_runner__srcs})
+target_include_directories(
+  qnn_multimodal_runner PUBLIC ${_common_include_directories}
+)
+target_include_directories(
+  qnn_multimodal_runner
+  PUBLIC ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+)
+target_compile_options(qnn_multimodal_runner PUBLIC ${_common_compile_options})
+
+target_link_libraries(
+  qnn_multimodal_runner
+  qnn_executorch_backend
+  executorch_core
+  extension_data_loader
+  extension_flat_tensor
+  extension_llm_runner
+  extension_module
+  extension_tensor
+  gflags
+  custom_ops
+  quantized_ops_lib
+  quantized_kernels
+  tokenizers::tokenizers
+)
+
+set_target_properties(
+  qnn_multimodal_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
+)
