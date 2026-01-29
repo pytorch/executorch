@@ -265,16 +265,23 @@ cmake-out/examples/models/llama/llama_main \
     --prompt="What is the capital of France?"
 ```
 
+**Template/model compatibility:**
+- Use Llama templates (`llama3` or the Llama vLLM template) with Llama models.
+- Using a Gemma template with a Llama model will cause the model to echo Gemma tokens.
+
 **Supported chat formats:**
 | Format | Models | Template Style |
 |--------|--------|----------------|
 | `llama3` | Llama 3.x Instruct | `<\|begin_of_text\|><\|start_header_id\|>user...` |
+| `gemma3` | Gemma 3 Instruct | `<bos><start_of_turn>user...` |
+| `jinja` | Custom template | Jinja2 chat template from file |
 | `none` | Base models (default) | No formatting |
 
 **Additional options:**
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--chat_format` | Chat template format (llama3, none) | `none` |
+| `--chat_format` | Chat template format (llama3, gemma3, jinja, none) | `none` |
+| `--chat_template_file` | Path to custom Jinja2 template (overrides `--chat_format`) | (empty) |
 | `--system_prompt` | System prompt to set assistant behavior | (empty) |
 | `--echo` | Echo input prompt in output (set to false for clean output) | `true` |
 
@@ -290,6 +297,19 @@ cmake-out/examples/models/llama/llama_main \
 
 # Output: The capital of France is Paris.
 ```
+
+**Example with a custom template file:**
+```bash
+cmake-out/examples/models/llama/llama_main \
+    --model_path=<model.pte> \
+    --tokenizer_path=<tokenizer.model> \
+    --chat_template_file=./my_template.jinja \
+    --prompt="Hello!"
+```
+
+**Build note:** If you see a CMake error about RapidJSON requiring
+`CMAKE_POLICY_VERSION_MINIMUM=3.5`, add `CMAKE_POLICY_VERSION_MINIMUM=3.5`
+to your build environment when running `make llama-cpu`.
 
 To build for CoreML backend and validate on Mac, replace `-DEXECUTORCH_BUILD_XNNPACK=ON` with `-DEXECUTORCH_BUILD_COREML=ON`
 
