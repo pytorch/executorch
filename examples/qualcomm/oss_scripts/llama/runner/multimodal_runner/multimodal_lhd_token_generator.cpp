@@ -211,7 +211,8 @@ Result<int64_t> MultimodalLhdTokenGenerator<T>::generate(
     int64_t start_pos,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
-    bool dump_logits) {
+    bool dump_logits,
+    AttentionSinkRopeRunner* attention_sink_rope_runner) {
   ET_CHECK_MSG(
       !tokens.empty(), "Token generation loop shouldn't take empty tokens");
   // position in the sequence

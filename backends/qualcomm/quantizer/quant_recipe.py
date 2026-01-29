@@ -73,6 +73,7 @@ class QuantizationStrategy(ABC):
         is_qat: bool,
         granularity: QuantGranularity,
         act_observer: UniformQuantizationObserverBase,
+        act_symmetric: bool,
         extra_kwargs: Dict,
         note: str,
         priority: int,
@@ -81,6 +82,7 @@ class QuantizationStrategy(ABC):
         self.is_qat = is_qat
         self.granularity = granularity
         self.act_observer = act_observer
+        self.act_symmetric = act_symmetric
         self.extra_kwargs = extra_kwargs
         self.note = note
         self.priority = priority
@@ -91,6 +93,7 @@ class QuantizationStrategy(ABC):
             is_conv_per_channel=True,
             is_linear_per_channel=True,
             act_observer=self.act_observer,
+            act_symmetric=self.act_symmetric,
         )
 
     @abstractmethod
@@ -143,6 +146,7 @@ class ByNodeTarget(QuantizationStrategy):
         is_qat,
         granularity,
         act_observer,
+        act_symmetric,
         extra_kwargs,
         note,
         priority,
@@ -153,6 +157,7 @@ class ByNodeTarget(QuantizationStrategy):
             is_qat,
             granularity,
             act_observer,
+            act_symmetric,
             extra_kwargs,
             note,
             priority,
@@ -179,6 +184,7 @@ class ByNameRegex(QuantizationStrategy):
         is_qat,
         granularity,
         act_observer,
+        act_symmetric,
         extra_kwargs,
         note,
         priority,
@@ -189,6 +195,7 @@ class ByNameRegex(QuantizationStrategy):
             is_qat,
             granularity,
             act_observer,
+            act_symmetric,
             extra_kwargs,
             note,
             priority,
@@ -228,6 +235,7 @@ class QuantRecipe:
         is_qat,
         act_observer: UniformQuantizationObserverBase,
         granularity: QuantGranularity,
+        act_symmetric: bool = False,
         note: str = "",
         extra_kwargs: Optional[dict] = None,
         verbose: bool = False,
@@ -257,6 +265,7 @@ class QuantRecipe:
             is_qat,
             granularity,
             act_observer,
+            act_symmetric,
             extra_kwargs or {},
             note,
             priority=1,
@@ -311,6 +320,7 @@ class QuantRecipe:
         is_qat,
         act_observer: UniformQuantizationObserverBase,
         granularity: QuantGranularity,
+        act_symmetric: bool = False,
         note: str = "",
         priority: int = 1,
         extra_kwargs: Optional[dict] = None,
@@ -321,6 +331,7 @@ class QuantRecipe:
                 is_qat,
                 granularity,
                 act_observer,
+                act_symmetric,
                 extra_kwargs or {},
                 note,
                 priority,
@@ -336,6 +347,7 @@ class QuantRecipe:
         is_qat,
         act_observer: UniformQuantizationObserverBase,
         granularity: QuantGranularity,
+        act_symmetric: bool = False,
         note: str = "",
         priority: int = 1,
         extra_kwargs: Optional[dict] = None,
@@ -359,6 +371,7 @@ class QuantRecipe:
                 is_qat,
                 granularity,
                 act_observer,
+                act_symmetric,
                 extra_kwargs or {},
                 note,
                 priority,
