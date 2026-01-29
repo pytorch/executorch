@@ -30,12 +30,25 @@
 #define ET_MLX_ENABLE_OP_LOGGING 0
 #endif
 
+// =============================================================================
+// Constant Zero-Copy - Enable via CMake: -DET_MLX_ENABLE_CONSTANT_ZERO_COPY=1
+// When enabled, attempts to load model constants (weights) using zero-copy
+// on Apple Silicon's unified memory. Falls back to copying if zero-copy fails.
+// Disable if you want predictable memory usage (always copies).
+// =============================================================================
+#ifndef ET_MLX_ENABLE_CONSTANT_ZERO_COPY
+#define ET_MLX_ENABLE_CONSTANT_ZERO_COPY 1  // Enabled by default
+#endif
+
 namespace executorch {
 namespace backends {
 namespace mlx {
 
 // Compile-time logging flag
 constexpr bool kEnableOpLogging = ET_MLX_ENABLE_OP_LOGGING;
+
+// Compile-time constant zero-copy flag
+constexpr bool kEnableConstantZeroCopy = ET_MLX_ENABLE_CONSTANT_ZERO_COPY;
 
 // =============================================================================
 // Type aliases
@@ -455,7 +468,56 @@ inline ::mlx::core::Shape to_shape(
 // Constant loading from raw bytes
 // =============================================================================
 
-inline void load_constants(const MLXProgram& program, ConstantData& store) {
+// Load constants with zero-copy (when enabled)
+// On Apple Silicon unified memory, MLX can wrap pointers directly
+// If MLX falls back to copying, there may be temporary memory overhead (~2x)
+// Helper struct to hold constant tensor metadata
+struct ConstantTensorInfo {
+  ::mlx::core::Shape shape;
+  ::mlx::core::Dtype dtype;
+  size_t nbytes;
+  const void* data_ptr;
+};
+
+// Helper to compute constant tensor metadata and advance offset
+inline ConstantTensorInfo get_constant_tensor_info(
+    const MLXProgram& program,
+    uint32_t tensor_id,
+    const uint8_t* base,
+    size_t& offset) {
+  using namespace ::mlx::core;
+
+  // Validate metadata exists
+  if (tensor_id >= program.tensor_meta.size() || !program.tensor_meta[tensor_id]) {
+    throw std::runtime_error(
+        "get_constant_tensor_info: missing metadata for constant " +
+        std::to_string(tensor_id));
+  }
+
+  const auto& meta = *program.tensor_meta[tensor_id];
+  Shape shape = to_shape(meta.shape);
+  Dtype dtype = to_mlx_dtype(meta.dtype);
+
+  // Align to 16 bytes
+  offset = (offset + 15) & ~15ULL;
+
+  // Calculate size
+  size_t num_elements = 1;
+  for (auto s : shape) {
+    num_elements *= s;
+  }
+  size_t elem_size = size_of(dtype);
+  size_t nbytes = num_elements * elem_size;
+
+  const void* data_ptr = static_cast<const void*>(base + offset);
+
+  return ConstantTensorInfo{shape, dtype, nbytes, data_ptr};
+}
+
+// Load constants with zero-copy by wrapping the constant buffer directly
+inline void load_constants_zero_copy(
+    const MLXProgram& program,
+    ConstantData& store) {
   using namespace ::mlx::core;
 
   store.tensors.clear();
@@ -470,65 +532,87 @@ inline void load_constants(const MLXProgram& program, ConstantData& store) {
   size_t offset = 0;
 
   for (uint32_t tid = 0; tid < program.num_constant_tensors; ++tid) {
-    // Get metadata
-    if (tid >= program.tensor_meta.size() || !program.tensor_meta[tid]) {
-      throw std::runtime_error(
-          "load_constants: missing metadata for constant " +
-          std::to_string(tid));
-    }
+    ConstantTensorInfo info = get_constant_tensor_info(program, tid, base, offset);
 
-    const auto& meta = *program.tensor_meta[tid];
-    auto shape = to_shape(meta.shape);
-    auto dtype = to_mlx_dtype(meta.dtype);
+    // Zero-copy: wrap pointer directly with no-op deleter
+    void* data_ptr = const_cast<void*>(info.data_ptr);
+    auto deleter = [](void*) {
+      // Buffer will be freed when MLXHandle is destroyed
+    };
 
-    // Align to 16 bytes
-    offset = (offset + 15) & ~15ULL;
+    array arr = array(data_ptr, info.shape, info.dtype, deleter);
+    store.add(std::move(arr));
+    offset += info.nbytes;
+  }
+}
 
-    // Calculate size
-    size_t num_elements = 1;
-    for (auto s : shape) {
-      num_elements *= s;
-    }
-    size_t elem_size = size_of(dtype);
-    size_t nbytes = num_elements * elem_size;
+// Load constants with explicit copying
+inline void load_constants_with_copy(
+    const MLXProgram& program,
+    ConstantData& store) {
+  using namespace ::mlx::core;
 
-    // Create array by copying data from CPU pointer
-    // MLX requires proper Metal-aligned memory, so we copy the data
-    const void* src_ptr = static_cast<const void*>(base + offset);
+  store.tensors.clear();
 
-    // Helper lambda to create the array with proper typed constructor
+  if (program.num_constant_tensors == 0 || !program.constant_data) {
+    return;
+  }
+
+  store.tensors.reserve(program.num_constant_tensors);
+
+  const uint8_t* base = program.constant_data;
+  size_t offset = 0;
+
+  for (uint32_t tid = 0; tid < program.num_constant_tensors; ++tid) {
+    ConstantTensorInfo info = get_constant_tensor_info(program, tid, base, offset);
+
+    // Create array by copying data using typed constructor
     auto create_array = [&]() -> array {
-      switch (dtype) {
+      switch (info.dtype) {
         case float32:
-          return array(static_cast<const float*>(src_ptr), shape, dtype);
+          return array(static_cast<const float*>(info.data_ptr), info.shape, info.dtype);
         case float16:
-          return array(static_cast<const float16_t*>(src_ptr), shape, dtype);
+          return array(static_cast<const float16_t*>(info.data_ptr), info.shape, info.dtype);
         case bfloat16:
-          return array(static_cast<const bfloat16_t*>(src_ptr), shape, dtype);
+          return array(static_cast<const bfloat16_t*>(info.data_ptr), info.shape, info.dtype);
         case int32:
-          return array(static_cast<const int32_t*>(src_ptr), shape, dtype);
+          return array(static_cast<const int32_t*>(info.data_ptr), info.shape, info.dtype);
         case int64:
-          return array(static_cast<const int64_t*>(src_ptr), shape, dtype);
+          return array(static_cast<const int64_t*>(info.data_ptr), info.shape, info.dtype);
         case int16:
-          return array(static_cast<const int16_t*>(src_ptr), shape, dtype);
+          return array(static_cast<const int16_t*>(info.data_ptr), info.shape, info.dtype);
         case int8:
-          return array(static_cast<const int8_t*>(src_ptr), shape, dtype);
+          return array(static_cast<const int8_t*>(info.data_ptr), info.shape, info.dtype);
         case uint32:
-          return array(static_cast<const uint32_t*>(src_ptr), shape, dtype);
+          return array(static_cast<const uint32_t*>(info.data_ptr), info.shape, info.dtype);
         case uint8:
-          return array(static_cast<const uint8_t*>(src_ptr), shape, dtype);
+          return array(static_cast<const uint8_t*>(info.data_ptr), info.shape, info.dtype);
         case bool_:
-          return array(static_cast<const bool*>(src_ptr), shape, dtype);
+          return array(static_cast<const bool*>(info.data_ptr), info.shape, info.dtype);
         default:
           throw std::runtime_error(
-              "load_constants: unsupported dtype " +
-              std::to_string(static_cast<int>(dtype.val())));
+              "load_constants_with_copy: unsupported dtype " +
+              std::to_string(static_cast<int>(info.dtype.val())));
       }
     };
 
     store.add(create_array());
-    offset += nbytes;
+    offset += info.nbytes;
   }
+}
+
+// Public interface: dispatch based on compile-time flag
+inline void load_constants(const MLXProgram& program, ConstantData& store) {
+  if constexpr (kEnableConstantZeroCopy) {
+    load_constants_zero_copy(program, store);
+  } else {
+    load_constants_with_copy(program, store);
+  }
+
+  // Evaluate all constants immediately to prepare Metal buffers
+  // This trades init time for faster first inference
+  using namespace ::mlx::core;
+  eval(store.tensors);
 }
 
 // =============================================================================
