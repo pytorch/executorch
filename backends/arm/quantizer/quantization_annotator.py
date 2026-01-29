@@ -11,7 +11,7 @@ annotations to FX graphs using TorchAO qspecs.
 
 import logging
 import operator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, cast, List, Optional, Sequence
 
 import torch
@@ -25,6 +25,7 @@ from torch.fx import Node
 from torchao.quantization.pt2e.quantizer import (
     annotate_input_qspec_map,
     annotate_output_qspec,
+    QuantizationSpec,
     QuantizationSpecBase,
     SharedQuantizationSpec,
 )
@@ -80,6 +81,25 @@ def _as_list(x):
         return [
             x,
         ]
+
+
+def _adjust_weight_qspec_for_conv_transpose(node: Node, weight_qspec):
+    if (
+        node.target == torch.ops.aten.conv_transpose2d.input
+        and isinstance(weight_qspec, QuantizationSpec)
+        and weight_qspec.qscheme == torch.per_channel_symmetric
+        and weight_qspec.ch_axis != 1
+    ):
+        return QuantizationSpec(
+            dtype=weight_qspec.dtype,
+            observer_or_fake_quant_ctr=weight_qspec.observer_or_fake_quant_ctr,
+            quant_min=weight_qspec.quant_min,
+            quant_max=weight_qspec.quant_max,
+            qscheme=weight_qspec.qscheme,
+            ch_axis=1,
+            is_dynamic=weight_qspec.is_dynamic,
+        )
+    return weight_qspec
 
 
 def _is_ok_for_quantization(
@@ -339,6 +359,7 @@ _conv_ops = [
     torch.ops.aten.conv1d.default,
     torch.ops.aten.conv2d.default,
     torch.ops.aten.conv2d.padding,
+    torch.ops.aten.conv_transpose2d.input,
     torch.ops.aten.conv3d.default,
     torch.ops.aten.conv3d.padding,
 ]
@@ -480,6 +501,12 @@ def get_quant_properties(  # noqa: C901
             node is unsupported or not suitable for quantization.
 
     """
+    if node.target == torch.ops.aten.conv_transpose2d.input:
+        weight_qspec = _adjust_weight_qspec_for_conv_transpose(
+            node, quantization_config.get_weight_qspec()
+        )
+        quantization_config = replace(quantization_config, weight=weight_qspec)
+
     input_act_qspec = quantization_config.get_input_act_qspec()
     weight_qspec = quantization_config.get_weight_qspec()
     output_act_qspec = quantization_config.get_output_act_qspec()

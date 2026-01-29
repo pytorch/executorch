@@ -156,7 +156,7 @@ def vgf_compile(
             vgf_path,
         ]
         try:
-            subprocess.run(
+            subprocess.run(  # nosec B602, B603 - shell invocation constrained to trusted converter binary with trusted inputs
                 conversion_command, shell=False, check=True, capture_output=True
             )
         except subprocess.CalledProcessError as process_error:
