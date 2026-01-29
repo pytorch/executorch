@@ -37,7 +37,7 @@ from executorch.extension.pybindings.portable_lib import (
 from torch._export.verifier import Verifier
 from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
-from torch.fx.passes.infra.pass_manager import PassManager
+from executorch.exir.pass_manager import PassManager
 
 from torch.library import impl, Library
 from torch.nn import functional as F
