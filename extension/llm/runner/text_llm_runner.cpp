@@ -14,10 +14,6 @@
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <pytorch/tokenizers/hf_tokenizer.h>
-#include <pytorch/tokenizers/llama2c_tokenizer.h>
-#include <pytorch/tokenizers/sentencepiece.h>
-#include <pytorch/tokenizers/tiktoken.h>
 
 namespace executorch::extension::llm {
 

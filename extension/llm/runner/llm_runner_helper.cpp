@@ -8,7 +8,6 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
 // Implementation of helper utilities for creating and configuring LLM runners
 
-#include <executorch/extension/llm/runner/image_prefiller.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/multimodal_decoder_runner.h>
 #include <executorch/extension/llm/runner/multimodal_prefiller.h>

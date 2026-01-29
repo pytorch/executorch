@@ -11,6 +11,9 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
+
+#include <executorch/extension/llm/runner/jinja_chat_formatter.h>
 
 namespace example {
 
@@ -20,6 +23,8 @@ namespace example {
 enum class ChatFormat {
   None,   // No formatting (pass-through)
   Llama3, // Llama 3.x Instruct models
+  Gemma3, // Gemma 3 Instruct models
+  Jinja,  // Custom Jinja template from file
 };
 
 /**
@@ -49,32 +54,6 @@ class ChatFormatter {
 };
 
 /**
- * Llama 3.x Instruct chat format.
- * Template: <|begin_of_text|><|start_header_id|>...<|eot_id|>...
- */
-class Llama3ChatFormatter : public ChatFormatter {
- public:
-  std::string format(
-      const std::string& prompt,
-      const std::string& system_prompt = "") const override {
-    std::string result = "<|begin_of_text|>";
-    if (!system_prompt.empty()) {
-      result += "<|start_header_id|>system<|end_header_id|>\n\n";
-      result += system_prompt;
-      result += "<|eot_id|>";
-    }
-    result += "<|start_header_id|>user<|end_header_id|>\n\n";
-    result += prompt;
-    result += "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
-    return result;
-  }
-
-  bool includes_bos() const override {
-    return true; // <|begin_of_text|> is the BOS token
-  }
-};
-
-/**
  * No formatting (pass-through).
  * Use when the prompt is already formatted or for base models.
  */
@@ -92,6 +71,26 @@ class NoChatFormatter : public ChatFormatter {
   }
 };
 
+class JinjaChatFormatterAdapter : public ChatFormatter {
+ public:
+  explicit JinjaChatFormatterAdapter(
+      std::unique_ptr<executorch::extension::llm::JinjaChatFormatter> formatter)
+      : formatter_(std::move(formatter)) {}
+
+  std::string format(
+      const std::string& prompt,
+      const std::string& system_prompt = "") const override {
+    return formatter_->format(prompt, system_prompt);
+  }
+
+  bool includes_bos() const override {
+    return formatter_->includesBos();
+  }
+
+ private:
+  std::unique_ptr<executorch::extension::llm::JinjaChatFormatter> formatter_;
+};
+
 /**
  * Parse a chat format string into the corresponding enum value.
  *
@@ -102,6 +101,11 @@ inline ChatFormat parse_chat_format(const std::string& format_str) {
   static const std::unordered_map<std::string, ChatFormat> format_map = {
       {"none", ChatFormat::None},
       {"llama3", ChatFormat::Llama3},
+      {"llama3.2", ChatFormat::Llama3},
+      {"llama32", ChatFormat::Llama3},
+      {"llama3_2", ChatFormat::Llama3},
+      {"gemma3", ChatFormat::Gemma3},
+      {"jinja", ChatFormat::Jinja},
   };
   auto it = format_map.find(format_str);
   if (it != format_map.end()) {
@@ -114,7 +118,7 @@ inline ChatFormat parse_chat_format(const std::string& format_str) {
  * Get a human-readable list of supported chat formats.
  */
 inline std::string get_supported_formats() {
-  return "llama3, none";
+  return "llama3, gemma3, jinja, none";
 }
 
 /**
@@ -123,10 +127,26 @@ inline std::string get_supported_formats() {
  * @param format The chat format to use
  * @return Unique pointer to a ChatFormatter instance
  */
-inline std::unique_ptr<ChatFormatter> create_chat_formatter(ChatFormat format) {
+inline std::unique_ptr<ChatFormatter> create_chat_formatter(
+    ChatFormat format,
+    const std::string& template_file = "") {
+  using executorch::extension::llm::ChatTemplateType;
+  using executorch::extension::llm::JinjaChatFormatter;
+
+  if (!template_file.empty()) {
+    return std::make_unique<JinjaChatFormatterAdapter>(
+        JinjaChatFormatter::fromFile(template_file));
+  }
+
   switch (format) {
     case ChatFormat::Llama3:
-      return std::make_unique<Llama3ChatFormatter>();
+      return std::make_unique<JinjaChatFormatterAdapter>(
+          JinjaChatFormatter::fromTemplate(ChatTemplateType::Llama3));
+    case ChatFormat::Gemma3:
+      return std::make_unique<JinjaChatFormatterAdapter>(
+          JinjaChatFormatter::fromTemplate(ChatTemplateType::Gemma3));
+    case ChatFormat::Jinja:
+      return std::make_unique<NoChatFormatter>();
     case ChatFormat::None:
     default:
       return std::make_unique<NoChatFormatter>();
