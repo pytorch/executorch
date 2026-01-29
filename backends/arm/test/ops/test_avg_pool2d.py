@@ -134,9 +134,19 @@ test_modules_bf16 = {
         (torch.rand(1, 4, 12, 12, dtype=torch.bfloat16),),
     ),
 }
+test_modules_fp16 = {
+    "rand_fp16": lambda: (
+        AvgPool2d(4, 2, 0, False),
+        (torch.rand(1, 16, 50, 32, dtype=torch.float16),),
+    ),
+    "kernel_3x3_stride_1_pad_1_fp16": lambda: (
+        AvgPool2d((3, 3), (1, 1), 1),
+        (torch.rand(1, 4, 12, 12, dtype=torch.float16),),
+    ),
+}
 
 
-@common.parametrize("test_module", test_modules | test_modules_bf16)
+@common.parametrize("test_module", test_modules | test_modules_bf16 | test_modules_fp16)
 def test_avg_pool2d_tosa_FP(test_module):
     model, input_tensor = test_module()
 
@@ -242,7 +252,7 @@ def test_avg_pool2d_16a8w_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules)
+@common.parametrize("test_module", test_modules | test_modules_fp16)
 @common.SkipIfNoModelConverter
 def test_avg_pool2d_vgf_no_quant(test_module):
     model, input_tensor = test_module()
