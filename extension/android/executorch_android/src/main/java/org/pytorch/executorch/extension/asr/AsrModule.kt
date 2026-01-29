@@ -22,8 +22,8 @@ import org.pytorch.executorch.annotations.Experimental
  *
  * Warning: These APIs are experimental and subject to change without notice
  *
- * @param modelPath Path to the ExecuTorch model file (.pte). The model should expose two callable
- *   methods: "encoder" and "text_decoder".
+ * @param modelPath Path to the ExecuTorch model file (.pte). The model must expose exactly two
+ *   callable methods named "encoder" and "text_decoder" (these names are required).
  * @param tokenizerPath Path to the tokenizer directory containing tokenizer.json
  * @param dataPath Optional path to additional data file (e.g., for delegate data)
  * @param preprocessorPath Optional path to preprocessor .pte for converting raw audio to features.

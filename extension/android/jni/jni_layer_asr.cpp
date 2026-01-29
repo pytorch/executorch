@@ -87,18 +87,24 @@ AsrCallbackCache callbackCache;
 std::once_flag callbackCacheInitFlag;
 
 void initCallbackCache(JNIEnv* env) {
-  std::call_once(callbackCacheInitFlag, [env]() {
-    jclass localClass =
-        env->FindClass("org/pytorch/executorch/extension/asr/AsrCallback");
-    if (localClass != nullptr) {
-      callbackCache.callbackClass = (jclass)env->NewGlobalRef(localClass);
-      callbackCache.onTokenMethod = env->GetMethodID(
-          callbackCache.callbackClass, "onToken", "(Ljava/lang/String;)V");
-      callbackCache.onCompleteMethod = env->GetMethodID(
-          callbackCache.callbackClass, "onComplete", "(Ljava/lang/String;)V");
-      env->DeleteLocalRef(localClass);
-    }
-  });
+  std::call_once(
+      callbackCacheInitFlag,
+      [](JNIEnv* localEnv) {
+        jclass localClass = localEnv->FindClass(
+            "org/pytorch/executorch/extension/asr/AsrCallback");
+        if (localClass != nullptr) {
+          callbackCache.callbackClass =
+              (jclass)localEnv->NewGlobalRef(localClass);
+          callbackCache.onTokenMethod = localEnv->GetMethodID(
+              callbackCache.callbackClass, "onToken", "(Ljava/lang/String;)V");
+          callbackCache.onCompleteMethod = localEnv->GetMethodID(
+              callbackCache.callbackClass,
+              "onComplete",
+              "(Ljava/lang/String;)V");
+          localEnv->DeleteLocalRef(localClass);
+        }
+      },
+      env);
 }
 
 // Helper to create a unique_ptr for JNI global references
@@ -338,32 +344,68 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
   // Use unique_ptr with custom deleter to ensure global ref is released
   auto scopedCallback = make_scoped_global_ref(env, callback);
 
-  // Local token buffer for UTF-8 accumulation (per-call, not shared)
+  // Local token buffer for UTF-8 accumulation.
+  // Note: unlike the LLM JNI layer (which uses a global token_buffer),
+  // this buffer is intentionally per-transcription-call and captured by
+  // reference in the callback lambda. This design keeps ASR callbacks
+  // thread-safe and avoids sharing state across concurrent calls.
   std::string tokenBuffer;
 
   if (scopedCallback) {
     initCallbackCache(env);
 
     jobject callbackRef = scopedCallback.get();
-    tokenCallback = [env, callbackRef, &tokenBuffer](const std::string& token) {
-      tokenBuffer += token;
-      if (!utf8_check_validity(tokenBuffer.c_str(), tokenBuffer.size())) {
-        ET_LOG(
-            Info, "Current token buffer is not valid UTF-8. Waiting for more.");
-        return;
-      }
 
-      std::string completeToken = tokenBuffer;
-      tokenBuffer.clear();
+    JavaVM* jvm = nullptr;
+    if (env->GetJavaVM(&jvm) != JNI_OK || jvm == nullptr) {
+      ET_LOG(Error, "Failed to get JavaVM for ASR token callback.");
+    } else {
+      tokenCallback =
+          [jvm, callbackRef, &tokenBuffer](const std::string& token) {
+            JNIEnv* envLocal = nullptr;
+            jint getEnvResult =
+                jvm->GetEnv(reinterpret_cast<void**>(&envLocal), JNI_VERSION_1_6);
+            if (getEnvResult == JNI_EDETACHED) {
+#if defined(__ANDROID__) || defined(ANDROID)
+              if (jvm->AttachCurrentThread(&envLocal, nullptr) != JNI_OK)
+#else
+              if (jvm->AttachCurrentThread(reinterpret_cast<void**>(&envLocal), nullptr) !=
+                  JNI_OK)
+#endif
+              {
+                ET_LOG(
+                    Error,
+                    "Failed to attach current thread to JVM for ASR token callback.");
+                return;
+              }
+            } else if (getEnvResult != JNI_OK || envLocal == nullptr) {
+              ET_LOG(
+                  Error,
+                  "Failed to get JNIEnv for ASR token callback (GetEnv error).");
+              return;
+            }
 
-      jstring jToken = env->NewStringUTF(completeToken.c_str());
-      env->CallVoidMethod(callbackRef, callbackCache.onTokenMethod, jToken);
-      if (env->ExceptionCheck()) {
-        ET_LOG(Error, "Exception occurred in AsrCallback.onToken");
-        env->ExceptionClear();
-      }
-      env->DeleteLocalRef(jToken);
-    };
+            tokenBuffer += token;
+            if (!utf8_check_validity(tokenBuffer.c_str(), tokenBuffer.size())) {
+              ET_LOG(
+                  Info,
+                  "Current token buffer is not valid UTF-8. Waiting for more.");
+              return;
+            }
+
+            std::string completeToken = tokenBuffer;
+            tokenBuffer.clear();
+
+            jstring jToken = envLocal->NewStringUTF(completeToken.c_str());
+            envLocal->CallVoidMethod(
+                callbackRef, callbackCache.onTokenMethod, jToken);
+            if (envLocal->ExceptionCheck()) {
+              ET_LOG(Error, "Exception occurred in AsrCallback.onToken");
+              envLocal->ExceptionClear();
+            }
+            envLocal->DeleteLocalRef(jToken);
+          };
+    }
   }
 
   // Run transcription
