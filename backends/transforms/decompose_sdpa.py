@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -84,9 +84,6 @@ class DecomposeScaledDotProductAttention(ExportPass):
 
             # Copy node from decompose graph module
             for decomposed_node in decomposed_module.graph.nodes:
-                node.meta["nn_module_stack"] = decomposed_node.meta.get(
-                    "nn_module_stack"
-                )
                 if decomposed_node.op == "placeholder":
                     continue
 
@@ -112,9 +109,12 @@ class DecomposeScaledDotProductAttention(ExportPass):
                     decomposed_node,
                     arg_transform=lambda x: decomposed_node_to_subgraph_node[x],
                 )
+                subgraph_node.meta.update(decomposed_node.meta)
                 subgraph_node.meta["source_fn_stack"] = [
                     (subgraph_node, subgraph_node.target)
                 ]
+                if "nn_module_stack" in node.meta:
+                    subgraph_node.meta["nn_module_stack"] = node.meta["nn_module_stack"]
                 decomposed_node_to_subgraph_node[decomposed_node] = subgraph_node
 
             graph.erase_node(node)
