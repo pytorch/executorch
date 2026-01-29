@@ -10,9 +10,7 @@ import io
 import logging
 from collections import defaultdict
 
-import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
-
 import torch
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
@@ -33,6 +31,12 @@ from executorch.devtools.visualization.visualization_utils import (
 )
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
+from executorch.examples.nxp.experimental.cifar_net.cifar_net import (
+    CifarNet,
+    test_cifarnet_model,
+    train_cifarnet_model,
+)
+from executorch.examples.nxp.models.mobilenet_v2 import MobilenetV2
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -45,13 +49,6 @@ from torch.ao.quantization import (
 )
 from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
-
-from .experimental.cifar_net.cifar_net import (
-    CifarNet,
-    test_cifarnet_model,
-    train_cifarnet_model,
-)
-from .models.mobilenet_v2 import MobilenetV2
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -118,7 +115,6 @@ models = {
     "cifar10": CifarNet,
     "mobilenetv2": MobilenetV2,
 }
-
 
 if __name__ == "__main__":  # noqa C901
     parser = argparse.ArgumentParser()
@@ -237,6 +233,13 @@ if __name__ == "__main__":  # noqa C901
         # The dim order of the example inputs will define the dim order of the intermediate tensors in the model.
         example_inputs = tuple(
             i.to(memory_format=torch.channels_last) for i in example_inputs
+        )
+
+    else:
+        # Notify the user of this option.
+        print(
+            "HINT: Converting your model to channels last may significantly improve inference speed. You can use the "
+            "flag `--use_channels_last_dim_order`. See `docs/source/backends/nxp/nxp-dim-order.md` for more information."
         )
 
     # 2. Export the model to ATEN
