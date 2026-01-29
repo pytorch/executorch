@@ -7,6 +7,7 @@
  * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
  */
 
+#include <executorch/examples/models/llama/runner/chat_formatter.h>
 #include <executorch/examples/models/llama/runner/runner.h>
 #include <gflags/gflags.h>
 #include <sstream>
@@ -72,6 +73,22 @@ DEFINE_string(
     "etdump.in",
     "If an etdump path is provided, generate an ETDump file at the specified path for profiling purposes.");
 
+DEFINE_string(
+    chat_format,
+    "none",
+    "Chat template format for Instruct models. Supported formats: llama3, none (default: none). "
+    "When set, the prompt will be wrapped in the appropriate chat template.");
+
+DEFINE_string(
+    system_prompt,
+    "",
+    "System prompt for chat format (optional). Sets the behavior/personality of the assistant.");
+
+DEFINE_bool(
+    echo,
+    true,
+    "Echo the input prompt in the output. Set to false to only show generated text.");
+
 // Helper function to parse comma-separated string lists
 std::vector<std::string> parseStringList(const std::string& input) {
   std::vector<std::string> result;
@@ -104,7 +121,30 @@ int32_t main(int32_t argc, char** argv) {
 
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
 
-  const char* prompt = FLAGS_prompt.c_str();
+  // Parse chat format and create formatter
+  auto chat_format = example::parse_chat_format(FLAGS_chat_format);
+  auto chat_formatter = example::create_chat_formatter(chat_format);
+
+  // Apply chat formatting to prompt
+  std::string formatted_prompt =
+      chat_formatter->format(FLAGS_prompt, FLAGS_system_prompt);
+  const char* prompt = formatted_prompt.c_str();
+
+  if (chat_format != example::ChatFormat::None) {
+    ET_LOG(
+        Info,
+        "Using chat format: %s",
+        FLAGS_chat_format.c_str());
+
+    // Warn if num_bos is set since chat templates already include BOS
+    if (FLAGS_num_bos > 0 && chat_formatter->includes_bos()) {
+      ET_LOG(
+          Info,
+          "Note: Chat format '%s' already includes BOS token. "
+          "Consider setting --num_bos=0 to avoid duplicate BOS tokens.",
+          FLAGS_chat_format.c_str());
+    }
+  }
 
   float temperature = FLAGS_temperature;
 
@@ -163,6 +203,7 @@ int32_t main(int32_t argc, char** argv) {
   }
   // generate
   executorch::extension::llm::GenerationConfig config{
+      .echo = FLAGS_echo,
       .temperature = temperature};
 
   if (FLAGS_max_new_tokens != -1) {
