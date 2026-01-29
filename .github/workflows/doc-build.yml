@@ -112,6 +112,9 @@ jobs:
         # refs/tags/v1.12.0 convert to 1.12
         export GITHUB_REF=${{ github.ref }}
 
+        # Fail immediately instead of prompting for input.
+        export GIT_TERMINAL_PROMPT=0
+
         # Convert refs/tags/v1.12.0rc3 into 1.12.
         # Adopted from https://github.com/pytorch/pytorch/blob/main/.github/workflows/_docs.yml#L150C11-L155C13
         if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+) ]]; then
