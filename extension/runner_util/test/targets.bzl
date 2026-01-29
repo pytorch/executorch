@@ -28,5 +28,6 @@ def define_common_targets(is_fbcode = False):
                 ],
                 env = {
                     "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
+                    "ET_MODULE_INTBOOL_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleIntBool.pte])",
                 },
             )
