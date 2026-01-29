@@ -406,19 +406,20 @@ void quantized_conv2d_nhwc(
     float output_scale,
     int32_t output_zero_point,
     Tensor& out) {
+  const bool conv1d = input.dim() == 3;
   // input = [n, h, w, c]
-  const int n = input.size(0);
-  const int h = input.size(1);
-  const int w = input.size(2);
-  const int c = input.size(3);
+  const int n = static_cast<int>(input.size(0));
+  const int h = static_cast<int>(conv1d ? 1 : input.size(1));
+  const int w = static_cast<int>(conv1d ? input.size(1) : input.size(2));
+  const int c = static_cast<int>(conv1d ? input.size(2) : input.size(3));
   // weight = [oc, wh, ww, wc]
-  const int oc = weight.size(0);
-  const int wh = weight.size(1);
-  const int ww = weight.size(2);
-  const int wc = weight.size(3);
+  const int oc = static_cast<int>(weight.size(0));
+  const int wh = static_cast<int>(conv1d ? 1 : weight.size(1));
+  const int ww = static_cast<int>(conv1d ? weight.size(1) : weight.size(2));
+  const int wc = static_cast<int>(conv1d ? weight.size(2) : weight.size(3));
   // output = [n, oh, ow, oc]
-  const int oh = out.size(1);
-  const int ow = out.size(2);
+  const int oh = static_cast<int>(conv1d ? 1 : out.size(1));
+  const int ow = static_cast<int>(conv1d ? out.size(1) : out.size(2));
 
   // Handle W8A16 heterogeneous type (int16_t activations, int8_t weights)
   if (out.scalar_type() == ScalarType::Short &&
