@@ -51,16 +51,35 @@ class DecomposeWrapWithAutocast(ExportPass):
     def _replace(self, gm: torch.fx.GraphModule) -> None:
         graph = gm.graph
         for node in graph.nodes:
-            if isinstance(node.target, torch._higher_order_ops.wrap.WrapWithAutocast):
+            if isinstance(
+                node.target,
+                (
+                    torch._higher_order_ops.wrap.WrapWithAutocast,
+                    torch._higher_order_ops.wrap.WrapWithSetGradEnabled,
+                )
+            ):
                 submod, _ = self._get_submod(gm, node)
                 n_args = node.args
-                input_submod = n_args[4]
+                input_submod = (
+                    n_args[4] if node.target == torch._higher_order_ops.wrap.WrapWithAutocast
+                    else n_args[1]
+                )
                 decomposed_module = submod
+                placeholders = [n for n in submod.graph.nodes if n.op == "placeholder"]
                 with graph.inserting_before(node):
                     # remap is used to map original node values to new node values,
                     # which ensures that reference to nodes are correctly updated in the new graph
-                    # remap = {"expand_1": node.args[5], "to_4": node.args[6]}
-                    remap = {n_args[i].name: n_args[i] for i in range(5, len(n_args))}
+                    remap = (
+                        # remap = {"expand_1": node.args[5], "to_4": node.args[6]}
+                        {n_args[i].name: n_args[i] for i in range(5, len(n_args))}
+                        if node.target == torch._higher_order_ops.wrap.WrapWithAutocast
+                        # remap = {
+                        #   "tok_embeddings_weight": node.args[2],
+                        #   "tok_embeddings_scales": node.args[3],
+                        #   "tokens": node.args[4]
+                        # }
+                        else {placeholders[i-2].name: n_args[i] for i in range(2, len(n_args))}
+                    )
                     merge_decomposed_graph(
                         remap=remap,
                         target_node=node,
