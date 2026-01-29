@@ -10,6 +10,7 @@
 
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/core/storage.h>
+#include <executorch/backends/aoti/slim/factory/empty.h>
 
 namespace executorch::backends::aoti::slim {
 
