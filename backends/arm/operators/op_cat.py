@@ -25,8 +25,6 @@ from torch.fx import Node
 class CatVisitor(NodeVisitor):
     target = "aten.cat.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 

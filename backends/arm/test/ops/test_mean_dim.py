@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -247,6 +247,8 @@ class MeanDim(torch.nn.Module):
             (2),
             False,
         ),
+    }
+    u55_test_data_suite = {
         "u55_avg_pool_not_supported": lambda: (
             torch.rand(1, 1, 1, 257),
             (0, 1, 2, 3),
@@ -288,7 +290,9 @@ def test_mean_dim_tosa_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", MeanDim.test_data_suite)
+@common.parametrize(
+    "test_data", {**MeanDim.test_data_suite, **MeanDim.u55_test_data_suite}
+)
 @common.XfailIfNoCorstone300
 def test_mean_dim_u55_INT(test_data):
     test_data, dim, keep_dim = test_data()

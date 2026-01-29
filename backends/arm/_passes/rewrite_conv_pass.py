@@ -5,7 +5,7 @@
 
 
 import itertools
-from typing import Set, Type
+from typing import Any, Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
@@ -31,7 +31,7 @@ from torch.export.graph_signature import InputKind
 
 
 class RewriteConvPass(ArmPass):
-    """Rewrites aten.convolution to tosa.CONV2D or tosa.DEPTHWISE_CONV2D."""
+    """Rewrites aten.convolution to TOSA conv ops (CONV2D/DEPTHWISE/TRANSPOSE/CONV3D)."""
 
     def __init__(self, exported_program: torch.export.ExportedProgram, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -237,8 +237,8 @@ class RewriteConvPass(ArmPass):
                 stride,
                 pad,
                 dilation,
-                _,
-                _,
+                transposed,
+                output_padding,
                 group,
             ) = node.args
 
@@ -251,47 +251,82 @@ class RewriteConvPass(ArmPass):
             dilation_list = expand_around_channel(dilation, spatial_rank)
             pad_list = expand_around_channel(pad, spatial_rank)
 
-            pad_attr: list[int] = []
-            for value in pad_list:
-                pad_attr.extend([value, value])  # duplicate pad before/after per axis
-
-            for axis_index in range(spatial_rank):
-                pad_index = axis_index * 2 + 1  # adjust trailing pad entry
-                pad_attr[pad_index] = self._adjust_pad_if_needed(
-                    input_shape[axis_index + 2],
-                    weight_shape[axis_index + 2],
-                    stride_list[axis_index],
-                    pad_attr[pad_index],
-                    dilation_list[axis_index],
-                )
-
             stride = tuple(stride_list)
-            dilation = tuple(dilation_list)
-            pad = pad_attr
 
             has_bias = bias is not None
             if not has_bias:
                 bias = self._add_bias(graph_module, node, weight)
 
-            if self._is_conv3d(len(input_shape), group):
-                target_op = exir_ops.backend.tosa.CONV3D.default
-            elif self._is_depthwise_conv2d(node):
-                target_op = exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
-                # If there are any TOSA.DEPTHWISE_CONV2D nodes using the weights, we've already reshaped them.
-                if all(user.target != target_op for user in weight.users):
-                    self._reshape_weights(weight, input_fake_tensor.shape[1])
-                weight_fake_tensor = get_first_fake_tensor(weight)
+            conv_args: tuple[Any, ...]
+            if transposed:
+                if spatial_rank != 2:
+                    raise RuntimeError(
+                        "Only 2D transpose convolutions are supported in the Arm backend."
+                    )
+                if group != 1:
+                    raise RuntimeError(
+                        "Grouped transpose convolutions are not supported in the Arm backend."
+                    )
+                if any(d != 1 for d in dilation_list):
+                    raise RuntimeError(
+                        "Transpose convolutions with dilation are not supported in the Arm backend."
+                    )
+                output_padding_list = expand_around_channel(
+                    output_padding, spatial_rank
+                )
+                out_pad = [
+                    -pad_list[0],
+                    -pad_list[0] + output_padding_list[0],
+                    -pad_list[1],
+                    -pad_list[1] + output_padding_list[1],
+                ]
+                target_op = exir_ops.backend.tosa.TRANSPOSE_CONV2D.default
+                conv_args = (
+                    x,
+                    weight,
+                    bias,
+                    out_pad,
+                    stride,
+                )
             else:
-                target_op = exir_ops.backend.tosa.CONV2D.default
+                pad_attr: list[int] = []
+                for value in pad_list:
+                    pad_attr.extend(
+                        [value, value]
+                    )  # duplicate pad before/after per axis
 
-            conv_args = (
-                x,
-                weight,
-                bias,
-                stride,
-                pad,
-                dilation,
-            )
+                for axis_index in range(spatial_rank):
+                    pad_index = axis_index * 2 + 1  # adjust trailing pad entry
+                    pad_attr[pad_index] = self._adjust_pad_if_needed(
+                        input_shape[axis_index + 2],
+                        weight_shape[axis_index + 2],
+                        stride_list[axis_index],
+                        pad_attr[pad_index],
+                        dilation_list[axis_index],
+                    )
+
+                dilation = tuple(dilation_list)
+                pad = pad_attr
+
+                if self._is_conv3d(len(input_shape), group):
+                    target_op = exir_ops.backend.tosa.CONV3D.default
+                elif self._is_depthwise_conv2d(node):
+                    target_op = exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
+                    # If there are any TOSA.DEPTHWISE_CONV2D nodes using the weights, we've already reshaped them.
+                    if all(user.target != target_op for user in weight.users):
+                        self._reshape_weights(weight, input_fake_tensor.shape[1])
+                    weight_fake_tensor = get_first_fake_tensor(weight)
+                else:
+                    target_op = exir_ops.backend.tosa.CONV2D.default
+
+                conv_args = (
+                    x,
+                    weight,
+                    bias,
+                    stride,
+                    pad,
+                    dilation,
+                )
 
             with graph_module.graph.inserting_after(node):
                 tosa_op = create_node(

@@ -30,7 +30,6 @@ def binary_operator_factory(
 
     class BinaryOperator(NodeVisitor):
         target = bw_target
-        tosa_specs = NodeVisitor.tosa_specs
 
         def define_node(
             self,

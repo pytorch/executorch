@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -96,6 +96,8 @@ class TosaSpecification:
     version: Version
     is_U55_subset: bool
     extensions: List[str]
+    _SUPPORTED_VERSIONS = [Version("1.0"), Version("1.1")]
+    _SUPPORTED_PROFILES = ["INT", "FP"]
 
     def support_integer(self) -> bool:
         """Return True if integer operations are supported."""
@@ -132,6 +134,52 @@ class TosaSpecification:
         if self.is_U55_subset:
             extras.remove("u55")
 
+    @classmethod
+    def _normalize_version(cls, version: Version | str) -> Version:
+        if isinstance(version, Version):
+            parsed = version
+        else:
+            version_str = str(version)
+            if version_str.startswith("TOSA-"):
+                version_str = version_str[len("TOSA-") :]
+            parsed = Version(version_str)
+
+        return Version(f"{parsed.major}.{parsed.minor}")
+
+    @classmethod
+    def all_versions_and_profiles(cls) -> List["TosaSpecification"]:
+        """Return specs for all supported versions and profiles."""
+        specs: List["TosaSpecification"] = []
+        for version in cls._SUPPORTED_VERSIONS:
+            for profile in cls._SUPPORTED_PROFILES:
+                specs.append(cls.create_from_string(f"TOSA-{version}+{profile}"))
+        return specs
+
+    @classmethod
+    def all_versions_for_profile(cls, profile: str) -> List["TosaSpecification"]:
+        """Return specs for all supported versions of a given profile."""
+        normalized = profile.upper()
+        if normalized not in cls._SUPPORTED_PROFILES:
+            raise ValueError(f"Unsupported TOSA profile: {profile}")
+        return [
+            cls.create_from_string(f"TOSA-{version}+{normalized}")
+            for version in cls._SUPPORTED_VERSIONS
+        ]
+
+    @classmethod
+    def all_profiles_for_version(
+        cls, version: Version | str
+    ) -> List["TosaSpecification"]:
+        """Return specs for all supported profiles for a given version."""
+        normalized = cls._normalize_version(version)
+        supported = {(v.major, v.minor) for v in cls._SUPPORTED_VERSIONS}
+        if (normalized.major, normalized.minor) not in supported:
+            raise ValueError(f"Unsupported TOSA version: {version}")
+        return [
+            cls.create_from_string(f"TOSA-{normalized}+{profile}")
+            for profile in cls._SUPPORTED_PROFILES
+        ]
+
     @staticmethod
     def create_from_string(repr: str) -> "TosaSpecification":
         """Create a specification from a standard string format.
@@ -156,9 +204,11 @@ class TosaSpecification:
             extras = match.group(3).split("+")
             if name != "TOSA":
                 raise ValueError(f"Malformed TOSA specification representation: {repr}")
-            match version:
-                case _ if version.major == 1 and version.minor == 0:
+            match version.major, version.minor:
+                case [1, 0]:
                     return Tosa_1_00(version, extras)
+                case [1, 1]:
+                    return Tosa_1_1(version, extras)
                 case _:
                     raise ValueError(f"Wrong TOSA version: {version} from {repr}")
 
@@ -207,22 +257,24 @@ class Tosa_1_00(TosaSpecification):
         """
         super().__init__(version, extras)
 
+        cls = self.__class__
+
         # Check that we have at least one profile in the extensions list
-        if [e in Tosa_1_00.available_profiles for e in extras].count(True) == 0:
+        if [e in cls.available_profiles for e in extras].count(True) == 0:
             raise ValueError(
-                f"No profile ({Tosa_1_00.available_profiles}) found in: {extras}."
+                f"No profile ({cls.available_profiles}) found in: {extras}."
             )
 
         # and not more than number of available profiles
-        if [e in Tosa_1_00.available_profiles for e in extras].count(True) > len(
-            Tosa_1_00.available_profiles
+        if [e in cls.available_profiles for e in extras].count(True) > len(
+            cls.available_profiles
         ):
             raise ValueError(
-                f"Too many profiles ({Tosa_1_00.available_profiles}) found in: {extras}."
+                f"Too many profiles ({cls.available_profiles}) found in: {extras}."
             )
 
         # The list contains one profile at least, so pick them
-        self.profiles = [e for e in extras if e in Tosa_1_00.available_profiles]
+        self.profiles = [e for e in extras if e in cls.available_profiles]
         for p in self.profiles:
             extras.remove(p)
 
@@ -232,7 +284,7 @@ class Tosa_1_00(TosaSpecification):
 
         combined_extensions = []
         for p in self.profiles:
-            combined_extensions += Tosa_1_00.valid_extensions[p]
+            combined_extensions += cls.valid_extensions[p]
 
         if not all(e in combined_extensions for e in extras):
             raise ValueError(
@@ -307,10 +359,10 @@ class Tosa_1_00(TosaSpecification):
             bool: True if the extension is valid for the active profiles and selected.
 
         """
+        cls = self.__class__
         for p in self.profiles:
-            if extension in self.valid_extensions[p] and extension in self.extensions:
+            if extension in cls.valid_extensions[p] and extension in self.extensions:
                 return True
-
         return False
 
     def _canonical_key(self) -> "Tosa_1_00":
@@ -322,6 +374,28 @@ class Tosa_1_00(TosaSpecification):
 
         norm_version = Version(f"{self.version.major}.{self.version.minor}.0")
         return Tosa_1_00(norm_version, self.profiles.copy())
+
+
+class Tosa_1_1(Tosa_1_00):
+
+    valid_extensions = {
+        "INT": ["shape", "int64", "int16", "int4", "var", "cf", "u55"],
+        "FP": [
+            "shape",
+            "int64",
+            "bf16",
+            "fp8e4m3",
+            "fp8e5m2",
+            "fft",
+            "var",
+            "cf",
+            "random",
+            "mxfp",
+            "blockscale_ue5m3",
+        ],
+    }
+
+    pass
 
 
 class TosaLoweringContext:

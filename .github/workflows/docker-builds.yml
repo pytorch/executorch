@@ -46,6 +46,8 @@ jobs:
         include:
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64
             runner: linux.arm64.2xlarge
+          - docker-image-name: executorch-ubuntu-22.04-cuda-windows
+            runner: linux.g5.4xlarge.nvidia.gpu
 
     runs-on: [self-hosted, "${{ matrix.runner }}"]
     env:

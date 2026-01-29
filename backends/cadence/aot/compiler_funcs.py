@@ -81,6 +81,46 @@ def prepare(
     return prepared_model
 
 
+def extract_quant_params_through_permute(
+    module: torch.fx.GraphModule,
+) -> dict[int, tuple[float, int, int, int, torch.dtype]]:
+    """
+    Extract quantization parameters for inputs that go through a permute.
+
+    For models with nhwc input -> conv, the graph looks like:
+        x (placeholder) -> permute -> quantize -> dequantize -> conv ...
+    """
+    quant_args: dict[int, tuple[float, int, int, int, torch.dtype]] = {}
+
+    placeholder_idx = 0
+    for node in module.graph.nodes:
+        if node.op != "placeholder":
+            continue
+        for user in node.users:
+            if user.target in (
+                torch.ops.aten.permute.default,
+                torch.ops.aten.permute_copy.default,
+            ):
+                for permute_user in user.users:
+                    target_str = str(permute_user.target)
+                    if "quantize_per_tensor" in target_str:
+                        args = permute_user.args[1:]
+                        if len(args) >= 5:
+                            quant_args[placeholder_idx] = (
+                                float(args[0]),  # scale
+                                int(args[1]),  # zero_point
+                                int(args[2]),  # qmin
+                                int(args[3]),  # qmax
+                                args[4],  # dtype
+                            )
+                        break
+                break
+
+        placeholder_idx += 1
+
+    return quant_args
+
+
 def extract_input_quant_params_from_graph(
     module: GraphModule,
     input_names: list[str],

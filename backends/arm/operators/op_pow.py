@@ -26,9 +26,7 @@ from torch.fx import Node
 class PowVisitor(NodeVisitor):
     target = "aten.pow.Tensor_Tensor"
 
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
+    tosa_specs = TosaSpecification.all_versions_for_profile("FP")
 
     def __init__(self, *args):
         super().__init__(*args)

@@ -407,37 +407,6 @@ class TextDecoder(Component):
                 "Audio encoder modality is not currently supported. "
                 "Please provide a valid modality_placeholder_token_id in kwargs."
             )
-        # Language-only Model (LLM) configuration
-        # Handle architecture-specific parameters for models that require special configurations
-        # beyond the general Static LLaMA architecture
-        else:
-            match self.control_args.decoder_model:
-                case "gemma3-1b":
-                    # Gemma3 requires additional configuration parameters:
-                    # - layer_types: Specifies the type of each layer (e.g., casual vs. sliding window attention)
-                    # - rope_local_base_freq: Base frequency for local RoPE
-                    # - sliding_window: Size of the sliding attention window for efficient long-context processing
-                    from transformers import Gemma3Config
-
-                    hf_config = Gemma3Config.from_pretrained(self.config.repo_id)
-                    kwargs["layer_types"] = hf_config.text_config.layer_types
-                    kwargs["rope_local_base_freq"] = (
-                        hf_config.text_config.rope_local_base_freq
-                    )
-                    kwargs["sliding_window"] = hf_config.sliding_window
-                case "gemma2-2b":
-                    from transformers import Gemma2Config
-
-                    hf_config = Gemma2Config.from_pretrained(self.config.repo_id)
-                    kwargs["layer_types"] = hf_config.layer_types
-                    kwargs["rope_local_base_freq"] = hf_config.rope_parameters[
-                        "rope_theta"
-                    ]
-                    kwargs["sliding_window"] = hf_config.sliding_window
-                    kwargs["final_logit_softcapping"] = (
-                        hf_config.final_logit_softcapping
-                    )
-                    kwargs["attn_logit_softcapping"] = hf_config.attn_logit_softcapping
 
         return kwargs
 

@@ -1,0 +1,24 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//tools/target_determinator/macros:fbcode_ci_helpers.bzl", "fbcode_ci")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_mimi",
+    srcs = ["test_mimi.py"],
+    labels = ci.labels(fbcode_ci.use_opt_instead_of_dev()),
+    deps = [
+        "fbsource//third-party/pypi/huggingface-hub:huggingface-hub",
+        "fbsource//third-party/pypi/moshi:moshi",
+        "fbsource//third-party/pypi/numpy:numpy",
+        "fbsource//third-party/pypi/requests:requests",
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/runtime:runtime",
+        "//pytorch/audio/src:torchaudio_core",
+    ],
+)

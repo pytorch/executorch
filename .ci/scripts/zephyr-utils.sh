@@ -26,8 +26,8 @@
 #
 # The blockheader is 'Install requirements' and the code block is 'pip install something ... \npip install something_else'
 # so if we run
-#   run_command_block_from_zephyr_readme 'Install requirements' '^(pip|pip3)[[:space:]]+install([[:space:]].*)?$'
-# it will make sure each lite start with pip or pip3 and then run them one by one
+#   run_command_block_from_zephyr_readme 'Install requirements'
+# it will run them one by one
 
 
 
@@ -88,8 +88,7 @@ _zephyr_utils_extract_block () {
 
 _zephyr_utils_run_simple_commands () {
   local block="$1"
-  local allowedpattern="$2"
-  local description="$3"
+  local description="$2"
   temp_dir="$(mktemp -d)"
   if [[ ! -d "${temp_dir}" ]]; then
     echo "ERROR: Failed to create temporary directory for west init" >&2
@@ -102,16 +101,6 @@ _zephyr_utils_run_simple_commands () {
     cmd="${cmd#"${cmd%%[![:space:]]*}"}"
     cmd="${cmd%"${cmd##*[![:space:]]}"}"
     [[ -z "${cmd}" ]] && continue
-
-    if [[ ! "${cmd}" =~ ${allowedpattern} ]]; then
-      echo "ERROR: Unexpected command in '${description}' readme block: ${cmd} must match pattern: ${allowedpattern}" >&2
-      return 1
-    fi
-
-    if [[ "${cmd}" == *";"* || "${cmd}" == *"&&"* || "${cmd}" == *"||"* || "${cmd}" == *"|"* ]]; then
-      echo "ERROR: Command chaining is not allowed in '${description}' readme block: ${cmd}" >&2
-      return 1
-    fi
 
     echo "Running: ${cmd}"
     if ! eval "${cmd}"; then
@@ -130,7 +119,6 @@ _zephyr_utils_run_simple_commands () {
 
 run_command_block_from_zephyr_readme () {
   local blockheader="$1"
-  local allowedpattern="$2"
 
   echo "Run block '${blockheader}' from zephyr/README.md"
 
@@ -143,7 +131,7 @@ run_command_block_from_zephyr_readme () {
     echo "ERROR: Failed to locate ${blockheader} block in ${readme_path}" >&2
     return 1
   fi
-  _zephyr_utils_run_simple_commands "${block}" "${allowedpattern}" "${blockheader}"
+  _zephyr_utils_run_simple_commands "${block}" "${blockheader}"
 }
 
 # Check that zephyr/executorch.yaml match zephyr/README.md

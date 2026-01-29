@@ -1,0 +1,27 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "preprocess",
+    srcs = [
+        "preprocess.py"
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/passes:lib",
+        "fbsource//third-party/mediatek/neuropilot-express-sdk:sdk",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "partitioner",
+    srcs = [
+        "partitioner.py"
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":preprocess",
+    ],
+)

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -8,7 +8,7 @@ from typing import Tuple
 
 import torch
 
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -45,8 +45,7 @@ def test_sin_tosa_FP(test_data: Tuple):
         aten_op,
         exir_op=[],
     )
-    if conftest.get_option("tosa_version") == "1.0":
-        pipeline.run()
+    pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)

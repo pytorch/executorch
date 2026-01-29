@@ -113,6 +113,12 @@ class ProgramTestFriend final {
       const Program* program) {
     return program->internal_program_;
   }
+  static Result<const void*> get_constant_buffer_data(
+      const Program* program,
+      size_t buffer_index,
+      size_t nbytes) {
+    return program->get_constant_buffer_data(buffer_index, nbytes);
+  }
 };
 } // namespace testing
 } // namespace runtime
@@ -826,4 +832,20 @@ TEST_F(ProgramTest, NullPlanNameDoesNotCrash) {
 
   // Should return error, not crash
   EXPECT_EQ(p->method_meta("forward").error(), Error::InvalidArgument);
+}
+
+TEST_F(ProgramTest, GetConstantBufferDataRejectsOversizedRequest) {
+  const char* path =
+      std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
+  Result<FileDataLoader> loader = FileDataLoader::from(path);
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Request way more bytes than any buffer could contain
+  Result<const void*> data = ProgramTestFriend::get_constant_buffer_data(
+      &program.get(), /*buffer_index=*/0, /*nbytes=*/SIZE_MAX);
+
+  EXPECT_EQ(data.error(), Error::InvalidArgument);
 }

@@ -67,6 +67,18 @@ class ModuleIndex(nn.Module):
         return (torch.randn(10, 10, 10),)
 
 
+# Used for testing int and bool inputs.
+class ModuleIntBool(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor, y: int, z: bool):
+        return x + y + int(z)
+
+    def get_random_inputs(self):
+        return (torch.ones(1), 1, True)
+
+
 class ModuleNoOp(nn.Module):
     def __init__(self):
         super(ModuleNoOp, self).__init__()

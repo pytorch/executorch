@@ -8,9 +8,9 @@
 
 #include <gtest/gtest.h>
 
-#include <executorch/backends/aoti/slim/core/Storage.h>
-#include <executorch/backends/aoti/slim/factory/Empty.h>
-#include <executorch/backends/aoti/slim/factory/FromBlob.h>
+#include <executorch/backends/aoti/slim/core/storage.h>
+#include <executorch/backends/aoti/slim/factory/empty.h>
+#include <executorch/backends/aoti/slim/factory/from_blob.h>
 
 #ifdef CUDA_AVAILABLE
 #include <cuda_runtime.h>

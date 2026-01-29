@@ -12,10 +12,7 @@ from executorch.backends.arm.tosa.specification import TosaSpecification
 
 @register_fake_tosa_op(
     "SCATTER(Tensor values_in, Tensor indices, Tensor input) -> Tensor",  # schema
-    (
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-    ),  # target TOSA specifications
+    TosaSpecification.all_versions_and_profiles(),  # target TOSA specifications
 )
 def SCATTER(
     x: torch.Tensor,

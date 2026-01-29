@@ -18,18 +18,12 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
 
 
 @register_node_visitor
 class SubVisitor(NodeVisitor):
     target = "aten.sub.Tensor"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def define_node(
         self,

@@ -421,36 +421,9 @@ class ArmTester(Tester):
     def is_quantized(self) -> bool:
         return self.stages[StageType.QUANTIZE] is not None
 
-    def run_method_and_compare_outputs(
-        self,
-        stage: Optional[StageType] = None,
-        inputs: Optional[Tuple[torch.Tensor, ...]] = None,
-        num_runs: int = 1,
-        atol: float = 1e-03,
-        rtol: float = 1e-03,
-        qtol: int = 0,
-        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
-        # Preserve positional compatibility while keeping new flags keyword-only.
-        *,
-        error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
-        run_eager_mode: bool = False,
+    def _get_input_and_stages(
+        self, inputs, stage, reference_stage_type, run_eager_mode: bool
     ):
-        """
-        Compares the run_artifact output of 'stage' with the output of a reference stage.
-        If the model is quantized, the reference stage is the Quantize stage output.
-        Otherwise, the reference stage is the initial pytorch module.
-
-        Asserts that the outputs are equal (within tolerances).
-        Returns self to allow the function to be run in a test chain.
-
-        Args:
-            stage: (Optional[str]): The name of the stage to compare.
-                The default is the latest run stage.
-            inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
-                The default is random data.
-        """
-
-        # backward-compatible ordering (accept inputs as the first positional argument)
         if inputs is None and isinstance(stage, tuple):
             if all(isinstance(arg, torch.Tensor) for arg in stage):
                 inputs = cast(Tuple[torch.Tensor, ...], stage)
@@ -478,18 +451,57 @@ class ArmTester(Tester):
         is_quantized = self.is_quantized()
 
         if is_quantized:
-            reference_stage = self.stages[StageType.QUANTIZE]
+            reference_stage_type = reference_stage_type or StageType.QUANTIZE
         else:
-            reference_stage = self.stages[StageType.INITIAL_MODEL]
+            reference_stage_type = reference_stage_type or StageType.INITIAL_MODEL
+        reference_stage = self.stages[reference_stage_type]
+
+        return inputs, reference_stage, test_stage
+
+    def run_method_and_compare_outputs(
+        self,
+        stage: Optional[StageType] = None,
+        inputs: Optional[Tuple[torch.Tensor, ...]] = None,
+        num_runs: int = 1,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 0,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
+        # Preserve positional compatibility while keeping new flags keyword-only.
+        *,
+        reference_stage_type: StageType | None = None,
+        compare_callback: Optional[Callable[..., None]] = None,
+        error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
+        run_eager_mode: bool = False,
+    ):
+        """
+        Compares the run_artifact output of 'stage' with the output of a reference stage.
+        If the model is quantized, the reference stage is the Quantize stage output.
+        Otherwise, the reference stage is the initial pytorch module.
+
+        Asserts that the outputs are equal (within tolerances).
+        Returns self to allow the function to be run in a test chain.
+
+        Args:
+            stage: (Optional[str]): The name of the stage to compare.
+                The default is the latest run stage.
+            inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
+                The default is random data.
+        """
+
+        # backward-compatible ordering (accept inputs as the first positional argument)
+        inputs, reference_stage, test_stage = self._get_input_and_stages(
+            inputs, stage, reference_stage_type, run_eager_mode
+        )
 
         exported_stage = self.stages[StageType.EXPORT]
         exported_program = cast(ExportedProgram, exported_stage.artifact)
         output_node = exported_program.graph_module.graph.output_node()
         output_qparams = get_output_quantization_params(output_node)
 
-        quantization_scales = []
+        quantization_params = []
         for node in output_qparams:
-            quantization_scales.append(getattr(output_qparams[node], "scale", None))
+            quantization_params.append(output_qparams[node])
 
         logger.info(
             f"Comparing Stage '{test_stage.stage_type()}' with Stage '{reference_stage.stage_type()}'"
@@ -531,9 +543,10 @@ class ArmTester(Tester):
             logger.info(f"\n Ref output: {reference_outputs}")
             logger.info(f"\nTest output: {test_outputs}")
 
-            for reference_output, test_output, quantization_scale in zip(
-                reference_outputs, test_outputs, quantization_scales
+            for reference_output, test_output, quantization_param in zip(
+                reference_outputs, test_outputs, quantization_params
             ):
+                quantization_scale = getattr(quantization_param, "scale", None)
                 self._compare_outputs(
                     reference_output,
                     test_output,
@@ -542,7 +555,9 @@ class ArmTester(Tester):
                     rtol,
                     qtol,
                     statistics_callback=statistics_callback,
+                    compare_callback=compare_callback,
                     error_callbacks=error_callbacks,
+                    quantization_parameters=quantization_param,
                 )
 
         return self
@@ -940,19 +955,26 @@ class ArmTester(Tester):
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
         # Extra debugging hooks are keyword-only to keep the signature stable.
         *,
+        compare_callback: Optional[Callable[..., None]] = None,
         error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
+        quantization_parameters=None,
     ):
         # Accept extra error callback hook for debugging
         try:
-            super()._compare_outputs(
-                reference_output,
-                stage_output,
-                quantization_scale,
-                atol,
-                rtol,
-                qtol,
-                statistics_callback=statistics_callback,
-            )
+            if compare_callback:
+                compare_callback(
+                    reference_output, stage_output, quantization_parameters
+                )
+            else:
+                super()._compare_outputs(
+                    reference_output,
+                    stage_output,
+                    quantization_scale,
+                    atol,
+                    rtol,
+                    qtol,
+                    statistics_callback=statistics_callback,
+                )
         except AssertionError as e:
             callbacks = (
                 list(error_callbacks)

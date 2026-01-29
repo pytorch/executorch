@@ -10,10 +10,6 @@ import tosa_serializer as ts
 from typing import Any, List
 
 import torch
-
-from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
-    get_input_qparams,
-)
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -22,8 +18,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_valid_dtype,
 )
+from executorch.backends.arm.operators.ops_quant_utils import add_input_weight_zp_consts
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.specification import TosaSpecification
 
 
 @register_node_visitor
@@ -31,11 +27,6 @@ class Conv2dVisitor(NodeVisitor):
     """Provide a visitor that serializes TOSA ``CONV2D``."""
 
     target = "tosa.CONV2D.default"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -89,32 +80,14 @@ class Conv2dVisitor(NodeVisitor):
         stride_attr = stride.special
         dilation_attr = dilation.special
 
-        input_zp = 0
-        if inputs[0].dtype in (ts.DType.INT8, ts.DType.INT16):
-            # int8 and int16 input requires quantization information
-            input_qparams = get_input_qparams(node)
-            input_zp = input_qparams[0].get_zp_per_tensor()
-
-        weight_zp = 0
-        if inputs[1].dtype == ts.DType.INT8:
-            # int8 weights requires quantization information
-            input_qparams = get_input_qparams(node)
-            weight_zp = input_qparams[1].zp  # type: ignore[assignment]
-
         conv2d_output_name = output.name
         acc_type = output.dtype
         if output.dtype == ts.DType.BF16:
             # Accumulate BF16 inputs in FP32 for better precision per TOSA BF16 extension.
             acc_type = ts.DType.FP32
 
-        tosa_graph.addConst(
-            [1], inputs[0].dtype, [input_zp], name=f"{conv2d_output_name}_input_zp"
-        )
-        tosa_graph.addConst(
-            [1],
-            inputs[1].dtype,
-            weight_zp,
-            name=f"{conv2d_output_name}_weight_zp",
+        input_zp_name, weight_zp_name = add_input_weight_zp_consts(
+            tosa_graph, node, inputs, conv2d_output_name
         )
 
         tosa_op = self._get_tosa_op()
@@ -136,8 +109,8 @@ class Conv2dVisitor(NodeVisitor):
                 input.name,
                 weight.name,
                 bias.name,
-                f"{conv2d_output_name}_input_zp",
-                f"{conv2d_output_name}_weight_zp",
+                input_zp_name,
+                weight_zp_name,
             ],
             [conv2d_output_name],
             attr,

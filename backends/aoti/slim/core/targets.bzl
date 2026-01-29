@@ -7,7 +7,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "storage",
         headers = [
-            "Storage.h",
+            "storage.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [
@@ -18,15 +18,15 @@ def define_common_targets():
             "//executorch/backends/aoti/slim/util:size_util",
             "//executorch/runtime/platform:platform",
             "//executorch/backends/aoti/slim/c10/cuda:exception",
-            "//executorch/backends/cuda/runtime:guard",
+            "//executorch/backends/aoti/slim/cuda:guard",
         ],
     )
 
     runtime.cxx_library(
         name = "slimtensor",
         headers = [
-            "SlimTensor.h",
-            "SlimTensorView-incl.h",
+            "slim_tensor.h",
+            "slim_tensor_view_incl.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [

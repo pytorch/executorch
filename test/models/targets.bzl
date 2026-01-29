@@ -68,6 +68,7 @@ def define_common_targets():
         "ModuleMultipleEntry",
         "ModuleNoKVCache",
         "ModuleIndex",
+        "ModuleIntBool",
         "ModuleDynamicCatUnallocatedIO",
         "ModuleSimpleTrain",
         "ModuleStateful",
