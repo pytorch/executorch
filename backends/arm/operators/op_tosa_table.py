@@ -26,7 +26,7 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 class TableVisitor(NodeVisitor):
     target = "tosa.TABLE.default"
 
-    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+INT")]
+    tosa_specs = TosaSpecification.all_versions_for_profile("INT")
 
     def define_node(
         self,

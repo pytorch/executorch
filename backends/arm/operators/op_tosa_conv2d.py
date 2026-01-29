@@ -20,7 +20,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
 )
 from executorch.backends.arm.operators.ops_quant_utils import add_input_weight_zp_consts
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.specification import TosaSpecification
 
 
 @register_node_visitor
@@ -28,11 +27,6 @@ class Conv2dVisitor(NodeVisitor):
     """Provide a visitor that serializes TOSA ``CONV2D``."""
 
     target = "tosa.CONV2D.default"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def __init__(self, *args):
         super().__init__(*args)

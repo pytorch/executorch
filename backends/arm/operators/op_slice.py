@@ -56,8 +56,6 @@ def _fixup_end(end, shape, dim):
 class SliceVisitor(NodeVisitor):
     target = "aten.slice_copy.Tensor"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 

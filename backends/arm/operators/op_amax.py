@@ -24,8 +24,6 @@ from torch.fx import Node
 class MaxVisitor(NodeVisitor):
     target = "aten.amax.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 

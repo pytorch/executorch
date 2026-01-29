@@ -42,8 +42,6 @@ def get_negate_zero_points(node: torch.fx.Node, is_int8: bool) -> tuple[int, int
 class NegVisitor(NodeVisitor):
     target = "aten.neg.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 

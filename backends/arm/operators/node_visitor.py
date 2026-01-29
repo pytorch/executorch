@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,10 +46,7 @@ class NodeVisitor:
     # a specific TOSA version.
     # When all node_visitors has been refactored to target a specific
     # version, this list should be removed.
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
+    tosa_specs = TosaSpecification.all_versions_and_profiles()
 
     def __init__(
         self,

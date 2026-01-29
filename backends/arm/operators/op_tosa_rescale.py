@@ -18,7 +18,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
 )
 
-from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import map_dtype, TosaArg
 from torch.fx import Node
 
@@ -214,8 +213,6 @@ def _build_rescale(
 @register_node_visitor
 class RescaleVisitor(NodeVisitor):
     target = "tosa.RESCALE.default"
-
-    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+INT")]
 
     def define_node(
         self,

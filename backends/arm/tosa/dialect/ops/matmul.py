@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,9 +16,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 @register_fake_tosa_op(
     "MATMUL(Tensor input1, Tensor input2) -> Tensor",  # schema
-    (
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-    ),  # target TOSA specifications
+    TosaSpecification.all_versions_and_profiles(),
 )
 def MATMUL(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
     tosa_spec = get_context_spec()

@@ -16,10 +16,7 @@ from executorch.backends.arm.tosa.specification import (
 
 @register_fake_tosa_op(
     "GATHER(Tensor values, Tensor indices) -> Tensor",
-    (
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-    ),
+    TosaSpecification.all_versions_and_profiles(),
 )
 def GATHER(values: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
     """
