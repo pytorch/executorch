@@ -35,10 +35,12 @@ if TYPE_CHECKING:
 
 # Import custom MLX ops for rms_norm and apply_rope
 import executorch.backends.apple.mlx.ops  # noqa: F401
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# Import shared KV cache module
+from executorch.backends.apple.mlx.examples.cache import KVCache
 
 # Import custom ops to register llama.update_cache
 from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
@@ -65,62 +67,6 @@ class CustomRMSNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.ops.mlx.rms_norm(x, self.weight, self.eps)
-
-
-# =============================================================================
-# KV Cache Update Helper
-# =============================================================================
-
-
-def kv_update_and_window(
-    k_cache: torch.Tensor,  # [B, Hkv, T_max, D]
-    v_cache: torch.Tensor,  # [B, Hkv, T_max, D]
-    k_step: torch.Tensor,  # [B, Hkv, T_step, D]
-    v_step: torch.Tensor,  # [B, Hkv, T_step, D]
-    input_pos: int,  # Position as int (SymInt during tracing from .item())
-    seq_len: int,  # Sequence length as int (backed from tensor.size())
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Update KV cache using llama.update_cache and return cache for SDPA.
-
-    Uses torch.ops.llama.update_cache which is well-tested for MLX export.
-
-    IMPORTANT: We return the full cache (not windowed) because SDPA with
-    is_causal=True needs to see all positions to correctly compute the
-    causal attention mask. The mask handles which positions are attended to.
-
-    For decode at position N with single-token query:
-    - Q shape: [B, H, 1, D]
-    - K/V shape: [B, H, T_max, D] (full cache)
-    - With is_causal=True, Q[0] attends to K[0] only (WRONG!)
-
-    This is a fundamental limitation of SDPA with is_causal=True when
-    Q and K have different sequence lengths. The workaround is to ensure
-    Q and K have the same sequence length by using the full cache.
-
-    Actually, the correct approach for autoregressive decode is to NOT
-    use is_causal=True at all - just pass the valid K/V slice with no mask.
-    But that requires conditional logic at runtime.
-
-    For now, we return the cache sliced to valid positions and use
-    is_causal=False in SDPA to allow full attention to all valid positions.
-    """
-    # Transpose cache and inputs from [B, H, S, D] to [B, S, H, D] for update_cache
-    k_cache_view = k_cache.transpose(1, 2)
-    v_cache_view = v_cache.transpose(1, 2)
-    k_step_t = k_step.transpose(1, 2)
-    v_step_t = v_step.transpose(1, 2)
-
-    # Use llama.update_cache (well-tested pattern for MLX)
-    torch.ops.llama.update_cache(k_step_t, k_cache_view, input_pos)
-    torch.ops.llama.update_cache(v_step_t, v_cache_view, input_pos)
-
-    # Window the cache to valid positions [0:input_pos+seq_len]
-    end_pos = input_pos + seq_len
-    k_windowed = k_cache[:, :, :end_pos, :]
-    v_windowed = v_cache[:, :, :end_pos, :]
-
-    return k_windowed, v_windowed
 
 
 # =============================================================================
@@ -226,18 +172,22 @@ class KVCacheAttention(nn.Module):
         self.is_causal = True
         self.rope_base = rope_base
 
-        # Initialize KV cache buffers
-        k0 = torch.zeros(
-            (1, self.num_key_value_heads, self.T_max, self.head_dim), dtype=dtype
+        # Initialize KV cache module
+        self.kv_cache = KVCache(
+            num_heads=self.num_key_value_heads,
+            head_dim=self.head_dim,
+            max_cache_len=self.T_max,
+            dtype=dtype,
         )
-        v0 = torch.zeros(
-            (1, self.num_key_value_heads, self.T_max, self.head_dim), dtype=dtype
-        )
-        self.register_buffer("k_cache", k0, persistent=False)
-        self.register_buffer("v_cache", v0, persistent=False)
 
     def forward(self, hidden_states: torch.Tensor, pos_int: int) -> torch.Tensor:
-        """Forward pass. pos_int is the position as a SymInt (from .item() at top level)."""
+        """
+        Forward pass with KV cache support.
+
+        Args:
+            hidden_states: [B, T, hidden_size]
+            pos_int: Position as int (SymInt during tracing)
+        """
         torch._check(hidden_states.size(0) == 1)
         B, T, _ = hidden_states.shape
         H, Hkv, Dh = self.num_heads, self.num_key_value_heads, self.head_dim
@@ -278,21 +228,16 @@ class KVCacheAttention(nn.Module):
             None,  # freqs
         )
 
-        # 5) Update KV cache
-        # Pass seq_len (backed symbol from .size()) for proper windowing
-        k_win, v_win = kv_update_and_window(
-            self.k_cache,
-            self.v_cache,
-            k_bhtd,
-            v_bhtd,
-            pos_int,  # int (unbacked from .item() at top level)
-            T,  # int (backed from hidden_states.size())
-        )
+        # 5) Update KV cache using callable module (returns full cache)
+        k_cache, v_cache = self.kv_cache(k_bhtd, v_bhtd, pos_int)
 
-        # 6) Prepare for SDPA
+        # 6) Explicit windowing: slice cache to valid positions
+        end_pos = pos_int + T
+        k_ = k_cache[:, :, :end_pos, :]
+        v_ = v_cache[:, :, :end_pos, :]
+
+        # 7) Prepare for SDPA
         q_ = q_bhtd  # [B,H,T,D]
-        k_ = k_win  # [B,Hkv,T,D]
-        v_ = v_win  # [B,Hkv,T,D]
 
         B_, Hq_, T_, Dh_ = q_.shape
         _, Hkv_, Tk_, Dhk_ = k_.shape
@@ -309,7 +254,7 @@ class KVCacheAttention(nn.Module):
             k_ = k_.repeat_interleave(group, dim=1)
             v_ = v_.repeat_interleave(group, dim=1)
 
-        # 7) Scaled dot-product attention
+        # 8) Scaled dot-product attention
         # With windowed cache + is_causal=True:
         # - Prefill (pos=0, T>1): Q[B,H,T,D], K[B,H,T,D] - same length
         # - Decode (pos=N, T=1): Q[B,H,1,D], K[B,H,N+1,D] - different length
@@ -329,7 +274,7 @@ class KVCacheAttention(nn.Module):
             scale=None,
         )  # → [B,H,T,D]
 
-        # 8) Reshape back and output projection
+        # 9) Reshape back and output projection
         attn_out = (
             attn_out.permute(0, 2, 1, 3).contiguous().view(B, T, H * Dh)  # [B,T,H,D]
         )
@@ -412,6 +357,7 @@ class LlamaWithFunctionalKV(nn.Module):
         # Get position as int from tensor ONCE at top level
         # This ensures all layers share the same position value,
         # avoiding creation of 16 separate input tensors in the exported graph
+        # Both MLX and Custom cache now accept int position directly
         pos_int = input_pos[0].item()
         torch._check_is_size(pos_int)
 

@@ -329,85 +329,18 @@ def inspect_pte_file(pte_path: Union[str, Path]) -> Dict:
     return mlx_data
 
 
-def print_mlx_graph_summary(pte_path: Union[str, Path]) -> None:  # noqa: C901
+def print_mlx_graph_summary(pte_path: Union[str, Path]) -> None:
     """
     Print a human-readable summary of the MLX graph in a PTE file.
+
+    This function uses the pte_inspector module to display the MLX graph.
     """
-    mlx_data = inspect_pte_file(pte_path)
+    from executorch.backends.apple.mlx.pte_inspector import show_mlx_instructions
 
-    if "error" in mlx_data:
-        print(f"Error: {mlx_data['error']}")
-        return
+    pte_path = Path(pte_path)
+    pte_data = pte_path.read_bytes()
 
-    graph = mlx_data.get("graph", {})
-
-    print("\n" + "=" * 60)
-    print("MLX Graph Summary")
-    print("=" * 60)
-
-    # Basic info
-    print(f"Version: {graph.get('version', 'unknown')}")
-    print(f"Constant tensors: {graph.get('num_constant_tensors', 0)}")
-    print(f"Non-constant tensors: {graph.get('num_non_constant_tensors', 0)}")
-    print(f"Non-constant values: {graph.get('num_non_constant_values', 0)}")
-    print(f"Instructions: {graph.get('num_instructions', 0)}")
-
-    # Constant data size
-    constant_seg = graph.get("constant_segment", {})
-    if constant_seg:
-        print(f"Constant data: {constant_seg.get('size', 0):,} bytes")
-
-    # Instructions
-    instructions = graph.get("instructions", [])
-    if instructions:
-        print("\nInstructions:")
-        for instr in instructions:
-            op_name = instr.get("op_name", f"op_{instr.get('op_type', '?')}")
-            print(f"  [{instr.get('index', '?')}] {op_name}")
-
-            # Print operands (skip index, op_type, op_name)
-            for key, value in instr.items():
-                if key in ("index", "op_type", "op_name"):
-                    continue
-                if isinstance(value, dict):
-                    if "tid" in value:
-                        print(f"      {key}: tid {value['tid']}")
-                    elif "vid" in value:
-                        print(f"      {key}: vid {value['vid']}")
-                    elif "value" in value:
-                        print(f"      {key}: {value['value']}")
-                    else:
-                        print(f"      {key}: {value}")
-                elif value is not None:
-                    print(f"      {key}: {value}")
-
-    # Named slots
-    named_slots = graph.get("named_slots", [])
-    if named_slots:
-        print("\nNamed Slots:")
-        for slot in named_slots:
-            slot_type = "tensor" if slot.get("slot_type", 0) == 0 else "value"
-            print(
-                f"  [{slot.get('slot_idx', '?')}] {slot.get('name', '?')} ({slot_type})"
-            )
-
-    # Input/Output maps
-    input_map = graph.get("input_map", [])
-    output_map = graph.get("output_map", [])
-
-    if input_map:
-        print("\nInputs:")
-        for inp in input_map:
-            slot_type = "tid" if inp.get("slot_type", 0) == 0 else "vid"
-            print(f"  {slot_type} {inp.get('idx', '?')}")
-
-    if output_map:
-        print("\nOutputs:")
-        for out in output_map:
-            slot_type = "tid" if out.get("slot_type", 0) == 0 else "vid"
-            print(f"  {slot_type} {out.get('idx', '?')}")
-
-    print("=" * 60 + "\n")
+    show_mlx_instructions(pte_data)
 
 
 def compare_outputs(

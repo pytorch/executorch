@@ -496,8 +496,12 @@ class Interpreter {
       const MLXProgram& prog,
       ExecutionState& st,
       StreamOrDevice stream = {}) const {
+    size_t idx = 0;
     for (const auto& instr : prog.instructions) {
+      st.begin_op(idx, op_name(instr.op));
       dispatch(instr, st, stream);
+      st.end_op();
+      ++idx;
     }
   }
 

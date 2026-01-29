@@ -174,6 +174,9 @@ FetchContent_MakeAvailable(mlx)
 # MLX Backend library
 # -----------------------------------------------------------------------------
 
+# Op logging option (for debugging) - OFF by default for performance
+option(ET_MLX_ENABLE_OP_LOGGING "Enable per-op logging in MLX delegate" OFF)
+
 set(_mlx_backend__srcs ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXLoader.cpp
                        ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXBackend.cpp
 )
@@ -182,6 +185,12 @@ add_library(mlxdelegate ${_mlx_backend__srcs})
 
 # Ensure schema is generated before compiling
 add_dependencies(mlxdelegate mlx_schema flatc)
+
+# Add logging flag if enabled
+if(ET_MLX_ENABLE_OP_LOGGING)
+  target_compile_definitions(mlxdelegate PRIVATE ET_MLX_ENABLE_OP_LOGGING=1)
+  message(STATUS "MLX delegate op logging ENABLED")
+endif()
 
 target_include_directories(
   mlxdelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime

@@ -394,6 +394,11 @@ table MLXGraph {
     num_non_constant_tensors: uint32;
     num_non_constant_values: uint32;
 
+    // Per-IdSpace tensor counts (for O(1) tensor type lookup in logging)
+    num_input_tensors: uint32;
+    num_output_tensors: uint32;
+    num_mutable_buffer_tensors: uint32;
+
     // Instructions (the program)
     instructions: [Instruction] (required);
 

@@ -34,7 +34,6 @@ import flatbuffers
 from executorch.backends.apple.mlx.serialization._generated_serializers import (
     GeneratedOpBuilders,
 )
-
 from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (  # noqa: F401
     AddNode,
     AddScalarNode,
@@ -264,6 +263,11 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         )
         FBMLXGraphModule.AddNumNonConstantValues(
             builder, self.graph.num_non_constant_values
+        )
+        FBMLXGraphModule.AddNumInputTensors(builder, self.graph.num_input_tensors)
+        FBMLXGraphModule.AddNumOutputTensors(builder, self.graph.num_output_tensors)
+        FBMLXGraphModule.AddNumMutableBufferTensors(
+            builder, self.graph.num_mutable_buffer_tensors
         )
         FBMLXGraphModule.AddInstructions(builder, instructions_vec)
         FBMLXGraphModule.AddInputMap(builder, input_map_vec)

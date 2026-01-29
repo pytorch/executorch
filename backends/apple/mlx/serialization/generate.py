@@ -395,6 +395,9 @@ def generate_python_schema(schema: FBSSchema) -> str:  # noqa: C901
             "    num_constant_tensors: int = 0",
             "    num_non_constant_tensors: int = 0",
             "    num_non_constant_values: int = 0",
+            "    num_input_tensors: int = 0",
+            "    num_output_tensors: int = 0",
+            "    num_mutable_buffer_tensors: int = 0",
             "    input_map: Optional[List[SlotVariant]] = None",
             "    output_map: Optional[List[SlotVariant]] = None",
             "    mutable_buffer_map: Optional[List[SlotVariant]] = None",
@@ -878,6 +881,25 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
     lines.append("};")
     lines.append("")
 
+    # Generate op_name() function for logging
+    lines.extend(
+        [
+            "// OpCode to string conversion (for logging)",
+            "inline const char* op_name(OpCode op) {",
+            "  switch (op) {",
+        ]
+    )
+    for table in op_nodes:
+        op_code = _table_name_to_opcode(table.name)
+        lines.append(f"    case OpCode::{op_code}:")
+        lines.append(f'      return "{op_code}";')
+    lines.append("    case OpCode::SENTINEL:")
+    lines.append('      return "SENTINEL";')
+    lines.append("  }")
+    lines.append('  return "UNKNOWN";')
+    lines.append("}")
+    lines.append("")
+
     # Generate NodeVariant
     lines.extend(
         [
@@ -952,6 +974,11 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
             "  uint32_t num_constant_tensors{0};",
             "  uint32_t num_non_constant_tensors{0};",
             "  uint32_t num_non_constant_values{0};",
+            "",
+            "  // Per-IdSpace tensor counts (for O(1) tensor type lookup in logging)",
+            "  uint32_t num_input_tensors{0};",
+            "  uint32_t num_output_tensors{0};",
+            "  uint32_t num_mutable_buffer_tensors{0};",
             "",
             "  // Instructions",
             "  std::vector<Instruction> instructions;",
@@ -1334,6 +1361,9 @@ def generate_cpp_loader_cpp(schema: FBSSchema) -> str:
             "  program.num_constant_tensors = fb_graph->num_constant_tensors();",
             "  program.num_non_constant_tensors = fb_graph->num_non_constant_tensors();",
             "  program.num_non_constant_values = fb_graph->num_non_constant_values();",
+            "  program.num_input_tensors = fb_graph->num_input_tensors();",
+            "  program.num_output_tensors = fb_graph->num_output_tensors();",
+            "  program.num_mutable_buffer_tensors = fb_graph->num_mutable_buffer_tensors();",
             "",
             "  if (fb_graph->instructions()) {",
             "    program.instructions.reserve(fb_graph->instructions()->size());",
@@ -1645,7 +1675,7 @@ def generate_inspector(schema: "Schema") -> str:  # noqa: F821
         "",
         "from __future__ import annotations",
         "",
-        "from typing import Any, Callable, Dict, List, Optional, Tuple",
+        "from typing import Dict, List, Tuple",
         "",
         "",
         "# Field kinds and their extractors",
