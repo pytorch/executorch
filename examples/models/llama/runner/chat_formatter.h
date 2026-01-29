@@ -20,8 +20,6 @@ namespace example {
 enum class ChatFormat {
   None,   // No formatting (pass-through)
   Llama3, // Llama 3.x Instruct models
-  Llama2, // Llama 2 Instruct models
-  Gemma,  // Gemma Instruct models
 };
 
 /**
@@ -77,58 +75,6 @@ class Llama3ChatFormatter : public ChatFormatter {
 };
 
 /**
- * Llama 2 Instruct chat format.
- * Template: <s>[INST] <<SYS>>...<</SYS>> ... [/INST]
- */
-class Llama2ChatFormatter : public ChatFormatter {
- public:
-  std::string format(
-      const std::string& prompt,
-      const std::string& system_prompt = "") const override {
-    std::string result = "<s>[INST] ";
-    if (!system_prompt.empty()) {
-      result += "<<SYS>>\n" + system_prompt + "\n<</SYS>>\n\n";
-    }
-    result += prompt + " [/INST]";
-    return result;
-  }
-
-  bool includes_bos() const override {
-    return true; // <s> is the BOS token
-  }
-};
-
-/**
- * Gemma Instruct chat format.
- * Template: <start_of_turn>user\n...<end_of_turn>\n<start_of_turn>model\n
- */
-class GemmaChatFormatter : public ChatFormatter {
- public:
-  std::string format(
-      const std::string& prompt,
-      const std::string& system_prompt = "") const override {
-    std::string result = "<bos>";
-    // Gemma doesn't have a dedicated system prompt format,
-    // but we can prepend it to the user message if provided
-    if (!system_prompt.empty()) {
-      result += "<start_of_turn>user\n";
-      result += system_prompt + "\n\n" + prompt;
-      result += "<end_of_turn>\n";
-    } else {
-      result += "<start_of_turn>user\n";
-      result += prompt;
-      result += "<end_of_turn>\n";
-    }
-    result += "<start_of_turn>model\n";
-    return result;
-  }
-
-  bool includes_bos() const override {
-    return true; // <bos> is included
-  }
-};
-
-/**
  * No formatting (pass-through).
  * Use when the prompt is already formatted or for base models.
  */
@@ -149,16 +95,13 @@ class NoChatFormatter : public ChatFormatter {
 /**
  * Parse a chat format string into the corresponding enum value.
  *
- * @param format_str String identifier (e.g., "llama3", "llama2", "gemma",
- * "none")
+ * @param format_str String identifier (e.g., "llama3", "none")
  * @return ChatFormat enum value, defaults to None for unknown formats
  */
 inline ChatFormat parse_chat_format(const std::string& format_str) {
   static const std::unordered_map<std::string, ChatFormat> format_map = {
       {"none", ChatFormat::None},
       {"llama3", ChatFormat::Llama3},
-      {"llama2", ChatFormat::Llama2},
-      {"gemma", ChatFormat::Gemma},
   };
   auto it = format_map.find(format_str);
   if (it != format_map.end()) {
@@ -171,7 +114,7 @@ inline ChatFormat parse_chat_format(const std::string& format_str) {
  * Get a human-readable list of supported chat formats.
  */
 inline std::string get_supported_formats() {
-  return "llama3, llama2, gemma, none";
+  return "llama3, none";
 }
 
 /**
@@ -184,10 +127,6 @@ inline std::unique_ptr<ChatFormatter> create_chat_formatter(ChatFormat format) {
   switch (format) {
     case ChatFormat::Llama3:
       return std::make_unique<Llama3ChatFormatter>();
-    case ChatFormat::Llama2:
-      return std::make_unique<Llama2ChatFormatter>();
-    case ChatFormat::Gemma:
-      return std::make_unique<GemmaChatFormatter>();
     case ChatFormat::None:
     default:
       return std::make_unique<NoChatFormatter>();

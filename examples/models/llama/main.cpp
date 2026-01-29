@@ -76,7 +76,7 @@ DEFINE_string(
 DEFINE_string(
     chat_format,
     "none",
-    "Chat template format for Instruct models. Supported formats: llama3, llama2, gemma, none (default: none). "
+    "Chat template format for Instruct models. Supported formats: llama3, none (default: none). "
     "When set, the prompt will be wrapped in the appropriate chat template.");
 
 DEFINE_string(
