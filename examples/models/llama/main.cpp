@@ -76,8 +76,13 @@ DEFINE_string(
 DEFINE_string(
     chat_format,
     "none",
-    "Chat template format for Instruct models. Supported formats: llama3, none (default: none). "
+    "Chat template format for Instruct models. Supported formats: llama3, gemma3, jinja, none (default: none). "
     "When set, the prompt will be wrapped in the appropriate chat template.");
+
+DEFINE_string(
+    chat_template_file,
+    "",
+    "Path to a custom Jinja2 chat template file. Overrides --chat_format.");
 
 DEFINE_string(
     system_prompt,
@@ -123,18 +128,29 @@ int32_t main(int32_t argc, char** argv) {
 
   // Parse chat format and create formatter
   auto chat_format = example::parse_chat_format(FLAGS_chat_format);
-  auto chat_formatter = example::create_chat_formatter(chat_format);
+  auto chat_formatter =
+      example::create_chat_formatter(chat_format, FLAGS_chat_template_file);
+  const bool using_chat_template =
+      chat_format != example::ChatFormat::None ||
+      !FLAGS_chat_template_file.empty();
 
   // Apply chat formatting to prompt
   std::string formatted_prompt =
       chat_formatter->format(FLAGS_prompt, FLAGS_system_prompt);
   const char* prompt = formatted_prompt.c_str();
 
-  if (chat_format != example::ChatFormat::None) {
-    ET_LOG(
-        Info,
-        "Using chat format: %s",
-        FLAGS_chat_format.c_str());
+  if (using_chat_template) {
+    if (!FLAGS_chat_template_file.empty()) {
+      ET_LOG(
+          Info,
+          "Using chat template file: %s",
+          FLAGS_chat_template_file.c_str());
+    } else {
+      ET_LOG(
+          Info,
+          "Using chat format: %s",
+          FLAGS_chat_format.c_str());
+    }
 
     // Warn if num_bos is set since chat templates already include BOS
     if (FLAGS_num_bos > 0 && chat_formatter->includes_bos()) {
