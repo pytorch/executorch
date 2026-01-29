@@ -48,7 +48,7 @@ class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = nu
 
   companion object {
     init {
-      System.loadLibrary("executorch_jni")
+      System.loadLibrary("executorch")
     }
 
     @JvmStatic
