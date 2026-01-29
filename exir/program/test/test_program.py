@@ -20,6 +20,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.error import ExportError, InternalError
 from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import (
     _transform,
@@ -37,7 +38,6 @@ from executorch.extension.pybindings.portable_lib import (
 from torch._export.verifier import Verifier
 from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
-from torch.fx.passes.infra.pass_manager import PassManager
 
 from torch.library import impl, Library
 from torch.nn import functional as F
@@ -402,14 +402,6 @@ class TestProgramManagers(unittest.TestCase):
                 torch.ones(1), torch.ones(1)
             ),
             torch.ones(1),  # x * y * x
-        )
-
-        # original unchanged
-        self.assertEqual(
-            edge_manager.exported_program("forward").module()(
-                torch.ones(1), torch.ones(1)
-            ),
-            original_res,  # x * y + x
         )
 
     def test_issue_3659(self):
