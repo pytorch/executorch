@@ -26,8 +26,6 @@ from executorch.backends.arm.tosa.utils import tosa_shape
 class ViewVisitor(NodeVisitor):
     target = "aten.view_copy.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 

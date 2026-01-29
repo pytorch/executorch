@@ -16,7 +16,7 @@
 
 ${define_active_storage_type(STORAGE)}
 
-${define_required_extensions(DTYPE)}
+${define_required_extensions(STORAGE, DTYPE)}
 
 #extension GL_EXT_control_flow_attributes : require
 

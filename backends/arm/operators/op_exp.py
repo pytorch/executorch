@@ -26,7 +26,7 @@ class ExpVisitor(NodeVisitor):
     target = "aten.exp.default"
 
     # BI case should be handled by op_table
-    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+FP")]
+    tosa_specs = TosaSpecification.all_versions_for_profile("FP")
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -43,7 +43,7 @@ class ExpVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            ts.DType.FP32,
+            [ts.DType.FP32, ts.DType.BF16],
             self.tosa_spec,
         )
 

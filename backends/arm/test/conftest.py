@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,10 +25,6 @@ def pytest_configure(config):
     if getattr(config.option, "llama_inputs", False) and config.option.llama_inputs:
         pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
 
-    pytest._test_options["tosa_version"] = "1.0"  # type: ignore[attr-defined]
-    if config.option.arm_run_tosa_version:
-        pytest._test_options["tosa_version"] = config.option.arm_run_tosa_version
-
     logging.basicConfig(stream=sys.stdout)
 
 
@@ -50,7 +46,6 @@ def pytest_addoption(parser):
         nargs="+",
         help="List of two files. Firstly .pt file. Secondly .json",
     )
-    try_addoption("--arm_run_tosa_version", action="store", default="1.0")
 
 
 def pytest_sessionstart(session):

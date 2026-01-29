@@ -38,6 +38,7 @@ from executorch.backends.arm._passes import (
     DecomposeAnyPass,
     DecomposeAsinAndAcosPass,
     DecomposeAsinhPass,
+    DecomposeAsStridedCopyPass,
     DecomposeAtanhPass,
     DecomposeAtanPass,
     DecomposeAvgPool2dPass,
@@ -56,6 +57,7 @@ from executorch.backends.arm._passes import (
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
+    DecomposeIndexSelectToGatherPass,
     DecomposeIntPowPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -289,6 +291,8 @@ class ArmPassManager(PassManager):
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupedConvPass(),
                 DecomposeUnfoldToGatherPass(),
+                DecomposeEmbeddingPass(),
+                DecomposeIndexSelectToGatherPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
@@ -314,7 +318,6 @@ class ArmPassManager(PassManager):
                 RewriteIndexPutPass(),
                 DecomposeRemainderPass(),
                 DecomposeDivTensorModePass(),
-                DecomposeEmbeddingPass(),
                 FuseBatchNorm2dPass(exported_program),
                 ConvertMmToBmmPass(),
                 DecomposeGluPass(),
@@ -331,6 +334,7 @@ class ArmPassManager(PassManager):
                 ConvertExpandCopyToRepeatPass(),
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
+                DecomposeAsStridedCopyPass(),
                 DecomposeMaxPool2dPass(),
                 SizeAdjustInputPass(),
                 DecomposeSelectPass(),
@@ -375,10 +379,7 @@ class ArmPassManager(PassManager):
 
         if not tosa_spec_in_set(
             self.tosa_spec,
-            {
-                TosaSpecification.create_from_string("TOSA-1.0+FP"),
-                TosaSpecification.create_from_string("TOSA-1.0+INT"),
-            },
+            set(TosaSpecification.all_versions_and_profiles()),
         ):
             raise RuntimeError(
                 f"No pass pipeline found for TOSA specification: {self.tosa_spec}"

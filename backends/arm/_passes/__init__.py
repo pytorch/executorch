@@ -31,6 +31,7 @@ from .decompose_adaptive_avg_pool2d_pass import DecomposeAdaptiveAvgPool2dPass  
 from .decompose_add_sub_alpha_pass import DecomposeAddSubAlphaPass  # noqa
 from .decompose_addmm_pass import DecomposeAddmmPass  # noqa
 from .decompose_any_pass import DecomposeAnyPass  # noqa
+from .decompose_as_strided_copy_pass import DecomposeAsStridedCopyPass  # noqa
 from .decompose_asin_and_acos_pass import DecomposeAsinAndAcosPass  # noqa
 from .decompose_asinh_pass import DecomposeAsinhPass  # noqa
 from .decompose_atan_pass import DecomposeAtanPass  # noqa
@@ -50,6 +51,9 @@ from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
+from .decompose_index_select_to_gather_pass import (  # noqa
+    DecomposeIndexSelectToGatherPass,
+)
 from .decompose_int16_activation_conv_pass import (  # noqa
     DecomposeConvWithInt16ActivationPass,
 )

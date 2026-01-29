@@ -18,7 +18,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa import TosaSpecification
 
 from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
@@ -27,11 +26,6 @@ from torch.fx import Node
 @register_node_visitor
 class ClampVisitor(NodeVisitor):
     target = "aten.clamp.default"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def __init__(self, *args):
         super().__init__(*args)
