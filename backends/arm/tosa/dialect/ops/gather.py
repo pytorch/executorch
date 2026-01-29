@@ -40,10 +40,11 @@ def GATHER(values: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
         torch.int32,
         torch.float16,
         torch.float32,
+        torch.bfloat16,
     )
     if values.dtype not in allowed_values_dtypes:
         raise TosaValueError(
-            "values must be one of int8/int16/int32/float16/float32; "
+            "values must be one of int8/int16/int32/float16/float32/bfloat16; "
             f"got {values.dtype}",
             op="GATHER",
         )
