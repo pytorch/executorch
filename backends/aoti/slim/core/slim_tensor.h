@@ -20,9 +20,9 @@
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/aoti/slim/c10/core/SizesAndStrides.h>
-#include <executorch/backends/aoti/slim/core/Storage.h>
-#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
-#include <executorch/backends/aoti/slim/util/SizeUtil.h>
+#include <executorch/backends/aoti/slim/core/storage.h>
+#include <executorch/backends/aoti/slim/util/array_ref_util.h>
+#include <executorch/backends/aoti/slim/util/size_util.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch::backends::aoti::slim {
@@ -568,4 +568,4 @@ class SlimTensor {
 
 // Include view operations implementations (must be after SlimTensor class
 // definition)
-#include <executorch/backends/aoti/slim/core/SlimTensorView-incl.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor_view_incl.h>

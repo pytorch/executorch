@@ -11,8 +11,8 @@
 #include <cstdint>
 
 #include <executorch/backends/aoti/export.h>
-#include <executorch/backends/aoti/slim/core/SlimTensor.h>
-#include <executorch/backends/aoti/slim/core/SlimTensorView-incl.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor_view_incl.h>
 #include <executorch/runtime/core/error.h>
 
 namespace executorch::backends::cuda {
