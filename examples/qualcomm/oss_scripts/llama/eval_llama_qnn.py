@@ -319,7 +319,7 @@ def eval_llm(args):
         )
 
         quantizer = make_custom_quantizer(
-            quant_dtype, args.range_setting, custom_annotations, args.quant_linear_only
+            quant_dtype, custom_annotations, args.quant_linear_only
         )
 
         with torch.no_grad():

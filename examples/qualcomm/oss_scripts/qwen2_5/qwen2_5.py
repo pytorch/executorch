@@ -162,7 +162,7 @@ def inference(args):
         adb.push(inputs=[], input_list="", files=[tokenizer_json_path])
         adb.execute(custom_runner_cmd=runner_cmd)
 
-        adb.pull(output_path=args.artifact, callback=post_process)
+        adb.pull(host_output_path=args.artifact, callback=post_process)
 
     if args.ip and args.port != -1:
         with Client((args.ip, args.port)) as conn:
