@@ -9,21 +9,30 @@
 #include <jni.h>
 
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include <executorch/extension/asr/runner/runner.h>
+#include <executorch/extension/llm/runner/wav_loader.h>
+#include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace asr = ::executorch::extension::asr;
+using ::executorch::extension::from_blob;
+using ::executorch::extension::Module;
+using ::executorch::extension::TensorPtr;
 using ::executorch::runtime::Error;
 
 namespace {
+
+// Handle struct that holds both the ASR runner and optional preprocessor
+struct AsrModuleHandle {
+  std::unique_ptr<asr::AsrRunner> runner;
+  std::unique_ptr<Module> preprocessor;
+};
 
 // Helper to get a string from jstring
 std::string jstringToString(JNIEnv* env, jstring jstr) {
@@ -111,7 +120,8 @@ extern "C" {
 /*
  * Class:     org_pytorch_executorch_extension_asr_AsrModule
  * Method:    nativeCreate
- * Signature: (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)J
+ * Signature:
+ * (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)J
  */
 JNIEXPORT jlong JNICALL
 Java_org_pytorch_executorch_extension_asr_AsrModule_nativeCreate(
@@ -119,10 +129,12 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeCreate(
     jobject /* this */,
     jstring modelPath,
     jstring tokenizerPath,
-    jstring dataPath) {
+    jstring dataPath,
+    jstring preprocessorPath) {
   std::string modelPathStr = jstringToString(env, modelPath);
   std::string tokenizerPathStr = jstringToString(env, tokenizerPath);
   std::string dataPathStr = jstringToString(env, dataPath);
+  std::string preprocessorPathStr = jstringToString(env, preprocessorPath);
 
   std::optional<std::string> dataPathOpt;
   if (!dataPathStr.empty()) {
@@ -130,14 +142,32 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeCreate(
   }
 
   try {
-    auto* runner =
-        new asr::AsrRunner(modelPathStr, dataPathOpt, tokenizerPathStr);
-    return reinterpret_cast<jlong>(runner);
+    auto handle = std::make_unique<AsrModuleHandle>();
+
+    // Create the ASR runner
+    handle->runner = std::make_unique<asr::AsrRunner>(
+        modelPathStr, dataPathOpt, tokenizerPathStr);
+
+    // Create the preprocessor module if path is provided
+    if (!preprocessorPathStr.empty()) {
+      handle->preprocessor =
+          std::make_unique<Module>(preprocessorPathStr, Module::LoadMode::Mmap);
+      auto load_error = handle->preprocessor->load();
+      if (load_error != Error::Ok) {
+        ET_LOG(Error, "Failed to load preprocessor module");
+        env->ThrowNew(
+            env->FindClass("java/lang/RuntimeException"),
+            "Failed to load preprocessor module");
+        return 0;
+      }
+    }
+
+    return reinterpret_cast<jlong>(handle.release());
   } catch (const std::exception& e) {
-    ET_LOG(Error, "Failed to create AsrRunner: %s", e.what());
+    ET_LOG(Error, "Failed to create AsrModule: %s", e.what());
     env->ThrowNew(
         env->FindClass("java/lang/RuntimeException"),
-        ("Failed to create AsrRunner: " + std::string(e.what())).c_str());
+        ("Failed to create AsrModule: " + std::string(e.what())).c_str());
     return 0;
   }
 }
@@ -153,8 +183,8 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeDestroy(
     jobject /* this */,
     jlong nativeHandle) {
   if (nativeHandle != 0) {
-    auto* runner = reinterpret_cast<asr::AsrRunner*>(nativeHandle);
-    delete runner;
+    auto* handle = reinterpret_cast<AsrModuleHandle*>(nativeHandle);
+    delete handle;
   }
 }
 
@@ -175,8 +205,8 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeLoad(
     return -1;
   }
 
-  auto* runner = reinterpret_cast<asr::AsrRunner*>(nativeHandle);
-  Error error = runner->load();
+  auto* handle = reinterpret_cast<AsrModuleHandle*>(nativeHandle);
+  Error error = handle->runner->load();
   return static_cast<jint>(error);
 }
 
@@ -194,25 +224,22 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeIsLoaded(
     return JNI_FALSE;
   }
 
-  auto* runner = reinterpret_cast<asr::AsrRunner*>(nativeHandle);
-  return runner->is_loaded() ? JNI_TRUE : JNI_FALSE;
+  auto* handle = reinterpret_cast<AsrModuleHandle*>(nativeHandle);
+  return handle->runner->is_loaded() ? JNI_TRUE : JNI_FALSE;
 }
 
 /*
  * Class:     org_pytorch_executorch_extension_asr_AsrModule
  * Method:    nativeTranscribe
  * Signature:
- * (J[FIIIJFJLorg/pytorch/executorch/extension/asr/AsrCallback;)I
+ * (JLjava/lang/String;JFJLorg/pytorch/executorch/extension/asr/AsrCallback;)I
  */
 JNIEXPORT jint JNICALL
 Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
     JNIEnv* env,
     jobject /* this */,
     jlong nativeHandle,
-    jfloatArray features,
-    jint batchSize,
-    jint timeSteps,
-    jint featureDim,
+    jstring wavPath,
     jlong maxNewTokens,
     jfloat temperature,
     jlong decoderStartTokenId,
@@ -224,73 +251,80 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
     return -1;
   }
 
-  if (features == nullptr) {
+  if (wavPath == nullptr) {
     env->ThrowNew(
         env->FindClass("java/lang/IllegalArgumentException"),
-        "Features array cannot be null");
+        "WAV path cannot be null");
     return -1;
   }
 
-  // Validate dimension parameters are positive
-  if (batchSize <= 0 || timeSteps <= 0 || featureDim <= 0) {
+  auto* handle = reinterpret_cast<AsrModuleHandle*>(nativeHandle);
+  std::string wavPathStr = jstringToString(env, wavPath);
+
+  // Load audio data from WAV file
+  std::vector<float> audioData;
+  try {
+    audioData = ::executorch::extension::llm::load_wav_audio_data(wavPathStr);
+  } catch (const std::exception& e) {
     env->ThrowNew(
-        env->FindClass("java/lang/IllegalArgumentException"),
-        ("Dimensions must be positive: batchSize=" + std::to_string(batchSize) +
-         ", timeSteps=" + std::to_string(timeSteps) +
-         ", featureDim=" + std::to_string(featureDim))
-            .c_str());
+        env->FindClass("java/lang/RuntimeException"),
+        ("Failed to load WAV file: " + std::string(e.what())).c_str());
     return -1;
   }
 
-  auto* runner = reinterpret_cast<asr::AsrRunner*>(nativeHandle);
-
-  // Get features from Java array
-  jsize featuresLen = env->GetArrayLength(features);
-  if (featuresLen == 0) {
+  if (audioData.empty()) {
     env->ThrowNew(
         env->FindClass("java/lang/IllegalArgumentException"),
-        "Features array cannot be empty");
+        "WAV file contains no audio data");
     return -1;
   }
 
-  // Validate that dimensions match the array length
-  // Use int64_t to detect overflow before casting to jsize
-  int64_t expectedLen64 =
-      static_cast<int64_t>(batchSize) * timeSteps * featureDim;
-  if (expectedLen64 > std::numeric_limits<jsize>::max()) {
-    env->ThrowNew(
-        env->FindClass("java/lang/IllegalArgumentException"),
-        ("Dimensions overflow: " + std::to_string(batchSize) + " x " +
-         std::to_string(timeSteps) + " x " + std::to_string(featureDim) +
-         " exceeds maximum array size")
-            .c_str());
-    return -1;
-  }
-  jsize expectedLen = static_cast<jsize>(expectedLen64);
-  if (featuresLen != expectedLen) {
-    env->ThrowNew(
-        env->FindClass("java/lang/IllegalArgumentException"),
-        ("Features array length (" + std::to_string(featuresLen) +
-         ") does not match dimensions: " + std::to_string(batchSize) + " x " +
-         std::to_string(timeSteps) + " x " + std::to_string(featureDim) +
-         " = " + std::to_string(expectedLen))
-            .c_str());
-    return -1;
-  }
+  ET_LOG(Info, "Loaded %zu audio samples from WAV file", audioData.size());
 
-  // Copy feature data - this vector must remain in scope for the duration of
-  // transcribe() since from_blob creates a non-owning view over the data.
-  std::vector<float> featuresData(featuresLen);
-  env->GetFloatArrayRegion(features, 0, featuresLen, featuresData.data());
+  // Create tensor from audio data
+  TensorPtr featuresTensor;
 
-  // Create tensor from features. Note: from_blob does NOT copy the data,
-  // it creates a view. featuresData must outlive the tensor and transcribe().
-  auto featuresTensor = ::executorch::extension::from_blob(
-      featuresData.data(),
-      {static_cast<::executorch::aten::SizesType>(batchSize),
-       static_cast<::executorch::aten::SizesType>(timeSteps),
-       static_cast<::executorch::aten::SizesType>(featureDim)},
-      ::executorch::aten::ScalarType::Float);
+  if (handle->preprocessor) {
+    // Run preprocessor to convert raw audio to features
+    auto audioTensor = from_blob(
+        audioData.data(),
+        {static_cast<::executorch::aten::SizesType>(audioData.size())},
+        ::executorch::aten::ScalarType::Float);
+
+    auto processedResult = handle->preprocessor->execute("forward", audioTensor);
+    if (processedResult.error() != Error::Ok) {
+      env->ThrowNew(
+          env->FindClass("java/lang/RuntimeException"),
+          "Audio preprocessing failed");
+      return -1;
+    }
+
+    auto outputs = std::move(processedResult.get());
+    if (outputs.empty() || !outputs[0].isTensor()) {
+      env->ThrowNew(
+          env->FindClass("java/lang/RuntimeException"),
+          "Preprocessor returned unexpected output");
+      return -1;
+    }
+
+    auto tensor = outputs[0].toTensor();
+    featuresTensor =
+        std::make_shared<::executorch::aten::Tensor>(std::move(tensor));
+
+    ET_LOG(
+        Info,
+        "Preprocessor output shape: %d dims",
+        static_cast<int>(featuresTensor->dim()));
+  } else {
+    // No preprocessor - use raw audio as features (1D tensor)
+    // This is for models that expect raw waveform input
+    featuresTensor = from_blob(
+        audioData.data(),
+        {1,
+         static_cast<::executorch::aten::SizesType>(audioData.size()),
+         1},
+        ::executorch::aten::ScalarType::Float);
+  }
 
   // Build config
   asr::AsrTranscribeConfig config;
@@ -333,7 +367,7 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
   }
 
   // Run transcription
-  auto result = runner->transcribe(featuresTensor, config, tokenCallback);
+  auto result = handle->runner->transcribe(featuresTensor, config, tokenCallback);
 
   // Call onComplete if callback provided
   if (scopedCallback) {

@@ -15,19 +15,27 @@ import org.pytorch.executorch.annotations.Experimental
 
 /**
  * AsrModule is a wrapper around the ExecuTorch ASR Runner. It provides a simple interface to
- * transcribe audio using speech recognition models like Whisper.
+ * transcribe audio from WAV files using speech recognition models like Whisper.
  *
- * The module expects preprocessed audio features (e.g., mel-spectrogram) as input. The model should
- * expose two callable methods: "encoder" and "text_decoder".
+ * The module loads a WAV file, optionally preprocesses it using a preprocessor module (e.g., for
+ * mel-spectrogram extraction), and then runs the ASR model to generate transcriptions.
  *
  * Warning: These APIs are experimental and subject to change without notice
  *
- * @param modelPath Path to the ExecuTorch model file (.pte)
- * @param tokenizerPath Path to the tokenizer file
+ * @param modelPath Path to the ExecuTorch model file (.pte). The model should expose two callable
+ *   methods: "encoder" and "text_decoder".
+ * @param tokenizerPath Path to the tokenizer directory containing tokenizer.json
  * @param dataPath Optional path to additional data file (e.g., for delegate data)
+ * @param preprocessorPath Optional path to preprocessor .pte for converting raw audio to features.
+ *   If not provided, raw audio samples will be passed directly to the model.
  */
 @Experimental
-class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = null) : Closeable {
+class AsrModule(
+    modelPath: String,
+    tokenizerPath: String,
+    dataPath: String? = null,
+    preprocessorPath: String? = null,
+) : Closeable {
 
   private val nativeHandle = AtomicLong(0L)
 
@@ -35,11 +43,15 @@ class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = nu
     val modelFile = File(modelPath)
     require(modelFile.canRead() && modelFile.isFile) { "Cannot load model path $modelPath" }
     val tokenizerFile = File(tokenizerPath)
-    require(tokenizerFile.canRead() && tokenizerFile.isFile) {
-      "Cannot load tokenizer path $tokenizerPath"
+    require(tokenizerFile.exists()) { "Cannot load tokenizer path $tokenizerPath" }
+    if (preprocessorPath != null) {
+      val preprocessorFile = File(preprocessorPath)
+      require(preprocessorFile.canRead() && preprocessorFile.isFile) {
+        "Cannot load preprocessor path $preprocessorPath"
+      }
     }
 
-    val handle = nativeCreate(modelPath, tokenizerPath, dataPath)
+    val handle = nativeCreate(modelPath, tokenizerPath, dataPath, preprocessorPath)
     if (handle == 0L) {
       throw RuntimeException("Failed to create native AsrModule")
     }
@@ -56,6 +68,7 @@ class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = nu
         modelPath: String,
         tokenizerPath: String,
         dataPath: String?,
+        preprocessorPath: String?,
     ): Long
 
     @JvmStatic private external fun nativeDestroy(nativeHandle: Long)
@@ -67,10 +80,7 @@ class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = nu
     @JvmStatic
     private external fun nativeTranscribe(
         nativeHandle: Long,
-        features: FloatArray,
-        batchSize: Int,
-        timeSteps: Int,
-        featureDim: Int,
+        wavPath: String,
         maxNewTokens: Long,
         temperature: Float,
         decoderStartTokenId: Long,
@@ -115,52 +125,37 @@ class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = nu
   }
 
   /**
-   * Transcribe preprocessed audio features with default configuration.
+   * Transcribe audio from a WAV file with default configuration.
    *
-   * @param features Preprocessed audio features as a float array
-   * @param batchSize Batch size (typically 1)
-   * @param timeSteps Number of time steps in the features
-   * @param featureDim Feature dimension (e.g., 80 for mel-spectrogram)
+   * @param wavPath Path to the WAV audio file
    * @param callback Callback to receive tokens, can be null
    * @return 0 on success, error code otherwise
    * @throws IllegalStateException if the module has been destroyed
    */
-  fun transcribe(
-      features: FloatArray,
-      batchSize: Int,
-      timeSteps: Int,
-      featureDim: Int,
-      callback: AsrCallback? = null,
-  ): Int = transcribe(features, batchSize, timeSteps, featureDim, AsrTranscribeConfig(), callback)
+  fun transcribe(wavPath: String, callback: AsrCallback? = null): Int =
+      transcribe(wavPath, AsrTranscribeConfig(), callback)
 
   /**
-   * Transcribe preprocessed audio features with custom configuration.
+   * Transcribe audio from a WAV file with custom configuration.
    *
-   * @param features Preprocessed audio features as a float array
-   * @param batchSize Batch size (typically 1)
-   * @param timeSteps Number of time steps in the features
-   * @param featureDim Feature dimension (e.g., 80 for mel-spectrogram)
+   * @param wavPath Path to the WAV audio file
    * @param config Configuration for transcription
    * @param callback Callback to receive tokens, can be null
    * @return 0 on success, error code otherwise
    * @throws IllegalStateException if the module has been destroyed
    */
   fun transcribe(
-      features: FloatArray,
-      batchSize: Int,
-      timeSteps: Int,
-      featureDim: Int,
+      wavPath: String,
       config: AsrTranscribeConfig,
       callback: AsrCallback? = null,
   ): Int {
     val handle = nativeHandle.get()
     check(handle != 0L) { "AsrModule has been destroyed" }
+    val wavFile = File(wavPath)
+    require(wavFile.canRead() && wavFile.isFile) { "Cannot read WAV file: $wavPath" }
     return nativeTranscribe(
         handle,
-        features,
-        batchSize,
-        timeSteps,
-        featureDim,
+        wavPath,
         config.maxNewTokens,
         config.temperature,
         config.decoderStartTokenId,
@@ -169,33 +164,24 @@ class AsrModule(modelPath: String, tokenizerPath: String, dataPath: String? = nu
   }
 
   /**
-   * Transcribe preprocessed audio features and return the full transcription.
+   * Transcribe audio from a WAV file and return the full transcription.
    *
    * This is a blocking call that collects all tokens and returns the complete transcription.
    *
-   * @param features Preprocessed audio features as a float array
-   * @param batchSize Batch size (typically 1)
-   * @param timeSteps Number of time steps in the features
-   * @param featureDim Feature dimension (e.g., 80 for mel-spectrogram)
+   * @param wavPath Path to the WAV audio file
    * @param config Configuration for transcription
    * @return The transcribed text
    * @throws RuntimeException if transcription fails
    */
   @JvmOverloads
   fun transcribeBlocking(
-      features: FloatArray,
-      batchSize: Int,
-      timeSteps: Int,
-      featureDim: Int,
+      wavPath: String,
       config: AsrTranscribeConfig = AsrTranscribeConfig(),
   ): String {
     val result = StringBuilder()
     val status =
         transcribe(
-            features,
-            batchSize,
-            timeSteps,
-            featureDim,
+            wavPath,
             config,
             object : AsrCallback {
               override fun onToken(token: String) {
