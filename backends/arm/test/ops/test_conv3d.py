@@ -9,11 +9,9 @@ from typing import List, Tuple, Union
 import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
-    get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
-    TOSAQuantizer,
 )
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -22,8 +20,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 
 aten_op = "torch.ops.aten.conv3d.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
@@ -467,25 +463,6 @@ def _get_dtype_count(model: torch.nn.Module):
     }
 
 
-def get_symmetric_a16w8_conv3d_quantizer(per_channel_quantization: bool = False):
-    tosa_version = conftest.get_option("tosa_version")
-    tosa_profiles = {
-        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
-    }
-
-    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-    quant_config = get_symmetric_a16w8_quantization_config(
-        is_per_channel=per_channel_quantization
-    )
-    quantizer.set_global(quant_config)
-    quantizer.set_module_type(torch.nn.Conv3d, quant_config)
-
-    return Quantize(
-        quantizer,
-        quant_config,
-    )
-
-
 input_t = Tuple[torch.Tensor]
 
 
@@ -549,12 +526,6 @@ def test_convolution_3d_tosa_INT_a16w8(test_data):
         use_to_edge_transform_and_lower=True,
         tosa_extensions=["int16"],
         qtol=1,
-    )
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_conv3d_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
     )
     pipeline.run()
 
