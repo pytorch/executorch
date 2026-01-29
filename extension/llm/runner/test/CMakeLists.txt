@@ -19,6 +19,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_test_srcs
     test_generation_config.cpp
+    test_jinja_chat_formatter.cpp
     test_text_llm_runner.cpp
     test_text_prefiller.cpp
     test_text_decoder_runner.cpp
