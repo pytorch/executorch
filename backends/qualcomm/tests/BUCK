@@ -1,10 +1,11 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
 oncall("executorch")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "models",
     srcs = ["models.py"],
     deps = [
@@ -12,7 +13,7 @@ runtime.python_library(
     ]
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "test_qnn_delegate",
     srcs = [
         "test_qnn_delegate.py",
@@ -41,7 +42,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "tester",
     srcs = [
         "tester.py",
@@ -51,7 +52,7 @@ runtime.python_library(
     ]
 )
 
-runtime.python_test(
+fbcode_target(_kind = runtime.python_test,
     name = "test_passes",
     srcs = [
         "test_passes.py",
