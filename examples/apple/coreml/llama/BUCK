@@ -1,9 +1,10 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "llama_transformer",
     srcs = [
         "llama_transformer.py",
@@ -17,7 +18,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "utils",
     srcs = [
         "utils.py",
@@ -30,7 +31,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_binary(
+fbcode_target(_kind = runtime.python_binary,
     name = "export",
     srcs = [
         "export.py",
