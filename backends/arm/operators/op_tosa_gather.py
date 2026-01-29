@@ -32,7 +32,6 @@ class GatherVisitor(NodeVisitor):
     """
 
     target = "tosa.GATHER.default"
-    tosa_specs = NodeVisitor.tosa_specs
 
     def define_node(
         self,

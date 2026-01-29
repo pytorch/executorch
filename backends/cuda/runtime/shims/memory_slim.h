@@ -11,8 +11,8 @@
 #include <cstdint>
 
 #include <executorch/backends/aoti/export.h>
-#include <executorch/backends/aoti/slim/core/SlimTensor.h>
-#include <executorch/backends/aoti/slim/core/SlimTensorView-incl.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor_view_incl.h>
 #include <executorch/runtime/core/error.h>
 
 namespace executorch::backends::cuda {
@@ -142,6 +142,19 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
  */
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
+
+/**
+ * Extracts a boolean scalar value from a single-element tensor.
+ *
+ * The tensor must contain exactly one element and have Bool dtype.
+ * For CUDA tensors, this will synchronize to copy the value to CPU.
+ *
+ * @param tensor Single-element boolean tensor (must not be null)
+ * @param ret_value Output parameter for the extracted boolean value
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_bool(Tensor* tensor, bool* ret_value);
 
 /**
  * Moves a tensor into a new handle and assigns it to the output parameter.

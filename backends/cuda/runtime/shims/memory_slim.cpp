@@ -8,9 +8,9 @@
 
 #include <executorch/backends/cuda/runtime/shims/memory_slim.h>
 
-#include <executorch/backends/aoti/slim/factory/Empty.h>
-#include <executorch/backends/aoti/slim/factory/FromBlob.h>
-#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
+#include <executorch/backends/aoti/slim/factory/empty.h>
+#include <executorch/backends/aoti/slim/factory/from_blob.h>
+#include <executorch/backends/aoti/slim/util/array_ref_util.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch::backends::cuda {
@@ -215,6 +215,35 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking) {
   // - CPU-CPU, CPU-CUDA, CUDA-CPU, CUDA-CUDA copies
   // - Contiguous fast path and non-contiguous element-wise copy
   self->copy_(*src);
+
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_item_bool(Tensor* tensor, bool* ret_value) {
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_item_bool: tensor is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_value != nullptr,
+      InvalidArgument,
+      "aoti_torch_item_bool: ret_value is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor->numel() == 1,
+      InvalidArgument,
+      "aoti_torch_item_bool: tensor must have exactly 1 element, got %zu",
+      tensor->numel());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor->dtype() == ScalarType::Bool,
+      InvalidArgument,
+      "aoti_torch_item_bool: tensor dtype must be Bool");
+
+  // SlimTensor::item<T>() handles both CPU and CUDA tensors.
+  // For CUDA tensors, it copies the value to CPU automatically.
+  *ret_value = tensor->item<bool>();
 
   return Error::Ok;
 }

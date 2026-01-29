@@ -27,7 +27,7 @@ class TanhVisitor(NodeVisitor):
     target = "aten.tanh.default"
 
     # INT case should be handled by op_table
-    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+FP")]
+    tosa_specs = TosaSpecification.all_versions_for_profile("FP")
 
     def __init__(self, *args):
         super().__init__(*args)
