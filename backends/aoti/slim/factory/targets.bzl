@@ -29,3 +29,16 @@ def define_common_targets():
             "//executorch/backends/aoti/slim/util:size_util",
         ],
     )
+
+    runtime.cxx_library(
+        name = "from_etensor",
+        headers = [
+            "from_etensor.h",
+        ],
+        visibility = ["@EXECUTORCH_CLIENTS"],
+        exported_deps = [
+            "//executorch/backends/aoti/slim/factory:empty",
+            "//executorch/backends/aoti/slim/util:array_ref_util",
+            "//executorch/runtime/core/portable_type:portable_type",
+        ],
+    )
