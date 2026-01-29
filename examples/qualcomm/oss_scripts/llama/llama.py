@@ -564,14 +564,14 @@ def _build_parser():
 
     parser.add_argument(
         "--max_context_len",
-        help="Maximum length of the model's memory/cache",
+        help="Maximum length of the model's memory/cache, including both prompt tokens and generated tokens.",
         default=None,
         type=int,
     )
 
     parser.add_argument(
         "--max_seq_len",
-        help="Maximum sequence length the model can handle",
+        help="Maximum sequence length the model can generate.",
         default=512,
         type=int,
     )

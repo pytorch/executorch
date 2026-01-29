@@ -445,8 +445,8 @@ There are two mainly concept for attention sink:
 This feature supports fluent multi-turn conversations and manages long-context scenarios. To enable it, set `--use_attention_sink <sink_size>,<batch_eviction_size>`.
 
 ##### Explanation of Parameters Related to Attention Sink:
-1. **`--max_seq_len`**: Maximum sequence length the model can handle
-2. **`--max_context_len`**: Maximum length of the model's memory/cache
+1. **`--max_seq_len`**: Maximum sequence length the model can generate
+2. **`--max_context_len`**: Maximum length of the model's memory/cache, including both prompt tokens and generated tokens
 3. **`<sink_size>`**: Always include `sink_size` initial tokens as attention sinks in the kv cache.
 4. **`<batch_eviction_size>`**: How many tokens to evict from the cache at once when the cache is full. 
 
