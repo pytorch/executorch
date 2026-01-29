@@ -11,7 +11,7 @@
 #include <cstring>
 #include <type_traits>
 
-#include <executorch/backends/aoti/slim/factory/Empty.h>
+#include <executorch/backends/aoti/slim/factory/empty.h>
 
 namespace executorch::backends::aoti::slim {
 

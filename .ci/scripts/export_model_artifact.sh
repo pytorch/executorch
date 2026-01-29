@@ -60,11 +60,13 @@ OUTPUT_DIR="${4:-.}"
 case "$DEVICE" in
   cuda)
     ;;
+  cuda-windows)
+    ;;
   metal)
     ;;
   *)
     echo "Error: Unsupported device '$DEVICE'"
-    echo "Supported devices: cuda, metal"
+    echo "Supported devices: cuda, cuda-windows, metal"
     exit 1
     ;;
 esac
@@ -104,10 +106,6 @@ case "$HF_MODEL" in
     PREPROCESSOR_OUTPUT=""
     ;;
   nvidia/parakeet-tdt)
-    if [ "$DEVICE" = "metal" ]; then
-      echo "Error: Export for device 'metal' is not yet tested for model '$HF_MODEL'"
-      exit 1
-    fi
     MODEL_NAME="parakeet"
     TASK=""
     MAX_SEQ_LEN=""
@@ -181,7 +179,7 @@ if [ -n "$MAX_SEQ_LEN" ]; then
 fi
 
 DEVICE_ARG=""
-if [ "$DEVICE" = "cuda" ]; then
+if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
   DEVICE_ARG="--device cuda"
 fi
 
@@ -203,10 +201,17 @@ if [ -n "$PREPROCESSOR_OUTPUT" ]; then
       --output_file $PREPROCESSOR_OUTPUT
 fi
 
+# Determine blob file name - cuda and cuda-windows both use aoti_cuda_blob.ptd
+if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+  BLOB_FILE="aoti_cuda_blob.ptd"
+else
+  BLOB_FILE="aoti_${DEVICE}_blob.ptd"
+fi
+
 test -f model.pte
 # CUDA saves named data to separate .ptd file, Metal embeds in .pte
-if [ "$DEVICE" = "cuda" ]; then
-  test -f aoti_cuda_blob.ptd
+if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+  test -f $BLOB_FILE
 fi
 if [ -n "$PREPROCESSOR_OUTPUT" ]; then
   test -f $PREPROCESSOR_OUTPUT
@@ -217,8 +222,8 @@ echo "::group::Store $MODEL_NAME Artifacts"
 mkdir -p "${OUTPUT_DIR}"
 mv model.pte "${OUTPUT_DIR}/"
 # CUDA saves named data to separate .ptd file, Metal embeds in .pte
-if [ "$DEVICE" = "cuda" ]; then
-  mv aoti_cuda_blob.ptd "${OUTPUT_DIR}/"
+if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+  mv $BLOB_FILE "${OUTPUT_DIR}/"
 fi
 if [ -n "$PREPROCESSOR_OUTPUT" ]; then
   mv $PREPROCESSOR_OUTPUT "${OUTPUT_DIR}/"
