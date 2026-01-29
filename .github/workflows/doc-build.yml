@@ -87,10 +87,12 @@ jobs:
 
         cp -rf docs/_build/html/* "${RUNNER_DOCS_DIR}"
 
-        mv docs/_build/html "${RUNNER_ARTIFACT_DIR}"
-        cp -rf "${RUNNER_DOCS_DIR}"/javadoc "${RUNNER_ARTIFACT_DIR}"/html
+        # Copy docs and javadoc directly to artifact dir (not in html/ subfolder)
+        # This matches the expected structure for _upload_docs.yml
+        cp -rf docs/_build/html/* "${RUNNER_ARTIFACT_DIR}"
+        cp -rf "${RUNNER_DOCS_DIR}"/javadoc "${RUNNER_ARTIFACT_DIR}"/javadoc
 
-        ls -R "${RUNNER_ARTIFACT_DIR}"/*/*.html
+        find "${RUNNER_ARTIFACT_DIR}" -name "*.html" | head -20
 
   upload-gh-pages:
     needs: build
@@ -98,46 +100,9 @@ jobs:
     permissions:
       id-token: write
       contents: write
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     secrets: inherit
+    uses: pytorch/test-infra/.github/workflows/_upload_docs.yml@main
     with:
+      docs-branch: gh-pages
+      docs-name: docs
       repository: pytorch/executorch
-      download-artifact: docs
-      ref: gh-pages
-      timeout: 90
-      secrets-env: GITHUB_TOKEN
-      script: |
-        set -euo pipefail
-
-        # Get github.ref for the output doc folder. By default "main"
-        # If matches a tag like refs/tags/v1.12.0-rc3 or
-        # refs/tags/v1.12.0 convert to 1.12
-        export GITHUB_REF=${{ github.ref }}
-
-        # Fail immediately instead of prompting for input.
-        export GIT_TERMINAL_PROMPT=0
-        # Configure git to use the token for authentication
-        git remote set-url origin https://x-access-token:${SECRET_GITHUB_TOKEN}@github.com/pytorch/executorch.git
-
-        # Convert refs/tags/v1.12.0rc3 into 1.12.
-        # Adopted from https://github.com/pytorch/pytorch/blob/main/.github/workflows/_docs.yml#L150C11-L155C13
-        if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+) ]]; then
-          TARGET_FOLDER="${BASH_REMATCH[1]}"
-        else
-          TARGET_FOLDER="main"
-        fi
-        echo "Target Folder: ${TARGET_FOLDER}"
-
-        # Clean up target folder if exists and copy html output to the
-        # Target folder
-        if [ -d "${TARGET_FOLDER}" ]; then
-          rm -rf "${TARGET_FOLDER}"
-        fi
-        mkdir -p "${TARGET_FOLDER}"
-        mv "${RUNNER_ARTIFACT_DIR}"/html/* "${TARGET_FOLDER}"
-        git add "${TARGET_FOLDER}" || true
-
-        git config user.name 'pytorchbot'
-        git config user.email 'soumith+bot@pytorch.org'
-        git commit -m "Auto-generating sphinx docs" || true
-        git push -f
