@@ -120,6 +120,7 @@ class PermuteVisitor(NodeVisitor):
                 ts.DType.INT16,
                 ts.DType.INT32,
                 ts.DType.FP32,
+                ts.DType.BF16,
             ],
             self.tosa_spec,
         )
