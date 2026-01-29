@@ -481,6 +481,41 @@ class ConvBNModule(torch.nn.Module):
         return self.bn(x)
 
 
+class LinearBNModule(torch.nn.Module):
+    def __init__(
+        self,
+        input_shape: tuple[int],
+        out_features: int,
+        linear_bias: bool,
+        act: nn.Module | None = None,
+    ):
+        super().__init__()
+
+        self.linear = torch.nn.Linear(
+            in_features=input_shape[-1], out_features=out_features, bias=linear_bias
+        )
+
+        num_dims = len(input_shape)
+        bn_features = input_shape[1]
+        if num_dims == 3:
+            self.bn = torch.nn.BatchNorm1d(bn_features)
+        elif num_dims == 4:
+            self.bn = torch.nn.BatchNorm2d(bn_features)
+        elif num_dims == 5:
+            self.bn = torch.nn.BatchNorm3d(bn_features)
+        else:
+            raise ValueError(
+                f"Unknown input_dim: {len(input_shape)}, supported values are 1, 2 or 3."
+            )
+
+        self.act = act
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = self.bn(x)
+        return self.act(x) if self.act is not None else x
+
+
 class MulTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()

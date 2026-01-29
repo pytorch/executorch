@@ -40,6 +40,27 @@ class FuseBatchNormWithLinearPass(PassBase):
     [1] https://github.com/pytorch/executorch/blob/v0.5.0-rc2/kernels/portable/cpu/op_native_batch_norm.cpp#L118-L128
     """
 
+    def _is_fq_node(self, node: Node):
+        return (
+            node is not None
+            and hasattr(node, "target")
+            and isinstance(node.target, str)
+            and node.target.startswith("activation_post_process")
+        )
+
+    def _unwrap_if_fq(self, node: Node):
+        target_node = node
+
+        if self._is_fq_node(node):
+            if len(node.args) >= 1:
+                target_node = node.args[0]
+            else:
+                raise ValueError(
+                    f"FakeQuantize node '{node}' should have at least one argument, but has {len(node.args)}."
+                )
+
+        return target_node
+
     def _get_tensor_constant_from_node(self, graph_module, node) -> Parameter | None:
         """Get the static data from a given node. If it doesn't have any data, return `None`."""
         if node is None or node.op != "get_attr":
@@ -86,10 +107,13 @@ class FuseBatchNormWithLinearPass(PassBase):
                 continue  # Something other than a Linear node comes before the BatchNorm.
 
             linear_node = bn_node.args[0]
-            linear_weight_node = linear_node.args[1]
-            linear_bias_node = (
+            linear_weight_node_or_fq = linear_node.args[1]
+            linear_bias_node_or_fq = (
                 linear_node.args[2] if len(linear_node.args) > 2 else None
             )
+
+            linear_weight_node = self._unwrap_if_fq(linear_weight_node_or_fq)
+            linear_bias_node = self._unwrap_if_fq(linear_bias_node_or_fq)
 
             linear_w = self._get_tensor_constant_from_node(
                 graph_module, linear_weight_node
