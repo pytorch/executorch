@@ -32,6 +32,8 @@ public class LlmModule {
   private static final int DEFAULT_SEQ_LEN = 128;
   private static final boolean DEFAULT_ECHO = true;
   private static final float DEFAULT_TEMPERATURE = -1.0f;
+  private static final int DEFAULT_BOS = 0;
+  private static final int DEFAULT_EOS = 0;
 
   @DoNotStrip
   private static native HybridData initHybrid(
@@ -39,7 +41,9 @@ public class LlmModule {
       String modulePath,
       String tokenizerPath,
       float temperature,
-      List<String> dataFiles);
+      List<String> dataFiles,
+      int numBos,
+      int numEos);
 
   /**
    * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
@@ -50,7 +54,9 @@ public class LlmModule {
       String modulePath,
       String tokenizerPath,
       float temperature,
-      List<String> dataFiles) {
+      List<String> dataFiles,
+      int numBos,
+      int numEos) {
     ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
 
     File modelFile = new File(modulePath);
@@ -62,7 +68,44 @@ public class LlmModule {
       throw new RuntimeException("Cannot load tokenizer path " + tokenizerPath);
     }
 
-    mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, dataFiles);
+    mHybridData =
+        initHybrid(
+            modelType, modulePath, tokenizerPath, temperature, dataFiles, numBos, numEos);
+  }
+
+  /**
+   * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
+   * dataFiles.
+   */
+  public LlmModule(
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      List<String> dataFiles) {
+    this(modelType, modulePath, tokenizerPath, temperature, dataFiles, DEFAULT_BOS, DEFAULT_EOS);
+  }
+
+  /**
+   * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
+   * data path.
+   */
+  public LlmModule(
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      String dataPath,
+      int numBos,
+      int numEos) {
+    this(
+        modelType,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        dataPath != null ? List.of(dataPath) : List.of(),
+        numBos,
+        numEos);
   }
 
   /**
@@ -71,17 +114,19 @@ public class LlmModule {
    */
   public LlmModule(
       int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
-    this(
-        modelType,
-        modulePath,
-        tokenizerPath,
-        temperature,
-        dataPath != null ? List.of(dataPath) : List.of());
+    this(modelType, modulePath, tokenizerPath, temperature, dataPath, DEFAULT_BOS, DEFAULT_EOS);
   }
 
   /** Constructs a LLM Module for a model with given model path, tokenizer, temperature. */
   public LlmModule(String modulePath, String tokenizerPath, float temperature) {
-    this(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, List.of());
+    this(
+        MODEL_TYPE_TEXT,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        List.of(),
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /**
@@ -89,12 +134,19 @@ public class LlmModule {
    * path.
    */
   public LlmModule(String modulePath, String tokenizerPath, float temperature, String dataPath) {
-    this(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, List.of(dataPath));
+    this(
+        MODEL_TYPE_TEXT,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        List.of(dataPath),
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /** Constructs a LLM Module for a model with given path, tokenizer, and temperature. */
   public LlmModule(int modelType, String modulePath, String tokenizerPath, float temperature) {
-    this(modelType, modulePath, tokenizerPath, temperature, List.of());
+    this(modelType, modulePath, tokenizerPath, temperature, List.of(), DEFAULT_BOS, DEFAULT_EOS);
   }
 
   /** Constructs a LLM Module for a model with the given LlmModuleConfig */
@@ -104,7 +156,9 @@ public class LlmModule {
         config.getModulePath(),
         config.getTokenizerPath(),
         config.getTemperature(),
-        config.getDataPath());
+        config.getDataPath(),
+        config.getNumBos(),
+        config.getNumEos());
   }
 
   public void resetNative() {
@@ -118,7 +172,14 @@ public class LlmModule {
    * @param llmCallback callback object to receive results.
    */
   public int generate(String prompt, LlmCallback llmCallback) {
-    return generate(prompt, DEFAULT_SEQ_LEN, llmCallback, DEFAULT_ECHO, DEFAULT_TEMPERATURE);
+    return generate(
+        prompt,
+        DEFAULT_SEQ_LEN,
+        llmCallback,
+        DEFAULT_ECHO,
+        DEFAULT_TEMPERATURE,
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /**
@@ -129,7 +190,18 @@ public class LlmModule {
    * @param llmCallback callback object to receive results.
    */
   public int generate(String prompt, int seqLen, LlmCallback llmCallback) {
-    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, DEFAULT_ECHO, DEFAULT_TEMPERATURE);
+    return generate(
+        null,
+        0,
+        0,
+        0,
+        prompt,
+        seqLen,
+        llmCallback,
+        DEFAULT_ECHO,
+        DEFAULT_TEMPERATURE,
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /**
@@ -140,7 +212,18 @@ public class LlmModule {
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
   public int generate(String prompt, LlmCallback llmCallback, boolean echo) {
-    return generate(null, 0, 0, 0, prompt, DEFAULT_SEQ_LEN, llmCallback, echo, DEFAULT_TEMPERATURE);
+    return generate(
+        null,
+        0,
+        0,
+        0,
+        prompt,
+        DEFAULT_SEQ_LEN,
+        llmCallback,
+        echo,
+        DEFAULT_TEMPERATURE,
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /**
@@ -163,9 +246,17 @@ public class LlmModule {
    * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    * @param temperature temperature for sampling (use negative value to use module default)
+   * @param numBos number of BOS tokens to prepend
+   * @param numEos number of EOS tokens to append
    */
   public native int generate(
-      String prompt, int seqLen, LlmCallback llmCallback, boolean echo, float temperature);
+      String prompt,
+      int seqLen,
+      LlmCallback llmCallback,
+      boolean echo,
+      float temperature,
+      int numBos,
+      int numEos);
 
   /**
    * Start generating tokens from the module.
@@ -178,7 +269,9 @@ public class LlmModule {
     int seqLen = config.getSeqLen();
     boolean echo = config.isEcho();
     float temperature = config.getTemperature();
-    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo, temperature);
+    int numBos = config.getNumBos();
+    int numEos = config.getNumEos();
+    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
   }
 
   /**
@@ -203,7 +296,17 @@ public class LlmModule {
       LlmCallback llmCallback,
       boolean echo) {
     return generate(
-        image, width, height, channels, prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE);
+        image,
+        width,
+        height,
+        channels,
+        prompt,
+        seqLen,
+        llmCallback,
+        echo,
+        DEFAULT_TEMPERATURE,
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /**
@@ -229,11 +332,52 @@ public class LlmModule {
       LlmCallback llmCallback,
       boolean echo,
       float temperature) {
+    return generate(
+        image,
+        width,
+        height,
+        channels,
+        prompt,
+        seqLen,
+        llmCallback,
+        echo,
+        temperature,
+        DEFAULT_BOS,
+        DEFAULT_EOS);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param image Input image as a byte array
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
+   * @param prompt Input prompt
+   * @param seqLen sequence length
+   * @param llmCallback callback object to receive results.
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
+   * @param temperature temperature for sampling (use negative value to use module default)
+   * @param numBos number of BOS tokens to prepend
+   * @param numEos number of EOS tokens to append
+   */
+  public int generate(
+      int[] image,
+      int width,
+      int height,
+      int channels,
+      String prompt,
+      int seqLen,
+      LlmCallback llmCallback,
+      boolean echo,
+      float temperature,
+      int numBos,
+      int numEos) {
     prefillPrompt(prompt);
     if (image != null) {
       prefillImages(image, width, height, channels);
     }
-    return generate(prompt, seqLen, llmCallback, echo, temperature);
+    return generate(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
   }
 
   /**
