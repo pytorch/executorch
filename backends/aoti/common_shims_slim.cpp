@@ -106,8 +106,68 @@ AOTITorchError aoti_torch_get_device_index(
   return Error::Ok;
 }
 
-} // extern "C"
+// ============================================================
+// DType Constants - Implementations
+// ============================================================
 
+int32_t aoti_torch_dtype_float32() {
+  return 6; // ScalarType::Float
+}
+
+int32_t aoti_torch_dtype_bfloat16() {
+  return 15; // ScalarType::BFloat16
+}
+
+int32_t aoti_torch_dtype_int64() {
+  return 4; // ScalarType::Long
+}
+
+int32_t aoti_torch_dtype_int32() {
+  return 3; // ScalarType::Int
+}
+
+int32_t aoti_torch_dtype_int16() {
+  return 2; // ScalarType::Short
+}
+
+int32_t aoti_torch_dtype_int8() {
+  return 1; // ScalarType::Char
+}
+
+int32_t aoti_torch_dtype_bool() {
+  return 11; // ScalarType::Bool
+}
+
+// ============================================================
+// Device Type Constants - Implementations
+// ============================================================
+
+int32_t aoti_torch_device_type_cpu() {
+  return 0; // DeviceType::CPU
+}
+
+int32_t aoti_torch_device_type_cuda() {
+  return 1; // DeviceType::CUDA
+}
+
+// ============================================================
+// Grad Mode Functions - Implementations
+// ============================================================
+
+bool aoti_torch_grad_mode_is_enabled() {
+  // ExecuTorch doesn't support autograd
+  return false;
+}
+
+AOTITorchError aoti_torch_grad_mode_set_enabled(bool enabled) {
+  if (enabled) {
+    // ExecuTorch doesn't support autograd
+    return Error::NotSupported;
+  }
+  return Error::Ok;
+}
+
+} // extern "C"
 } // namespace aoti
 } // namespace backends
 } // namespace executorch
