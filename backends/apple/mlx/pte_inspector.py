@@ -583,7 +583,8 @@ def extract_delegate_payload(  # noqa: C901
                                 + extended_header.segment_data_size
                             ]
 
-                    match_count += 1
+                    # If we reach here, we found the delegate we wanted but it has no data
+                    return None
 
         return None
 
@@ -764,6 +765,133 @@ def show_mlx_summary(pte_data: bytes) -> None:  # noqa: C901
         traceback.print_exc()
 
 
+def show_mlx_instructions(pte_data: bytes) -> None:  # noqa: C901
+    """Show detailed instruction-level view of MLX delegates in a PTE file."""
+    try:
+        from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
+
+        program_json = _program_flatbuffer_to_json(pte_data)
+        program_data = json.loads(program_json)
+
+        # Find all MLX delegates
+        mlx_delegates = []
+        for plan in program_data.get("execution_plan", []):
+            for i, delegate in enumerate(plan.get("delegates", [])):
+                if "mlx" in delegate.get("id", "").lower():
+                    mlx_delegates.append((i, delegate))
+
+        if not mlx_delegates:
+            print("No MLX delegates found in this PTE file.", file=sys.stderr)
+            sys.exit(1)
+
+        if len(mlx_delegates) > 1:
+            print(
+                f"Found {len(mlx_delegates)} MLX delegate(s) in PTE file\n",
+                file=sys.stderr,
+            )
+
+        # Process each MLX delegate
+        for idx, (delegate_idx, _delegate) in enumerate(mlx_delegates):
+            # Extract delegate payload using the match index
+            payload = extract_delegate_payload(pte_data, "mlx", delegate_index=idx)
+            if payload is None:
+                print(f"\nError: Could not extract MLX delegate {idx}", file=sys.stderr)
+                continue
+
+            # Parse the MLX payload
+            mlx_data = parse_mlx_payload(payload)
+
+            if "error" in mlx_data:
+                print(
+                    f"\nError parsing delegate {idx}: {mlx_data['error']}",
+                    file=sys.stderr,
+                )
+                continue
+
+            graph = mlx_data.get("graph", {})
+
+            # Print delegate header
+            if len(mlx_delegates) > 1:
+                print("\n" + "=" * 70)
+                print(f"MLX DELEGATE {idx} (plan index {delegate_idx})")
+                print("=" * 70)
+            else:
+                print("\n" + "=" * 70)
+                print("MLX Graph Summary")
+                print("=" * 70)
+
+            # Basic info
+            print(f"Version: {graph.get('version', 'unknown')}")
+            print(f"Constant tensors: {graph.get('num_constant_tensors', 0)}")
+            print(f"Non-constant tensors: {graph.get('num_non_constant_tensors', 0)}")
+            print(f"Non-constant values: {graph.get('num_non_constant_values', 0)}")
+            print(f"Instructions: {graph.get('num_instructions', 0)}")
+
+            # Constant data size
+            constant_seg = graph.get("constant_segment", {})
+            if constant_seg:
+                print(f"Constant data: {constant_seg.get('size', 0):,} bytes")
+
+            # Instructions
+            instructions = graph.get("instructions", [])
+            if instructions:
+                print("\nInstructions:")
+                for instr in instructions:
+                    op_name = instr.get("op_name", f"op_{instr.get('op_type', '?')}")
+                    print(f"  [{instr.get('index', '?')}] {op_name}")
+
+                    # Print operands (skip index, op_type, op_name)
+                    for key, value in instr.items():
+                        if key in ("index", "op_type", "op_name"):
+                            continue
+                        if isinstance(value, dict):
+                            if "tid" in value:
+                                print(f"      {key}: tid {value['tid']}")
+                            elif "vid" in value:
+                                print(f"      {key}: vid {value['vid']}")
+                            elif "literal" in value:
+                                print(f"      {key}: {value}")
+                            else:
+                                print(f"      {key}: {value}")
+                        elif value is not None:
+                            print(f"      {key}: {value}")
+
+            # Named slots
+            named_slots = graph.get("named_slots", [])
+            if named_slots:
+                print("\nNamed Slots:")
+                for slot in named_slots:
+                    slot_type = "tensor" if slot.get("slot_type", 0) == 0 else "value"
+                    print(
+                        f"  [{slot.get('slot_idx', '?')}] {slot.get('name', '?')} ({slot_type})"
+                    )
+
+            # Input/Output maps
+            input_map = graph.get("input_map", [])
+            output_map = graph.get("output_map", [])
+
+            if input_map:
+                print("\nInputs:")
+                for inp in input_map:
+                    slot_type = "tid" if inp.get("slot_type", 0) == 0 else "vid"
+                    print(f"  {slot_type} {inp.get('idx', '?')}")
+
+            if output_map:
+                print("\nOutputs:")
+                for out in output_map:
+                    slot_type = "tid" if out.get("slot_type", 0) == 0 else "vid"
+                    print(f"  {slot_type} {out.get('idx', '?')}")
+
+            print("=" * 70 + "\n")
+
+    except Exception as e:
+        print(f"Error showing MLX instructions: {e}", file=sys.stderr)
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
 # =============================================================================
 # Main CLI
 # =============================================================================
@@ -771,7 +899,28 @@ def show_mlx_summary(pte_data: bytes) -> None:  # noqa: C901
 
 def main():  # noqa: C901
     parser = argparse.ArgumentParser(
-        description="Inspect ExecuTorch .pte files and extract data"
+        description="Inspect ExecuTorch .pte files and extract data",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+MLX-Specific Options:
+  --mlx-summary        Show high-level summary (tensor counts, I/O maps)
+  --mlx-instructions   Show detailed instruction list with operation parameters
+                       (use this to verify quantization, inspect ops, etc.)
+
+Examples:
+  # Basic PTE file inspection
+  python -m executorch.backends.apple.mlx.pte_inspector model.pte
+
+  # Show high-level MLX delegate summary
+  python -m executorch.backends.apple.mlx.pte_inspector model.pte --mlx-summary
+
+  # Show detailed MLX instructions (verify quantization, inspect operations)
+  python -m executorch.backends.apple.mlx.pte_inspector model.pte --mlx-instructions
+
+  # Extract raw delegate payload to binary file
+  python -m executorch.backends.apple.mlx.pte_inspector model.pte \\
+      --extract-delegate MLXBackend -o delegate.bin
+        """,
     )
     parser.add_argument("pte_file", type=Path, help="Path to the .pte file")
     parser.add_argument(
@@ -801,6 +950,11 @@ def main():  # noqa: C901
         help="Show summary of all MLX delegates (input/output/mutable buffer counts)",
     )
     parser.add_argument(
+        "--mlx-instructions",
+        action="store_true",
+        help="Show detailed MLX instruction list with operands and quantization details",
+    )
+    parser.add_argument(
         "--format",
         choices=["json", "summary"],
         default="json",
@@ -823,6 +977,11 @@ def main():  # noqa: C901
     pte_data = args.pte_file.read_bytes()
     print(f"Loaded {len(pte_data)} bytes from {args.pte_file}", file=sys.stderr)
 
+    # Handle MLX instruction details view
+    if args.mlx_instructions:
+        show_mlx_instructions(pte_data)
+        return
+
     # Handle MLX summary
     if args.mlx_summary:
         show_mlx_summary(pte_data)
@@ -830,7 +989,9 @@ def main():  # noqa: C901
 
     # Handle delegate extraction
     if args.extract_delegate:
-        payload = extract_delegate_payload(pte_data, args.extract_delegate)
+        payload = extract_delegate_payload(
+            pte_data, args.extract_delegate, delegate_index=args.delegate_index
+        )
         if payload is None:
             print(
                 f"Error: Delegate '{args.extract_delegate}' not found", file=sys.stderr
@@ -840,7 +1001,26 @@ def main():  # noqa: C901
         if args.parse_mlx and args.extract_delegate.lower() == "mlx":
             # Parse and output as JSON
             result = parse_mlx_payload(payload)
-            output = json.dumps(result, indent=args.indent)
+
+            # Custom JSON encoder for MLX types
+            def mlx_json_encoder(obj):
+                # Handle IntOrVid objects (literal, vid, is_vid attrs)
+                if hasattr(obj, "literal") and hasattr(obj, "is_vid"):
+                    if obj.is_vid:
+                        return {"vid": obj.vid}
+                    return {"literal": obj.literal}
+                # Handle FloatOrVid objects
+                if hasattr(obj, "float64") and hasattr(obj, "vid"):
+                    if obj.vid is not None:
+                        return {"vid": obj.vid}
+                    return {"literal": obj.float64}
+                # Handle Vid objects (just has idx attr)
+                if hasattr(obj, "idx") and not hasattr(obj, "literal"):
+                    return obj.idx
+                # Fallback: convert to string representation
+                return str(obj)
+
+            output = json.dumps(result, indent=args.indent, default=mlx_json_encoder)
 
             if args.output:
                 args.output.write_text(output)
