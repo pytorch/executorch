@@ -423,6 +423,16 @@ class ET_EXPERIMENTAL CudaBackend final
 
     const bool copy_outputs = !should_skip_copy_for_method(handle->method_name);
 
+    // Synchronize CUDA stream to ensure kernel execution is complete
+    // before accessing output data (either for copy or skip-copy path)
+    cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
+    cudaError_t sync_err = cudaStreamSynchronize(cuda_stream);
+    ET_CHECK_OR_RETURN_ERROR(
+        sync_err == cudaSuccess,
+        Internal,
+        "cudaStreamSynchronize failed: %s",
+        cudaGetErrorString(sync_err));
+
     if (copy_outputs) {
       // Deep copy GPU SlimTensor results back to CPU ETensors
       for (size_t i = 0; i < n_outputs; i++) {
@@ -432,6 +442,8 @@ class ET_EXPERIMENTAL CudaBackend final
             "Failed to copy GPU output %zu back to CPU ETensor",
             i);
       }
+      // Cleanup gpu_outputs after copying - they are no longer needed
+      delete_slimtensor_vector(gpu_outputs);
     } else {
       // Skip-copy optimization: point ETensor directly to GPU data.
       // The caller is responsible for handling GPU data directly.
@@ -443,12 +455,7 @@ class ET_EXPERIMENTAL CudaBackend final
         auto& cached_outputs = cached_outputs_[handle];
 
         // Delete the previous round's tensors since they are no longer in use.
-        for (auto* tensor : cached_outputs) {
-          if (tensor != nullptr) {
-            delete tensor;
-          }
-        }
-        cached_outputs.clear();
+        delete_slimtensor_vector(cached_outputs);
 
         for (size_t i = 0; i < n_outputs; i++) {
           // Cache this output tensor to keep the underlying GPU data alive.
@@ -466,6 +473,9 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
+    // Cleanup gpu_inputs - they are no longer needed after kernel execution
+    delete_slimtensor_vector(gpu_inputs);
+
     return Error::Ok;
   }
 
@@ -480,11 +490,7 @@ class ET_EXPERIMENTAL CudaBackend final
       std::lock_guard<std::mutex> guard(cached_outputs_mutex_);
       auto it = cached_outputs_.find(handle);
       if (it != cached_outputs_.end()) {
-        for (auto* tensor : it->second) {
-          if (tensor != nullptr) {
-            delete tensor;
-          }
-        }
+        delete_slimtensor_vector(it->second);
         cached_outputs_.erase(it);
       }
     }

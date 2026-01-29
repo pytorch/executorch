@@ -61,7 +61,7 @@ foreach(test_name ${CUDA_SHIM_TESTS})
 
   target_link_libraries(
     ${test_name} PRIVATE GTest::gtest GTest::gtest_main aoti_cuda_shims
-                         slimtensor executorch_core CUDA::cudart
+                         executorch_core CUDA::cudart
   )
 
   add_test(NAME ${test_name} COMMAND ${test_name})

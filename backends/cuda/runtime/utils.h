@@ -157,4 +157,23 @@ inline executorch::runtime::Error wrap_slimtensor_to_etensor(
   return executorch::runtime::Error::Ok;
 }
 
+/**
+ * Deletes all SlimTensor pointers in a vector and clears the vector.
+ *
+ * This utility function safely deletes each non-null SlimTensor pointer in the
+ * vector and then clears the vector. This pattern is used in multiple places
+ * in the CUDA backend to clean up GPU tensors.
+ *
+ * @param tensors Reference to a vector of SlimTensor pointers to delete.
+ */
+inline void delete_slimtensor_vector(
+    std::vector<executorch::backends::aoti::slim::SlimTensor*>& tensors) {
+  for (auto* tensor : tensors) {
+    if (tensor != nullptr) {
+      delete tensor;
+    }
+  }
+  tensors.clear();
+}
+
 } // namespace executorch::backends::cuda
