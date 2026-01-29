@@ -11,6 +11,8 @@ concurrency:
 
 jobs:
   do_update_viablestrict:
+    permissions:
+      id-token: write
     if: ${{ github.repository_owner == 'pytorch' }}
     runs-on: ubuntu-22.04
     environment: ${{ (github.event_name == 'schedule') && 'update-viable-strict' || '' }}
