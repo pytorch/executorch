@@ -511,6 +511,13 @@ include_patterns = [
     'backends/arm/tosa/**/*.py',
     'backends/arm/ethosu/**/*.py',
     'backends/arm/operators/**/*.py',
+    'backends/arm/common/**/*.py',
+    'backends/arm/util/**/*.py',
+    'backends/arm/runtime/**/*.py',
+    'backends/arm/quantizer/**/*.py',
+    'backends/arm/debug/**/*.py',
+    'backends/arm/scripts/**/*.py',
+    'backends/arm/*.py',
 ]
 exclude_patterns = ['third-party/**', '**/third-party/**']
 command = [
