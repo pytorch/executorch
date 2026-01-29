@@ -14,8 +14,6 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.android)
 }
 
-import com.vanniktech.maven.publish.SonatypeHost
-
 spotless {
     kotlin {
         target '**/*.kt'
@@ -78,7 +76,7 @@ dependencies {
 }
 
 mavenPublishing {
-    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+    publishToMavenCentral("CENTRAL_PORTAL", true)
     signAllPublications()
 
     coordinates("org.pytorch", "executorch-android" + ((flavor && flavor != "xnnpack") ? "-" + flavor : ""), execuTorchVersion ? execuTorchVersion : "1.2.0-SNAPSHOT")
