@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 
-#include <executorch/backends/aoti/slim/factory/Empty.h>
+#include <executorch/backends/aoti/slim/factory/empty.h>
 
 #ifdef CUDA_AVAILABLE
 #include <cuda_runtime.h>

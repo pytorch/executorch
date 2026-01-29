@@ -17,9 +17,9 @@
 
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
-#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
-#include <executorch/backends/aoti/slim/util/SharedPtr.h>
-#include <executorch/backends/aoti/slim/util/SizeUtil.h>
+#include <executorch/backends/aoti/slim/util/array_ref_util.h>
+#include <executorch/backends/aoti/slim/util/shared_ptr.h>
+#include <executorch/backends/aoti/slim/util/size_util.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
 
