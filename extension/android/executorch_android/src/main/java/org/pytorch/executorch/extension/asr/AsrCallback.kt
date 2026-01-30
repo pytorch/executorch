@@ -26,4 +26,3 @@ interface AsrCallback {
    */
   fun onToken(token: String)
 }
-

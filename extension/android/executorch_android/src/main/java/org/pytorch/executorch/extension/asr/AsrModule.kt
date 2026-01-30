@@ -99,9 +99,7 @@ class AsrModule(
       return handle != 0L && nativeIsLoaded(handle)
     }
 
-  /**
-   * Releases native resources. Call this when done with the module.
-   */
+  /** Releases native resources. Call this when done with the module. */
   override fun close() {
     val handle = nativeHandle.getAndSet(0L)
     if (handle != 0L) {
