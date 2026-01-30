@@ -93,7 +93,7 @@ def main(args):
                 output = np.fromfile(filename, dtype=np.float32)
                 output_raws.append(output)
 
-    adb.pull(output_path=args.artifact, callback=post_process)
+    adb.pull(host_output_path=args.artifact, callback=post_process)
 
     # top-k analysis
     predictions = []
