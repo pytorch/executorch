@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -68,6 +68,13 @@ test_data_suite = {
     "randn": lambda: (torch.randn(5, 16, 50, 32), [4, 2, 0]),
 }
 
+test_data_suite_bf16 = {
+    "rand_bf16": lambda: (
+        torch.rand(1, 8, 20, 20, dtype=torch.bfloat16),
+        [3, 2, 1],
+    ),
+}
+
 
 test_data_suite_dilation = [
     # Simple dilation=2 on 8x8 input, kernel=3, stride=1, no padding
@@ -112,11 +119,15 @@ class MaxPool2d(torch.nn.Module):
         return self.max_pool_2d(x)
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_max_pool2d_tosa_FP(test_data: torch.Tensor):
     test_data, model_params = test_data()
     pipeline = TosaPipelineFP[input_t1](
-        MaxPool2d(*model_params), (test_data,), aten_op, exir_op
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
