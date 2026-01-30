@@ -24,7 +24,8 @@
  * Binary file format:
  *   - 4 bytes: number of tensors (uint32_t)
  *   For each tensor:
- *     - 4 bytes: dtype (0=float32, 1=float16, 2=int32, 3=int64)
+ *     - 4 bytes: dtype (0=float32, 1=float16, 2=int32, 3=int64, 4=bfloat16,
+ * 5=bool)
  *     - 4 bytes: number of dimensions (uint32_t)
  *     - 4 bytes * ndim: shape (int32_t each)
  *     - N bytes: data (size = product of shape * sizeof(dtype))
@@ -50,6 +51,7 @@ enum class DType : uint32_t {
   Int32 = 2,
   Int64 = 3,
   BFloat16 = 4,
+  Bool = 5,
 };
 
 size_t dtype_size(DType dtype) {
@@ -64,6 +66,8 @@ size_t dtype_size(DType dtype) {
       return 8;
     case DType::BFloat16:
       return 2;
+    case DType::Bool:
+      return 1;
     default:
       return 4;
   }
@@ -81,6 +85,8 @@ exec_aten::ScalarType dtype_to_scalar_type(DType dtype) {
       return exec_aten::ScalarType::Long;
     case DType::BFloat16:
       return exec_aten::ScalarType::BFloat16;
+    case DType::Bool:
+      return exec_aten::ScalarType::Bool;
     default:
       return exec_aten::ScalarType::Float;
   }
@@ -98,6 +104,8 @@ DType scalar_type_to_dtype(exec_aten::ScalarType stype) {
       return DType::Int64;
     case exec_aten::ScalarType::BFloat16:
       return DType::BFloat16;
+    case exec_aten::ScalarType::Bool:
+      return DType::Bool;
     default:
       return DType::Float32;
   }
@@ -294,6 +302,11 @@ int main(int argc, char* argv[]) {
         std::vector<int64_t> data(t.data.size() / sizeof(int64_t));
         std::memcpy(data.data(), t.data.data(), t.data.size());
         tensor_ptr = make_tensor_ptr(sizes, std::move(data));
+      } else if (t.dtype == DType::Bool) {
+        std::vector<uint8_t> data(t.data.size());
+        std::memcpy(data.data(), t.data.data(), t.data.size());
+        tensor_ptr = make_tensor_ptr(
+            sizes, std::move(data), {}, {}, exec_aten::ScalarType::Bool);
       } else {
         std::cerr << "Unsupported dtype: " << static_cast<int>(t.dtype)
                   << std::endl;

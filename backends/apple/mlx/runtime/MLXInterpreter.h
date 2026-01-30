@@ -27,25 +27,6 @@ namespace ops {
 
 using namespace ::mlx::core;
 
-// ----- Helper to resolve int or Vid -----
-inline int32_t resolve_int(
-    const std::variant<int64_t, Vid<int32_t>>& v,
-    const ExecutionState& st) {
-  if (std::holds_alternative<int64_t>(v)) {
-    int64_t val64 = std::get<int64_t>(v);
-    // Clamp to int32_t range to avoid overflow
-    // INT64_MAX is commonly used to mean "slice to end" or similar semantics
-    if (val64 >= static_cast<int64_t>(std::numeric_limits<int32_t>::max())) {
-      return std::numeric_limits<int32_t>::max();
-    } else if (
-        val64 <= static_cast<int64_t>(std::numeric_limits<int32_t>::min())) {
-      return std::numeric_limits<int32_t>::min();
-    }
-    return static_cast<int32_t>(val64);
-  }
-  return st.const_value_ref<int32_t>(std::get<Vid<int32_t>>(v));
-}
-
 // ----- GELU implementation (tanh approximation) -----
 inline array gelu_impl(const array& x, StreamOrDevice s = {}) {
   constexpr float sqrt_2_over_pi = 0.7978845608f;
@@ -73,12 +54,14 @@ exec_addmm(const AddmmNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& mat1 = st.const_tensor_ref(n.mat1);
   const auto& mat2 = st.const_tensor_ref(n.mat2);
 
-  array Y = matmul(mat1, mat2, s);
-
-  if (n.bias) {
-    const auto& b = st.const_tensor_ref(*n.bias);
-    Y = add(Y, b, s);
-  }
+  array Y = n.bias ? addmm(
+                         st.const_tensor_ref(*n.bias),
+                         mat1,
+                         mat2,
+                         /*alpha=*/n.alpha,
+                         /*beta=*/n.beta,
+                         s)
+                   : matmul(mat1, mat2, s);
 
   st.set_tensor(n.out, std::move(Y));
 }
@@ -90,12 +73,14 @@ exec_linear(const LinearNode& n, ExecutionState& st, StreamOrDevice s) {
   auto W = st.const_tensor_ref(n.weight);
   W = transpose(W, {1, 0}, s);
 
-  array Y = matmul(X, W, s);
-
-  if (n.bias) {
-    const auto& b = st.const_tensor_ref(*n.bias);
-    Y = add(Y, b, s);
-  }
+  array Y = n.bias ? addmm(
+                         st.const_tensor_ref(*n.bias),
+                         X,
+                         W,
+                         /*alpha=*/1.0f,
+                         /*beta=*/1.0f,
+                         s)
+                   : matmul(X, W, s);
 
   st.set_tensor(n.out, std::move(Y));
 }
@@ -117,7 +102,10 @@ inline void exec_expand_dims(
 
 // ----- Tile -----
 inline void exec_tile(const TileNode& n, ExecutionState& st, StreamOrDevice s) {
-  st.set_tensor(n.out, tile(st.const_tensor_ref(n.x), n.reps, s));
+  const auto& x = st.const_tensor_ref(n.x);
+  auto reps_shape = to_shape(n.reps, st);
+  std::vector<int> reps(reps_shape.begin(), reps_shape.end());
+  st.set_tensor(n.out, tile(x, reps, s));
 }
 
 // ----- Take Along Axis -----
@@ -227,10 +215,25 @@ exec_sym_size(const SymSizeNode& n, ExecutionState& st, StreamOrDevice) {
   st.set_value(n.out, size);
 }
 
-// ----- Mul -----
-inline void exec_mul(const MulNode& n, ExecutionState& st, StreamOrDevice s) {
+// ----- Multiply -----
+inline void
+exec_multiply(const MultiplyNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, multiply(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+// ----- Divide -----
+inline void
+exec_divide(const DivideNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, divide(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+// ----- Subtract -----
+inline void
+exec_subtract(const SubtractNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, subtract(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
 // ----- Conv1D -----
@@ -239,6 +242,18 @@ exec_conv1d(const Conv1DNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   const auto& w = st.const_tensor_ref(n.w);
   auto out = conv1d(x, w, n.stride, n.padding, n.dilation, n.groups, s);
+  st.set_tensor(n.out, std::move(out));
+}
+
+// ----- Conv2D -----
+inline void
+exec_conv2d(const Conv2DNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const auto& w = st.const_tensor_ref(n.w);
+  std::pair<int, int> stride = {n.stride_h, n.stride_w};
+  std::pair<int, int> padding = {n.padding_h, n.padding_w};
+  std::pair<int, int> dilation = {n.dilation_h, n.dilation_w};
+  auto out = conv2d(x, w, stride, padding, dilation, n.groups, s);
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -264,6 +279,81 @@ exec_arange(const ARangeNode& n, ExecutionState& st, StreamOrDevice s) {
 inline void exec_silu(const SiluNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, multiply(x, sigmoid(x, s), s));
+}
+
+// ----- Sigmoid -----
+inline void
+exec_sigmoid(const SigmoidNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(n.out, sigmoid(x, s));
+}
+
+// ----- Rsqrt -----
+inline void
+exec_rsqrt(const RsqrtNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(n.out, rsqrt(x, s));
+}
+
+// ----- Maximum -----
+inline void
+exec_maximum(const MaximumNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, maximum(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+// ----- Log -----
+inline void exec_log(const LogNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(n.out, log(x, s));
+}
+
+// ----- Softmax -----
+inline void
+exec_softmax(const SoftmaxNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(n.out, softmax(x, n.axis, /*precise=*/false, s));
+}
+
+// ----- BroadcastTo -----
+inline void exec_broadcast_to(
+    const BroadcastToNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  auto new_shape = to_shape(n.shape, st);
+  st.set_tensor(n.out, broadcast_to(x, new_shape, s));
+}
+
+// ----- Pad -----
+inline void exec_pad(const PadNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+
+  // Convert flat pad_width to vector of pairs
+  std::vector<std::pair<int, int>> pad_width_pairs;
+  for (size_t i = 0; i < n.pad_width.size(); i += 2) {
+    pad_width_pairs.push_back({n.pad_width[i], n.pad_width[i + 1]});
+  }
+
+  // MLX pad signature: pad(array, pad_width, pad_value, mode, stream)
+  if (n.mode == "constant") {
+    array pad_value(n.constant_value);
+    st.set_tensor(n.out, pad(x, pad_width_pairs, pad_value, "constant", s));
+  } else if (n.mode == "edge") {
+    array pad_value(0.0f);
+    st.set_tensor(n.out, pad(x, pad_width_pairs, pad_value, "edge", s));
+  } else {
+    throw std::runtime_error("Unsupported pad mode: " + n.mode);
+  }
+}
+
+// ----- Where -----
+inline void
+exec_where(const WhereNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& condition = st.const_tensor_ref(n.condition);
+  const auto& x = st.const_tensor_ref(n.x);
+  const auto& y = st.const_tensor_ref(n.y);
+  st.set_tensor(n.out, where(condition, x, y, s));
 }
 
 // ----- Reshape -----
@@ -561,11 +651,20 @@ class Interpreter {
       case OpCode::SYM_SIZE:
         ops::exec_sym_size(std::get<SymSizeNode>(instr.node), st, s);
         break;
-      case OpCode::MUL:
-        ops::exec_mul(std::get<MulNode>(instr.node), st, s);
+      case OpCode::MULTIPLY:
+        ops::exec_multiply(std::get<MultiplyNode>(instr.node), st, s);
+        break;
+      case OpCode::DIVIDE:
+        ops::exec_divide(std::get<DivideNode>(instr.node), st, s);
+        break;
+      case OpCode::SUBTRACT:
+        ops::exec_subtract(std::get<SubtractNode>(instr.node), st, s);
         break;
       case OpCode::CONV1D:
         ops::exec_conv1d(std::get<Conv1DNode>(instr.node), st, s);
+        break;
+      case OpCode::CONV2D:
+        ops::exec_conv2d(std::get<Conv2DNode>(instr.node), st, s);
         break;
       case OpCode::GELU:
         ops::exec_gelu(std::get<GeluNode>(instr.node), st, s);
@@ -575,6 +674,30 @@ class Interpreter {
         break;
       case OpCode::SILU:
         ops::exec_silu(std::get<SiluNode>(instr.node), st, s);
+        break;
+      case OpCode::SIGMOID:
+        ops::exec_sigmoid(std::get<SigmoidNode>(instr.node), st, s);
+        break;
+      case OpCode::RSQRT:
+        ops::exec_rsqrt(std::get<RsqrtNode>(instr.node), st, s);
+        break;
+      case OpCode::MAXIMUM:
+        ops::exec_maximum(std::get<MaximumNode>(instr.node), st, s);
+        break;
+      case OpCode::LOG:
+        ops::exec_log(std::get<LogNode>(instr.node), st, s);
+        break;
+      case OpCode::SOFTMAX:
+        ops::exec_softmax(std::get<SoftmaxNode>(instr.node), st, s);
+        break;
+      case OpCode::BROADCAST_TO:
+        ops::exec_broadcast_to(std::get<BroadcastToNode>(instr.node), st, s);
+        break;
+      case OpCode::PAD:
+        ops::exec_pad(std::get<PadNode>(instr.node), st, s);
+        break;
+      case OpCode::WHERE:
+        ops::exec_where(std::get<WhereNode>(instr.node), st, s);
         break;
       case OpCode::RESHAPE:
         ops::exec_reshape(std::get<ReshapeNode>(instr.node), st, s);

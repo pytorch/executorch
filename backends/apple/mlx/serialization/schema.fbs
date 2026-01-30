@@ -60,6 +60,8 @@ table AddmmNode {
     mat2: Tid (required);      // Second matrix
     out: Tid (required);
     bias: Tid;                 // optional - added to result
+    alpha: float = 1.0;        // Scalar multiplier for mat1 @ mat2
+    beta: float = 1.0;         // Scalar multiplier for bias
 }
 
 table LinearNode {
@@ -83,7 +85,7 @@ table ExpandDimsNode {
 table TileNode {
     x: Tid (required);
     out: Tid (required);
-    reps: [int32] (required);
+    reps: [IntOrVid] (required);
 }
 
 table TakeAlongAxisNode {
@@ -147,7 +149,19 @@ table SymSizeNode {
     out: Vid (required);
 }
 
-table MulNode {
+table MultiplyNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table DivideNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table SubtractNode {
     a: Tid (required);
     b: Tid (required);
     out: Tid (required);
@@ -160,6 +174,19 @@ table Conv1DNode {
     stride: int32 = 1;
     padding: int32 = 0;
     dilation: int32 = 1;
+    groups: int32 = 1;
+}
+
+table Conv2DNode {
+    x: Tid (required);
+    w: Tid (required);
+    out: Tid (required);
+    stride_h: int32 = 1;
+    stride_w: int32 = 1;
+    padding_h: int32 = 0;
+    padding_w: int32 = 0;
+    dilation_h: int32 = 1;
+    dilation_w: int32 = 1;
     groups: int32 = 1;
 }
 
@@ -178,6 +205,54 @@ table ARangeNode {
 
 table SiluNode {
     x: Tid (required);
+    out: Tid (required);
+}
+
+table SigmoidNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table RsqrtNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table MaximumNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table LogNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SoftmaxNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;  // Dimension to compute softmax over
+}
+
+table BroadcastToNode {
+    x: Tid (required);
+    out: Tid (required);
+    shape: [IntOrVid] (required);  // Target shape to broadcast to
+}
+
+table PadNode {
+    x: Tid (required);
+    out: Tid (required);
+    pad_width: [int32] (required);  // Padding pairs: [(before_0, after_0), (before_1, after_1), ...]
+    mode: string (required);        // "constant" or "edge"
+    constant_value: float = 0.0;    // Value to pad with (for constant mode)
+}
+
+table WhereNode {
+    condition: Tid (required);
+    x: Tid (required);
+    y: Tid (required);
     out: Tid (required);
 }
 
@@ -307,11 +382,22 @@ union OpNode {
     AddNode,
     AddScalarNode,
     SymSizeNode,
-    MulNode,
+    MultiplyNode,
+    DivideNode,
+    SubtractNode,
     Conv1DNode,
+    Conv2DNode,
     GeluNode,
     ARangeNode,
     SiluNode,
+    SigmoidNode,
+    RsqrtNode,
+    MaximumNode,
+    LogNode,
+    SoftmaxNode,
+    BroadcastToNode,
+    PadNode,
+    WhereNode,
     ReshapeNode,
     TransposeNode,
     ContiguousNode,
