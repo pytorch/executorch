@@ -13,6 +13,7 @@
 #include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/sampler/util.h>
+#include <cstdio>
 
 namespace executorch {
 namespace extension {
@@ -40,7 +41,20 @@ class ET_EXPERIMENTAL TextDecoderRunner {
    * @return The error code.
    */
   virtual ::executorch::runtime::Error load() {
-    return module_->load_method("forward");
+    auto err = module_->load_method("forward");
+    if (err != ::executorch::runtime::Error::Ok) {
+       printf("Failed to load method 'forward': 0x%x\n", (int)err);
+       auto names_res = module_->method_names();
+       if (names_res.ok()) {
+           printf("Available methods:\n");
+           for (const auto& name : names_res.get()) {
+               printf("  %s\n", name.c_str());
+           }
+       } else {
+           printf("Failed to get method names: 0x%x\n", (int)names_res.error());
+       }
+    }
+    return err;
   }
 
   /**

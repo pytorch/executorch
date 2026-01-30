@@ -66,4 +66,20 @@ void access_log_buffer(std::function<void(std::vector<log_entry>&)> accessor) {
 
 } // namespace executorch::extension
 
+#else
+
+#include <cstdio>
+
+void et_pal_emit_log_message(
+    et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    const char* function,
+    size_t line,
+    const char* message,
+    size_t length) {
+  printf("%c executorch:%s:%zu] %s\n", level, filename, line, message);
+  fflush(stdout);
+}
+
 #endif

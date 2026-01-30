@@ -57,9 +57,29 @@ Error TextLLMRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
-  ET_CHECK_OK_OR_RETURN_ERROR(text_prefiller_->load());
-  ET_CHECK_OK_OR_RETURN_ERROR(io_manager_->load());
-  ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());
+  printf("TextLLMRunner::load start\n");
+  if (is_loaded()) {
+    return Error::Ok;
+  }
+  printf("Loading prefiller...\n");
+  auto err = text_prefiller_->load();
+  if (err != Error::Ok) {
+    printf("Prefiller load failed: %d\n", (int)err);
+    return err;
+  }
+  printf("Loading io_manager...\n");
+  err = io_manager_->load();
+  if (err != Error::Ok) {
+    printf("IOManager load failed: %d\n", (int)err);
+    return err;
+  }
+  printf("Loading token generator...\n");
+  err = text_token_generator_->load();
+  if (err != Error::Ok) {
+    printf("Token generator load failed: %d\n", (int)err);
+    return err;
+  }
+  printf("TextLLMRunner::load success\n");
   return Error::Ok;
 }
 

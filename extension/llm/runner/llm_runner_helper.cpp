@@ -37,6 +37,7 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
     size_t bos_token_index,
     size_t eos_token_index) {
   runtime::runtime_init();
+  printf("Loading tokenizer\n");
   auto tekken_tokenizer = std::make_unique<tokenizers::Tekken>();
   // Prevent the case where tekken tokenizer accidentally successfully loads a
   // HuggingFace tokenizer, which is also .json.
@@ -45,13 +46,13 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
       tokenizer_path.rfind(tekken_name) ==
           tokenizer_path.size() - tekken_name.size()) {
     if (tekken_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-      ET_LOG(Info, "Loaded tekken tokenizer");
+      printf("Loaded tekken tokenizer\n");
       return tekken_tokenizer;
     }
   }
   auto json_tokenizer = std::make_unique<tokenizers::HFTokenizer>();
   if (json_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-    ET_LOG(Info, "Loaded json tokenizer");
+    printf("Loaded json tokenizer\n");
     return json_tokenizer;
   }
   std::unique_ptr<::tokenizers::Tiktoken> tiktoken_tokenizer;
@@ -66,9 +67,10 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
         eos_token_index);
   } else {
     tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>();
+    printf("Loaded TikToken tokenizer1\n");
   }
   if (tiktoken_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-    ET_LOG(Info, "Loaded TikToken tokenizer");
+    printf("Loaded TikToken tokenizer\n");
     return tiktoken_tokenizer;
   }
 
@@ -222,12 +224,15 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   }
 
   // Get metadata from Module
+  printf("Reading metadata from model (printf)\n");
   ET_LOG(Info, "Reading metadata from model");
   auto metadata_result = llm::get_llm_metadata(tokenizer.get(), module.get());
   if (metadata_result.error() != Error::Ok) {
+    printf("Failed to get metadata from model (printf)\n");
     ET_LOG(Error, "Failed to get metadata from model");
     return nullptr;
   }
+  printf("Got metadata (printf)\n");
   auto metadata = metadata_result.get();
 
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(

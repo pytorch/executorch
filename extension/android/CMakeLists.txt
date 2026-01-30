@@ -63,9 +63,11 @@ if(EXECUTORCH_ANDROID_PROFILING)
 endif()
 
 if(TARGET optimized_native_cpu_ops_lib)
-  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,optimized_native_cpu_ops_lib>)
+  list(APPEND link_libraries optimized_native_cpu_ops_lib)
+    executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
-  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,portable_ops_lib> portable_kernels)
+  list(APPEND link_libraries portable_ops_lib portable_kernels)
+    executorch_target_link_options_shared_lib(portable_ops_lib)
 endif()
 
 if(TARGET quantized_kernels)
@@ -173,6 +175,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
       executorch_jni
       PRIVATE ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/
               ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner
+        ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include 
     )
     add_library(libneuron_buffer_allocator SHARED IMPORTED)
     set_property(
@@ -191,6 +194,7 @@ if (ANDROID)
       executorch_jni
       PRIVATE
         ${_common_include_directories}
+        ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include 
     )
     target_link_libraries(executorch_jni ${link_libraries} log)
 else()
@@ -198,6 +202,7 @@ else()
       executorch_jni
       PRIVATE
         ${_common_include_directories}
+        ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include 
     )
     # On linux we don't need 'log' library usually, or we might need to link against a standard one/shim if used.
     target_link_libraries(executorch_jni ${link_libraries})
