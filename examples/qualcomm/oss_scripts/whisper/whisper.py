@@ -469,10 +469,9 @@ def inference_whisper(args, inputs, target):
             shared_buffer=args.shared_buffer,
             target=args.target,
             runner="examples/qualcomm/oss_scripts/whisper/qnn_whisper_runner",
-            backend=backend,
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=inputs, files=[tokenizer_json])
+        adb.push(inputs=inputs, files=[tokenizer_json], backends={backend})
         adb.execute(custom_runner_cmd=runner_cmd)
 
         adb.pull(host_output_path=args.artifact, callback=post_process)
