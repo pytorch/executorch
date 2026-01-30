@@ -22,6 +22,7 @@ import torch
 from executorch.backends.apple.mlx.program_builder import (
     _torch_dtype_to_dtypeid,
     emit_stop_position,
+    IntOrVid,
     MLXProgramBuilder,
     REGISTRY,
     Slot,
@@ -31,27 +32,37 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     AddNode,
     AddScalarNode,
     ARangeNode,
+    BroadcastToNode,
     ContiguousNode,
     Conv1DNode,
+    Conv2DNode,
     ExpandDimsNode,
     GatherNode,
     GeluNode,
     IdCopyNode,
-    IntOrVid,
     ItemIntNode,
     LayerNormNode,
     LinearNode,
-    MulNode,
+    LogNode,
+    MaximumNode,
+    MultiplyNode,
+    PadNode,
     ReshapeNode,
     RMSNormNode,
     RopeNode,
+    RsqrtNode,
+    SigmoidNode,
     SiluNode,
     SliceNode,
     SliceUpdateNode,
+    SoftmaxNode,
+    SubtractNode,
     SymSizeNode,
     TakeAlongAxisNode,
     TileNode,
     TransposeNode,
+    WhereNode,
+    ZerosNode,
 )
 from torch.fx.node import Node
 
@@ -273,20 +284,68 @@ def _addmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     out = P.make_or_get_slot(n)
 
-    # For now, only support the common case where beta=1 and alpha=1
-    # This is equivalent to: mat1 @ mat2 + bias
-    if beta != 1 or alpha != 1:
-        raise ValueError(
-            f"addmm with beta={beta}, alpha={alpha} not yet supported, only beta=1, alpha=1"
-        )
-
-    # Emit AddmmNode: computes mat1 @ mat2 + bias using matmul directly
+    # Emit AddmmNode with alpha and beta parameters
     P._emit(
         AddmmNode(
             mat1=P._slot_to_tid(mat1),
             mat2=P._slot_to_tid(mat2),
             out=P._slot_to_tid(out),
             bias=P._slot_to_tid(bias),
+            alpha=float(alpha),
+            beta=float(beta),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.mm.default])
+def _mm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle mm: mat1 @ mat2 (matrix multiplication without bias).
+
+    mm(input, mat2) computes: input @ mat2
+
+    We emit AddmmNode with bias=None, which will use the matmul-only path
+    in exec_addmm, avoiding the fused addmm operation.
+    """
+    args = P.args(n)
+    mat1, mat2 = args[0], args[1]
+
+    out = P.make_or_get_slot(n)
+
+    # Emit AddmmNode with no bias: uses matmul directly
+    P._emit(
+        AddmmNode(
+            mat1=P._slot_to_tid(mat1),
+            mat2=P._slot_to_tid(mat2),
+            out=P._slot_to_tid(out),
+            bias=None,  # No bias - will use matmul path
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.bmm.default])
+def _bmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle bmm: batch matrix multiplication.
+
+    bmm(input, mat2) computes batched matrix multiplication where both inputs are 3D.
+    For example, if input is [B, N, M] and mat2 is [B, M, P], the result is [B, N, P].
+
+    MLX's matmul naturally handles batched operations, so we emit AddmmNode with
+    bias=None which uses the matmul path in exec_addmm.
+    """
+    args = P.args(n)
+    mat1, mat2 = args[0], args[1]
+
+    out = P.make_or_get_slot(n)
+
+    # Emit AddmmNode with no bias: uses matmul which handles 3D+ tensors
+    P._emit(
+        AddmmNode(
+            mat1=P._slot_to_tid(mat1),
+            mat2=P._slot_to_tid(mat2),
+            out=P._slot_to_tid(out),
+            bias=None,  # No bias - matmul handles batched operations
         )
     )
     return out
@@ -432,7 +491,7 @@ def _mul_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
 
     P._emit(
-        MulNode(
+        MultiplyNode(
             a=P._slot_to_tid(a),
             b=P._slot_to_tid(b),
             out=P._slot_to_tid(out),
@@ -449,6 +508,44 @@ def _silu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         SiluNode(
             x=P._slot_to_tid(x),
             out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.sigmoid.default])
+def _sigmoid_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    (x,) = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        SigmoidNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten._softmax.default])
+def _softmax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle softmax: computes softmax along the specified dimension.
+
+    aten._softmax(self, dim, half_to_float) computes:
+        softmax(self, axis=dim)
+
+    The half_to_float parameter is for type conversion and is ignored for MLX.
+    """
+    args = P.args(n)
+    x, dim, _ = args[0], args[1], args[2]  # half_to_float is unused for MLX
+
+    out = P.make_or_get_slot(n)
+
+    # Emit SoftmaxNode with the specified axis
+    P._emit(
+        SoftmaxNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+            axis=dim,
         )
     )
     return out
@@ -618,15 +715,15 @@ def _unsqueeze_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 def _repeat_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     x, reps = P.args(n)
 
-    # Validate all repetition values are static integers
-    require_static_ints(list(reps), "reps", "aten.repeat (TileNode)")
+    # Convert reps to IntOrVid (supports both static ints and dynamic Vids)
+    reps_int_or_vid = [P._to_int_or_vid(r) for r in reps]
 
     out = P.make_or_get_slot(n)
     P._emit(
         TileNode(
             x=P._slot_to_tid(x),
             out=P._slot_to_tid(out),
-            reps=list(reps),
+            reps=reps_int_or_vid,
         )
     )
     return out
@@ -855,6 +952,289 @@ def _rope_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.conv2d.default])
+def _conv2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.conv2d or aten.convolution with 2D inputs.
+
+    PyTorch format: (N, C_in, H, W) with weights (C_out, C_in/G, KH, KW)
+    MLX format: (N, H, W, C_in) with weights (C_out, KH, KW, C_in/G)
+    """
+    x_node, w_node = n.args[0:2]
+    bias_node = n.args[2] if len(n.args) > 2 else None
+    stride = n.args[3] if len(n.args) > 3 else [1, 1]
+    padding = n.args[4] if len(n.args) > 4 else [0, 0]
+    dilation = n.args[5] if len(n.args) > 5 else [1, 1]
+    groups = n.args[8] if len(n.args) > 8 else 1
+
+    # Extract stride values
+    if isinstance(stride, list):
+        stride_h, stride_w = (
+            (stride[0], stride[1]) if len(stride) == 2 else (stride[0], stride[0])
+        )
+    else:
+        stride_h = stride_w = stride
+
+    # Extract padding values
+    if isinstance(padding, list):
+        padding_h, padding_w = (
+            (padding[0], padding[1]) if len(padding) == 2 else (padding[0], padding[0])
+        )
+    else:
+        padding_h = padding_w = padding
+
+    # Extract dilation values
+    if isinstance(dilation, list):
+        dilation_h, dilation_w = (
+            (dilation[0], dilation[1])
+            if len(dilation) == 2
+            else (dilation[0], dilation[0])
+        )
+    else:
+        dilation_h = dilation_w = dilation
+
+    # Validate all parameters are static integers
+    require_static_int(stride_h, "stride_h", "aten.convolution (Conv2D)")
+    require_static_int(stride_w, "stride_w", "aten.convolution (Conv2D)")
+    require_static_int(padding_h, "padding_h", "aten.convolution (Conv2D)")
+    require_static_int(padding_w, "padding_w", "aten.convolution (Conv2D)")
+    require_static_int(dilation_h, "dilation_h", "aten.convolution (Conv2D)")
+    require_static_int(dilation_w, "dilation_w", "aten.convolution (Conv2D)")
+    require_static_int(groups, "groups", "aten.convolution (Conv2D)")
+
+    # Weight needs to be transposed: (C_out, C_in/G, KH, KW) -> (C_out, KH, KW, C_in/G)
+    w_target, w_tensor = P.get_placeholder_target_and_tensor(w_node)
+    w = P.make_or_get_constant(
+        f"{w_target}_channel_last", w_tensor.permute([0, 2, 3, 1]).contiguous()
+    )
+
+    x, bias = P.slot_map([x_node, bias_node])
+
+    # Transpose input: (N, C_in, H, W) -> (N, H, W, C_in)
+    tmp_name, tmp = P.slot_manager.make_tmp_slot()
+    P._emit(
+        TransposeNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(tmp),
+            perm=[0, 2, 3, 1],
+        )
+    )
+
+    # Conv2D
+    P._emit(
+        Conv2DNode(
+            x=P._slot_to_tid(tmp),
+            w=P._slot_to_tid(w),
+            out=P._slot_to_tid(tmp),
+            stride_h=stride_h,
+            stride_w=stride_w,
+            padding_h=padding_h,
+            padding_w=padding_w,
+            dilation_h=dilation_h,
+            dilation_w=dilation_w,
+            groups=groups,
+        )
+    )
+
+    # Add bias if present
+    if bias is not None:
+        tmp2_name, tmp2 = P.slot_manager.make_tmp_slot()
+        P._emit(
+            ReshapeNode(
+                x=P._slot_to_tid(bias),
+                out=P._slot_to_tid(tmp2),
+                shape=[
+                    IntOrVid.from_literal(1),
+                    IntOrVid.from_literal(1),
+                    IntOrVid.from_literal(1),
+                    IntOrVid.from_literal(-1),
+                ],
+            )
+        )
+        P._emit(
+            AddNode(
+                a=P._slot_to_tid(tmp),
+                b=P._slot_to_tid(tmp2),
+                out=P._slot_to_tid(tmp),
+            )
+        )
+
+    # Transpose output: (N, H, W, C_out) -> (N, C_out, H, W)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        TransposeNode(
+            x=P._slot_to_tid(tmp),
+            out=P._slot_to_tid(out),
+            perm=[0, 3, 1, 2],
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.sub.Tensor])
+def _sub_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    a, b = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        SubtractNode(
+            a=P._slot_to_tid(a),
+            b=P._slot_to_tid(b),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.rsqrt.default])
+def _rsqrt_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    (x,) = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        RsqrtNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.relu.default])
+def _relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.relu.default - rectified linear unit.
+
+    ReLU(x) = max(x, 0), implemented using MaximumNode with a scalar zero.
+    Uses broadcasting in maximum operation for efficiency.
+    """
+    (x,) = P.args(n)  # x is already a Slot
+
+    # Get input dtype
+    x_meta = n.args[0].meta.get("val")
+    if x_meta is None:
+        raise ValueError("Input tensor metadata not found for relu")
+    dtype = x_meta.dtype
+
+    # Create a temporary slot for scalar zero using slot_manager
+    _, zero_slot = P.slot_manager.make_tmp_slot()
+
+    # Emit ZerosNode to create a scalar zero (shape=[])
+    # Maximum will broadcast this scalar to match input shape
+    P._emit(
+        ZerosNode(
+            shape=[],  # Scalar (will be broadcast in maximum)
+            dtype=_torch_dtype_to_dtypeid(dtype),
+            out=P._slot_to_tid(zero_slot),
+        )
+    )
+
+    # Emit MaximumNode(x, scalar_zero)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        MaximumNode(
+            a=P._slot_to_tid(x),
+            b=P._slot_to_tid(zero_slot),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten._log_softmax.default])
+def _log_softmax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten._log_softmax.default - log of softmax.
+
+    LogSoftmax(x, dim) = log(softmax(x, dim))
+
+    Implemented by emitting two nodes: SoftmaxNode → LogNode
+    """
+    x, dim, _half_to_float = P.args(n)  # x is already a Slot
+
+    # Create temporary slot for softmax output
+    _, softmax_slot = P.slot_manager.make_tmp_slot()
+
+    # Emit SoftmaxNode first
+    P._emit(
+        SoftmaxNode(
+            x=P._slot_to_tid(x),
+            axis=dim,
+            out=P._slot_to_tid(softmax_slot),
+        )
+    )
+
+    # Emit LogNode on the softmax output
+    out = P.make_or_get_slot(n)
+    P._emit(
+        LogNode(
+            x=P._slot_to_tid(softmax_slot),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.constant_pad_nd.default])
+def _constant_pad_nd_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.constant_pad_nd - pad with a constant value.
+
+    PyTorch pad format: [left_0, right_0, left_1, right_1, ...]
+    MLX pad_width format: [(before_0, after_0), (before_1, after_1), ...]
+
+    Note: PyTorch pads in reverse order (last dimensions first).
+    """
+    x_node, pad, value = P.args(n)
+
+    # Validate pad is static list of ints
+    require_static_ints(list(pad), "pad", "aten.constant_pad_nd")
+
+    if not isinstance(value, (int, float)):
+        raise ValueError(
+            f"aten.constant_pad_nd: constant value must be a scalar, got {type(value)}"
+        )
+
+    # Convert PyTorch pad format to MLX pad_width format
+    # PyTorch: [left_D, right_D, left_D-1, right_D-1, ...]
+    # MLX: [(before_0, after_0), (before_1, after_1), ..., (before_D, after_D)]
+    if len(pad) % 2 != 0:
+        raise ValueError(
+            f"aten.constant_pad_nd: pad length must be even, got {len(pad)}"
+        )
+
+    x = P.slot_map([x_node])[0]
+    x_meta = n.args[0].meta.get("val")
+    if x_meta is None:
+        raise ValueError("Input tensor metadata not found for constant_pad_nd")
+
+    ndim = len(x_meta.shape)
+    num_pad_dims = len(pad) // 2
+
+    if num_pad_dims > ndim:
+        raise ValueError(
+            f"aten.constant_pad_nd: trying to pad {num_pad_dims} dimensions "
+            f"but input has only {ndim} dimensions"
+        )
+
+    # Build MLX pad_width: start with zeros for non-padded dims
+    pad_width = []
+    for _ in range(ndim - num_pad_dims):
+        pad_width.extend([0, 0])  # No padding for these dimensions
+
+    # Add padding for the padded dimensions (reverse order)
+    for i in range(num_pad_dims - 1, -1, -1):
+        left = pad[i * 2]
+        right = pad[i * 2 + 1]
+        pad_width.extend([left, right])
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        PadNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+            pad_width=pad_width,
+            mode="constant",
+            constant_value=float(value),
+        )
+    )
+    return out
+
+
 @REGISTRY.register(target=[torch.ops.aten.conv1d.default])
 def _conv1d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     x_node, w_node = n.args[0:2]
@@ -959,6 +1339,46 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     P._emit(
         IdCopyNode(
             x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(
+    target=[torch.ops.aten.expand.default, torch.ops.aten.expand_copy.default]
+)
+def _expand_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle expand: broadcasts dimensions of size 1 to larger sizes."""
+    x, size = P.args(n)
+    out = P.make_or_get_slot(n)
+
+    shape_iovs = [P._to_int_or_vid(s) for s in size]
+    P._emit(
+        BroadcastToNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+            shape=shape_iovs,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.where.self])
+def _where_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle where: select from x or y according to condition.
+
+    where(condition, x, y) returns elements from x where condition is True,
+    and elements from y where condition is False.
+    """
+    condition, x, y = P.args(n)
+    out = P.make_or_get_slot(n)
+
+    P._emit(
+        WhereNode(
+            condition=P._slot_to_tid(condition),
+            x=P._slot_to_tid(x),
+            y=P._slot_to_tid(y),
             out=P._slot_to_tid(out),
         )
     )

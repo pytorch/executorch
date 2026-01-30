@@ -57,7 +57,7 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (  # no
     LayerNormNode,
     LinearNode,
     MLXGraph,
-    MulNode,
+    MultiplyNode,
     NamedSlot,
     NoopNode,
     OnesNode,

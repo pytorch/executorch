@@ -1205,6 +1205,7 @@ def _table_name_to_opcode(name: str) -> str:
         "SliceUpdate": "SLICE_UPDATE",
         "QuantizedLinear": "QUANTIZED_LINEAR",
         "QuantizedGather": "QUANTIZED_GATHER",
+        "BroadcastTo": "BROADCAST_TO",
     }
 
     if name in special_cases:
