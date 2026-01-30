@@ -8,9 +8,9 @@
 
 #include <executorch/backends/cuda/runtime/shims/memory_slim.h>
 
-#include <executorch/backends/aoti/slim/factory/Empty.h>
-#include <executorch/backends/aoti/slim/factory/FromBlob.h>
-#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
+#include <executorch/backends/aoti/slim/factory/empty.h>
+#include <executorch/backends/aoti/slim/factory/from_blob.h>
+#include <executorch/backends/aoti/slim/util/array_ref_util.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch::backends::cuda {

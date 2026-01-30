@@ -26,8 +26,6 @@ from executorch.backends.arm.tosa.utils import get_resize_parameters
 class ResizeVisitor(NodeVisitor):
     target = "tosa.RESIZE.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 
