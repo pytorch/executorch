@@ -57,10 +57,21 @@ TextLLMRunner::TextLLMRunner(
     } else if (metadata_.count(kMaxContextLen)) {
       sliding_window_size_ = metadata_.at(kMaxContextLen);
     }
-    ET_LOG(
-        Info,
-        "Ring buffer KV cache enabled with sliding window size: %" PRId64,
-        sliding_window_size_);
+
+    // Validate sliding_window_size
+    if (sliding_window_size_ <= 0) {
+      ET_LOG(
+          Error,
+          "Ring buffer enabled but sliding_window_size is %" PRId64
+          ". Disabling ring buffer mode.",
+          sliding_window_size_);
+      is_ring_buffer_ = false;
+    } else {
+      ET_LOG(
+          Info,
+          "Ring buffer KV cache enabled with sliding window size: %" PRId64,
+          sliding_window_size_);
+    }
   }
 }
 
