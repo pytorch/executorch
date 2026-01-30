@@ -161,10 +161,6 @@ class AsrModule(
                 result.append(token)
                 callback?.onToken(token)
               }
-
-              override fun onComplete(transcription: String) {
-                callback?.onComplete(transcription)
-              }
             },
         )
 
