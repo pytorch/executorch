@@ -238,6 +238,10 @@ If you're interested in deploying on non-CPU backends, [please refer the non-cpu
 ```
 cmake --workflow llm-release
 ```
+If you build with `make llama-cpu` and hit a RapidJSON CMake error, run it as:
+```
+CMAKE_POLICY_VERSION_MINIMUM=3.5 make llama-cpu
+```
 Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the section of Common Issues and Mitigations below for solutions.
 
 2. Build llama runner.
