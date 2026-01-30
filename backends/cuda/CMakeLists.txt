@@ -33,7 +33,7 @@ set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 
 find_package(CUDAToolkit REQUIRED)
 
-# Use ExecutorTorch's standard way to find PyTorch libraries for AOTI
+# Use ExecuTorch's standard way to find PyTorch libraries for AOTI
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 

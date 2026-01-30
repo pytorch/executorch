@@ -25,7 +25,7 @@
  *
  * Where MACRO is defined as: #define MACRO(ctype, name) ...
  * - ctype: C++ type (uint8_t or int8_t)
- * - name: ExecutorTorch ScalarType name suffix (Byte or Char)
+ * - name: ExecuTorch ScalarType name suffix (Byte or Char)
  *
  * Example:
  *   #define HANDLE_TYPE(ctype, name) \
@@ -52,7 +52,7 @@
  *
  * Where MACRO is defined as: #define MACRO(ctype, name) ...
  * - ctype: C++ type (uint8_t, int8_t, or int16_t)
- * - name: ExecutorTorch ScalarType name suffix (Byte, Char, or Short)
+ * - name: ExecuTorch ScalarType name suffix (Byte, Char, or Short)
  *
  * This macro includes int16_t support for operators that can handle 16-bit
  * quantized values (e.g., quantized_linear, quantized_fully_connected).
