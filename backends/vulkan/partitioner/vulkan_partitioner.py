@@ -97,7 +97,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
         """
         target = node.target
         # Account for custom operators
-        if node.target == torch.ops.higher_order.auto_functionalized:
+        if (
+            node.target == torch.ops.higher_order.auto_functionalized
+            or node.target == torch.ops.higher_order.auto_functionalized_v2
+        ):
             first_arg = node.args[0]
             assert isinstance(first_arg, torch._ops.OpOverload)
             target = first_arg.name()
@@ -197,6 +200,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
         return r
 
     def _is_node_supported(self, node: torch.fx.Node) -> bool:  # noqa: C901
+        # Check if tensor node dtype is supported by vulkan
+        if utils.is_tensor_node(node) and not utils.io_dtypes_are_supported(node):
+            self.log_skip(node, "dtype not supported")
+            return False
+
         if node.op == "call_function":
             # Apply nn module allowlist and blocklist
             if self.nn_module_allowlist is not None:
@@ -218,7 +226,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 return True
 
         target = node.target
-        if node.target == torch.ops.higher_order.auto_functionalized:
+        if (
+            node.target == torch.ops.higher_order.auto_functionalized
+            or node.target == torch.ops.higher_order.auto_functionalized_v2
+        ):
             first_arg = node.args[0]
             assert isinstance(first_arg, torch._ops.OpOverload)
             target = first_arg.name()

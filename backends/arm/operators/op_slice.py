@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -56,8 +56,6 @@ def _fixup_end(end, shape, dim):
 class SliceVisitor(NodeVisitor):
     target = "aten.slice_copy.Tensor"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -78,9 +76,10 @@ class SliceVisitor(NodeVisitor):
                 ts.DType.INT8,
                 ts.DType.INT16,
                 ts.DType.INT32,
+                ts.DType.BF16,
                 ts.DType.FP32,
             ],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         # See slice_copy_support.py

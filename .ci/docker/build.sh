@@ -67,6 +67,13 @@ case "${IMAGE_NAME}" in
     # From https://developer.android.com/ndk/downloads
     ANDROID_NDK_VERSION=r28c
     ;;
+  executorch-ubuntu-22.04-cuda-windows)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    CUDA_WINDOWS_CROSS_COMPILE=yes
+    CUDA_VERSION=12.8
+    SKIP_PYTORCH=yes
+    ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
     exit 1
@@ -101,6 +108,8 @@ docker build \
   --build-arg "MEDIATEK_SDK=${MEDIATEK_SDK:-}" \
   --build-arg "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION:-}" \
   --build-arg "SKIP_PYTORCH=${SKIP_PYTORCH:-}" \
+  --build-arg "CUDA_WINDOWS_CROSS_COMPILE=${CUDA_WINDOWS_CROSS_COMPILE:-}" \
+  --build-arg "CUDA_VERSION=${CUDA_VERSION:-}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -20,6 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 test_t = tuple[torch.Tensor, torch.Tensor]
 aten_op = "torch.ops.aten.maximum.default"
+exir_op = "executorch_exir_dialects_edge__ops_aten_maximum_default"
 
 
 class Maximum(torch.nn.Module):
@@ -36,6 +37,12 @@ class Maximum(torch.nn.Module):
             torch.randn(1, 1, 4, 1),
         ),
     }
+    test_parameters_fp16 = {
+        "fp16_rand": lambda: (
+            torch.randn(1, 3, 4, 4, dtype=torch.float16),
+            torch.randn(1, 3, 4, 4, dtype=torch.float16),
+        ),
+    }
 
     def __init__(self):
         super().__init__()
@@ -44,14 +51,22 @@ class Maximum(torch.nn.Module):
         return torch.maximum(x, y)
 
 
-@common.parametrize("test_data", Maximum.test_parameters)
+@common.parametrize(
+    "test_data",
+    Maximum.test_parameters | Maximum.test_parameters_fp16,
+)
 def test_maximum_tosa_FP(test_data: Tuple):
-    TosaPipelineFP[test_t](Maximum(), test_data(), aten_op).run()
+    TosaPipelineFP[test_t](
+        Maximum(),
+        test_data(),
+        aten_op,
+        exir_op,
+    ).run()
 
 
 @common.parametrize("test_data", Maximum.test_parameters)
 def test_maximum_tosa_INT(test_data: Tuple):
-    TosaPipelineINT[test_t](Maximum(), test_data(), aten_op).run()
+    TosaPipelineINT[test_t](Maximum(), test_data(), aten_op, exir_op).run()
 
 
 @common.parametrize("test_data", Maximum.test_parameters)
@@ -61,6 +76,7 @@ def test_maximum_u55_INT(test_data: Tuple):
         Maximum(),
         test_data(),
         aten_op,
+        exir_op,
     ).run()
 
 
@@ -71,16 +87,18 @@ def test_maximum_u85_INT(test_data: Tuple):
         Maximum(),
         test_data(),
         aten_op,
+        exir_op,
     ).run()
 
 
-@common.parametrize("test_data", Maximum.test_parameters)
+@common.parametrize("test_data", Maximum.test_parameters | Maximum.test_parameters_fp16)
 @common.SkipIfNoModelConverter
 def test_maximum_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[test_t](
         Maximum(),
         test_data(),
         aten_op,
+        exir_op,
         quantize=False,
     )
     pipeline.run()
@@ -93,6 +111,52 @@ def test_maximum_vgf_quant(test_data: Tuple):
         Maximum(),
         test_data(),
         aten_op,
+        exir_op,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Maximum.test_parameters)
+def test_maximum_tosa_INT_a16w8(test_data: test_t):
+    """Test maximum with 16A8W quantization for TOSA INT."""
+    pipeline = TosaPipelineINT[test_t](
+        Maximum(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Maximum.test_parameters)
+@common.XfailIfNoCorstone300
+def test_maximum_u55_INT_a16w8(test_data: test_t):
+    """Test maximum with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    pipeline = EthosU55PipelineINT[test_t](
+        Maximum(),
+        test_data(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Maximum.test_parameters)
+@common.XfailIfNoCorstone320
+def test_maximum_u85_INT_a16w8(test_data: test_t):
+    """Test maximum with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    pipeline = EthosU85PipelineINT[test_t](
+        Maximum(),
+        test_data(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

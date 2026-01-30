@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,11 +6,11 @@
 import logging
 import operator
 
+from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
 from executorch.backends.nxp.backend.edge_program_converter import functions_converters
 from executorch.backends.nxp.backend.node_format import NodeFormat, NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
-
 from torch.export import ExportedProgram
 from torch.fx import Node
 
@@ -220,8 +220,16 @@ class NodeFormatInference:
         Function for assigning format to nodes that don't care about format (Softmax, Abs).
         It stays formatless if there is no surrounding channels first ancestor/child node.
         """
+        # If the node uses channels last dim order in ExecuTorch, it will also require channels last data in Neutron IR.
+        #  Therefore, it's format must be marked as `channels first` here, which will cause it to be converted to
+        #  channels last later during the conversion stage.
+        if hasattr(val := node.meta["val"], "dim_order") and is_channels_last_dim_order(
+            list(val.dim_order())
+        ):
+            self._assign_format_to_node(node, NodeFormat.CHANNELS_FIRST)
+
         if not self._node_produces_or_consumes_channels_first_format(node):
-            # Nor inputs or current node are channels first -> assign everything to formatless
+            # Neither inputs nor current node are channels first -> assign everything to formatless
             for processed_node in self._node_inputs[node] + [node]:
                 self._assign_format_to_node(processed_node, NodeFormat.FORMATLESS)
 

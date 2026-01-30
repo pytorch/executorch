@@ -8,8 +8,8 @@
 
 #include <gtest/gtest.h>
 
-#include <executorch/backends/aoti/slim/core/SlimTensor.h>
-#include <executorch/backends/aoti/slim/core/Storage.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/backends/aoti/slim/core/storage.h>
 
 namespace executorch::backends::aoti::slim {
 
@@ -21,6 +21,9 @@ namespace executorch::backends::aoti::slim {
 inline std::vector<c10::Device> get_test_devices() {
   std::vector<c10::Device> devices;
   devices.push_back(CPU_DEVICE);
+#ifdef CUDA_AVAILABLE
+  devices.push_back(DEFAULT_CUDA_DEVICE);
+#endif
   return devices;
 }
 
@@ -52,7 +55,9 @@ INSTANTIATE_TEST_SUITE_P(
     DeviceTests,
     SlimTensorBasicDeviceTest,
     ::testing::ValuesIn(get_test_devices()),
-    [](const ::testing::TestParamInfo<c10::Device>& info) { return "CPU"; });
+    [](const ::testing::TestParamInfo<c10::Device>& info) {
+      return info.param.is_cuda() ? "CUDA" : "CPU";
+    });
 
 // =============================================================================
 // Constructor Tests (Device-Parameterized)
@@ -144,11 +149,11 @@ TEST_P(SlimTensorBasicDeviceTest, Dtype) {
 TEST_P(SlimTensorBasicDeviceTest, Device) {
   SlimTensor tensor = make_2x3_tensor();
 
-  // We only support CPU for now
-  EXPECT_TRUE(tensor.is_cpu());
-  EXPECT_EQ(tensor.device_type(), c10::DeviceType::CPU);
-
+  // Check device type and index
+  EXPECT_EQ(tensor.device_type(), device().type());
   EXPECT_EQ(tensor.device_index(), device().index());
+  EXPECT_EQ(tensor.is_cpu(), device().is_cpu());
+  EXPECT_EQ(tensor.is_cuda(), device().is_cuda());
 }
 
 TEST_P(SlimTensorBasicDeviceTest, Numel) {
@@ -358,6 +363,111 @@ TEST(SlimTensorBasicTest, CopyConstructor) {
   EXPECT_EQ(copy.dim(), 2u);
   EXPECT_EQ(copy.numel(), 6u);
   EXPECT_EQ(copy.dtype(), c10::ScalarType::Float);
+}
+
+// =============================================================================
+// Item Tests (Device-Parameterized)
+// =============================================================================
+
+// Helper to set value in storage (handles both CPU and CUDA)
+template <typename T>
+void set_storage_value(
+    Storage& storage,
+    const T& value,
+    const c10::Device& dev) {
+  if (dev.is_cpu()) {
+    *static_cast<T*>(storage->data()) = value;
+  } else {
+#if defined(CUDA_AVAILABLE)
+    DeviceTraits<c10::DeviceType::CUDA>::memcpy(
+        storage->data(), &value, sizeof(T), dev, CPU_DEVICE);
+#endif
+  }
+}
+
+// Template function for testing item<T>() with explicit type
+template <typename T>
+void test_item_typed(
+    const c10::Device& dev,
+    c10::ScalarType dtype,
+    T input_value,
+    T expected_value) {
+  std::vector<int64_t> sizes = {1};
+  std::vector<int64_t> strides = {1};
+  Storage storage(new MaybeOwningStorage(dev, sizeof(T)));
+  set_storage_value(storage, input_value, dev);
+
+  SlimTensor tensor(
+      std::move(storage), makeArrayRef(sizes), makeArrayRef(strides), dtype);
+
+  T result = tensor.item<T>();
+  if constexpr (std::is_floating_point_v<T>) {
+    EXPECT_FLOAT_EQ(result, expected_value);
+  } else {
+    EXPECT_EQ(result, expected_value);
+  }
+}
+
+// Tests for item<T>() with explicit type
+TEST_P(SlimTensorBasicDeviceTest, ItemTypedFloat) {
+  test_item_typed<float>(device(), c10::ScalarType::Float, 42.5f, 42.5f);
+}
+
+TEST_P(SlimTensorBasicDeviceTest, ItemTypedInt) {
+  test_item_typed<int32_t>(device(), c10::ScalarType::Int, 123, 123);
+}
+
+TEST_P(SlimTensorBasicDeviceTest, ItemTypedLong) {
+  test_item_typed<int64_t>(
+      device(), c10::ScalarType::Long, 9876543210LL, 9876543210LL);
+}
+
+TEST_P(SlimTensorBasicDeviceTest, ItemTypedShort) {
+  test_item_typed<int16_t>(device(), c10::ScalarType::Short, 1234, 1234);
+}
+
+TEST_P(SlimTensorBasicDeviceTest, ItemTypedChar) {
+  test_item_typed<int8_t>(device(), c10::ScalarType::Char, -42, -42);
+}
+
+TEST_P(SlimTensorBasicDeviceTest, ItemTypedBool) {
+  test_item_typed<bool>(device(), c10::ScalarType::Bool, true, true);
+}
+
+// Can't reuse test_item_typed() because we need to cast to float explictly for
+// comparison.
+TEST_P(SlimTensorBasicDeviceTest, ItemTypedBFloat16) {
+  c10::BFloat16 input{3.14f};
+  c10::BFloat16 expected{3.14f};
+  std::vector<int64_t> sizes = {1};
+  std::vector<int64_t> strides = {1};
+  Storage storage(new MaybeOwningStorage(device(), sizeof(c10::BFloat16)));
+  set_storage_value(storage, input, device());
+
+  SlimTensor tensor(
+      std::move(storage),
+      makeArrayRef(sizes),
+      makeArrayRef(strides),
+      c10::ScalarType::BFloat16);
+
+  c10::BFloat16 result = tensor.item<c10::BFloat16>();
+  EXPECT_FLOAT_EQ(static_cast<float>(result), static_cast<float>(expected));
+}
+
+// Test item() fails on non-scalar tensor (numel > 1)
+TEST_P(SlimTensorBasicDeviceTest, ItemFailsOnNonScalarTensor) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = {3, 1};
+  Storage storage = make_storage(6 * sizeof(float));
+
+  SlimTensor tensor(
+      std::move(storage),
+      makeArrayRef(sizes),
+      makeArrayRef(strides),
+      c10::ScalarType::Float);
+
+  EXPECT_EQ(tensor.numel(), 6u);
+  EXPECT_DEATH(tensor.item<float>(), "");
 }
 
 // CPU-only test for DataPtrWithOffset (requires reading data back)

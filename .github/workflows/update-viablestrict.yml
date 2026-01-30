@@ -11,17 +11,112 @@ concurrency:
 
 jobs:
   do_update_viablestrict:
+    permissions:
+      id-token: write
     if: ${{ github.repository_owner == 'pytorch' }}
     runs-on: ubuntu-22.04
     environment: ${{ (github.event_name == 'schedule') && 'update-viable-strict' || '' }}
     steps:
       - name: Update viable/strict
+        id: update
         uses: pytorch/test-infra/.github/actions/update-viablestrict@main
         with:
           repository: pytorch/executorch
           stable-branch: viable/strict
-          requires: '[\"pull\", \"lint\", \"trunk\", \"Build documentation\", \"^Apple$\", \"docker-builds\"]'
+          requires: '[\"pull\", \"lint\", \"trunk\", \"Build documentation\", \"^Apple$\"]'
           secret-bot-token: ${{ secrets.UPDATEBOT_TOKEN }}
           clickhouse-url: ${{ secrets.CLICKHOUSE_URL }}
           clickhouse-username: ${{ secrets.CLICKHOUSE_VIABLESTRICT_USERNAME }}
           clickhouse-password: ${{ secrets.CLICKHOUSE_VIABLESTRICT_PASSWORD }}
+
+      - name: Summarize CI failures
+        if: steps.update.outputs.latest_viable_sha == 'None'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -x  # Show commands in logs
+          echo "## ❌ No green commit found" >> $GITHUB_STEP_SUMMARY
+          echo "No green commit found"
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "viable/strict branch was not updated because no commit passed all required checks." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Failures by commit (recent)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Get commits between viable/strict and main using GitHub API
+          VIABLE_SHA=$(gh api repos/pytorch/executorch/git/ref/heads/viable/strict --jq '.object.sha' 2>/dev/null || echo "")
+          MAIN_SHA=$(gh api repos/pytorch/executorch/git/ref/heads/main --jq '.object.sha' 2>/dev/null || echo "")
+
+          found_failures=false
+
+          if [ -n "$VIABLE_SHA" ] && [ -n "$MAIN_SHA" ]; then
+            # Get commits between viable/strict and main (up to 20)
+            # Use ASCII unit separator (0x1f) to avoid issues with special chars in names
+            COMMITS=$(gh api "repos/pytorch/executorch/compare/${VIABLE_SHA}...${MAIN_SHA}" \
+              --jq '.commits | reverse | .[:20] | .[] | "\(.sha)\u001f\(.commit.message | split("\n")[0] | .[:50])"' 2>/dev/null || echo "")
+
+            if [ -n "$COMMITS" ]; then
+              echo "| Commit | Title | Failed Job |" >> $GITHUB_STEP_SUMMARY
+              echo "|--------|-------|------------|" >> $GITHUB_STEP_SUMMARY
+
+              while IFS=$'\x1f' read -r sha title; do
+                [ -z "$sha" ] && continue
+                short_sha="${sha:0:7}"
+                # Sanitize title for markdown table
+                title=$(echo "$title" | tr '|' '-')
+
+                # Get workflow runs for this commit (use unit separator)
+                failed_run=$(gh api "repos/pytorch/executorch/actions/runs?head_sha=${sha}&per_page=100" \
+                  --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)\u001f\(.name)"' 2>/dev/null | head -1)
+
+                if [ -n "$failed_run" ]; then
+                  IFS=$'\x1f' read -r run_id workflow_name <<< "$failed_run"
+                  # Sanitize workflow name for markdown table
+                  workflow_name=$(echo "$workflow_name" | tr '|' '-')
+
+                  # Get failed job name
+                  failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs?per_page=100" \
+                    --jq '.jobs[] | select(.conclusion == "failure") | .name' 2>/dev/null | head -1 | tr '|' '-')
+
+                  echo "| ${short_sha} | ${title} | ${workflow_name} / ${failed_job:-unknown} |" >> $GITHUB_STEP_SUMMARY
+                  found_failures=true
+                fi
+              done <<< "$COMMITS"
+            fi
+          fi
+
+          if [ "$found_failures" = false ]; then
+            # Fallback: show recent failed runs from main branch only
+            echo "> Note: Could not determine commits between branches. Showing recent failures from main branch." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Commit | Title | Failed Job |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|------------|" >> $GITHUB_STEP_SUMMARY
+
+            # Filter by branch=main and use unit separator
+            gh api "repos/pytorch/executorch/actions/runs?branch=main&per_page=20" \
+              --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)\u001f\(.head_sha | .[:7])\u001f\(.display_title | .[:50])\u001f\(.name)"' 2>/dev/null | \
+            while IFS=$'\x1f' read -r run_id sha title workflow; do
+              # Sanitize for markdown table
+              title=$(echo "$title" | tr '|' '-')
+              workflow=$(echo "$workflow" | tr '|' '-')
+              failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs?per_page=100" \
+                --jq '.jobs[] | select(.conclusion == "failure") | .name' 2>/dev/null | head -1 | tr '|' '-')
+              if [ -n "$failed_job" ]; then
+                echo "| ${sha} | ${title} | ${workflow} / ${failed_job} |" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Summary by job (main branch, last 24h)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          # Filter by main branch and created in last 24 hours (GNU date syntax for Ubuntu runner)
+          yesterday=$(date -u -d '24 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
+          gh api "repos/pytorch/executorch/actions/runs?branch=main&created=>${yesterday}&per_page=100" \
+            --jq '.workflow_runs[] | select(.conclusion == "failure") | .name' 2>/dev/null \
+            | sort | uniq -c | sort -rn | head -10 >> $GITHUB_STEP_SUMMARY || echo "Failed to fetch data" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          echo "::error::No green commit found - viable/strict was not updated"
+          exit 1

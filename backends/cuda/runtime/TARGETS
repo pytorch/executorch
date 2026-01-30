@@ -4,6 +4,28 @@ load("//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
 oncall("executorch")
 
 runtime.cxx_library(
+    name = "guard",
+    srcs = [
+        "guard.cpp",
+    ],
+    headers = [
+        "guard.h",
+        "utils.h",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/runtime/platform:platform",
+    ],
+    exported_deps = [
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/core/exec_aten:lib",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+)
+
+runtime.cxx_library(
     name = "cuda_platform",
     srcs = [
         "platform/platform.cpp",
@@ -77,6 +99,36 @@ runtime.cxx_library(
         "//executorch/runtime/core/exec_aten:lib",
         "//executorch/runtime/platform:platform",
         "//executorch/backends/cuda/runtime:cuda_platform",
+    ],
+    nvcc_flags = get_nvcc_arch_args() + [
+        "-_NVCC_HOST_COMPILER_FLAG_",
+        "gcc",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+)
+
+runtime.cxx_library(
+    name = "runtime_shims_slim",
+    srcs = [
+        "shims/memory_slim.cpp",
+    ],
+    headers = [
+        "shims/memory_slim.h",
+    ],
+    # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+    link_whole = True,
+    supports_python_dlopen = True,
+    visibility = ["@EXECUTORCH_CLIENTS"],
+    preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+    deps = [
+        "//executorch/backends/aoti/slim/core:slimtensor",
+        "//executorch/backends/aoti/slim/factory:empty",
+        "//executorch/backends/aoti/slim/factory:from_blob",
+        "//executorch/backends/aoti:common_shims",
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/platform:platform",
     ],
     nvcc_flags = get_nvcc_arch_args() + [
         "-_NVCC_HOST_COMPILER_FLAG_",

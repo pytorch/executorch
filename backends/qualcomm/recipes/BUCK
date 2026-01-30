@@ -1,0 +1,46 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "qnn_recipes",
+    srcs = [
+        "__init__.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/export:recipe_registry",
+        ":qnn_recipe_provider",
+        ":qnn_recipe_types",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "qnn_recipe_provider",
+    srcs = [
+        "qnn_recipe_provider.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/export:lib",
+        "//executorch/runtime:runtime",  # @manual
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/backends/qualcomm/serialization:serialization",
+        "//executorch/backends/qualcomm/utils:utils",
+        "//executorch/backends/qualcomm/_passes:passes",
+        ":qnn_recipe_types",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "qnn_recipe_types",
+    srcs = [
+        "qnn_recipe_types.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/export:lib",
+    ],
+)

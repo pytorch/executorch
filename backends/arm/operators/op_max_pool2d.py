@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,18 +19,12 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
 class MaxPool2dVisitor(NodeVisitor):
     target = "aten.max_pool2d.default"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -51,7 +45,7 @@ class MaxPool2dVisitor(NodeVisitor):
             self.target,
             [inputs[0], output],
             supported_dtypes,
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         input_tensor = inputs[0]

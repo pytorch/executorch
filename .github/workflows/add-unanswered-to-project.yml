@@ -42,19 +42,49 @@ jobs:
               "agunapal", "SamGondelman", "Ninja91", "ivayloen", "DrJessop", "rodrigos01meta", "akrieger", "cmt0", "yiming0416", 
               "ethansfng", "ThomasJannaud", "nirvanagth", "marcinkwiatkowski", "3l1", "omerjerk", "nitish2112", "yipjustin", 
               "ejnguyen", "andrewor14", "phaiting", "mgiordy", "LeeOHzzZ", "adicatana", "Polyomino", "ezrilow", "navsud", 
-              "michaelmaitland", "RahulC7", "seyeong-han", "thdusdl1219", "YifanShenSZ", "RdoubleA", "Olivia-liu", "Abhi-hpp", 
-              "Vysarat", "azad-meta", "junpi", "pytorchbot", "pytorchmergebot", "pytorchupdatebot", "facebook-github-bot", 
-              "app/dependabot", "Erik-Lundell", "zingo", "AdrianLundell", "oscarandersson8218", "per", "Sebastian-Larsson", "SaoirseARM", 
-              "robell", "mansnils", "martinlsm", "freddan80", "YufengShi-dudu", "tom-arm", "perheld", "Jerry-Ge", "gggekov", "fumchin", 
-              "wwwind", "benkli01", "Tessil", "maddun01", "Michiel-Olieslagers", "armwaheed", "agrima1304", "emmakujala", "annietllnd", 
-              "MatthiasHertel80", "AlexTawseArm", "jmahbs", "morgolock", "Christoffer-JL", "ArmRyan", "xingguo01", "tgonzalezorlandoarm", 
-              "haowhsu-quic", "shewu-quic", "winskuo-quic", "chunit-quic", "DannyYuyang-quic", "chuntl", "thchenqti", "jethroqti", 
-              "chenweng-quic", "cymbalrush", "DenisVieriu97", "billmguo", "StrycekSimon", "jirioc", "robert-kalmar", "skywall", 
-              "MartinPavella", "roman-janik-nxp", "novak-vaclav", "neuropilot-captain", "dijopaul", "cad-rlc", "cad-audio", "ynimmaga", 
-              "daniil-lyakhov", "emmanuel-ferdman", "cavusmustafa", "anzr299", "Jiseong-oh", "alexdean08",
+              "michaelmaitland", "RahulC7", "seyeong-han", "thdusdl1219", "jaejunku", "felixweilbach", "apullin", "trviv", "junluan01", 
+              "YifanShenSZ", "RdoubleA", "Olivia-liu", "Abhi-hpp", "Vysarat", "azad-meta", "junpi", "pytorchbot", "pytorchmergebot", 
+              "pytorchupdatebot", "facebook-github-bot", "app/dependabot", "Erik-Lundell", "zingo", "AdrianLundell", "oscarandersson8218", 
+              "per", "Sebastian-Larsson", "SaoirseARM", "robell", "mansnils", "martinlsm", "freddan80", "YufengShi-dudu", "tom-arm", 
+              "perheld", "Jerry-Ge", "gggekov", "fumchin", "wwwind", "benkli01", "Tessil", "maddun01", "Michiel-Olieslagers", "armwaheed", 
+              "agrima1304", "emmakujala", "annietllnd", "MatthiasHertel80", "AlexTawseArm", "jmahbs", "morgolock", "Christoffer-JL", 
+              "ArmRyan", "xingguo01", "tgonzalezorlandoarm", "chizkiyahu", "sarah-blades", "haowhsu-quic", "shewu-quic", "winskuo-quic", 
+              "chunit-quic", "DannyYuyang-quic", "chuntl", "thchenqti", "jethroqti", "chenweng-quic", "cymbalrush", "DenisVieriu97", 
+              "billmguo", "StrycekSimon", "jirioc", "robert-kalmar", "skywall", "MartinPavella", "roman-janik-nxp", "novak-vaclav", 
+              "neuropilot-captain", "dijopaul", "cad-rlc", "cad-audio", "ynimmaga", "daniil-lyakhov", "emmanuel-ferdman", "cavusmustafa", 
+              "anzr299", "Jiseong-oh", "alexdean08",
               // explicitly include the dependabot bot login seen in PRs
               "dependabot[bot]"
             ]);
+
+            // List of organization logins (lowercased) to exclude members of
+            const excludedOrgs = new Set([
+              "meta", "facebook", "pytorch", "arm", "apple", "qualcomm", "nxp", "mediatek", "cadence", "intel", "samsung"
+            ]);
+
+            // Labels on PRs to exclude from being added to the project
+            const excludedPrLabels = new Set(["fb-exported", "meta-exported"]);
+            
+            // Simple cache for user -> boolean (member of excluded org)
+            const orgsCache = new Map();
+
+            async function isMemberOfExcludedOrg(user) {
+              if (!user || !user.login) return false;
+              const login = user.login;
+              if (orgsCache.has(login)) return orgsCache.get(login);
+              try {
+                const response = await github.rest.orgs.listForUser({ username: login });
+                const orgs = response && response.data ? response.data : [];
+                const isMember = orgs.some(o => o && o.login && excludedOrgs.has(o.login.toLowerCase()));
+                orgsCache.set(login, isMember);
+                return isMember;
+              } catch (error) {
+                // If checking orgs fails (rate limit, permissions etc.), assume not a member to avoid false positives.
+                console.log(`Error checking orgs for ${login}: ${error.message}`);
+                orgsCache.set(login, false);
+                return false;
+              }
+            }
 
             function isBotOrExcluded(user) {
               if (!user) return false;
@@ -65,6 +95,11 @@ jobs:
               // Explicit excluded list
               if (excludedAuthors.has(user.login)) return true;
               return false;
+            }
+
+            function hasExcludedLabel(item) {
+              if (!item || !item.labels) return false;
+              return item.labels.some(l => l && l.name && excludedPrLabels.has(l.name.toLowerCase()));
             }
 
             async function addItem(contentId, type, number) {
