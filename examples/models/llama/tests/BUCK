@@ -1,8 +1,9 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_simple_sdpa",
     srcs = [
         "test_simple_sdpa.py",
@@ -14,7 +15,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_pre_quantization_transforms",
     srcs = [
         "test_pre_quantization_transforms.py",
@@ -27,7 +28,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_static_attention",
     srcs = [
         "test_static_attention.py",
@@ -39,7 +40,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_ring_kv_cache",
     srcs = [
         "test_ring_kv_cache.py",
@@ -50,7 +51,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_ring_attention",
     srcs = [
         "test_ring_attention.py",
@@ -68,7 +69,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_replace_kv_cache",
     srcs = [
         "test_replace_kv_cache.py",
@@ -86,7 +87,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_export_llama_lib",
     srcs = [
         "test_export_llama_lib.py",
