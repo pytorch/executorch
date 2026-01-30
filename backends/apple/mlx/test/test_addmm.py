@@ -32,15 +32,33 @@ from .test_utils import OpTestCase, register_test, run_op_test_main
 class AddmmModel(nn.Module):
     """Model that performs addmm: bias + (mat1 @ mat2)."""
 
-    def __init__(self, in_features: int, out_features: int):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        alpha: float = 1.0,
+        beta: float = 1.0,
+    ):
         super().__init__()
         self.weight = nn.Parameter(torch.randn(out_features, in_features))
-        self.bias = nn.Parameter(torch.randn(out_features))
+        if bias:
+            self.bias = nn.Parameter(torch.randn(out_features))
+        else:
+            self.bias = None
+        self.alpha = alpha
+        self.beta = beta
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # This will decompose to permute + addmm in Edge IR
-        # addmm(bias, x, weight.T) = bias + x @ weight.T
-        return torch.addmm(self.bias, x, self.weight.t())
+        # addmm(bias, x, weight.T, beta, alpha) = beta * bias + alpha * (x @ weight.T)
+        if self.bias is not None:
+            return torch.addmm(
+                self.bias, x, self.weight.t(), beta=self.beta, alpha=self.alpha
+            )
+        else:
+            # Without bias, this becomes just matmul
+            return torch.mm(x, self.weight.t())
 
 
 @register_test
@@ -60,22 +78,50 @@ class AddmmTest(OpTestCase):
         batch_size: int = 2,
         in_features: int = 64,
         out_features: int = 32,
+        bias: bool = True,
+        alpha: float = 1.0,
+        beta: float = 1.0,
     ):
         self.batch_size = batch_size
         self.in_features = in_features
         self.out_features = out_features
-        self.name = f"addmm_{in_features}x{out_features}"
+        self.bias = bias
+        self.alpha = alpha
+        self.beta = beta
+
+        # Build unique test name
+        if not bias:
+            name = f"addmm_{in_features}x{out_features}_no_bias"
+        elif alpha != 1.0 or beta != 1.0:
+            name = f"addmm_{in_features}x{out_features}_a{alpha}_b{beta}"
+        else:
+            name = f"addmm_{in_features}x{out_features}"
+        self.name = name
 
     @classmethod
     def get_test_configs(cls) -> List["AddmmTest"]:
         """Return all test configurations to run."""
         return [
-            cls(batch_size=2, in_features=64, out_features=32),
-            cls(batch_size=4, in_features=128, out_features=64),
+            cls(
+                batch_size=2, in_features=64, out_features=32
+            ),  # with bias, default alpha/beta
+            cls(
+                batch_size=2, in_features=64, out_features=32, bias=False
+            ),  # without bias
+            cls(batch_size=4, in_features=128, out_features=64),  # larger size
+            cls(
+                batch_size=2, in_features=64, out_features=32, alpha=2.0, beta=0.5
+            ),  # custom alpha/beta
         ]
 
     def create_model(self) -> nn.Module:
-        return AddmmModel(self.in_features, self.out_features)
+        return AddmmModel(
+            self.in_features,
+            self.out_features,
+            bias=self.bias,
+            alpha=self.alpha,
+            beta=self.beta,
+        )
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.batch_size, self.in_features)

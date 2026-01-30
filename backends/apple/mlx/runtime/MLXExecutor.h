@@ -425,6 +425,28 @@ inline ::mlx::core::Dtype to_mlx_dtype(DTypeId d) {
 }
 
 // =============================================================================
+// Helper to resolve int or Vid with overflow protection
+// =============================================================================
+
+inline int32_t resolve_int(
+    const std::variant<int64_t, Vid<int32_t>>& v,
+    const ExecutionState& st) {
+  if (std::holds_alternative<int64_t>(v)) {
+    int64_t val64 = std::get<int64_t>(v);
+    // Clamp to int32_t range to avoid overflow
+    // INT64_MAX is commonly used to mean "slice to end" or similar semantics
+    if (val64 >= static_cast<int64_t>(std::numeric_limits<int32_t>::max())) {
+      return std::numeric_limits<int32_t>::max();
+    } else if (
+        val64 <= static_cast<int64_t>(std::numeric_limits<int32_t>::min())) {
+      return std::numeric_limits<int32_t>::min();
+    }
+    return static_cast<int32_t>(val64);
+  }
+  return st.const_value_ref<int32_t>(std::get<Vid<int32_t>>(v));
+}
+
+// =============================================================================
 // Helper to convert shape with potential dynamic dims
 // =============================================================================
 
@@ -434,12 +456,7 @@ inline ::mlx::core::Shape to_shape(
   ::mlx::core::Shape out;
   out.reserve(dims.size());
   for (const auto& d : dims) {
-    if (std::holds_alternative<int64_t>(d)) {
-      out.push_back(static_cast<int32_t>(std::get<int64_t>(d)));
-    } else {
-      int32_t v = st.const_value_ref<int32_t>(std::get<Vid<int32_t>>(d));
-      out.push_back(v);
-    }
+    out.push_back(resolve_int(d, st));
   }
   return out;
 }
