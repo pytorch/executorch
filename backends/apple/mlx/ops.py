@@ -16,7 +16,7 @@ Each handler converts a specific PyTorch operation to the corresponding MLX grap
 from __future__ import annotations
 
 import operator
-from typing import Tuple
+from typing import Any, List, Tuple, Union
 
 import torch
 from executorch.backends.apple.mlx.program_builder import (
@@ -54,6 +54,59 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     TransposeNode,
 )
 from torch.fx.node import Node
+
+
+# =============================================================================
+# Parameter validation utilities
+# =============================================================================
+
+
+def require_static_int(value: Any, param_name: str, op_name: str) -> None:
+    """
+    Validate that a parameter is a static integer (not a Slot/SymInt).
+
+    Raises NotImplementedError if the value is dynamic.
+
+    Args:
+        value: The parameter value to check
+        param_name: Name of the parameter (for error message)
+        op_name: Name of the operation (for error message)
+    """
+    if isinstance(value, Slot) or not isinstance(value, int):
+        raise NotImplementedError(
+            f"{op_name} with dynamic {param_name} is not supported. "
+            f"{param_name} requires a static int32 value, but got {value} (type={type(value).__name__})."
+        )
+
+
+def require_static_ints(
+    values: Union[List[Any], Any], param_name: str, op_name: str
+) -> None:
+    """
+    Validate that all values in a list are static integers (not Slots/SymInts).
+
+    Raises NotImplementedError if any value is dynamic.
+
+    Args:
+        values: List of values to check, or a single value
+        param_name: Name of the parameter (for error message)
+        op_name: Name of the operation (for error message)
+    """
+    if not isinstance(values, list):
+        values = [values]
+
+    for v in values:
+        require_static_int(v, param_name, op_name)
+
+
+def is_static_value(value: Any) -> bool:
+    """
+    Check if a value is static (not a Slot/SymInt).
+
+    Returns:
+        True if the value is a static scalar (int, float, bool), False otherwise
+    """
+    return not isinstance(value, Slot)
 
 
 # =============================================================================
@@ -321,9 +374,7 @@ def _add_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     # 1. Scalars get lifted to tensors during export
     # 2. But the return type would be a tensor, not a scalar
     # 3. ExecuTorch would expect a scalar return value
-    a_is_scalar = not isinstance(a, Slot)
-    b_is_scalar = not isinstance(b, Slot)
-    if a_is_scalar and b_is_scalar:
+    if is_static_value(a) and is_static_value(b):
         raise ValueError(
             "aten.add.Tensor with both scalar inputs is not supported. "
             "Use operator.add for scalar arithmetic."
@@ -364,9 +415,7 @@ def _mul_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     # 1. Scalars get lifted to tensors during export
     # 2. But the return type would be a tensor, not a scalar
     # 3. ExecuTorch would expect a scalar return value
-    a_is_scalar = not isinstance(a, Slot)
-    b_is_scalar = not isinstance(b, Slot)
-    if a_is_scalar and b_is_scalar:
+    if is_static_value(a) and is_static_value(b):
         raise ValueError(
             "aten.mul.Tensor with both scalar inputs is not supported. "
             "Use operator.mul for scalar arithmetic."
@@ -568,6 +617,10 @@ def _unsqueeze_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 @REGISTRY.register(target=[torch.ops.aten.repeat.default])
 def _repeat_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     x, reps = P.args(n)
+
+    # Validate all repetition values are static integers
+    require_static_ints(list(reps), "reps", "aten.repeat (TileNode)")
+
     out = P.make_or_get_slot(n)
     P._emit(
         TileNode(
@@ -808,14 +861,29 @@ def _conv1d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     bias_node = n.args[2] if len(n.args) > 2 else None
     stride = n.args[3] if len(n.args) > 3 else 1
     if isinstance(stride, list):
-        assert len(stride) == 1
+        assert (
+            len(stride) == 1
+        ), f"Conv1D stride must be a single value, got {len(stride)} values"
         stride = stride[0]
     padding = n.args[4] if len(n.args) > 4 else 0
     if isinstance(padding, list):
-        assert len(padding) == 1
+        assert (
+            len(padding) == 1
+        ), f"Conv1D padding must be a single value, got {len(padding)} values"
         padding = padding[0]
     dilation = n.args[5] if len(n.args) > 5 else 1
+    if isinstance(dilation, list):
+        assert (
+            len(dilation) == 1
+        ), f"Conv1D dilation must be a single value, got {len(dilation)} values"
+        dilation = dilation[0]
     groups = n.args[6] if len(n.args) > 6 else 1
+
+    # Validate all parameters are static integers
+    require_static_int(stride, "stride", "aten.conv1d (Conv1DNode)")
+    require_static_int(padding, "padding", "aten.conv1d (Conv1DNode)")
+    require_static_int(dilation, "dilation", "aten.conv1d (Conv1DNode)")
+    require_static_int(groups, "groups", "aten.conv1d (Conv1DNode)")
 
     # Weight needs to be transposed: [O, I/G, K] -> [O, K, I]
     w_target, w_tensor = P.get_placeholder_target_and_tensor(w_node)
