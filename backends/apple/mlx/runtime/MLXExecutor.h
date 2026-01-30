@@ -37,7 +37,7 @@
 // Disable if you want predictable memory usage (always copies).
 // =============================================================================
 #ifndef ET_MLX_ENABLE_CONSTANT_ZERO_COPY
-#define ET_MLX_ENABLE_CONSTANT_ZERO_COPY 1  // Enabled by default
+#define ET_MLX_ENABLE_CONSTANT_ZERO_COPY 1 // Enabled by default
 #endif
 
 namespace executorch {
@@ -488,7 +488,8 @@ inline ConstantTensorInfo get_constant_tensor_info(
   using namespace ::mlx::core;
 
   // Validate metadata exists
-  if (tensor_id >= program.tensor_meta.size() || !program.tensor_meta[tensor_id]) {
+  if (tensor_id >= program.tensor_meta.size() ||
+      !program.tensor_meta[tensor_id]) {
     throw std::runtime_error(
         "get_constant_tensor_info: missing metadata for constant " +
         std::to_string(tensor_id));
@@ -532,7 +533,8 @@ inline void load_constants_zero_copy(
   size_t offset = 0;
 
   for (uint32_t tid = 0; tid < program.num_constant_tensors; ++tid) {
-    ConstantTensorInfo info = get_constant_tensor_info(program, tid, base, offset);
+    ConstantTensorInfo info =
+        get_constant_tensor_info(program, tid, base, offset);
 
     // Zero-copy: wrap pointer directly with no-op deleter
     void* data_ptr = const_cast<void*>(info.data_ptr);
@@ -564,31 +566,58 @@ inline void load_constants_with_copy(
   size_t offset = 0;
 
   for (uint32_t tid = 0; tid < program.num_constant_tensors; ++tid) {
-    ConstantTensorInfo info = get_constant_tensor_info(program, tid, base, offset);
+    ConstantTensorInfo info =
+        get_constant_tensor_info(program, tid, base, offset);
 
     // Create array by copying data using typed constructor
     auto create_array = [&]() -> array {
       switch (info.dtype) {
         case float32:
-          return array(static_cast<const float*>(info.data_ptr), info.shape, info.dtype);
+          return array(
+              static_cast<const float*>(info.data_ptr), info.shape, info.dtype);
         case float16:
-          return array(static_cast<const float16_t*>(info.data_ptr), info.shape, info.dtype);
+          return array(
+              static_cast<const float16_t*>(info.data_ptr),
+              info.shape,
+              info.dtype);
         case bfloat16:
-          return array(static_cast<const bfloat16_t*>(info.data_ptr), info.shape, info.dtype);
+          return array(
+              static_cast<const bfloat16_t*>(info.data_ptr),
+              info.shape,
+              info.dtype);
         case int32:
-          return array(static_cast<const int32_t*>(info.data_ptr), info.shape, info.dtype);
+          return array(
+              static_cast<const int32_t*>(info.data_ptr),
+              info.shape,
+              info.dtype);
         case int64:
-          return array(static_cast<const int64_t*>(info.data_ptr), info.shape, info.dtype);
+          return array(
+              static_cast<const int64_t*>(info.data_ptr),
+              info.shape,
+              info.dtype);
         case int16:
-          return array(static_cast<const int16_t*>(info.data_ptr), info.shape, info.dtype);
+          return array(
+              static_cast<const int16_t*>(info.data_ptr),
+              info.shape,
+              info.dtype);
         case int8:
-          return array(static_cast<const int8_t*>(info.data_ptr), info.shape, info.dtype);
+          return array(
+              static_cast<const int8_t*>(info.data_ptr),
+              info.shape,
+              info.dtype);
         case uint32:
-          return array(static_cast<const uint32_t*>(info.data_ptr), info.shape, info.dtype);
+          return array(
+              static_cast<const uint32_t*>(info.data_ptr),
+              info.shape,
+              info.dtype);
         case uint8:
-          return array(static_cast<const uint8_t*>(info.data_ptr), info.shape, info.dtype);
+          return array(
+              static_cast<const uint8_t*>(info.data_ptr),
+              info.shape,
+              info.dtype);
         case bool_:
-          return array(static_cast<const bool*>(info.data_ptr), info.shape, info.dtype);
+          return array(
+              static_cast<const bool*>(info.data_ptr), info.shape, info.dtype);
         default:
           throw std::runtime_error(
               "load_constants_with_copy: unsupported dtype " +

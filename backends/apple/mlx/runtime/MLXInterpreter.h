@@ -32,7 +32,16 @@ inline int32_t resolve_int(
     const std::variant<int64_t, Vid<int32_t>>& v,
     const ExecutionState& st) {
   if (std::holds_alternative<int64_t>(v)) {
-    return static_cast<int32_t>(std::get<int64_t>(v));
+    int64_t val64 = std::get<int64_t>(v);
+    // Clamp to int32_t range to avoid overflow
+    // INT64_MAX is commonly used to mean "slice to end" or similar semantics
+    if (val64 >= static_cast<int64_t>(std::numeric_limits<int32_t>::max())) {
+      return std::numeric_limits<int32_t>::max();
+    } else if (
+        val64 <= static_cast<int64_t>(std::numeric_limits<int32_t>::min())) {
+      return std::numeric_limits<int32_t>::min();
+    }
+    return static_cast<int32_t>(val64);
   }
   return st.const_value_ref<int32_t>(std::get<Vid<int32_t>>(v));
 }

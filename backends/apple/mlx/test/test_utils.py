@@ -15,6 +15,7 @@ This module provides functions to:
 4. Run the C++ op_test_runner binary
 """
 
+import json
 import struct
 import subprocess
 from pathlib import Path
@@ -339,8 +340,41 @@ def print_mlx_graph_summary(pte_path: Union[str, Path]) -> None:
 
     pte_path = Path(pte_path)
     pte_data = pte_path.read_bytes()
-
     show_mlx_instructions(pte_data)
+
+
+def count_mlx_delegate_segments(pte_path: Union[str, Path]) -> int:
+    """
+    Count the number of MLX delegate segments in a PTE file.
+
+    Args:
+        pte_path: Path to the .pte file
+
+    Returns:
+        Number of MLX delegate segments found
+    """
+    from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
+
+    pte_path = Path(pte_path)
+    pte_data = pte_path.read_bytes()
+
+    try:
+        program_json = _program_flatbuffer_to_json(pte_data)
+        program_data = json.loads(program_json)
+
+        # Count all MLX delegates across all execution plans
+        count = 0
+        for plan in program_data.get("execution_plan", []):
+            for delegate in plan.get("delegates", []):
+                delegate_name = delegate.get("id", "")
+                # Match MLXBackend (case-insensitive)
+                if "mlx" in delegate_name.lower():
+                    count += 1
+
+        return count
+    except Exception as e:
+        print(f"Error counting MLX segments: {e}")
+        return 0
 
 
 def compare_outputs(
@@ -760,6 +794,7 @@ class OpTestCase:
     Optionally override:
     - get_dynamic_shapes() -> Optional[Dict] - for dynamic shape testing
     - create_test_inputs() -> Tuple[torch.Tensor, ...] - inputs for testing (may differ from export inputs)
+    - expected_mlx_segments: int - expected number of MLX delegate segments (default: 1)
     """
 
     name: str = "base_test"
@@ -770,6 +805,7 @@ class OpTestCase:
     timeout: int = DEFAULT_TEST_TIMEOUT  # Timeout in seconds
     skip_comparison: bool = False  # Skip output comparison (for pattern-only tests)
     skip_comparison_reason: str = ""  # Reason for skipping comparison
+    expected_mlx_segments: int = 1  # Expected number of MLX delegate segments
 
     def _set_seed(self) -> None:
         """Set random seed for reproducibility."""
@@ -918,8 +954,22 @@ class OpTestCase:
         # Print MLX graph summary
         print_mlx_graph_summary(pte_path)
 
+        # Verify expected number of MLX delegate segments
+        print("\nStep 2: Verifying MLX delegation...")
+        actual_segments = count_mlx_delegate_segments(pte_path)
+        print(f"  Expected MLX segments: {self.expected_mlx_segments}")
+        print(f"  Actual MLX segments:   {actual_segments}")
+
+        if actual_segments != self.expected_mlx_segments:
+            print("✗ FAILED: MLX delegation mismatch!")
+            print(
+                f"  Expected {self.expected_mlx_segments} segment(s), but found {actual_segments}"
+            )
+            return False
+        print("✓ MLX delegation verified")
+
         # Run C++ binary
-        print("Step 2: Running C++ binary...")
+        print("\nStep 3: Running C++ binary...")
         actual_path = self.get_test_dir() / "actual_output.bin"
         if not run_cpp_test_runner(
             pte_path, input_path, actual_path, verbose=verbose, timeout=timeout
@@ -927,7 +977,7 @@ class OpTestCase:
             return False
 
         # Compare outputs (or skip if configured)
-        print("\nStep 3: Comparing outputs...")
+        print("\nStep 4: Comparing outputs...")
         if self.skip_comparison:
             reason = self.skip_comparison_reason or "skip_comparison=True"
             print(f"NOTE: Output comparison skipped ({reason})")

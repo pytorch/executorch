@@ -389,7 +389,6 @@ def export_all(
             qlinear_group_size=qlinear_encoder_group_size,
             qlinear_packing_format=qlinear_encoder_packing_format,
         )
-
     programs["encoder"] = export(
         encoder_with_proj,
         (),
@@ -439,6 +438,7 @@ def export_all(
         dynamic_shapes={"f": {}, "g": {}},
         strict=False,
     )
+
 
     sample_rate = model.preprocessor._cfg.sample_rate
     window_stride = float(model.preprocessor._cfg.window_stride)
@@ -560,11 +560,27 @@ def _create_cuda_partitioners(programs, is_windows=False):
     return partitioner, updated_programs
 
 
+def _create_mlx_partitioners(programs):
+    """Create MLX partitioners for all programs."""
+    from executorch.backends.apple.mlx.partitioner import MLXPartitioner
+
+    print("\nLowering to ExecuTorch with MLX...")
+
+    # MLX backend doesn't need decompositions
+    partitioner = {}
+    for key in programs.keys():
+        partitioner[key] = [MLXPartitioner()]
+
+    return partitioner, programs
+
+
 def lower_to_executorch(programs, metadata=None, backend="portable"):
     if backend == "xnnpack":
         partitioner, programs = _create_xnnpack_partitioners(programs)
     elif backend == "metal":
         partitioner, programs = _create_metal_partitioners(programs)
+    elif backend == "mlx":
+        partitioner, programs = _create_mlx_partitioners(programs)
     elif backend in ("cuda", "cuda-windows"):
         partitioner, programs = _create_cuda_partitioners(
             programs, is_windows=(backend == "cuda-windows")
@@ -607,7 +623,7 @@ def main():
         "--backend",
         type=str,
         default="xnnpack",
-        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
+        choices=["portable", "xnnpack", "metal", "mlx", "cuda", "cuda-windows"],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
