@@ -20,6 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 test_t = tuple[torch.Tensor, torch.Tensor]
 aten_op = "torch.ops.aten.minimum.default"
+exir_op = "executorch_exir_dialects_edge__ops_aten_minimum_default"
 
 
 class Minimum(torch.nn.Module):
@@ -36,6 +37,12 @@ class Minimum(torch.nn.Module):
             torch.randn(1, 1, 4, 1),
         ),
     }
+    test_parameters_fp16 = {
+        "fp16_rand": lambda: (
+            torch.randn(1, 3, 4, 4, dtype=torch.float16),
+            torch.randn(1, 3, 4, 4, dtype=torch.float16),
+        ),
+    }
 
     def __init__(self):
         super().__init__()
@@ -44,14 +51,22 @@ class Minimum(torch.nn.Module):
         return torch.minimum(x, y)
 
 
-@common.parametrize("test_data", Minimum.test_parameters)
+@common.parametrize(
+    "test_data",
+    Minimum.test_parameters | Minimum.test_parameters_fp16,
+)
 def test_minimum_tosa_FP(test_data: Tuple):
-    TosaPipelineFP[test_t](Minimum(), test_data(), aten_op).run()
+    TosaPipelineFP[test_t](
+        Minimum(),
+        test_data(),
+        aten_op,
+        exir_op,
+    ).run()
 
 
 @common.parametrize("test_data", Minimum.test_parameters)
 def test_minimum_tosa_INT(test_data: Tuple):
-    TosaPipelineINT[test_t](Minimum(), test_data(), aten_op).run()
+    TosaPipelineINT[test_t](Minimum(), test_data(), aten_op, exir_op).run()
 
 
 @common.parametrize("test_data", Minimum.test_parameters)
@@ -61,6 +76,7 @@ def test_minimum_u55_INT(test_data: Tuple):
         Minimum(),
         test_data(),
         aten_op,
+        exir_op,
     ).run()
 
 
@@ -71,16 +87,18 @@ def test_minimum_u85_INT(test_data: Tuple):
         Minimum(),
         test_data(),
         aten_op,
+        exir_op,
     ).run()
 
 
-@common.parametrize("test_data", Minimum.test_parameters)
+@common.parametrize("test_data", Minimum.test_parameters | Minimum.test_parameters_fp16)
 @common.SkipIfNoModelConverter
 def test_minimum_vgf_no_quant(test_data: test_t):
     pipeline = VgfPipeline[test_t](
         Minimum(),
         test_data(),
         aten_op,
+        exir_op,
         quantize=False,
     )
     pipeline.run()
@@ -93,6 +111,7 @@ def test_minimum_vgf_quant(test_data: test_t):
         Minimum(),
         test_data(),
         aten_op,
+        exir_op,
         quantize=True,
     )
     pipeline.run()
@@ -105,6 +124,7 @@ def test_minimum_tosa_INT_a16w8(test_data: test_t):
         Minimum(),
         test_data(),
         aten_op,
+        exir_op,
         tosa_extensions=["int16"],
     )
     pipeline.run()
@@ -118,6 +138,7 @@ def test_minimum_u55_INT_a16w8(test_data: test_t):
         Minimum(),
         test_data(),
         aten_op,
+        exir_op,
         per_channel_quantization=False,
         a16w8_quantization=True,
         use_to_edge_transform_and_lower=True,
@@ -133,6 +154,7 @@ def test_minimum_u85_INT_a16w8(test_data: test_t):
         Minimum(),
         test_data(),
         aten_op,
+        exir_op,
         per_channel_quantization=False,
         a16w8_quantization=True,
         use_to_edge_transform_and_lower=True,

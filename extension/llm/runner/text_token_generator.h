@@ -32,6 +32,10 @@ class ET_EXPERIMENTAL TextTokenGenerator {
         use_kv_cache_(use_kv_cache),
         stats_(stats) {}
 
+  void set_ignore_eos(bool ignore_eos) {
+    ignore_eos_ = ignore_eos;
+  }
+
   virtual ~TextTokenGenerator() = default;
 
   /**
@@ -125,7 +129,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       }
 
       // data-dependent terminating condition: we have n_eos_ number of EOS
-      if (eos_ids_->find(cur_token) != eos_ids_->end()) {
+      if (!ignore_eos_ && eos_ids_->find(cur_token) != eos_ids_->end()) {
         printf("\n");
         ET_LOG(Info, "\nReached to the end of generation");
         break;
@@ -169,6 +173,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
   TextDecoderRunner* text_decoder_runner_;
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
   bool use_kv_cache_;
+  bool ignore_eos_ = false;
 
   // state machine
   bool should_stop_ = false;
