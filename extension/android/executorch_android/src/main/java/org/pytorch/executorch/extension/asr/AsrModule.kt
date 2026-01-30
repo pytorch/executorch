@@ -88,7 +88,7 @@ class AsrModule(
     ): Int
   }
 
-  /** Check if the native handle is valid. */
+  /** Check if the native handle is valid (not yet closed). */
   val isValid: Boolean
     get() = nativeHandle.get() != 0L
 
@@ -99,17 +99,14 @@ class AsrModule(
       return handle != 0L && nativeIsLoaded(handle)
     }
 
-  /** Releases native resources. Call this when done with the module. */
-  fun destroy() {
+  /**
+   * Releases native resources. Call this when done with the module.
+   */
+  override fun close() {
     val handle = nativeHandle.getAndSet(0L)
     if (handle != 0L) {
       nativeDestroy(handle)
     }
-  }
-
-  /** Closeable implementation for use with use {} blocks. */
-  override fun close() {
-    destroy()
   }
 
   /**
