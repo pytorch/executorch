@@ -20,32 +20,6 @@ import org.pytorch.executorch.annotations.Experimental
  * The module loads a WAV file, optionally preprocesses it using a preprocessor module (e.g., for
  * mel-spectrogram extraction), and then runs the ASR model to generate transcriptions.
  *
- * The `transcribe()` method is synchronous and returns the complete transcription as a String.
- * If you need asynchronous behavior, you can implement it using threading or coroutines:
- *
- * Example using Kotlin Coroutines:
- * ```kotlin
- * launch(Dispatchers.IO) {
- *     val transcription = asrModule.transcribe(wavPath)
- *     withContext(Dispatchers.Main) {
- *         // Update UI with transcription
- *     }
- * }
- * ```
- *
- * Example using Java threads:
- * ```java
- * ExecutorService executor = Executors.newSingleThreadExecutor();
- * executor.submit(() -> {
- *     try {
- *         String transcription = asrModule.transcribe(wavPath);
- *         // Handle the result
- *     } catch (RuntimeException e) {
- *         // Handle transcription errors
- *     }
- * });
- * ```
- *
  * Warning: These APIs are experimental and subject to change without notice
  *
  * @param modelPath Path to the ExecuTorch model file (.pte). The model must expose exactly two
@@ -151,12 +125,13 @@ class AsrModule(
   }
 
   /**
-   * Transcribe audio from a WAV file with default configuration.
+   * Transcribe audio from a WAV file.
    *
    * This is a synchronous blocking call that returns the complete transcription.
    *
    * @param wavPath Path to the WAV audio file
-   * @param config Configuration for transcription
+   * @param config Configuration for transcription (null uses default configuration)
+   * @param callback Optional callback to receive tokens as they are generated (can be null)
    * @return The complete transcribed text
    * @throws IllegalStateException if the module has been destroyed
    * @throws RuntimeException if transcription fails (non-zero result code)
@@ -164,25 +139,7 @@ class AsrModule(
   @JvmOverloads
   fun transcribe(
       wavPath: String,
-      config: AsrTranscribeConfig = AsrTranscribeConfig(),
-  ): String =
-      transcribe(wavPath, config, null)
-
-  /**
-   * Transcribe audio from a WAV file with custom configuration.
-   *
-   * This is a synchronous blocking call that returns the complete transcription.
-   *
-   * @param wavPath Path to the WAV audio file
-   * @param config Configuration for transcription
-   * @param callback Optional callback to receive tokens as they are generated (can be null)
-   * @return The complete transcribed text
-   * @throws IllegalStateException if the module has been destroyed
-   * @throws RuntimeException if transcription fails (non-zero result code)
-   */
-  fun transcribe(
-      wavPath: String,
-      config: AsrTranscribeConfig,
+      config: AsrTranscribeConfig? = null,
       callback: AsrCallback? = null,
   ): String {
     val handle = nativeHandle.get()
@@ -190,14 +147,15 @@ class AsrModule(
     val wavFile = File(wavPath)
     require(wavFile.canRead() && wavFile.isFile) { "Cannot read WAV file: $wavPath" }
 
+    val effectiveConfig = config ?: AsrTranscribeConfig()
     val result = StringBuilder()
     val status =
         nativeTranscribe(
             handle,
             wavPath,
-            config.maxNewTokens,
-            config.temperature,
-            config.decoderStartTokenId,
+            effectiveConfig.maxNewTokens,
+            effectiveConfig.temperature,
+            effectiveConfig.decoderStartTokenId,
             object : AsrCallback {
               override fun onToken(token: String) {
                 result.append(token)
