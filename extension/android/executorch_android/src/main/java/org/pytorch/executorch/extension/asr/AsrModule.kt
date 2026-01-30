@@ -88,7 +88,7 @@ class AsrModule(
     ): Int
   }
 
-  /** Check if the native handle is valid. */
+  /** Check if the native handle is valid (not yet closed). */
   val isValid: Boolean
     get() = nativeHandle.get() != 0L
 
@@ -100,16 +100,11 @@ class AsrModule(
     }
 
   /** Releases native resources. Call this when done with the module. */
-  fun destroy() {
+  override fun close() {
     val handle = nativeHandle.getAndSet(0L)
     if (handle != 0L) {
       nativeDestroy(handle)
     }
-  }
-
-  /** Closeable implementation for use with use {} blocks. */
-  override fun close() {
-    destroy()
   }
 
   /**
@@ -125,71 +120,41 @@ class AsrModule(
   }
 
   /**
-   * Transcribe audio from a WAV file with default configuration.
+   * Transcribe audio from a WAV file.
+   *
+   * This is a blocking call that returns the complete transcription.
    *
    * @param wavPath Path to the WAV audio file
-   * @param callback Callback to receive tokens, can be null
-   * @return 0 on success, error code otherwise
+   * @param config Configuration for transcription (null uses default configuration)
+   * @param callback Optional callback to receive tokens as they are generated (can be null)
+   * @return The complete transcribed text
    * @throws IllegalStateException if the module has been destroyed
+   * @throws RuntimeException if transcription fails (non-zero result code)
    */
-  fun transcribe(wavPath: String, callback: AsrCallback? = null): Int =
-      transcribe(wavPath, AsrTranscribeConfig(), callback)
-
-  /**
-   * Transcribe audio from a WAV file with custom configuration.
-   *
-   * @param wavPath Path to the WAV audio file
-   * @param config Configuration for transcription
-   * @param callback Callback to receive tokens, can be null
-   * @return 0 on success, error code otherwise
-   * @throws IllegalStateException if the module has been destroyed
-   */
+  @JvmOverloads
   fun transcribe(
       wavPath: String,
-      config: AsrTranscribeConfig,
+      config: AsrTranscribeConfig? = null,
       callback: AsrCallback? = null,
-  ): Int {
+  ): String {
     val handle = nativeHandle.get()
     check(handle != 0L) { "AsrModule has been destroyed" }
     val wavFile = File(wavPath)
     require(wavFile.canRead() && wavFile.isFile) { "Cannot read WAV file: $wavPath" }
-    return nativeTranscribe(
-        handle,
-        wavPath,
-        config.maxNewTokens,
-        config.temperature,
-        config.decoderStartTokenId,
-        callback,
-    )
-  }
 
-  /**
-   * Transcribe audio from a WAV file and return the full transcription.
-   *
-   * This is a blocking call that collects all tokens and returns the complete transcription.
-   *
-   * @param wavPath Path to the WAV audio file
-   * @param config Configuration for transcription
-   * @return The transcribed text
-   * @throws RuntimeException if transcription fails
-   */
-  @JvmOverloads
-  fun transcribeBlocking(
-      wavPath: String,
-      config: AsrTranscribeConfig = AsrTranscribeConfig(),
-  ): String {
+    val effectiveConfig = config ?: AsrTranscribeConfig()
     val result = StringBuilder()
     val status =
-        transcribe(
+        nativeTranscribe(
+            handle,
             wavPath,
-            config,
+            effectiveConfig.maxNewTokens,
+            effectiveConfig.temperature,
+            effectiveConfig.decoderStartTokenId,
             object : AsrCallback {
               override fun onToken(token: String) {
                 result.append(token)
-              }
-
-              override fun onComplete(transcription: String) {
-                // Tokens already collected
+                callback?.onToken(token)
               }
             },
         )

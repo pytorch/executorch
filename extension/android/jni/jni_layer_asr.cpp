@@ -80,7 +80,6 @@ bool utf8_check_validity(const char* str, size_t length) {
 struct AsrCallbackCache {
   jclass callbackClass = nullptr;
   jmethodID onTokenMethod = nullptr;
-  jmethodID onCompleteMethod = nullptr;
 };
 
 AsrCallbackCache callbackCache;
@@ -97,10 +96,6 @@ void initCallbackCache(JNIEnv* env) {
               (jclass)localEnv->NewGlobalRef(localClass);
           callbackCache.onTokenMethod = localEnv->GetMethodID(
               callbackCache.callbackClass, "onToken", "(Ljava/lang/String;)V");
-          callbackCache.onCompleteMethod = localEnv->GetMethodID(
-              callbackCache.callbackClass,
-              "onComplete",
-              "(Ljava/lang/String;)V");
           localEnv->DeleteLocalRef(localClass);
         }
       },
@@ -410,18 +405,6 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
   // Run transcription
   auto result =
       handle->runner->transcribe(featuresTensor, config, tokenCallback);
-
-  // Call onComplete if callback provided
-  if (scopedCallback) {
-    jstring emptyStr = env->NewStringUTF("");
-    env->CallVoidMethod(
-        scopedCallback.get(), callbackCache.onCompleteMethod, emptyStr);
-    if (env->ExceptionCheck()) {
-      ET_LOG(Error, "Exception occurred in AsrCallback.onComplete");
-      env->ExceptionClear();
-    }
-    env->DeleteLocalRef(emptyStr);
-  }
 
   if (!result.ok()) {
     return static_cast<jint>(result.error());
