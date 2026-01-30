@@ -69,9 +69,117 @@ class ConvertToCortexMPass(XNNPACKPass):
             pass
         return None
 
+    def _get_addmm_replacement(self, node):
+        """
+        Handle aten.addmm (decomposed linear):
+        addmm(bias, input, weight.T) = input @ weight.T + bias
+
+        input_qparams indices for addmm:
+        [0] = bias (int32)
+        [1] = input activation (int8)
+        [2] = weight (int8)
+
+        The weight qparams at index [2] are guaranteed to be present because
+        CortexMQuantizer marks weight nodes as annotated, allowing
+        FoldAndAnnotateQParamsPass to properly fold Q/DQ nodes and populate qparams.
+        """
+        # Validate addmm node structure: addmm(bias, input, weight)
+        if len(node.args) < 3:
+            return None
+
+        bias_node = node.args[0]
+        input_node = node.args[1]
+        weights_node = node.args[2]
+
+        # Validate qparams are present with helpful error messages
+        input_qparams = node.meta.get("input_qparams", {})
+        if 1 not in input_qparams:
+            raise RuntimeError(
+                f"Missing input activation qparams at index 1 for addmm node '{node.name}'. "
+                f"Available input_qparams keys: {list(input_qparams.keys())}. "
+                "Ensure the model is properly quantized and FoldAndAnnotateQParamsPass ran."
+            )
+        if 2 not in input_qparams:
+            raise RuntimeError(
+                f"Missing weight qparams at index 2 for addmm node '{node.name}'. "
+                f"Available input_qparams keys: {list(input_qparams.keys())}. "
+                "Ensure CortexMQuantizer marked weight nodes and PropagateQParamsPass "
+                "propagated qparams through any transpose/permute ops."
+            )
+
+        # Get input activation qparams (index 1, not 0 which is bias!)
+        input_scale = input_qparams[1].scale
+        input_zp = input_qparams[1].zp
+
+        # Get weight qparams (index 2)
+        weight_scale = input_qparams[2].scale
+        weight_zp = input_qparams[2].zp
+
+        # Get output qparams
+        output_scale = node.meta["output_qparams"][0].scale
+        output_zp = node.meta["output_qparams"][0].zp
+        output_min = node.meta["output_qparams"][0].qmin
+        output_max = node.meta["output_qparams"][0].qmax
+
+        # Calculate quantization multiplier and shift
+        quantized_multiplier, quantized_shift = quantize_multiplier_aot(
+            (input_scale * weight_scale) / output_scale
+        )
+
+        # Get the original weight tensor
+        # Trace back through transpose/permute to find the placeholder
+        if weights_node.op == "call_function" and len(weights_node.args) > 0:
+            original_weight_node = weights_node.args[0]
+        else:
+            original_weight_node = weights_node
+
+        weights_tensor = get_param_tensor(self.exported_program, original_weight_node)
+        final_weights = weights_tensor.contiguous()
+
+        # Compute kernel_sum WITHOUT bias (pass None)
+        # Bias is passed separately to the C++ operator
+        kernel_sum_tensor = self._compute_kernel_sum(
+            final_weights, None, -input_zp, -weight_zp
+        )
+
+        # Create placeholders for weights and kernel_sum
+        with node.graph.inserting_after(original_weight_node):
+            weights_placeholder = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_weights",
+                InputKind.PARAMETER,
+                final_weights,
+            )
+
+            kernel_sum = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_kernel_sum",
+                InputKind.PARAMETER,
+                kernel_sum_tensor,
+            )
+
+        # Build args for cortex_m.quantized_linear
+        args = (
+            input_node,
+            weights_placeholder,
+            bias_node,
+            kernel_sum,
+            -input_zp,
+            -weight_zp,
+            output_zp,
+            [quantized_multiplier],
+            [quantized_shift],
+            output_max,
+            output_min,
+        )
+
+        return exir_ops.edge.cortex_m.quantized_linear.default, args
+
     def _get_linear_replacement(self, node):
         """
-         Let
+        Let
         - yi be the output activations (y1, ... yn)
         - xj be the input activations (x1, ... xm)
         - wij be the weights (w11, ... wnm)
@@ -386,6 +494,11 @@ class ConvertToCortexMPass(XNNPACKPass):
             match node.target:
                 case exir_ops.edge.aten.linear.default:
                     op, args = self._get_linear_replacement(node)
+                case exir_ops.edge.aten.addmm.default:
+                    result = self._get_addmm_replacement(node)
+                    if result is None:
+                        continue
+                    op, args = result
                 case exir_ops.edge.aten.convolution.default:
                     # Check if it's transposed convolution (arg index 6)
                     transposed = node.args[6] if len(node.args) > 6 else False

@@ -33,6 +33,14 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
 
+# Passthrough ops that preserve quantization parameters from input to output.
+# These ops should be foldable even without explicit annotation metadata.
+PASSTHROUGH_OPS = {
+    exir_ops.edge.aten.hardtanh.default,
+    exir_ops.edge.aten.relu.default,
+    exir_ops.edge.aten.clamp.default,
+}
+
 def _get_special_dtype(qspec: QuantArgs) -> TosaSpecialDtype | None:
     if qspec.dtype == torch.int8:
         if qspec.qmax == 7 and qspec.qmin == -7:
@@ -249,6 +257,26 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         return
 
     @staticmethod
+    def _has_dq_input_and_q_output(node: Node) -> bool:
+        """
+        Check if a node has dequantize input(s) and quantize output(s).
+        This indicates the node is part of a quantized computation path.
+        """
+        # Check if any input is from a dequantize op
+        has_dq_input = any(
+            isinstance(arg, Node) and arg.target in DQ_OPS
+            for arg in node.args
+            if isinstance(arg, Node)
+        )
+
+        # Check if any output goes to a quantize op
+        has_q_output = any(
+            user.target in Q_OPS
+            for user in node.users
+        )
+        return has_dq_input and has_q_output
+
+    @staticmethod
     def is_foldable(node: Node) -> bool:
         if node.op != "call_function":
             return False
@@ -262,6 +290,13 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             *ComputeConstantOpsAOTPass.targeted_ops,
         ):
             return True
+
+        # Passthrough ops (hardtanh, relu, clamp) that have dq inputs and q outputs
+        # should be foldable even without explicit annotation. These ops preserve
+        # quantization parameters and are common in quantized models like MobileNetV2.
+        if node.target in PASSTHROUGH_OPS:
+            if FoldAndAnnotateQParamsPass._has_dq_input_and_q_output(node):
+                return True
 
         # We should not fold q-dq nodes into non-quantized nodes.
         if not (
@@ -334,6 +369,35 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 torch.ops.higher_order.while_loop,
             ):
                 self._handle_control_flow_node(n, graph_module)
+
+        # Second pass: Propagate qparams through passthrough ops.
+        # For ops like hardtanh that share qparams with their input, we need to:
+        # 1. Copy output_qparams from the passthrough op to its input node
+        # 2. Set input_qparams on the passthrough op
+        for n in graph_module.graph.nodes:
+            n = cast(Node, n)
+            if n.target not in PASSTHROUGH_OPS:
+                continue
+
+            # Check if this passthrough op has output_qparams but missing input_qparams
+            has_output = "output_qparams" in n.meta and len(n.meta.get("output_qparams", {})) > 0
+            has_input = "input_qparams" in n.meta and len(n.meta.get("input_qparams", {})) > 0
+
+            if not has_output or has_input:
+                continue
+
+            # Get the input node
+            if len(n.args) == 0 or not isinstance(n.args[0], Node):
+                continue
+
+            input_node = n.args[0]
+
+            # Propagate: For passthrough ops, output qparams equal input qparams
+            if "output_qparams" not in input_node.meta:
+                input_node.meta["output_qparams"] = n.meta["output_qparams"]
+
+            # Set input_qparams from output_qparams (same for passthrough ops)
+            n.meta["input_qparams"] = {0: n.meta["output_qparams"][0]}
 
         # retrace the graph to update the fake tensor types
         graph_module = super().call(graph_module).graph_module
