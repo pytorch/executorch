@@ -210,6 +210,51 @@ def _torch_dtype_to_dtypeid(dtype: torch.dtype) -> DTypeId:
     return _TORCH_DTYPE_TO_DTYPEID[dtype]
 
 
+def _check_dtype(node: Node) -> Optional[str]:
+    """
+    Check if a node has a supported dtype.
+
+    Args:
+        node: The FX node to check
+
+    Returns:
+        None if the node's dtype is supported, otherwise an error message string
+    """
+    fake_val = node.meta.get("val", None)
+    if fake_val is not None and hasattr(fake_val, "dtype"):
+        if fake_val.dtype not in _TORCH_DTYPE_TO_DTYPEID:
+            return f"has unsupported dtype: {fake_val.dtype}"
+    return None
+
+
+def _check_input_dtypes(node: Node) -> Optional[str]:
+    """
+    Check if all input tensors to a node have supported dtypes.
+
+    Args:
+        node: The FX node to check
+
+    Returns:
+        None if all input dtypes are supported, otherwise an error message string
+        describing which input (arg position or kwarg name) has an unsupported dtype
+    """
+    # Check positional args
+    for i, arg in enumerate(node.args):
+        if isinstance(arg, Node):
+            dtype_error = _check_dtype(arg)
+            if dtype_error is not None:
+                return f"arg[{i}] ({arg.name}) {dtype_error}"
+
+    # Check kwargs
+    for kwarg_name, kwarg_val in node.kwargs.items():
+        if isinstance(kwarg_val, Node):
+            dtype_error = _check_dtype(kwarg_val)
+            if dtype_error is not None:
+                return f"kwarg '{kwarg_name}' ({kwarg_val.name}) {dtype_error}"
+
+    return None
+
+
 # =============================================================================
 # Slot management
 # =============================================================================
@@ -939,7 +984,7 @@ class MLXProgramBuilder:
         for handler in matcher.find_patterns():
             handler.set_handlers(self)
 
-    def _process_nodes(self) -> None:
+    def _process_nodes(self) -> None:  # noqa C901
         """
         Common logic for processing all nodes: create slots, match patterns, run handlers.
 
@@ -965,21 +1010,33 @@ class MLXProgramBuilder:
             if self._is_handled(n):
                 continue
 
-            if n.op in ("placeholder", "output"):
-                self._mark_supported(n)
-                continue
-
             if self.node_info[n].handler is not None:
                 handler = self.node_info[n].handler
                 handler(self, n)
                 self._mark_supported(n, handler=handler)
                 continue
 
+            # Check input dtypes before processing node
+            unsupported_dtype_msg = _check_input_dtypes(n)
+            if unsupported_dtype_msg is not None:
+                if n.meta.get("val", None) is not None:
+                    self.slot_manager.make_or_get_slots(n)
+                self._mark_unsupported(n, unsupported_dtype_msg)
+                continue
+
+            if n.op in ("placeholder", "output"):
+                dtype_error = _check_dtype(n)
+                if dtype_error is not None:
+                    self._mark_unsupported(n, f"{n.op} {dtype_error}")
+                    continue
+                self._mark_supported(n)
+                continue
+
             handler = REGISTRY.get_handler(n)
             if handler is None:
                 msg = f"no handler for target={n.target}"
                 if n.meta.get("val", None) is not None:
-                    self.slot_manager.make_or_get_slot(n)
+                    self.slot_manager.make_or_get_slots(n)
                 self._mark_unsupported(n, msg)
                 continue
 
@@ -990,7 +1047,7 @@ class MLXProgramBuilder:
                 trace_str = traceback.format_exc()
                 msg = f"{handler} failed for {n.target}: {e}.\n{trace_str}"
                 if n.meta.get("val", None) is not None:
-                    self.slot_manager.make_or_get_slot(n)
+                    self.slot_manager.make_or_get_slots(n)
                 self._mark_unsupported(n, msg)
 
     def check_support_only(self) -> None:
