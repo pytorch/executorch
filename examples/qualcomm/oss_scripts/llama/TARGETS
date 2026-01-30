@@ -100,7 +100,10 @@ runtime.python_library(
 runtime.python_library(
     name = "wrappers",
     srcs = [
-        "wrappers.py",
+        "wrappers/__init__.py",
+        "wrappers/attention_sink_wrappers.py",
+        "wrappers/base_component.py",
+        "wrappers/llm_wrappers.py",
     ],
     deps = [
         ":decoder_constants",
