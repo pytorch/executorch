@@ -448,6 +448,11 @@ class SharedQspecQuantizer(Quantizer):
         torch.ops.aten._unsafe_view.default,
         torch.ops.aten.unflatten.int,
         torch.ops.aten.flatten.using_ints,
+        # Additional passthrough ops for MobileNetV2 and similar architectures
+        torch.ops.aten.hardtanh.default,
+        torch.ops.aten.hardtanh_.default,
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.dropout.default,
     ]
 
     def __init__(self, targets: Optional[List[OpOverload]] = None) -> None:
