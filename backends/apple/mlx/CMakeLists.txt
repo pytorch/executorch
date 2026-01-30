@@ -197,8 +197,11 @@ target_include_directories(
                       ${_mlx_schema__include_dir} ${mlx_SOURCE_DIR}
 )
 
-# Link against MLX and executorch
-target_link_libraries(mlxdelegate PRIVATE mlx_schema executorch_core mlx)
+# Link against MLX and executorch mlx is only available at BUILD_INTERFACE -
+# consumers must link to mlx separately
+target_link_libraries(
+  mlxdelegate PRIVATE mlx_schema executorch_core $<BUILD_INTERFACE:mlx>
+)
 
 executorch_target_link_options_shared_lib(mlxdelegate)
 target_compile_options(mlxdelegate PUBLIC ${_common_compile_options})
@@ -207,6 +210,19 @@ install(
   TARGETS mlxdelegate mlx_schema
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+# Install mlx library (from FetchContent) for downstream consumers Since mlx is
+# a FetchContent dependency, we need to explicitly install it so that consumers
+# of mlxdelegate can link against it
+install(TARGETS mlx DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+# Install mlx headers for downstream consumers that may need mlx types
+install(
+  DIRECTORY ${mlx_SOURCE_DIR}/mlx/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mlx
+  FILES_MATCHING
+  PATTERN "*.h"
 )
 
 # -----------------------------------------------------------------------------

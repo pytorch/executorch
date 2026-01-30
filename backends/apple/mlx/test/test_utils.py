@@ -421,26 +421,85 @@ def compare_outputs(
     return True, "All outputs match"
 
 
-def find_executorch_root() -> Path:
-    """Find the executorch root directory."""
-    test_dir = Path(__file__).parent
+def find_executorch_root() -> Path:  # noqa: C901
+    """
+    Find the executorch root directory, handling editable installs.
 
-    # Walk up to find the executorch root (has CMakeLists.txt and backends dir at root)
+    This function attempts to find the source directory in the following order:
+    1. Check for pip editable install markers (egg-link or direct_url.json)
+    2. Walk up from __file__ to find CMakeLists.txt and backends/ directory
+    3. Handle legacy src/executorch structure
+
+    Returns:
+        Path to the executorch root directory
+    """
+    # Start from the actual file location (resolve symlinks)
+    test_dir = Path(__file__).resolve().parent
+
+    # First, check if we're in an editable install by looking for markers
+    # This handles the case where the package is imported from site-packages
+    # but points to a source directory
+    site_packages = test_dir
+    for _ in range(10):
+        if site_packages.name == "site-packages":
+            # Method 1: Look for executorch.egg-link (older pip editable installs)
+            egg_link = site_packages / "executorch.egg-link"
+            if egg_link.exists():
+                try:
+                    with open(egg_link) as f:
+                        editable_path = Path(f.readline().strip())
+                        if (
+                            editable_path.exists()
+                            and (editable_path / "CMakeLists.txt").exists()
+                        ):
+                            return editable_path
+                except (OSError, ValueError):
+                    pass  # Fall through to other methods
+
+            # Method 2: Check dist-info for direct_url.json (PEP 660 editable installs)
+            for dist_info in site_packages.glob("executorch-*.dist-info"):
+                direct_url = dist_info / "direct_url.json"
+                if direct_url.exists():
+                    try:
+                        import json
+
+                        with open(direct_url) as f:
+                            data = json.load(f)
+                            # Check if it's an editable install
+                            if "dir_info" in data and data.get("dir_info", {}).get(
+                                "editable"
+                            ):
+                                # Extract path from file:// URL
+                                url = data.get("url", "")
+                                if url.startswith("file://"):
+                                    editable_path = Path(url.replace("file://", ""))
+                                    if (
+                                        editable_path.exists()
+                                        and (editable_path / "CMakeLists.txt").exists()
+                                    ):
+                                        return editable_path
+                    except (OSError, ValueError, json.JSONDecodeError):
+                        pass  # Fall through to other methods
+            break
+        site_packages = site_packages.parent
+
+    # Fall back to walking up from __file__ to find the executorch root
     executorch_root = test_dir
     for _ in range(10):  # Max 10 levels up
         if (executorch_root / "CMakeLists.txt").exists() and (
             executorch_root / "backends"
         ).exists():
-            # Check if we're in src/executorch (editable install)
+            # Check if we're in src/executorch (legacy editable install structure)
             if (
                 executorch_root.name == "executorch"
                 and executorch_root.parent.name == "src"
             ):
                 executorch_root = executorch_root.parent.parent
-            break
+            return executorch_root
         executorch_root = executorch_root.parent
 
-    return executorch_root
+    # If we still haven't found it, return the current best guess
+    return test_dir
 
 
 def find_build_dir() -> Optional[Path]:
