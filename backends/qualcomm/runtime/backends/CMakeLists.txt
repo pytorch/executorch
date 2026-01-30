@@ -43,13 +43,16 @@ target_sources(
                        ${CMAKE_CURRENT_LIST_DIR}/QnnProfiler.cpp
 )
 
-set(HOST_ARCHITECTURE_GPU
-    ${CMAKE_CURRENT_LIST_DIR}/gpu/${CMAKE_SYSTEM_PROCESSOR}
-)
-set(HOST_ARCHITECTURE_HTP
-    ${CMAKE_CURRENT_LIST_DIR}/htp/${CMAKE_SYSTEM_PROCESSOR}
-)
-set(HOST_ARCHITECTURE_IR ${CMAKE_CURRENT_LIST_DIR}/ir/${CMAKE_SYSTEM_PROCESSOR})
+# quick workaround for hexagon target
+set(target_platform aarch64)
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES x86_64)
+  set(target_platform x86_64)
+endif()
+
+set(HOST_ARCHITECTURE_GPU ${CMAKE_CURRENT_LIST_DIR}/gpu/${target_platform})
+set(HOST_ARCHITECTURE_HTP ${CMAKE_CURRENT_LIST_DIR}/htp/${target_platform})
+set(HOST_ARCHITECTURE_IR ${CMAKE_CURRENT_LIST_DIR}/ir/${target_platform})
+set(HOST_ARCHITECTURE_LPAI ${CMAKE_CURRENT_LIST_DIR}/lpai/${target_platform})
 
 # qnn_device
 target_sources(
@@ -57,6 +60,7 @@ target_sources(
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnDeviceCommon.h
          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuDevice.h
          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpDevice.h
+         ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiDevice.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnDeviceCommon.cpp
           ${CMAKE_CURRENT_LIST_DIR}/htp/HtpDevice.cpp
           ${CMAKE_CURRENT_LIST_DIR}/htp/HtpDevicePlatformInfoConfig.h
@@ -65,6 +69,7 @@ target_sources(
           # platform infomation and SocModel to Qnn
           ${HOST_ARCHITECTURE_HTP}/HtpDevicePlatformInfoConfig.cpp
           ${HOST_ARCHITECTURE_HTP}/HtpDeviceCustomConfig.cpp
+          ${HOST_ARCHITECTURE_LPAI}/LpaiDevice.cpp
 )
 
 # qnn_context
@@ -74,13 +79,17 @@ target_sources(
          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContext.h
          ${CMAKE_CURRENT_LIST_DIR}/ir/IrContext.h
          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuContext.h
+         ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiContext.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.cpp
-          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContext.cpp
-          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContextCustomConfig.h
           ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuContext.cpp
           ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuContextCustomConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContext.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContextCustomConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiContext.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiContextCustomConfig.h
           ${HOST_ARCHITECTURE_GPU}/GpuContextCustomConfig.cpp
           ${HOST_ARCHITECTURE_HTP}/HtpContextCustomConfig.cpp
+          ${HOST_ARCHITECTURE_LPAI}/LpaiContextCustomConfig.cpp
           ${HOST_ARCHITECTURE_IR}/IrContext.cpp
 )
 
@@ -99,6 +108,7 @@ target_sources(
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnGraphCommon.h
          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuGraph.h
          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpGraph.h
+         ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiGraph.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnGraphCommon.cpp
           ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuGraph.cpp
           ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuGraphCustomConfig.h
@@ -107,6 +117,9 @@ target_sources(
           ${CMAKE_CURRENT_LIST_DIR}/htp/HtpGraphCustomConfig.h
           ${CMAKE_CURRENT_LIST_DIR}/htp/HtpGraphCustomConfig.cpp
           ${HOST_ARCHITECTURE_HTP}/HtpGraphCustomConfig.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiGraphCustomConfig.h
+          ${HOST_ARCHITECTURE_LPAI}/LpaiGraph.cpp
+          ${HOST_ARCHITECTURE_LPAI}/LpaiGraphCustomConfig.cpp
 )
 
 # qnn_op_package_manager
@@ -123,10 +136,14 @@ target_sources(
          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuBackend.h
          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpBackend.h
          ${CMAKE_CURRENT_LIST_DIR}/ir/IrBackend.h
+         ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiBackend.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCommon.cpp
           ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuBackend.cpp
           ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuBackendCustomConfig.h
           ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuBackendCustomConfig.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiBackend.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiBackendCustomConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiBackendCustomConfig.cpp
 )
 
 # qnn_mem_manager

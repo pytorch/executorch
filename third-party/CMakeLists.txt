@@ -6,7 +6,10 @@
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 add_subdirectory(json)
-add_subdirectory(gflags)
+# [workaround]: mkdir was not supported in hexagon
+if(NOT ${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
+  add_subdirectory(gflags)
+endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(pybind11)
