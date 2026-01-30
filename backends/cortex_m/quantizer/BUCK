@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -8,7 +9,7 @@ load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 oncall("executorch")
 
-python_library(
+fbcode_target(_kind = python_library,
     name = "quantizer",
     srcs = [
         "__init__.py",
@@ -23,7 +24,7 @@ python_library(
     ],
 )
 
-python_library(
+fbcode_target(_kind = python_library,
     name = "quantization_configs",
     srcs = [
         "quantization_configs.py",
