@@ -1507,6 +1507,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(4, 10),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_narrow(self):
+        module = Narrow()  # noqa: F405
+        sample_input = (torch.randn(1, 128, 64),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_neg(self):
         module = Neg()  # noqa: F405
         sample_input = (torch.randn(1, 4, 16, 16),)
@@ -3798,6 +3803,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_min_dim(self):
         module = MinDim()  # noqa: F405
         sample_input = (torch.randn(4, 10),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_narrow(self):
+        module = Narrow()  # noqa: F405
+        sample_input = (torch.randn(1, 128, 64),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -6205,6 +6216,8 @@ class TestExampleLLMScript(TestQNN):
             "kv",
             "--max_seq_len",
             "1024",
+            "--max_context_len",
+            "1024",
             "--run_lm_eval",
             "--tasks",
             "wikitext",
@@ -6275,6 +6288,8 @@ class TestExampleLLMScript(TestQNN):
             "kv",
             "--max_seq_len",
             "128",
+            "--max_context_len",
+            "128",
         ]
         self.add_default_cmds(cmds)
 
@@ -6327,13 +6342,13 @@ class TestExampleLLMScript(TestQNN):
             "kv",
             "--max_seq_len",
             "1024",
+            "--max_context_len",
+            "1024",
             "--run_lm_eval",
             "--tasks",
             "hellaswag",
             "--limit",
             "10",
-            "--kv_updater",
-            "shift_pointer",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -6401,6 +6416,8 @@ class TestExampleLLMScript(TestQNN):
             "32",
             "--max_seq_len",
             "128",
+            "--max_context_len",
+            "128",
         ]
         self.add_default_cmds(cmds)
 
@@ -6462,6 +6479,8 @@ class TestExampleLLMScript(TestQNN):
             "32",
             "--max_seq_len",
             "128",
+            "--max_context_len",
+            "128",
         ]
         self.add_default_cmds(cmds)
 
@@ -6486,6 +6505,69 @@ class TestExampleLLMScript(TestQNN):
                     self.assertLessEqual(pte_size, 135_000_000)  # 135MB
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
+
+    def test_attention_sink(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = (
+            "I would like to learn python, could you teach me with a simple example?"
+        )
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--temperature",
+            "0",
+            "--decoder_model",
+            "smollm2_135m",
+            "--model_mode",
+            "kv",
+            "--max_seq_len",
+            "2048",
+            "--max_context_len",
+            "1024",
+            "--run_lm_eval",
+            "--tasks",
+            "wikitext",
+            "--limit",
+            "1",
+            "--use_attention_sink",
+            "4,32",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.compile_only:
+                    self.assertLessEqual(msg["rope_pte_size"], 1_700_000)  # 1.7 MB
+                    self.assertLessEqual(msg["wiki_ppl"], 20)
 
     def test_qwen2_5(self):
         # This is not testing static llm flow.
