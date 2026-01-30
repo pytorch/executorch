@@ -91,6 +91,12 @@ class RemoveNoopPass(ExportPass):
                         if node.args[0].target in _DEQUANT_OPS:
                             dequant_nodes += [node.args[0]]
                         node.replace_all_uses_with(node.args[0])
+                except (
+                    torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode
+                ):
+                    # Cannot determine if shapes match due to data-dependent symbols
+                    # Conservatively keep the node (don't remove it)
+                    pass
 
         graph_module.graph.eliminate_dead_code()
         eliminate_dq_q(graph_module, dequant_nodes)
