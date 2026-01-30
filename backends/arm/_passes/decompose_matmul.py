@@ -40,7 +40,11 @@ class DecomposeMatmulPass(ArmPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         modified = False
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in self.targeted_ops:
+            if (
+                node.op != "call_function"
+                or node.target not in self.targeted_ops
+                or not self.allowed_to_transform(node.meta)
+            ):
                 continue
 
             input_tensors = [arg.meta["val"] for arg in node.args]
