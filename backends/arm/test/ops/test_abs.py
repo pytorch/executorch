@@ -38,12 +38,19 @@ class Abs(torch.nn.Module):
         "randn_1d_bf16": lambda: (torch.randn(8, dtype=torch.bfloat16),),
         "randn_4d_bf16": lambda: (torch.randn(1, 2, 3, 4, dtype=torch.bfloat16),),
     }
+    test_parameters_fp16 = {
+        "randn_1d_fp16": lambda: (torch.randn(8, dtype=torch.float16),),
+        "randn_4d_fp16": lambda: (torch.randn(1, 2, 3, 4, dtype=torch.float16),),
+    }
 
     def forward(self, x):
         return torch.abs(x)
 
 
-@common.parametrize("test_data", Abs.test_parameters | Abs.test_parameters_bf16)
+@common.parametrize(
+    "test_data",
+    Abs.test_parameters | Abs.test_parameters_bf16 | Abs.test_parameters_fp16,
+)
 def test_abs_tosa_FP(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](
         Abs(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
@@ -81,7 +88,7 @@ def test_abs_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", Abs.test_parameters)
+@common.parametrize("test_data", Abs.test_parameters | Abs.test_parameters_fp16)
 @common.SkipIfNoModelConverter
 def test_abs_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
