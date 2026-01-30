@@ -12,20 +12,7 @@ ExecuTorch is PyTorch's unified solution for deploying AI models on-device (smar
 
 ### Initial Setup
 
-```bash
-# Install dependencies
-./install_requirements.sh
-./install_executorch.sh
-
-# Configure CMake (one-time setup after cloning/pulling)
-rm -rf cmake-out
-mkdir cmake-out
-cd cmake-out
-cmake ..
-
-# Build (use core count + 1 for -j)
-cmake --build cmake-out -j9
-```
+See `docs/source/using-executorch-building-from-source.md` for environment setup and installation.
 
 ### Common CMake Build Options
 
@@ -277,15 +264,6 @@ lintrunner init      # Setup
 lintrunner           # Check
 lintrunner -a        # Auto-fix
 ```
-
-## Build Presets
-
-See `CMakePresets.json` for workflow presets:
-- `llm-release` - LLM build with optimized kernels
-- `llm-release-cuda` - LLM with CUDA backend
-- `llm-release-metal` - LLM with Metal backend
-
-Model-specific presets in `examples/models/<model>/CMakePresets.json`.
 
 ## File Layout Constraints
 
