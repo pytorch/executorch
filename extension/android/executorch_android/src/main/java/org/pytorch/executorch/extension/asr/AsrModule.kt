@@ -127,7 +127,7 @@ class AsrModule(
   /**
    * Transcribe audio from a WAV file.
    *
-   * This is a synchronous blocking call that returns the complete transcription.
+   * This is a blocking call that returns the complete transcription.
    *
    * @param wavPath Path to the WAV audio file
    * @param config Configuration for transcription (null uses default configuration)
