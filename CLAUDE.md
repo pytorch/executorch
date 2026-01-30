@@ -1,7 +1,8 @@
 # Repo and framework name
 
 Refer to the repo/framework/runtime "executorch" (in lower cases) or "ExecuTorch" (in 
-camel cases), not "ExecutorTorch".
+camel cases), not "ExecutorTorch". With limited code or comment length, maybe refer
+to the framework "ET" but consider it as very unofficial and not recommended.
 
 # Commit messages
 
