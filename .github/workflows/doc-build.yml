@@ -107,7 +107,7 @@ jobs:
       timeout: 90
       secrets-env: GITHUB_TOKEN
       script: |
-        set -euo pipefail
+        set -xeuo pipefail
 
         # Get github.ref for the output doc folder. By default "main"
         # If matches a tag like refs/tags/v1.12.0-rc3 or
