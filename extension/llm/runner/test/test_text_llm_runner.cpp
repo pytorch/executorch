@@ -191,6 +191,22 @@ class RunnerTest : public Test {
     };
   }
 
+  std::unordered_map<std::string, int64_t> createRingBufferMetadata(
+      int64_t max_context_len = 128,
+      int64_t sliding_window_size = 0) {
+    std::unordered_map<std::string, int64_t> metadata = {
+        {"enable_dynamic_shape", false},
+        {"get_max_seq_len", max_context_len},
+        {"get_max_context_len", max_context_len},
+        {"use_kv_cache", true},
+        {"is_ring_buffer", 1},
+    };
+    if (sliding_window_size > 0) {
+      metadata["sliding_window_size"] = sliding_window_size;
+    }
+    return metadata;
+  }
+
  protected:
   Stats stats_;
   std::vector<float> return_logits_ = {0.1f, 0.2f, 0.3f, 0.4f};
@@ -353,6 +369,409 @@ TEST_F(RunnerTest, IsLoadedReturnsTrueWhenComponentsInitialized) {
 
   // Verify is_loaded returns true
   EXPECT_TRUE(runner.is_loaded());
+}
+
+// ============================================================================
+// Ring Buffer Tests
+// ============================================================================
+
+// Test that ring buffer mode is enabled when metadata contains is_ring_buffer=1
+// and sliding_window_size defaults to max_context_len
+TEST_F(RunnerTest, RingBufferModeEnabledFromMetadata) {
+  // Create mock instances using helper functions
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  // Set up expectations for the tokenizer encode method
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
+
+  // Set up expectations for the text prefiller
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+        return (Result<uint64_t>(4));
+      });
+
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
+
+  std::unique_ptr<executorch::llm::Stats> stats =
+      std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+
+  // Create a Runner with ring buffer metadata (no explicit sliding_window_size)
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+
+  // Use ring buffer metadata with max_context_len=64
+  TextLLMRunner runner(
+      createRingBufferMetadata(64),
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+
+  // Load and generate should succeed
+  runner.load();
+
+  GenerationConfig config;
+  config.max_new_tokens = 5;
+  config.echo = false;
+
+  Error err = runner.generate("test prompt", config, nullptr);
+  EXPECT_EQ(err, Error::Ok);
+}
+
+// Test that ring buffer mode uses explicit sliding_window_size when provided
+TEST_F(RunnerTest, RingBufferModeUsesExplicitSlidingWindowSize) {
+  // Create mock instances using helper functions
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  // Set up expectations for the tokenizer encode method
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
+
+  // Set up expectations for the text prefiller
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+        return (Result<uint64_t>(4));
+      });
+
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
+
+  std::unique_ptr<executorch::llm::Stats> stats =
+      std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+
+  // Create a Runner with ring buffer metadata with explicit sliding_window_size
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+
+  // max_context_len=128, but sliding_window_size=32
+  TextLLMRunner runner(
+      createRingBufferMetadata(128, 32),
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+
+  // Load and generate should succeed
+  runner.load();
+
+  GenerationConfig config;
+  config.max_new_tokens = 5;
+  config.echo = false;
+
+  Error err = runner.generate("test prompt", config, nullptr);
+  EXPECT_EQ(err, Error::Ok);
+}
+
+// Test that ring buffer mode rejects prompts that exceed sliding window size
+TEST_F(RunnerTest, RingBufferModeRejectsPromptExceedingSlidingWindow) {
+  // Create mock instances using helper functions
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  // Set up tokenizer to return a long prompt (10 tokens)
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+      });
+
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
+
+  std::unique_ptr<executorch::llm::Stats> stats =
+      std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+
+  // Create a Runner with ring buffer and small sliding_window_size=5
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+
+  TextLLMRunner runner(
+      createRingBufferMetadata(128, 5), // sliding_window_size=5
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+
+  runner.load();
+
+  GenerationConfig config;
+  config.max_new_tokens = 5;
+  config.echo = false;
+
+  // Generate should fail because prompt (10 tokens) > sliding_window_size (5)
+  Error err = runner.generate("long prompt that exceeds window", config, nullptr);
+  EXPECT_EQ(err, Error::InvalidArgument);
+}
+
+// Test that non-ring buffer mode (default) still works with original behavior
+TEST_F(RunnerTest, NonRingBufferModeBackwardCompatibility) {
+  // Create mock instances using helper functions
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  // Set up expectations for the tokenizer encode method
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
+
+  // Set up expectations for the text prefiller
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+        return (Result<uint64_t>(4));
+      });
+
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
+
+  std::unique_ptr<executorch::llm::Stats> stats =
+      std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+
+  // Create a Runner WITHOUT ring buffer (default metadata)
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+
+  TextLLMRunner runner(
+      createDefaultMetadata(), // No is_ring_buffer
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+
+  runner.load();
+
+  GenerationConfig config;
+  config.max_new_tokens = 5;
+  config.echo = false;
+
+  // Generate should succeed with default (non-ring buffer) mode
+  Error err = runner.generate("test prompt", config, nullptr);
+  EXPECT_EQ(err, Error::Ok);
+}
+
+// Test that non-ring buffer mode rejects prompts exceeding remaining context
+TEST_F(RunnerTest, NonRingBufferModeRejectsPromptExceedingRemainingContext) {
+  // Create mock instances using helper functions
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  // Set up tokenizer to return a long prompt (120 tokens)
+  std::vector<uint64_t> long_prompt(120);
+  for (size_t i = 0; i < 120; i++) {
+    long_prompt[i] = i + 1;
+  }
+
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault(
+          [long_prompt](const std::string&, int8_t, int8_t) {
+            return ::tokenizers::Result<std::vector<uint64_t>>(long_prompt);
+          });
+
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
+
+  std::unique_ptr<executorch::llm::Stats> stats =
+      std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+
+  // Create a Runner WITHOUT ring buffer with max_context_len=128
+  // But prompt is 120 tokens, leaving only 8 tokens for generation
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+
+  // Metadata with small max_context_len
+  std::unordered_map<std::string, int64_t> metadata = {
+      {"enable_dynamic_shape", false},
+      {"get_max_seq_len", 50},
+      {"get_max_context_len", 50}, // Only 50 tokens allowed
+      {"use_kv_cache", true},
+  };
+
+  TextLLMRunner runner(
+      metadata,
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+
+  runner.load();
+
+  GenerationConfig config;
+  config.max_new_tokens = 5;
+  config.echo = false;
+
+  // Generate should fail because prompt (120 tokens) >= max_context_len (50)
+  Error err = runner.generate("very long prompt", config, nullptr);
+  EXPECT_EQ(err, Error::InvalidArgument);
+}
+
+// Test that ring buffer mode allows generation after multiple calls
+// (simulating continuous conversation that wraps around)
+TEST_F(RunnerTest, RingBufferModeAllowsContinuousGeneration) {
+  // Create mock instances using helper functions
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  // Set up expectations for the tokenizer encode method
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
+
+  // Set up expectations for the text prefiller
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+        return (Result<uint64_t>(4));
+      });
+
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
+
+  std::unique_ptr<executorch::llm::Stats> stats =
+      std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+
+  // Create a Runner with ring buffer and small window size
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+
+  // Small sliding_window_size to force wrapping
+  TextLLMRunner runner(
+      createRingBufferMetadata(32, 32),
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+
+  runner.load();
+
+  GenerationConfig config;
+  config.max_new_tokens = 20;
+  config.echo = false;
+
+  // First generation
+  Error err1 = runner.generate("first prompt", config, nullptr);
+  EXPECT_EQ(err1, Error::Ok);
+
+  // Second generation (without reset - should continue in ring buffer mode)
+  // In ring buffer mode, this should succeed even if pos_ > sliding_window_size
+  Error err2 = runner.generate("second prompt", config, nullptr);
+  EXPECT_EQ(err2, Error::Ok);
+
+  // Third generation - positions should wrap around
+  Error err3 = runner.generate("third prompt", config, nullptr);
+  EXPECT_EQ(err3, Error::Ok);
+}
+
+// Test that reset() clears position for both ring buffer and non-ring buffer
+// modes
+TEST_F(RunnerTest, ResetClearsPositionInRingBufferMode) {
+  // Create mock instances using helper functions
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
+
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+        return (Result<uint64_t>(4));
+      });
+
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
+
+  std::unique_ptr<executorch::llm::Stats> stats =
+      std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+
+  TextLLMRunner runner(
+      createRingBufferMetadata(64),
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+
+  runner.load();
+
+  GenerationConfig config;
+  config.max_new_tokens = 10;
+  config.echo = false;
+
+  // Generate to advance position
+  Error err1 = runner.generate("test prompt", config, nullptr);
+  EXPECT_EQ(err1, Error::Ok);
+
+  // Reset should clear position
+  runner.reset();
+
+  // Generate again - should start from position 0
+  Error err2 = runner.generate("another prompt", config, nullptr);
+  EXPECT_EQ(err2, Error::Ok);
 }
 
 } // namespace

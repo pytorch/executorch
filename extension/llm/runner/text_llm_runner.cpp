@@ -47,6 +47,21 @@ TextLLMRunner::TextLLMRunner(
       pos_(0) {
   // Note: This constructor assumes that text_prefiller and text_token_generator
   // already have references to the Module and TextDecoderRunner they need
+
+  // Initialize ring buffer configuration from metadata
+  if (metadata_.count(kIsRingBuffer) && metadata_.at(kIsRingBuffer) > 0) {
+    is_ring_buffer_ = true;
+    // Sliding window size defaults to max_context_len if not specified
+    if (metadata_.count(kSlidingWindowSize)) {
+      sliding_window_size_ = metadata_.at(kSlidingWindowSize);
+    } else if (metadata_.count(kMaxContextLen)) {
+      sliding_window_size_ = metadata_.at(kMaxContextLen);
+    }
+    ET_LOG(
+        Info,
+        "Ring buffer KV cache enabled with sliding window size: %" PRId64,
+        sliding_window_size_);
+  }
 }
 
 bool TextLLMRunner::is_loaded() const {
@@ -129,24 +144,65 @@ Error TextLLMRunner::generate(
   std::vector<uint64_t> prompt_tokens = encode_res.get();
   int num_prompt_tokens = prompt_tokens.size();
 
-  // Reduce max_context_len by pos_
-  int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;
   ET_CHECK_OR_RETURN_ERROR(
       num_prompt_tokens >= 1,
       InvalidArgument,
       "Expected at least 1 prompt token");
-  ET_CHECK_OR_RETURN_ERROR(
-      num_prompt_tokens < max_context_len,
-      InvalidArgument,
-      "num_prompt_tokens %d >= max_context_len %" PRId64
-      ", Max seq length exceeded - please increase max seq len value in your export script",
-      num_prompt_tokens,
-      max_context_len);
 
-  // Determine max_new_tokens using the GenerationConfig's resolve method,
-  // then subtract pos_ for max_new_tokens.
-  int max_new_tokens =
-      config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
+  int64_t max_context_len = metadata_.at(kMaxContextLen);
+  int64_t effective_context_len;
+  int max_new_tokens;
+
+  if (is_ring_buffer_) {
+    // Ring buffer mode: positions wrap around, allowing continuous generation.
+    // The model's KV cache uses a ring buffer that overwrites old entries,
+    // so we can generate beyond the initial context length.
+
+    // Check that a single prompt fits within the sliding window
+    ET_CHECK_OR_RETURN_ERROR(
+        num_prompt_tokens <= sliding_window_size_,
+        InvalidArgument,
+        "num_prompt_tokens %d > sliding_window_size %" PRId64
+        ", Single prompt exceeds sliding window capacity",
+        num_prompt_tokens,
+        sliding_window_size_);
+
+    // In ring buffer mode, effective context is the sliding window size
+    // We can always generate up to sliding_window_size tokens at a time
+    effective_context_len = sliding_window_size_;
+
+    // Calculate max_new_tokens - in ring buffer mode we're not limited by pos_
+    // since positions wrap around. Use the config's max or a practical limit.
+    max_new_tokens =
+        config.resolve_max_new_tokens(effective_context_len, num_prompt_tokens);
+
+    // Log ring buffer status
+    if (pos_ >= sliding_window_size_) {
+      ET_LOG(
+          Info,
+          "Ring buffer active: logical pos %" PRId64
+          " >= window size %" PRId64 ", positions will wrap",
+          pos_,
+          sliding_window_size_);
+    }
+  } else {
+    // Non-ring buffer mode: original behavior with hard context limit.
+    // Reduce max_context_len by current position.
+    effective_context_len = max_context_len - pos_;
+
+    ET_CHECK_OR_RETURN_ERROR(
+        num_prompt_tokens < effective_context_len,
+        InvalidArgument,
+        "num_prompt_tokens %d >= remaining context %" PRId64
+        ", Max seq length exceeded - please increase max seq len value in "
+        "your export script or enable ring buffer KV cache",
+        num_prompt_tokens,
+        effective_context_len);
+
+    // Determine max_new_tokens using the GenerationConfig's resolve method
+    max_new_tokens = config.resolve_max_new_tokens(
+        effective_context_len, num_prompt_tokens);
+  }
 
   ET_LOG(
       Info,

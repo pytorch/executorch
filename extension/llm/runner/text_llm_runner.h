@@ -157,6 +157,17 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
 
   // The position in KV cache of the input, starting from 0.
   int64_t pos_ = 0;
+
+  // Ring buffer configuration for continuous generation beyond context length.
+  // When is_ring_buffer_ is true, the model's KV cache uses a ring buffer
+  // that wraps around, allowing generation to continue indefinitely by
+  // overwriting old cache entries.
+  bool is_ring_buffer_ = false;
+
+  // The sliding window size for ring buffer models. This is the effective
+  // context length that the model can attend to at any given time.
+  // Typically equals max_context_len for ring buffer models.
+  int64_t sliding_window_size_ = 0;
 };
 
 } // namespace executorch::extension::llm
