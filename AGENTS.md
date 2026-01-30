@@ -312,7 +312,7 @@ See `docs/source/backend-delegates-integration.md` for detailed guide.
 
 ## CI and Testing Requirements
 
-- CI runs automatically on PRs: https://hud.pytorch.org/hud/pytorch/executorch/main
+- CI runs automatically on PRs: https://hud.pytorch.org/hud/pytorch/executorch/main <!-- @lint-ignore -->
 - All tests must pass before merge
 - Add tests for new features/bug fixes
 - C++ tests use GTest framework
