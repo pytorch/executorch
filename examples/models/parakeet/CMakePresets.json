@@ -55,6 +55,19 @@
                 "type": "equals",
                 "rhs": "Darwin"
             }
+        },
+        {
+            "name": "parakeet-mlx",
+            "displayName": "Parakeet runner (MLX)",
+            "inherits": ["parakeet-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
@@ -80,6 +93,12 @@
             "name": "parakeet-metal",
             "displayName": "Build Parakeet runner (Metal)",
             "configurePreset": "parakeet-metal",
+            "targets": ["parakeet_runner"]
+        },
+        {
+            "name": "parakeet-mlx",
+            "displayName": "Build Parakeet runner (MLX)",
+            "configurePreset": "parakeet-mlx",
             "targets": ["parakeet_runner"]
         }
     ],
@@ -137,6 +156,20 @@
                 {
                     "type": "build",
                     "name": "parakeet-metal"
+                }
+            ]
+        },
+        {
+            "name": "parakeet-mlx",
+            "displayName": "Configure and build Parakeet runner (MLX)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "parakeet-mlx"
+                },
+                {
+                    "type": "build",
+                    "name": "parakeet-mlx"
                 }
             ]
         }
