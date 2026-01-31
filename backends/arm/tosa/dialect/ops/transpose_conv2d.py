@@ -19,10 +19,7 @@ from executorch.backends.arm.tosa.specification import (
     "Tensor bias, "
     "int[4] out_pad, "
     "int[2] stride) -> Tensor",  # schema
-    (
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-    ),  # target TOSA specifications
+    TosaSpecification.all_versions_and_profiles(),
 )
 def TRANSPOSE_CONV2D(
     x: torch.Tensor,
