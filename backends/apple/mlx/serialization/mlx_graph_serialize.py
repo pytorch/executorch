@@ -40,7 +40,7 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (  # no
     ARangeNode,
     ArgmaxNode,
     CastNode,
-    ConcatNode,
+    ConcatenateNode,
     ContiguousNode,
     Conv1DNode,
     DataSegment,

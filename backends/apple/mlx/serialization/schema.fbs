@@ -213,6 +213,24 @@ table SigmoidNode {
     out: Tid (required);
 }
 
+table TanhNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SqueezeNode {
+    x: Tid (required);
+    out: Tid (required);
+    dims: [int32];  // Optional list of dimensions to squeeze. If empty, squeeze all dims of size 1
+}
+
+table SplitNode {
+    x: Tid (required);
+    outs: [Tid] (required);  // Multiple output tensor IDs (one for each split chunk)
+    sizes: [IntOrVid] (required);  // Split sizes (can be dynamic)
+    axis: int32;
+}
+
 table RsqrtNode {
     x: Tid (required);
     out: Tid (required);
@@ -311,9 +329,8 @@ table QuantizedLinearNode {
     out_dtype: DTypeId;
 }
 
-table ConcatNode {
-    a: Tid (required);
-    b: Tid (required);
+table ConcatenateNode {
+    tensors: [Tid] (required);  // List of tensors to concatenate
     out: Tid (required);
     axis: int32;
 }
@@ -391,6 +408,9 @@ union OpNode {
     ARangeNode,
     SiluNode,
     SigmoidNode,
+    TanhNode,
+    SqueezeNode,
+    SplitNode,
     RsqrtNode,
     MaximumNode,
     LogNode,
@@ -406,7 +426,7 @@ union OpNode {
     SliceNode,
     CastNode,
     QuantizedLinearNode,
-    ConcatNode,
+    ConcatenateNode,
     FullNode,
     ZerosNode,
     OnesNode,

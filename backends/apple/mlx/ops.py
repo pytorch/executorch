@@ -33,6 +33,7 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     AddScalarNode,
     ARangeNode,
     BroadcastToNode,
+    ConcatenateNode,
     ContiguousNode,
     Conv1DNode,
     Conv2DNode,
@@ -56,9 +57,12 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     SliceNode,
     SliceUpdateNode,
     SoftmaxNode,
+    SplitNode,
+    SqueezeNode,
     SubtractNode,
     SymSizeNode,
     TakeAlongAxisNode,
+    TanhNode,
     TileNode,
     TransposeNode,
     WhereNode,
@@ -526,6 +530,25 @@ def _sigmoid_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.tanh.default])
+def _tanh_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle tanh activation function.
+
+    tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))
+
+    Returns values in range [-1, 1].
+    """
+    (x,) = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        TanhNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
 @REGISTRY.register(target=[torch.ops.aten._softmax.default])
 def _softmax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle softmax: computes softmax along the specified dimension.
@@ -709,6 +732,150 @@ def _unsqueeze_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
     return out
+
+
+@REGISTRY.register(
+    target=[torch.ops.aten.squeeze.dims, torch.ops.aten.squeeze_copy.dims]
+)
+def _squeeze_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle squeeze operation for specific dimensions.
+
+    Removes dimensions of size 1 from the tensor at specified positions.
+    If dims is empty, removes all dimensions of size 1.
+    """
+    x, dims = P.args(n)
+    out = P.make_or_get_slot(n)
+
+    # dims is typically a list of ints
+    dims_list = list(dims) if dims is not None else []
+
+    P._emit(
+        SqueezeNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+            dims=dims_list,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.cat.default])
+def _cat_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle concatenation of a list of tensors.
+
+    Concatenates tensors along a specified dimension.
+    All tensors must have the same shape except in the concatenating dimension.
+    """
+    args = P.args(n)
+    # aten.cat.default signature: cat(Tensor[] tensors, int dim=0) -> Tensor
+    # args can be (tensors_list,) or (tensors_list, dim)
+    tensors_list = args[0]
+    dim = args[1] if len(args) > 1 else 0
+
+    out = P.make_or_get_slot(n)
+
+    # Convert list of tensor slots to list of Tids
+    tensor_tids = [P._slot_to_tid(t) for t in tensors_list]
+
+    # dim is typically an int
+    axis = dim if dim is not None else 0
+
+    P._emit(
+        ConcatenateNode(
+            tensors=tensor_tids,
+            out=P._slot_to_tid(out),
+            axis=axis,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(
+    target=[
+        torch.ops.aten.split_with_sizes.default,
+        torch.ops.aten.split_with_sizes_copy.default,
+    ]
+)
+def _split_with_sizes_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle split_with_sizes operation.
+
+    Splits a tensor into chunks with specified sizes along a dimension.
+    Returns a tuple of output slots that getitem can extract from.
+
+    PyTorch: split_with_sizes(x, [2, 3, 4], dim=1)
+    MLX: split(x, indices=[2, 5], axis=1)  # indices are cumulative positions
+    """
+    args = P.args(n)
+    x = args[0]
+    sizes = args[1]
+    dim = args[2] if len(args) > 2 else 0  # dim has default value of 0
+
+    # Convert sizes to IntOrVid (supports both static ints and dynamic Vids)
+    sizes_int_or_vid = [P._to_int_or_vid(s) for s in sizes]
+
+    axis = dim if dim is not None else 0
+
+    # Create output slots for multi-output operation
+    # make_or_get_slots automatically creates slots based on node.meta["val"]
+    output_slots = P.make_or_get_slots(n)
+
+    # Emit SplitNode with all output slots
+    P._emit(
+        SplitNode(
+            x=P._slot_to_tid(x),
+            outs=[P._slot_to_tid(s) for s in output_slots],
+            sizes=sizes_int_or_vid,
+            axis=axis,
+        )
+    )
+
+    # Return tuple of slots - getitem will extract individual elements
+    return output_slots
+
+
+@REGISTRY.register(
+    target=[
+        torch.ops.aten.split.Tensor,
+        torch.ops.aten.split_copy.Tensor,
+    ]
+)
+def _split_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle split operation with uniform chunk size.
+
+    Splits a tensor into chunks of a given size along a dimension.
+    The last chunk may be smaller if the dimension doesn't divide evenly.
+
+    PyTorch: split(x, split_size, dim=0)
+
+    We pass [split_size] to the interpreter, which computes the actual
+    chunk sizes based on the tensor dimension.
+    """
+    args = P.args(n)
+    x = args[0]
+    split_size = args[1]
+    dim = args[2] if len(args) > 2 else 0
+
+    axis = dim if dim is not None else 0
+    if axis < 0:
+        x_meta = n.args[0].meta.get("val")
+        if x_meta is None:
+            raise RuntimeError("split: missing tensor metadata for negative axis")
+        axis += len(x_meta.shape)
+
+    # Create output slots for multi-output operation
+    output_slots = P.make_or_get_slots(n)
+
+    # Emit SplitNode - interpreter computes actual chunk sizes from split_size
+    P._emit(
+        SplitNode(
+            x=P._slot_to_tid(x),
+            outs=[P._slot_to_tid(s) for s in output_slots],
+            sizes=[P._to_int_or_vid(split_size)],
+            axis=axis,
+        )
+    )
+
+    return output_slots
 
 
 @REGISTRY.register(target=[torch.ops.aten.repeat.default])
