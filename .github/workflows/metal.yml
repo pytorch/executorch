@@ -28,6 +28,30 @@ jobs:
         PYTHON_EXECUTABLE=python CMAKE_ARGS="-DEXECUTORCH_BUILD_METAL=ON" ${CONDA_RUN} --no-capture-output ./install_executorch.sh
         echo "::endgroup::"
 
+  test-metal-modules:
+    name: test-metal-backend-modules
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m2-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Build Metal Runtime"
+        ${CONDA_RUN} backends/apple/metal/tests/run_metal_test.sh --build
+        echo "::endgroup::"
+
+        echo "::group::Run Metal Backend Module Tests"
+        ${CONDA_RUN} python -m unittest backends.apple.metal.tests.test_modules.TestMetalBackendModules
+        echo "::endgroup::"
+
   export-model-metal-artifact:
     name: export-model-metal-artifact
       # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
