@@ -75,9 +75,8 @@ find_package(gflags REQUIRED)
 #
 
 # find `executorch` libraries Same as for gflags
-list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
-find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-executorch_target_link_options_shared_lib(executorch)
+set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
+find_package(executorch CONFIG REQUIRED)
 
 set(LINK_LIBS executorch gflags extension_llm_runner)
 set(link_libraries ${LINK_LIBS})
