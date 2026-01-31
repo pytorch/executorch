@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -33,6 +34,8 @@ using ::executorch::extension::llm::Sampler;
 using ::executorch::extension::llm::Stats;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
+
+using TokenCallback = std::function<void(const std::string&)>;
 
 /**
  * Configuration for the ASR transcription loop.
@@ -84,13 +87,12 @@ class ET_EXPERIMENTAL AsrRunner {
    * @param token_callback Optional functor invoked for each decoded piece of
    * text emitted during generation.
    *
-   * @returns Result containing the final decoder token ids (including the seed
-   * prompt and generated tokens), or an error.
+   * @returns Result containing the final transcribed text, or an error.
    */
-  ::executorch::runtime::Result<std::vector<int64_t>> transcribe(
+  ::executorch::runtime::Result<std::string> transcribe(
       ::executorch::extension::TensorPtr preprocessed_features,
       AsrTranscribeConfig config = {},
-      std::function<void(const std::string&)> token_callback = {});
+      std::optional<TokenCallback> token_callback = std::nullopt);
 
  private:
   ::executorch::runtime::Error load_tokenizer();

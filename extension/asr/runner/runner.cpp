@@ -151,10 +151,10 @@ Error AsrRunner::load() {
   return Error::Ok;
 }
 
-Result<std::vector<int64_t>> AsrRunner::transcribe(
+Result<std::string> AsrRunner::transcribe(
     ::executorch::extension::TensorPtr preprocessed_features,
     AsrTranscribeConfig config,
-    std::function<void(const std::string&)> token_callback) {
+    std::optional<TokenCallback> token_callback) {
   ET_CHECK_OR_RETURN_ERROR(
       config.max_new_tokens > 0,
       InvalidArgument,
@@ -253,6 +253,7 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
       std::move(encoder_output_tensor));
 
   std::vector<int64_t> tokens = {config.decoder_start_token_id};
+  std::string transcription;
 
   int64_t input_id = config.decoder_start_token_id;
   int64_t cache_position = 0;
@@ -331,20 +332,21 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
     ++cache_position;
     input_id = next_token;
 
-    if (token_callback) {
-      auto piece_result = tokenizer_->decode(
-          static_cast<uint64_t>(prev_token), static_cast<uint64_t>(next_token));
-      if (piece_result.ok()) {
-        token_callback(piece_result.get());
-      } else {
-        ET_LOG(
-            Error,
-            "Tokenizer failed to decode token pair (%" PRId64 ", %" PRId64
-            ") with error %d",
-            prev_token,
-            next_token,
-            static_cast<int>(piece_result.error()));
+    auto piece_result = tokenizer_->decode(
+        static_cast<uint64_t>(prev_token), static_cast<uint64_t>(next_token));
+    if (piece_result.ok()) {
+      transcription += piece_result.get();
+      if (token_callback.has_value()) {
+        (*token_callback)(piece_result.get());
       }
+    } else {
+      ET_LOG(
+          Error,
+          "Tokenizer failed to decode token pair (%" PRId64 ", %" PRId64
+          ") with error %d",
+          prev_token,
+          next_token,
+          static_cast<int>(piece_result.error()));
     }
 
     if (eos_tokens->count(next_token) > 0) {
@@ -359,7 +361,7 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
   printf("\n");
   print_report(stats_);
 
-  return tokens;
+  return transcription;
 }
 
 } // namespace executorch::extension::asr
