@@ -7,66 +7,62 @@
  */
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
-#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <executorch/kernels/portable/cpu/util/transpose_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 using executorch::aten::ScalarType;
 using executorch::aten::SizesType;
 using executorch::aten::Tensor;
-using executorch::runtime::IntArrayRef;
+using executorch::runtime::Error;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::kTensorDimensionLimit;
+using executorch::runtime::nonzero_dim;
 using executorch::runtime::resize_tensor;
 using executorch::runtime::tensors_have_same_dim_order;
-using torch::executor::check_permute_copy_args;
-using torch::executor::Error;
-using torch::executor::get_permute_copy_out_target_size;
+using torch::executor::check_transpose_copy_args;
+using torch::executor::get_transpose_out_target_size;
+using torch::executor::transpose_tensors;
 
 namespace impl {
 namespace HiFi {
 namespace native {
 
-namespace {
-
-void increment_coordinate_permuted(
-    const Tensor& tensor,
-    size_t* const coordinate,
-    IntArrayRef dims) {
-  for (int i = dims.size() - 1; i >= 0; i--) {
-    size_t d = dims[i] >= 0 ? dims[i] : dims[i] + tensor.dim();
-    coordinate[d]++;
-    if (coordinate[d] == tensor.size(d)) {
-      coordinate[d] = 0;
-    } else {
-      return;
-    }
-  }
-}
-
-} // namespace
-
-Tensor& permute_copy_out(
+/**
+ * Swaps dimension 'dim0' of 'a' with 'dim1', and copying
+ * that mutation into `out` in a manner such that the data is densely packed
+ * and is_contiguous() would return true (stride dim[size-1] = 1).
+ *
+ * transpose_copy.int_out(Tensor self, int dim0, int dim1, *, Tensor(a!) out)
+ */
+Tensor& transpose_copy_int_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    IntArrayRef dims,
+    int64_t dim0,
+    int64_t dim1,
     Tensor& out) {
   (void)ctx;
 
-  ET_KERNEL_CHECK(
-      ctx, check_permute_copy_args(in, dims, out), InvalidArgument, out);
-
-  ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+  if (dim0 < 0) {
+    dim0 += nonzero_dim(in);
+  }
+  if (dim1 < 0) {
+    dim1 += nonzero_dim(in);
+  }
 
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
-  get_permute_copy_out_target_size(
-      in, dims, expected_out_size, &expected_out_dim);
+  get_transpose_out_target_size(
+      in, dim0, dim1, expected_out_size, &expected_out_dim);
+
+  // Resize for dynamic shape
   ET_KERNEL_CHECK(
       ctx,
       resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   const auto in_type = in.scalar_type();
   constexpr int kNnlibMaxDim = 5;
@@ -91,15 +87,15 @@ Tensor& permute_copy_out(
 
     for (int i = 0; i < num_inp_dims; i++) {
       p_inp_shape[i] = in.size(i);
-    }
-
-    for (int i = 0; i < num_out_dims; i++) {
       p_out_shape[i] = out.size(i);
     }
 
     for (int i = 0; i < num_inp_dims; i++) {
-      p_permute_vec[i] = dims[i];
+      p_permute_vec[i] = i;
     }
+
+    p_permute_vec[dim0] = dim1;
+    p_permute_vec[dim1] = dim0;
 
     if (in_type == ScalarType::Float) {
       WORD32* p_inp = (WORD32*)in.const_data_ptr<float>();
@@ -146,29 +142,19 @@ Tensor& permute_copy_out(
 
       ET_KERNEL_CHECK(ctx, val == 0, Internal, out);
     }
+
     return out;
   }
 
-  size_t in_coord[kTensorDimensionLimit] = {0};
-  size_t trailing_dims_memo[kTensorDimensionLimit];
-  executorch::runtime::memoizeTrailingDims(in, trailing_dims_memo);
+  ET_KERNEL_CHECK(
+      ctx,
+      check_transpose_copy_args(in, dim0, dim1, out),
+      InvalidArgument,
+      out);
 
-  const char* const in_data = static_cast<const char*>(in.const_data_ptr());
-  char* const out_data = static_cast<char*>(out.mutable_data_ptr());
-  const size_t element_size = out.element_size();
-
-  for (size_t i = 0; i < out.numel(); ++i) {
-    const size_t in_index =
-        executorch::runtime::coordinateToIndexWithTrailingDimsMemo(
-            in, in_coord, trailing_dims_memo);
-
-    std::memcpy(
-        out_data + i * element_size,
-        in_data + in_index * element_size,
-        element_size);
-
-    increment_coordinate_permuted(in, in_coord, dims);
-  }
+  ET_SWITCH_ALL_TYPES(in.scalar_type(), ctx, __func__, CTYPE, [&] {
+    transpose_tensors<CTYPE>(in, dim0, dim1, out);
+  });
 
   return out;
 }

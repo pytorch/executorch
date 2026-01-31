@@ -45,11 +45,11 @@ void xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
       (WORD32* __restrict__)bias.const_data_ptr<int32_t>();
 
   WORD32 batches = input.size(0);
-  WORD32 input_channels = input.size(1);
-  WORD32 input_width = input.size(2);
-  WORD32 out_channels = weight.size(0);
-  WORD32 kernel_width = weight.size(2);
-  WORD32 out_width = out.size(2);
+  WORD32 input_channels = input.size(2);
+  WORD32 input_width = input.size(1);
+  WORD32 out_channels = weight.size(2);
+  WORD32 kernel_width = weight.size(1);
+  WORD32 out_width = out.size(1);
   WORD32 x_stride = stride[1];
   WORD32 x_padding = padding[1];
   WORD32 input_zero_bias = -in_zero_point;
@@ -75,8 +75,8 @@ void xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
         in_batch,
         p_kernel,
         p_bias,
-        1,
         input_width,
+        1,
         input_channels,
         kernel_width,
         out_channels,

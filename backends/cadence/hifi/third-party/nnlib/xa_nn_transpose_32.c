@@ -170,44 +170,23 @@ WORD32 xa_nn_transpose_32_32(WORD32 * __restrict__ p_out
           for(itr3 = 0; itr3 < out_dim3; itr3++, p_out+=out_dim4)
           {
             WORD32 *p_inp4 = p_inp3+(itr3*inp_stride[p_5D_permute_vec[3]]);
-            if((((unsigned)p_inp4 & 1) == 0) && (((unsigned)p_out & 1) == 0))
+            ae_int32x2 *__restrict__ pae_i = (ae_int32x2 *)(p_inp4);
+            ae_int32x2 *__restrict__ pae_o = (ae_int32x2 *)(p_out);
+            ae_valign a_inp = AE_LA64_PP(pae_i);
+            ae_valign a_out = AE_ZALIGN64();
+            ae_int32x2 d0;
+            for(itr4 = 0; itr4 < (out_dim4 >> 1); itr4++)
             {
-              ae_int32x2 *__restrict__ pae_i = (ae_int32x2 *)(p_inp4);
-              ae_int32x2 *__restrict__ pae_o = (ae_int32x2 *)(p_out);
-              ae_int32x2 d0;
-              for(itr4 = 0; itr4 < (out_dim4 >> 1); itr4++)
-              {
-                AE_L32X2_IP(d0, pae_i, 2 * sizeof(WORD32));
-                AE_S32X2_IP(d0, pae_o, 2 * sizeof(WORD32));
-              }
-              ae_int32 *__restrict__ puae_i = (ae_int32 *)(pae_i);
-              ae_int32 *__restrict__ puae_o = (ae_int32 *)(pae_o);
-#pragma loop_count max=3
-              for(itr4 = 0; itr4 < (out_dim4 & 1); itr4++)
-              {
-                puae_o[itr4] = puae_i[itr4];
-              }
+              AE_LA32X2_IP(d0, a_inp, pae_i);
+              AE_SA32X2_IP(d0, a_out, pae_o);
             }
-            else
-            {
-              ae_int32x2 *__restrict__ pae_i = (ae_int32x2 *)(p_inp4);
-              ae_int32x2 *__restrict__ pae_o = (ae_int32x2 *)(p_out);
-              ae_valign a_inp = AE_LA64_PP(pae_i);
-              ae_valign a_out = AE_ZALIGN64();
-              ae_int32x2 d0;
-              for(itr4 = 0; itr4 < (out_dim4 >> 1); itr4++)
-              {
-                AE_LA32X2_IP(d0, a_inp, pae_i);
-                AE_SA32X2_IP(d0, a_out, pae_o);
-              }
-              AE_SA64POS_FP(a_out, pae_o);
-              ae_int32 *__restrict__ puae_i = (ae_int32 *)(pae_i);
-              ae_int32 *__restrict__ puae_o = (ae_int32 *)(pae_o);
+            AE_SA64POS_FP(a_out, pae_o);
+            ae_int32 *__restrict__ puae_i = (ae_int32 *)(pae_i);
+            ae_int32 *__restrict__ puae_o = (ae_int32 *)(pae_o);
 #pragma loop_count max=3
-              for(itr4 = 0; itr4 < (out_dim4 & 1); itr4++)
-              {
-                puae_o[itr4] = puae_i[itr4];
-              }
+            for(itr4 = 0; itr4 < (out_dim4 & 1); itr4++)
+            {
+              puae_o[itr4] = puae_i[itr4];
             }
           }
         }
@@ -237,8 +216,10 @@ WORD32 xa_nn_transpose_32_32(WORD32 * __restrict__ p_out
               ae_int32x2 d0, d1;
               ae_int32x2 tmp0;
 
-              AE_L32_XP(d0, (ae_int32 *)p_inp4, inp_stride[p_5D_permute_vec[4]] << 2);
-              AE_L32_XP(d1, (ae_int32 *)p_inp4, inp_stride[p_5D_permute_vec[4]] << 2);
+              d0 = AE_L32_X((ae_int32 *)p_inp4, 0);
+              p_inp4 += inp_stride[p_5D_permute_vec[4]];
+              d1 = AE_L32_X((ae_int32 *)p_inp4, 0);
+              p_inp4 += inp_stride[p_5D_permute_vec[4]];
 
               tmp0 = AE_SEL32_HH(d0, d1);
 
