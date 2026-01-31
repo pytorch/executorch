@@ -425,6 +425,22 @@ inline ::mlx::core::Dtype to_mlx_dtype(DTypeId d) {
 }
 
 // =============================================================================
+// Helper to safely clamp int64_t to int32_t range
+// =============================================================================
+
+inline int32_t clamp_to_int32(int64_t val64) {
+  // Clamp to int32_t range to avoid overflow
+  // INT64_MAX is commonly used to mean "slice to end" or similar semantics
+  if (val64 >= static_cast<int64_t>(std::numeric_limits<int32_t>::max())) {
+    return std::numeric_limits<int32_t>::max();
+  } else if (
+      val64 <= static_cast<int64_t>(std::numeric_limits<int32_t>::min())) {
+    return std::numeric_limits<int32_t>::min();
+  }
+  return static_cast<int32_t>(val64);
+}
+
+// =============================================================================
 // Helper to resolve int or Vid with overflow protection
 // =============================================================================
 
@@ -432,18 +448,24 @@ inline int32_t resolve_int(
     const std::variant<int64_t, Vid<int32_t>>& v,
     const ExecutionState& st) {
   if (std::holds_alternative<int64_t>(v)) {
-    int64_t val64 = std::get<int64_t>(v);
-    // Clamp to int32_t range to avoid overflow
-    // INT64_MAX is commonly used to mean "slice to end" or similar semantics
-    if (val64 >= static_cast<int64_t>(std::numeric_limits<int32_t>::max())) {
-      return std::numeric_limits<int32_t>::max();
-    } else if (
-        val64 <= static_cast<int64_t>(std::numeric_limits<int32_t>::min())) {
-      return std::numeric_limits<int32_t>::min();
-    }
-    return static_cast<int32_t>(val64);
+    return clamp_to_int32(std::get<int64_t>(v));
   }
   return st.const_value_ref<int32_t>(std::get<Vid<int32_t>>(v));
+}
+
+// =============================================================================
+// Helper to resolve vector of ints or Vids with overflow protection
+// =============================================================================
+
+inline std::vector<int32_t> resolve_ints(
+    const std::vector<std::variant<int64_t, Vid<int32_t>>>& v,
+    const ExecutionState& st) {
+  std::vector<int32_t> out;
+  out.reserve(v.size());
+  for (const auto& elem : v) {
+    out.push_back(resolve_int(elem, st));
+  }
+  return out;
 }
 
 // =============================================================================
@@ -453,12 +475,8 @@ inline int32_t resolve_int(
 inline ::mlx::core::Shape to_shape(
     const std::vector<std::variant<int64_t, Vid<int32_t>>>& dims,
     const ExecutionState& st) {
-  ::mlx::core::Shape out;
-  out.reserve(dims.size());
-  for (const auto& d : dims) {
-    out.push_back(resolve_int(d, st));
-  }
-  return out;
+  auto resolved = resolve_ints(dims, st);
+  return ::mlx::core::Shape(resolved.begin(), resolved.end());
 }
 
 inline ::mlx::core::Shape to_shape(const std::vector<int32_t>& dims) {
@@ -476,7 +494,7 @@ inline ::mlx::core::Shape to_shape(
       throw std::runtime_error(
           "to_shape: expected static shape but found dynamic Vid reference");
     }
-    out.push_back(static_cast<int32_t>(std::get<int64_t>(d)));
+    out.push_back(clamp_to_int32(std::get<int64_t>(d)));
   }
   return out;
 }
