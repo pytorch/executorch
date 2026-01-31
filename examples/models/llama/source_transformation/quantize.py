@@ -140,7 +140,7 @@ def quantize(  # noqa C901
             Int8DynamicActivationIntxWeightConfig,
             quantize_,
         )
-        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.granularity import PerAxis, PerGroup
         from torchao.utils import unwrap_tensor_subclass
 
         def filter_fn(m, fqn):
@@ -159,9 +159,12 @@ def quantize(  # noqa C901
             # Check if the weight shape is compatible with group size
             has_shape_compatible_with_group_size = False
             if is_linear or is_lora_linear:
-                has_shape_compatible_with_group_size = (
-                    m.weight.shape[1] % group_size == 0
-                )
+                if group_size == 0:
+                    has_shape_compatible_with_group_size = True
+                else:
+                    has_shape_compatible_with_group_size = (
+                        m.weight.shape[1] % group_size == 0
+                    )
             return (
                 is_linear or is_lora_linear
             ) and has_shape_compatible_with_group_size
@@ -171,7 +174,9 @@ def quantize(  # noqa C901
             Int8DynamicActivationIntxWeightConfig(
                 # pyre-ignore[16]
                 weight_dtype=torch.int4,
-                weight_granularity=PerGroup(group_size),
+                weight_granularity=(
+                    PerAxis(0) if group_size == 0 else PerGroup(group_size)
+                ),
                 # pyre-ignore[6]
                 intx_choose_qparams_algorithm=(
                     "hqq_scale_only" if quantize_with_hqq else "affine"
