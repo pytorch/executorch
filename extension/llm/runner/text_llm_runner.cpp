@@ -239,6 +239,28 @@ Error TextLLMRunner::generate(
   return Error::Ok;
 }
 
+Error TextLLMRunner::prefill(
+    const std::string& prompt,
+    const GenerationConfig& config) {
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
+
+  ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
+      prompt,
+      /*bos=*/config.num_bos,
+      /*eos=*/config.num_eos);
+
+  ET_CHECK_TK_OK_OR_RETURN_ERROR(
+      encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
+
+  // encode the (string) prompt into tokens sequence
+  std::vector<uint64_t> prompt_tokens = encode_res.get();
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos_);
+  ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
+  return Error::Ok;
+}
+
 Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
   // Create a GenerationConfig for warmup
   GenerationConfig config;
