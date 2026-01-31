@@ -2,9 +2,10 @@
 Test cases for Conv2D operation.
 """
 
+from typing import List, Tuple
+
 import torch
 import torch.nn as nn
-from typing import List, Tuple
 
 from .test_utils import OpTestCase, register_test
 

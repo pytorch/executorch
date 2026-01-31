@@ -964,7 +964,7 @@ def _conv2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     stride = n.args[3] if len(n.args) > 3 else [1, 1]
     padding = n.args[4] if len(n.args) > 4 else [0, 0]
     dilation = n.args[5] if len(n.args) > 5 else [1, 1]
-    groups = n.args[8] if len(n.args) > 8 else 1
+    groups = n.args[6] if len(n.args) > 6 else 1
 
     # Extract stride values
     if isinstance(stride, list):
@@ -1002,6 +1002,7 @@ def _conv2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_static_int(groups, "groups", "aten.convolution (Conv2D)")
 
     # Weight needs to be transposed: (C_out, C_in/G, KH, KW) -> (C_out, KH, KW, C_in/G)
+    # The memory format doesn't affect the dimension order - we always need to permute
     w_target, w_tensor = P.get_placeholder_target_and_tensor(w_node)
     w = P.make_or_get_constant(
         f"{w_target}_channel_last", w_tensor.permute([0, 2, 3, 1]).contiguous()

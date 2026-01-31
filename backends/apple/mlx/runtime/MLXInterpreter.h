@@ -27,6 +27,58 @@ namespace ops {
 
 using namespace ::mlx::core;
 
+// ----- Utility: Infer -1 dimensions in shape -----
+/**
+ * Infer -1 dimensions in a shape based on input tensor size.
+ *
+ * PyTorch allows -1 in shapes to mean "infer this dimension from total size".
+ * MLX requires concrete positive integers, so we must resolve -1 values.
+ *
+ * @param shape The shape to resolve (may contain -1)
+ * @param input_size Total number of elements in the input tensor
+ * @return Resolved shape with all positive integers
+ * @throws std::runtime_error if shape has multiple -1 or incompatible sizes
+ */
+inline std::vector<int> infer_shape_with_minus_one(
+    const std::vector<int>& shape,
+    size_t input_size) {
+  std::vector<int> resolved_shape = shape;
+  int neg_one_idx = -1;
+  int64_t known_size = 1; // Use int64_t to avoid overflow
+
+  // Find -1 dimension and compute product of known dimensions
+  for (size_t i = 0; i < resolved_shape.size(); i++) {
+    if (resolved_shape[i] == -1) {
+      if (neg_one_idx != -1) {
+        throw std::runtime_error("infer_shape: only one dimension can be -1");
+      }
+      neg_one_idx = static_cast<int>(i);
+    } else {
+      known_size *= static_cast<int64_t>(resolved_shape[i]);
+    }
+  }
+
+  // Infer the -1 dimension if present
+  if (neg_one_idx != -1) {
+    int64_t input_size_i64 = static_cast<int64_t>(input_size);
+    if (input_size_i64 % known_size != 0) {
+      throw std::runtime_error(
+          "infer_shape: cannot infer dimension - size mismatch");
+    }
+    int64_t inferred_dim = input_size_i64 / known_size;
+
+    // Check that inferred dimension fits in int
+    if (inferred_dim > std::numeric_limits<int>::max()) {
+      throw std::runtime_error(
+          "infer_shape: inferred dimension exceeds int max");
+    }
+
+    resolved_shape[neg_one_idx] = static_cast<int>(inferred_dim);
+  }
+
+  return resolved_shape;
+}
+
 // ----- GELU implementation (tanh approximation) -----
 inline array gelu_impl(const array& x, StreamOrDevice s = {}) {
   constexpr float sqrt_2_over_pi = 0.7978845608f;
@@ -103,8 +155,7 @@ inline void exec_expand_dims(
 // ----- Tile -----
 inline void exec_tile(const TileNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
-  auto reps_shape = to_shape(n.reps, st);
-  std::vector<int> reps(reps_shape.begin(), reps_shape.end());
+  auto reps = resolve_ints(n.reps, st);
   st.set_tensor(n.out, tile(x, reps, s));
 }
 
@@ -250,9 +301,11 @@ inline void
 exec_conv2d(const Conv2DNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   const auto& w = st.const_tensor_ref(n.w);
+
   std::pair<int, int> stride = {n.stride_h, n.stride_w};
   std::pair<int, int> padding = {n.padding_h, n.padding_w};
   std::pair<int, int> dilation = {n.dilation_h, n.dilation_w};
+
   auto out = conv2d(x, w, stride, padding, dilation, n.groups, s);
   st.set_tensor(n.out, std::move(out));
 }
@@ -321,8 +374,14 @@ inline void exec_broadcast_to(
     ExecutionState& st,
     StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
-  auto new_shape = to_shape(n.shape, st);
-  st.set_tensor(n.out, broadcast_to(x, new_shape, s));
+  auto shape_vec = resolve_ints(n.shape, st);
+  auto inferred_shape = infer_shape_with_minus_one(shape_vec, x.size());
+  st.set_tensor(
+      n.out,
+      broadcast_to(
+          x,
+          ::mlx::core::Shape(inferred_shape.begin(), inferred_shape.end()),
+          s));
 }
 
 // ----- Pad -----
