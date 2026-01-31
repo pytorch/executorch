@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -421,36 +421,9 @@ class ArmTester(Tester):
     def is_quantized(self) -> bool:
         return self.stages[StageType.QUANTIZE] is not None
 
-    def run_method_and_compare_outputs(
-        self,
-        stage: Optional[StageType] = None,
-        inputs: Optional[Tuple[torch.Tensor, ...]] = None,
-        num_runs: int = 1,
-        atol: float = 1e-03,
-        rtol: float = 1e-03,
-        qtol: int = 0,
-        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
-        # Preserve positional compatibility while keeping new flags keyword-only.
-        *,
-        error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
-        run_eager_mode: bool = False,
+    def _get_input_and_stages(
+        self, inputs, stage, reference_stage_type, run_eager_mode: bool
     ):
-        """
-        Compares the run_artifact output of 'stage' with the output of a reference stage.
-        If the model is quantized, the reference stage is the Quantize stage output.
-        Otherwise, the reference stage is the initial pytorch module.
-
-        Asserts that the outputs are equal (within tolerances).
-        Returns self to allow the function to be run in a test chain.
-
-        Args:
-            stage: (Optional[str]): The name of the stage to compare.
-                The default is the latest run stage.
-            inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
-                The default is random data.
-        """
-
-        # backward-compatible ordering (accept inputs as the first positional argument)
         if inputs is None and isinstance(stage, tuple):
             if all(isinstance(arg, torch.Tensor) for arg in stage):
                 inputs = cast(Tuple[torch.Tensor, ...], stage)
@@ -478,18 +451,57 @@ class ArmTester(Tester):
         is_quantized = self.is_quantized()
 
         if is_quantized:
-            reference_stage = self.stages[StageType.QUANTIZE]
+            reference_stage_type = reference_stage_type or StageType.QUANTIZE
         else:
-            reference_stage = self.stages[StageType.INITIAL_MODEL]
+            reference_stage_type = reference_stage_type or StageType.INITIAL_MODEL
+        reference_stage = self.stages[reference_stage_type]
+
+        return inputs, reference_stage, test_stage
+
+    def run_method_and_compare_outputs(
+        self,
+        stage: Optional[StageType] = None,
+        inputs: Optional[Tuple[torch.Tensor, ...]] = None,
+        num_runs: int = 1,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 0,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
+        # Preserve positional compatibility while keeping new flags keyword-only.
+        *,
+        reference_stage_type: StageType | None = None,
+        compare_callback: Optional[Callable[..., None]] = None,
+        error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
+        run_eager_mode: bool = False,
+    ):
+        """
+        Compares the run_artifact output of 'stage' with the output of a reference stage.
+        If the model is quantized, the reference stage is the Quantize stage output.
+        Otherwise, the reference stage is the initial pytorch module.
+
+        Asserts that the outputs are equal (within tolerances).
+        Returns self to allow the function to be run in a test chain.
+
+        Args:
+            stage: (Optional[str]): The name of the stage to compare.
+                The default is the latest run stage.
+            inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
+                The default is random data.
+        """
+
+        # backward-compatible ordering (accept inputs as the first positional argument)
+        inputs, reference_stage, test_stage = self._get_input_and_stages(
+            inputs, stage, reference_stage_type, run_eager_mode
+        )
 
         exported_stage = self.stages[StageType.EXPORT]
         exported_program = cast(ExportedProgram, exported_stage.artifact)
         output_node = exported_program.graph_module.graph.output_node()
         output_qparams = get_output_quantization_params(output_node)
 
-        quantization_scales = []
+        quantization_params = []
         for node in output_qparams:
-            quantization_scales.append(getattr(output_qparams[node], "scale", None))
+            quantization_params.append(output_qparams[node])
 
         logger.info(
             f"Comparing Stage '{test_stage.stage_type()}' with Stage '{reference_stage.stage_type()}'"
@@ -531,9 +543,10 @@ class ArmTester(Tester):
             logger.info(f"\n Ref output: {reference_outputs}")
             logger.info(f"\nTest output: {test_outputs}")
 
-            for reference_output, test_output, quantization_scale in zip(
-                reference_outputs, test_outputs, quantization_scales
+            for reference_output, test_output, quantization_param in zip(
+                reference_outputs, test_outputs, quantization_params
             ):
+                quantization_scale = getattr(quantization_param, "scale", None)
                 self._compare_outputs(
                     reference_output,
                     test_output,
@@ -542,7 +555,9 @@ class ArmTester(Tester):
                     rtol,
                     qtol,
                     statistics_callback=statistics_callback,
+                    compare_callback=compare_callback,
                     error_callbacks=error_callbacks,
+                    quantization_parameters=quantization_param,
                 )
 
         return self
@@ -755,7 +770,10 @@ class ArmTester(Tester):
         return graph
 
     def dump_operator_distribution(
-        self, path_to_dump: Optional[str] = None, print_table: bool = True
+        self,
+        path_to_dump: Optional[str] = None,
+        print_table: bool = True,
+        include_dtypes: bool = True,
     ):
         """Dump the distribution of operators in the current stage.
         In the partition stage, additional information is included such as the number of
@@ -766,37 +784,74 @@ class ArmTester(Tester):
         Returns self for daisy-chaining.
         """
         line = "#" * 10
-        to_print = f"{line} {self.cur} Operator Distribution {line}\n"
+        to_print = f"\n{line} {self.cur} Operator Distribution {line}\n"
 
-        if (
-            self.cur
-            in (
-                StageType.PARTITION,
-                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
-            )
-            and print_table
+        if self.cur in (
+            StageType.PARTITION,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
         ):
             graph_module = self.get_artifact().exported_program().graph_module
             delegation_info = get_delegation_info(graph_module)
+            op_dist = _get_tosa_operator_distribution(graph_module, include_dtypes)
             if print_table:
-                op_dist = delegation_info.get_operator_delegation_dataframe()
+                aten_op_dist = delegation_info.get_operator_delegation_dataframe()
+                to_print += "Aten operators:\n" + _format_dict(
+                    dict(aten_op_dist), print_table
+                )
+
+                if include_dtypes:
+                    op_dist_dict = {
+                        "Operator": [op_type[0] for op_type, _ in op_dist],
+                        "Dtype": [op_type[1] for op_type, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
+                else:
+                    op_dist_dict = {
+                        "Operator": [op for op, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
             else:
-                op_dist = dict(_get_operator_distribution(graph_module.graph))
-            to_print += _format_dict(op_dist, print_table)
-            to_print += "\n" + _get_tosa_operator_distribution(
-                graph_module, print_table
-            )
-            to_print += "\n"
-            to_print += delegation_info.get_summary()
+                if include_dtypes:
+                    op_dtype_dist_dict: Dict[str, Dict[str, int]] = defaultdict(dict)
+                    for op_dtype, count in op_dist:
+                        op = op_dtype[0]
+                        dtype = op_dtype[1]
+                        op_dtype_dist_dict[op].update({dtype: count})
+                    op_dist_dict = dict(op_dtype_dist_dict)
+                else:
+                    op_dist_dict = dict(op_dist)  # type: ignore[arg-type]
+            to_print += "\nTOSA operators:\n" + _format_dict(op_dist_dict, print_table)
+            to_print += "\n" + delegation_info.get_summary()
         else:
             graph = self.get_graph(self.cur)
-            op_dist = dict(_get_operator_distribution(graph))
+            if include_dtypes:
+                op_dist = _get_operator_dtype_distribution(graph)
+            else:
+                op_dist = _get_operator_distribution(graph)
             if print_table:
-                op_dist = {
-                    "Operator": list(op_dist),
-                    "Count": [op_dist[key] for key in op_dist],
-                }
-            to_print += _format_dict(op_dist, print_table) + "\n"
+                if include_dtypes:
+                    op_dist_dict = {
+                        "Operator": [op_dtype[0] for op_dtype, _ in op_dist],
+                        "Dtype": [op_dtype[1] for op_dtype, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
+                else:
+                    op_dist_dict = {
+                        "Operator": [op for op, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
+            else:
+                if include_dtypes:
+                    op_dtype_dist_dict = defaultdict(dict)
+                    for op_dtype, count in op_dist:
+                        op = op_dtype[0]
+                        dtype = op_dtype[1]
+                        op_dtype_dist_dict[op].update({dtype: count})
+                    op_dist_dict = dict(op_dtype_dist_dict)
+                else:
+                    op_dist_dict = dict(op_dist)  # type: ignore[arg-type]
+
+            to_print += _format_dict(op_dist_dict, print_table) + "\n"
 
         _dump_str(to_print, path_to_dump)
 
@@ -900,19 +955,26 @@ class ArmTester(Tester):
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
         # Extra debugging hooks are keyword-only to keep the signature stable.
         *,
+        compare_callback: Optional[Callable[..., None]] = None,
         error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
+        quantization_parameters=None,
     ):
         # Accept extra error callback hook for debugging
         try:
-            super()._compare_outputs(
-                reference_output,
-                stage_output,
-                quantization_scale,
-                atol,
-                rtol,
-                qtol,
-                statistics_callback=statistics_callback,
-            )
+            if compare_callback:
+                compare_callback(
+                    reference_output, stage_output, quantization_parameters
+                )
+            else:
+                super()._compare_outputs(
+                    reference_output,
+                    stage_output,
+                    quantization_scale,
+                    atol,
+                    rtol,
+                    qtol,
+                    statistics_callback=statistics_callback,
+                )
         except AssertionError as e:
             callbacks = (
                 list(error_callbacks)
@@ -939,6 +1001,38 @@ class ArmTester(Tester):
             if intermediate_path.startswith(tempdir):
                 shutil.rmtree(intermediate_path, ignore_errors=True)
 
+    def check_dtype_count(self, dtype_dict: Dict[str, Dict[str, int]]):
+        if self.cur in (
+            StageType.PARTITION,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+        ):
+            graph_module = self.get_artifact().exported_program().graph_module
+            op_dist = _get_tosa_operator_distribution(graph_module, include_dtypes=True)
+            op_dist_dict: Dict[str, Dict[str, int]] = defaultdict(dict)
+            for op_dtype, count in op_dist:
+                if isinstance(op_dtype, str):
+                    raise ValueError(
+                        f"Expected {_get_tosa_operator_distribution.__name__} to return "
+                        "Tuple[Tuple[str, str], int]."
+                    )
+                else:
+                    op, dtype = op_dtype
+
+                op_dist_dict[op].update({dtype: count})
+            for op in dtype_dict.keys():
+                if op not in op_dist_dict:
+                    raise RuntimeError(f"Could not find op {op}.")
+                for dtype, count in dtype_dict[op].items():
+                    dtype_count = op_dist_dict[op].setdefault(dtype, 0)
+                    if dtype_count != count:
+                        raise RuntimeError(
+                            f"Expected {count} occurencies of {op=}, {dtype=} but found {dtype_count}."
+                        )
+
+        else:
+
+            raise NotImplementedError(f"Cannot check dtypes for stage {self.cur}")
+
 
 def _get_dtype_distribution(
     graph: Graph, tosa_spec: TosaSpecification
@@ -953,18 +1047,40 @@ def _get_dtype_distribution(
             placeholder_dtypes.append(str(node.meta["val"].dtype))
         if node.op == "call_function":
             if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
-                dtype, _, _ = extract_tensor_meta(node.meta, tosa_spec)
+                dtype, _, _ = extract_tensor_meta(node.meta)
                 call_function_dtypes.append(ts.DTypeNames[dtype])
     return Counter(placeholder_dtypes), Counter(call_function_dtypes)
 
 
-def _get_operator_distribution(graph: Graph) -> dict[str, int]:
+def _get_operator_distribution(graph: Graph) -> List[Tuple[str, int]]:
     """Counts the occurences of operator names in a graph.
-    The result is a dict {'operator name':'number of nodes'}
+    The result is a sorted list [('operator name':'number of nodes')]
     """
-    return Counter(
-        [str(node.target) for node in list(graph.nodes) if node.op == "call_function"]
+    return sorted(
+        Counter(
+            [
+                str(node.target)
+                for node in list(graph.nodes)
+                if node.op == "call_function"
+            ]
+        ).items()
     )
+
+
+def _get_operator_dtype_distribution(graph: Graph) -> List[Tuple[Tuple[str, str], int]]:
+    """Counts the occurences of operator names and dtype pairs in a graph.
+    The result is a sorted list[(('operator name','dtype'),'number of nodes')]
+    """
+    target_dtype_pairs = []
+    for node in graph.nodes:
+        if node.op != "call_function":
+            continue
+        if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
+            dtype = str(node.meta["val"].dtype)
+        else:
+            dtype = "UNKNOWN"
+        target_dtype_pairs.append((str(node.target), dtype))
+    return sorted(Counter(target_dtype_pairs).items())
 
 
 def _format_export_graph_signature(signature: ExportGraphSignature) -> str:
@@ -984,14 +1100,15 @@ def _format_export_graph_signature(signature: ExportGraphSignature) -> str:
 
 
 def _get_tosa_operator_distribution(
-    graph_module: torch.fx.GraphModule, print_table=False
-) -> str:
+    graph_module: torch.fx.GraphModule, include_dtypes=False
+) -> list[Tuple[str, int]] | list[Tuple[Tuple[str, str], int]]:
     """Counts the occurences of operator names of all lowered modules containing
     a TOSA flatbuffer.
     The result is a string with the operator distribution or an error message.
     """
-    op_list = []
     id = 0
+    unknown_dtype_str = "UNKNOWN"
+    op_list = []
     while lowered_module := getattr(graph_module, f"lowered_module_{id}", None):
         compile_spec = parse_compile_spec(lowered_module.compile_specs)
         if isinstance(compile_spec, TosaCompileSpec):
@@ -999,22 +1116,42 @@ def _get_tosa_operator_distribution(
             tosa_json = dbg_tosa_fb_to_json(tosa_fb)
             for region in tosa_json["regions"]:
                 for block in region["blocks"]:
-                    op_list.extend([operator["op"] for operator in block["operators"]])
+                    for operator in block["operators"]:
+                        op = operator["op"]
+                        if include_dtypes:
+                            outputs = operator.get("outputs", [])
+                            if outputs == []:
+                                op_list.append((op, unknown_dtype_str))
+                                continue
+                            tensor_block = block.get("tensors", {})
+                            tensors_with_matching_name = [
+                                t for t in tensor_block if t["name"] == outputs[0]
+                            ]
+                            dtype = (
+                                tensors_with_matching_name[0]["type"]
+                                if len(tensors_with_matching_name) > 0
+                                else unknown_dtype_str
+                            )
+                            op_list.append((op, dtype))
+                        else:
+                            op_list.append(op)
+
         elif isinstance(compile_spec, EthosUCompileSpec):
-            return "Can not get operator distribution for Vela command stream."
+            raise NotImplementedError(
+                "Can not get operator distribution for Vela command stream."
+            )
         elif isinstance(compile_spec, VgfCompileSpec):
-            return "Can not get operator distribution for VGF."
+            raise NotImplementedError("Can not get operator distribution for VGF.")
         else:
-            return f"Unknown output format '{compile_spec.get_output_format()}'."
+            raise NotImplementedError(
+                f"Unknown output format '{compile_spec.get_output_format()}'."
+            )
         id += 1
     if id == 0:
-        return "No delegate with name 'lowered_module_0 found in graph module."
-    op_dist = dict(Counter(op_list))
-    op_dist = {
-        "Operator": list(op_dist.keys()),
-        "Count": [item[1] for item in op_dist.items()],
-    }
-    return "TOSA operators:\n" + _format_dict(dict(op_dist), print_table)
+        raise ValueError(
+            "No delegate with name 'lowered_module_0 found in graph module."
+        )
+    return sorted(Counter(op_list).items())
 
 
 def _dump_str(to_print: str, path_to_dump: Optional[str] = None):

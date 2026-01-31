@@ -181,7 +181,7 @@ def test_split_with_sizes_vgf_no_quant(test_data: input_t1):
 
 @common.parametrize("test_data", Split.test_data_list)
 @common.SkipIfNoModelConverter
-def test_split_with_sizes_2_vgf_no_quant(test_data: input_t1):
+def test_split_with_sizes_vgf_no_quant_2(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         SplitWithSizes(),
         test_data(),
@@ -197,7 +197,7 @@ def test_split_with_sizes_2_vgf_no_quant(test_data: input_t1):
     (Split.test_data | Split.test_data_list),
 )
 @common.SkipIfNoModelConverter
-def test_split_with_sizes_one_out_vgf_no_quant(test_data: input_t1):
+def test_split_with_sizes_vgf_no_quant_one_out(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         SplitSingleOut(),
         test_data(),
@@ -213,7 +213,7 @@ def test_split_with_sizes_one_out_vgf_no_quant(test_data: input_t1):
     (Split.test_data | Split.test_data_list),
 )
 @common.SkipIfNoModelConverter
-def test_split_with_sizes_two_out_vgf_no_quant(test_data: input_t1):
+def test_split_with_sizes_vgf_no_quant_two_out(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         SplitTwoOut(),
         test_data(),

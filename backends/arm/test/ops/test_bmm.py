@@ -156,7 +156,7 @@ def test_bmm_vgf_no_quant(test_data: input_t1):
     flakies={"rand_big_1": 3},
 )
 @common.SkipIfNoModelConverter
-def test_bmm_single_input_vgf_no_quant(test_data: input_t1):
+def test_bmm_vgf_no_quant_single_input(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         BMMSingleInput(),
         test_data(),
@@ -182,7 +182,7 @@ def test_bmm_vgf_quant(test_data: input_t1):
 
 @common.parametrize("test_data", BMMSingleInput.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_bmm_single_input_vgf_quant(test_data: input_t1):
+def test_bmm_vgf_quant_single_input(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         BMMSingleInput(),
         test_data(),

@@ -29,6 +29,7 @@ test_data_suite = {
     "pattern2_int8": 0xCC * torch.ones(1, 2, 2, 2, dtype=torch.int8),
     "pattern2_int16": 0xCCCC * torch.ones(1, 2, 2, 2, dtype=torch.int16),
     "pattern2_int32": 0xCCCCCCCC * torch.ones(1, 2, 2, 2, dtype=torch.int32),
+    "pattern_bool": torch.tensor([True, False, True], dtype=torch.bool),
     "rand_rank2": torch.randint(-128, 127, (10, 10), dtype=torch.int8),
     "rand_rank4": torch.randint(-128, 127, (1, 10, 10, 10), dtype=torch.int8),
 }

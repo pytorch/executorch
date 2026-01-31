@@ -1,0 +1,104 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+fbcode_target(_kind = python_unittest,
+    name = "test_simple_sdpa",
+    srcs = [
+        "test_simple_sdpa.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_pre_quantization_transforms",
+    srcs = [
+        "test_pre_quantization_transforms.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/examples/models/llama:llama_transformer",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_static_attention",
+    srcs = [
+        "test_static_attention.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/examples/models/llama:static_attention",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_ring_kv_cache",
+    srcs = [
+        "test_ring_kv_cache.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_ring_attention",
+    srcs = [
+        "test_ring_attention.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/kernels/quantized:aot_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/examples/models/llama:custom_kv_cache",
+        "//executorch/examples/models/llama:sdpa",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_replace_kv_cache",
+    srcs = [
+        "test_replace_kv_cache.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/kernels/quantized:aot_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/examples/models/llama:custom_kv_cache",
+        "//executorch/examples/models/llama:sdpa",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_export_llama_lib",
+    srcs = [
+        "test_export_llama_lib.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)

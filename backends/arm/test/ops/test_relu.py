@@ -78,7 +78,7 @@ def test_relu_tosa_FP(test_data: torch.Tensor):
 
 # Test the folding of Conv2D with ReLU
 @common.parametrize("test_data", test_data_conv_relu)
-def test_conv_relu_folding_tosa_INT(test_data: torch.Tensor):
+def test_relu_tosa_INT_conv_folding(test_data: torch.Tensor):
     input_data, inplace = test_data()
     pipeline = TosaPipelineINT[input_t1](
         Conv2d_Relu_Add(inplace=inplace),

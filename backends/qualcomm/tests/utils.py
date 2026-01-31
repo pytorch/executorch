@@ -20,10 +20,7 @@ from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
 )
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import (
-    QcomChipset,
-    QnnExecuTorchBackendType,
-)
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_PASS_ACTIVATE_KEY,
@@ -39,6 +36,7 @@ from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
+    get_backend_type,
     make_output_dir,
     make_quantizer,
     SimpleADB,
@@ -186,6 +184,7 @@ class TestQNN(unittest.TestCase):
     dump_intermediate_outputs: bool = False
     inference_speed: float = 0.0
     inference_speed_output_path = "outputs/inference_speed.txt"
+    static_llm_eval_method = ""
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -222,9 +221,6 @@ class TestQNN(unittest.TestCase):
 
         return ref_outputs, pte_fname
 
-    def get_backend_type(self):
-        return getattr(QnnExecuTorchBackendType, f"k{self.backend.title()}Backend")
-
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
         return all(
@@ -234,6 +230,42 @@ class TestQNN(unittest.TestCase):
                 *conditions,
             ]
         )
+
+    def add_default_cmds(self, cmds):
+        cmds.extend(
+            [
+                "--model",
+                self.model,
+                "--target",
+                self.target,
+                "--ip",
+                self.ip,
+                "--port",
+                str(self.port),
+                "--seed",
+                str(1126),
+                "--backend",
+                self.backend,
+            ]
+        )
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+
+        if self.online_prepare:
+            cmds.extend(["--online_prepare"])
+
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
+
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
 
     def verify_output(  # noqa: C901
         self,
@@ -442,7 +474,7 @@ class TestQNN(unittest.TestCase):
                     dump_intermediate_outputs=(
                         True if expected_intermediate_events != -1 else False
                     ),
-                    backend=self.get_backend_type(),
+                    backend=get_backend_type(self.backend),
                     expected_input_shape=(
                         (tensor.shape for tensor in processed_inputs)
                         if check_io_shape
@@ -465,7 +497,7 @@ class TestQNN(unittest.TestCase):
                         f" --performance_output_path {self.inference_speed_output_path}"
                     )
                 adb.execute(method_index=method_index, output_callback=output_callback)
-                adb.pull(output_path=tmp_dir, callback=post_process)
+                adb.pull(host_output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
 
                 if expected_profile_events != -1:

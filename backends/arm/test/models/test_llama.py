@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -190,7 +190,7 @@ def test_llama_vgf_quant():
         pipeline.run()
 
 
-def test_llama_partial_quant_tosa_INT_FP():
+def test_llama_tosa_INT_FP_partial_quant():
     llama_model, llama_inputs, llama_meta = TestLlama().prepare_model()
 
     if llama_model is None or llama_inputs is None:
@@ -203,6 +203,29 @@ def test_llama_partial_quant_tosa_INT_FP():
             aten_op=[],
             exir_op=[],
             tosa_extensions=["FP"],
+            # Due to a few outliers, atol must be set high
+            atol=1.1,
+        )
+        _use_partial_quantizer(pipeline)
+        pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_llama_vgf_quant_partial_quant():
+    llama_model, llama_inputs, llama_meta = TestLlama().prepare_model()
+
+    if llama_model is None or llama_inputs is None:
+        pytest.skip("Missing model and/or input files")
+
+    with torch.no_grad():
+        pipeline = VgfPipeline[input_t](
+            llama_model,
+            llama_inputs,
+            aten_op=[],
+            exir_op=[],
+            quantize=True,
+            # Due to a few outliers, atol must be set high
+            atol=1.1,
         )
         _use_partial_quantizer(pipeline)
         pipeline.run()

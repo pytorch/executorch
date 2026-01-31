@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -30,7 +30,7 @@ constexpr size_t kMaxSupportedDims = 4;
 Tensor& transpose_out(
     KernelRuntimeContext& context,
     const Tensor& input,
-    const IntArrayRef perm,
+    const Int64ArrayRef perm,
     Tensor& out) {
   if (input.scalar_type() != ScalarType::Char ||
       out.scalar_type() != ScalarType::Char) {

@@ -8,6 +8,11 @@
 
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+${define_required_extensions("texture3d", "int8")}
+
+#extension GL_EXT_control_flow_attributes : require
+
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
 #define T ${texel_load_component_type(DTYPE, STORAGE)}
@@ -19,11 +24,6 @@
 #define MAX_THREADS 256
 
 ${define_active_storage_type(STORAGE)}
-
-${define_required_extensions(DTYPE)}
-${define_required_extensions("int8")}
-
-#extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
 

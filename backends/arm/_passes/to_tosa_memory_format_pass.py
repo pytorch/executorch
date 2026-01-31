@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -32,6 +32,18 @@ def _is_input(node: torch.fx.Node, exported_program: ExportedProgram) -> bool:
     return node.op == "placeholder" and not is_param_node(exported_program, node)
 
 
+def _is_transpose_conv2d_weight(node: torch.fx.Node) -> bool:
+    for user in node.users:
+        if (
+            user.op == "call_function"
+            and user.target == exir_ops.backend.tosa.TRANSPOSE_CONV2D.default
+            and len(user.args) > 1
+            and user.args[1] is node
+        ):
+            return True
+    return False
+
+
 class ToTosaMemoryFormatPass(ArmPass):
     """
     Annotates each node with a tosa_dim_order. tosa_dim_order can be seen as a channels-last dim-order
@@ -43,8 +55,8 @@ class ToTosaMemoryFormatPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def __init__(self, exported_program: ExportedProgram) -> None:
-        super().__init__()
+    def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     @staticmethod
@@ -415,7 +427,9 @@ class ToTosaMemoryFormatPass(ArmPass):
             if _is_input(node, self.exported_program) or node.op == "output":
                 dim_order = node_data.dim_order()
             else:
-                if node_data.dim() >= 4:
+                if node_data.dim() == 4 and _is_transpose_conv2d_weight(node):
+                    dim_order = (1, 2, 3, 0)
+                elif node_data.dim() >= 4:
                     dim_order = self._channels_last_order(node_data.dim(), spatial_rank)
                 else:
                     dim_order = tuple(range(node_data.dim()))  # type: ignore[assignment]

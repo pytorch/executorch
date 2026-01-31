@@ -11,10 +11,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "operators",
         srcs = [],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/kernels/portable/cpu:cpu",
         ],
@@ -24,10 +21,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "operators_aten",
             srcs = [],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/kernels/portable/cpu:cpu_aten",
             ],
@@ -35,48 +29,33 @@ def define_common_targets():
 
     runtime.export_file(
         name = "functions.yaml",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.export_file(
         name = "custom_ops.yaml",
-        visibility = [
-            "//executorch/codegen/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     et_operator_library(
         name = "executorch_all_ops",
         include_all_operators = True,
         define_static_targets = True,
-        visibility = [
-            "//executorch/codegen/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     et_operator_library(
         name = "executorch_aten_ops",
         ops_schema_yaml_target = "//executorch/kernels/portable:functions.yaml",
         define_static_targets = True,
-        visibility = [
-            "//executorch/codegen/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     et_operator_library(
         name = "executorch_custom_ops",
         ops_schema_yaml_target = "//executorch/kernels/portable:custom_ops.yaml",
         define_static_targets = True,
-        visibility = [
-            "//executorch/codegen/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     generated_lib_common_args = {
@@ -84,10 +63,7 @@ def define_common_targets():
         # size_test expects _static targets to be available for these libraries.
         "define_static_targets": True,
         "functions_yaml_target": "//executorch/kernels/portable:functions.yaml",
-        "visibility": [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        "visibility": ["PUBLIC"],
     }
 
     executorch_generated_lib(
@@ -113,9 +89,6 @@ def define_common_targets():
             ],
             custom_ops_yaml_target = "//executorch/kernels/portable:custom_ops.yaml",
             aten_mode = True,
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             define_static_targets = True,
         )

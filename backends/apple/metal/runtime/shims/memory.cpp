@@ -128,7 +128,7 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   // memory
   memory_to_n_tensor[adjusted_data] = NOT_OWN;
 
-  ET_LOG(Debug, "aoti_torch_create_tensor_from_blob_v2: successfull");
+  ET_LOG(Debug, "aoti_torch_create_tensor_from_blob_v2: successful");
   return Error::Ok;
 }
 
@@ -212,7 +212,7 @@ AOTITorchError aoti_torch_empty_strided(
   // This tensor owns the memory it allocated, set reference count to 1
   memory_to_n_tensor[ptr] = 1;
 
-  ET_LOG(Debug, "aoti_torch_empty_strided: successfull");
+  ET_LOG(Debug, "aoti_torch_empty_strided: successful");
   return Error::Ok;
 }
 
@@ -292,7 +292,7 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
       // Remove tensor from set (this will call the destructor if it's the last
       // reference)
       tensors.erase(it);
-      ET_LOG(Debug, "aoti_torch_delete_tensor_object: successfull");
+      ET_LOG(Debug, "aoti_torch_delete_tensor_object: successful");
       return Error::Ok;
     }
   }
@@ -401,7 +401,7 @@ AOTITorchError aoti_torch_copy_(
     return Error::NotImplemented;
   }
 
-  ET_LOG(Debug, "aoti_torch_copy_: successfull");
+  ET_LOG(Debug, "aoti_torch_copy_: successful");
   return Error::Ok;
 }
 
@@ -429,9 +429,6 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       ret_new_tensor != nullptr,
       InvalidArgument,
       "aoti_torch__reinterpret_tensor failed: ret_new_tensor is null");
-
-  // Check if storage_offset is not 0 - return error if not
-  ET_CHECK_OK_OR_RETURN_ERROR(validate_storage_offset(storage_offset));
 
   // Get the device info from the source tensor to perform device_index
   // validation
@@ -470,6 +467,10 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       "Memory address %p is not being tracked by reference counting system",
       data_ptr);
 
+  // Handle storage offset by adjusting the data pointer
+  void* adjusted_data = static_cast<char*>(data_ptr) +
+      (storage_offset * dtype_to_element_size(dtype));
+
   // Convert sizes using utility function from utils.h
   std::vector<aten::SizesType> sizes = convert_sizes_to_vector(ndim, sizes_ptr);
 
@@ -480,7 +481,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   // Create new tensor view that reinterprets the same memory with different
   // shape/strides This creates a view, not a copy - the data pointer is shared
   std::shared_ptr<Tensor> tensor = executorch::extension::from_blob(
-      data_ptr, // Reuse the same memory from source tensor
+      adjusted_data, // Use adjusted data pointer with storage offset applied
       sizes, // New sizes with explicit SizesType
       strides, // New strides with explicit StridesType
       dtype_to_scalar_type(dtype) // Convert dtype with explicit type casting
@@ -496,23 +497,124 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
   *ret_new_tensor = tensor.get();
 
+  if (adjusted_data != data_ptr) {
+    ET_LOG(
+        Debug,
+        "aoti_torch__reinterpret_tensor: Adjusted original_data=%p, storage_offset=%lld, element_size=%zu, adjusted_data=%p",
+        data_ptr,
+        storage_offset,
+        dtype_to_element_size(dtype),
+        adjusted_data);
+
+    ET_CHECK_OR_RETURN_ERROR(
+        metal_buffer_nocopy(adjusted_data, tensor->nbytes(), true),
+        Internal,
+        "metal_buffer_nocopy failed for adjusted_data=%p, nbytes=%zu",
+        adjusted_data,
+        static_cast<size_t>(tensor->nbytes()));
+
+    memory_to_n_tensor[adjusted_data] = NOT_OWN;
+  }
+
   // Increment the reference count for this memory address only if it is owned
   // by tensor
-  memory_to_n_tensor[data_ptr] = memory_to_n_tensor[data_ptr] == NOT_OWN
-      ? NOT_OWN
-      : memory_to_n_tensor[data_ptr] + 1;
+  if (memory_to_n_tensor[data_ptr] != NOT_OWN) {
+    memory_to_n_tensor[data_ptr] += 1;
+  }
 
-  ET_LOG(Debug, "aoti_torch__reinterpret_tensor: successfull");
+  ET_LOG(Debug, "aoti_torch__reinterpret_tensor: successful");
   return Error::Ok;
 }
 
 AOTITorchError aoti_torch_new_tensor_handle(
     Tensor* orig_handle,
     Tensor** new_handle) {
-  (void)orig_handle;
-  (void)new_handle;
-  throw std::runtime_error("Not implemented");
-  return Error::Internal;
+  ET_LOG(Debug, "aoti_torch_new_tensor_handle: entered");
+
+  // Validate input parameters
+  ET_CHECK_OR_RETURN_ERROR(
+      orig_handle != nullptr,
+      InvalidArgument,
+      "aoti_torch_new_tensor_handle failed: orig_handle is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      new_handle != nullptr,
+      InvalidArgument,
+      "aoti_torch_new_tensor_handle failed: new_handle is null");
+
+  // Get metadata from the original tensor
+  int64_t* sizes_ptr;
+  int64_t* strides_ptr;
+  int32_t dtype;
+  int32_t device_type;
+  int32_t device_index;
+
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_sizes(orig_handle, &sizes_ptr));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      aoti_torch_get_strides(orig_handle, &strides_ptr));
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_dtype(orig_handle, &dtype));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      aoti_torch_get_device_type(orig_handle, &device_type));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      aoti_torch_get_device_index(orig_handle, &device_index));
+
+  int64_t ndim = orig_handle->dim();
+
+  // Validate dtype
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
+
+  // Ensure device_index is always 0
+  ET_CHECK_OR_RETURN_ERROR(
+      device_index == 0,
+      InvalidArgument,
+      "device_index must be 0, got: %d",
+      device_index);
+
+  // Get the original data pointer from the source tensor
+  void* data_ptr = orig_handle->mutable_data_ptr();
+  ET_CHECK_OR_RETURN_ERROR(
+      data_ptr != nullptr,
+      InvalidArgument,
+      "Source tensor has null data pointer");
+
+  // Check if the given memory is in the map
+  auto memory_it = memory_to_n_tensor.find(data_ptr);
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it != memory_to_n_tensor.end(),
+      InvalidArgument,
+      "Memory address %p is not being tracked by reference counting system",
+      data_ptr);
+
+  // Convert sizes and strides to vectors
+  auto sizes = convert_sizes_to_vector(ndim, sizes_ptr);
+  auto strides = convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
+
+  // Create new tensor that shares the same memory as the original
+  // This is similar to PyTorch's Tensor copy constructor - creates a new
+  // tensor object that shares the same underlying storage
+  std::shared_ptr<Tensor> tensor = executorch::extension::from_blob(
+      data_ptr, // Share the same memory from source tensor
+      sizes, // Same sizes as original
+      strides, // Same strides as original
+      dtype_to_scalar_type(dtype) // Same dtype as original
+  );
+
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr, InvalidArgument, "Failed to create new tensor handle");
+
+  // Store the tensor so it doesn't get destroyed
+  tensors.insert(tensor);
+
+  *new_handle = tensor.get();
+
+  // Increment the reference count for this memory address only if it is owned
+  // by tensor
+  memory_to_n_tensor[data_ptr] = memory_to_n_tensor[data_ptr] == NOT_OWN
+      ? NOT_OWN
+      : memory_to_n_tensor[data_ptr] + 1;
+
+  ET_LOG(Debug, "aoti_torch_new_tensor_handle: successful");
+  return Error::Ok;
 }
 
 // Cleanup function for clearing global state

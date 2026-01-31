@@ -15,9 +15,7 @@ def define_common_targets():
         exported_headers = [
             "state_dict_util.h",
         ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:named_data_map",
             "//executorch/extension/tensor:tensor",
@@ -36,9 +34,7 @@ def define_common_targets():
             exported_headers = [
                 "training_module.h",
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/runtime/core:evalue" + aten_suffix,

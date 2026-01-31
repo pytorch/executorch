@@ -11,6 +11,9 @@
 
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+${define_required_extensions(STORAGE, "bool")}
+
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
@@ -18,8 +21,6 @@
 #define COND_T ${buffer_scalar_type("bool")}
 
 ${define_active_storage_type(STORAGE)}
-${define_required_extensions(DTYPE)}
-${define_required_extensions("bool")}
 
 layout(std430) buffer;
 

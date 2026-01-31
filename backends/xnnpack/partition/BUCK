@@ -1,0 +1,33 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "xnnpack_partitioner",
+    srcs = [
+        "xnnpack_partitioner.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":partitioner_graphs",
+        "//executorch/backends/xnnpack:xnnpack_preprocess",
+        "//executorch/backends/xnnpack/partition/config:xnnpack_partitioner_configs",
+        "//executorch/exir:delegate",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "partitioner_graphs",
+    srcs = glob([
+        "graphs/*.py",
+    ]),
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/exir:lib",
+    ],
+)

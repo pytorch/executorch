@@ -73,11 +73,11 @@ void layer_norm(
     CTYPE* y = out_data + i * normalized;
 
     // compute E[X] and Var[x] = E[x^2] - E[x]^2
-    CTYPE sum = reduce_add(x, ct_normalized);
-    CTYPE sq_sum = vec_powerf(x, ct_normalized);
-    CTYPE mean_value = sum / ct_normalized;
-    CTYPE variance = sq_sum / ct_normalized - mean_value * mean_value;
-    CTYPE std = std::sqrt(variance + eps);
+    float sum = reduce_add(x, ct_normalized);
+    float sq_sum = vec_powerf(x, ct_normalized);
+    float mean_value = sum / ct_normalized;
+    float variance = sq_sum / ct_normalized - mean_value * mean_value;
+    float std = std::sqrt(variance + eps);
 
     // Calculate the elements of output
     for (const auto j : c10::irange(normalized)) {

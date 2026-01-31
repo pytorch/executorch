@@ -28,10 +28,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/backend:interface",
         ],
-        visibility = [
-            "//executorch/backends/xnnpack/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     for aten_mode in get_aten_mode_options():
@@ -43,13 +40,7 @@ def define_common_targets():
                 "runtime/*.h",
                 "runtime/profiling/*.h",
             ]),
-            visibility = [
-                "//executorch/exir/backend:backend_lib",
-                "//executorch/exir/backend/test/...",
-                "//executorch/backends/xnnpack/test/...",
-                "//executorch/extension/pybindings/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             preprocessor_flags = [
                 # Uncomment to enable per operator timings
                 # "-DENABLE_XNNPACK_PROFILING",
@@ -76,9 +67,7 @@ def define_common_targets():
     
     runtime.cxx_library(
         name = "xnnpack_interface",
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_headers = [
             "runtime/XNNPACKBackend.h",
         ],

@@ -80,16 +80,18 @@ _all_ops: Dict[
 )
 
 
-class ReplaceScalarWithTensorByProfilePass(ReplaceScalarWithTensorArgPass, ArmPass):
+class ReplaceScalarWithTensorByProfilePass(ArmPass, ReplaceScalarWithTensorArgPass):
     """Profile-aware scalar-to-tensor replacement pass for binary ops."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def __init__(self):
+    def __init__(self, tfa_pass=False, *args, **kwargs):
+        # NOTE diamond heritance for this class, thus MRO is important.
+
         # Initialize base (ReplaceScalarWithTensorArgPass) with the full
         # superset which will make the superclass handle ops in _all_ops.
         # Actual selection is done per-call in call_operator.
-        super().__init__(_all_ops)
+        super().__init__(tfa_pass, _all_ops, *args, **kwargs)
 
     def call_operator(self, op, args, kwargs, meta):
         tosa_spec = get_context_spec()

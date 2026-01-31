@@ -376,7 +376,7 @@ class NodeVisitor:
         node: torch.fx.Node,
         wrapper_idx: int = 0,
     ):
-        tensor_name = f"{node.name}_{wrapper_idx}"
+        tensor_name = f"{node.name}@{wrapper_idx}"
         # The `input_{id}` is utilized for sorting at runtime. Due to multiple passes in qnn_preprocess,
         # the input order between QNN and the original graph’s forward function may differ.
         # The `mutbuf_{id}` is utilized for mapping I/O of mutable buffer at runtime.

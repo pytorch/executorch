@@ -15,10 +15,7 @@ def define_common_targets():
             "templates/**/*.ini",
             "templates/**/*.h",
         ]),
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -26,11 +23,7 @@ def define_common_targets():
         exported_headers = [
             "macros.h",
         ],
-        visibility = [
-            "//executorch/runtime/kernel/...",
-            "//executorch/kernels/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.python_library(
@@ -61,10 +54,7 @@ def define_common_targets():
         deps = [
             ":api",
         ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-            "//executorch/codegen/...",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.python_binary(

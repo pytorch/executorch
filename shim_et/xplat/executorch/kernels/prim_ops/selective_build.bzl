@@ -38,10 +38,7 @@ def prim_ops_registry_selective(name, selected_prim_ops_header_target, aten_suff
             "selective_build_prim_ops.h": ":" + genrule_dep_name + "[selective_build_prim_ops.h]",
             "selected_prim_ops.h": ":" + genrule_dep_name + "[selected_prim_ops.h]"
         },
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         # @lint-ignore BUCKLINT link_whole, need this to register prim ops.
         link_whole = True,
         # prim ops are registered through a global table so the ctor needs to be allowed

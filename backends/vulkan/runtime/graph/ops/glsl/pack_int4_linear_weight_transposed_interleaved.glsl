@@ -8,10 +8,10 @@
 
 #version 450 core
 
-#define PRECISION ${PRECISION}
-
 $if not NO_INT8_BUFFERS:
-  ${define_required_extensions("uint8")}
+  ${define_required_extensions("buffer", "uint8")}
+
+#define PRECISION ${PRECISION}
 
 layout(std430) buffer;
 

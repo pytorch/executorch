@@ -8,14 +8,14 @@
 
 #version 450 core
 
+${define_required_extensions("buffer", DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 $if HAS_BIAS:
   #define HAS_BIAS
 
 #define T ${buffer_scalar_type(DTYPE)}
-
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 

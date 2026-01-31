@@ -156,7 +156,7 @@ def test_native_layer_norm_tosa_INT_a16w8(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-def test_native_layer_norm_16a8w_u55_INT16(test_data):
+def test_native_layer_norm_16a8w_u55_INT(test_data):
     """Test layer_norm with int16 I/O quantization for U55"""
     test_input, model = test_data()
     pipeline = EthosU55PipelineINT[input_t](
@@ -172,7 +172,7 @@ def test_native_layer_norm_16a8w_u55_INT16(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_native_layer_norm_16a8w_u85_INT16(test_data):
+def test_native_layer_norm_16a8w_u85_INT(test_data):
     """Test layer_norm with int16 I/O quantization for U85"""
     test_input, model = test_data()
     pipeline = EthosU85PipelineINT[input_t](

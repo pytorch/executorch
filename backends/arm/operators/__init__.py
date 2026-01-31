@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -31,7 +31,6 @@ from . import (  # noqa
     op_floor,
     op_ge,
     op_gt,
-    op_index_select,
     op_index_tensor,
     op_le,
     op_log,
@@ -58,11 +57,14 @@ from . import (  # noqa
     op_tosa_conv2d,
     op_tosa_conv3d,
     op_tosa_depthwise_conv2d,
+    op_tosa_gather,
     op_tosa_matmul,
     op_tosa_rescale,
     op_tosa_resize,
+    op_tosa_scatter,
     op_tosa_table,
     op_tosa_transpose,
+    op_tosa_transpose_conv2d,
     op_view,
     op_where,
     op_while,

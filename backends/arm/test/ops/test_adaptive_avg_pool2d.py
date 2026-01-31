@@ -172,7 +172,7 @@ for key in ["high_channel_count", "output_1x1_from_19"]:
 
 @common.parametrize("test_module", u55_test_modules)
 @common.XfailIfNoCorstone300
-def test_adaptive_avg_pool2d_16a8w_u55_INT16(test_module):
+def test_adaptive_avg_pool2d_u55_INT_a16w8(test_module):
     """Test adaptive_avg_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     model, input_tensor = test_module()
     pipeline = EthosU55PipelineINT[input_t](
@@ -201,7 +201,7 @@ def test_adaptive_avg_pool2d_u85_INT(test_module):
 
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone320
-def test_adaptive_avg_pool2d_16a8w_u85_INT16(test_module):
+def test_adaptive_avg_pool2d_u85_INT_a16w8(test_module):
     """Test adaptive_avg_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     model, input_tensor = test_module()
     pipeline = EthosU85PipelineINT[input_t](

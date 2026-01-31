@@ -187,18 +187,6 @@ exported_program_backend_1 = to_backend(exported_program, backend_1_parititioner
 exported_program_backend_1_and_2 = to_backend(exported_program_backend_1, backend_2_parititioner())
 ```
 
-A more concrete example be found
-[here](https://github.com/pytorch/executorch/blob/main/exir/backend/test/demos/test_xnnpack_qnnpack.py).
-In this example,
-qnnpack is one backend and xnnpack is another backend. We haven't open-sourced
-these two backends delegates yet, and this example won't run out of box. It can
-be used as a reference to see how it can be done.
-
-This option is easy to try because usually all backends will implement their own
-partitioner. However this option may get different results if we change the
-order of to_backend call. If we want to have a better control on the nodes, like
-which backend they should go, option 2 is better.
-
 *Option 2: Have a partitioner which partitions for different backends*
 
 Another option is to create a customized partitioner, say partitioner

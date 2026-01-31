@@ -38,7 +38,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:vectorized_math",
             "//executorch/kernels/portable/cpu/util:grid_sampler_2d_util",
         ],
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -88,7 +88,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -101,7 +101,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -124,7 +124,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -139,7 +139,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -262,7 +262,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":broadcast_util",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -308,7 +308,7 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -328,10 +328,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -369,12 +366,7 @@ def define_common_targets():
                 "//executorch/extension/threadpool:threadpool",
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
-            visibility = [
-                "//executorch/extension/llm/custom_ops/...",
-                "//executorch/kernels/portable/cpu/...",
-                "//executorch/kernels/quantized/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )
 
         runtime.cxx_library(

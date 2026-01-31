@@ -52,7 +52,7 @@ class TestAutoencoderKL:
         return auto_encoder_model, auto_encoder_model_inputs
 
 
-def test_AutoencoderKL_tosa_FP():
+def test_vae_tosa_FP():
     auto_encoder_model, auto_encoder_model_inputs = (
         TestAutoencoderKL().prepare_model_and_inputs()
     )
@@ -67,7 +67,7 @@ def test_AutoencoderKL_tosa_FP():
         pipeline.run()
 
 
-def test_AutoencoderKL_tosa_INT():
+def test_vae_tosa_INT():
     auto_encoder_model, auto_encoder_model_inputs = (
         TestAutoencoderKL().prepare_model_and_inputs()
     )
@@ -84,7 +84,7 @@ def test_AutoencoderKL_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_AutoencoderKL_vgf_no_quant():
+def test_vae_vgf_no_quant():
     auto_encoder_model, auto_encoder_model_inputs = (
         TestAutoencoderKL().prepare_model_and_inputs()
     )
@@ -101,7 +101,7 @@ def test_AutoencoderKL_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_AutoencoderKL_vgf_quant():
+def test_vae_vgf_quant():
     auto_encoder_model, auto_encoder_model_inputs = (
         TestAutoencoderKL().prepare_model_and_inputs()
     )

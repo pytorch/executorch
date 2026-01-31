@@ -13,11 +13,7 @@ def define_common_targets():
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors", "-fno-rtti", "-DNO_HEAP_USAGE"],
         labels = [ci.skip_target()],
-        visibility = [
-            "//executorch/backends/nxp/runtime/fb:nxp_fb_backend",
-            "//executorch/backends/nxp/runtime/fb:nxp_hifi_fb_backend",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",

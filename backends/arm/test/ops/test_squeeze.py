@@ -190,7 +190,7 @@ def test_squeeze_dim_u85_INT_2(test_data: Tuple):
 
 @common.parametrize("test_data", SqueezeDim.test_parameters)
 @common.SkipIfNoModelConverter
-def test_squeeze_dim_2_vgf_no_quant(test_data: Tuple):
+def test_squeeze_dim_vgf_no_quant_2(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SqueezeDim(),
         test_data(),
@@ -203,7 +203,7 @@ def test_squeeze_dim_2_vgf_no_quant(test_data: Tuple):
 
 @common.parametrize("test_data", SqueezeDim.test_parameters)
 @common.SkipIfNoModelConverter
-def test_squeeze_dim_2_vgf_quant(test_data: Tuple):
+def test_squeeze_dim_vgf_quant_2(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SqueezeDim(),
         test_data(),

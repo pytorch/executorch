@@ -226,11 +226,12 @@ def quantize_pt2(
         calibration_data=calibration_data,
         dump_graphs=dump_graphs,
     )
-    # Wrap the model to handle quantized inputs
-    wrapped_module = QuantizedInputWrapper(converted_gm, quant_input_args).module
+    # Wrap the model to handle quantized inputs if provided
+    if quant_input_args is not None:
+        converted_gm = QuantizedInputWrapper(converted_gm, quant_input_args)
 
     # Apply quant fusion to the exported program
-    program = torch.export.export(wrapped_module, inputs, strict=True)
+    program = torch.export.export(converted_gm, inputs, strict=True)
     fused_program = apply_pre_edge_transform_passes(program, quantizer)
 
     if dump_graphs:

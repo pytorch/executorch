@@ -1,0 +1,201 @@
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
+load("@fbsource//arvr/firmware/ar/build_defs:xtensa.bzl", "XTENSA_TEST_REMOTE_EXECUTION_ASIC")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
+load("@fbcode//on_device_ai/Assistant/Jarvis/build:cxx_wrapper.bzl", "jarvis_wrapper")
+
+oncall("odai_jarvis")
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_relu_out",
+    srcs = [
+        "test_op_quantized_relu_out.cpp",
+    ],
+    compatible_backends = ["hifi"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_quantized_relu_out",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantize_per_tensor",
+    srcs = [
+        "test_op_quantize_per_tensor.cpp",
+    ],
+    compatible_backends = ["hifi"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_quantize_per_tensor",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_div",
+    srcs = [
+        "test_op_div.cpp",
+    ],
+    compatible_backends = ["hifi"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_div",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_dequantize_per_tensor_out",
+    srcs = [
+        "test_op_dequantize_per_tensor_out.cpp",
+    ],
+    compatible_backends = ["hifi"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_dequantize_per_tensor",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_cat",
+    srcs = [
+        "test_op_cat.cpp",
+    ],
+    compatible_backends = ["hifi"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_cat",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_permute_copy",
+    srcs = [
+        "test_op_permute_copy.cpp",
+    ],
+    compatible_backends = ["hifi"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_permute_copy",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_linear_out",
+    srcs = [
+        "test_op_quantized_linear_out.cpp",
+    ],
+    compatible_backends = ["hifi"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_quantized_linear_out",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_conv2d_out",
+    srcs = [
+        "test_op_quantized_conv2d_out.cpp",
+    ],
+    compatible_backends = ["hifi"],
+    labels = [
+        ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev")),
+    ],
+    platforms = CXX,
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_quantized_conv2d_nchw_out",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_quantized_conv2d_nhwc_out",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_matmul_out",
+    srcs = [
+        "test_op_quantized_matmul_out.cpp",
+    ],
+    compatible_backends = ["hifi"],
+    labels = [
+        ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev")),
+    ],
+    platforms = CXX,
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_quantized_matmul_out",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)

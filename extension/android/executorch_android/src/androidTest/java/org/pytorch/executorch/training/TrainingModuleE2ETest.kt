@@ -8,10 +8,8 @@
 
 package org.pytorch.executorch.training
 
-import android.Manifest
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.rule.GrantPermissionRule
 import java.io.File
 import java.io.IOException
 import java.net.URISyntaxException
@@ -19,7 +17,6 @@ import kotlin.random.Random
 import kotlin.test.assertContains
 import org.apache.commons.io.FileUtils
 import org.junit.Assert
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.EValue
@@ -29,9 +26,6 @@ import org.pytorch.executorch.TestFileUtils
 /** Unit tests for [TrainingModule]. */
 @RunWith(AndroidJUnit4::class)
 class TrainingModuleE2ETest {
-  @get:Rule
-  var runtimePermissionRule: GrantPermissionRule =
-      GrantPermissionRule.grant(Manifest.permission.READ_EXTERNAL_STORAGE)
 
   @Test
   @Throws(IOException::class, URISyntaxException::class)

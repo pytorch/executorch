@@ -7,9 +7,7 @@
  */
 package org.pytorch.executorch
 
-import android.Manifest
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.rule.GrantPermissionRule
 import java.io.File
 import java.io.IOException
 import java.net.URISyntaxException
@@ -19,7 +17,6 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TestFileUtils.getTestFilePath
@@ -50,10 +47,6 @@ class LlmModuleInstrumentationTest : LlmCallback {
     llmModule =
         LlmModule(getTestFilePath(TEST_FILE_NAME), getTestFilePath(TOKENIZER_FILE_NAME), 0.0f)
   }
-
-  @get:Rule
-  var runtimePermissionRule: GrantPermissionRule =
-      GrantPermissionRule.grant(Manifest.permission.READ_EXTERNAL_STORAGE)
 
   @Test
   @Throws(IOException::class, URISyntaxException::class)

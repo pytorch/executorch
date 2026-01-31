@@ -1574,6 +1574,11 @@ Error Method::experimental_step() {
   return step();
 }
 
+bool Method::in_progress() const {
+  return (step_state_.chain_idx != 0 || step_state_.instr_idx != 0) &&
+      step_state_.chain_idx < n_chains_;
+}
+
 Error Method::execute() {
   internal::event_tracer_create_event_block(event_tracer_, "Execute");
   EventTracerEntry event_tracer_entry =
@@ -1584,6 +1589,8 @@ Error Method::execute() {
       initialized(),
       NotSupported,
       "Cannot execute until method has been initialized.");
+  ET_CHECK_OR_RETURN_ERROR(
+      !in_progress(), InvalidState, "Method execution is in progress");
   const size_t n_input = inputs_size();
   for (size_t i = 0; i < n_input; ++i) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -1622,6 +1629,7 @@ Error Method::execute() {
               static_cast<DebugHandle>(step_state_.instr_idx));
       auto status = execute_instruction();
       if (status != Error::Ok) {
+        step_state_ = StepState{0, 0};
         return status;
       }
     }

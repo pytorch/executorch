@@ -459,6 +459,12 @@ lib.define(
     "quantized_softmax.per_tensor_out(Tensor input, Tensor mask, int dim, float in_scale, int in_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor (a!)"
 )
 
+# pack float/bool mask tensor into a bitmask of type uint8 (each element holding 8 bool mask elements)
+lib.define("sdpa_bitwise_mask_gen(Tensor mask, float threshold) -> (Tensor out)")
+lib.define(
+    "sdpa_bitwise_mask_gen.out(Tensor mask, float threshold, *, Tensor(a!) out) -> Tensor (a!)"
+)
+
 # Load/store with iDMA. These only exist before memory planning.
 # Post memory planning, we check that outputs/inputs for the load/store are in
 # DTCM and replace idma_load/idma_store with idma_copy.
@@ -2764,6 +2770,21 @@ def quantized_softmax_per_tensor_meta(
     out_zero_point: int,
 ) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::sdpa_bitwise_mask_gen")
+def sdpa_bitwise_mask_gen_meta(
+    mask: torch.Tensor,
+    threshold: float,
+) -> torch.Tensor:
+    # Expect mask to be a float/bool tensor with last dimension representing sequence length
+    assert mask.dim() >= 1, "mask must have at least 1 dimension"
+    mask_shape = list(mask.shape)
+
+    last = mask_shape[-1]
+    assert last % 8 == 0, "last dimension must be a multiple of 8"
+    mask_shape[-1] = last // 8  # pack 8 elements into 1 byte
+    return mask.new_empty(mask_shape, dtype=torch.uint8)
 
 
 @register_fake("cadence::quantized_w8a32_linear")

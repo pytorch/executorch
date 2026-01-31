@@ -14,7 +14,9 @@ class ErrorStatisticsTests(unittest.TestCase):
         # Check actual tensor statistics
         self.assertEqual(error_stats.actual_stats.shape, torch.Size([4]))
         self.assertEqual(error_stats.actual_stats.numel, 4)
-        self.assertEqual(error_stats.actual_stats.median, 2.5)
+        self.assertEqual(
+            error_stats.actual_stats.median, 2
+        )  # torch.median takes the lower median
         self.assertEqual(error_stats.actual_stats.mean, 2.5)
         self.assertEqual(error_stats.actual_stats.max, 4)
         self.assertEqual(error_stats.actual_stats.min, 1)
@@ -44,7 +46,7 @@ class ErrorStatisticsTests(unittest.TestCase):
         # Check actual tensor statistics
         self.assertEqual(error_stats.actual_stats.shape, torch.Size([4]))
         self.assertEqual(error_stats.actual_stats.numel, 4)
-        self.assertEqual(error_stats.actual_stats.median, 2.5)
+        self.assertEqual(error_stats.actual_stats.median, 2)
         self.assertEqual(error_stats.actual_stats.mean, 2.5)
         self.assertEqual(error_stats.actual_stats.max, 4)
         self.assertEqual(error_stats.actual_stats.min, 1)
@@ -52,7 +54,7 @@ class ErrorStatisticsTests(unittest.TestCase):
         # Check reference tensor statistics
         self.assertEqual(error_stats.reference_stats.shape, torch.Size([2, 2]))
         self.assertEqual(error_stats.reference_stats.numel, 4)
-        self.assertEqual(error_stats.reference_stats.median, 3.5)
+        self.assertEqual(error_stats.reference_stats.median, 3)
         self.assertEqual(error_stats.reference_stats.mean, 3.5)
         self.assertEqual(error_stats.reference_stats.max, 5)
         self.assertEqual(error_stats.reference_stats.min, 2)

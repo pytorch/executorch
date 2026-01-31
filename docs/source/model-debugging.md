@@ -2,6 +2,8 @@
 
 With the ExecuTorch Developer Tools, users can debug their models for numerical inaccurcies and extract model outputs from their device to do quality analysis (such as Signal-to-Noise, Mean square error etc.).
 
+For a complete step-by-step walkthrough, please refer to the [Debugging Tutorial](tutorials/devtools-debugging-tutorial). <!-- @lint-ignore -->
+
 Currently, ExecuTorch supports the following debugging flows:
 - Extraction of model level outputs via ETDump.
 - Extraction of intermediate outputs (outside of delegates) via ETDump:

@@ -15,6 +15,8 @@
 
 #include <gtest/gtest.h>
 
+#include <executorch/runtime/platform/log.h>
+
 #ifndef ET_BUILD_MODE_COV
 #define ET_BUILD_MODE_COV 0
 #endif // ET_BUILD_MODE_COV
@@ -28,6 +30,17 @@
  * tests.
  */
 #define ET_EXPECT_DEATH(_statement, _matcher) ((void)0)
+
+#elif defined(_WIN32) || !ET_LOG_ENABLED
+
+/**
+ * On Windows, death test stderr matching is unreliable.
+ * When logging is disabled, ET_CHECK_MSG doesn't output error messages.
+ * In both cases, we ignore the matcher and only verify that the statement
+ * causes the process to terminate.
+ */
+#define ET_EXPECT_DEATH(_statement, _matcher) \
+  EXPECT_DEATH_IF_SUPPORTED(_statement, "")
 
 #else // ET_BUILD_MODE_COV
 

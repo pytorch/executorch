@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,7 +28,7 @@ class NeutronConverterManager:
 
     def __init__(
         self,
-        neutron_converter_flavor: str = "SDK_25_09",
+        neutron_converter_flavor: str = "SDK_25_12",
     ):
 
         neutron_converter_modules = [

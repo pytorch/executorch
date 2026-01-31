@@ -8,6 +8,9 @@
 
 #version 450 core
 
+${define_required_extensions(INPUT_STORAGE, DTYPE)}
+${define_required_extensions("texture3d", "int8")}
+
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, INPUT_STORAGE)}
 #define T ${texel_load_component_type(DTYPE, INPUT_STORAGE)}
@@ -16,9 +19,6 @@ $if OUTPUT_STORAGE == "buffer":
   #define OUTPUT_BUFFER
 $if INPUT_STORAGE == "buffer":
   #define INPUT_BUFFER
-
-${define_required_extensions(DTYPE)}
-${define_required_extensions("int8")}
 
 #extension GL_EXT_integer_dot_product : require
 

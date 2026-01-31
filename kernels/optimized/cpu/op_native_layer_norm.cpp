@@ -76,18 +76,18 @@ void layer_norm(
     const CTYPE* src_ptr = input_data + i * N;
     CTYPE* dst_ptr = out_data + i * N;
 
-    CTYPE mean_val;
-    CTYPE rstd_val;
+    acc_t<CTYPE> mean_val;
+    acc_t<CTYPE> rstd_val;
     std::tie(mean_val, rstd_val) = RowwiseMoments(src_ptr, N);
     rstd_val = CTYPE(1) / std::sqrt(rstd_val + eps);
 
-    const CTYPE scale = rstd_val;
-    const CTYPE offset = -rstd_val * mean_val;
+    const acc_t<CTYPE> scale = rstd_val;
+    const acc_t<CTYPE> offset = -rstd_val * mean_val;
 
     if (gamma_null || beta_null) {
       for (size_t j = 0; j < N; ++j) {
-        const CTYPE gamma_v = gamma_null ? CTYPE(1) : gamma_data[j];
-        const CTYPE beta_v = beta_null ? CTYPE(0) : beta_data[j];
+        const acc_t<CTYPE> gamma_v = gamma_null ? CTYPE(1) : gamma_data[j];
+        const acc_t<CTYPE> beta_v = beta_null ? CTYPE(0) : beta_data[j];
         dst_ptr[j] = (src_ptr[j] * scale + offset) * gamma_v + beta_v;
       }
     } else {

@@ -23,10 +23,7 @@ def define_common_targets():
             exported_headers = [
                 "scalar_type_util.h",
             ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_preprocessor_flags = exported_preprocessor_flags_,
             exported_deps = exported_deps_,
             exported_external_deps = ["libtorch"] if aten_mode else [],
@@ -42,10 +39,7 @@ def define_common_targets():
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core/portable_type/c10/c10:c10",
             ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
         )
 
@@ -55,10 +49,7 @@ def define_common_targets():
             exported_headers = [
                 "tensor_util.h",
             ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             exported_deps = [
                 ":tensor_dimension_limit",
@@ -84,17 +75,11 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
             ],
             exported_headers = ["tensor_shape_to_c_string.h"],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )
 
     runtime.cxx_library(
         name = "tensor_dimension_limit",
         exported_headers = ["tensor_dimension_limit.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -181,7 +181,7 @@ def test_amin_vgf_quant(test_data: Amin.input_t):
 
 @common.parametrize("test_data", Min.test_data)
 @common.SkipIfNoModelConverter
-def test_min_dim_to_amin_vgf_no_quant(test_data: Min.input_t):
+def test_min_dim_vgf_no_quant_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Min.input_t](
         Min(dim),
@@ -194,12 +194,41 @@ def test_min_dim_to_amin_vgf_no_quant(test_data: Min.input_t):
 
 @common.parametrize("test_data", Min.test_data)
 @common.SkipIfNoModelConverter
-def test_min_dim_to_amin_vgf_quant(test_data: Min.input_t):
+def test_min_dim_vgf_quant_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Min.input_t](
         Min(dim),
         data,
         "torch.ops.aten.amin",
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amin.test_data)
+def test_amin_tosa_INT_a16w8(test_data: Amin.input_t):
+    """Test amin with 16A8W quantization for TOSA INT."""
+    data, dim, keep_dims = test_data()
+    pipeline = TosaPipelineINT[Amin.input_t](
+        Amin(dim, keep_dims),
+        data,
+        Amin.aten_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amin.test_data)
+@common.XfailIfNoCorstone320
+def test_amin_u85_INT_a16w8(test_data: Min.input_t):
+    """Test amin with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    data, dim, keep_dims = test_data()
+    pipeline = EthosU85PipelineINT[Amin.input_t](
+        Amin(dim, keep_dims),
+        data,
+        Amin.aten_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

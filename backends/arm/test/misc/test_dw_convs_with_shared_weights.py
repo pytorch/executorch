@@ -6,9 +6,7 @@
 from typing import Any, Tuple
 
 import torch
-from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 from executorch.backends.arm.test.tester.test_pipeline import (
-    PassPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
 )
@@ -32,7 +30,7 @@ class DWConvsModule(torch.nn.Module):
         return (torch.randn(1, 6, 24, 24),)
 
 
-def test_convs_tosa_fp():
+def test_convs_tosa_FP():
     module = DWConvsModule()
     pipeline = TosaPipelineFP[input_t](
         module, module.get_inputs(), aten_op=[], exir_op=[]
@@ -40,19 +38,9 @@ def test_convs_tosa_fp():
     pipeline.run()
 
 
-def test_convs_tosa_int():
+def test_convs_tosa_INT():
     module = DWConvsModule()
     pipeline = TosaPipelineINT[input_t](
         module, module.get_inputs(), aten_op=[], exir_op=[]
     )
-    pipeline.run()
-
-
-def test_rewrite_conv_pass():
-    module = DWConvsModule()
-    pipeline = PassPipeline(
-        module, module.get_inputs(), passes_with_exported_program=[RewriteConvPass]
-    )
-    # We can't run TOSA backend dialect operators in eager mode
-    pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()

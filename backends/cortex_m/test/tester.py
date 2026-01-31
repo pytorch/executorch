@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -41,7 +41,8 @@ class CortexMToEdge(ToEdge):
                 torch.ops.aten.hardsigmoid_.default,
                 torch.ops.aten.hardswish.default,
                 torch.ops.aten.hardswish_.default,
-            ]
+            ],
+            _check_ir_validity=False,
         )
         super().__init__(config)
 
@@ -103,10 +104,10 @@ class CortexMTester(TesterBase):
 @dataclass
 class McuTestCase:
     model: torch.nn.Module
-    example_inputs: tuple[Any]
+    example_inputs: tuple[Any, ...]
 
 
-def ramp_tensor(start: int, end: int, shape: tuple[int]) -> torch.Tensor:
+def ramp_tensor(start: int, end: int, shape: tuple[int, ...]) -> torch.Tensor:
     return torch.linspace(start, end, steps=torch.prod(torch.tensor(shape))).reshape(
         shape
     )

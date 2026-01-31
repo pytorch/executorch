@@ -1,0 +1,52 @@
+# Copyright (c) 2025 Petri Oksanen
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+config ZEPHYR_EXECUTORCH_MODULE
+	bool
+
+config EXECUTORCH
+	bool "ExecuTorch Support"
+	select REQUIRES_FULL_LIBCPP
+	help
+	  This option enables the ExecuTorch library.
+
+if EXECUTORCH
+
+config EXECUTORCH_ENABLE_LOGGING
+	bool "Enable ExecuTorch logging"
+	default y
+	help
+	  Enable logging within the ExecuTorch runtime.
+
+config EXECUTORCH_ENABLE_EVENT_TRACER
+	bool "Enable ExecuTorch event tracer"
+	default n
+	help
+	  Enable the event tracer for performance profiling.
+
+config EXECUTORCH_ENABLE_PROGRAM_VERIFICATION
+	bool "Enable ExecuTorch program verification"
+	default n
+	help
+	  Enable verification of the ExecuTorch program flatbuffer.
+
+config EXECUTORCH_OPTIMIZE_FOR_SIZE
+	bool "Optimize ExecuTorch for size"
+	default y
+	help
+	  Optimize the ExecuTorch library for size (-Os).
+
+config EXECUTORCH_BUILD_PORTABLE_OPS
+	bool "Build ExecuTorch portable operators library"
+	default y
+	help
+	  Build the default portable operators library that includes all
+	  available operators. When disabled, you should use selective
+	  operator building to include only needed operators, but the
+	  underlying kernel implementations will still be available.
+
+endif # EXECUTORCH

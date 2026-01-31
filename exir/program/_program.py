@@ -42,6 +42,7 @@ from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     base_post_op_replace_passes,
     base_pre_op_replace_passes,
+    convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     EdgeToBackendOpsPass,
     MemoryFormatOpsPass,
@@ -149,9 +150,7 @@ def _get_updated_range_constraints(gm):
     if shape_env is None:
         return {}
     range_constraints = {
-        k: v
-        for k, v in shape_env.var_to_range.items()
-        if k not in shape_env.replacements
+        shape_env.replacements.get(k, k): v for k, v in shape_env.var_to_range.items()
     }
     # Only when we have an unbacked symint, and it's used as constructor inputs,
     # runtime_var_to_range will make a difference compated to var_to_range.
@@ -592,10 +591,13 @@ class ExecutorchProgram:
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
         from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorConfig,
             FlatTensorSerializer,
         )
 
-        self._data_serializer: DataSerializer = FlatTensorSerializer()
+        self._data_serializer: DataSerializer = FlatTensorSerializer(
+            FlatTensorConfig(self._segment_alignment)
+        )
 
     def _get_emitter_output(self) -> EmitterOutput:
         if self._emitter_output is None:
@@ -909,8 +911,15 @@ def _generate_edge_program(
             )
         ],
     )
+
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
+
+    # Normalize constant tensor dim order on the unlifted graph
+    edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+        edge_program
+    )
+
     edge_program = _transform(edge_program, *post_op_replace_passes)
 
     return edge_program
@@ -1851,10 +1860,13 @@ class ExecutorchProgramManager:
 
         # Serialize emitter output, ready to be written to a file.
         from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorConfig,
             FlatTensorSerializer,
         )
 
-        self._data_serializer = FlatTensorSerializer()
+        self._data_serializer = FlatTensorSerializer(
+            FlatTensorConfig(segment_alignment=backend_config.segment_alignment)
+        )
         self._pte_data, self._tensor_data = serialize_for_executorch(
             self._emitter_output,
             backend_config,

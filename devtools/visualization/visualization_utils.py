@@ -1,5 +1,5 @@
 # Copyright 2025 Arm Limited and/or its affiliates.
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -178,6 +178,7 @@ def _save_model_as_json(cur_config: ModelExplorerConfig, file_name: str):
 def visualize_with_clusters(
     exported_program: ExportedProgram,
     json_file_name: str | None = None,
+    no_open_in_browser: bool = False,
     reuse_server: bool = False,
     get_node_partition_name: Callable[[Node], str | None] = lambda node: node.meta.get(
         "delegation_tag", None
@@ -199,6 +200,8 @@ def visualize_with_clusters(
     :param json_file_name: If not None, a JSON of the visualization will be stored in the provided file. The JSON can
                             then be opened in the Model Explorer GUI later.
                            If None, a Model Explorer instance will be launched with the model visualization.
+    :param no_open_in_browser: If `True`, a browser instance with the model explorer will NOT be launched, and only the
+                                URI to the model explorer server with the visualization will be printed.
     :param reuse_server: If True, an existing instance of the Model Explorer server will be used (if one exists).
                           Otherwise, a new instance at a separate port will start.
     :param get_node_partition_name: Function which takes a `Node` and returns a string with the name of the partition
@@ -272,6 +275,7 @@ def visualize_with_clusters(
         visualize_from_config(
             cur_config,
             **kwargs,
+            no_open_in_browser=no_open_in_browser,
         )
 
 

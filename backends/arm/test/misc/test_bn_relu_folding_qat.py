@@ -108,7 +108,7 @@ models = {
     "test_data",
     models,
 )
-def test_qat_tosa_INT(test_data):
+def test_bn_relu_folding_qat_tosa_INT(test_data):
     model, per_channel = test_data
     pipeline = TosaPipelineINT[input_t1](model, model.test_data, [], [], qtol=1)
     quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,6 +13,6 @@ cd $EXECUTORCH_DIR
 
 # Run the AoT example
 python -m examples.nxp.aot_neutron_compile --quantize \
-    --delegate --neutron_converter_flavor SDK_25_09 -m ${MODEL}
+    --delegate --neutron_converter_flavor SDK_25_12 -m ${MODEL}
 # verify file exists
 test -f ${MODEL}_nxp_delegate.pte

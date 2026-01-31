@@ -8,13 +8,15 @@
 
 #version 450 core
 
+${define_required_extensions("texture3d", DTYPE)}
+${define_explicit_type_extensions(DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_type(DTYPE)}
 #define T ${buffer_scalar_type(DTYPE)}
 
 ${define_active_storage_type("texture3d")}
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 

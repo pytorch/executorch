@@ -96,7 +96,7 @@ def test_embedding_tosa_INT(test_input: input_params):
     pipeline.run()
 
 
-def test_expand_embedding_tosa_INT():
+def test_embedding_tosa_INT_expand():
     op = ExpandEmbedding()
     pipeline = TosaPipelineINT(
         op,

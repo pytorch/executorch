@@ -1,6 +1,6 @@
 #
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2025 NXP
+# Copyright 2023-2026 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -34,6 +34,7 @@ from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
     BuiltinOperator,
 )
 from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing import optimizer
 from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     cast_options,
@@ -49,7 +50,6 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
 from executorch.backends.nxp.backend.ir.tflite_generator.custom_options.flex_transpose_options import (
     FlexTranspose,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer import optimizer
 from executorch.backends.nxp.backend.neutron_operator_support import (
     transposition_is_supported_on_neutron,
 )

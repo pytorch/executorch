@@ -84,7 +84,7 @@ class PromptProcessor {
     }
   }
 
- private:
+ protected:
   // If the cache length is zero, it indicates a BERT model, which does not use
   // position ids or KV cache inputs.
   bool is_bert() const {

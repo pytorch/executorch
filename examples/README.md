@@ -34,7 +34,7 @@ A user's journey may commence by exploring the demos located in the [`portable/`
 
 ## Demos Apps
 
-Explore mobile apps with ExecuTorch models integrated and deployable on [Android](demo-apps/android) and [iOS](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple). This provides end-to-end instructions on how to export Llama models, load on device, build the app, and run it on device.
+Explore mobile apps with ExecuTorch models integrated and deployable on [Android](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android) and [iOS](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple). This provides end-to-end instructions on how to export Llama models, load on device, build the app, and run it on device.
 
 For specific details related to models and backend, you can explore the various subsections.
 

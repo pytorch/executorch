@@ -171,12 +171,12 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 #endif
 
     model_type_category_ = model_type_category;
+    std::vector<std::string> data_files_vector;
     if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       multi_modal_runner_ = llm::create_multimodal_runner(
           model_path->toStdString().c_str(),
           llm::load_tokenizer(tokenizer_path->toStdString()));
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      std::vector<std::string> data_files_vector;
       if (data_files != nullptr) {
         // Convert Java List<String> to C++ std::vector<string>
         auto list_class = facebook::jni::findClassStatic("java/util/List");
@@ -209,6 +209,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           decoder_model.c_str(),
           model_path->toStdString().c_str(),
           tokenizer_path->toStdString().c_str(),
+          "",
           "");
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
@@ -227,7 +228,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
-      jboolean echo) {
+      jboolean echo,
+      jfloat temperature) {
+    float effective_temperature = temperature >= 0 ? temperature : temperature_;
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
       prefill_inputs_.clear();
@@ -237,7 +240,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       executorch::extension::llm::GenerationConfig config{
           .echo = static_cast<bool>(echo),
           .seq_len = seq_len,
-          .temperature = temperature_,
+          .temperature = effective_temperature,
       };
       multi_modal_runner_->generate(
           std::move(inputs),
@@ -248,7 +251,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       executorch::extension::llm::GenerationConfig config{
           .echo = static_cast<bool>(echo),
           .seq_len = seq_len,
-          .temperature = temperature_,
+          .temperature = effective_temperature,
       };
       runner_->generate(
           prompt->toStdString(),

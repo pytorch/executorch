@@ -112,14 +112,14 @@ class TokenGenerator {
   // stats
   executorch::llm::Stats* stats_;
 
- private:
   /**
    * @brief Fill in I/O buffers with prompt token and position.
    * @param cur_token Current token.
    * @param start_pos Starting position.
    */
-  void prepare_io(uint64_t cur_token, int64_t start_pos);
+  virtual void prepare_io(uint64_t cur_token, int64_t start_pos);
 
+ private:
   // metadata
   Metadata metadata_;
 

@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -23,18 +23,12 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
 class AvgPool2dVisitor(NodeVisitor):
     target = "aten.avg_pool2d.default"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -115,14 +109,19 @@ class AvgPool2dVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, [3, 4, 5, 6, 7])
         validate_same_dtype(self.target, [inputs[0], output], ts)
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        supported_dtypes = [
+            ts.DType.INT8,
+            ts.DType.FP16,
+            ts.DType.FP32,
+            ts.DType.BF16,
+        ]
         if self.tosa_spec.support_extension("int16"):
             supported_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
             supported_dtypes,
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         if inputs[0].dtype == ts.DType.INT8 or inputs[0].dtype == ts.DType.INT16:

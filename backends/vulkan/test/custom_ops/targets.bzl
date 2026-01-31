@@ -38,10 +38,7 @@ def define_common_targets(is_fbcode = False):
             "glsl/*.glsl",
             "glsl/*.yaml",
         ]),
-        visibility = [
-            "//executorch/backends/vulkan/test/custom_ops/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     vulkan_spv_shader_lib(
@@ -71,10 +68,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//executorch/backends/vulkan:vulkan_graph_runtime",
         ],
-        visibility = [
-            "//executorch/backends/vulkan/test/custom_ops/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # Operator implementations library
@@ -88,10 +82,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/vulkan:vulkan_graph_runtime",
             ":custom_ops_shaderlib",
         ],
-        visibility = [
-            "//executorch/backends/vulkan/test/custom_ops/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         link_whole = True,
     )
 

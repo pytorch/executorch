@@ -13,7 +13,7 @@ pip install qairt-visualizer
 ## Quick start
 This command launches an interactive GUI interface to visualize the `optrace` and `QHAS` results.
 ```
-python -m examples.qualcomm.util_scripts.qairt_visualizer_demo -H ${host} -s {device} -b build-android -a ${path_to_output_folder} --online_prepare
+python -m examples.qualcomm.util_scripts.qairt_visualizer_demo -H ${host} -s {device} -m ${SOC_MODEL} -b build-android -a ${path_to_output_folder} --online_prepare
 ```
 - If online prepare mode is `enabled`, the following artifacts will be generated:
     - `model`.dlc

@@ -28,10 +28,7 @@ def define_operator(name: str, deps: list[str] | None = None, exported_headers: 
         name = op_name,
         srcs = [op_name + ".cpp"],
         platforms = CXX,
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         compatible_with = ["ovr_config//cpu:xtensa"],
         deps = deps + common_deps,
         exported_headers = exported_headers,

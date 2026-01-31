@@ -11,9 +11,13 @@ import torch.fx
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
+from pytest import mark
 
 input_single = Tuple[torch.Tensor]
 input_double = Tuple[torch.Tensor, torch.Tensor]
@@ -95,15 +99,15 @@ class DecreasingOutput(torch.nn.Module):
 class WhileAdditionalArg(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.register_buffer("threshold", torch.tensor((30.0,)))
+        self.register_buffer("threshold", torch.tensor((300.0,)))
 
     def forward(self, value: torch.Tensor) -> torch.Tensor:
         def cond_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
             total = value.sum()
             return torch.lt(total, limit).squeeze()
 
-        def body_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
-            return torch.add(value, value)
+        def body_fn(value: torch.Tensor, limit: torch.Tensor) -> tuple[torch.Tensor]:
+            return (torch.add(value, value),)
 
         result = torch.ops.higher_order.while_loop(
             cond_fn,
@@ -117,7 +121,7 @@ class WhileAdditionalArg(torch.nn.Module):
 class WhileSingleCapturedOutput(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.register_buffer("threshold", torch.tensor((30.0,)))
+        self.register_buffer("threshold", torch.tensor((200.0,)))
 
     def forward(self, value: torch.Tensor) -> torch.Tensor:
         def cond_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
@@ -168,10 +172,6 @@ test_cases: dict[str, Callable[[], Tuple[torch.nn.Module, Tuple]]] = {
 @common.parametrize(
     "case",
     test_cases,
-    xfails={
-        "additional_arg": "Support not implemented.",
-        "two_in_one_captured_out": "When only one output is used, the second one is removed, which is not allowed in TOSA.",
-    },
 )
 def test_while_loop_tosa_FP(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
     module, example_inputs = case()
@@ -187,10 +187,6 @@ def test_while_loop_tosa_FP(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
 @common.parametrize(
     "case",
     test_cases,
-    xfails={
-        "additional_arg": "Support not implemented.",
-        "two_in_one_captured_out": "When only one output is used, the second one is removed, which is not allowed in TOSA.",
-    },
 )
 def test_while_loop_tosa_INT(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
     module, example_inputs = case()
@@ -207,3 +203,62 @@ def test_while_loop_tosa_INT(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
         ["torch.ops.higher_order.while_loop"],
     )
     pipeline.run()
+
+
+@common.parametrize(
+    "case",
+    test_cases,
+)
+def test_while_loop_u55_INT(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
+    module, example_inputs = case()
+    OpNotSupportedPipeline[tuple](
+        module,
+        example_inputs,
+        non_delegated_ops={"torch.ops.higher_order.while_loop": 1},
+        u55_subset=True,
+    ).run()
+
+
+@common.parametrize(
+    "case",
+    test_cases,
+)
+@common.XfailIfNoCorstone320
+def test_while_loop_u85_INT(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
+    module, example_inputs = case()
+    EthosU85PipelineINT[tuple](
+        module,
+        example_inputs,
+        "torch.ops.higher_order.while_loop",
+    ).run()
+
+
+@mark.skip("While not supported in model_converter.")
+@common.parametrize(
+    "case",
+    test_cases,
+)
+@common.SkipIfNoModelConverter
+def test_while_loop_vgf_FP(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
+    module, example_inputs = case()
+    VgfPipeline[tuple](
+        module,
+        example_inputs,
+        "torch.ops.higher_order.while_loop",
+        tosa_version="TOSA-1.0+FP",
+    ).run()
+
+
+@mark.skip("While not supported in model_converter.")
+@common.parametrize(
+    "case",
+    test_cases,
+)
+@common.SkipIfNoModelConverter
+def test_while_loop_vgf_INT(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
+    module, example_inputs = case()
+    VgfPipeline[tuple](
+        module,
+        example_inputs,
+        "torch.ops.higher_order.while_loop",
+    ).run()

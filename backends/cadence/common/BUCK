@@ -1,0 +1,15 @@
+load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("odai_jarvis")
+
+runtime.cxx_library(
+    name = "xt_macros",
+    exported_headers=["xt_macros.h"],
+    platforms = CXX,
+    visibility = ["PUBLIC"],
+    compatible_with = ["ovr_config//cpu:xtensa"],
+    deps = [
+        "//executorch/runtime/core/exec_aten/util:tensor_util",
+    ]
+)

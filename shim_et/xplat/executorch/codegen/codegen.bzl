@@ -573,7 +573,7 @@ def build_portable_lib(
         portable_header_lib = None,
         feature = None,
         expose_operator_symbols = False,
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         platforms = get_default_executorch_platforms()):
     """
     WARNING: Before using this, please consider using executorch_generated_lib instead. This
@@ -687,21 +687,18 @@ def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature =
         name = name,
         srcs = optimized_source_files,
         exported_preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
-        deps = get_portable_lib_deps() + get_optimized_lib_deps() + [":" + portable_header_lib],
         compiler_flags = compiler_flags,
         platforms = platforms,
         preprocessor_flags = get_vec_preprocessor_flags(),
         # sleef needs to be added as a direct dependency of the operator target when building for Android,
-        # or a linker error may occur. Not sure why this happens; it seems that fbandroid_platform_deps of
+        # or a linker error may occur. Not sure why this happens; it seems that platform deps of
         # dependencies are not transitive
-        fbandroid_platform_deps = [
-            (
-                "^android-arm64.*$",
-                [
-                    "fbsource//third-party/sleef:sleef",
-                ],
-            ),
-        ],
+        deps = get_portable_lib_deps() + get_optimized_lib_deps() + [":" + portable_header_lib] + select({
+            "ovr_config//os:android-arm64": [
+                "fbsource//third-party/sleef:sleef",
+            ],
+            "DEFAULT": [],
+        }),
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
         # it to depend on other so libraries because that way we have to

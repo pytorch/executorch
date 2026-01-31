@@ -112,7 +112,7 @@
                 result = [paths.lastObject stringByAppendingPathComponent:self.productName];
             }
         });
-        
+
         return result;
     #endif
 }
@@ -126,7 +126,7 @@
         dispatch_once(&onceToken, ^{
             result = [NSTemporaryDirectory() stringByAppendingPathComponent:self.productName];
         });
-        
+
         return result;
     #endif
 }

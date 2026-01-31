@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -43,11 +43,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
 
     targets = [
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-    ]
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     @staticmethod
@@ -117,6 +112,9 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             torch.float32,
         ],
     }
+    SUPPORTED_INT_FP_PROFILE_DTYPES: SupportedTypeDict = {
+        torch.bool: [torch.float32],
+    }
 
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
@@ -136,6 +134,10 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if tosa_spec.support_float():
             supported_dtypes = self._merge_supported_types(
                 self.SUPPORTED_FP_PROFILE_DTYPES, supported_dtypes
+            )
+        if tosa_spec.support_integer() and tosa_spec.support_float():
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_INT_FP_PROFILE_DTYPES, supported_dtypes
             )
 
         if len(node.all_input_nodes) != 1:

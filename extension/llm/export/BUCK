@@ -1,0 +1,107 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/extension/llm/export/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "export_lib",
+    srcs = [
+        "builder.py",
+        "export_passes.py",
+        "partitioner_lib.py",
+        "quantizer_lib.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.export",
+    visibility = [
+        "//bento/...",
+        "//bento_kernels/...",
+        "//executorch/examples/...",
+        "//executorch/extension/llm/...",
+        "//meta_intern_odllm/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/apple/coreml:backend",
+        "//executorch/backends/apple/coreml:partitioner",
+        "//executorch/backends/apple/mps:partitioner",
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/backends/qualcomm/quantizer:quantizer",
+        "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan/quantizer:vulkan_quantizer",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/exir:delegate",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_details",
+        "//executorch/extension/export_util:export_util",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+        "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "export_llm",
+    srcs = [
+        "export_llm.py",
+    ],
+    main_function = "executorch.extension.llm.export.export_llm.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/kernels/quantized:aot_lib",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/hydra-core:hydra-core",
+        "fbsource//third-party/pypi/omegaconf:omegaconf",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/extension/pybindings:aten_lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "export_llm_lib",
+    srcs = [
+        "export_llm.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/hydra-core:hydra-core",
+        "fbsource//third-party/pypi/omegaconf:omegaconf",
+        "//executorch/examples/models/llama:export_library",
+    ],
+    visibility = [
+        "//executorch/examples/...",
+        "//executorch/extension/llm/...",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "export_passes_test",
+    srcs = [
+        "test_export_passes.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+    ],
+    deps = [
+        ":export_lib",
+    ],
+)

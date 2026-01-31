@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -67,7 +67,7 @@ class NeutronCompileSpecBuilder:
         Args:
             config: Neutron accelerator configuration, e.g. "imxrt700"
             neutron_converter_flavor: Flavor of the neutron-converter module to use. Neutron-converter module named "
-             "'neutron_converter_SDK_25_09' has flavor 'SDK_25_09'.
+             "'neutron_converter_SDK_25_12' has flavor 'SDK_25_12'.
             extra_flags: Extra flags for the Neutron compiler
             operators_not_to_delegate: List of operators that should not be delegated
             use_neutron_for_format_conversion: If True, the EdgeProgramToIRConverter will insert `Transpose` ops to

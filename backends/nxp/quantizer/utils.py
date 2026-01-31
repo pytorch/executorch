@@ -15,13 +15,15 @@ from typing import Any, Dict, List, Tuple, Type
 import torch
 from torch import fx
 from torch._ops import OpOverload
-from torch.ao.quantization import move_exported_model_to_eval
 from torch.export import ExportedProgram
 from torch.fx.passes.utils.source_matcher_utils import (
     check_subgraphs_connected,
     SourcePartition,
 )
-from torchao.quantization.pt2e import ObserverOrFakeQuantize
+from torchao.quantization.pt2e import (
+    move_exported_model_to_eval,
+    ObserverOrFakeQuantize,
+)
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,

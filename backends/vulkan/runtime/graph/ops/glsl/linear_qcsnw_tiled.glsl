@@ -8,6 +8,8 @@
 
 #version 450 core
 
+${define_required_extensions(OUT_STORAGE, DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
@@ -15,8 +17,6 @@
 
 #define TILE_ROWS ${TILE_ROWS}
 #define TILE_TXCOLS ${TILE_TXCOLS}
-
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 

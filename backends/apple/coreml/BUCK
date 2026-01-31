@@ -1,0 +1,155 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load(
+    "@fbsource//tools/build_defs:default_platform_defs.bzl",
+    "APPLE",
+)
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/runtime/core:targets.bzl", "build_sdk")
+
+oncall("executorch")
+
+runtime.cxx_library(
+    name = "coreml",
+    srcs = [
+        "runtime/delegate/ETCoreMLAsset.mm",
+        "runtime/delegate/ETCoreMLAssetManager.mm",
+        "runtime/delegate/ETCoreMLDefaultModelExecutor.mm",
+        "runtime/delegate/ETCoreMLLogging.mm",
+        "runtime/delegate/ETCoreMLModel.mm",
+        "runtime/delegate/ETCoreMLModelCompiler.mm",
+        "runtime/delegate/ETCoreMLModelLoader.mm",
+        "runtime/delegate/ETCoreMLModelManager.mm",
+        "runtime/delegate/ETCoreMLStrings.mm",
+        "runtime/delegate/MLModel_Prewarm.mm",
+        "runtime/delegate/MLMultiArray_Copy.mm",
+        "runtime/delegate/asset.mm",
+        "runtime/delegate/backend_delegate.mm",
+        "runtime/delegate/coreml_backend_delegate.mm",
+        "runtime/delegate/multiarray.mm",
+        "runtime/delegate/executorch_operations.mm",
+        "runtime/delegate/serde_json.mm",
+        "runtime/inmemoryfs/inmemory_filesystem.cpp",
+        "runtime/inmemoryfs/inmemory_filesystem_utils.mm",
+        "runtime/inmemoryfs/memory_buffer.cpp",
+        "runtime/inmemoryfs/memory_stream.cpp",
+        "runtime/inmemoryfs/reversed_memory_stream.cpp",
+        "runtime/kvstore/database.cpp",
+        "runtime/kvstore/json_key_value_store.cpp",
+        "runtime/kvstore/key_value_store.cpp",
+        "runtime/kvstore/sqlite_error.cpp",
+        "runtime/kvstore/statement.cpp",
+        "runtime/util/json_util.cpp",
+        "runtime/util/objc_json_serde.mm",
+    ] + (glob([
+        "runtime/sdk/*.mm",
+    ]) if build_sdk() else []),
+    headers = glob([
+        "runtime/include/coreml_backend/delegate.h",
+        "runtime/kvstore/*.hpp",
+        "runtime/inmemoryfs/*.hpp",
+        "runtime/delegate/*.h",
+        "runtime/delegate/*.hpp",
+        "runtime/util/*.h",
+        "runtime/util/*.hpp",
+    ]) + (glob([
+        "runtime/sdk/*.h",
+    ]) if build_sdk() else []),
+    compiler_flags = [
+        "-fobjc-arc",
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-Wno-null-character",
+        "-Wno-receiver-expr",
+        "-Wno-error",
+    ],
+    define_static_target = True,
+    header_namespace = "backends/apple/coreml",
+    exported_headers = ["runtime/delegate/executorch_operations.h", "runtime/include/coreml_backend/delegate.h"],
+    fbobjc_ios_target_sdk_version = "13.0",
+    fbobjc_frameworks = [
+        "Accelerate",
+        "CoreML",
+        "Foundation",
+    ],
+    include_directories = [
+        "runtime/include",
+        "runtime/kvstore",
+        "runtime/inmemoryfs",
+        "runtime/delegate",
+        "runtime/util",
+    ] + ([
+        "runtime/sdk",
+    ] if build_sdk() else []),
+    fbobjc_libraries = [
+        "libsqlite3",
+    ],
+    link_whole = True,
+    platforms = [APPLE],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/runtime/backend:interface",
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/kernel:kernel_includes",
+    ] + ([
+        ":proto",
+    ] if build_sdk() else []),
+)
+
+_PROTOS = [
+    "ArrayFeatureExtractor",
+    "AudioFeaturePrint",
+    "BayesianProbitRegressor",
+    "CategoricalMapping",
+    "ClassConfidenceThresholding",
+    "CustomModel",
+    "DataStructures",
+    "DictVectorizer",
+    "FeatureTypes",
+    "FeatureVectorizer",
+    "Gazetteer",
+    "GLMClassifier",
+    "GLMRegressor",
+    "Identity",
+    "Imputer",
+    "ItemSimilarityRecommender",
+    "LinkedModel",
+    "MIL",
+    "Model",
+    "NearestNeighbors",
+    "NeuralNetwork",
+    "NonMaximumSuppression",
+    "Normalizer",
+    "OneHotEncoder",
+    "Parameters",
+    "Scaler",
+    "SoundAnalysisPreprocessing",
+    "SVM",
+    "TextClassifier",
+    "TreeEnsemble",
+    "VisionFeaturePrint",
+    "WordEmbedding",
+    "WordTagger",
+]
+
+runtime.cxx_library(
+    name = "proto",
+    srcs = [
+        "fbsource//third-party/pypi/coremltools:exported-cpp-protoc[{}.pb.cc]".format(name)
+        for name in _PROTOS
+    ],
+    exported_headers = {
+        "format/{}.pb.h".format(name): "fbsource//third-party/pypi/coremltools:exported-cpp-protoc[{}.pb.h]".format(name)
+        for name in _PROTOS
+    },
+    compiler_flags = [
+        "-Wno-global-constructors",
+    ],
+    public_include_directories = [
+        "",
+    ],
+    deps = [
+        "//third-party/protobuf:fb-protobuf-lite",
+    ],
+)

@@ -187,9 +187,12 @@ def _run_flatc(args: Sequence[str]) -> None:
     If a resource matching _FLATC_RESOURCE_NAME exists, uses that executable.
     Otherwise, expects the `flatc` tool to be available on the system path.
     """
-    if importlib.resources.is_resource(__package__, _FLATC_RESOURCE_NAME):
+    flatc_resource = importlib.resources.files(__package__).joinpath(
+        _FLATC_RESOURCE_NAME
+    )
+    if flatc_resource.is_file():
         # Use the provided flatc binary.
-        with importlib.resources.path(__package__, _FLATC_RESOURCE_NAME) as flatc_path:
+        with importlib.resources.as_file(flatc_resource) as flatc_path:
             subprocess.run([flatc_path] + list(args), check=True)
     else:
         # Expect the `flatc` tool to be on the system path or set as an env var.

@@ -171,7 +171,7 @@ class QNNRunnerEvalWrapper(EagerEvalWrapper):
 
                 result_logits.append(output_tensor)
 
-        self.adb.pull(output_path=self.output_dir, callback=post_process)
+        self.adb.pull(host_output_path=self.output_dir, callback=post_process)
         return torch.cat(result_logits, dim=1)
 
 

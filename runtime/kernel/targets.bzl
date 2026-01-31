@@ -28,10 +28,7 @@ def define_common_targets():
         name = "operator_registry_MAX_NUM_KERNELS_TEST_ONLY",
         srcs = ["operator_registry.cpp"],
         exported_headers = ["operator_registry.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",
@@ -60,10 +57,7 @@ def define_common_targets():
             name = "operator_registry" + aten_suffix,
             srcs = ["operator_registry.cpp"],
             exported_headers = ["operator_registry.h"],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:evalue" + aten_suffix,
@@ -76,12 +70,7 @@ def define_common_targets():
             exported_headers = [
                 "kernel_runtime_context.h",
             ],
-            visibility = [
-                "//executorch/kernels/...",
-                "//executorch/runtime/executor/...",
-                "//executorch/runtime/kernel/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/platform:platform",
@@ -98,12 +87,7 @@ def define_common_targets():
             exported_headers = [
                 "kernel_includes.h",
             ],
-            visibility = [
-                "//executorch/runtime/kernel/...",
-                "//executorch/kernels/...",
-                "//executorch/kernels/prim_ops/...",  # Prim kernels
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":kernel_runtime_context" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,

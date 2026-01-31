@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,13 +8,11 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
-    TOSAQuantizer,
 )
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -22,8 +20,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa.specification import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 
 aten_op = "torch.ops.aten.sigmoid.default"  # Used for checking that we do not have softmax in the graph after decompose
 exir_op = "executorch_exir_dialects_edge__ops_aten_sigmoid_default"
@@ -192,7 +188,7 @@ def test_sigmoid_vgf_quant(test_data: Tuple):
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_vgf_no_quant():
+def test_sigmoid_vgf_no_quant_add():
     pipeline = VgfPipeline[input_t1](
         AddSigmoid(),
         (test_data_suite["zeros"](),),
@@ -204,7 +200,7 @@ def test_sigmoid_add_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_vgf_quant():
+def test_sigmoid_vgf_quant_add():
     pipeline = VgfPipeline[input_t1](
         AddSigmoid(),
         (test_data_suite["ramp"](),),
@@ -216,7 +212,7 @@ def test_sigmoid_add_vgf_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_2_vgf_no_quant():
+def test_sigmoid_vgf_no_quant_add_2():
     pipeline = VgfPipeline[input_t1](
         SigmoidAdd(),
         (test_data_suite["zeros"](),),
@@ -228,7 +224,7 @@ def test_sigmoid_add_2_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_2_vgf_quant():
+def test_sigmoid_vgf_quant_add_2():
     pipeline = VgfPipeline[input_t1](
         SigmoidAdd(),
         (test_data_suite["zeros"](),),
@@ -240,7 +236,7 @@ def test_sigmoid_add_2_vgf_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_3_vgf_no_quant():
+def test_sigmoid_vgf_no_quant_add_3():
     pipeline = VgfPipeline[input_t1](
         SigmoidAddSigmoid(),
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
@@ -252,7 +248,7 @@ def test_sigmoid_add_3_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_3_vgf_quant():
+def test_sigmoid_vgf_quant_add_3():
     pipeline = VgfPipeline[input_t1](
         SigmoidAddSigmoid(),
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
@@ -261,29 +257,6 @@ def test_sigmoid_add_3_vgf_quant():
         quantize=True,
     )
     pipeline.run()
-
-
-def get_symmetric_a16w8_sigmoid_quantizer(per_channel_quantization=False):
-    tosa_version = conftest.get_option("tosa_version")
-    tosa_profiles = {
-        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
-    }
-
-    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-
-    # Use a smaller episilon value to not greatly inflate [qmin, qmax]
-    quantizer.set_global(
-        get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization, epsilon=2**-16
-        )
-    )
-
-    return Quantize(
-        quantizer,
-        get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization, epsilon=2**-16
-        ),
-    )
 
 
 @common.parametrize("test_data", test_data_suite)
@@ -300,21 +273,16 @@ def test_sigmoid_16a8w_tosa_INT(test_data: torch.Tensor):
         use_to_edge_transform_and_lower=True,
         tosa_extensions=["int16"],
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_sigmoid_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization, epsilon=2**-16
+        )
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="MLETORCH-707: AssertionError: Output 0 does not match reference output."
-)
 def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
     """Test sigmoid operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -327,19 +295,17 @@ def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_sigmoid_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization, epsilon=2**-16
+        )
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_sigmoid_16a8w_u85_INT16(test_data: torch.Tensor):
+def test_sigmoid_16a8w_u85_INT(test_data: torch.Tensor):
     """Test sigmoid operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -351,11 +317,9 @@ def test_sigmoid_16a8w_u85_INT16(test_data: torch.Tensor):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_sigmoid_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization, epsilon=2**-16
+        )
     )
     pipeline.run()

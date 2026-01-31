@@ -179,7 +179,7 @@ template <typename T>
 inline float vec_powerf(const T* x, size_t size) {
   float sum = 0;
   for (const auto i : c10::irange(size)) {
-    sum += x[i] * x[i];
+    sum += static_cast<float>(x[i]) * x[i];
   }
   return sum;
 }

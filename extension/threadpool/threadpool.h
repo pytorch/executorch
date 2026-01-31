@@ -70,6 +70,15 @@ class ThreadPool final {
   bool _unsafe_reset_threadpool(uint32_t num_threads);
 
   /**
+   * INTERNAL: Destroys the threadpool. This is not a thread safe call. When
+   * calling this method, threads of the threadpool might be doing some work.
+   * Some other code may also be holding on to the threadpool pointer, that is
+   * no longer valid.
+   */
+  [[deprecated("This API is experimental and may change without notice.")]]
+  void _unsafe_destroy_threadpool();
+
+  /**
    * Run, in parallel, function fn(task_id) over task_id in range [0, range).
    * This function is blocking.  All input is processed by the time it returns.
    * NoThreadPoolGuard (see threadpool_guard.h) can used to disable use of

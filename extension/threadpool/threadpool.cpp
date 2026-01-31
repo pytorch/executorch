@@ -75,6 +75,12 @@ bool ThreadPool::_unsafe_reset_threadpool(uint32_t new_thread_count) {
   return true;
 }
 
+void ThreadPool::_unsafe_destroy_threadpool() {
+  std::lock_guard<std::mutex> lock{mutex_};
+  ET_LOG(Info, "Destroying threadpool.");
+  threadpool_.reset();
+}
+
 void ThreadPool::run(
     runtime::FunctionRef<void(size_t)> fn,
     const size_t range) {

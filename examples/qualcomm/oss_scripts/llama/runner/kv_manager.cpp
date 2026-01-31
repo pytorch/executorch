@@ -348,16 +348,20 @@ void KVManager<T>::update_value(
     }
   } else {
     int32_t update_times = n_update;
-    auto wp = write_ptr, rp = read_ptr;
-    for (auto sel : selected) {
-      if (sel) {
-        std::memcpy(wp, rp, metadata_.head_dim * sizeof(T));
-        wp += metadata_.head_dim;
-        update_times--;
-        if (update_times == 0)
-          break;
+    for (int i = 0; i < n_iter; ++i) {
+      auto wp = write_ptr, rp = read_ptr;
+      for (auto sel : selected) {
+        if (sel) {
+          std::memcpy(wp, rp, metadata_.head_dim * sizeof(T));
+          wp += metadata_.head_dim;
+          update_times--;
+          if (update_times == 0)
+            break;
+        }
+        rp += metadata_.head_dim;
       }
-      rp += metadata_.head_dim;
+      write_ptr += iter_size;
+      read_ptr += out_size;
     }
   }
 }
