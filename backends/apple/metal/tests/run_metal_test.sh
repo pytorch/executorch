@@ -8,7 +8,7 @@
 # Script to build and run Metal backend tests
 # Usage:
 #   ./run_metal_test.sh --build              # Build the Metal runtime
-#   ./run_metal_test.sh --run <pte> <ptd>    # Run inference with given model files
+#   ./run_metal_test.sh --run <pte>          # Run inference with given model file
 #   ./run_metal_test.sh --check-build        # Check if runtime is already built
 
 set -e  # Exit on any error
@@ -74,7 +74,6 @@ build_runtime() {
 # Function to run inference
 run_inference() {
     local pte_path="$1"
-    local ptd_path="$2"
 
     if [[ ! -f "$EXECUTOR_RUNNER" ]]; then
         echo "Error: executor_runner not found at $EXECUTOR_RUNNER"
@@ -87,16 +86,10 @@ run_inference() {
         exit 1
     fi
 
-    if [[ ! -f "$ptd_path" ]]; then
-        echo "Error: PTD file not found: $ptd_path"
-        exit 1
-    fi
-
     echo "Running inference..."
     echo "  PTE: $pte_path"
-    echo "  PTD: $ptd_path"
 
-    "$EXECUTOR_RUNNER" --model_path "$pte_path" --data_path "$ptd_path"
+    "$EXECUTOR_RUNNER" --model_path "$pte_path"
 }
 
 # Parse command line arguments
@@ -105,11 +98,11 @@ case "$1" in
         build_runtime
         ;;
     --run)
-        if [[ -z "$2" ]] || [[ -z "$3" ]]; then
-            echo "Usage: $0 --run <pte_path> <ptd_path>"
+        if [[ -z "$2" ]]; then
+            echo "Usage: $0 --run <pte_path>"
             exit 1
         fi
-        run_inference "$2" "$3"
+        run_inference "$2"
         ;;
     --check-build)
         check_build
@@ -119,7 +112,7 @@ case "$1" in
         echo ""
         echo "Usage:"
         echo "  $0 --build              Build the Metal runtime"
-        echo "  $0 --run <pte> <ptd>    Run inference with given model files"
+        echo "  $0 --run <pte>          Run inference with given model file"
         echo "  $0 --check-build        Check if runtime is already built"
         exit 1
         ;;

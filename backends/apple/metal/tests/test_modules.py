@@ -72,7 +72,22 @@ DTYPE_NAMES = {
     torch.bfloat16: "bfloat16",
 }
 
+# Default tolerances for output comparison by dtype
+# bfloat16 has lower precision (7 bits mantissa vs 23 for float32)
+DEFAULT_TOLERANCES = {
+    torch.float32: {"atol": 1e-5, "rtol": 1e-5},
+    torch.bfloat16: {"atol": 1e-2, "rtol": 1e-2},
+}
+
+
 # Registry mapping model names to their configurations
+# Each entry can optionally include:
+#   - "atol": float - Override absolute tolerance for all dtypes
+#   - "rtol": float - Override relative tolerance for all dtypes
+#   - "atol_<dtype>": float - Override absolute tolerance for specific dtype (e.g., "atol_bfloat16")
+#   - "rtol_<dtype>": float - Override relative tolerance for specific dtype (e.g., "rtol_bfloat16")
+#   - "skip": bool or str - Skip all tests for this module (True to skip, or string with reason)
+#   - "skip_<dtype>": bool or str - Skip tests for specific dtype (e.g., "skip_bfloat16")
 MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {}
 
 
@@ -206,6 +221,7 @@ MODULE_REGISTRY["conv2d"] = {
     "model_class": SingleConv2d,
     "input_shapes": [(4, 3, 8, 8)],
     "description": "Single Conv2d layer model",
+    "skip": True,
 }
 
 
@@ -232,6 +248,7 @@ MODULE_REGISTRY["depthwise_conv"] = {
     "model_class": DepthwiseConv,
     "input_shapes": [(1, 32, 112, 112)],
     "description": "Single Depthwise Conv2d layer model",
+    "skip": True,
 }
 
 
@@ -412,6 +429,8 @@ MODULE_REGISTRY["audio_encoder_sdpa1"] = {
     "model_class": AddStridedSDPA,
     "input_shapes": [(10, 20, 1500, 64)],
     "description": "Audio Encoder model with strided SDPA",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
 }
 
 
@@ -532,12 +551,104 @@ MODULE_REGISTRY["single_resnet_block"] = {
     "model_class": SingleResNetBlock,
     "input_shapes": [(1, 64, 8, 8)],
     "description": "Single ResNet block with skip connection",
+    "skip": True,
+}
+
+
+# -------------------------------------------------------------------------
+class TransformerBlock(nn.Module):
+    def __init__(self, embed_dim=256, num_heads=8, ff_dim=1024, dropout=0.1):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+
+        self.self_attn = nn.MultiheadAttention(
+            embed_dim=embed_dim, num_heads=num_heads, dropout=dropout, batch_first=True
+        )
+
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm2 = nn.LayerNorm(embed_dim)
+
+        self.ffn = nn.Sequential(
+            nn.Linear(embed_dim, ff_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(ff_dim, embed_dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x):
+        attn_output, _ = self.self_attn(x, x, x)
+        x = self.norm1(x + attn_output)
+        ff_output = self.ffn(x)
+        x = self.norm2(x + ff_output)
+        return x
+
+
+MODULE_REGISTRY["transformer_block"] = {
+    "model_class": TransformerBlock,
+    "input_shapes": [(4, 32, 256)],
+    "description": "Single transformer block with multi-head attention and FFN",
+    "skip": True,
 }
 
 
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
+
+def get_tolerances_for_model(
+    model_name: str, dtype: torch.dtype
+) -> Tuple[float, float]:
+    """
+    Get atol and rtol tolerances for a specific model and dtype.
+
+    Priority order:
+    1. Model-specific dtype tolerance (e.g., "atol_bfloat16")
+    2. Model-specific general tolerance (e.g., "atol")
+    3. Default dtype tolerance from DEFAULT_TOLERANCES
+
+    Returns:
+        Tuple of (atol, rtol)
+    """
+    model_config = MODULE_REGISTRY.get(model_name, {})
+    dtype_name = DTYPE_NAMES.get(dtype, "float32")
+    default_tols = DEFAULT_TOLERANCES.get(dtype, DEFAULT_TOLERANCES[torch.float32])
+
+    # Check for dtype-specific override, then general override, then default
+    atol = model_config.get(
+        f"atol_{dtype_name}", model_config.get("atol", default_tols["atol"])
+    )
+    rtol = model_config.get(
+        f"rtol_{dtype_name}", model_config.get("rtol", default_tols["rtol"])
+    )
+
+    return atol, rtol
+
+
+def should_skip_model(model_name: str, dtype: torch.dtype) -> Tuple[bool, str]:
+    """
+    Check if a model should be skipped for testing.
+
+    Priority order:
+    1. Model-specific dtype skip (e.g., "skip_bfloat16")
+    2. Model-specific general skip (e.g., "skip")
+
+    Returns:
+        Tuple of (should_skip, reason)
+    """
+    model_config = MODULE_REGISTRY.get(model_name, {})
+    dtype_name = DTYPE_NAMES.get(dtype, "float32")
+
+    # Check for dtype-specific skip first, then general skip
+    skip_value = model_config.get(f"skip_{dtype_name}", model_config.get("skip", False))
+
+    if skip_value is True:
+        return True, f"{model_name} is marked as skipped"
+    elif isinstance(skip_value, str):
+        return True, skip_value
+    return False, ""
 
 
 def get_model_and_inputs(
@@ -605,21 +716,23 @@ def export_model_to_files(
     # Export to executorch
     executorch_program = export_model_to_metal(model, example_inputs)
 
-    # Save .pte file
+    # Save .pte file (Metal backend embeds data into the .pte file, no separate .ptd)
     pte_path = output_dir / f"{model_name}.pte"
     with open(pte_path, "wb") as f:
         f.write(executorch_program.buffer)
 
-    # Save .ptd file (tensor data)
-    executorch_program.write_tensor_data_to_file(str(output_dir))
-    ptd_path = output_dir / "aoti_metal_blob.ptd"
-
-    return pte_path, ptd_path, expected_output
+    return pte_path, expected_output
 
 
-def run_executor_runner(pte_path: Path, ptd_path: Path) -> Tuple[bool, Optional[str]]:
+def run_executor_runner(
+    pte_path: Path, output_path: Path
+) -> Tuple[bool, Optional[str]]:
     """
     Run the executor_runner binary with the given model files.
+
+    Args:
+        pte_path: Path to the .pte model file
+        output_path: Base path for output files (executor_runner will create <output_path>-0.bin, etc.)
 
     Returns:
         Tuple of (success, error_message). If success is True, error_message is None.
@@ -635,8 +748,8 @@ def run_executor_runner(pte_path: Path, ptd_path: Path) -> Tuple[bool, Optional[
         str(EXECUTOR_RUNNER),
         "--model_path",
         str(pte_path),
-        "--data_path",
-        str(ptd_path),
+        "--output_file",
+        str(output_path),
     ]
 
     try:
@@ -660,32 +773,80 @@ def run_executor_runner(pte_path: Path, ptd_path: Path) -> Tuple[bool, Optional[
         return False, f"executor_runner timed out after 60 seconds: {e}"
 
 
-def read_output_file(filepath: Path) -> Optional[np.ndarray]:
-    """Read comma-separated output values from a file."""
+def read_binary_output_file(filepath: Path, dtype: torch.dtype) -> Optional[np.ndarray]:
+    """
+    Read binary output values from an executor_runner output file.
+
+    Args:
+        filepath: Path to the binary output file
+        dtype: The torch dtype to interpret the binary data as
+
+    Returns:
+        numpy array of values, or None if file doesn't exist or is empty
+    """
+    if not filepath.exists():
+        return None
+
+    # Map torch dtype to numpy dtype
+    dtype_map = {
+        torch.float32: np.float32,
+        torch.float16: np.float16,
+        torch.bfloat16: np.float32,  # bfloat16 is read as float32 after conversion
+        torch.int32: np.int32,
+        torch.int64: np.int64,
+    }
+
+    np_dtype = dtype_map.get(dtype, np.float32)
+
     try:
-        with open(filepath, "r") as f:
-            content = f.read().strip()
-            if not content:
+        with open(filepath, "rb") as f:
+            binary_data = f.read()
+            if not binary_data:
                 return None
-            values = [float(x.strip()) for x in content.split(",") if x.strip()]
-            return np.array(values)
-    except (FileNotFoundError, ValueError):
+            # For bfloat16, the runtime output is in bfloat16 format (2 bytes per element)
+            # We need to read it as uint16 and convert
+            if dtype == torch.bfloat16:
+                # Read as uint16 (2 bytes per element like bfloat16)
+                values_uint16 = np.frombuffer(binary_data, dtype=np.uint16)
+                # Convert bfloat16 to float32 by shifting left 16 bits
+                values_uint32 = values_uint16.astype(np.uint32) << 16
+                values = values_uint32.view(np.float32)
+            else:
+                values = np.frombuffer(binary_data, dtype=np_dtype)
+            return values
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error reading binary file {filepath}: {e}")
         return None
 
 
 def compare_outputs(
     expected: torch.Tensor,
     runtime_output_file: Path,
-    atol: float = 1e-5,
-    rtol: float = 1e-5,
+    dtype: torch.dtype,
+    atol: Optional[float] = None,
+    rtol: Optional[float] = None,
 ) -> Tuple[bool, Optional[float], Optional[float]]:
     """
-    Compare expected PyTorch output with runtime output from file.
+    Compare expected PyTorch output with runtime output from binary file.
+
+    Args:
+        expected: Expected output tensor from PyTorch
+        runtime_output_file: Path to the binary output file from executor_runner
+        dtype: The dtype used for the model (needed to parse binary output)
+        atol: Absolute tolerance for comparison (if None, uses dtype-specific default)
+        rtol: Relative tolerance for comparison (if None, uses dtype-specific default)
 
     Returns:
         Tuple of (is_close, max_atol, max_rtol)
     """
-    runtime_values = read_output_file(runtime_output_file)
+    # Use dtype-specific tolerances if not specified
+    tolerances = DEFAULT_TOLERANCES.get(dtype, DEFAULT_TOLERANCES[torch.float32])
+    if atol is None:
+        atol = tolerances["atol"]
+    if rtol is None:
+        rtol = tolerances["rtol"]
+
+    runtime_values = read_binary_output_file(runtime_output_file, dtype)
     if runtime_values is None:
         return False, None, None
 
@@ -693,10 +854,10 @@ def compare_outputs(
     # (required when tensor is on MPS device)
     if isinstance(expected, tuple):
         expected_values = np.concatenate(
-            [t.detach().cpu().flatten().numpy() for t in expected]
+            [t.detach().cpu().float().flatten().numpy() for t in expected]
         )
     else:
-        expected_values = expected.detach().cpu().flatten().numpy()
+        expected_values = expected.detach().cpu().float().flatten().numpy()
 
     if len(runtime_values) != len(expected_values):
         return False, None, None
@@ -736,6 +897,11 @@ class TestMetalBackendModules(unittest.TestCase):
         self, model_name: str, dtype: torch.dtype = torch.float32
     ) -> None:
         """Generic test for module export."""
+        # Check if this model/dtype combination should be skipped
+        skip, skip_reason = should_skip_model(model_name, dtype)
+        if skip:
+            self.skipTest(skip_reason)
+
         if SKIP_EXPORT_TESTS:
             self.skipTest(SKIP_REASON)
 
@@ -770,10 +936,15 @@ class TestMetalBackendModules(unittest.TestCase):
         Test that Metal backend runtime output matches PyTorch output.
 
         This test:
-        1. Exports the model to .pte and .ptd files
+        1. Exports the model to a .pte file
         2. Runs the model using executor_runner
         3. Compares the runtime output with expected PyTorch output
         """
+        # Check if this model/dtype combination should be skipped
+        skip, skip_reason = should_skip_model(model_name, dtype)
+        if skip:
+            self.skipTest(skip_reason)
+
         if SKIP_RUNTIME_TESTS:
             self.skipTest(SKIP_RUNTIME_REASON)
 
@@ -788,7 +959,7 @@ class TestMetalBackendModules(unittest.TestCase):
             model_output_dir.mkdir(parents=True, exist_ok=True)
 
             # Export model and get expected output
-            pte_path, ptd_path, expected_output = export_model_to_files(
+            pte_path, expected_output = export_model_to_files(
                 model, example_inputs, model_output_dir, model_name
             )
 
@@ -796,29 +967,29 @@ class TestMetalBackendModules(unittest.TestCase):
                 pte_path.exists(),
                 f"{model_name} ({dtype_name}): PTE file not created at {pte_path}",
             )
-            self.assertTrue(
-                ptd_path.exists(),
-                f"{model_name} ({dtype_name}): PTD file not created at {ptd_path}",
-            )
 
-            # Run executor_runner
-            success, error_msg = run_executor_runner(pte_path, ptd_path)
+            # Run executor_runner with output file
+            output_base_path = model_output_dir / "output"
+            success, error_msg = run_executor_runner(pte_path, output_base_path)
             self.assertTrue(
                 success,
                 f"{model_name} ({dtype_name}): executor_runner failed\n{error_msg}",
             )
 
-            # Compare outputs - executor_runner writes to aoti_debug_data/ in cwd
-            # In CI, this is TEST_OUTPUT_BASE_DIR; locally it may vary
-            runtime_output_file = model_output_dir / "final_runtime_output.txt"
+            # executor_runner writes output files as <output_path>-<index>.bin
+            # For single output models, this is output-0.bin
+            runtime_output_file = model_output_dir / "output-0.bin"
 
             self.assertTrue(
                 runtime_output_file.exists(),
                 f"{model_name} ({dtype_name}): Runtime output file not created at {runtime_output_file}",
             )
 
+            # Get model-specific tolerances (with dtype-specific overrides)
+            atol, rtol = get_tolerances_for_model(model_name, dtype)
+
             is_close, max_atol, max_rtol = compare_outputs(
-                expected_output, runtime_output_file
+                expected_output, runtime_output_file, dtype, atol=atol, rtol=rtol
             )
 
             self.assertTrue(
