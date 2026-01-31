@@ -238,6 +238,10 @@ If you're interested in deploying on non-CPU backends, [please refer the non-cpu
 ```
 cmake --workflow llm-release
 ```
+If you build with `make llama-cpu` and hit a RapidJSON CMake error, run it as:
+```
+CMAKE_POLICY_VERSION_MINIMUM=3.5 make llama-cpu
+```
 Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the section of Common Issues and Mitigations below for solutions.
 
 2. Build llama runner.
@@ -251,6 +255,65 @@ popd
 ```
 cmake-out/examples/models/llama/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.model> --prompt=<prompt>
 ```
+
+### Chat Format for Instruct Models
+
+For **Instruct models** (e.g., Llama-3.2-1B-Instruct), use the `--chat_format` flag to automatically wrap your prompt in the appropriate chat template. Without this, Instruct models may not generate end-of-turn tokens and will run until max tokens.
+
+```bash
+# Basic usage with chat format
+cmake-out/examples/models/llama/llama_main \
+    --model_path=<model.pte> \
+    --tokenizer_path=<tokenizer.model> \
+    --chat_format=llama3 \
+    --prompt="What is the capital of France?"
+```
+
+**Template/model compatibility:**
+- Use Llama templates (`llama3` or the Llama vLLM template) with Llama models.
+- Using a Gemma template with a Llama model will cause the model to echo Gemma tokens.
+
+**Supported chat formats:**
+| Format | Models | Template Style |
+|--------|--------|----------------|
+| `llama3` | Llama 3.x Instruct | `<\|begin_of_text\|><\|start_header_id\|>user...` |
+| `gemma3` | Gemma 3 Instruct | `<bos><start_of_turn>user...` |
+| `jinja` | Custom template | Jinja2 chat template from file |
+| `none` | Base models (default) | No formatting |
+
+**Additional options:**
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--chat_format` | Chat template format (llama3, gemma3, jinja, none) | `none` |
+| `--chat_template_file` | Path to custom Jinja2 template (overrides `--chat_format`) | (empty) |
+| `--system_prompt` | System prompt to set assistant behavior | (empty) |
+| `--echo` | Echo input prompt in output (set to false for clean output) | `true` |
+
+**Example with system prompt and clean output:**
+```bash
+cmake-out/examples/models/llama/llama_main \
+    --model_path=<model.pte> \
+    --tokenizer_path=<tokenizer.model> \
+    --chat_format=llama3 \
+    --system_prompt="You are a helpful assistant. Be concise." \
+    --echo=false \
+    --prompt="What is the capital of France?"
+
+# Output: The capital of France is Paris.
+```
+
+**Example with a custom template file:**
+```bash
+cmake-out/examples/models/llama/llama_main \
+    --model_path=<model.pte> \
+    --tokenizer_path=<tokenizer.model> \
+    --chat_template_file=./my_template.jinja \
+    --prompt="Hello!"
+```
+
+**Build note:** If you see a CMake error about RapidJSON requiring
+`CMAKE_POLICY_VERSION_MINIMUM=3.5`, add `CMAKE_POLICY_VERSION_MINIMUM=3.5`
+to your build environment when running `make llama-cpu`.
 
 To build for CoreML backend and validate on Mac, replace `-DEXECUTORCH_BUILD_XNNPACK=ON` with `-DEXECUTORCH_BUILD_COREML=ON`
 
