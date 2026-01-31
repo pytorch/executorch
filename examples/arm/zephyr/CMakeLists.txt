@@ -117,7 +117,7 @@ if(NOT DEFINED EXECUTORCH_DIR)
   else()
     message(
       FATAL_ERROR
-        "ExecutorTorch module not found. Ensure it's properly configured in your Zephyr workspace."
+        "ExecuTorch module not found. Ensure it's properly configured in your Zephyr workspace."
     )
   endif()
 else()
