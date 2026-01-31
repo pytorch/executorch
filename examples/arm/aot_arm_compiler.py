@@ -9,6 +9,7 @@
 
 import argparse
 import copy
+import inspect
 import logging
 import os
 import sys
@@ -49,6 +50,12 @@ from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
+
+from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
+from executorch.backends.cortex_m.passes.cortex_m_pass_manager import (
+    CortexMPassManager,
+)
+from executorch.backends.arm._passes import FoldAndAnnotateQParamsPass
 
 from executorch.devtools import generate_etrecord
 from executorch.devtools.backend_debug import get_delegation_info
@@ -399,6 +406,7 @@ TARGETS = [
     "TOSA-1.0+INT",
     "TOSA-1.0+FP",
     "TOSA-1.0+INT+int16",
+    "cortex-m",
 ]
 
 
@@ -783,6 +791,108 @@ def to_edge_TOSA_delegate(
     return model_quant, edge
 
 
+def to_edge_cortex_m(
+    exported_program: ExportedProgram,
+    args,
+    model: GraphModule,
+    example_inputs: Tuple[torch.Tensor],
+):
+    """
+    Export and lower model for Cortex-M target using CMSIS-NN portable kernels.
+
+    This function:
+    1. Quantizes the model using CortexMQuantizer
+    2. Re-exports the quantized model
+    3. Lowers to edge IR
+    4. Applies CortexMPassManager transforms to convert ops to cortex_m::* ops
+
+    No delegation is used - all ops run as portable kernels on the Cortex-M target.
+    """
+    logging.info("=" * 80)
+    logging.info("Using Cortex-M/CMSIS-NN compilation path (no delegation)")
+    logging.info("=" * 80)
+
+    model_quant = None
+
+    if args.quantize:
+        logging.info("Quantizing with CortexMQuantizer...")
+
+        # Convert model to channels_last memory format for optimal Cortex-M performance
+        model_channels_last = model.to(memory_format=torch.channels_last)
+        example_inputs_cl = tuple(
+            x.to(memory_format=torch.channels_last) if x.dim() == 4 else x
+            for x in example_inputs
+        )
+
+        # Use CortexMQuantizer for INT8 quantization
+        quantizer = CortexMQuantizer()
+        prepared = prepare_pt2e(model_channels_last, quantizer)
+
+        logging.info("Calibrating...")
+        dataset = get_calibration_data(
+            args.model_name, example_inputs_cl,
+            args.evaluate, args.evaluate_config
+        )
+
+        if isinstance(dataset, DataLoader):
+            for sample, _ in dataset:
+                if isinstance(sample, torch.Tensor) and sample.dim() == 4:
+                    sample = sample.to(memory_format=torch.channels_last)
+                prepared(sample)
+        else:
+            dataset_cl = tuple(
+                x.to(memory_format=torch.channels_last)
+                if isinstance(x, torch.Tensor) and x.dim() == 4 else x
+                for x in dataset
+            )
+            prepared(*dataset_cl)
+
+        logging.info("Converting to quantized model...")
+        model_quant = convert_pt2e(prepared)
+
+        logging.info("Re-exporting quantized model...")
+        exported_program = torch.export.export(
+            model_quant, example_inputs_cl, strict=args.strict_export
+        )
+    else:
+        logging.warning("Quantization is DISABLED. Cortex-M typically requires quantization.")
+
+    logging.info("Lowering to edge IR...")
+    edge = to_edge_transform_and_lower(
+        exported_program,
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+
+    # Apply CortexM passes using EdgeProgramManager.transform()
+    logging.info("Applying CortexMPassManager transforms...")
+
+    # Build pass instances from CortexMPassManager.pass_list
+    pass_instances = []
+    for pass_cls in CortexMPassManager.pass_list:
+        sig = inspect.signature(pass_cls.__init__)
+        if "exported_program" in sig.parameters:
+            pass_instances.append(pass_cls(edge.exported_program()))
+        else:
+            pass_instances.append(pass_cls())
+
+    # Apply transforms
+    edge = edge.transform(pass_instances)
+
+    # Log cortex_m ops summary
+    cortex_m_ops = {}
+    for node in edge.exported_program().graph.nodes:
+        target_str = str(node.target)
+        if 'cortex_m' in target_str:
+            op_name = target_str.split('.')[-1] if '.' in target_str else target_str
+            cortex_m_ops[op_name] = cortex_m_ops.get(op_name, 0) + 1
+
+    logging.info("Cortex-M ops summary:")
+    for op_name, count in sorted(cortex_m_ops.items()):
+        logging.info(f"  - {op_name}: {count}")
+
+    return model_quant, edge
+
+
 def to_edge_no_delegate(
     exported_program: ExportedProgram,
     args,
@@ -822,17 +932,21 @@ def transform_for_cortex_m_backend(edge_program_manager, args):
     # NB: If we can't find and replace ops those are expected to be replaced,
     # bad things will happen at runtime, like "missing operator" errors!
 
-    # Instantiate the mandatory ReplaceQuantNodesPass
-    passes = [ReplaceQuantNodesPass]
+    # CRITICAL: FoldAndAnnotateQParamsPass MUST run first to populate qparams metadata.
+    # Without this pass, ConvertToCortexMPass won't find any ops to convert because
+    # it checks for input_qparams and output_qparams in node.meta.
+    passes = [FoldAndAnnotateQParamsPass, ReplaceQuantNodesPass]
     if args.enable_qdq_fusion_pass:
         passes += [ConvertToCortexMPass, QuantizedOpFusionPass]
+
     current_edge = edge_program_manager
     for pass_cls in passes:
-        transform_pass = (
-            pass_cls(current_edge.exported_program())
-            if pass_cls.__name__ == "QuantizedLinearFusionPass"
-            else pass_cls()
-        )
+        # Handle passes that need exported_program parameter
+        sig = inspect.signature(pass_cls.__init__)
+        if "exported_program" in sig.parameters:
+            transform_pass = pass_cls(current_edge.exported_program())
+        else:
+            transform_pass = pass_cls()
         current_edge = current_edge.transform([transform_pass])
     return current_edge
 
@@ -868,7 +982,12 @@ if __name__ == "__main__":  # noqa: C901
 
     # Quantize if required
     model_quant = None
-    if args.delegate:
+    if args.target == "cortex-m":
+        # Cortex-M path: CMSIS-NN portable kernels, no delegation
+        model_quant, edge = to_edge_cortex_m(
+            exported_program, args, model, example_inputs
+        )
+    elif args.delegate:
         model_quant, edge = to_edge_TOSA_delegate(
             exported_program, args, model, example_inputs
         )
@@ -876,10 +995,10 @@ if __name__ == "__main__":  # noqa: C901
         model_quant, edge = to_edge_no_delegate(
             exported_program, args, model, example_inputs
         )
-
-    if args.target != "vgf":
-        # Transform so we can use ops from the Cortex M backend
-        edge = transform_for_cortex_m_backend(edge, args)
+        # Apply Cortex-M transforms for non-vgf, non-cortex-m targets
+        if args.target != "vgf":
+            # Transform so we can use ops from the Cortex M backend
+            edge = transform_for_cortex_m_backend(edge, args)
 
     dump_delegation_info(edge, args.intermediates)
 

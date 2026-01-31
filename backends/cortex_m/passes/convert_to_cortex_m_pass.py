@@ -69,6 +69,112 @@ class ConvertToCortexMPass(XNNPACKPass):
             pass
         return None
 
+    def _get_addmm_replacement(self, node):
+      """
+      Handle aten.addmm (decomposed linear):
+      addmm(bias, input, weight.T) = input @ weight.T + bias
+      
+      In the graph, weight is already transposed via cortex_m.transpose or aten.t
+      so we need to trace back to find the original weight placeholder.
+      """
+      # addmm args: (bias, input, weight_transposed)
+      bias_node = node.args[0]
+      input_node = node.args[1]
+      weights_node = node.args[2]  # This is the transposed weight
+
+      input_scale = node.meta["input_qparams"][0].scale
+      input_zp = node.meta["input_qparams"][0].zp
+      weight_scale = node.meta["input_qparams"][1].scale
+      weight_zp = node.meta["input_qparams"][1].zp
+      output_scale = node.meta["output_qparams"][0].scale
+      output_zp = node.meta["output_qparams"][0].zp
+      output_min = node.meta["output_qparams"][0].qmin
+      output_max = node.meta["output_qparams"][0].qmax
+
+      quantized_multiplier, quantized_shift = quantize_multiplier_aot(
+          (input_scale * weight_scale) / output_scale
+      )
+
+      # Trace back through graph to find original weight placeholder
+      current_node = weights_node
+      max_depth = 10
+      found_transpose = False
+      original_weight_node = None
+
+      for _ in range(max_depth):
+          if current_node.op == "placeholder":
+              original_weight_node = current_node
+              break
+          elif current_node.op == "call_function":
+              target_name = str(current_node.target)
+              if ".t." in target_name or "transpose" in target_name.lower():
+                  found_transpose = True
+              if len(current_node.args) > 0:
+                  current_node = current_node.args[0]
+              else:
+                  break
+          else:
+              break
+
+      if original_weight_node is None:
+          raise RuntimeError(f"Could not find original weight placeholder for addmm node {node.name}")
+
+      # Get the weight tensor from the original placeholder
+      weights_tensor = get_param_tensor(self.exported_program, original_weight_node)
+
+      # If transpose found, original weights are [out_feat, in_feat]
+      # CMSIS-NN expects [out_feat, in_feat], so use original directly
+      if found_transpose:
+          final_weights = weights_tensor.contiguous()
+      else:
+          final_weights = weights_tensor.T.contiguous()
+
+      # Get bias tensor - compute kernel_sum WITHOUT bias
+      # Pass bias separately to C++ operator
+      bias_tensor = None
+      if bias_node is not None and bias_node.op == "placeholder":
+          bias_tensor = get_param_tensor(self.exported_program, bias_node)
+
+      # Compute kernel_sum WITHOUT bias (pass None)
+      kernel_sum_tensor = self._compute_kernel_sum(
+          final_weights, None, -input_zp, -weight_zp  # None = no bias in kernel_sum
+      )
+
+      # Create placeholders
+      with node.graph.inserting_after(original_weight_node):
+          weights_placeholder = create_constant_placeholder(
+              self.exported_program,
+              node.graph,
+              node.name + "_weights_correct",
+              InputKind.PARAMETER,
+              final_weights,
+          )
+
+          kernel_sum = create_constant_placeholder(
+              self.exported_program,
+              node.graph,
+              node.name + "_kernel_sum",
+              InputKind.PARAMETER,
+              kernel_sum_tensor,
+          )
+
+      # CMSIS-NN shift convention: negate the shift
+      args = (
+          input_node,
+          weights_placeholder,
+          bias_node,           # Pass original bias (kernel_sum doesn't include it)
+          kernel_sum,
+          -input_zp,
+          -weight_zp,
+          output_zp,
+          [quantized_multiplier],
+          [-quantized_shift],  # NEGATE for CMSIS-NN
+          output_max,
+          output_min,
+      )
+
+      return exir_ops.edge.cortex_m.quantized_linear.default, args
+
     def _get_linear_replacement(self, node):
         """
          Let
@@ -386,6 +492,11 @@ class ConvertToCortexMPass(XNNPACKPass):
             match node.target:
                 case exir_ops.edge.aten.linear.default:
                     op, args = self._get_linear_replacement(node)
+                case exir_ops.edge.aten.addmm.default:
+                    result = self._get_addmm_replacement(node)
+                    if result is None:
+                        continue
+                    op, args = result
                 case exir_ops.edge.aten.convolution.default:
                     # Check if it's transposed convolution (arg index 6)
                     transposed = node.args[6] if len(node.args) > 6 else False
