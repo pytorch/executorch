@@ -1,0 +1,30 @@
+ExecuTorch provides CMake targets:
+
+    find_package(ExecuTorch CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE executorch)
+
+Available components/backends can be linked as needed:
+- executorch - Core runtime library
+- extension_module - Extension module support
+- extension_data_loader - Data loader extension
+- extension_runner_util - Runner utilities
+- portable_ops_lib - Portable CPU operators (if portable-ops feature enabled)
+- optimized_ops_lib - Optimized CPU operators (if optimized-ops feature enabled)
+- quantized_ops_lib - Quantized operators (if quantized-ops feature enabled)
+- xnnpack_backend - XNNPACK backend (if xnnpack feature enabled)
+- coreml_backend - CoreML backend (if coreml feature enabled, Apple only)
+- mps_backend - MPS backend (if mps feature enabled, Apple only)
+- vulkan_backend - Vulkan backend (if vulkan feature enabled)
+- qnn_backend - Qualcomm QNN backend (if qnn feature enabled)
+
+Example with specific components:
+
+    find_package(ExecuTorch CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE 
+        executorch
+        extension_module
+        portable_ops_lib
+    )
+
+For more information, see:
+https://pytorch.org/executorch/
