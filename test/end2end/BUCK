@@ -1,5 +1,103 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # @noautodeps
 # add this empty BUCK file to unblock landing. Without this, we get land error like:
 #   "No build file at xplat/executorch/exir/BUCK when resolving target fbsource//xplat/executorch/exir:."
 
-oncall("executorch")
+
+# !!!! fbcode/executorch/test/end2end/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# @noautodeps
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+
+fbcode_target(_kind = runtime.python_library,
+    name = "exported_module",
+    srcs = [
+        "exported_module.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:dynamic_shape",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "register_scratch_meta_fns",
+    srcs = [
+        "register_scratch_meta_fns.py",
+    ],
+    deps = [
+        "//executorch/exir/operator:manip",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "end2end_aten",
+    srcs = [
+        "test_end2end.py",
+    ],
+    preload_deps = ["//executorch/kernels/portable:custom_ops_generated_lib"],
+    deps = [
+        ":exported_module",
+        ":register_scratch_meta_fns",
+        "//caffe2:torch",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/exir:dynamic_shape",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir:print_program",
+        "//executorch/exir:tensor",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/emit:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/tests:control_flow_models",
+        "//executorch/exir/tests:dynamic_shape_models",
+        "//executorch/exir/tests:models",
+        "//executorch/exir/tests:transformer",
+        "//executorch/extension/pybindings:aten_lib",
+        "//executorch/extension/pytree:pybindings",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "end2end",
+    srcs = [
+        "test_end2end.py",
+    ],
+    preload_deps = ["//executorch/kernels/portable:custom_ops_generated_lib"],
+    deps = [
+        ":exported_module",
+        ":register_scratch_meta_fns",
+        "//caffe2:torch",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/exir:dynamic_shape",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir:print_program",
+        "//executorch/exir:tensor",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/emit:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/tests:control_flow_models",
+        "//executorch/exir/tests:dynamic_shape_models",
+        "//executorch/exir/tests:models",
+        "//executorch/exir/tests:transformer",
+        "//executorch/extension/pybindings:portable_lib",
+        "//executorch/extension/pytree:pybindings",
+    ],
+)
