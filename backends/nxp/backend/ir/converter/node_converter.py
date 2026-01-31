@@ -173,13 +173,22 @@ class NodeConverter(ABC):
         """Assert that the call `_is_supported_in_IR()` returns `True`. Otherwise, raise an exception and print an
         error message.
         """
-        assert self._is_supported_in_IR(
+        supported_in_ir = self._is_supported_in_IR(
             node,
             self.context.parameters_mapping,
             self.context.custom_delegation_options,
-        ), (
-            f"Node `{node}` is not convertible to the intermediate representation. "
-            "There is an error in the partitioner."
+        )
+
+        supported_on_target = self._is_supported_on_target(
+            node,
+            self.neutron_target_spec,
+            self.context.parameters_mapping,
+            self.context.custom_delegation_options,
+        )
+
+        assert supported_in_ir and supported_on_target, (
+            f"Node `{node}` was selected for delegation to Neutron, but it is not convertible to the intermediate "
+            "representation. There is an error in the NXP partitioner,]. Please report this."
         )
 
     @property

@@ -1,10 +1,11 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
 import torch
+from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 
 from executorch.backends.nxp.backend.edge_helper import (
     node_is_effectively_static_tensor,
@@ -18,7 +19,6 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
     NeutronTargetSpec,
     NodeConverter,
 )
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     transpose_options,
@@ -27,7 +27,6 @@ from executorch.backends.nxp.backend.neutron_operator_support import (
     is_tensor_invariant_permutation,
     transposition_is_supported_on_neutron,
 )
-from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -181,7 +180,7 @@ class PermuteCopyFormatHandler:
                 "A `permute_copy` node was incorrectly selected for delegation. Please report this."
             )
 
-        t_op.tmp_inputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
+        t_op.tmp_inputs[0].tensor_format = DataFormat.CHANNELS_FIRST
 
         return perm
 
@@ -216,7 +215,7 @@ class PermuteCopyFormatHandler:
                 "A `permute_copy` node was incorrectly selected for delegation. Please report this."
             )
 
-        t_op.tmp_outputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
+        t_op.tmp_outputs[0].tensor_format = DataFormat.CHANNELS_FIRST
 
         return perm
 
@@ -281,8 +280,8 @@ class PermuteCopyFormatHandler:
                 "A `permute_copy` node was incorrectly selected for delegation. Please report this."
             )
 
-        t_op.tmp_inputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
-        t_op.tmp_outputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
+        t_op.tmp_inputs[0].tensor_format = DataFormat.CHANNELS_FIRST
+        t_op.tmp_outputs[0].tensor_format = DataFormat.CHANNELS_FIRST
 
         return perm
 
