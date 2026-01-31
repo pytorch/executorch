@@ -239,6 +239,13 @@ if __name__ == "__main__":  # noqa C901
             i.to(memory_format=torch.channels_last) for i in example_inputs
         )
 
+    else:
+        # Notify the user of this option.
+        print(
+            "HINT: Converting your model to channels last may significantly improve inference speed. You can use the "
+            "flag `--use_channels_last_dim_order`. See `docs/source/backends/nxp/nxp-dim-order.md` for more information."
+        )
+
     # 2. Export the model to ATEN
     exported_program = torch.export.export(model, example_inputs, strict=True)
 
