@@ -341,6 +341,81 @@ exec_sigmoid(const SigmoidNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, sigmoid(x, s));
 }
 
+// ----- Tanh -----
+inline void exec_tanh(const TanhNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(n.out, tanh(x, s));
+}
+
+// ----- Squeeze -----
+inline void
+exec_squeeze(const SqueezeNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  auto dims_fb = n.dims;
+
+  if (dims_fb.size() > 0) {
+    // Squeeze specific dimensions
+    std::vector<int> dims;
+    for (auto d : dims_fb) {
+      dims.push_back(d);
+    }
+    st.set_tensor(n.out, squeeze(x, dims, s));
+  } else {
+    // Squeeze all dimensions of size 1
+    st.set_tensor(n.out, squeeze(x, s));
+  }
+}
+
+// ----- Split -----
+inline void
+exec_split(const SplitNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+
+  // Resolve dynamic sizes to std::vector<int>
+  std::vector<int32_t> sizes_vec = resolve_ints(n.sizes, st);
+
+  // Get results based on split mode
+  auto outs_fb = n.outs;
+
+  if (sizes_vec.size() == 1) {
+    // Single value means split_size (chunk size)
+    // Compute actual sizes: e.g., dim_size=10, split_size=3 -> [3, 3, 3, 1]
+    int split_size = sizes_vec[0];
+    int axis = n.axis < 0 ? n.axis + x.ndim() : n.axis;
+    int dim_size = x.shape(axis);
+
+    std::vector<int> indices;
+    for (int pos = split_size; pos < dim_size; pos += split_size) {
+      indices.push_back(pos);
+    }
+
+    auto results = split(x, to_shape(indices), n.axis, s);
+    if (results.size() != outs_fb.size()) {
+      throw std::runtime_error("Split: output count mismatch");
+    }
+    for (size_t i = 0; i < results.size(); ++i) {
+      st.set_tensor(outs_fb[i], std::move(results[i]));
+    }
+  } else {
+    // Multiple sizes: convert to cumulative indices for MLX
+    // sizes=[10, 20, 30] -> indices=[10, 30] (split at positions 10 and 30)
+    std::vector<int> indices;
+    indices.reserve(sizes_vec.size() - 1);
+    int cumsum = 0;
+    for (size_t i = 0; i < sizes_vec.size() - 1; ++i) {
+      cumsum += sizes_vec[i];
+      indices.push_back(cumsum);
+    }
+    auto results = split(x, to_shape(indices), n.axis, s);
+    if (results.size() != outs_fb.size()) {
+      throw std::runtime_error("Split: output count mismatch");
+    }
+    for (size_t i = 0; i < results.size(); ++i) {
+      st.set_tensor(outs_fb[i], std::move(results[i]));
+    }
+  }
+}
+
 // ----- Rsqrt -----
 inline void
 exec_rsqrt(const RsqrtNode& n, ExecutionState& st, StreamOrDevice s) {
@@ -529,13 +604,17 @@ inline void exec_quantized_linear(
   st.set_tensor(n.out, std::move(Y));
 }
 
-// ----- Concat -----
-inline void
-exec_concat(const ConcatNode& n, ExecutionState& st, StreamOrDevice s) {
-  st.set_tensor(
-      n.out,
-      concatenate(
-          {st.const_tensor_ref(n.a), st.const_tensor_ref(n.b)}, n.axis, s));
+// ----- Concatenate -----
+inline void exec_concatenate(
+    const ConcatenateNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  auto tensors_fb = n.tensors;
+  std::vector<array> tensors;
+  for (auto tid : tensors_fb) {
+    tensors.push_back(st.const_tensor_ref(tid));
+  }
+  st.set_tensor(n.out, concatenate(tensors, n.axis, s));
 }
 
 // ----- Full -----
@@ -737,6 +816,15 @@ class Interpreter {
       case OpCode::SIGMOID:
         ops::exec_sigmoid(std::get<SigmoidNode>(instr.node), st, s);
         break;
+      case OpCode::TANH:
+        ops::exec_tanh(std::get<TanhNode>(instr.node), st, s);
+        break;
+      case OpCode::SQUEEZE:
+        ops::exec_squeeze(std::get<SqueezeNode>(instr.node), st, s);
+        break;
+      case OpCode::SPLIT:
+        ops::exec_split(std::get<SplitNode>(instr.node), st, s);
+        break;
       case OpCode::RSQRT:
         ops::exec_rsqrt(std::get<RsqrtNode>(instr.node), st, s);
         break;
@@ -783,8 +871,8 @@ class Interpreter {
         ops::exec_quantized_linear(
             std::get<QuantizedLinearNode>(instr.node), st, s);
         break;
-      case OpCode::CONCAT:
-        ops::exec_concat(std::get<ConcatNode>(instr.node), st, s);
+      case OpCode::CONCATENATE:
+        ops::exec_concatenate(std::get<ConcatenateNode>(instr.node), st, s);
         break;
       case OpCode::FULL:
         ops::exec_full(std::get<FullNode>(instr.node), st, s);

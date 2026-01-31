@@ -562,6 +562,20 @@ class GeneratedOpBuilders:
             builder.PrependUOffsetTRelative(off)
         return builder.EndVector()
 
+    def _build_tid_vector(
+        self, builder: flatbuffers.Builder, vec: List[Tid]
+    ) -> int:
+        """Build a vector of Tid structs."""
+        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Tid import CreateTid
+
+        # For vectors of structs, we need to build the vector differently
+        # Each Tid struct is 4 bytes (uint32), so we manually write them
+        builder.StartVector(4, len(vec), 4)
+        for tid in reversed(vec):
+            builder.Prep(4, 0)  # Align for struct
+            builder.PrependUint32(tid.idx)
+        return builder.EndVector()
+
 '''
 
     # Generate builder methods for each op
@@ -608,6 +622,10 @@ def _generate_op_builder_method(table: FBSTable) -> str:  # noqa: C901
         elif kind == "list_int_or_vid":
             prebuild_lines.append(
                 f"        {fld.name}_vec = self._build_int_or_vid_vector(builder, op.{fld.name})"
+            )
+        elif kind == "list_tid":
+            prebuild_lines.append(
+                f"        {fld.name}_vec = self._build_tid_vector(builder, op.{fld.name})"
             )
         elif kind == "int_or_vid":
             prebuild_lines.append(
@@ -660,6 +678,10 @@ def _generate_op_builder_method(table: FBSTable) -> str:  # noqa: C901
             lines.append(
                 f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_vec)"
             )
+        elif kind == "list_tid":
+            lines.append(
+                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_vec)"
+            )
         elif kind == "int_or_vid":
             lines.append(
                 f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_off)"
@@ -709,6 +731,8 @@ def _get_field_kind(fld: FBSField, table: FBSTable) -> str:  # noqa: C901
             return "list_int"
         if inner == "IntOrVid":
             return "list_int_or_vid"
+        if inner == "Tid":
+            return "list_tid"
         return f"list_{inner}"
 
     # Handle basic types
@@ -1543,6 +1567,13 @@ def _generate_loader_case(table: FBSTable) -> List[str]:  # noqa: C901
             )
             lines.append("        }")
             lines.append("      }")
+        elif kind == "list_tid":
+            lines.append("      // Load tensors vector")
+            lines.append(f"      if (fb->{fb_field_name}()) {{")
+            lines.append(f"        for (auto fb_tid : *fb->{fb_field_name}()) {{")
+            lines.append(f"          node.{fld.name}.push_back(convert_tid(fb_tid));")
+            lines.append("        }")
+            lines.append("      }")
 
     lines.extend(
         [
@@ -1620,7 +1651,7 @@ def _get_inspector_field_kind(fld: FBSField, table: FBSTable) -> str:
     """Determine the inspector field kind for a field.
 
     Returns one of: 'tid', 'vid', 'int_or_vid', 'float_or_vid', 'int_list',
-    'int_or_vid_list', 'scalar', 'string'
+    'int_or_vid_list', 'tid_list', 'scalar', 'string'.
     """
     t = fld.type_str
 
@@ -1636,6 +1667,8 @@ def _get_inspector_field_kind(fld: FBSField, table: FBSTable) -> str:
         return "int_list"
     if t == "[IntOrVid]":
         return "int_or_vid_list"
+    if t == "[Tid]":
+        return "tid_list"
     if t == "string":
         return "string"
     # Everything else (int, float, bool, enum) is a scalar
@@ -1682,7 +1715,7 @@ def generate_inspector(schema: "Schema") -> str:  # noqa: F821
         "# Field kinds and their extractors",
         "# Each field is a tuple of (display_name, accessor_name, kind)",
         "# where kind is one of: 'tid', 'vid', 'int_or_vid', 'float_or_vid',",
-        "# 'int_list', 'int_or_vid_list', 'scalar', 'string'",
+        "# 'int_list', 'int_or_vid_list', 'tid_list', 'scalar', 'string'",
         "",
         "FieldSpec = Tuple[str, str, str]  # (display_name, accessor_name, kind)",
         "",

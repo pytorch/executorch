@@ -225,6 +225,13 @@ install(
   PATTERN "*.h"
 )
 
+# Install mlx.metallib (Metal GPU kernels) for runtime execution MLX searches
+# for this in: Resources/mlx/, Resources/default/, or a hardcoded build path We
+# install it to lib/ alongside libmlx.a and create a Resources symlink structure
+install(FILES ${mlx_BINARY_DIR}/mlx/backend/metal/kernels/mlx.metallib
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
 # -----------------------------------------------------------------------------
 # Tests
 # -----------------------------------------------------------------------------
