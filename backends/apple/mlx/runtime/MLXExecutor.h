@@ -249,7 +249,7 @@ struct ExecutionState {
     current_op_idx = idx;
     current_op_name = name;
     if constexpr (kEnableOpLogging) {
-      std::cout << "[" << idx << "] " << name << "\n";
+      std::cout << "[" << idx << "] " << name << std::endl;
     }
   }
 

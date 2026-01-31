@@ -359,6 +359,17 @@ def parse_op_node(  # noqa: C901
                     result[field_name] = [
                         item_method(i) for i in range(length_method())
                     ]
+                elif kind == "tid_list":
+                    length_method = getattr(node, f"{accessor_name}Length")
+                    item_method = getattr(node, accessor_name)
+                    tids = []
+                    for i in range(length_method()):
+                        tid_struct = item_method(i)
+                        if tid_struct:
+                            tids.append(f"tid {tid_struct.Idx()}")
+                        else:
+                            tids.append(None)
+                    result[field_name] = tids
                 elif kind == "int_or_vid_list":
                     length_method = getattr(node, f"{accessor_name}Length")
                     item_method = getattr(node, accessor_name)
