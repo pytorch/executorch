@@ -38,12 +38,21 @@ IS_MACOS = platform.system() == "Darwin"
 SKIP_EXPORT_TESTS = not MPS_AVAILABLE
 SKIP_REASON = "MPS not available - Metal export tests require MPS support"
 
+# Check if running in CI (GitHub Actions)
+IS_CI = os.environ.get("GITHUB_ACTIONS") == "true"
+
 # Paths
 TESTS_DIR = Path(__file__).parent
 EXECUTORCH_ROOT = TESTS_DIR.parent.parent.parent.parent
 BUILD_DIR = EXECUTORCH_ROOT / "cmake-out"
 EXECUTOR_RUNNER = BUILD_DIR / "executor_runner"
 RUN_METAL_TEST_SCRIPT = TESTS_DIR / "run_metal_test.sh"
+
+# Test output directory - use current working directory in CI for reliable write access
+if IS_CI:
+    TEST_OUTPUT_BASE_DIR = Path.cwd() / "aoti_debug_data"
+else:
+    TEST_OUTPUT_BASE_DIR = None  # Will use tempfile.TemporaryDirectory
 
 # Check if executor_runner is built
 EXECUTOR_RUNNER_AVAILABLE = EXECUTOR_RUNNER.exists()
@@ -76,6 +85,7 @@ class Add(nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         return x + y
 
+
 MODULE_REGISTRY["add"] = {
     "model_class": Add,
     "input_shapes": [(10,), (10,)],
@@ -87,15 +97,18 @@ MODULE_REGISTRY["add"] = {
 # Matrix Multiplication Modules
 # -------------------------------------------------------------------------
 
+
 class Mm(nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         return x.mm(y)
+
 
 MODULE_REGISTRY["mm"] = {
     "model_class": Mm,
     "input_shapes": [(3, 4), (4, 5)],
     "description": "Simple mm layer model",
 }
+
 
 # -------------------------------------------------------------------------
 class MmWeights(nn.Module):
@@ -106,11 +119,13 @@ class MmWeights(nn.Module):
     def forward(self, x: torch.Tensor):
         return x.mm(self.weight)
 
+
 MODULE_REGISTRY["mm_weights"] = {
     "model_class": MmWeights,
     "input_shapes": [(3, 4)],
     "description": "Matrix multiplication with weight parameter",
 }
+
 
 # -------------------------------------------------------------------------
 class TwoMm(nn.Module):
@@ -126,11 +141,13 @@ class TwoMm(nn.Module):
     def forward(self, x: torch.Tensor):
         return self.left_weight.mm(x).mm(self.right_weight)
 
+
 MODULE_REGISTRY["two_mm"] = {
     "model_class": TwoMm,
     "input_shapes": [(5, 6)],
     "description": "Two consecutive matrix multiplications",
 }
+
 
 # -------------------------------------------------------------------------
 class ElementwiseMmReduction(nn.Module):
@@ -139,6 +156,7 @@ class ElementwiseMmReduction(nn.Module):
         y2 = y.cos() + 3
         z = x1.mm(y2)
         return z + z.sum()
+
 
 MODULE_REGISTRY["elementwise_mm_reduction"] = {
     "model_class": ElementwiseMmReduction,
@@ -151,6 +169,7 @@ MODULE_REGISTRY["elementwise_mm_reduction"] = {
 # Linear Modules
 # -------------------------------------------------------------------------
 
+
 class LinearNoBias(nn.Module):
     def __init__(self):
         super().__init__()
@@ -158,6 +177,7 @@ class LinearNoBias(nn.Module):
 
     def forward(self, x: torch.Tensor):
         return self.linear(x)
+
 
 MODULE_REGISTRY["linear_nobias"] = {
     "model_class": LinearNoBias,
@@ -170,6 +190,7 @@ MODULE_REGISTRY["linear_nobias"] = {
 # Convolution Modules
 # -------------------------------------------------------------------------
 
+
 class SingleConv2d(nn.Module):
     def __init__(self):
         super().__init__()
@@ -180,11 +201,13 @@ class SingleConv2d(nn.Module):
     def forward(self, x: torch.Tensor):
         return self.conv(x)
 
+
 MODULE_REGISTRY["conv2d"] = {
     "model_class": SingleConv2d,
     "input_shapes": [(4, 3, 8, 8)],
     "description": "Single Conv2d layer model",
 }
+
 
 # -------------------------------------------------------------------------
 class DepthwiseConv(nn.Module):
@@ -204,11 +227,13 @@ class DepthwiseConv(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
+
 MODULE_REGISTRY["depthwise_conv"] = {
     "model_class": DepthwiseConv,
     "input_shapes": [(1, 32, 112, 112)],
     "description": "Single Depthwise Conv2d layer model",
 }
+
 
 # -------------------------------------------------------------------------
 class SmallConv1d(nn.Module):
@@ -228,14 +253,16 @@ class SmallConv1d(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
+
 MODULE_REGISTRY["small_conv1d"] = {
     "model_class": SmallConv1d,
     "input_shapes": [(1, 8, 5)],
     "description": "Conv1d layer with 8 input channels, 6 output channels",
 }
 
+
 # -------------------------------------------------------------------------
-class MockConv1d(nn.Module):
+class MediumConv1d(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = nn.Conv1d(
@@ -252,11 +279,13 @@ class MockConv1d(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
+
 MODULE_REGISTRY["conv1d"] = {
-    "model_class": MockConv1d,
+    "model_class": MediumConv1d,
     "input_shapes": [(1, 80, 3000)],
     "description": "Conv1d layer with 80 input channels, 384 output channels",
 }
+
 
 # -------------------------------------------------------------------------
 class VoxtralConv1d(nn.Module):
@@ -276,6 +305,7 @@ class VoxtralConv1d(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
+
 MODULE_REGISTRY["voxtral_conv1d"] = {
     "model_class": VoxtralConv1d,
     "input_shapes": [(10, 128, 3000)],
@@ -286,6 +316,7 @@ MODULE_REGISTRY["voxtral_conv1d"] = {
 # -------------------------------------------------------------------------
 # Attention (SDPA) Modules
 # -------------------------------------------------------------------------
+
 
 class SimpleSDPA(nn.Module):
     """Minimal SDPA test model."""
@@ -298,11 +329,13 @@ class SimpleSDPA(nn.Module):
         )
         return output
 
+
 MODULE_REGISTRY["sdpa"] = {
     "model_class": SimpleSDPA,
     "input_shapes": [(2, 4, 16, 64), (2, 4, 16, 64), (2, 4, 16, 64)],
     "description": "Simple Scaled Dot Product Attention model",
 }
+
 
 # -------------------------------------------------------------------------
 class AddSDPA(nn.Module):
@@ -310,13 +343,9 @@ class AddSDPA(nn.Module):
 
     def __init__(self, batch_size=2, num_heads=4, seq_len=16, head_dim=64):
         super().__init__()
-        self.query = nn.Parameter(
-            torch.randn(batch_size, num_heads, seq_len, head_dim)
-        )
+        self.query = nn.Parameter(torch.randn(batch_size, num_heads, seq_len, head_dim))
         self.key = nn.Parameter(torch.randn(batch_size, num_heads, seq_len, head_dim))
-        self.value = nn.Parameter(
-            torch.randn(batch_size, num_heads, seq_len, head_dim)
-        )
+        self.value = nn.Parameter(torch.randn(batch_size, num_heads, seq_len, head_dim))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         sdpa_output = torch.nn.functional.scaled_dot_product_attention(
@@ -324,17 +353,21 @@ class AddSDPA(nn.Module):
         )
         return sdpa_output + x
 
+
 MODULE_REGISTRY["add_sdpa"] = {
     "model_class": AddSDPA,
     "input_shapes": [(2, 4, 16, 64)],
     "description": "SDPA model with Q,K,V as parameters that adds input to output",
 }
 
+
 # -------------------------------------------------------------------------
 class BaseAddStridedSDPA(nn.Module):
     """SDPA model with strided Q, K, V parameters."""
 
-    def __init__(self, q_size, k_size, v_size, q_stride, k_stride, v_stride, attn_mask_size=None):
+    def __init__(
+        self, q_size, k_size, v_size, q_stride, k_stride, v_stride, attn_mask_size=None
+    ):
         super().__init__()
         self.q_size = q_size
         self.k_size = k_size
@@ -361,6 +394,7 @@ class BaseAddStridedSDPA(nn.Module):
         )
         return sdpa_output + x
 
+
 # -------------------------------------------------------------------------
 class AddStridedSDPA(BaseAddStridedSDPA):
     def __init__(self):
@@ -373,11 +407,13 @@ class AddStridedSDPA(BaseAddStridedSDPA):
             v_stride=(1920000, 64, 1280, 1),
         )
 
+
 MODULE_REGISTRY["audio_encoder_sdpa1"] = {
     "model_class": AddStridedSDPA,
     "input_shapes": [(10, 20, 1500, 64)],
     "description": "Audio Encoder model with strided SDPA",
 }
+
 
 # -------------------------------------------------------------------------
 class AddStridedSDPA1(BaseAddStridedSDPA):
@@ -391,11 +427,13 @@ class AddStridedSDPA1(BaseAddStridedSDPA):
             v_stride=(1920000, 64, 1280, 1),
         )
 
+
 MODULE_REGISTRY["whisper_strided_sdpa1"] = {
     "model_class": AddStridedSDPA1,
     "input_shapes": [(1, 20, 1, 64)],
     "description": "Whisper-like strided SDPA variant 1",
 }
+
 
 # -------------------------------------------------------------------------
 class AddStridedSDPA2(BaseAddStridedSDPA):
@@ -410,6 +448,7 @@ class AddStridedSDPA2(BaseAddStridedSDPA):
             attn_mask_size=(1, 1, 1, 1024),
         )
 
+
 MODULE_REGISTRY["whisper_strided_sdpa2"] = {
     "model_class": AddStridedSDPA2,
     "input_shapes": [(1, 20, 1, 64)],
@@ -421,6 +460,7 @@ MODULE_REGISTRY["whisper_strided_sdpa2"] = {
 # Normalization Modules
 # -------------------------------------------------------------------------
 
+
 class BatchNorm(nn.Module):
     def __init__(self):
         super().__init__()
@@ -428,6 +468,7 @@ class BatchNorm(nn.Module):
 
     def forward(self, x):
         return self.bn(x)
+
 
 MODULE_REGISTRY["batchnorm"] = {
     "model_class": BatchNorm,
@@ -439,6 +480,7 @@ MODULE_REGISTRY["batchnorm"] = {
 # -------------------------------------------------------------------------
 # Block/Composite Modules
 # -------------------------------------------------------------------------
+
 
 class SingleResNetBlock(nn.Module):
     def __init__(self, in_channels=64, out_channels=64, stride=1):
@@ -485,6 +527,7 @@ class SingleResNetBlock(nn.Module):
 
         return out
 
+
 MODULE_REGISTRY["single_resnet_block"] = {
     "model_class": SingleResNetBlock,
     "input_shapes": [(1, 64, 8, 8)],
@@ -515,9 +558,7 @@ def get_model_and_inputs(
     if dtype is not None:
         model = model.to(dtype)
 
-    example_inputs = tuple(
-        torch.randn(*shape, dtype=dtype) for shape in input_shapes
-    )
+    example_inputs = tuple(torch.randn(*shape, dtype=dtype) for shape in input_shapes)
 
     return model, example_inputs
 
@@ -576,12 +617,13 @@ def export_model_to_files(
     return pte_path, ptd_path, expected_output
 
 
-def run_executor_runner(pte_path: Path, ptd_path: Path) -> bool:
+def run_executor_runner(pte_path: Path, ptd_path: Path) -> Tuple[bool, Optional[str]]:
     """
     Run the executor_runner binary with the given model files.
 
     Returns:
-        True if execution succeeded, False otherwise.
+        Tuple of (success, error_message). If success is True, error_message is None.
+        If success is False, error_message contains details about the failure.
     """
     if not EXECUTOR_RUNNER.exists():
         raise RuntimeError(
@@ -591,8 +633,10 @@ def run_executor_runner(pte_path: Path, ptd_path: Path) -> bool:
 
     cmd = [
         str(EXECUTOR_RUNNER),
-        "--model_path", str(pte_path),
-        "--data_path", str(ptd_path),
+        "--model_path",
+        str(pte_path),
+        "--data_path",
+        str(ptd_path),
     ]
 
     try:
@@ -603,11 +647,17 @@ def run_executor_runner(pte_path: Path, ptd_path: Path) -> bool:
             timeout=60,
             cwd=str(EXECUTORCH_ROOT),
         )
-        return result.returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
-    except Exception:
-        return False
+        if result.returncode == 0:
+            return True, None
+        else:
+            error_msg = (
+                f"executor_runner exited with code {result.returncode}\n"
+                f"stdout: {result.stdout}\n"
+                f"stderr: {result.stderr}"
+            )
+            return False, error_msg
+    except subprocess.TimeoutExpired as e:
+        return False, f"executor_runner timed out after 60 seconds: {e}"
 
 
 def read_output_file(filepath: Path) -> Optional[np.ndarray]:
@@ -639,11 +689,14 @@ def compare_outputs(
     if runtime_values is None:
         return False, None, None
 
-    # Flatten expected output
+    # Flatten expected output and move to CPU for numpy conversion
+    # (required when tensor is on MPS device)
     if isinstance(expected, tuple):
-        expected_values = np.concatenate([t.flatten().numpy() for t in expected])
+        expected_values = np.concatenate(
+            [t.detach().cpu().flatten().numpy() for t in expected]
+        )
     else:
-        expected_values = expected.flatten().numpy()
+        expected_values = expected.detach().cpu().flatten().numpy()
 
     if len(runtime_values) != len(expected_values):
         return False, None, None
@@ -725,47 +778,62 @@ class TestMetalBackendModules(unittest.TestCase):
             self.skipTest(SKIP_RUNTIME_REASON)
 
         model, example_inputs = get_model_and_inputs(model_name, dtype=dtype)
+        dtype_name = DTYPE_NAMES[dtype]
+        test_subdir_name = f"{model_name}_{dtype_name}"
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir_path = Path(tmpdir)
-
-            # Create aoti_debug_data directory for output files
-            debug_dir = tmpdir_path / "aoti_debug_data"
-            debug_dir.mkdir(exist_ok=True)
+        def run_test_in_directory(test_dir: Path) -> None:
+            """Run the actual test logic in the given directory."""
+            # Create model output directory: aoti_debug_data/<model_name>_<dtype>/
+            model_output_dir = test_dir / test_subdir_name
+            model_output_dir.mkdir(parents=True, exist_ok=True)
 
             # Export model and get expected output
             pte_path, ptd_path, expected_output = export_model_to_files(
-                model, example_inputs, tmpdir_path, model_name
+                model, example_inputs, model_output_dir, model_name
             )
 
             self.assertTrue(
                 pte_path.exists(),
-                f"{model_name}: PTE file not created at {pte_path}",
+                f"{model_name} ({dtype_name}): PTE file not created at {pte_path}",
             )
             self.assertTrue(
                 ptd_path.exists(),
-                f"{model_name}: PTD file not created at {ptd_path}",
+                f"{model_name} ({dtype_name}): PTD file not created at {ptd_path}",
             )
 
             # Run executor_runner
-            success = run_executor_runner(pte_path, ptd_path)
+            success, error_msg = run_executor_runner(pte_path, ptd_path)
             self.assertTrue(
                 success,
-                f"{model_name}: executor_runner failed",
+                f"{model_name} ({dtype_name}): executor_runner failed\n{error_msg}",
             )
 
-            # Compare outputs
-            runtime_output_file = debug_dir / "final_runtime_output.txt"
+            # Compare outputs - executor_runner writes to aoti_debug_data/ in cwd
+            # In CI, this is TEST_OUTPUT_BASE_DIR; locally it may vary
+            runtime_output_file = model_output_dir / "final_runtime_output.txt"
 
-            if runtime_output_file.exists():
-                is_close, max_atol, max_rtol = compare_outputs(
-                    expected_output, runtime_output_file
-                )
+            self.assertTrue(
+                runtime_output_file.exists(),
+                f"{model_name} ({dtype_name}): Runtime output file not created at {runtime_output_file}",
+            )
 
-                self.assertTrue(
-                    is_close,
-                    f"{model_name} ({DTYPE_NAMES[dtype]}): Output mismatch - max_atol={max_atol}, max_rtol={max_rtol}",
-                )
+            is_close, max_atol, max_rtol = compare_outputs(
+                expected_output, runtime_output_file
+            )
+
+            self.assertTrue(
+                is_close,
+                f"{model_name} ({dtype_name}): Output mismatch - max_atol={max_atol}, max_rtol={max_rtol}",
+            )
+
+        if IS_CI:
+            # In CI, use a persistent directory in the current working directory
+            TEST_OUTPUT_BASE_DIR.mkdir(parents=True, exist_ok=True)
+            run_test_in_directory(TEST_OUTPUT_BASE_DIR)
+        else:
+            # Locally, use a temporary directory that gets cleaned up
+            with tempfile.TemporaryDirectory() as tmpdir:
+                run_test_in_directory(Path(tmpdir))
 
 
 # =============================================================================
@@ -775,8 +843,10 @@ class TestMetalBackendModules(unittest.TestCase):
 
 def _make_export_test(model_name: str, dtype: torch.dtype):
     """Factory function to create an export test method for a given model and dtype."""
+
     def test_method(self):
         self._test_module_export(model_name, dtype)
+
     dtype_name = DTYPE_NAMES[dtype]
     test_method.__doc__ = f"Test {model_name} module export with {dtype_name}."
     return test_method
@@ -784,10 +854,14 @@ def _make_export_test(model_name: str, dtype: torch.dtype):
 
 def _make_output_consistency_test(model_name: str, dtype: torch.dtype):
     """Factory function to create an output consistency test method for a given model and dtype."""
+
     def test_method(self):
         self._test_module_output_consistency(model_name, dtype)
+
     dtype_name = DTYPE_NAMES[dtype]
-    test_method.__doc__ = f"Test {model_name} module output consistency with {dtype_name}."
+    test_method.__doc__ = (
+        f"Test {model_name} module output consistency with {dtype_name}."
+    )
     return test_method
 
 

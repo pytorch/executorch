@@ -56,7 +56,7 @@ build_runtime() {
                 -DCMAKE_BUILD_TYPE=Release"
 
     echo "Running cmake..."
-    eval cmake $CMAKE_ARGS "$EXECUTORCH_ROOT"
+    cmake $CMAKE_ARGS "$EXECUTORCH_ROOT"
 
     echo "Building..."
     cmake --build . -j$(sysctl -n hw.ncpu)
