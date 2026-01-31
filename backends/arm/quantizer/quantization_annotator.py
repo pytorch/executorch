@@ -406,6 +406,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.squeeze.default,
     torch.ops.aten.squeeze_copy.default,
     torch.ops.aten.squeeze_copy.dim,
+    torch.ops.aten.squeeze_copy.dims,
     torch.ops.aten.squeeze.dim,
     torch.ops.aten.squeeze.dims,
     torch.ops.aten.unbind.int,
