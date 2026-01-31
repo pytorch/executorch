@@ -54,7 +54,7 @@ jobs:
 
   export-model-metal-artifact:
     name: export-model-metal-artifact
-      # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
