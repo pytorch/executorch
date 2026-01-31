@@ -1,10 +1,13 @@
 $dokka.format:javadoc-v1
 $dokka.linkExtension:html
+$dokka.location:org.pytorch.executorch.extension.asr/AsrModule.Companion///PointingToDeclaration/org/pytorch/executorch/extension/asr/AsrModule.Companion.html
+$dokka.location:org.pytorch.executorch.extension.asr/AsrTranscribeConfig.Builder///PointingToDeclaration/org/pytorch/executorch/extension/asr/AsrTranscribeConfig.Builder.html
 $dokka.location:org.pytorch.executorch.extension.llm/LlmGenerationConfig.Builder///PointingToDeclaration/org/pytorch/executorch/extension/llm/LlmGenerationConfig.Builder.html
 $dokka.location:org.pytorch.executorch.extension.llm/LlmModuleConfig.Builder///PointingToDeclaration/org/pytorch/executorch/extension/llm/LlmModuleConfig.Builder.html
 $dokka.location:org.pytorch.executorch/ExecutorchRuntimeException.ExecutorchInvalidArgumentException///PointingToDeclaration/org/pytorch/executorch/ExecutorchRuntimeException.ExecutorchInvalidArgumentException.html
 org.pytorch.executorch
 org.pytorch.executorch.annotations
+org.pytorch.executorch.extension.asr
 org.pytorch.executorch.extension.llm
 org.pytorch.executorch.training
 

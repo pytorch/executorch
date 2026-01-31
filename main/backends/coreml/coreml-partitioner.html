@@ -5,7 +5,6 @@
 <html lang="en" data-content_root="../../" >
 
   <head>
-  <meta name="robots" content="noindex">
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
@@ -1019,6 +1018,15 @@ document.write(`
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
   <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Backend Overview</span></p>
 <ul class="current nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../xnnpack/xnnpack-overview.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-partitioner.html">Partitioner API</a></li>
+
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-arch-internals.html">Architecture and Internals</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../cuda/cuda-overview.html">CUDA Backend</a></li>
 <li class="toctree-l1 current active has-children"><a class="reference internal" href="coreml-overview.html">Core ML Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="coreml-troubleshooting.html">Troubleshooting</a></li>
 <li class="toctree-l2 current active"><a class="current reference internal" href="#">Partitioner API</a></li>
@@ -1026,11 +1034,60 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="coreml-op-support.html">Op support</a></li>
 </ul>
 </details></li>
+<li class="toctree-l1"><a class="reference internal" href="../mps/mps-overview.html">MPS Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../vulkan/vulkan-overview.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-op-support.html">Operator Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../vulkan/tutorials/vulkan-tutorials.html">Vulkan Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../vulkan/tutorials/etvk-profiling-tutorial.html">Executing and profiling an ExecuTorch Vulkan model on device</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../vulkan/tutorials/etvk-llama-tutorial.html">Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../arm-ethos-u/arm-ethos-u-overview.html">Arm Ethos-U Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../arm-ethos-u/arm-ethos-u-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-ethos-u/arm-ethos-u-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-ethos-u/arm-ethos-u-troubleshooting.html">Arm Ethos-U Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../arm-ethos-u/tutorials/arm-ethos-u-tutorials.html">Arm Ethos-U Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../arm-ethos-u/tutorials/ethos-u-getting-started.html">Getting Started Tutorial</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../arm-vgf/arm-vgf-overview.html">Arm VGF Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../arm-vgf/arm-vgf-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-vgf/arm-vgf-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-vgf/arm-vgf-troubleshooting.html">Arm VGF Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../arm-vgf/tutorials/arm-vgf-tutorials.html">Arm VGF Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../arm-vgf/tutorials/vgf-getting-started.html">Getting Started Tutorial</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../nxp/nxp-overview.html">NXP eIQ Neutron Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-partitioner.html">Partitioner API</a></li>
+
+<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-quantization.html">NXP eIQ Neutron Quantization</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../nxp/tutorials/nxp-tutorials.html">NXP Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../nxp/tutorials/nxp-basic-tutorial.html">Preparing a Model for NXP eIQ Neutron Backend</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-dim-order.html">NXP eIQ Dim Order Support</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../backends-cadence.html">Cadence Xtensa Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../backends-samsung-exynos.html">Samsung Exynos Backend (TBD)</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-op-support.html">Operator Support</a></li>
+</ul>
+</details></li>
 </ul>
 </div>
 </nav></div>
@@ -1257,6 +1314,107 @@ They must be provided through a compile spec.</p>
 </div>
 </section>
 </section>
+<section id="multifunction-models">
+<h2>Multifunction Models<a class="headerlink" href="#multifunction-models" title="Link to this heading">#</a></h2>
+<p>Core ML supports multifunction ML Programs, which allow a single model to contain multiple functions that share weights. This is particularly useful for Large Language Models (LLMs) that use different execution paths for prefill (processing the initial prompt) and decode (generating tokens one at a time) phases. By sharing weights between functions, the model size remains manageable while allowing optimized execution paths for each phase.</p>
+<section id="requirements">
+<h3>Requirements<a class="headerlink" href="#requirements" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>iOS &gt;= 18.0, macOS &gt;= 15.0</p></li>
+<li><p>Xcode &gt;= 16.0</p></li>
+</ul>
+</section>
+<section id="exporting-multifunction-models">
+<h3>Exporting Multifunction Models<a class="headerlink" href="#exporting-multifunction-models" title="Link to this heading">#</a></h3>
+<p>To export a multifunction model, pass a dictionary of method names to <code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code> objects to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>. Enable weight sharing with <code class="docutils literal notranslate"><span class="pre">MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">coremltools</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ct</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.compiler.coreml_preprocess</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">CoreMLBackend</span><span class="p">,</span>
+    <span class="n">MULTIMETHOD_WEIGHT_SHARING_STRATEGY</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.partition</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoreMLPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">SimpleModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">linear</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">SimpleModel</span><span class="p">()</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+
+<span class="c1"># Create inputs for different sequence lengths</span>
+<span class="n">decode_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">16</span><span class="p">),)</span>   <span class="c1"># seqlen=1 for decode</span>
+<span class="n">prefill_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">16</span><span class="p">),)</span>  <span class="c1"># seqlen=64 for prefill</span>
+
+<span class="c1"># Export both methods</span>
+<span class="n">decode_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">decode_inputs</span><span class="p">)</span>
+<span class="n">prefill_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">prefill_inputs</span><span class="p">)</span>
+
+<span class="c1"># Configure compile specs with weight sharing</span>
+<span class="n">compile_specs</span> <span class="o">=</span> <span class="n">CoreMLBackend</span><span class="o">.</span><span class="n">generate_compile_specs</span><span class="p">(</span>
+    <span class="n">minimum_deployment_target</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">iOS18</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">compile_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+    <span class="n">CoreMLBackend</span><span class="o">.</span><span class="n">generate_multimethod_weight_sharing_strategy_compile_spec</span><span class="p">(</span>
+        <span class="n">MULTIMETHOD_WEIGHT_SHARING_STRATEGY</span><span class="o">.</span><span class="n">POSITIONAL</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+
+<span class="n">partitioner</span> <span class="o">=</span> <span class="n">CoreMLPartitioner</span><span class="p">(</span><span class="n">compile_specs</span><span class="o">=</span><span class="n">compile_specs</span><span class="p">)</span>
+
+<span class="c1"># Lower with multiple methods - pass a dict of {method_name: ExportedProgram}</span>
+<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">decode_ep</span><span class="p">,</span> <span class="s2">&quot;prefill&quot;</span><span class="p">:</span> <span class="n">prefill_ep</span><span class="p">},</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">partitioner</span><span class="p">],</span>
+<span class="p">)</span>
+
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Save the multifunction model</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;multifunction_model.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">et_program</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="weight-sharing-strategies">
+<h3>Weight Sharing Strategies<a class="headerlink" href="#weight-sharing-strategies" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">POSITIONAL</span></code></strong>: Weights from the first method are shared positionally with subsequent methods. This is the recommended strategy for LLMs where prefill and decode share the same model weights.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">DISABLED</span></code></strong>: Each method has its own copy of weights. Use this when methods have different weights or for debugging.</p></li>
+</ul>
+</section>
+<section id="runtime-behavior">
+<h3>Runtime Behavior<a class="headerlink" href="#runtime-behavior" title="Link to this heading">#</a></h3>
+<p>At runtime, the ExecuTorch Core ML delegate automatically:</p>
+<ol class="arabic simple">
+<li><p>Detects multifunction models based on metadata</p></li>
+<li><p>Uses <code class="docutils literal notranslate"><span class="pre">MLModelConfiguration.functionName</span></code> (iOS 18+) to select the appropriate function</p></li>
+<li><p>Shares weights between functions via NamedDataStore to minimize memory usage</p></li>
+</ol>
+<p>Each function in a multifunction model is treated as a separate method in ExecuTorch:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">&quot;multifunction_model.pte&quot;</span><span class="p">)</span>
+
+<span class="c1"># List available methods</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">method_names</span><span class="p">)</span>  <span class="c1"># {&#39;forward&#39;, &#39;prefill&#39;}</span>
+
+<span class="c1"># Load and execute specific methods</span>
+<span class="n">forward_method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+<span class="n">decode_output</span> <span class="o">=</span> <span class="n">forward_method</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">decode_inputs</span><span class="p">)</span>
+
+<span class="n">prefill_method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;prefill&quot;</span><span class="p">)</span>
+<span class="n">prefill_output</span> <span class="o">=</span> <span class="n">prefill_method</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">prefill_inputs</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>For a complete example including KV cache handling, see the <a class="reference download internal" download="" href="../../_downloads/fd29ee5b36fce8a1f6acfbf1490894f7/test_coreml_multifunction.py"><span class="xref download myst">multifunction test</span></a> and the <a class="reference download internal" download="" href="../../_downloads/058c925ffda309ec66d942170bb9da17/export_static_llm_coreml.py"><span class="xref download myst">LLM export script</span></a>.</p>
+</section>
+</section>
 </section>
 
 
@@ -1380,6 +1538,13 @@ They must be provided through a compile spec.</p>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dynamic-and-enumerated-shapes-in-core-ml-export">Dynamic and Enumerated Shapes in Core ML Export</a><ul class="visible nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#enumerated-shapes">Enumerated Shapes</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#specifying-enumerated-shapes">Specifying Enumerated Shapes</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#multifunction-models">Multifunction Models</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#requirements">Requirements</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#exporting-multifunction-models">Exporting Multifunction Models</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#weight-sharing-strategies">Weight Sharing Strategies</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-behavior">Runtime Behavior</a></li>
 </ul>
 </li>
 </ul>
@@ -1607,7 +1772,7 @@ They must be provided through a compile spec.</p>
        "headline": "Partitioner API",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/backends/coreml/coreml-partitioner.html",
-       "articleBody": "Partitioner API# The Core ML partitioner API allows for configuration of the model delegation to Core ML. Passing a CoreMLPartitioner instance with no additional parameters will run as much of the model as possible on the Core ML backend with default settings. This is the most common use case. For advanced use cases, the partitioner exposes the following options via the constructor: skip_ops_for_coreml_delegation: Allows you to skip ops for delegation by Core ML. By default, all ops that Core ML supports will be delegated. See here for an example of skipping an op for delegation. compile_specs: A list of CompileSpecs for the Core ML backend. These control low-level details of Core ML delegation, such as the compute unit (CPU, GPU, ANE), the iOS deployment target, and the compute precision (FP16, FP32). These are discussed more below. take_over_mutable_buffer: A boolean that indicates whether PyTorch mutable buffers in stateful models should be converted to Core ML MLState. If set to False, mutable buffers in the PyTorch graph are converted to graph inputs and outputs to the Core ML lowered module under the hood. Generally, setting take_over_mutable_buffer to true will result in better performance, but using MLState requires iOS \u003e= 18.0, macOS \u003e= 15.0, and Xcode \u003e= 16.0. take_over_constant_data: A boolean that indicates whether PyTorch constant data like model weights should be consumed by the Core ML delegate. If set to False, constant data is passed to the Core ML delegate as inputs. By default, take_over_constant_data=True. lower_full_graph: A boolean that indicates whether the entire graph must be lowered to Core ML. If set to True and Core ML does not support an op, an error is raised during lowering. If set to False and Core ML does not support an op, the op is executed on the CPU by ExecuTorch. Although setting lower_full_graph=False can allow a model to lower where it would otherwise fail, it can introduce performance overhead in the model when there are unsupported ops. You will see warnings about unsupported ops during lowering if there are any. By default, lower_full_graph=False. Core ML CompileSpec# A list of CompileSpecs is constructed with CoreMLBackend.generate_compile_specs. Below are the available options: compute_unit: this controls the compute units (CPU, GPU, ANE) that are used by Core ML. The default value is coremltools.ComputeUnit.ALL. The available options from coremltools are: coremltools.ComputeUnit.ALL (uses the CPU, GPU, and ANE) coremltools.ComputeUnit.CPU_ONLY (uses the CPU only) coremltools.ComputeUnit.CPU_AND_GPU (uses both the CPU and GPU, but not the ANE) coremltools.ComputeUnit.CPU_AND_NE (uses both the CPU and ANE, but not the GPU) minimum_deployment_target: The minimum iOS deployment target (e.g., coremltools.target.iOS18). By default, the smallest deployment target needed to deploy the model is selected. During export, you will see a warning about the \u201cCore ML specification version\u201d that was used for the model, which maps onto a deployment target as discussed here. If you need to control the deployment target, please specify it explicitly. compute_precision: The compute precision used by Core ML (coremltools.precision.FLOAT16 or coremltools.precision.FLOAT32). The default value is coremltools.precision.FLOAT16. Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model. For example, an FP32 PyTorch model will be converted to FP16 when delegating to the Core ML backend by default. Also note that the ANE only supports FP16 precision. model_type: Whether the model should be compiled to the Core ML mlmodelc format during .pte creation (CoreMLBackend.MODEL_TYPE.COMPILED_MODEL), or whether it should be compiled to mlmodelc on device (CoreMLBackend.MODEL_TYPE.MODEL). Using CoreMLBackend.MODEL_TYPE.COMPILED_MODEL and doing compilation ahead of time should improve the first time on-device model load time. Dynamic and Enumerated Shapes in Core ML Export# When exporting an ExportedProgram to Core ML, dynamic shapes are mapped to RangeDim. This enables Core ML .pte files to accept inputs with varying dimensions at runtime. \u26a0\ufe0f Note: The Apple Neural Engine (ANE) does not support true dynamic shapes. If a model relies on RangeDim, Core ML will fall back to scheduling the model on the CPU or GPU instead of the ANE. Enumerated Shapes# To enable limited flexibility on the ANE\u2014and often achieve better performance overall\u2014you can export models using enumerated shapes. Enumerated shapes are not fully dynamic. Instead, they define a finite set of valid input shapes that Core ML can select from at runtime. This approach allows some adaptability while still preserving ANE compatibility. Specifying Enumerated Shapes# Unlike RangeDim, enumerated shapes are not part of the ExportedProgram itself. They must be provided through a compile spec. For reference on how to do this, see: The annotated code snippet below, and The end-to-end test in ExecuTorch, which demonstrates how to specify enumerated shapes during export. class Model(torch.nn.Module): def __init__(self): super().__init__() self.linear1 = torch.nn.Linear(10, 5) self.linear2 = torch.nn.Linear(11, 5) def forward(self, x, y): return self.linear1(x).sum() + self.linear2(y) model = Model() example_inputs = ( torch.randn((4, 6, 10)), torch.randn((5, 11)), ) # Specify the enumerated shapes. Below we specify that: # # * x can take shape [1, 5, 10] and y can take shape [3, 11], or # * x can take shape [4, 6, 10] and y can take shape [5, 11] # # Any other input shapes will result in a runtime error. # # Note that we must export x and y with dynamic shapes in the ExportedProgram # because some of their dimensions are dynamic enumerated_shapes = {\"x\": [[1, 5, 10], [4, 6, 10]], \"y\": [[3, 11], [5, 11]]} dynamic_shapes = [ { 0: torch.export.Dim.AUTO(min=1, max=4), 1: torch.export.Dim.AUTO(min=5, max=6), }, {0: torch.export.Dim.AUTO(min=3, max=5)}, ] ep = torch.export.export( model.eval(), example_inputs, dynamic_shapes=dynamic_shapes ) # If enumerated shapes are specified for multiple inputs, we must export # for iOS18+ compile_specs = CoreMLBackend.generate_compile_specs( minimum_deployment_target=ct.target.iOS18 ) compile_specs.append( CoreMLBackend.generate_enumerated_shapes_compile_spec( ep, enumerated_shapes, ) ) # When using an enumerated shape compile spec, you must specify lower_full_graph=True # in the CoreMLPartitioner. We do not support using enumerated shapes # for partially exported models partitioner = CoreMLPartitioner( compile_specs=compile_specs, lower_full_graph=True ) delegated_program = executorch.exir.to_edge_transform_and_lower( ep, partitioner=[partitioner], ) et_prog = delegated_program.to_executorch()",
+       "articleBody": "Partitioner API# The Core ML partitioner API allows for configuration of the model delegation to Core ML. Passing a CoreMLPartitioner instance with no additional parameters will run as much of the model as possible on the Core ML backend with default settings. This is the most common use case. For advanced use cases, the partitioner exposes the following options via the constructor: skip_ops_for_coreml_delegation: Allows you to skip ops for delegation by Core ML. By default, all ops that Core ML supports will be delegated. See here for an example of skipping an op for delegation. compile_specs: A list of CompileSpecs for the Core ML backend. These control low-level details of Core ML delegation, such as the compute unit (CPU, GPU, ANE), the iOS deployment target, and the compute precision (FP16, FP32). These are discussed more below. take_over_mutable_buffer: A boolean that indicates whether PyTorch mutable buffers in stateful models should be converted to Core ML MLState. If set to False, mutable buffers in the PyTorch graph are converted to graph inputs and outputs to the Core ML lowered module under the hood. Generally, setting take_over_mutable_buffer to true will result in better performance, but using MLState requires iOS \u003e= 18.0, macOS \u003e= 15.0, and Xcode \u003e= 16.0. take_over_constant_data: A boolean that indicates whether PyTorch constant data like model weights should be consumed by the Core ML delegate. If set to False, constant data is passed to the Core ML delegate as inputs. By default, take_over_constant_data=True. lower_full_graph: A boolean that indicates whether the entire graph must be lowered to Core ML. If set to True and Core ML does not support an op, an error is raised during lowering. If set to False and Core ML does not support an op, the op is executed on the CPU by ExecuTorch. Although setting lower_full_graph=False can allow a model to lower where it would otherwise fail, it can introduce performance overhead in the model when there are unsupported ops. You will see warnings about unsupported ops during lowering if there are any. By default, lower_full_graph=False. Core ML CompileSpec# A list of CompileSpecs is constructed with CoreMLBackend.generate_compile_specs. Below are the available options: compute_unit: this controls the compute units (CPU, GPU, ANE) that are used by Core ML. The default value is coremltools.ComputeUnit.ALL. The available options from coremltools are: coremltools.ComputeUnit.ALL (uses the CPU, GPU, and ANE) coremltools.ComputeUnit.CPU_ONLY (uses the CPU only) coremltools.ComputeUnit.CPU_AND_GPU (uses both the CPU and GPU, but not the ANE) coremltools.ComputeUnit.CPU_AND_NE (uses both the CPU and ANE, but not the GPU) minimum_deployment_target: The minimum iOS deployment target (e.g., coremltools.target.iOS18). By default, the smallest deployment target needed to deploy the model is selected. During export, you will see a warning about the \u201cCore ML specification version\u201d that was used for the model, which maps onto a deployment target as discussed here. If you need to control the deployment target, please specify it explicitly. compute_precision: The compute precision used by Core ML (coremltools.precision.FLOAT16 or coremltools.precision.FLOAT32). The default value is coremltools.precision.FLOAT16. Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model. For example, an FP32 PyTorch model will be converted to FP16 when delegating to the Core ML backend by default. Also note that the ANE only supports FP16 precision. model_type: Whether the model should be compiled to the Core ML mlmodelc format during .pte creation (CoreMLBackend.MODEL_TYPE.COMPILED_MODEL), or whether it should be compiled to mlmodelc on device (CoreMLBackend.MODEL_TYPE.MODEL). Using CoreMLBackend.MODEL_TYPE.COMPILED_MODEL and doing compilation ahead of time should improve the first time on-device model load time. Dynamic and Enumerated Shapes in Core ML Export# When exporting an ExportedProgram to Core ML, dynamic shapes are mapped to RangeDim. This enables Core ML .pte files to accept inputs with varying dimensions at runtime. \u26a0\ufe0f Note: The Apple Neural Engine (ANE) does not support true dynamic shapes. If a model relies on RangeDim, Core ML will fall back to scheduling the model on the CPU or GPU instead of the ANE. Enumerated Shapes# To enable limited flexibility on the ANE\u2014and often achieve better performance overall\u2014you can export models using enumerated shapes. Enumerated shapes are not fully dynamic. Instead, they define a finite set of valid input shapes that Core ML can select from at runtime. This approach allows some adaptability while still preserving ANE compatibility. Specifying Enumerated Shapes# Unlike RangeDim, enumerated shapes are not part of the ExportedProgram itself. They must be provided through a compile spec. For reference on how to do this, see: The annotated code snippet below, and The end-to-end test in ExecuTorch, which demonstrates how to specify enumerated shapes during export. class Model(torch.nn.Module): def __init__(self): super().__init__() self.linear1 = torch.nn.Linear(10, 5) self.linear2 = torch.nn.Linear(11, 5) def forward(self, x, y): return self.linear1(x).sum() + self.linear2(y) model = Model() example_inputs = ( torch.randn((4, 6, 10)), torch.randn((5, 11)), ) # Specify the enumerated shapes. Below we specify that: # # * x can take shape [1, 5, 10] and y can take shape [3, 11], or # * x can take shape [4, 6, 10] and y can take shape [5, 11] # # Any other input shapes will result in a runtime error. # # Note that we must export x and y with dynamic shapes in the ExportedProgram # because some of their dimensions are dynamic enumerated_shapes = {\"x\": [[1, 5, 10], [4, 6, 10]], \"y\": [[3, 11], [5, 11]]} dynamic_shapes = [ { 0: torch.export.Dim.AUTO(min=1, max=4), 1: torch.export.Dim.AUTO(min=5, max=6), }, {0: torch.export.Dim.AUTO(min=3, max=5)}, ] ep = torch.export.export( model.eval(), example_inputs, dynamic_shapes=dynamic_shapes ) # If enumerated shapes are specified for multiple inputs, we must export # for iOS18+ compile_specs = CoreMLBackend.generate_compile_specs( minimum_deployment_target=ct.target.iOS18 ) compile_specs.append( CoreMLBackend.generate_enumerated_shapes_compile_spec( ep, enumerated_shapes, ) ) # When using an enumerated shape compile spec, you must specify lower_full_graph=True # in the CoreMLPartitioner. We do not support using enumerated shapes # for partially exported models partitioner = CoreMLPartitioner( compile_specs=compile_specs, lower_full_graph=True ) delegated_program = executorch.exir.to_edge_transform_and_lower( ep, partitioner=[partitioner], ) et_prog = delegated_program.to_executorch() Multifunction Models# Core ML supports multifunction ML Programs, which allow a single model to contain multiple functions that share weights. This is particularly useful for Large Language Models (LLMs) that use different execution paths for prefill (processing the initial prompt) and decode (generating tokens one at a time) phases. By sharing weights between functions, the model size remains manageable while allowing optimized execution paths for each phase. Requirements# iOS \u003e= 18.0, macOS \u003e= 15.0 Xcode \u003e= 16.0 Exporting Multifunction Models# To export a multifunction model, pass a dictionary of method names to ExportedProgram objects to to_edge_transform_and_lower. Enable weight sharing with MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL: import coremltools as ct import torch from executorch.backends.apple.coreml.compiler.coreml_preprocess import ( CoreMLBackend, MULTIMETHOD_WEIGHT_SHARING_STRATEGY, ) from executorch.backends.apple.coreml.partition import CoreMLPartitioner from executorch.exir import to_edge_transform_and_lower class SimpleModel(torch.nn.Module): def __init__(self): super().__init__() self.linear = torch.nn.Linear(16, 16) def forward(self, x): return self.linear(x) model = SimpleModel().eval() # Create inputs for different sequence lengths decode_inputs = (torch.randn(1, 1, 16),) # seqlen=1 for decode prefill_inputs = (torch.randn(1, 64, 16),) # seqlen=64 for prefill # Export both methods decode_ep = torch.export.export(model, decode_inputs) prefill_ep = torch.export.export(model, prefill_inputs) # Configure compile specs with weight sharing compile_specs = CoreMLBackend.generate_compile_specs( minimum_deployment_target=ct.target.iOS18, ) compile_specs.append( CoreMLBackend.generate_multimethod_weight_sharing_strategy_compile_spec( MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL ) ) partitioner = CoreMLPartitioner(compile_specs=compile_specs) # Lower with multiple methods - pass a dict of {method_name: ExportedProgram} edge_manager = to_edge_transform_and_lower( {\"forward\": decode_ep, \"prefill\": prefill_ep}, partitioner=[partitioner], ) et_program = edge_manager.to_executorch() # Save the multifunction model with open(\"multifunction_model.pte\", \"wb\") as f: et_program.write_to_file(f) Weight Sharing Strategies# POSITIONAL: Weights from the first method are shared positionally with subsequent methods. This is the recommended strategy for LLMs where prefill and decode share the same model weights. DISABLED: Each method has its own copy of weights. Use this when methods have different weights or for debugging. Runtime Behavior# At runtime, the ExecuTorch Core ML delegate automatically: Detects multifunction models based on metadata Uses MLModelConfiguration.functionName (iOS 18+) to select the appropriate function Shares weights between functions via NamedDataStore to minimize memory usage Each function in a multifunction model is treated as a separate method in ExecuTorch: from executorch.runtime import Runtime runtime = Runtime.get() program = runtime.load_program(\"multifunction_model.pte\") # List available methods print(program.method_names) # {\u0027forward\u0027, \u0027prefill\u0027} # Load and execute specific methods forward_method = program.load_method(\"forward\") decode_output = forward_method.execute(decode_inputs) prefill_method = program.load_method(\"prefill\") prefill_output = prefill_method.execute(prefill_inputs) For a complete example including KV cache handling, see the multifunction test and the LLM export script.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",

@@ -1,0 +1,1895 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+    <title>Using the ExecuTorch Developer Tools for Numerical Debugging &#8212; ExecuTorch main documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../_static/documentation_options.js?v=a8da1a53"></script>
+    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'tutorials/devtools-debugging-tutorial';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
+        </script>
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/tutorials/devtools-debugging-tutorial.html" />
+    <link rel="icon" href="../_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+<script>
+  if (window.location.hostname === 'docs.pytorch.org' || window.location.hostname === 'docs-preview.pytorch.org') {
+    const script = document.createElement('script');
+    script.src = 'https://cmp.osano.com/16A0DbT9yDNIaQkvZ/31b1b91a-e0b6-47ea-bde2-7f2bd13dbe5c/osano.js?variant=one';
+    document.head.appendChild(script);
+  }
+</script>
+<script>
+  // Cookie banner for non-LF projects
+  document.addEventListener('DOMContentLoaded', function () {
+    // Hide cookie banner on local environments and LF owned docs
+    if (window.location.hostname === 'localhost' ||
+      window.location.hostname === '0.0.0.0' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'docs.pytorch.org' ||
+      window.location.hostname === 'docs-preview.pytorch.org' ||
+      window.location.hostname.startsWith('192.168.')) {
+      const banner = document.querySelector('.cookie-banner-wrapper');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+  });
+</script>
+<!-- Conditional CSS for header and footer height adjustment -->
+
+
+<link rel="stylesheet" type="text/css" href="../_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="../_static/js/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+<meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="../_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
+<meta name="pytorch_project" content="">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS" height="0" width="0"
+    style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager -->
+<script>(function (w, d, s, l, i) {
+    w[l] = w[l] || []; w[l].push({
+      'gtm.start':
+        new Date().getTime(), event: 'gtm.js'
+    }); var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+        'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+    j.onload = function () {
+      window.dispatchEvent(new Event('gtm_loaded'));
+      console.log('GTM loaded successfully');
+    };
+  })(window, document, 'script', 'dataLayer', 'GTM-T8XT4PS');
+</script>
+<!-- End Google Tag Manager -->
+<!-- Facebook Pixel Code -->
+<script>
+  !function (f, b, e, v, n, t, s) {
+    if (f.fbq) return; n = f.fbq = function () {
+      n.callMethod ?
+        n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+    };
+    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+    n.queue = []; t = b.createElement(e); t.async = !0;
+    t.src = v; s = b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t, s)
+  }(window, document, 'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '243028289693773');
+  fbq('track', 'PageView');
+</script>
+<script>
+  document.documentElement.setAttribute('data-version', 'main');
+</script>
+<noscript>
+  <img height="1" width="1" src="https://www.facebook.com/tr?id=243028289693773&ev=PageView&noscript=1" />
+</noscript>
+<script>
+  function gtag() {
+    window.dataLayer.push(arguments);
+  }
+</script>
+<!-- End Facebook Pixel Code -->
+<!-- Repository configuration for tutorials -->
+
+<!-- Script to Fix scrolling -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Fix anchor scrolling
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const targetId = this.getAttribute('href').substring(1);
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          const headerHeight =
+            (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
+            (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
+
+          const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
+          window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+          });
+
+          // Update URL hash without scrolling
+          history.pushState(null, null, '#' + targetId);
+        }
+      });
+    });
+  });
+</script>
+
+<script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+  </head>
+
+<body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
+  
+    <div class="container-fluid header-holder tutorials-header" id="header-holder">
+   <div class="header-container-wrapper">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                <span>Learn</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started/locally">
+                  <span class=dropdown-title>Get Started</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/webinars/">
+                  <span class="dropdown-title">Webinars</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Community</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://landscape.pytorch.org/" target="_blank">
+                  <span class="dropdown-title">Landscape</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/join-ecosystem">
+                  <span class="dropdown-title">Join the Ecosystem</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-hub/">
+                  <span class="dropdown-title">Community Hub</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/">
+                  <span class="dropdown-title">Forums</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contributor-awards/">
+                  <span class="dropdown-title">Contributor Awards</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-events/">
+                  <span class="dropdown-title">Community Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/programs/ambassadors/">
+                  <span class="dropdown-title">PyTorch Ambassadors</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Projects</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/pytorch/">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/vllm/">
+                  <span class="dropdown-title">vLLM</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/deepspeed/">
+                  <span class="dropdown-title">DeepSpeed</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/host-your-project/">
+                  <span class="dropdown-title">Host Your Project</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/ray/">
+                  <span class="dropdown-title">RAY</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span> Docs</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/domains">
+                  <span class="dropdown-title">Domains</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>Blogs & News</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">Blog</span>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/announcements">
+                  <span class="dropdown-title">Announcements</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/case-studies/">
+                  <span class="dropdown-title">Case Studies</span>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                </a>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+              <span>About</span>
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/members">
+                  <span class="dropdown-title">Members</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact">
+                  <span class="dropdown-title">Contact</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/wp-content/uploads/2025/09/pytorch_brand_guide_091925a.pdf">
+                  <span class="dropdown-title">Brand Guidelines</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown main-menu-button">
+              <a href="https://pytorch.org/join" data-cta="join">
+                JOIN
+              </a>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu">
+        <i class="fa-solid fa-ellipsis"></i>
+      </a>
+    </div>
+  </div>
+ </div>
+
+ <!-- Begin Mobile Menu -->
+
+<div class="mobile-main-menu">
+  <div class="container-fluid">
+    <div class="header-container-wrapper">
+      <div class="mobile-main-menu-header-container">
+        <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu">
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="mobile-main-menu-links-container">
+    <div class="main-menu">
+      <ul>
+         <li class="resources-mobile-menu-title">
+           <a>Learn</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/get-started/locally">Get Started</a>
+           </li>
+           <li>
+             <a href="https://docs.pytorch.org/tutorials">Tutorials</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/webinars/">Webinars</a>
+          </li>
+        </ul>
+         <li class="resources-mobile-menu-title">
+           <a>Community</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://landscape.pytorch.org/">Landscape</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/join-ecosystem">Join the Ecosystem</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/community-hub/">Community Hub</a>
+           </li>
+           <li>
+             <a href="https://discuss.pytorch.org/">Forums</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/resources">Developer Resources</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/contributor-awards/">Contributor Awards</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/community-events/">Community Events</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/programs/ambassadors/">PyTorch Ambassadors</a>
+          </li>
+       </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Projects</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/projects/pytorch/">PyTorch</a>
+           </li>
+
+           <li>
+             <a href="https://pytorch.org/projects/vllm/">vLLM</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/projects/deepspeed/">DeepSpeed</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/projects/host-your-project/">Host Your Project</a>
+           </li>
+         </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Docs</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://docs.pytorch.org/docs/stable/index.html">PyTorch</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/domains">Domains</a>
+          </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>Blog & News</a>
+        </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/announcements">Announcements</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/case-studies/">Case Studies</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/events">Events</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/newsletter">Newsletter</a>
+           </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>About</a>
+        </li>
+
+        <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/members">Members</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/governing-board">Governing Board</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+         </li>
+         <li>
+             <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/staff">Staff</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/contact">Contact</a>
+          </li>
+        </ul>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- End Mobile Menu -->
+  
+  
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class=" navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch main documentation - Home"/>
+    <script>document.write(`<img src="../_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch main documentation - Home"/>`);</script>
+  
+  
+</a></div>
+    
+      <div class="navbar-item">
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-2"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-2"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-2"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-2">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script></div>
+    
+  </div>
+  
+  <div class=" navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../api-section.html">
+    API
+  </a>
+</li>
+
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="../support-section.html">
+    Support
+  </a>
+</li>
+
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+      
+        <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <div class="bd-sidebar-primary bd-sidebar hide-on-wide">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../intro-section.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../quick-start-section.html">
+    Quick Start
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../edge-platforms-section.html">
+    Edge
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../backends-section.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../llm/working-with-llms.html">
+    LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../advanced-topics-section.html">
+    Advanced
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../tools-section.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../api-section.html">
+    API
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../support-section.html">
+    Support
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page">Using the...</li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+</div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+  
+<div id="searchbox"></div>
+  <article class="bd-article" id="pytorch-article">
+    <!-- Hidden breadcrumb schema for SEO only -->
+    <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="Using the ExecuTorch Developer Tools for Numerical Debugging">
+        <meta itemprop="position" content="1">
+      </div>
+    </div>
+
+    
+    
+
+    
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <div class="sphx-glr-download-link-note admonition note">
+<p class="admonition-title">Note</p>
+<p><a class="reference internal" href="#sphx-glr-download-tutorials-devtools-debugging-tutorial-py"><span class="std std-ref">Go to the end</span></a>
+to download the full example code</p>
+</div>
+<section class="sphx-glr-example-title" id="using-the-executorch-developer-tools-for-numerical-debugging">
+<span id="sphx-glr-tutorials-devtools-debugging-tutorial-py"></span><h1>Using the ExecuTorch Developer Tools for Numerical Debugging<a class="headerlink" href="#using-the-executorch-developer-tools-for-numerical-debugging" title="Link to this heading">#</a></h1>
+<p>The <a class="reference external" href="../devtools-overview.html">ExecuTorch Developer Tools</a> is a set of tools designed to
+provide users with the ability to profile, debug, and visualize ExecuTorch
+models.</p>
+<p>This tutorial will show a full end-to-end flow of how to utilize the Developer Tools to debug a model
+by detecting numerical discrepancies between the original PyTorch model and the ExecuTorch model.</p>
+<p>The tutorial will show you how to:
+1. Check if the lowered ExecuTorch model is numerically correct.
+2. Gain a deeper understanding of where the numerical discrepancy comes from using the Inspector API.</p>
+<p>This is particularly useful when working with delegated models (e.g., XNNPACK) where numerical
+precision may differ. Specifically, it will:</p>
+<ol class="arabic simple">
+<li><p>Generate the artifacts consumed by the Developer Tools (<a class="reference external" href="../etrecord.html">ETRecord</a>, <a class="reference external" href="../etdump.html">ETDump</a>).</p></li>
+<li><p>Run the model and compare final outputs between eager model and runtime.</p></li>
+<li><p>If discrepancies exist, use the Inspector’s <a class="reference external" href="../model-inspector.html#calculate-numeric-gap">calculate_numeric_gap</a> method to identify operator-level issues.</p></li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Currently operator-level debugging support is limited to ET-visible operators,
+and treat every delegate call as a single operator.
+We are working on expanding this support to dive into delegate operators.</p>
+</div>
+<p>We provide two example debugging pipelines on xnnpack-delegated Vision Transformer (VIT) model:</p>
+<ul class="simple">
+<li><p><strong>Python Pipeline</strong>: Export, run, and debug entirely in Python using the ExecuTorch Runtime API.</p></li>
+<li><p><strong>CMake Pipeline</strong>: Export in Python, run with CMake example runner, then analyze in Python.</p></li>
+</ul>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
+<p>To run this tutorial, you’ll first need to
+<a class="reference external" href="../getting-started-setup.html">Set up your ExecuTorch environment</a>.</p>
+<p>For the Python pipeline, you’ll need the ExecuTorch Python runtime bindings.
+For the CMake pipeline, follow <a class="reference external" href="../runtime-build-and-cross-compilation.html#configure-the-cmake-build">these instructions</a> to set up CMake.</p>
+</section>
+</section>
+<section id="pipeline-1-python-runtime">
+<h1>Pipeline 1: Python Runtime<a class="headerlink" href="#pipeline-1-python-runtime" title="Link to this heading">#</a></h1>
+<p>This pipeline allows you to export, run, and debug your model entirely in Python,
+making it ideal for rapid iteration during development.</p>
+<section id="step-1-export-model-and-generate-etrecord">
+<h2>Step 1: Export Model and Generate ETRecord<a class="headerlink" href="#step-1-export-model-and-generate-etrecord" title="Link to this heading">#</a></h2>
+<p>First, we export the model and generate an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code>. The ETRecord contains
+model graphs and metadata for linking runtime results to the eager model.
+We use <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code> with <code class="docutils literal notranslate"><span class="pre">generate_etrecord=True</span></code> to
+automatically capture the ETRecord during the lowering process.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.utils.configs</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_xnnpack_edge_compile_config</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExecutorchProgramManager</span><span class="p">,</span> <span class="n">to_edge_transform_and_lower</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">ExportedProgram</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>  <span class="c1"># type: ignore[import-untyped]</span>
+
+<span class="c1"># Create Vision Transformer model</span>
+<span class="n">vit</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">vision_transformer</span><span class="o">.</span><span class="n">vit_b_16</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="s2">&quot;IMAGENET1K_V1&quot;</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">vit</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),)</span>
+
+<span class="n">temp_dir</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">()</span>
+
+<span class="c1"># Export and lower model to XNNPACK delegate</span>
+<span class="n">aten_model</span><span class="p">:</span> <span class="n">ExportedProgram</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">edge_program_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">aten_model</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()],</span>
+    <span class="n">compile_config</span><span class="o">=</span><span class="n">get_xnnpack_edge_compile_config</span><span class="p">(),</span>
+    <span class="n">generate_etrecord</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">et_program_manager</span><span class="p">:</span> <span class="n">ExecutorchProgramManager</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Save the .pte file</span>
+<span class="n">pte_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;model.pte&quot;</span><span class="p">)</span>
+<span class="n">et_program_manager</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">pte_path</span><span class="p">)</span>
+
+<span class="c1"># Get and save ETRecord with representative inputs</span>
+<span class="n">etrecord</span> <span class="o">=</span> <span class="n">et_program_manager</span><span class="o">.</span><span class="n">get_etrecord</span><span class="p">()</span>
+<span class="n">etrecord</span><span class="o">.</span><span class="n">update_representative_inputs</span><span class="p">(</span><span class="n">model_inputs</span><span class="p">)</span>
+<span class="n">etrecord_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;etrecord.bin&quot;</span><span class="p">)</span>
+<span class="n">etrecord</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">update_representative_inputs</span></code> method is crucial for debugging.
+It stores the inputs that will be used to compute reference outputs
+from the exported program, which are then compared against the runtime outputs.</p>
+</div>
+</section>
+<section id="step-2-run-model-and-generate-etdump-with-debug-buffer">
+<h2>Step 2: Run Model and Generate ETDump with Debug Buffer<a class="headerlink" href="#step-2-run-model-and-generate-etdump-with-debug-buffer" title="Link to this heading">#</a></h2>
+<p>Next, we run the model using the ExecuTorch Python Runtime API with debug
+output enabled. The debug buffer captures intermediate outputs from the
+runtime execution.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Method</span><span class="p">,</span> <span class="n">Program</span><span class="p">,</span> <span class="n">Runtime</span><span class="p">,</span> <span class="n">Verification</span>
+
+<span class="c1"># Load and run the model with debug output enabled</span>
+<span class="n">et_runtime</span><span class="p">:</span> <span class="n">Runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+<span class="n">program</span><span class="p">:</span> <span class="n">Program</span> <span class="o">=</span> <span class="n">et_runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span>
+    <span class="n">pte_path</span><span class="p">,</span>
+    <span class="n">verification</span><span class="o">=</span><span class="n">Verification</span><span class="o">.</span><span class="n">Minimal</span><span class="p">,</span>
+    <span class="n">enable_etdump</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">debug_buffer_size</span><span class="o">=</span><span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">,</span>  <span class="c1"># 1GB buffer</span>
+<span class="p">)</span>
+
+<span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+<span class="n">runtime_outputs</span> <span class="o">=</span> <span class="n">forward</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="o">*</span><span class="n">model_inputs</span><span class="p">)</span>
+
+<span class="c1"># Save ETDump and debug buffer</span>
+<span class="n">etdump_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;etdump.etdp&quot;</span><span class="p">)</span>
+<span class="n">debug_buffer_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;debug_buffer.bin&quot;</span><span class="p">)</span>
+<span class="n">program</span><span class="o">.</span><span class="n">write_etdump_result_to_file</span><span class="p">(</span><span class="n">etdump_path</span><span class="p">,</span> <span class="n">debug_buffer_path</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>The debug buffer size should be large enough to hold all intermediate
+outputs.
+If the buffer is too small, some intermediate outputs may be truncated or error might be rasied.</p>
+</div>
+</section>
+<section id="step-3-compare-final-outputs-best-practice">
+<h2>Step 3: Compare Final Outputs (Best Practice)<a class="headerlink" href="#step-3-compare-final-outputs-best-practice" title="Link to this heading">#</a></h2>
+<p><strong>Best Practice</strong>: Before diving into operator-level debugging, first compare
+the final outputs between the eager model and the runtime model. This helps
+you quickly determine if there are any numerical issues worth investigating.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Get eager model output</span>
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">eager_output</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">*</span><span class="n">model_inputs</span><span class="p">)</span>
+
+<span class="c1"># Compare with runtime output</span>
+<span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">runtime_outputs</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+    <span class="n">runtime_output</span> <span class="o">=</span> <span class="n">runtime_outputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="n">runtime_output</span> <span class="o">=</span> <span class="n">runtime_outputs</span>
+
+<span class="c1"># Calculate MSE between eager and runtime outputs</span>
+<span class="n">mse</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="n">eager_output</span> <span class="o">-</span> <span class="n">runtime_output</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Final output MSE: </span><span class="si">{</span><span class="n">mse</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Check if outputs are close enough</span>
+<span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">eager_output</span><span class="p">,</span> <span class="n">runtime_output</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Outputs match within tolerance!&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Outputs differ - proceeding with operator-level analysis...&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="step-4-operator-level-debugging-with-calculate-numeric-gap">
+<h2>Step 4: Operator-Level Debugging with calculate_numeric_gap<a class="headerlink" href="#step-4-operator-level-debugging-with-calculate-numeric-gap" title="Link to this heading">#</a></h2>
+<p>If the final outputs show discrepancies, use the Inspector’s <code class="docutils literal notranslate"><span class="pre">calculate_numeric_gap</span></code>
+method to identify which operators are contributing to the numerical differences.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">Inspector</span>
+
+<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span>
+    <span class="n">etdump_path</span><span class="o">=</span><span class="n">etdump_path</span><span class="p">,</span>
+    <span class="n">etrecord</span><span class="o">=</span><span class="n">etrecord_path</span><span class="p">,</span>
+    <span class="n">debug_buffer_path</span><span class="o">=</span><span class="n">debug_buffer_path</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s2">&quot;display.width&quot;</span><span class="p">,</span> <span class="mi">100000</span><span class="p">)</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s2">&quot;display.max_columns&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+<span class="c1"># Calculate numerical gap using Mean Squared Error</span>
+<span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span> <span class="o">=</span> <span class="n">inspector</span><span class="o">.</span><span class="n">calculate_numeric_gap</span><span class="p">(</span><span class="s2">&quot;MSE&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The returned DataFrame contains columns for each operator including:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">aot_ops</span></code>: The operators in the eager model graph</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">aot_intermediate_output</span></code>: Intermediate outputs from eager model</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">runtime_ops</span></code>: The operators executed at runtime (may show DELEGATE_CALL for delegated ops)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">runtime_intermediate_output</span></code>: Intermediate outputs from runtime</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gap</span></code>: The numerical gap (MSE) between eager and runtime outputs</p></li>
+</ul>
+<p>Example output:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>|    | aot_ops                                                         | aot_intermediate_output                            | runtime_ops                                        | runtime_intermediate_output                        | gap                        |
+|----|----------------------------------------------------------------|----------------------------------------------------|----------------------------------------------------|----------------------------------------------------| ---------------------------|
+| 0  | [conv2d]                                                        | [[[tensor([-0.0130,  0.0075, -0.0334, -0.0122,...  | [DELEGATE_CALL]                                    | [[[tensor([-0.0130,  0.0075, -0.0334, -0.0122,...  | [3.2530690555343034e-15]   |
+| 1  | [permute, cat, add, dropout]                                    | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0...  | [DELEGATE_CALL]                                    | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0...  | [3.2488685838924244e-15]   |
+...
+| 4  | [transpose, linear, unflatten, unsqueeze, tran...]              | [[[tensor(0.0045), tensor(-0.0084), tensor(0.0...  | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(0.0045), tensor(-0.0084), tensor(0.00...  | [0.00010033142876115867]   |
+...
+| 59 | [transpose_66, linear_44, unflatten_11, unsque...]              | [[[tensor(-0.3346), tensor(0.1540), tensor(-0....  | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(-0.3346), tensor(0.1540), tensor(-0.0...  | [0.02629170972698486]      |
+</pre></div>
+</div>
+</section>
+<section id="step-5-analyze-and-identify-problematic-operators">
+<h2>Step 5: Analyze and Identify Problematic Operators<a class="headerlink" href="#step-5-analyze-and-identify-problematic-operators" title="Link to this heading">#</a></h2>
+<p>Once you have the numerical gaps, identify operators with significant
+discrepancies for further investigation.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Find operators with the largest discrepancies</span>
+<span class="n">df_sorted</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s2">&quot;gap&quot;</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">y</span><span class="p">:</span> <span class="n">y</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">y</span><span class="p">))</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Top 5 operators with largest numerical discrepancies:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df_sorted</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">5</span><span class="p">))</span>
+
+<span class="c1"># Filter for operators with gap above a threshold</span>
+<span class="n">threshold</span> <span class="o">=</span> <span class="mf">1e-4</span>
+<span class="n">problematic_ops</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s2">&quot;gap&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">threshold</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">x</span> <span class="o">&gt;</span> <span class="n">threshold</span><span class="p">)]</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Operators with MSE &gt; </span><span class="si">{</span><span class="n">threshold</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">problematic_ops</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Example output showing problematic operators in a ViT model:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Top 5 operators with largest numerical discrepancies:
+                                              aot_ops                            aot_intermediate_output                                        runtime_ops                        runtime_intermediate_output                     gap
+59  [transpose_66, linear_44, unflatten_11, unsque...  [[[tensor(-0.3346), tensor(0.1540), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.3346), tensor(0.1540), tensor(-0.0...   [0.02629170972698486]
+24  [transpose_24, linear_16, unflatten_4, unsquee...  [[[tensor(0.0344), tensor(-0.0583), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0344), tensor(-0.0583), tensor(-0.0...  [0.010045093258604096]
+29  [transpose_30, linear_20, unflatten_5, unsquee...  [[[tensor(0.0457), tensor(0.0266), tensor(-0.0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0457), tensor(0.0266), tensor(-0.05...  [0.008497326594593926]
+34  [transpose_36, linear_24, unflatten_6, unsquee...  [[[tensor(-0.1336), tensor(-0.0154), tensor(-0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.1336), tensor(-0.0154), tensor(-0....  [0.007672668965640913]
+19  [transpose_18, linear_12, unflatten_3, unsquee...  [[[tensor(-0.0801), tensor(0.0458), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.0801), tensor(0.0458), tensor(-0.0...  [0.007446783635888463]
+
+Operators with MSE &gt; 0.0001:
+                                              aot_ops                            aot_intermediate_output                                        runtime_ops                        runtime_intermediate_output                       gap
+4   [transpose, linear, unflatten, unsqueeze, tran...  [[[tensor(0.0045), tensor(-0.0084), tensor(0.0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0045), tensor(-0.0084), tensor(0.00...  [0.00010033142876115867]
+9   [transpose_6, linear_4, unflatten_1, unsqueeze...  [[[tensor(0.0113), tensor(-0.0737), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0113), tensor(-0.0737), tensor(-0.0...   [0.0005611182577030275]
+14  [transpose_12, linear_8, unflatten_2, unsqueez...  [[[tensor(-0.0476), tensor(-0.0941), tensor(-0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.0476), tensor(-0.0941), tensor(-0....    [0.004658652508649068]
+...
+</pre></div>
+</div>
+<p>In this example, we can see that the attention layers (transpose + linear + unflatten patterns)
+show the largest numerical discrepancies, which is expected behavior for delegated operators
+using different precision.</p>
+</section>
+</section>
+<section id="pipeline-2-cmake-runtime">
+<h1>Pipeline 2: CMake Runtime<a class="headerlink" href="#pipeline-2-cmake-runtime" title="Link to this heading">#</a></h1>
+<p>This pipeline is useful when you want to test your model with the native
+C++ runtime or on platforms where Python bindings are not available.</p>
+<section id="id1">
+<h2>Step 1: Export Model and Generate ETRecord<a class="headerlink" href="#id1" title="Link to this heading">#</a></h2>
+<p>First, we export the model and generate an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code>, same as step 1 of pipeline 1:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.utils.configs</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_xnnpack_edge_compile_config</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExecutorchProgramManager</span><span class="p">,</span> <span class="n">to_edge_transform_and_lower</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">ExportedProgram</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>  <span class="c1"># type: ignore[import-untyped]</span>
+
+<span class="c1"># Create Vision Transformer model</span>
+<span class="n">vit</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">vision_transformer</span><span class="o">.</span><span class="n">vit_b_16</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="s2">&quot;IMAGENET1K_V1&quot;</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">vit</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),)</span>
+
+<span class="n">temp_dir</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">()</span>
+
+<span class="c1"># Export and lower model to XNNPACK delegate</span>
+<span class="n">aten_model</span><span class="p">:</span> <span class="n">ExportedProgram</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">edge_program_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">aten_model</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()],</span>
+    <span class="n">compile_config</span><span class="o">=</span><span class="n">get_xnnpack_edge_compile_config</span><span class="p">(),</span>
+    <span class="n">generate_etrecord</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">et_program_manager</span><span class="p">:</span> <span class="n">ExecutorchProgramManager</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Save the .pte file</span>
+<span class="n">pte_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;model.pte&quot;</span><span class="p">)</span>
+<span class="n">et_program_manager</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">pte_path</span><span class="p">)</span>
+
+<span class="c1"># Get and save ETRecord with representative inputs</span>
+<span class="n">etrecord</span> <span class="o">=</span> <span class="n">et_program_manager</span><span class="o">.</span><span class="n">get_etrecord</span><span class="p">()</span>
+<span class="n">etrecord</span><span class="o">.</span><span class="n">update_representative_inputs</span><span class="p">(</span><span class="n">model_inputs</span><span class="p">)</span>
+<span class="n">etrecord_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;etrecord.bin&quot;</span><span class="p">)</span>
+<span class="n">etrecord</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="step-2-create-bundledprogram">
+<h2>Step 2: Create BundledProgram<a class="headerlink" href="#step-2-create-bundledprogram" title="Link to this heading">#</a></h2>
+<p>For the CMake pipeline, we create a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> that packages the model
+with sample inputs and expected outputs for testing. We reuse the
+<code class="docutils literal notranslate"><span class="pre">et_program_manager</span></code> from Step 1.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">BundledProgram</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.serialize</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Define the method name and test inputs</span>
+<span class="c1"># IMPORTANT: Use the same inputs as etrecord.update_representative_inputs()</span>
+<span class="n">m_name</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span>
+<span class="n">test_inputs</span> <span class="o">=</span> <span class="p">[</span><span class="n">model_inputs</span><span class="p">]</span>
+
+<span class="c1"># Create test cases by running the eager model to get expected outputs</span>
+<span class="n">method_test_suites</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">MethodTestSuite</span><span class="p">(</span>
+        <span class="n">method_name</span><span class="o">=</span><span class="n">m_name</span><span class="p">,</span>
+        <span class="n">test_cases</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">MethodTestCase</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="n">inp</span><span class="p">,</span> <span class="n">expected_outputs</span><span class="o">=</span><span class="n">model</span><span class="p">(</span><span class="o">*</span><span class="n">inp</span><span class="p">))</span> <span class="k">for</span> <span class="n">inp</span> <span class="ow">in</span> <span class="n">test_inputs</span>
+        <span class="p">],</span>
+    <span class="p">)</span>
+<span class="p">]</span>
+
+<span class="c1"># Generate BundledProgram using the existing et_program_manager</span>
+<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">BundledProgram</span><span class="p">(</span><span class="n">et_program_manager</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+
+<span class="c1"># Serialize BundledProgram to flatbuffer</span>
+<span class="n">serialized_bundled_program</span> <span class="o">=</span> <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
+    <span class="n">bundled_program</span>
+<span class="p">)</span>
+<span class="n">bundled_program_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;bundled_program.bpte&quot;</span><span class="p">)</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">bundled_program_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">serialized_bundled_program</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="step-3-run-with-devtool-example-runner">
+<h2>Step 3: Run with Devtool Example Runner<a class="headerlink" href="#step-3-run-with-devtool-example-runner" title="Link to this heading">#</a></h2>
+<p>This step we will verify the final result and generate etdump for next
+step usage by using devtool example runner.</p>
+<p>First, build the example runner with XNNPACK backend support:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>/path/to/executorch
+./examples/devtools/build_example_runner.sh<span class="w"> </span>--xnnpack
+</pre></div>
+</div>
+<p>where <code class="docutils literal notranslate"><span class="pre">--xnnpack</span></code> is a build flag that enables XNNPACK backend support.
+Then run the example runner with output verification and debug output enabled:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cmake-out/examples/devtools/example_runner<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--bundled_program_path<span class="o">=</span>/path/to/bundled_program.bpte<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--output_verification<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--dump_intermediate_outputs<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--debug_buffer_size<span class="o">=</span><span class="m">1073741824</span>
+</pre></div>
+</div>
+<p>The key flags are:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--output_verification</span></code>: Compare runtime outputs against the expected
+outputs stored in the BundledProgram (uses rtol=1e-3, atol=1e-5)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--dump_intermediate_outputs</span></code>: Capture intermediate outputs for
+operator-level debugging</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--debug_buffer_size=&lt;bytes&gt;</span></code>: Size of debug buffer (1GB in this example)</p></li>
+</ul>
+<p>Example output on success:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>I 00:00:00.123456 executorch:example_runner.cpp:135] Model file bundled_program.bpte is loaded.
+I 00:00:00.123456 executorch:example_runner.cpp:145] Running method forward
+I 00:00:00.234567 executorch:example_runner.cpp:250] Model executed successfully.
+I 00:00:00.234567 executorch:example_runner.cpp:287] Model verified successfully.
+</pre></div>
+</div>
+<p>If verification fails (outputs don’t match within tolerance), you’ll see an error:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>E 00:00:00.234567 executorch:example_runner.cpp:287] Bundle verification failed with status 0x10
+</pre></div>
+</div>
+<p>This will also generate:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">etdump.etdp</span></code>: The ETDump file containing execution trace (default path, configurable via <code class="docutils literal notranslate"><span class="pre">--etdump_path</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">debug_output.bin</span></code>: The debug buffer containing intermediate outputs (default path, configurable via <code class="docutils literal notranslate"><span class="pre">--debug_output_path</span></code>)</p></li>
+</ul>
+</section>
+<section id="step-4-analyze-results-in-python">
+<h2>Step 4: Analyze Results in Python<a class="headerlink" href="#step-4-analyze-results-in-python" title="Link to this heading">#</a></h2>
+<p>After running the model with the CMake runner, load the generated artifacts
+back into Python for analysis using the Inspector.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">Inspector</span>
+
+<span class="n">etrecord_path</span> <span class="o">=</span> <span class="s2">&quot;/path/to/etrecord.bin&quot;</span>
+<span class="n">etdump_path</span> <span class="o">=</span> <span class="s2">&quot;/path/to/etdump.etdp&quot;</span>
+<span class="n">debug_buffer_path</span> <span class="o">=</span> <span class="s2">&quot;/path/to/debug_output.bin&quot;</span>
+
+<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span>
+    <span class="n">etdump_path</span><span class="o">=</span><span class="n">etdump_path</span><span class="p">,</span>
+    <span class="n">etrecord</span><span class="o">=</span><span class="n">etrecord_path</span><span class="p">,</span>
+    <span class="n">debug_buffer_path</span><span class="o">=</span><span class="n">debug_buffer_path</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Then use the same analysis techniques as in Pipeline 1:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="c1"># Calculate numerical gaps</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">inspector</span><span class="o">.</span><span class="n">calculate_numeric_gap</span><span class="p">(</span><span class="s2">&quot;MSE&quot;</span><span class="p">)</span>
+
+<span class="c1"># Find problematic operators</span>
+<span class="n">df_sorted</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s2">&quot;gap&quot;</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">y</span><span class="p">:</span> <span class="n">y</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">y</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Top operators with largest gaps:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df_sorted</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">5</span><span class="p">))</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="best-practices-for-debugging">
+<h1>Best Practices for Debugging<a class="headerlink" href="#best-practices-for-debugging" title="Link to this heading">#</a></h1>
+<ol class="arabic simple">
+<li><p><strong>Start with final outputs</strong>: Always compare the final model output first
+before diving into operator-level analysis. This saves time if outputs match.</p></li>
+<li><p><strong>Use appropriate thresholds</strong>: Small numerical differences (&lt; 1e-6) are
+typically acceptable. Focus on operators with gaps &gt; 1e-4.</p></li>
+<li><p><strong>Focus on delegated operators</strong>: Numerical discrepancies are most common
+in delegated operators (shown as <code class="docutils literal notranslate"><span class="pre">DELEGATE_CALL</span></code>) due to different
+precision handling in delegate backends.</p></li>
+<li><p><strong>Check accumulation patterns</strong>: In transformer models, attention layers
+often show larger gaps due to accumulated numerical differences across
+many operations.</p></li>
+<li><p><strong>Use stack traces</strong>: With ETRecord, you can trace operators back to the
+original PyTorch source code for easier debugging using
+<code class="docutils literal notranslate"><span class="pre">event.stack_traces</span></code> and <code class="docutils literal notranslate"><span class="pre">event.module_hierarchy</span></code>.</p></li>
+</ol>
+<section id="conclusion">
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Link to this heading">#</a></h2>
+<p>In this tutorial, we learned how to use the ExecuTorch Developer Tools
+to debug numerical discrepancies in models. The key workflow is:</p>
+<ol class="arabic simple">
+<li><p>Export the model with ETRecord generation enabled</p></li>
+<li><p>Run the model with debug buffer enabled (Python or CMake)</p></li>
+<li><p><strong>First</strong> compare final outputs between eager and runtime models</p></li>
+<li><p><strong>If issues found</strong>, use <code class="docutils literal notranslate"><span class="pre">calculate_numeric_gap</span></code> for operator-level analysis</p></li>
+<li><p>Identify and investigate operators with significant gaps</p></li>
+</ol>
+<section id="links-mentioned">
+<h3>Links Mentioned<a class="headerlink" href="#links-mentioned" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><a class="reference external" href="../devtools-overview.html">ExecuTorch Developer Tools Overview</a></p></li>
+<li><p><a class="reference external" href="../etrecord.html">ETRecord</a></p></li>
+<li><p><a class="reference external" href="../etdump.html">ETDump</a></p></li>
+<li><p><a class="reference external" href="../model-inspector.html">Inspector</a></p></li>
+<li><p><a class="reference external" href="../model-debugging.html">Model Debugging Guide</a></p></li>
+<li><p><a class="reference external" href="devtools-integration-tutorial.html">Profiling Tutorial</a></p></li>
+</ul>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.000 seconds)</p>
+<div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-devtools-debugging-tutorial-py">
+<div class="sphx-glr-download sphx-glr-download-python docutils container">
+<p><a class="reference download internal" download="" href="../_downloads/209b368833134991c53deae36b1a8dd3/devtools-debugging-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">devtools-debugging-tutorial.py</span></code></a></p>
+</div>
+<div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
+<p><a class="reference download internal" download="" href="../_downloads/032efceaa6105762956ea485a8550943/devtools-debugging-tutorial.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">devtools-debugging-tutorial.ipynb</span></code></a></p>
+</div>
+</div>
+<p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
+</section>
+</section>
+</section>
+
+
+                </article>
+              
+  </article>
+  
+              
+              
+                <footer class="bd-footer-article">
+                  <div class="footer-article-items footer-article__inner">
+  
+    <div class="footer-article-item">
+<div class="feedback">
+  
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+
+  <div class="feedback-send">
+    <button class="feedback-btn"
+            onclick="openGitHubIssue()"
+            data-bs-title="Create a GitHub Issue"
+            data-bs-placement="bottom"
+            data-bs-toggle="tooltip"
+            data-gtm="feedback-btn-click">Send Feedback
+    </button>
+  </div>
+</div>
+
+<div class="prev-next-area">
+</div>
+
+<div class="footer-info">
+  <p class="copyright">
+    
+  </p>
+
+  <p class="theme-version">
+    Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+  </p>
+</div>
+</div>
+  
+</div>
+                </footer>
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc">
+<div class="sidebar-secondary-items sidebar-secondary__inner">
+    
+       <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#">Using the ExecuTorch Developer Tools for Numerical Debugging</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a></li>
+</ul>
+</li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#pipeline-1-python-runtime">Pipeline 1: Python Runtime</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-1-export-model-and-generate-etrecord">Step 1: Export Model and Generate ETRecord</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-2-run-model-and-generate-etdump-with-debug-buffer">Step 2: Run Model and Generate ETDump with Debug Buffer</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-3-compare-final-outputs-best-practice">Step 3: Compare Final Outputs (Best Practice)</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-4-operator-level-debugging-with-calculate-numeric-gap">Step 4: Operator-Level Debugging with calculate_numeric_gap</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-5-analyze-and-identify-problematic-operators">Step 5: Analyze and Identify Problematic Operators</a></li>
+</ul>
+</li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#pipeline-2-cmake-runtime">Pipeline 2: CMake Runtime</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id1">Step 1: Export Model and Generate ETRecord</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-2-create-bundledprogram">Step 2: Create BundledProgram</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-3-run-with-devtool-example-runner">Step 3: Run with Devtool Example Runner</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-4-analyze-results-in-python">Step 4: Analyze Results in Python</a></li>
+</ul>
+</li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#best-practices-for-debugging">Best Practices for Debugging</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#conclusion">Conclusion</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#links-mentioned">Links Mentioned</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  </nav></div>
+    
+
+
+
+
+</div>
+</div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  
+
+<div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+  <div class="container">
+    <div class="row">
+      <div class="col-md-4">
+        <h2>Docs</h2>
+        <p>Access comprehensive developer documentation for PyTorch</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/docs/stable/index.html">View Docs</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Tutorials</h2>
+        <p>Get in-depth tutorials for beginners and advanced developers</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/tutorials">View Tutorials</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Resources</h2>
+        <p>Find development resources and get your questions answered</p>
+        <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<footer class="site-footer">
+
+  <div class="container footer-container">
+
+    <div class="newsletter" id="newsletter">
+
+      <p class="newsletter__title is-style-max-width-800"><strong>Stay in touch</strong> for updates, event info, and
+        the latest news</p>
+
+
+      <script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+      <script>
+        hbspt.forms.create({
+          region: "na1",
+          portalId: "8112310",
+          formId: "2fb2231c-000b-4ec5-88a0-1ab242549c9e"
+        });
+      </script>
+
+
+      <p class="newsletter__privacy">By submitting this form, I consent to receive marketing emails from the LF and its
+        projects regarding their events, training, research, developments, and related announcements. I understand that
+        I can unsubscribe at any time using the links in the footers of the emails I receive. <a
+          href="https://www.linuxfoundation.org/privacy/">Privacy Policy</a>.</p>
+
+    </div>
+
+    <div class="lf-grid">
+      <ul class="social-links">
+        <li><a href="https://www.facebook.com/pytorch" target="_blank" title="PyTorch on Facebook">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-0.51 -0.26 26.45 26.45" aria-label="Facebook">
+              <path fill="currentColor"
+                d="M25.497 13.075c0-2.45-.698-4.848-2.011-6.911a12.765 12.765 0 0 0-5.398-4.73A12.671 12.671 0 0 0 11.008.38a12.705 12.705 0 0 0-6.529 2.95A12.827 12.827 0 0 0 .563 9.358a12.896 12.896 0 0 0-.07 7.201 12.831 12.831 0 0 0 3.801 6.103 12.709 12.709 0 0 0 6.471 3.078v-8.957H7.53v-3.708h3.235v-2.824c0-3.213 1.903-4.988 4.813-4.988.956.014 1.909.097 2.852.25V8.67h-1.607a1.83 1.83 0 0 0-1.518.497 1.854 1.854 0 0 0-.561 1.505v2.404h3.535l-.563 3.708h-2.97v8.957a12.725 12.725 0 0 0 7.697-4.337 12.87 12.87 0 0 0 3.054-8.328z" />
+            </svg>
+          </a></li>
+        <li><a href="https://twitter.com/pytorch" target="_blank" title="PyTorch on X">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 300 300" aria-label="X">
+              <path fill="currentColor"
+                d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.youtube.com/pytorch" target="_blank" title="PyTorch on YouTube">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0.21 0.27 34.45 25.07" aria-label="YouTube">
+              <path fill="currentColor"
+                d="M33.729 6.084s-.327-2.33-1.317-3.356a4.691 4.691 0 0 0-3.32-1.432c-4.634-.34-11.589-.34-11.589-.34h-.014s-6.954 0-11.59.342a4.692 4.692 0 0 0-3.32 1.432c-.993 1.025-1.315 3.354-1.315 3.354a52.189 52.189 0 0 0-.331 5.473v2.566c.014 1.829.125 3.656.331 5.472 0 0 .322 2.33 1.316 3.36 1.26 1.345 2.916 1.3 3.653 1.445 2.65.26 11.263.34 11.263.34s6.96-.01 11.597-.353a4.691 4.691 0 0 0 3.32-1.432c.993-1.026 1.316-3.356 1.316-3.356.206-1.817.316-3.644.33-5.473v-2.57a52.26 52.26 0 0 0-.33-5.472zM14.076 17.232V7.729l8.951 4.768-8.95 4.735z" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.linkedin.com/company/pytorch" target="_blank" title="PyTorch on LinkedIn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-10.23 -10.23 531.96 531.96" aria-label="LinkedIn">
+              <rect width="512" height="512" rx="0" fill="currentColor" />
+              <circle fill="#000" cx="142" cy="138" r="37" />
+              <path stroke="#000" stroke-width="66" d="M244 194v198M142 194v198" />
+              <path fill="#000"
+                d="M276 282c0-20 13-40 36-40 24 0 33 18 33 45v105h66V279c0-61-32-89-76-89-34 0-51 19-59 32" />
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.slack.com" target="_blank" title="PyTorch Slack">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.16 -0.03 21.19 21.19" aria-label="Slack">
+              <path fill="currentColor"
+                d="M4.896 13.27a2.147 2.147 0 0 1-2.141 2.142A2.147 2.147 0 0 1 .613 13.27c0-1.178.963-2.141 2.142-2.141h2.141v2.141zm1.08 0c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.363a2.147 2.147 0 0 1-2.142 2.141 2.147 2.147 0 0 1-2.141-2.142V13.27zm2.141-8.6a2.147 2.147 0 0 1-2.141-2.14c0-1.18.962-2.142 2.141-2.142s2.142.963 2.142 2.141v2.142H8.117zm0 1.08c1.179 0 2.141.962 2.141 2.141a2.147 2.147 0 0 1-2.141 2.142H2.755A2.147 2.147 0 0 1 .613 7.89c0-1.179.963-2.141 2.142-2.141h5.362zm8.599 2.141c0-1.179.963-2.141 2.141-2.141 1.179 0 2.143.962 2.143 2.14a2.147 2.147 0 0 1-2.142 2.142h-2.141V7.89zm-1.08 0a2.147 2.147 0 0 1-2.141 2.142 2.147 2.147 0 0 1-2.141-2.142V2.53c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.362zm-2.141 8.6c1.179 0 2.142.962 2.142 2.14a2.147 2.147 0 0 1-2.142 2.142 2.147 2.147 0 0 1-2.141-2.141V16.49h2.141zm0-1.08a2.147 2.147 0 0 1-2.141-2.141c0-1.179.962-2.142 2.141-2.142h5.362c1.179 0 2.142.963 2.142 2.142a2.147 2.147 0 0 1-2.142 2.142h-5.362z">
+              </path>
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.org/wechat" title="PyTorch on WeChat">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.14 -0.17 38.02 33.02" aria-label="WeChat">
+              <path fill="currentColor"
+                d="M26.289 10.976a12.972 12.972 0 0 0-8.742 3.53 10.386 10.386 0 0 0-3.224 8.795c-1.326-.164-2.535-.345-3.75-.448a2.332 2.332 0 0 0-1.273.216c-1.18.666-2.311 1.418-3.652 2.255.246-1.112.405-2.087.687-3.024a1.15 1.15 0 0 0-.523-1.52C1.737 17.902.02 13.601 1.307 9.165c1.189-4.1 4.11-6.587 8.077-7.884A13.54 13.54 0 0 1 24.18 5.617a10.135 10.135 0 0 1 2.109 5.359zM10.668 9.594a1.564 1.564 0 0 0-2.095-1.472 1.52 1.52 0 0 0-.895 1.964 1.502 1.502 0 0 0 1.391.966 1.545 1.545 0 0 0 1.598-1.46v.002zm8.15-1.566a1.567 1.567 0 0 0-1.528 1.543 1.528 1.528 0 0 0 1.571 1.492 1.52 1.52 0 0 0 1.375-2.117 1.518 1.518 0 0 0-1.415-.919l-.003.001z">
+              </path>
+              <path fill="currentColor"
+                d="M33.914 32.137c-1.075-.478-2.062-1.196-3.11-1.306-1.049-.11-2.145.494-3.24.605a10.821 10.821 0 0 1-8.781-2.864c-4.682-4.33-4.013-10.97 1.403-14.518 4.811-3.154 11.874-2.102 15.268 2.273a8.671 8.671 0 0 1-1.002 12.095c-1.046.929-1.422 1.693-.751 2.917.102.257.174.525.213.798zM21.68 20.292a1.264 1.264 0 1 0 .01-2.528 1.264 1.264 0 0 0-.01 2.528zm7.887-2.526a1.266 1.266 0 0 0-1.256 1.21 1.247 1.247 0 1 0 1.256-1.21z">
+              </path>
+            </svg>
+          </a></li>
+      </ul>
+    </div>
+    
+    <div class="privacy-policy">
+      <div class="copyright">
+      
+        <p>
+          &copy; PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has registered
+          trademarks and uses trademarks. For more information, including terms of use, privacy policy, and trademark
+          usage, please see our <a href="https://www.linuxfoundation.org/legal/policies">Policies</a> page. <a
+            href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a>. <a
+            href="http://www.linuxfoundation.org/privacy">Privacy Policy</a>.
+        </p>
+        
+      </div>
+    </div>
+
+
+  </div>
+</footer>
+
+<div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../_static/img/pytorch-x.svg">
+  </div>
+</div>
+  
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2024, ExecuTorch.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  <script type="application/ld+json">
+    {
+       "@context": "https://schema.org",
+       "@type": "Article",
+       "name": "Using the ExecuTorch Developer Tools for Numerical Debugging",
+       "headline": "Using the ExecuTorch Developer Tools for Numerical Debugging",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
+       "url": "/tutorials/devtools-debugging-tutorial.html",
+       "articleBody": "Note Go to the end to download the full example code Using the ExecuTorch Developer Tools for Numerical Debugging# The ExecuTorch Developer Tools is a set of tools designed to provide users with the ability to profile, debug, and visualize ExecuTorch models. This tutorial will show a full end-to-end flow of how to utilize the Developer Tools to debug a model by detecting numerical discrepancies between the original PyTorch model and the ExecuTorch model. The tutorial will show you how to: 1. Check if the lowered ExecuTorch model is numerically correct. 2. Gain a deeper understanding of where the numerical discrepancy comes from using the Inspector API. This is particularly useful when working with delegated models (e.g., XNNPACK) where numerical precision may differ. Specifically, it will: Generate the artifacts consumed by the Developer Tools (ETRecord, ETDump). Run the model and compare final outputs between eager model and runtime. If discrepancies exist, use the Inspector\u2019s calculate_numeric_gap method to identify operator-level issues. Note Currently operator-level debugging support is limited to ET-visible operators, and treat every delegate call as a single operator. We are working on expanding this support to dive into delegate operators. We provide two example debugging pipelines on xnnpack-delegated Vision Transformer (VIT) model: Python Pipeline: Export, run, and debug entirely in Python using the ExecuTorch Runtime API. CMake Pipeline: Export in Python, run with CMake example runner, then analyze in Python. Prerequisites# To run this tutorial, you\u2019ll first need to Set up your ExecuTorch environment. For the Python pipeline, you\u2019ll need the ExecuTorch Python runtime bindings. For the CMake pipeline, follow these instructions to set up CMake. Pipeline 1: Python Runtime# This pipeline allows you to export, run, and debug your model entirely in Python, making it ideal for rapid iteration during development. Step 1: Export Model and Generate ETRecord# First, we export the model and generate an ETRecord. The ETRecord contains model graphs and metadata for linking runtime results to the eager model. We use to_edge_transform_and_lower with generate_etrecord=True to automatically capture the ETRecord during the lowering process. import os import tempfile import torch from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config from executorch.exir import ExecutorchProgramManager, to_edge_transform_and_lower from torch.export import export, ExportedProgram from torchvision import models # type: ignore[import-untyped] # Create Vision Transformer model vit = models.vision_transformer.vit_b_16(weights=\"IMAGENET1K_V1\") model = vit.eval() model_inputs = (torch.randn(1, 3, 224, 224),) temp_dir = tempfile.mkdtemp() # Export and lower model to XNNPACK delegate aten_model: ExportedProgram = export(model, model_inputs, strict=True) edge_program_manager = to_edge_transform_and_lower( aten_model, partitioner=[XnnpackPartitioner()], compile_config=get_xnnpack_edge_compile_config(), generate_etrecord=True, ) et_program_manager: ExecutorchProgramManager = edge_program_manager.to_executorch() # Save the .pte file pte_path = os.path.join(temp_dir, \"model.pte\") et_program_manager.save(pte_path) # Get and save ETRecord with representative inputs etrecord = et_program_manager.get_etrecord() etrecord.update_representative_inputs(model_inputs) etrecord_path = os.path.join(temp_dir, \"etrecord.bin\") etrecord.save(etrecord_path) Note The update_representative_inputs method is crucial for debugging. It stores the inputs that will be used to compute reference outputs from the exported program, which are then compared against the runtime outputs. Step 2: Run Model and Generate ETDump with Debug Buffer# Next, we run the model using the ExecuTorch Python Runtime API with debug output enabled. The debug buffer captures intermediate outputs from the runtime execution. from executorch.runtime import Method, Program, Runtime, Verification # Load and run the model with debug output enabled et_runtime: Runtime = Runtime.get() program: Program = et_runtime.load_program( pte_path, verification=Verification.Minimal, enable_etdump=True, debug_buffer_size=1024 * 1024 * 1024, # 1GB buffer ) forward: Method = program.load_method(\"forward\") runtime_outputs = forward.execute(*model_inputs) # Save ETDump and debug buffer etdump_path = os.path.join(temp_dir, \"etdump.etdp\") debug_buffer_path = os.path.join(temp_dir, \"debug_buffer.bin\") program.write_etdump_result_to_file(etdump_path, debug_buffer_path) Warning The debug buffer size should be large enough to hold all intermediate outputs. If the buffer is too small, some intermediate outputs may be truncated or error might be rasied. Step 3: Compare Final Outputs (Best Practice)# Best Practice: Before diving into operator-level debugging, first compare the final outputs between the eager model and the runtime model. This helps you quickly determine if there are any numerical issues worth investigating. # Get eager model output with torch.no_grad(): eager_output = model(*model_inputs) # Compare with runtime output if isinstance(runtime_outputs, (list, tuple)): runtime_output = runtime_outputs[0] else: runtime_output = runtime_outputs # Calculate MSE between eager and runtime outputs mse = torch.mean((eager_output - runtime_output) ** 2).item() print(f\"Final output MSE: {mse}\") # Check if outputs are close enough if torch.allclose(eager_output, runtime_output, rtol=1e-3, atol=1e-5): print(\"Outputs match within tolerance!\") else: print(\"Outputs differ - proceeding with operator-level analysis...\") Step 4: Operator-Level Debugging with calculate_numeric_gap# If the final outputs show discrepancies, use the Inspector\u2019s calculate_numeric_gap method to identify which operators are contributing to the numerical differences. import pandas as pd from executorch.devtools import Inspector inspector = Inspector( etdump_path=etdump_path, etrecord=etrecord_path, debug_buffer_path=debug_buffer_path, ) pd.set_option(\"display.width\", 100000) pd.set_option(\"display.max_columns\", None) # Calculate numerical gap using Mean Squared Error df: pd.DataFrame = inspector.calculate_numeric_gap(\"MSE\") print(df) The returned DataFrame contains columns for each operator including: aot_ops: The operators in the eager model graph aot_intermediate_output: Intermediate outputs from eager model runtime_ops: The operators executed at runtime (may show DELEGATE_CALL for delegated ops) runtime_intermediate_output: Intermediate outputs from runtime gap: The numerical gap (MSE) between eager and runtime outputs Example output: | | aot_ops | aot_intermediate_output | runtime_ops | runtime_intermediate_output | gap | |----|----------------------------------------------------------------|----------------------------------------------------|----------------------------------------------------|----------------------------------------------------| ---------------------------| | 0 | [conv2d] | [[[tensor([-0.0130, 0.0075, -0.0334, -0.0122,... | [DELEGATE_CALL] | [[[tensor([-0.0130, 0.0075, -0.0334, -0.0122,... | [3.2530690555343034e-15] | | 1 | [permute, cat, add, dropout] | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0... | [DELEGATE_CALL] | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0... | [3.2488685838924244e-15] | ... | 4 | [transpose, linear, unflatten, unsqueeze, tran...] | [[[tensor(0.0045), tensor(-0.0084), tensor(0.0... | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(0.0045), tensor(-0.0084), tensor(0.00... | [0.00010033142876115867] | ... | 59 | [transpose_66, linear_44, unflatten_11, unsque...] | [[[tensor(-0.3346), tensor(0.1540), tensor(-0.... | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(-0.3346), tensor(0.1540), tensor(-0.0... | [0.02629170972698486] | Step 5: Analyze and Identify Problematic Operators# Once you have the numerical gaps, identify operators with significant discrepancies for further investigation. # Find operators with the largest discrepancies df_sorted = df.sort_values(by=\"gap\", ascending=False, key=lambda x: x.apply(lambda y: y[0] if isinstance(y, list) else y)) print(\"Top 5 operators with largest numerical discrepancies:\") print(df_sorted.head(5)) # Filter for operators with gap above a threshold threshold = 1e-4 problematic_ops = df[df[\"gap\"].apply(lambda x: x[0] \u003e threshold if isinstance(x, list) else x \u003e threshold)] print(f\"\\nOperators with MSE \u003e {threshold}:\") print(problematic_ops) Example output showing problematic operators in a ViT model: Top 5 operators with largest numerical discrepancies: aot_ops aot_intermediate_output runtime_ops runtime_intermediate_output gap 59 [transpose_66, linear_44, unflatten_11, unsque... [[[tensor(-0.3346), tensor(0.1540), tensor(-0.... [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ... [[tensor(-0.3346), tensor(0.1540), tensor(-0.0... [0.02629170972698486] 24 [transpose_24, linear_16, unflatten_4, unsquee... [[[tensor(0.0344), tensor(-0.0583), tensor(-0.... [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ... [[tensor(0.0344), tensor(-0.0583), tensor(-0.0... [0.010045093258604096] 29 [transpose_30, linear_20, unflatten_5, unsquee... [[[tensor(0.0457), tensor(0.0266), tensor(-0.0... [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ... [[tensor(0.0457), tensor(0.0266), tensor(-0.05... [0.008497326594593926] 34 [transpose_36, linear_24, unflatten_6, unsquee... [[[tensor(-0.1336), tensor(-0.0154), tensor(-0... [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ... [[tensor(-0.1336), tensor(-0.0154), tensor(-0.... [0.007672668965640913] 19 [transpose_18, linear_12, unflatten_3, unsquee... [[[tensor(-0.0801), tensor(0.0458), tensor(-0.... [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ... [[tensor(-0.0801), tensor(0.0458), tensor(-0.0... [0.007446783635888463] Operators with MSE \u003e 0.0001: aot_ops aot_intermediate_output runtime_ops runtime_intermediate_output gap 4 [transpose, linear, unflatten, unsqueeze, tran... [[[tensor(0.0045), tensor(-0.0084), tensor(0.0... [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ... [[tensor(0.0045), tensor(-0.0084), tensor(0.00... [0.00010033142876115867] 9 [transpose_6, linear_4, unflatten_1, unsqueeze... [[[tensor(0.0113), tensor(-0.0737), tensor(-0.... [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ... [[tensor(0.0113), tensor(-0.0737), tensor(-0.0... [0.0005611182577030275] 14 [transpose_12, linear_8, unflatten_2, unsqueez... [[[tensor(-0.0476), tensor(-0.0941), tensor(-0... [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ... [[tensor(-0.0476), tensor(-0.0941), tensor(-0.... [0.004658652508649068] ... In this example, we can see that the attention layers (transpose + linear + unflatten patterns) show the largest numerical discrepancies, which is expected behavior for delegated operators using different precision. Pipeline 2: CMake Runtime# This pipeline is useful when you want to test your model with the native C++ runtime or on platforms where Python bindings are not available. Step 1: Export Model and Generate ETRecord# First, we export the model and generate an ETRecord, same as step 1 of pipeline 1: import os import tempfile import torch from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config from executorch.exir import ExecutorchProgramManager, to_edge_transform_and_lower from torch.export import export, ExportedProgram from torchvision import models # type: ignore[import-untyped] # Create Vision Transformer model vit = models.vision_transformer.vit_b_16(weights=\"IMAGENET1K_V1\") model = vit.eval() model_inputs = (torch.randn(1, 3, 224, 224),) temp_dir = tempfile.mkdtemp() # Export and lower model to XNNPACK delegate aten_model: ExportedProgram = export(model, model_inputs, strict=True) edge_program_manager = to_edge_transform_and_lower( aten_model, partitioner=[XnnpackPartitioner()], compile_config=get_xnnpack_edge_compile_config(), generate_etrecord=True, ) et_program_manager: ExecutorchProgramManager = edge_program_manager.to_executorch() # Save the .pte file pte_path = os.path.join(temp_dir, \"model.pte\") et_program_manager.save(pte_path) # Get and save ETRecord with representative inputs etrecord = et_program_manager.get_etrecord() etrecord.update_representative_inputs(model_inputs) etrecord_path = os.path.join(temp_dir, \"etrecord.bin\") etrecord.save(etrecord_path) Step 2: Create BundledProgram# For the CMake pipeline, we create a BundledProgram that packages the model with sample inputs and expected outputs for testing. We reuse the et_program_manager from Step 1. from executorch.devtools import BundledProgram from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite from executorch.devtools.bundled_program.serialize import ( serialize_from_bundled_program_to_flatbuffer, ) # Define the method name and test inputs # IMPORTANT: Use the same inputs as etrecord.update_representative_inputs() m_name = \"forward\" test_inputs = [model_inputs] # Create test cases by running the eager model to get expected outputs method_test_suites = [ MethodTestSuite( method_name=m_name, test_cases=[ MethodTestCase(inputs=inp, expected_outputs=model(*inp)) for inp in test_inputs ], ) ] # Generate BundledProgram using the existing et_program_manager bundled_program = BundledProgram(et_program_manager, method_test_suites) # Serialize BundledProgram to flatbuffer serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer( bundled_program ) bundled_program_path = os.path.join(temp_dir, \"bundled_program.bpte\") with open(bundled_program_path, \"wb\") as f: f.write(serialized_bundled_program) Step 3: Run with Devtool Example Runner# This step we will verify the final result and generate etdump for next step usage by using devtool example runner. First, build the example runner with XNNPACK backend support: cd /path/to/executorch ./examples/devtools/build_example_runner.sh --xnnpack where --xnnpack is a build flag that enables XNNPACK backend support. Then run the example runner with output verification and debug output enabled: cmake-out/examples/devtools/example_runner \\ --bundled_program_path=/path/to/bundled_program.bpte \\ --output_verification \\ --dump_intermediate_outputs \\ --debug_buffer_size=1073741824 The key flags are: --output_verification: Compare runtime outputs against the expected outputs stored in the BundledProgram (uses rtol=1e-3, atol=1e-5) --dump_intermediate_outputs: Capture intermediate outputs for operator-level debugging --debug_buffer_size=\u003cbytes\u003e: Size of debug buffer (1GB in this example) Example output on success: I 00:00:00.123456 executorch:example_runner.cpp:135] Model file bundled_program.bpte is loaded. I 00:00:00.123456 executorch:example_runner.cpp:145] Running method forward I 00:00:00.234567 executorch:example_runner.cpp:250] Model executed successfully. I 00:00:00.234567 executorch:example_runner.cpp:287] Model verified successfully. If verification fails (outputs don\u2019t match within tolerance), you\u2019ll see an error: E 00:00:00.234567 executorch:example_runner.cpp:287] Bundle verification failed with status 0x10 This will also generate: etdump.etdp: The ETDump file containing execution trace (default path, configurable via --etdump_path) debug_output.bin: The debug buffer containing intermediate outputs (default path, configurable via --debug_output_path) Step 4: Analyze Results in Python# After running the model with the CMake runner, load the generated artifacts back into Python for analysis using the Inspector. from executorch.devtools import Inspector etrecord_path = \"/path/to/etrecord.bin\" etdump_path = \"/path/to/etdump.etdp\" debug_buffer_path = \"/path/to/debug_output.bin\" inspector = Inspector( etdump_path=etdump_path, etrecord=etrecord_path, debug_buffer_path=debug_buffer_path, ) Then use the same analysis techniques as in Pipeline 1: import pandas as pd # Calculate numerical gaps df = inspector.calculate_numeric_gap(\"MSE\") # Find problematic operators df_sorted = df.sort_values(by=\"gap\", ascending=False, key=lambda x: x.apply(lambda y: y[0] if isinstance(y, list) else y)) print(\"Top operators with largest gaps:\") print(df_sorted.head(5)) Best Practices for Debugging# Start with final outputs: Always compare the final model output first before diving into operator-level analysis. This saves time if outputs match. Use appropriate thresholds: Small numerical differences (\u003c 1e-6) are typically acceptable. Focus on operators with gaps \u003e 1e-4. Focus on delegated operators: Numerical discrepancies are most common in delegated operators (shown as DELEGATE_CALL) due to different precision handling in delegate backends. Check accumulation patterns: In transformer models, attention layers often show larger gaps due to accumulated numerical differences across many operations. Use stack traces: With ETRecord, you can trace operators back to the original PyTorch source code for easier debugging using event.stack_traces and event.module_hierarchy. Conclusion# In this tutorial, we learned how to use the ExecuTorch Developer Tools to debug numerical discrepancies in models. The key workflow is: Export the model with ETRecord generation enabled Run the model with debug buffer enabled (Python or CMake) First compare final outputs between eager and runtime models If issues found, use calculate_numeric_gap for operator-level analysis Identify and investigate operators with significant gaps Links Mentioned# ExecuTorch Developer Tools Overview ETRecord ETDump Inspector Model Debugging Guide Profiling Tutorial Total running time of the script: (0 minutes 0.000 seconds) Download Python source code: devtools-debugging-tutorial.py Download Jupyter notebook: devtools-debugging-tutorial.ipynb Gallery generated by Sphinx-Gallery",
+       "author": {
+         "@type": "Organization",
+         "name": "PyTorch Contributors",
+         "url": "https://pytorch.org"
+       },
+       "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
+       "mainEntityOfPage": {
+         "@type": "WebPage",
+         "@id": "/tutorials/devtools-debugging-tutorial.html"
+       },
+       "datePublished": "2023-01-01T00:00:00Z",
+       "dateModified": "2023-01-01T00:00:00Z"
+     }
+ </script>
+  <script>
+    // Tutorials Call to action event tracking
+    $("[data-behavior='call-to-action-event']").on('click', function () {
+      fbq('trackCustom', "Download", {
+        tutorialTitle: $('h1:first').text(),
+        downloadLink: this.href,
+        tutorialLink: window.location.href,
+        downloadTitle: $(this).attr("data-response")
+      });
+      if (typeof gtag === 'function') {
+        gtag('event', 'click', {
+          'event_category': $(this).attr("data-response"),
+          'event_label': $("h1").first().text(),
+          'tutorial_link': window.location.href
+        });
+      }
+    });
+  </script>
+  
+  </body>
+</html>
