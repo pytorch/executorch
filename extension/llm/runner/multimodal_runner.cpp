@@ -51,6 +51,32 @@ MultimodalRunner::MultimodalRunner(
   stats_->gpu_total_bytes = cuda_memory_tracker_->total_bytes();
   stats_->gpu_free_before_load_bytes = cuda_memory_tracker_->last_free_bytes();
 #endif
+
+  // Initialize ring buffer configuration from metadata
+  if (metadata_.count(kIsRingBuffer) && metadata_.at(kIsRingBuffer) > 0) {
+    is_ring_buffer_ = true;
+    // Sliding window size defaults to max_context_len if not specified
+    if (metadata_.count(kSlidingWindowSize)) {
+      sliding_window_size_ = metadata_.at(kSlidingWindowSize);
+    } else if (metadata_.count(kMaxContextLen)) {
+      sliding_window_size_ = metadata_.at(kMaxContextLen);
+    }
+
+    // Validate sliding_window_size
+    if (sliding_window_size_ <= 0) {
+      ET_LOG(
+          Error,
+          "Ring buffer enabled but sliding_window_size is %" PRId64
+          ". Disabling ring buffer mode.",
+          sliding_window_size_);
+      is_ring_buffer_ = false;
+    } else {
+      ET_LOG(
+          Info,
+          "Ring buffer KV cache enabled with sliding window size: %" PRId64,
+          sliding_window_size_);
+    }
+  }
 }
 
 bool MultimodalRunner::is_loaded() {
@@ -176,10 +202,48 @@ Error MultimodalRunner::generate(
       "RSS after multimodal input processing: %f MiB (0 if unsupported)",
       get_rss_bytes() / 1024.0 / 1024.0);
 
-  // Resolve max_new_tokens based on config
-  int64_t max_context_len =
-      metadata_.at(kMaxContextLen) - 0; // No start_pos offset
-  int32_t max_new_tokens = config.resolve_max_new_tokens(max_context_len, pos_);
+  // Resolve max_new_tokens based on config and ring buffer mode
+  int64_t max_context_len = metadata_.at(kMaxContextLen);
+  int64_t effective_context_len;
+  int32_t max_new_tokens;
+
+  if (is_ring_buffer_) {
+    // Ring buffer mode: positions wrap around, allowing continuous generation.
+    // The model's KV cache uses a ring buffer that overwrites old entries,
+    // so we can generate beyond the initial context length.
+    effective_context_len = sliding_window_size_;
+
+    // In ring buffer mode, we're not limited by pos_ since positions wrap
+    // around. Use the effective position within the sliding window.
+    int64_t effective_pos = pos_ % sliding_window_size_;
+    max_new_tokens =
+        config.resolve_max_new_tokens(effective_context_len, effective_pos);
+
+    // Log ring buffer status
+    if (pos_ >= sliding_window_size_) {
+      ET_LOG(
+          Info,
+          "Ring buffer active: logical pos %" PRId64
+          " >= window size %" PRId64 ", positions will wrap",
+          pos_,
+          sliding_window_size_);
+    }
+  } else {
+    // Non-ring buffer mode: original behavior with hard context limit.
+    effective_context_len = max_context_len - pos_;
+
+    ET_CHECK_OR_RETURN_ERROR(
+        pos_ < max_context_len,
+        InvalidArgument,
+        "pos_ %" PRId64 " >= max_context_len %" PRId64
+        ", context exhausted - please increase max context len or enable ring "
+        "buffer KV cache",
+        pos_,
+        max_context_len);
+
+    max_new_tokens =
+        config.resolve_max_new_tokens(effective_context_len, 0);
+  }
 
   ET_LOG(
       Info,
