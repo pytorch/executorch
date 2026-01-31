@@ -410,8 +410,6 @@ def annotate_arange(node: Node, quantization_config: QuantizationConfig) -> None
         return
 
     if _is_float_tensor(node):
-        # workaround for node with kwargs could not be correctly annotated
-        node.kwargs = {}
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={},
             output_qspec=quantization_config.output_activation,
@@ -491,8 +489,6 @@ def annotate_scalar_tensor(node: Node, quantization_config: QuantizationConfig) 
     if _is_annotated([node]):
         return
     if _is_float_tensor(node):
-        # workaround for node with kwargs could not be correctly annotated
-        node.kwargs = {}
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={},
             output_qspec=quantization_config.output_activation,
@@ -547,8 +543,6 @@ def annotate_full(node: Node, quantization_config: QuantizationConfig) -> None:
         return
 
     if _is_float_tensor(node):
-        # workaround for node with kwargs could not be correctly annotated
-        node.kwargs = {}
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={},
             output_qspec=quantization_config.output_activation,
@@ -1492,8 +1486,6 @@ def annotate_zeros(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]) or not _is_float_tensor(node):
         return
 
-    # workaround for node with kwargs could not be correctly annotated
-    node.kwargs = {}
     node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map={},
         output_qspec=quantization_config.output_activation,
