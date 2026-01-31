@@ -1,7 +1,8 @@
-# Copyright 2023-2025 NXP
+# Copyright 2023-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import warnings
 from typing import Callable, Dict, Union
 
@@ -392,10 +393,16 @@ class OverrideTargetSupportCheck:
     ):
         self._converter_class = converter_class
         self.new_target_support_check = new_target_support_check
+
+        # Store the original target check method. NOTE: The staticmethod must be unwrapped to get the underlying
+        #  function, therefore the stored function is not a staticmethod anymore.
         self.old_target_support_check = converter_class._is_supported_on_target
 
     def __enter__(self):
         self._converter_class._is_supported_on_target = self.new_target_support_check
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._converter_class._is_supported_on_target = self.old_target_support_check
+        # The stored `old_target_support_check` is a plain function, so it needs to be wrapped back as a staticmethod.
+        self._converter_class._is_supported_on_target = staticmethod(
+            self.old_target_support_check
+        )
