@@ -1,9 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 from typing import Tuple
+
+import pytest
 
 import torch
 from executorch.backends.arm.test import common
@@ -27,6 +29,13 @@ class MatMul(torch.nn.Module):
         "rand_rand_4d": lambda: (torch.rand(1, 2, 3, 5), torch.rand(1, 2, 5, 2)),
     }
 
+    test_data_generators_bf16 = {
+        "rand_rand_2d_bf16": lambda: (
+            torch.rand(4, 4, dtype=torch.bfloat16),
+            torch.rand(4, 3, dtype=torch.bfloat16),
+        ),
+    }
+
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         return torch.matmul(x, y)
 
@@ -36,6 +45,10 @@ class MatMulSingleInput(torch.nn.Module):
         "rand_2d": lambda: (torch.rand(5, 5),),
         "rand_3d": lambda: (torch.rand(2, 5, 5),),
         "rand_4d": lambda: (torch.rand(1, 2, 5, 5),),
+    }
+
+    test_data_generators_bf16 = {
+        "rand_2d_bf16": lambda: (torch.rand(4, 4, dtype=torch.bfloat16),),
     }
 
     def forward(self, x: torch.Tensor):
@@ -61,30 +74,53 @@ class MatMulCombo(torch.nn.Module):
         ),
     }
 
+    test_data_generators_bf16 = {
+        "rand_rand_rand_2d_bf16": lambda: (
+            torch.rand(4, 4, dtype=torch.bfloat16),
+            torch.rand(4, 3, dtype=torch.bfloat16),
+            torch.rand(3, 4, dtype=torch.bfloat16),
+        ),
+    }
+
     def forward(self, x1: torch.Tensor, x2: torch.Tensor, x3: torch.Tensor):
         y1 = torch.matmul(x1, x1)
         y2 = torch.matmul(x2, x3)
         return y1 + y2
 
 
-@common.parametrize("test_data", MatMul.test_data_generators)
+@common.parametrize(
+    "test_data", MatMul.test_data_generators | MatMul.test_data_generators_bf16
+)
 def test_matmul_tosa_FP(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](MatMul(), test_data(), aten_op_mm, exir_op_mm)
-    pipeline.run()
-
-
-@common.parametrize("test_data", MatMulSingleInput.test_data_generators)
-def test_matmul_tosa_FP_single_input(test_data: input_t1):
     pipeline = TosaPipelineFP[input_t1](
-        MatMulSingleInput(), test_data(), aten_op_mm, exir_op_mm
+        MatMul(), test_data(), aten_op_mm, exir_op_mm, tosa_extensions=["bf16"]
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", MatMulCombo.test_data_generators)
+@common.parametrize(
+    "test_data",
+    MatMulSingleInput.test_data_generators
+    | MatMulSingleInput.test_data_generators_bf16,
+)
+def test_matmul_tosa_FP_single_input(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](
+        MatMulSingleInput(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        tosa_extensions=["bf16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    MatMulCombo.test_data_generators | MatMulCombo.test_data_generators_bf16,
+)
 def test_matmul_tosa_FP_combo(test_data: input_t1):
     pipeline = TosaPipelineFP[input_t1](
-        MatMulCombo(), test_data(), aten_op_mm, exir_op_mm
+        MatMulCombo(), test_data(), aten_op_mm, exir_op_mm, tosa_extensions=["bf16"]
     )
     pipeline.run()
 
@@ -134,10 +170,7 @@ def test_matmul_u55_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    MatMulSingleInput.test_data_generators,
-)
+@common.parametrize("test_data", MatMulSingleInput.test_data_generators)
 @common.XfailIfNoCorstone300
 def test_matmul_u55_INT_single_input(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -150,10 +183,7 @@ def test_matmul_u55_INT_single_input(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    MatMulCombo.test_data_generators,
-)
+@common.parametrize("test_data", MatMulCombo.test_data_generators)
 @common.XfailIfNoCorstone300
 def test_matmul_u55_INT_combo(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -179,10 +209,7 @@ def test_matmul_u85_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    MatMulSingleInput.test_data_generators,
-)
+@common.parametrize("test_data", MatMulSingleInput.test_data_generators)
 @common.XfailIfNoCorstone320
 def test_matmul_u85_INT_single_input(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -195,10 +222,7 @@ def test_matmul_u85_INT_single_input(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    MatMulCombo.test_data_generators,
-)
+@common.parametrize("test_data", MatMulCombo.test_data_generators)
 @common.XfailIfNoCorstone320
 def test_matmul_u85_INT_combo(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -285,5 +309,53 @@ def test_matmul_vgf_quant_combo(test_data: input_t1):
         aten_op_mm,
         exir_op_mm,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MatMulCombo.test_data_generators)
+def test_matmul_tosa_INT_a16w8(test_data: input_t1):
+    """Test matmul with 16A8W quantization for TOSA INT."""
+    pipeline = TosaPipelineINT[Tuple[torch.Tensor]](
+        MatMulCombo(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MatMulCombo.test_data_generators)
+@pytest.mark.xfail(
+    reason="Vela compilation fails with 'Non-passthrough operation' for int16 matmul operations"
+)
+@common.XfailIfNoCorstone300
+def test_matmul_u55_INT_a16w8(test_data: input_t1):
+    """Test matmul with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    pipeline = EthosU55PipelineINT[Tuple[torch.Tensor]](
+        MatMulCombo(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MatMulCombo.test_data_generators)
+@common.XfailIfNoCorstone320
+def test_matmul_u85_INT_a16w8(test_data: input_t1):
+    """Test matmul with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    pipeline = EthosU85PipelineINT[Tuple[torch.Tensor]](
+        MatMulCombo(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

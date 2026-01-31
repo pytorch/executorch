@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -269,3 +269,6 @@ if __name__ == "__main__":
         print(entry)
 
     print(f"Total tests needing renaming: {len(violations)}")
+
+    if violations:
+        sys.exit(1)

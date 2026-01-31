@@ -193,6 +193,9 @@ Error TextLLMRunner::generate(
   // start the main loop
   prompt_tokens.push_back(cur_token);
 
+  // Set ignore_eos based on config
+  text_token_generator_->set_ignore_eos(config.ignore_eos);
+
   // Generate max_new_tokens - 1 because prefill already generated 1 token.
   auto generate_result = text_token_generator_->generate(
       prompt_tokens,

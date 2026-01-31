@@ -4,6 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# decode qdq file name
+DECODE_QDQ_FILENAME = "decode_qdq.pt2"
+
+# eval methods
+PROMPT_EVAL = "prompt_eval"
+TASKS_EVAL = "tasks_eval"
+SQNR_EVAL = "sqnr_eval"
+
 # filenames for vision model
 VISION_ENCODER_INPUT_FILENAME = "vision_encoder_input"
 
@@ -38,6 +46,7 @@ DECODER_MODEL_VERSION = {
     "llama3_2-3b_instruct": "llama3",
     "codegen2_1b": "codegen",
     "gemma-2b": "gemma",
+    "gemma2-2b": "gemma2",
     "gemma3-1b": "gemma3",
     "granite_3_3-2b_instruct": "granite",
     "phi_4_mini": "phi_4_mini",

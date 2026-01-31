@@ -19,10 +19,7 @@ from typing import cast, Dict, Optional, Sequence
 
 import torch
 import torch.fx
-from executorch.backends.cadence.aot.compiler_utils import (
-    get_zero_point,
-    quantize_tensor_multiplier,
-)
+from executorch.backends.cadence.aot.compiler_utils import quantize_tensor_multiplier
 from executorch.backends.cadence.aot.fuse_ops import (
     FuseCascadedTransposeOrPermuteOps,
     FuseCascadedViewOps,
@@ -32,7 +29,6 @@ from executorch.backends.cadence.aot.pass_utils import (
     register_cadence_pass,
     RemoveOrReplacePassInterface,
 )
-from executorch.backends.cadence.aot.remove_ops import RemoveNopSelectOpPass
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
@@ -1461,15 +1457,7 @@ class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
         # kernel_width for conv1d, and X = kernel_height * kernel_width for
         # conv2d. We extract X as the kernel_size for im2row.
         kernel_size = list(weight_shape[1:-1] if channel_last else weight_shape[2:])
-        # If the transposed_convolution op was quantized, we need the input tensor's
-        # zero_point for im2row. Otherwise in_zero_point defaults to a zero
-        # tensor.
         assert isinstance(in_tensor, torch.fx.Node)
-        in_zero_point = (
-            get_zero_point(in_tensor.meta["val"])
-            if quantized_op
-            else torch.tensor(0, dtype=torch.int32)
-        )
 
         # Cast to appropriate types
         stride = cast(Sequence[int], stride)
@@ -1493,6 +1481,20 @@ class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
             return False
 
         graph = node.graph
+
+        # If the transposed_convolution op was quantized, we need the input tensor's
+        # zero_point for im2row. Otherwise in_zero_point defaults to a zero tensor.
+        # We create the tensor as a graph node using aten.full to avoid
+        # DataDependentOutputException during FakeTensor shape propagation.
+        in_zero_point_val = node.args[8] if quantized_op else 0
+        in_zero_point = graph.call_function(
+            exir_ops.edge.aten.full.default,
+            args=([1], in_zero_point_val),
+            kwargs={"dtype": torch.int32},
+        )
+        # Insert the node before the current node
+        node.prepend(in_zero_point)
+        in_zero_point.meta = node.meta
 
         # Create a transposed_im2row node with the input. This will create a 2d
         # matrix of shape [out_height*out_weight, X*in_channels]. X is as
@@ -1662,13 +1664,13 @@ class ReplaceNopTransposeOrPermuteWithViewPass(RemoveOrReplacePassInterface):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         result = super().call(graph_module)
-        # If this pass made modifications, fuse any cascaded view ops that may have been created
-        if result.modified:
-            fuse_cascaded_result = FuseCascadedViewOps().call(result.graph_module)
 
-            # True because we are in the 'if modified' block
-            return PassResult(fuse_cascaded_result.graph_module, True)
-        return result
+        # TODO: I tried conditionally running this only if the above made any modifications,
+        # but for whatever reason was getting numerical failures in
+        # test_mtl_e2e_test_a16w8_two_layers_turing_3_1_1k. Always running this pass
+        # resolved that issue.
+        fuse_cascaded_result = FuseCascadedViewOps().call(result.graph_module)
+        return PassResult(fuse_cascaded_result.graph_module, True)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
@@ -1679,8 +1681,15 @@ class ReplaceLinearWithFullyConnectedOpPass(RemoveOrReplacePassInterface):
     """
 
     linear_to_fc_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
+        # Default variants
         exir_ops.edge.aten.linear.default: exir_ops.edge.cadence.fully_connected.default,
         exir_ops.edge.cadence.quantized_linear.default: exir_ops.edge.cadence.quantized_fully_connected.default,
+        # Per-tensor variants
+        exir_ops.edge.cadence.quantized_linear.per_tensor: exir_ops.edge.cadence.quantized_fully_connected.per_tensor,
+        # Type-specialized variants (int8)
+        exir_ops.edge.cadence.quantized_linear_asym8sxasym8s_asym8s.per_tensor: exir_ops.edge.cadence.quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor,
+        # Type-specialized variants (uint8)
+        exir_ops.edge.cadence.quantized_linear_asym8uxasym8u_asym8u.per_tensor: exir_ops.edge.cadence.quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor,
     }
 
     @property
@@ -1916,7 +1925,10 @@ class ReplaceIm2RowWithViewPass(RemoveOrReplacePassInterface):
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
-        return [exir_ops.edge.cadence.im2row.default]
+        return [
+            exir_ops.edge.cadence.im2row.default,
+            exir_ops.edge.cadence.im2row.per_tensor,
+        ]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Check if im2row applies padding. If yes, we cannot replace it with view.
@@ -2490,7 +2502,6 @@ class CadenceReplaceOpsInGraph:
         ReplacePermuteWithTransposePass,
         ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
         ReplaceAddMMWithLinearPass,
-        RemoveNopSelectOpPass,
         ReplacePadWithCatPass,
         ReplaceConstantPadNdWithSlicePass,
         ReplaceConvWithChannelLastConvPass,

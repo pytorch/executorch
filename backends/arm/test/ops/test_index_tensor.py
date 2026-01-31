@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -321,6 +321,12 @@ class IndexTensor(torch.nn.Module):
             ),
         ),
     }
+    test_data_bf16: dict[input_params] = {
+        "test_2d_1_idx_bf16": (
+            torch.rand(size=(3, 4), dtype=torch.bfloat16),
+            (torch.arange(2, dtype=torch.int32),),
+        ),
+    }
 
     # xfail - None (unsqueeze) unsupported
     test_data_none: dict[input_params] = {
@@ -372,7 +378,7 @@ class IndexTensor(torch.nn.Module):
         return input_[indices]
 
 
-@common.parametrize("test_data", IndexTensor.test_data)
+@common.parametrize("test_data", IndexTensor.test_data | IndexTensor.test_data_bf16)
 def test_index_tensor_tosa_FP(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
@@ -384,6 +390,7 @@ def test_index_tensor_tosa_FP(test_data: input_params):
                 IndexTensorTestCommon.exir_op,
                 atol=IndexTensorTestCommon.atol,
                 rtol=IndexTensorTestCommon.rtol,
+                tosa_extensions=["bf16"],
             ).run()
         )
 

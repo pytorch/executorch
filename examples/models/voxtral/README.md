@@ -89,8 +89,7 @@ optimum-cli export executorch \
 ```
 
 This will generate:
-- `model.pte` - The exported model
-- `aoti_metal_blob.ptd` - The Metal kernel blob required for runtime
+- `model.pte` - The exported model (includes Metal kernel blob)
 
 See the "Building the multimodal runner" section below for instructions on building with Metal support, and the "Running the model" section for runtime instructions.
 
@@ -162,10 +161,17 @@ If you already have a preprocessed mel spectrogram saved as a `.bin` file, you c
   --audio_path path/to/preprocessed_audio.bin
 ```
 
-### Running on CUDA or Metal:
-Add the `--data_path` argument to provide the appropriate data blob to the commands above:
-- For CUDA: `--data_path path/to/aoti_cuda_blob.ptd`
-- For Metal: `--data_path path/to/aoti_metal_blob.ptd`
+### Running on CUDA:
+Add the `--data_path` argument to provide the CUDA data blob:
+```
+./cmake-out/examples/models/voxtral/voxtral_runner \
+  --model_path path/to/model.pte \
+  --data_path path/to/aoti_cuda_blob.ptd \
+  --tokenizer_path path/to/tekken.json \
+  --prompt "What can you tell me about this audio?" \
+  --audio_path path/to/audio_input.wav \
+  --processor_path path/to/voxtral_preprocessor.pte
+```
 
 ### Example output:
 ```

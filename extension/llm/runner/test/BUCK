@@ -1,0 +1,47 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/extension/llm/runner/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load(":targets.bzl", "define_common_targets")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = runtime.cxx_test,
+    name = "test_text_decoder_runner",
+    srcs = ["test_text_decoder_runner.cpp"],
+    deps = [
+        "//executorch/extension/llm/runner:runner_lib",
+        "//executorch/extension/llm/runner/io_manager:io_manager",
+        "//executorch/kernels/portable:generated_lib",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+    env = {
+        "KVCACHE_CACHE_POS": "$(location fbcode//executorch/test/models:exported_programs[ModuleKVCacheCachePos.pte])",
+        "KVCACHE_INPUT_POS": "$(location fbcode//executorch/test/models:exported_programs[ModuleKVCacheInputPos.pte])",
+        "NO_KVCACHE": "$(location fbcode//executorch/test/models:exported_programs[ModuleNoKVCache.pte])",
+    }
+)

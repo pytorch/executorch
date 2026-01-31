@@ -118,6 +118,9 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kLlama3;
   } else if (decoder_model_version == "gemma") {
     decoder_model_version_ = DecoderModelVersion::kGemma;
+  } else if (decoder_model_version == "gemma2") {
+    decoder_model_version_ = DecoderModelVersion::kGemma2;
+    cache_mode_ = CacheMode::HybridCache;
   } else if (decoder_model_version == "gemma3") {
     decoder_model_version_ = DecoderModelVersion::kGemma3;
     cache_mode_ = CacheMode::HybridCache;
@@ -162,8 +165,8 @@ Error Runner<T>::load() {
   std::vector<std::string> method_names;
   switch (eval_mode_) {
     case EvalMode::kKVCached:
-      prompt_processor_method_name = "forward";
-      token_generator_method_name = "forward";
+      prompt_processor_method_name = "kv_forward";
+      token_generator_method_name = "kv_forward";
       method_names.emplace_back(token_generator_method_name);
       break;
     case EvalMode::kHybrid:
@@ -202,6 +205,7 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
   } else if (
       decoder_model_version_ == DecoderModelVersion::kGemma ||
+      decoder_model_version_ == DecoderModelVersion::kGemma2 ||
       decoder_model_version_ == DecoderModelVersion::kGemma3) {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kCodegen) {
@@ -210,7 +214,6 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|user|>", 0, 0).get()[0]);
   }
 
-  // Try avoid getMetadataHelper as it is time consuming.
   Result<MethodMeta> method_meta =
       module_->method_meta(token_generator_method_name);
 

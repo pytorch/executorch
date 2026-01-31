@@ -4,26 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import copy
-import getpass
 import logging
-import os
-import subprocess
 from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
-import numpy as np
 import torch
 from executorch.backends.qualcomm._passes import SeqMSE
 from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
-from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
-    DECODER_MODEL_VERSION,
-    EVAL_MODE,
-)
 from executorch.examples.qualcomm.oss_scripts.llama.masking_utils import AttentionMask
 
-from executorch.examples.qualcomm.utils import make_output_dir, SimpleADB
 from executorch.exir._serialize._program import deserialize_pte_binary
 from pytorch_tokenizers.hf_tokenizer import HuggingFaceTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
@@ -101,7 +91,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         max_seq_length: int,
         ar_len: int,
         use_kv_cache: bool,
-        example_input: Tuple[List[torch.Tensor]],
+        get_example_inputs: Callable,
         use_i64_token: bool,
         seq_mse_candidates: int,
     ):
@@ -113,7 +103,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         self._model = model.to(self.device)
         self.ar_len = ar_len
         self._use_kv_cache = use_kv_cache
-        self.example_input = example_input
+        self.get_example_inputs = get_example_inputs
         self.max_seq_length = max_seq_length
         self.use_i64_token = use_i64_token
         self.seq_mse_candidates = seq_mse_candidates
@@ -126,9 +116,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
             kwargs["seq_mse_candidates"] = self.seq_mse_candidates
 
         all_logits = INFERENCE_REGISTRY[self._use_kv_cache](
-            copy.deepcopy(
-                self.example_input
-            ),  # Copy the example input to avoid KV cache pollution when testing PPL
+            self.get_example_inputs,
             inps,
             self._model,
             self._tokenizer,
@@ -291,184 +279,51 @@ class LookaheadDecoder:
         return best_match, branch
 
 
-class QnnRunnerEvalWrapper(EagerEvalWrapper):
-    """
-    A wrapper class to run PPL scores with QNN on device.
-    """
+def retrieve_info_from_pte(pte_path: str) -> dict:
+    # Retrieve vocab_size from get_metadata under static_llama that is passed to edge manager
+    output_vocab_size = None
+    pte_max_seq_len = None
+    logits_scale = None
+    logits_zero_point = None
+    kv_io_bit_width = 32
 
-    def __init__(  # noqa: C901
-        self,
-        args,
-        pte_path: str,
-        tokenizer: Union[
-            SentencePieceTokenizer, TiktokenTokenizer, HuggingFaceTokenizer
-        ],
-        runtime_tokenizer_path,
-    ):
-        self.args = args
-        self.pte_path = pte_path
-        self.enable_x86_64 = args.enable_x86_64
-        self.max_seq_length = args.max_seq_len
-
-        if self.enable_x86_64:
-            logging.warning(
-                "Using x86_64 emulator is NOT recommended as it is for CI purpose."
-            )
-
-        with open(pte_path, "rb") as f:
-            program_data = f.read()
+    with open(pte_path, "rb") as f:
+        program_data = f.read()
         program = deserialize_pte_binary(program_data).program
 
-        # Retrieve vocab_size from get_metadata under static_llama that is passed to edge manager
-        self.output_vocab_size = None
-        pte_max_seq_len = None
-        self.logits_scale = None
-        self.logits_zero_point = None
-        self.kv_io_bit_width = 32
-        for method in program.execution_plan:
-            # Don't use tokenizer.n_words, the numbers are off once calling get_tokenizer()
-            if method.name == "get_vocab_size":
-                # pyre-ignore
-                self.output_vocab_size = method.values[0].val.int_val
-            if method.name == "get_max_seq_len":
-                # pyre-ignore
-                pte_max_seq_len = method.values[0].val.int_val
-            if method.name == "get_logits_scale":
-                self.logits_scale = method.values[0].val.double_val
-            if method.name == "get_logits_zero_point":
-                self.logits_zero_point = method.values[0].val.int_val
-            if method.name == "get_kv_io_bit_width":
-                self.kv_io_bit_width = method.values[0].val.int_val
+    for method in program.execution_plan:
+        # Don't use tokenizer.n_words, the numbers are off once calling get_tokenizer()
+        if method.name == "get_vocab_size":
+            # pyre-ignore
+            output_vocab_size = method.values[0].val.int_val
+        if method.name == "get_max_seq_len":
+            # pyre-ignore
+            pte_max_seq_len = method.values[0].val.int_val
+        if method.name == "get_logits_scale":
+            logits_scale = method.values[0].val.double_val
+        if method.name == "get_logits_zero_point":
+            logits_zero_point = method.values[0].val.int_val
+        if method.name == "get_kv_io_bit_width":
+            kv_io_bit_width = method.values[0].val.int_val
 
-        # FP has no scale/zero_point, use following values, which is equivalent to not performing dequantize.
-        if self.kv_io_bit_width == 32:
-            self.logits_scale = 1
-            self.logits_zero_point = 0
-        elif self.logits_scale is None or self.logits_zero_point is None:
-            raise RuntimeError(
-                "Unable to find scale/offset. The .pte file might be deprecated. Please generate a new .pte file"
-            )
-
-        assert self.output_vocab_size is not None, "Couldn't find the vocab size"
-        assert pte_max_seq_len is not None, "Couldn't find the max_seq_len from pte"
-        if pte_max_seq_len != self.max_seq_length:
-            logging.warning(
-                f"The pte provided has a max_seq_len {pte_max_seq_len}, which is different from --max_seq_len {self.max_seq_length} provided to the script, please ensure this is desired."
-            )
-            if pte_max_seq_len < self.max_seq_length:
-                logging.warning(
-                    f"The pte max_seq_len {pte_max_seq_len} is used since it is shorter than --max_seq_len {self.max_seq_length}"
-                )
-                self.max_seq_length = pte_max_seq_len
-        self.runtime_tokenizer_path = runtime_tokenizer_path
-
-        self.output_dir = args.artifact
-
-        self.workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
-        self.adb = SimpleADB(
-            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-            build_path=args.build_folder,
-            pte_path=pte_path,
-            workspace=self.workspace,
-            device_id=args.device,
-            host_id=args.host,
-            soc_model=args.model,
-            runner="examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
-            target=args.target,
+    # FP has no scale/zero_point, use following values, which is equivalent to not performing dequantize.
+    if kv_io_bit_width == 32:
+        logits_scale = 1
+        logits_zero_point = 0
+    elif logits_scale is None or logits_zero_point is None:
+        raise RuntimeError(
+            "Unable to find scale/offset. The .pte file might be deprecated. Please generate a new .pte file"
         )
-
-        # collect output data
-        output_data_folder = f"{self.args.artifact}/outputs"
-        make_output_dir(output_data_folder)
-
-        if not self.enable_x86_64:
-            self.adb.push(inputs=[], files=[self.runtime_tokenizer_path])
-        # n seq len = n-1 cache len, so we len(inps) = n-1 during _model_call
-        # pyre-ignore
-        super().__init__(None, tokenizer, self.max_seq_length - 1)
-
-    def _model_call(self, inps):
-
-        input_file_name = f"{self.args.artifact}/input_tokens.raw"
-        inps = inps.to(torch.uint64).numpy()
-        inps.tofile(input_file_name)
-
-        outputs_path = "outputs/outputs.txt"
-        dump_logits_path = "outputs/all_logit.raw"
-        performance_output_path = "outputs/inference_speed.txt"
-        output_tensor_list = []
-
-        def post_process():
-            with open(f"{self.args.artifact}/{dump_logits_path}", "r") as f:
-                logits_dtype = np.float32 if self.kv_io_bit_width == 32 else np.uint16
-                output_tensor = torch.from_numpy(
-                    np.fromfile(f.name, dtype=logits_dtype).reshape(
-                        1, -1, self.output_vocab_size
-                    )
-                )
-                output_tensor = (
-                    output_tensor.to(torch.float32) - self.logits_zero_point
-                ) * self.logits_scale
-                output_tensor_list.append(output_tensor)
-
-            # simple_eval will run multiple rounds, use last run for inference speed
-            with open(f"{self.args.artifact}/{performance_output_path}", "r") as f:
-                self.inference_speed = float(f.read())
-
-        if self.enable_x86_64:
-            qnn_sdk = os.getenv("QNN_SDK_ROOT")
-            target = "x86_64-linux-clang"
-            runner_cmd = " ".join(
-                [
-                    f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{self.args.build_folder}/lib &&",
-                    f"./{self.args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
-                    f"--decoder_model_version {DECODER_MODEL_VERSION[self.args.decoder_model]}",
-                    f"--tokenizer_path {self.runtime_tokenizer_path}",
-                    f"--model_path {self.pte_path}",
-                    f"--seq_len {self.max_seq_length}",
-                    f"--output_path {self.args.artifact}/outputs/outputs.txt",
-                    f"--performance_output_path {self.args.artifact}/{performance_output_path}",
-                    f"--eval_mode {EVAL_MODE[self.args.model_mode]}",
-                    "--temperature 0",
-                    f"--dump_logits_path {self.args.artifact}/{dump_logits_path}",
-                    f"--tokenized_prompt {input_file_name}",
-                ]
-            )
-            subprocess.run(
-                runner_cmd,
-                shell=True,
-                executable="/bin/bash",
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-            )
-            post_process()
-
-        else:
-            runner_cmd = " ".join(
-                [
-                    f"cd {self.workspace} &&",
-                    "./qnn_llama_runner",
-                    f"--decoder_model_version {DECODER_MODEL_VERSION[self.args.decoder_model]}",
-                    f"--tokenizer_path {os.path.basename(self.runtime_tokenizer_path)}",
-                    f"--model_path {os.path.basename(self.pte_path)}",
-                    f"--seq_len {self.max_seq_length}",
-                    f"--output_path {outputs_path}",
-                    f"--performance_output_path {performance_output_path}",
-                    f"--window {self.args.window}",
-                    f"--gcap {self.args.gcap}",
-                    f"--ngram {self.args.ngram}",
-                    f"--eval_mode {EVAL_MODE[self.args.model_mode]}",
-                    "--temperature 0",
-                    f"--dump_logits_path {dump_logits_path}",
-                    f"--tokenized_prompt {os.path.basename(input_file_name)}",
-                    "--shared_buffer",
-                ]
-            )
-
-            self.adb.push(inputs=[], files=[input_file_name], init_env=False)
-            self.adb.execute(custom_runner_cmd=runner_cmd)
-            self.adb.pull(output_path=self.output_dir, callback=post_process)
-        return output_tensor_list[0]
+    assert output_vocab_size is not None, "Couldn't find the vocab size"
+    assert pte_max_seq_len is not None, "Couldn't find the max_seq_len from pte"
+    meta_info = {
+        "output_vocab_size": output_vocab_size,
+        "pte_max_seq_len": pte_max_seq_len,
+        "logits_scale": logits_scale,
+        "logits_zero_point": logits_zero_point,
+        "kv_io_bit_width": kv_io_bit_width,
+    }
+    return meta_info
 
 
 def smart_mask_updater(
@@ -779,7 +634,7 @@ def _generate(
 
 @register_inference(use_kv_cache=True)
 def kv_inference(  # noqa: C901
-    example_input,
+    get_example_inputs: Callable,
     prompt: Union[str, list],
     module: torch.fx.GraphModule,
     tokenizer,
@@ -801,7 +656,7 @@ def kv_inference(  # noqa: C901
         ]
     )
 
-    _, atten_mask, _, k_caches, v_caches = example_input
+    _, atten_mask, _, k_caches, v_caches = get_example_inputs()
 
     # TODO: change criteria & support batch inputs if necessary
     all_pos = torch.arange(0, max_seq_len, 1, dtype=torch.int32).unsqueeze(0)
@@ -920,7 +775,7 @@ def kv_inference(  # noqa: C901
 
 @register_inference(use_kv_cache=False)
 def prefill_inference(
-    example_input,
+    get_example_inputs: Callable,
     prompt: Union[str, list],
     module: torch.fx.GraphModule,
     tokenizer,
@@ -939,7 +794,7 @@ def prefill_inference(
         ]
     )
 
-    _, atten_mask = example_input
+    _, atten_mask = get_example_inputs()
 
     # TODO: change criteria & support batch inputs if necessary
 
@@ -1001,7 +856,7 @@ def prefill_inference(
 
 def graph_module_inference(
     use_kv_cache: bool,
-    example_input,
+    get_example_inputs: Callable,
     module: torch.fx.GraphModule,
     tokenizer,
     ar_len=1,
@@ -1034,7 +889,7 @@ def graph_module_inference(
             kwargs["lookahead_config"] = lookahead_config
 
         INFERENCE_REGISTRY[use_kv_cache](
-            example_input,
+            get_example_inputs,
             prompt,
             module,
             tokenizer,
@@ -1054,7 +909,7 @@ def graph_module_inference(
             max_seq_length=max_seq_len,
             ar_len=ar_len,
             use_kv_cache=use_kv_cache,
-            example_input=example_input,
+            get_example_inputs=get_example_inputs,
             use_i64_token=use_i64_token,
             seq_mse_candidates=seq_mse_candidates,
         )

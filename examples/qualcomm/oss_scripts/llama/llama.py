@@ -7,16 +7,15 @@
 # TODO: reenable pyre after fixing the issues
 # pyre-ignore-all-errors
 
-import getpass
 import json
 import logging
 import os
-import subprocess
 import sys
 from multiprocessing.connection import Client
 from typing import Dict
 
 import torch
+
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -29,36 +28,32 @@ from executorch.examples.qualcomm.oss_scripts.llama import (
 from executorch.examples.qualcomm.oss_scripts.llama.dataset import DatasetBuilder
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
+    DECODE_QDQ_FILENAME,
     DECODER_GRAPH_NAMES,
     EVAL_MODE,
+    PROMPT_EVAL,
+    SQNR_EVAL,
+    TASKS_EVAL,
     TEXT_DECODER,
     TEXT_EMBEDDING,
     TEXT_EMBEDDING_GRAPH_NAMES,
     TEXT_ENCODER,
     VISION_ENCODER,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
-    QnnRunnerEvalWrapper,
+from executorch.examples.qualcomm.oss_scripts.llama.decoder_runtime_evaluator import (
+    DefaultEval,
+    SqnrEval,
+    TaskEval,
 )
+
 from executorch.examples.qualcomm.oss_scripts.llama.tokenizer import TokenizerWrapper
 from executorch.examples.qualcomm.oss_scripts.llama.wrappers import (
     MultiModalManager,
     next_power_of_two,
 )
+from executorch.examples.qualcomm.utils import setup_common_args_and_variables
+from torchao.quantization.utils import compute_error
 
-from executorch.examples.qualcomm.utils import (
-    make_output_dir,
-    setup_common_args_and_variables,
-    SimpleADB,
-)
-
-
-try:
-    from lm_eval.evaluator import simple_evaluate
-except ImportError:
-    raise ImportError(
-        "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
-    )
 
 sys.setrecursionlimit(4096)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -93,7 +88,7 @@ def compile(
         TEXT_DECODER: None,
     }
     is_modality = False
-    # compile spec for multimodlity encoder
+    # compile spec for multimodality encoder
     for modality in compile_specs:
         if not hasattr(decoder_model_config, modality):
             continue
@@ -149,6 +144,7 @@ def inference(
     pte_filenames: Dict[str, str],
     runtime_tokenizer_path,
     tokenizer,
+    chat_template,
 ):
 
     assert args.model_mode in EVAL_MODE, f"Unknown model_mode: {args.model_mode}."
@@ -156,251 +152,154 @@ def inference(
     is_modality = hasattr(decoder_model_config, VISION_ENCODER) or hasattr(
         decoder_model_config, AUDIO_ENCODER
     )
-
-    pte_path = (
+    decoder_pte_path = (
         f"{args.pre_gen_pte}/{pte_filenames[TEXT_DECODER]}.pte"
         if args.pre_gen_pte
         else f"{args.artifact}/{pte_filenames[TEXT_DECODER]}.pte"
     )
+    pte_paths = {TEXT_DECODER: decoder_pte_path}
+    eval_results = {
+        "pte_size": os.path.getsize(decoder_pte_path),
+    }
 
-    # TODO: support multimodal runtime, we only check pte size for now
     if is_modality:
-        if args.ip and args.port != -1:
-            encoder_pte_path = (
-                f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
-                if args.pre_gen_pte
-                else f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
-            )
-            text_embedding_pte_path = (
-                f"{args.pre_gen_pte}/{pte_filenames[TEXT_EMBEDDING]}.pte"
-                if args.pre_gen_pte
-                else f"{args.artifact}/{pte_filenames[TEXT_EMBEDDING]}.pte"
-            )
-            # Prepare validation results for CI system
-            validation_results = {
-                "pte_size": os.path.getsize(pte_path),
-                "encoder_pte_size": os.path.getsize(encoder_pte_path),
+        vision_encoder_pte_path = (
+            f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
+            if args.pre_gen_pte
+            else f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
+        )
+        text_embedding_pte_path = (
+            f"{args.pre_gen_pte}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+            if args.pre_gen_pte
+            else f"{args.artifact}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+        )
+        eval_results.update(
+            {
+                "encoder_pte_size": os.path.getsize(vision_encoder_pte_path),
                 "text_embedding_pte_size": os.path.getsize(text_embedding_pte_path),
             }
-            with Client((args.ip, args.port)) as conn:
-                conn.send(json.dumps(validation_results))
-        else:
-            logging.info("Multimodal runtime support is currently under development.")
-            logging.info(
-                "Detected vision/audio encoder in model config. Exiting process safely."
-            )
-            exit(0)
-        return None
+        )
+        pte_paths.update(
+            {
+                VISION_ENCODER: vision_encoder_pte_path,
+                TEXT_EMBEDDING: text_embedding_pte_path,
+            }
+        )
 
-    # For decoder-only models, enable accuracy evaluation using perplexity
-    # TODO: Add support for multimodal accuracy evaluation (e.g., VLM)
-    if args.run_lm_eval:
-        # Generate the eval wrapper
-        eval_wrapper = QnnRunnerEvalWrapper(
+    if PROMPT_EVAL in args.eval_methods:
+        prompt_evaluator = DefaultEval(
             args=args,
-            pte_path=pte_path,
+            pte_paths=pte_paths,
+            runtime_tokenizer_path=runtime_tokenizer_path,
+            is_modality=is_modality,
+        )
+        output_prompt = prompt_evaluator.run(prompt=args.prompt)
+        eval_results.update(
+            {
+                "inference_speed": prompt_evaluator.inference_speed,
+                "result": output_prompt,
+            }
+        )
+        for idx, output in enumerate(output_prompt):
+            logging.info(f"Device Inference Results[{idx}]:\n{output}")
+
+    if SQNR_EVAL in args.eval_methods:
+        assert not is_modality, "Modality Model does not support SQNR_EVAL."
+        tokenizer_wrapper = TokenizerWrapper(
+            args,
+            decoder_model_config,
+        )
+        prompt = (
+            tokenizer_wrapper.apply_prompt_template(
+                chat_template, args.prompt[0], args.system_prompt
+            )
+            if chat_template is not None
+            else args.prompt[0]
+        )
+        multi_modal_mgr = MultiModalManager(
+            control_args=args, config=decoder_model_config
+        )
+        source_model = multi_modal_mgr.text_decoder.decode.decoder
+        sqnr_evaluator = SqnrEval(
+            source_model=source_model,
+            get_example_inputs=source_model.get_example_inputs,
+            args=args,
+            pte_paths=pte_paths,
             tokenizer=tokenizer,
             runtime_tokenizer_path=runtime_tokenizer_path,
+            is_modality=is_modality,
+        )
+        sqnr, golden_logits, _ = sqnr_evaluator.run(prompt=prompt)
+        logging.info(f"SQNR Eval Score between FP32 nn.Module and QNN: {sqnr}")
+        eval_results.update(
+            {
+                "sqnr": sqnr,
+                "inference_speed": sqnr_evaluator.inference_speed,
+            }
         )
 
-        # Evaluate the model
-        with torch.no_grad():
-            eval_results = simple_evaluate(
-                model=eval_wrapper,
-                tasks=args.tasks,
-                num_fewshot=args.num_fewshot,
-                limit=args.limit,
+        qdq_ep_path = (
+            f"{args.pre_gen_pte}/{DECODE_QDQ_FILENAME}"
+            if args.pre_gen_pte
+            else f"{args.artifact}/{DECODE_QDQ_FILENAME}"
+        )
+        if os.path.exists(qdq_ep_path):
+            qdq_ep = torch.export.load(qdq_ep_path)
+            qdq_sqnr_evaluator = SqnrEval(
+                source_model=qdq_ep.module(),
+                get_example_inputs=source_model.get_example_inputs,
+                args=args,
+                pte_paths=pte_paths,
+                tokenizer=tokenizer,
+                runtime_tokenizer_path=runtime_tokenizer_path,
+                is_modality=is_modality,
+            )
+            qdq_sqnr, cpu_qdq_logits, _ = qdq_sqnr_evaluator.run(prompt=prompt)
+            eval_results["qdq_sqnr"] = qdq_sqnr
+            logging.info(f"SQNR Eval Score between CPU QDQ and QNN: {qdq_sqnr}")
+            logging.info(
+                f"SQNR Eval Score between FP32 nn.Module and CPU QDQ: {compute_error(golden_logits, cpu_qdq_logits).item()}"
+            )
+        else:
+            logging.info(
+                f"Couldn't find saved qdq_ep under {qdq_ep_path}, skip eval sqnr for CPU QDQ."
             )
 
-        if args.ip and args.port != -1:
-            assert len(args.tasks) == 1, "CI currently supports 1 lm_eval task only."
-            match args.tasks[0]:
+    if TASKS_EVAL in args.eval_methods:
+        assert not is_modality, "Modality Model does not support TASKS_EVAL."
+        # Generate the eval wrapper
+        ppl_evaluator = TaskEval(
+            args=args,
+            pte_paths=pte_paths,
+            tokenizer=tokenizer,
+            runtime_tokenizer_path=runtime_tokenizer_path,
+            is_modality=is_modality,
+        )
+        ppl_eval_result = ppl_evaluator.run()
+        eval_results["inference_speed"] = ppl_evaluator.inference_speed
+
+        for task, res in ppl_eval_result["results"].items():
+            match task:
                 case "wikitext":
-                    wiki_ppl = eval_results["results"][args.tasks[0]][
-                        "word_perplexity,none"
-                    ]
-                    pte_size = os.path.getsize(pte_path)
-                    with Client((args.ip, args.port)) as conn:
-                        conn.send(
-                            json.dumps(
-                                {
-                                    "wiki_ppl": wiki_ppl,
-                                    "pte_size": pte_size,
-                                    "inference_speed": eval_wrapper.inference_speed,
-                                }
-                            )
-                        )
+                    wiki_ppl = ppl_eval_result["results"][task]["word_perplexity,none"]
+                    eval_results["wiki_ppl"] = wiki_ppl
                 case "hellaswag":
-                    acc_norm = eval_results["results"][args.tasks[0]]["acc_norm,none"]
-                    pte_size = os.path.getsize(pte_path)
-                    with Client((args.ip, args.port)) as conn:
-                        conn.send(
-                            json.dumps(
-                                {
-                                    "acc_norm": acc_norm,
-                                    "pte_size": pte_size,
-                                    "inference_speed": eval_wrapper.inference_speed,
-                                }
-                            )
-                        )
+                    acc_norm = ppl_eval_result["results"][task]["acc_norm,none"]
+                    eval_results["acc_norm"] = acc_norm
                 case _:
-                    raise RuntimeError(
-                        "CI currently supports [wikitext, hellaswag] only."
-                    )
-
-        else:
-            for task, res in eval_results["results"].items():
-                logging.info(f"{task}: {res}")
-        return
-
-    workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
-
-    # collect output data
-    output_data_folder = f"{args.artifact}/outputs"
-    make_output_dir(output_data_folder)
-    outputs = []
-
-    def post_process():
-        with open(f"{args.artifact}/outputs/outputs.txt", "r") as f:
-            outputs.append(f.read())
-
-    seq_len = args.max_seq_len
-    multi_prompts = " ".join([f'--prompt "{prompt}"' for prompt in args.prompt])
-    lookahead_args = " ".join(
-        [
-            f"--window {args.window}",
-            f"--gcap {args.gcap}",
-            f"--ngram {args.ngram}",
-        ]
-    )
-    runner_args = " ".join(
-        [
-            multi_prompts,
-            f"--eval_mode {EVAL_MODE[args.model_mode]}",
-            f"--temperature {args.temperature}",
-            f"--system_prompt '{args.system_prompt}'",
-            lookahead_args if args.model_mode == "lookahead" else "",
-        ]
-    )
-
-    runner_cmd = ""
-    performance_output_path = "outputs/inference_speed.txt"
-    if args.enable_x86_64:
-        # x86 emulator is intended for CI and not performance. Check only the first few tokens.
-        seq_len = min(seq_len, 16)
-
-        qnn_sdk = os.getenv("QNN_SDK_ROOT")
-        target = "x86_64-linux-clang"
-        runner_cmd = " ".join(
-            [
-                f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
-                f"./{args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
-                f"--decoder_model_version {decoder_model_config.decoder_model_version}",
-                f"--tokenizer_path {runtime_tokenizer_path}",
-                f"--model_path {pte_path}",
-                f"--seq_len {seq_len}",
-                f"--output_path {args.artifact}/outputs/outputs.txt",
-                f"--performance_output_path {args.artifact}/{performance_output_path}",
-                runner_args,
-            ]
-        )
-        subprocess.run(
-            runner_cmd,
-            shell=True,
-            executable="/bin/bash",
-            capture_output=True,
-        )
-        post_process()
-    else:
-        runner_cmd = " ".join(
-            [
-                f"cd {workspace} &&",
-                f"./qnn_llama_runner",
-                f"--decoder_model_version {decoder_model_config.decoder_model_version}",
-                f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
-                f"--model_path {pte_filenames[TEXT_DECODER]}.pte",
-                f"--seq_len {seq_len}",
-                "--output_path outputs/outputs.txt",
-                f"--performance_output_path {performance_output_path}",
-                "--shared_buffer",
-                runner_args,
-            ]
-        )
-        adb = SimpleADB(
-            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-            build_path=f"{args.build_folder}",
-            pte_path=pte_path,
-            workspace=workspace,
-            device_id=args.device,
-            host_id=args.host,
-            soc_model=args.model,
-            shared_buffer=True,
-            target=args.target,
-            runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
-        )
-
-        # No pregen inputs, input_list is not required
-        if not args.skip_push:
-            adb.push(inputs=[], files=[runtime_tokenizer_path])
-        adb.execute(custom_runner_cmd=runner_cmd)
-        adb.pull(output_path=args.artifact, callback=post_process)
+                    if args.ip and args.port != -1:
+                        raise RuntimeError(
+                            "CI currently supports [wikitext, hellaswag] only."
+                        )
+            logging.info(f"{task}: {res}")
 
     if args.ip and args.port != -1:
-        inference_speed = 0
-        with open(
-            f"{os.path.abspath(args.artifact)}/{performance_output_path}", "r"
-        ) as f:
-            inference_speed = float(f.read())
-
-        # Prepare validation results for CI system
-        validation_results = {
-            "result": outputs,
-            "inference_speed": inference_speed,
-            "pte_size": os.path.getsize(pte_path),
-        }
         with Client((args.ip, args.port)) as conn:
-            conn.send(json.dumps(validation_results))
-    else:
-        for idx, output in enumerate(outputs):
-            logging.info(f"Results[{idx}]:\n{output}")
-
-
-def _build_tasks_parser(parser):
-    parser.add_argument(
-        "--run_lm_eval",
-        help="If enabled, this will use the tasks provided under args.tasks to calibrate the model",
-        action="store_true",
-        default=False,
-    )
-
-    parser.add_argument(
-        "--tasks",
-        nargs="+",
-        type=str,
-        default=None,
-        help="list of lm-eluther tasks to evaluate usage: --tasks task1 task2",
-    )
-
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=1,
-        help="number of samples to evalulate. If not set, evaluate all samples",
-    )
-    parser.add_argument(
-        "--num_fewshot",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Number of examples in few-shot context",
-    )
-
-    return parser
+            conn.send(json.dumps(eval_results))
 
 
 def _build_parser():
     parser = setup_common_args_and_variables()
-    parser = _build_tasks_parser(parser)
     parser.add_argument(
         "-a",
         "--artifact",
@@ -526,6 +425,47 @@ def _build_parser():
         type=int,
     )
 
+    parser.add_argument(
+        "--image_path",
+        help="Path to the image file for multimodal language models (MLLM). If not specified, the default image from encoder/encoder_config.py will be used. The image should be preprocessed and saved in raw binary format.",
+        default=None,
+        type=str,
+    )
+
+    parser.add_argument(
+        "--eval_methods",
+        choices=[PROMPT_EVAL, TASKS_EVAL, SQNR_EVAL],
+        nargs="+",
+        default=[PROMPT_EVAL],
+        help="Choose eval methods(default: prompt_eval). Users can provide more than 1 eval methods. For example: --eval_methods tasks_eval sqnr_eval."
+        "Following eval methods are supported:"
+        "1) prompt_eval: Model will generate the output response based on the provided prompt through the flag --prompt."
+        "2) tasks_eval: This will eval the tasks provided through the flag --tasks."
+        "3) sqnr_eval: This will eval the sqnr between between QNN's output logit V.S. Static Llama nn.Module's output logit. Eval is based on the provided prompt through the --prompt flag. Please note that sqnr will only eval the prompt's logit but not the new generated token's logit.",
+    )
+
+    parser.add_argument(
+        "--tasks",
+        nargs="+",
+        type=str,
+        default=None,
+        help="list of lm-eluther tasks to evaluate usage: --tasks task1 task2",
+    )
+
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=1,
+        help="number of samples to evalulate. If not set, evaluate all samples",
+    )
+    parser.add_argument(
+        "--num_fewshot",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of examples in few-shot context",
+    )
+
     parser.add_argument("-v", "--verbose", action="store_true")
 
     return parser
@@ -534,9 +474,14 @@ def _build_parser():
 def export_llama(args) -> None:
     if args.compile_only and args.pre_gen_pte:
         raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
-    if args.run_lm_eval and args.model_mode != "kv":
-        raise RuntimeError("Eval device perplexity is only supported for KV mode")
-    if args.run_lm_eval and args.tasks is None:
+    if (TASKS_EVAL or SQNR_EVAL) in args.eval_methods and args.model_mode not in {
+        "kv",
+        "hybrid",
+    }:
+        raise RuntimeError(
+            "Eval device perplexity is only supported for KV mode. Hybrid mode will only use KV mode when evaluating tasks/sqnr."
+        )
+    if TASKS_EVAL in args.eval_methods and args.tasks is None:
         raise RuntimeError("Please provide --tasks to eval perplexity")
     assert (
         args.decoder_model in SUPPORTED_LLM_MODELS
@@ -588,9 +533,25 @@ def export_llama(args) -> None:
         args.prompt, chat_template
     )
 
+    # TODO: Implement multi-turn conversation support for multimodal models (vision/audio).
+    assert (
+        not (
+            hasattr(decoder_model_config, VISION_ENCODER)
+            or hasattr(decoder_model_config, AUDIO_ENCODER)
+        )
+    ) or (len(args.prompt) <= 1), (
+        "Multimodal models currently do not support multi-turn. "
+        "Please set `--prompt` to 1 or switch to a unimodal (text-only) decoder."
+    )
+
     if args.pre_gen_pte:
         inference(
-            args, decoder_model_config, pte_filenames, runtime_tokenizer_path, tokenizer
+            args,
+            decoder_model_config,
+            pte_filenames,
+            runtime_tokenizer_path,
+            tokenizer,
+            chat_template,
         )
         print(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
         return
@@ -626,7 +587,12 @@ def export_llama(args) -> None:
         calibration_data,
     )
     inference(
-        args, decoder_model_config, pte_filenames, runtime_tokenizer_path, tokenizer
+        args,
+        decoder_model_config,
+        pte_filenames,
+        runtime_tokenizer_path,
+        tokenizer,
+        chat_template,
     )
 
 

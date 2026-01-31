@@ -15,6 +15,7 @@ from executorch.examples.models.codegen import (
     convert_weights as convert_codegen_weights,
 )
 from executorch.examples.models.gemma import convert_weights as convert_gemma_weights
+from executorch.examples.models.gemma2 import convert_weights as convert_gemma2_weights
 from executorch.examples.models.gemma3 import convert_weights as convert_gemma3_weights
 
 from executorch.examples.models.glm import convert_weights as convert_glm_weights
@@ -48,7 +49,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
 
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config import (
     InternVL3Encoder,
-    LateFusionModalityConfig,
+    MultiModalityConfig,
     SmolVLMEncoder,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
@@ -59,6 +60,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
 
 from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
     CodegenQuantRecipe,
+    Gemma2QuantRecipe,
     Gemma3QuantRecipe,
     Gemma_2BQuantRecipe,
     GLM_1_5B_InstructQuantRecipe,
@@ -88,6 +90,7 @@ LLM_VARIANT_ARCHS: Dict[str, LlamaModel] = {
     "gemma3-1b": MultiScopeAwareLlamaModel,
     "smolvlm_500m_instruct": LlamaModelWithoutEmbedding,
     "internvl3_1b": LlamaModelWithoutEmbedding,
+    "gemma2-2b": MultiScopeAwareLlamaModel,
 }
 
 
@@ -180,12 +183,12 @@ SUPPORTED_LLM_MODELS: Dict[str, LLMModelConfig] = {}
 
 def register_llm_model(
     name: str,
-    vision_encoder: Optional[LateFusionModalityConfig] = None,
+    vision_encoder: Optional[MultiModalityConfig] = None,
 ):
     def decorator(cls: Type[LLMModelConfig]):
         cls.decoder_model_version = DECODER_MODEL_VERSION[name]
         if vision_encoder is not None and issubclass(
-            vision_encoder, LateFusionModalityConfig
+            vision_encoder, MultiModalityConfig
         ):
             setattr(cls, VISION_ENCODER, vision_encoder)
         SUPPORTED_LLM_MODELS[name.lower()] = cls()
@@ -301,6 +304,26 @@ class Gemma_2B(LLMModelConfig):
     r2 = False
     r3 = False
     quant_recipe = Gemma_2BQuantRecipe
+
+
+@register_llm_model("gemma2-2b")
+@dataclass(init=False, frozen=True)
+class Gemma2(LLMModelConfig):
+    repo_id: str = "google/gemma-2-2b-it"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/gemma2/config/2b_config.json"
+    )
+    convert_weights = convert_gemma2_weights
+    transform_weight = False
+    instruct_model = True
+
+    num_sharding = 4
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = Gemma2QuantRecipe
 
 
 @register_llm_model("gemma3-1b")

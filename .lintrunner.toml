@@ -203,6 +203,8 @@ include_patterns = ['**']
 exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
+    'shim/**',
+    'shim',
     '**/*.png',
     '**/*.webp',
     '**/*.jpeg',
@@ -380,6 +382,37 @@ command = [
     '--',
     '--explicit-package-bases',
     '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
+code = 'BANDIT'
+include_patterns = [
+    'backends/arm/**/*.py',
+    'examples/arm/**/*.py',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'bandit_linter',
+    '--configfile',
+    '.bandit.yaml',
+    '--',
+    '@{{PATHSFILE}}',
 ]
 init_command = [
     'python',

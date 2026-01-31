@@ -16,8 +16,12 @@ import torch
 import torchvision
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
     make_quantizer,
@@ -45,19 +49,26 @@ def main(args):
             crop_size=224,
         )
 
-    pte_filename = "vit_b_16_qnn_q8"
+    pte_filename = "vit_b_16_qnn"
     instance = torchvision.models.vit_b_16(weights="IMAGENET1K_V1").eval()
+    backend = get_backend_type(args.backend)
+    qnn_quantizer = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            per_channel_linear=True,
+        ),
+    }[backend]
     build_executorch_binary(
         instance,
         inputs[0],
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
-        custom_quantizer=make_quantizer(
-            quant_dtype=QuantDtype.use_8a8w,
-            per_channel_linear=True,
-        ),
+        custom_quantizer=qnn_quantizer,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -73,6 +84,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
+        backend=backend,
     )
     adb.push(inputs=inputs)
     adb.execute()
@@ -81,7 +93,7 @@ def main(args):
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []

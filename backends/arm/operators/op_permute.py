@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -99,8 +99,6 @@ def transform_permutation_vector(permutation_vector: list[int], dim_order: list[
 class PermuteVisitor(NodeVisitor):
     target = "aten.permute_copy.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -123,7 +121,7 @@ class PermuteVisitor(NodeVisitor):
                 ts.DType.INT32,
                 ts.DType.FP32,
             ],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         # The permutation vector describes a permutation P in default Pytorch dim_order.

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,8 +25,6 @@ from torch.fx import Node
 class AnyVisitor(NodeVisitor):
     target = "aten.any.dim"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def define_node(
         self,
         node: Node,
@@ -37,7 +35,7 @@ class AnyVisitor(NodeVisitor):
         validate_num_inputs(self.target, inputs, 3)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
-            self.target, [inputs[0], output], ts.DType.BOOL, output.tosa_spec
+            self.target, [inputs[0], output], ts.DType.BOOL, self.tosa_spec
         )
 
         input_shape = list(inputs[0].shape)

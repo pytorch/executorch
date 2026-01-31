@@ -1,0 +1,187 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//tools/build_defs:fb_xplat_cxx_binary.bzl", "fb_xplat_cxx_binary")
+load(
+    "@fbsource//tools/build_defs:platform_defs.bzl",
+    "ANDROID",
+)
+load(
+    "@fbsource//xplat/caffe2:pt_defs.bzl",
+    "get_pt_ops_deps",
+)
+
+oncall("executorch")
+# As fb_xplat_cxx_test (using target.bzl) fails to compile for
+# android-arm64.
+non_fbcode_target(_kind = fb_xplat_cxx_binary,
+    name = "dynamic_quant_utils_test",
+    srcs = ["runtime/test_runtime_utils.cpp"],
+    platforms = (ANDROID,),
+    deps = [
+        "//xplat/caffe2:aten_cpu",
+        "//xplat/executorch/extension/aten_util:aten_bridge",
+        "//xplat/executorch/test/utils:utils",
+        "//xplat/executorch/backends/xnnpack:dynamic_quant_utils",
+        "//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+        "//xplat/executorch/runtime/core/exec_aten/util:scalar_type_util",
+        # Need get_pt_ops_deps because at::zeros/quantize_per_tensor
+        # fail in dispatcher as this ops are no registered otherwise.
+    ] + get_pt_ops_deps(
+        name = "pt_ops_full",
+        train = True,
+        deps = [
+            "//xplat/caffe2:torch_mobile_ops_full_dev",
+        ],
+    ),
+)
+
+# !!!! fbcode/executorch/backends/xnnpack/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_xnnpack_passes",
+    srcs = glob([
+        "passes/*.py",
+    ]) + [
+        "test_xnnpack_utils_classes.py",
+    ],
+    deps = [
+        "//executorch/backends/transforms:remove_getitem_op",
+        "//executorch/backends/xnnpack/_passes:xnnpack_passes",
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir/dialects:lib",
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_xnnpack_fragments",
+    srcs = glob([
+        "fragments/*.py",
+    ]) + [
+        "test_xnnpack_utils.py",
+    ],
+    deps = [
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/exir/passes:constant_prop_pass",
+        "//pytorch/ao:torchao",  # @manual
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_xnnpack_ops",
+    srcs = glob([
+        "ops/*.py",
+    ]) + [
+        "test_xnnpack_utils.py",
+    ],
+    deps = [
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/exir/passes:constant_prop_pass",
+        "//pytorch/ao:torchao",  # @manual
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_xnnpack_models",
+    srcs = glob([
+        "models/*.py",
+    ]),
+    labels = ["long_running"],
+    deps = [
+        "fbsource//third-party/pypi/timm:timm",
+        "fbsource//third-party/pypi/torchsr:torchsr",  # @manual
+        "fbsource//third-party/pypi/transformers:transformers",  # @manual
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/examples/models/llama:llama2_model",
+        "//pytorch/audio/src:torchaudio_core",
+        "//pytorch/vision:torchvision",  # @manual
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_xnnpack_serialization",
+    srcs = glob([
+        "serialization/*.py",
+    ]),
+    deps = [
+        "//executorch/backends/xnnpack:xnnpack_preprocess",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_xnnpack_quantizer",
+    srcs = glob([
+        "quantizer/*.py",
+    ]),
+    deps = [
+        "//executorch/backends/xnnpack:xnnpack_preprocess",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//pytorch/ao:torchao",  # @manual
+        "//pytorch/vision:torchvision",  # @manual
+        "//caffe2:torch",
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_xnnpack_recipes",
+    srcs = glob([
+        "recipes/*.py",
+    ]),
+    env = {
+        "HTTP_PROXY": "http://fwdproxy:8080",
+        "HTTPS_PROXY": "http://fwdproxy:8080",
+    },
+    deps = [
+       "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
+        "//executorch/export:lib",
+        "//executorch/runtime:runtime",  # @manual
+        "//pytorch/vision:torchvision",  # @manual
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/examples/models:models",  # @manual
+        "//executorch/examples/xnnpack:models",  # @manual
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_xnnpack_partitioner",
+    srcs = ["test_xnnpack_partitioner.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
