@@ -787,7 +787,8 @@ class MulTensorPattern(QuantizationPattern):
         # which didn't take the requirements of "Mul" into account, we need to overwrite
         # the existing "quantization_annotation".
         for input_node in input_nodes:
-            input_node.meta["quantization_annotation"].output_qspec = qspec
+            if "quantization_annotation" in input_node.meta:
+                input_node.meta["quantization_annotation"].output_qspec = qspec
 
         return PartitionAnchors(
             inputs=[(node, NodeArgsIdx(0), qspec), (node, NodeArgsIdx(1), qspec)],
