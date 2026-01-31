@@ -233,6 +233,65 @@ TEST(EmptyTest, CanWriteAndReadData) {
   }
 }
 
+// =============================================================================
+// Dtype and Device Type Validation Tests
+// =============================================================================
+
+TEST(EmptyStridedTest, InvalidDtypeUndefined) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = {3, 1};
+
+  EXPECT_DEATH(
+      empty_strided(
+          makeArrayRef(sizes),
+          makeArrayRef(strides),
+          c10::ScalarType::Undefined),
+      "");
+}
+
+TEST(EmptyStridedTest, InvalidDtypeDouble) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = {3, 1};
+
+  EXPECT_DEATH(
+      empty_strided(
+          makeArrayRef(sizes),
+          makeArrayRef(strides),
+          static_cast<c10::ScalarType>(7)), // Double = 7
+      "");
+}
+
+TEST(EmptyStridedTest, InvalidDeviceType) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = {3, 1};
+
+  c10::Device invalid_device(static_cast<c10::DeviceType>(100), 0);
+
+  EXPECT_DEATH(
+      empty_strided(
+          makeArrayRef(sizes),
+          makeArrayRef(strides),
+          c10::ScalarType::Float,
+          invalid_device),
+      "");
+}
+
+TEST(EmptyTest, InvalidDtypeUndefined) {
+  EXPECT_DEATH(empty({2, 3}, c10::ScalarType::Undefined), "");
+}
+
+TEST(EmptyTest, InvalidDtypeDouble) {
+  EXPECT_DEATH(
+      empty({2, 3}, static_cast<c10::ScalarType>(7)), // Double = 7
+      "");
+}
+
+TEST(EmptyTest, InvalidDeviceType) {
+  c10::Device invalid_device(static_cast<c10::DeviceType>(100), 0);
+
+  EXPECT_DEATH(empty({2, 3}, c10::ScalarType::Float, invalid_device), "");
+}
+
 #ifdef CUDA_AVAILABLE
 
 // =============================================================================
