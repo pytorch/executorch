@@ -5,8 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
+# pyre-strict
 import copy
 import io
 import logging
@@ -37,8 +36,8 @@ from executorch.exir.error import ExportError
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.operator.convert import _pybind_schema_to_native_schema
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
-from executorch.exir.pass_base import PassBase
-from executorch.exir.pass_manager import PassType
+from executorch.exir.pass_base import ExportedProgramPassBase, PassBase
+from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (
     base_post_op_replace_passes,
     base_pre_op_replace_passes,
@@ -97,7 +96,6 @@ from torch.export.exported_program import (
 )
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
-from torch.fx.passes.infra.pass_manager import PassManager
 from torch.utils import _pytree as pytree
 
 Val = Any
@@ -221,7 +219,7 @@ def _get_updated_graph_signature(
 
 def _transform(
     self,
-    *passes: PassType,
+    *passes: ExportedProgramPassBase,
     override_verifiers: None | list[Type[Verifier]] = None,
 ) -> "ExportedProgram":
     """
@@ -263,15 +261,13 @@ def _transform_with_pass_manager(
     Returns:
         ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
     """
-    res = pass_manager(self.graph_module)
-    transformed_gm = res.graph_module if res is not None else self.graph_module
-    assert transformed_gm is not None
+    res = pass_manager.call_exported_program(self)
 
-    if transformed_gm is self.graph_module and not res.modified:
+    if not res.modified:
         return self
 
     return _update_exported_program_graph_module(
-        self, transformed_gm, override_verifiers
+        res.exported_program, res.exported_program.graph_module, override_verifiers
     )
 
 
@@ -391,7 +387,9 @@ def lift_constant_tensor_pass(ep):
 
 
 # Stub to ease migration from `transform` to private `_transform`
-def transform_exported_program(ep, *passes: PassType) -> ExportedProgram:
+def transform_exported_program(
+    ep, *passes: ExportedProgramPassBase
+) -> "ExportedProgram":
     if hasattr(ep, "_transform"):
         return ep._transform(*passes)
     else:
@@ -495,7 +493,7 @@ class ExirExportedProgram:
         # to detect misusage of directly calling to_executorch without to_edge
         self.after_to_edge_passes = after_to_edge_passes
 
-    def transform(self, *passes: PassType) -> "ExirExportedProgram":
+    def transform(self, *passes: ExportedProgramPassBase) -> "ExirExportedProgram":
         self.exported_program = _transform(self.exported_program, *passes)
         return self
 
@@ -687,7 +685,7 @@ class ExecutorchProgram:
     def dump_graph_module(self) -> torch.fx.GraphModule:
         return self.exported_program.graph_module
 
-    def dump_exported_program(self) -> ExportedProgram:
+    def dump_exported_program(self) -> "ExportedProgram":
         return self.exported_program
 
     def write_to_file(self, open_file: io.BufferedIOBase) -> None:
@@ -802,7 +800,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
 
 def pre_memory_planning_passes(
     config: ExecutorchBackendConfig, name: Optional[str] = None
-) -> List[PassType]:
+) -> List[ExportedProgramPassBase]:
     """
     Returns a list of passes to run before memory planning.
     Get the sym shape eval pass based on the method name, if the pass is not in the dict, use the default pass.
@@ -837,12 +835,12 @@ def pre_memory_planning_passes(
 
 def edge_to_executorch_passes(
     config: ExecutorchBackendConfig, name: Optional[str] = None
-) -> List[PassType]:
+) -> List[ExportedProgramPassBase]:
     """
     Returns a list of passes to lower from edge to executorch.
     Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
     """
-    passes: List[PassType] = [
+    passes: List[ExportedProgramPassBase] = [
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.
@@ -860,7 +858,7 @@ def _generate_edge_program(
     program: ExportedProgram,
     core_aten_ops_exception_list: Optional[List[torch._ops.OpOverload]] = None,
     preserve_ops: Optional[List[torch._ops.OpOverload]] = None,
-) -> ExportedProgram:
+) -> "ExportedProgram":
     """
     Args:
         config: The configuration for the edge program.
@@ -1299,7 +1297,11 @@ def collect_named_data_store_from_exported_program(
 def to_edge_transform_and_lower(  # noqa: C901
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
-        Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager]
+        Union[
+            Sequence[ExportedProgramPassBase],
+            Dict[str, Sequence[ExportedProgramPassBase]],
+            PassManager,
+        ]
     ] = None,
     partitioner: Optional[
         Union[List[Partitioner], Dict[str, List[Partitioner]]]
@@ -1564,7 +1566,7 @@ class EdgeProgramManager:
         """
         return set(self._config_methods.keys()) if self._config_methods else set()
 
-    def exported_program(self, method_name: str = "forward") -> ExportedProgram:
+    def exported_program(self, method_name: str = "forward") -> "ExportedProgram":
         """
         Returns the ExportedProgram specified by 'method_name'.
         """
@@ -1574,7 +1576,11 @@ class EdgeProgramManager:
     @et_logger("transform")
     def transform(
         self,
-        passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager],
+        passes: Union[
+            Sequence[ExportedProgramPassBase],
+            Dict[str, Sequence[ExportedProgramPassBase]],
+            PassManager,
+        ],
         compile_config: Optional[EdgeCompileConfig] = None,
     ) -> "EdgeProgramManager":
         """
@@ -1605,8 +1611,8 @@ class EdgeProgramManager:
         new_programs: Dict[str, ExportedProgram] = {}
 
         # Cast passes parameter upfront.
-        passes_seq: Optional[Sequence[PassType]] = None
-        passes_dict: Optional[Dict[str, Sequence[PassType]]] = None
+        passes_seq: Optional[Sequence[ExportedProgramPassBase]] = None
+        passes_dict: Optional[Dict[str, Sequence[ExportedProgramPassBase]]] = None
         pass_manager: Optional[PassManager] = None
 
         if isinstance(passes, Sequence):
@@ -1890,7 +1896,7 @@ class ExecutorchProgramManager:
         """
         return set(self._config_methods.keys()) if self._config_methods else set()
 
-    def exported_program(self, method_name: str = "forward") -> ExportedProgram:
+    def exported_program(self, method_name: str = "forward") -> "ExportedProgram":
         """
         Returns the ExportedProgram specified by 'method_name'.
         """

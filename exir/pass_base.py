@@ -6,10 +6,11 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-
 import operator
 import traceback
+import warnings
 from contextlib import nullcontext
+from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
@@ -27,9 +28,7 @@ from typing import (
 
 import torch
 from executorch.exir import memory
-
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
-
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from torch import fx
@@ -37,6 +36,7 @@ from torch._dispatch.python import enable_python_dispatcher
 from torch._subclasses import FakeTensorMode, UnsupportedFakeTensorException
 from torch._subclasses.fake_tensor import FakeTensor
 from torch._subclasses.functional_tensor import FunctionalTensor, FunctionalTensorMode
+from torch.export import ExportedProgram
 from torch.fx import traceback as fx_traceback
 from torch.fx.experimental.proxy_tensor import PythonKeyTracer
 from torch.fx.graph import CodeGen
@@ -157,7 +157,64 @@ class ExportPassBaseError(RuntimeError):
     pass
 
 
-class _ExportPassBase(PassBase):
+@dataclass(frozen=True)
+class ExportedProgramPassResult:
+    exported_program: ExportedProgram
+    modified: bool
+
+
+class ExportedProgramPassBase(PassBase):
+    """
+    Base class which supports running passes on either `exir.ExportedProgram` or `fx.GraphModule`
+    types.
+    """
+
+    def call_exported_program(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgramPassResult:
+        pass_result = self.call(exported_program.graph_module)
+        modified = pass_result.modified if pass_result else False
+        if modified:
+            exported_program._graph_module = pass_result.graph_module
+        return ExportedProgramPassResult(exported_program, modified)
+
+    def call(self, graph_module: fx.GraphModule) -> Optional[PassResult]:
+        """
+        Overriden version of call which is effectively a no-op, but is required
+        since the base class method is abstract.
+        """
+        return PassResult(graph_module, False)
+
+
+class LegacyPassWrapper(ExportedProgramPassBase):
+    """
+    Wraps a legacy callable pass (Callable[[GraphModule], Optional[PassResult]])
+    to work with the new ExportedProgramPassBase infrastructure.
+
+    This provides backwards compatibility for passes that haven't been migrated yet.
+    """
+
+    def __init__(
+        self, legacy_pass: Callable[[torch.fx.GraphModule], Optional[PassResult]]
+    ) -> None:
+        self._legacy_pass = legacy_pass
+        # Preserve the original name for debugging/logging
+        self.__class__.__name__ = getattr(
+            legacy_pass, "__name__", type(legacy_pass).__name__
+        )
+
+        warnings.warn(
+            f"Callable pass '{self.__class__.__name__}' is deprecated. "
+            "Please migrate to ExportedProgramPassBase.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+    def call(self, graph_module: fx.GraphModule) -> Optional[PassResult]:
+        return self._legacy_pass(graph_module)
+
+
+class _ExportPassBase(ExportedProgramPassBase):
     """
     Interpreter-based pass class to help users maintain the IR spec while writing
     transformations.
