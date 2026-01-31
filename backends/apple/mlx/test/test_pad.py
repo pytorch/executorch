@@ -45,12 +45,8 @@ class PadTest(OpTestCase):
             cls(shape=(2, 3, 4), pad=(1, 1, 1, 1), value=0.0),  # 3D, pad last 2 dims
             cls(shape=(10,), pad=(2, 3), value=0.0),  # 1D, asymmetric padding
             cls(shape=(4, 8), pad=(1, 2), value=0.0),  # 2D, pad last dim only
-            cls(
-                shape=(2, 8, 16), pad=(1, 1, 2, 2), value=0.0
-            ),  # 3D, pad last 2 dims
-            cls(
-                shape=(1, 3, 32, 32), pad=(1, 1, 1, 1), value=0.0
-            ),  # 4D, image padding
+            cls(shape=(2, 8, 16), pad=(1, 1, 2, 2), value=0.0),  # 3D, pad last 2 dims
+            cls(shape=(1, 3, 32, 32), pad=(1, 1, 1, 1), value=0.0),  # 4D, image padding
             cls(shape=(2, 3, 4), pad=(1, 1, 1, 1), value=1.0),  # Non-zero padding
         ]
 

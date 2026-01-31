@@ -72,6 +72,8 @@ class ExpandTest(OpTestCase):
             cls(input_shape=(1, 8), target_shape=(4, 8)),
             # 4D case (transformers): (1, 1, 1, 64) -> (2, 8, 16, 64)
             cls(input_shape=(1, 1, 1, 64), target_shape=(2, 8, 16, 64)),
+            # Expand with -1 (infer dimension): (93,) -> (1, -1) should become (1, 93)
+            cls(input_shape=(93,), target_shape=(1, -1)),
         ]
 
     def create_model(self) -> nn.Module:

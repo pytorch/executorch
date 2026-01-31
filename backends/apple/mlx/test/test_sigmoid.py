@@ -2,9 +2,10 @@
 Test cases for Sigmoid operation.
 """
 
+from typing import List, Tuple
+
 import torch
 import torch.nn as nn
-from typing import List, Tuple
 
 from .test_utils import OpTestCase, register_test
 
@@ -33,11 +34,11 @@ class SigmoidTest(OpTestCase):
     def get_test_configs(cls) -> List["SigmoidTest"]:
         """Return all test configurations to run."""
         return [
-            cls(shape=(2, 3, 4)),      # 3D tensor
-            cls(shape=(10,)),          # 1D tensor
-            cls(shape=(4, 8)),         # 2D tensor
-            cls(shape=(2, 8, 16)),     # Common intermediate layer size
-            cls(shape=(1, 1, 128)),    # Single batch, long sequence
+            cls(shape=(2, 3, 4)),  # 3D tensor
+            cls(shape=(10,)),  # 1D tensor
+            cls(shape=(4, 8)),  # 2D tensor
+            cls(shape=(2, 8, 16)),  # Common intermediate layer size
+            cls(shape=(1, 1, 128)),  # Single batch, long sequence
         ]
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
