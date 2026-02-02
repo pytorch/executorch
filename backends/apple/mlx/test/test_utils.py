@@ -189,6 +189,7 @@ def load_tensors_from_bin(path: Union[str, Path]) -> List[torch.Tensor]:
         torch.float16: np.float16,
         torch.int32: np.int32,
         torch.int64: np.int64,
+        torch.bool: np.bool_,
         # bfloat16 needs special handling - read as uint16
     }
 
@@ -199,6 +200,7 @@ def load_tensors_from_bin(path: Union[str, Path]) -> List[torch.Tensor]:
         torch.int32: 4,
         torch.int64: 8,
         torch.bfloat16: 2,
+        torch.bool: 1,
     }
 
     tensors = []
@@ -410,7 +412,18 @@ def compare_outputs(
             exp = exp.float()
             act = act.float()
 
-        if not torch.allclose(exp, act, rtol=rtol, atol=atol):
+        # For bool tensors, use exact comparison
+        if exp.dtype == torch.bool:
+            if not torch.equal(exp, act):
+                mismatches = (exp != act).sum().item()
+                total = exp.numel()
+                return False, (
+                    f"Output {i} values do not match:\n"
+                    f"  {mismatches}/{total} elements differ\n"
+                    f"  expected[:5]={exp.flatten()[:5].tolist()}\n"
+                    f"  actual[:5]={act.flatten()[:5].tolist()}"
+                )
+        elif not torch.allclose(exp, act, rtol=rtol, atol=atol):
             max_diff = (exp - act).abs().max().item()
             mean_diff = (exp - act).abs().mean().item()
             return False, (
