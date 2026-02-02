@@ -70,6 +70,8 @@ bool is_channels_last(const int hashed_layout) {
   return layout_id(hashed_layout) == CHANNELS_LAST_BUFFER_LAYOUT_ID;
 }
 
+#define get_fastest_dim(layout) ((layout) & 0xF)
+
 // Extract packed dim info from hashed_layout (bits 16-31)
 // These match the format created by create_hashed_layout() in Tensor.cpp
 #define get_packed_dim(layout) (((layout) >> 16) & 0xF)

@@ -513,6 +513,16 @@ class vTensor final {
     return packed_dim_info_.packed_dim;
   }
 
+  /*
+   * Returns the WHCN index of the fastest moving dimension (dim_order[0]).
+   * This is the dimension with stride 1 in the buffer layout.
+   * Note: dim_order_ is in NCHW order, so we convert to WHCN (3 - nchw_dim).
+   */
+  inline int32_t fastest_whcn_dim() const {
+    return packed_dim_info_.block_transposed ? packed_dim_info_.outer_packed_dim
+                                             : packed_dim_info_.packed_dim;
+  }
+
   inline const PackedDimInfo& packed_dim_info() const {
     return packed_dim_info_;
   }

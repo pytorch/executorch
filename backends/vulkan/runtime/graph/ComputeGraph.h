@@ -456,6 +456,10 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().packed_dim();
   }
 
+  inline int32_t fastest_whcn_dim_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().fastest_whcn_dim();
+  }
+
   inline const api::PackedDimInfo& packed_dim_info_of(
       const ValueRef idx) const {
     return values_.at(idx).toConstTensor().packed_dim_info();
