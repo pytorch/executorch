@@ -1,0 +1,74 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Macro to generate int8x4 block storing functions for a specific buffer.
+ *
+ * Usage:
+ *   define_store_int8x4_buffer_fns(t_out)
+ *
+ * This generates:
+ *   - store_int8x4_block_to_t_out(meta, tidx_base, layout, block_outer_dim,
+ *                                 block)
+ *
+ * IMPORTANT: block_outer_dim must be such that the inner dimension (packed_dim)
+ * contains 4 contiguous int8 elements packed into one int32. If the block needs
+ * to be transposed to match the output layout, that transposition must be done
+ * by the caller before storing.
+ */
+
+#ifndef BLOCK_INT8X4_STORE_GLSLH
+#define BLOCK_INT8X4_STORE_GLSLH
+
+#define define_store_int8x4_buffer_fns(buffer_name)                          \
+                                                                             \
+  void store_int8x4_block_to_##buffer_name(                                  \
+      const BufferMetadata meta,                                             \
+      const TensorIndex4D tidx_base,                                         \
+      const int hashed_layout,                                               \
+      const int block_outer_dim,                                             \
+      const ivec4 block) {                                                   \
+    const int outer_packed_dim = get_outer_packed_dim(hashed_layout);        \
+    const int outer_block_size =                                             \
+        get_outer_packed_dim_block_size(hashed_layout);                      \
+                                                                             \
+    /* Compute base packed index using block-based indexing */               \
+    const uint block_idx =                                                   \
+        tensor4d_idx_to_block_idx(meta, tidx_base, hashed_layout);           \
+    const uint texels_per_block = div_4(get_block_numel(hashed_layout));     \
+    uint buf_idx = block_idx * texels_per_block;                             \
+                                                                             \
+    /* Fast path: contiguous texels when iterating along outer_packed_dim */ \
+    if (outer_block_size == 4) { \
+      if (block_outer_dim == outer_packed_dim) {      \
+        buffer_name[buf_idx] = block[0];                                       \
+        buffer_name[buf_idx + 1] = block[1];                                   \
+        buffer_name[buf_idx + 2] = block[2];                                   \
+        buffer_name[buf_idx + 3] = block[3];                                   \
+        return;                                                                \
+      }                                                                        \
+      else { \
+        buf_idx += mod_4(tidx_base.data[outer_packed_dim]); \
+      } \
+    } \
+                                                                             \
+    /* General path: use stride for non-contiguous access */                 \
+    const uint outer_stride =                                                \
+        stride_at(meta, block_outer_dim) * texels_per_block;                 \
+    const uint outer_size = size_at(meta, block_outer_dim);                  \
+    const int base_outer_idx = tidx_base.data[block_outer_dim];              \
+                                                                             \
+    [[unroll]] for (int block_y = 0; block_y < 4; ++block_y) {               \
+      if (base_outer_idx + block_y < int(outer_size)) {                      \
+        buffer_name[buf_idx] = block[block_y];                               \
+      }                                                                      \
+      buf_idx += outer_stride;                                               \
+    }                                                                        \
+  }
+
+#endif // BLOCK_INT8X4_STORE_GLSLH

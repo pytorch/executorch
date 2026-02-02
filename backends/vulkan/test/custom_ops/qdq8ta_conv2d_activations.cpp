@@ -26,7 +26,10 @@ struct QDQ8TAConv2DConfig {
   int64_t height; // H dimension
   int64_t width; // W dimension
   std::string test_case_name = "placeholder";
-  std::string op_name = "qdq8ta_conv2d_input";
+  // Specifies the quantized tensor layout
+  utils::GPUMemoryLayout quant_layout = utils::kPackedInt8_4W4C;
+  // Whether to use legacy 4W4C implementation
+  int32_t use_legacy_impl = 0;
 };
 
 // Utility function to create a test case from a QDQ8TAConv2DConfig
@@ -46,7 +49,7 @@ TestCase create_test_case_from_config(
   test_case.set_name(test_name);
 
   // Set the operator name for the test case
-  std::string operator_name = "etvk." + config.op_name + ".default";
+  std::string operator_name = "test_etvk.q_dq_8bit_per_tensor.default";
   test_case.set_operator_name(operator_name);
 
   // Input tensor (float) - [N, C, H, W]
@@ -66,6 +69,20 @@ TestCase create_test_case_from_config(
   int32_t zero_point_val = -2;
   ValueSpec zero_point(zero_point_val);
 
+  // Layout parameter
+  int32_t layout_int = static_cast<int32_t>(config.quant_layout);
+  ValueSpec layout(layout_int);
+
+  // use_legacy_impl flag
+  ValueSpec use_legacy_impl_spec(config.use_legacy_impl);
+
+  // Add all specs to test case
+  test_case.add_input_spec(input_tensor);
+  test_case.add_input_spec(scale);
+  test_case.add_input_spec(zero_point);
+  test_case.add_input_spec(layout);
+  test_case.add_input_spec(use_legacy_impl_spec);
+
   // Output tensor (float) - same shape as input [N, C, H, W]
   ValueSpec output_tensor(
       input_size,
@@ -74,10 +91,6 @@ TestCase create_test_case_from_config(
       utils::kChannelsPacked,
       DataGenType::ZEROS);
 
-  // Add all specs to test case
-  test_case.add_input_spec(input_tensor);
-  test_case.add_input_spec(scale);
-  test_case.add_input_spec(zero_point);
   test_case.add_output_spec(output_tensor);
 
   test_case.set_abs_tolerance(scale_val + 1e-4);
@@ -103,7 +116,7 @@ std::vector<TestCase> generate_qdq8ta_conv2d_easy_cases() {
   };
 
   // Test with both storage types
-  std::vector<utils::StorageType> storage_types = {utils::kTexture3D};
+  std::vector<utils::StorageType> storage_types = {utils::kBuffer};
   std::vector<vkapi::ScalarType> float_types = {vkapi::kFloat};
 
   // Generate test cases for each combination
@@ -121,7 +134,7 @@ std::vector<TestCase> generate_qdq8ta_conv2d_easy_cases() {
 std::vector<TestCase> generate_qdq8ta_conv2d_test_cases() {
   std::vector<TestCase> test_cases;
 
-  std::vector<QDQ8TAConv2DConfig> configs = {
+  std::vector<QDQ8TAConv2DConfig> base_configs = {
       // Small test cases for correctness
       {1, 3, 16, 16},
       {1, 8, 32, 32},
@@ -145,28 +158,70 @@ std::vector<TestCase> generate_qdq8ta_conv2d_test_cases() {
       {1, 64, 128, 128},
       {1, 32, 64, 64},
       {1, 128, 56, 56},
+
+      // ImageNet-style feature maps
+      {1, 64, 224, 224},
+      {1, 128, 112, 112},
+      {1, 256, 56, 56},
+      {1, 512, 28, 28},
+      {1, 512, 14, 14},
+      {1, 1024, 14, 14},
+
+      // Mobile model sizes
+      {1, 32, 192, 192},
+      {1, 64, 96, 96},
+      {1, 96, 80, 80},
+      {1, 160, 48, 48},
+      {1, 320, 24, 24},
+
+      // High channel count cases
+      {1, 256, 32, 32},
+      {1, 384, 28, 28},
+      {1, 768, 14, 14},
+
+      // Large spatial dimension cases
+      {1, 32, 256, 256},
+      {1, 16, 512, 512},
+      {1, 64, 320, 320},
+
+      // Non-square aspect ratios
+      {1, 64, 128, 256},
+      {1, 128, 64, 128},
+      {1, 256, 28, 56},
   };
 
-  // Test with different storage types
-  std::vector<utils::StorageType> storage_types = {utils::kTexture3D};
+  // Test with different storage types (buffer and texture)
+  std::vector<utils::StorageType> storage_types = {
+      utils::kBuffer, utils::kTexture3D};
 
-  for (auto config : configs) {
-    std::string prefix =
-        (config.batch_size < kRefDimSizeLimit &&
-         config.in_channels < kRefDimSizeLimit &&
-         config.height < kRefDimSizeLimit && config.width < kRefDimSizeLimit)
+  // Op configurations to test:
+  // 1. Legacy impl: use_legacy_impl=1 (uses quantize_and_pack_4w4c shaders)
+  // 2. New impl: use_legacy_impl=0 (uses unified block-based dispatch)
+  std::vector<int32_t> use_legacy_impl_configs = {1, 0};
+
+  for (auto base_config : base_configs) {
+    std::string prefix = (base_config.batch_size < kRefDimSizeLimit &&
+                          base_config.in_channels < kRefDimSizeLimit &&
+                          base_config.height < kRefDimSizeLimit &&
+                          base_config.width < kRefDimSizeLimit)
         ? "correctness_"
         : "performance_";
-    std::string generated_test_case_name = prefix +
-        std::to_string(config.batch_size) + "_" +
-        std::to_string(config.in_channels) + "_" +
-        std::to_string(config.height) + "_" + std::to_string(config.width);
+    std::string size_str = std::to_string(base_config.batch_size) + "_" +
+        std::to_string(base_config.in_channels) + "_" +
+        std::to_string(base_config.height) + "_" +
+        std::to_string(base_config.width);
 
-    config.test_case_name = generated_test_case_name;
+    for (const auto& use_legacy_impl : use_legacy_impl_configs) {
+      QDQ8TAConv2DConfig config = base_config;
+      config.use_legacy_impl = use_legacy_impl;
+      // Include impl type in test case name for easy comparison
+      std::string op_suffix = use_legacy_impl ? "_legacy" : "_new";
+      config.test_case_name = prefix + size_str + op_suffix;
 
-    for (const auto& storage_type : storage_types) {
-      test_cases.push_back(
-          create_test_case_from_config(config, storage_type, vkapi::kFloat));
+      for (const auto& storage_type : storage_types) {
+        test_cases.push_back(
+            create_test_case_from_config(config, storage_type, vkapi::kFloat));
+      }
     }
   }
 
@@ -249,7 +304,7 @@ int main(int argc, char* argv[]) {
   ReferenceComputeFunc ref_fn = qdq8ta_conv2d_reference_impl;
 
   auto results = execute_test_cases(
-      generate_qdq8ta_conv2d_test_cases, "QDQ8TAConv2D", 0, 1, ref_fn);
+      generate_qdq8ta_conv2d_test_cases, "QDQ8TAConv2D", 3, 10, ref_fn);
 
   return 0;
 }

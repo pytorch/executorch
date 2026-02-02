@@ -46,6 +46,7 @@ int extract_4b(const int packed, const int pos) {
   return (packed >> (pos * 4)) & 0xF;
 }
 
+#define extract_buffer_packed_dim(layout) int(layout & 0xF)
 
 // Corresponds to dim_order[:4] = [0, 1, 2, 3]
 #define CONTIGUOUS_BUFFER_LAYOUT_ID 0x3210
@@ -68,6 +69,13 @@ bool is_contiguous(const int hashed_layout) {
 bool is_channels_last(const int hashed_layout) {
   return layout_id(hashed_layout) == CHANNELS_LAST_BUFFER_LAYOUT_ID;
 }
+
+// Extract packed dim info from hashed_layout (bits 16-31)
+// These match the format created by create_hashed_layout() in Tensor.cpp
+#define get_packed_dim(layout) (((layout) >> 16) & 0xF)
+#define get_outer_packed_dim(layout) (((layout) >> 20) & 0xF)
+#define get_packed_dim_block_size(layout) (((layout) >> 24) & 0xF)
+#define get_outer_packed_dim_block_size(layout) (((layout) >> 28) & 0xF)
 
 //
 // BufferMetadata
@@ -183,6 +191,11 @@ uint idx_at(const TensorIndex tidx, const uint dim) {
 
 uint x(const TensorIndex tidx) {
   return tidx.data[0][0];
+}
+
+bool out_of_bounds(const TensorIndex tidx, const BufferMetadata meta) {
+  return any(greaterThanEqual(tidx.data[0], meta.sizes[0])) ||
+         any(greaterThanEqual(tidx.data[1], meta.sizes[1]));
 }
 
 //
@@ -404,6 +417,109 @@ uint tensor4d_idx_to_linear_idx(
     lin_idx += meta.strides[0][d] * tidx.data[d];
   }
   return lin_idx;
+}
+
+//
+// Block-packed tensor indexing
+//
+
+/*
+ * Get the number of elements per block from hashed_layout.
+ */
+int get_block_numel(const int hashed_layout) {
+  const int inner_block_size = get_packed_dim_block_size(hashed_layout);
+  const int outer_block_size = get_outer_packed_dim_block_size(hashed_layout);
+  return inner_block_size * outer_block_size;
+}
+
+/*
+ * Compute the intra-block index (position within a block).
+ *
+ * Within a block, elements are stored with inner dimension varying fastest:
+ *   intra_block_idx = outer_offset * inner_block_size + inner_offset
+ *
+ * Parameters:
+ *   tidx: TensorIndex4D with logical tensor coordinates
+ *   hashed_layout: Packed layout info
+ *
+ * Returns: Intra-block index (0 to block_numel-1)
+ */
+int tensor4d_idx_to_intra_block_idx(
+    const TensorIndex4D tidx,
+    const int hashed_layout) {
+  const int inner_dim = get_packed_dim(hashed_layout);
+  const int outer_dim = get_outer_packed_dim(hashed_layout);
+  const int inner_block_size = get_packed_dim_block_size(hashed_layout);
+  const int outer_block_size = get_outer_packed_dim_block_size(hashed_layout);
+
+  const int inner_offset = tidx.data[inner_dim] % inner_block_size;
+  const int outer_offset = tidx.data[outer_dim] % outer_block_size;
+
+  return outer_offset * inner_block_size + inner_offset;
+}
+
+/*
+ * Convert a tensor index to a block-space linear index.
+ *
+ * The tensor index is converted to block-space coordinates by dividing
+ * the packed dimensions by their block sizes, then the linear index is
+ * computed using the block-space strides from BufferMetadata.
+ *
+ * Parameters:
+ *   meta: BufferMetadata with block-space strides
+ *   tidx: TensorIndex4D with logical tensor coordinates
+ *   hashed_layout: Packed layout info
+ *
+ * Returns: Linear index in block space
+ */
+int tensor4d_idx_to_block_idx(
+    const BufferMetadata meta,
+    TensorIndex4D tidx,
+    const int hashed_layout) {
+  // Extract packed dim info
+  const int inner_dim = get_packed_dim(hashed_layout);
+  const int outer_dim = get_outer_packed_dim(hashed_layout);
+  const int inner_block_size = get_packed_dim_block_size(hashed_layout);
+  const int outer_block_size = get_outer_packed_dim_block_size(hashed_layout);
+
+  // Convert to block-space coordinates
+  tidx.data[inner_dim] = tidx.data[inner_dim] / inner_block_size;
+  tidx.data[outer_dim] = tidx.data[outer_dim] / outer_block_size;
+
+  // Compute block-space linear index
+  int block_idx = 0;
+  [[unroll]] for (int d = 0; d < 4; ++d) {
+    block_idx += int(meta.strides[0][d]) * tidx.data[d];
+  }
+  return block_idx;
+}
+
+/*
+ * Convert a tensor index to a linear buffer index for block-packed layouts.
+ *
+ * For block-packed tensors:
+ * - Elements are grouped into blocks of (inner_block_size × outer_block_size)
+ * - Strides in BufferMetadata are in "block space"
+ * - Final index = block_index × block_numel + intra_block_index
+ *
+ * Parameters:
+ *   meta: BufferMetadata containing sizes and block-space strides
+ *   tidx: TensorIndex4D with logical tensor coordinates
+ *   hashed_layout: Packed layout info from create_hashed_layout() (see
+ * indexing.glslh)
+ *
+ * Returns: Linear buffer index for the element
+ */
+int tensor4d_idx_to_buf_idx(
+    const BufferMetadata meta,
+    const TensorIndex4D tidx,
+    const int hashed_layout) {
+  const int block_idx = tensor4d_idx_to_block_idx(meta, tidx, hashed_layout);
+  const int intra_block_idx =
+      tensor4d_idx_to_intra_block_idx(tidx, hashed_layout);
+  const int block_numel = get_block_numel(hashed_layout);
+
+  return block_idx * block_numel + intra_block_idx;
 }
 
 //

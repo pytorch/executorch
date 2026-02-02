@@ -9,8 +9,11 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taQuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
+
+#include <executorch/backends/vulkan/runtime/graph/Logging.h>
 
 namespace vkcompute {
 
@@ -383,11 +386,8 @@ void quantize_per_tensor_impl(
 
   const ValueRef int8_output = args[last_arg_idx];
 
-  VK_CHECK_COND(
-      graph.estimate_memory_layout_of(int8_output) == utils::kPackedInt8_4W4C);
-
-  add_quantize_and_pack_4w4c_node(
-      graph, fp_input, scale, zero_point, int8_output);
+  // Use unified block-based dispatch for all layouts
+  add_q8ta_quantize_node(graph, fp_input, scale, zero_point, int8_output);
 }
 
 void dequantize_per_tensor_impl(
@@ -409,34 +409,8 @@ void dequantize_per_tensor_impl(
 
   const ValueRef fp_output = args[last_arg_idx];
 
-  VK_CHECK_COND(
-      graph.estimate_memory_layout_of(int8_input) == utils::kPackedInt8_4W4C);
-
-  add_unpack_4w4c_and_dequantize_node(
-      graph, int8_input, scale, zero_point, fp_output);
-}
-
-void qdq8ta_conv2d_input(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args) {
-  int32_t idx = 0;
-  const ValueRef fp_input = args.at(idx++);
-  const ValueRef scale = args.at(idx++);
-  const ValueRef zero_point = args.at(idx++);
-  const ValueRef fp_output = args.at(idx++);
-
-  TmpTensor packed_int8_input(
-      &graph,
-      graph.sizes_of(fp_input),
-      vkapi::kInt8x4,
-      utils::kBuffer,
-      utils::kPackedInt8_4W4C);
-
-  add_quantize_and_pack_4w4c_node(
-      graph, fp_input, scale, zero_point, packed_int8_input);
-
-  add_unpack_4w4c_and_dequantize_node(
-      graph, packed_int8_input, scale, zero_point, fp_output);
+  // Use unified block-based dispatch for all layouts
+  add_q8ta_dequantize_node(graph, int8_input, scale, zero_point, fp_output);
 }
 
 REGISTER_OPERATORS {
@@ -446,7 +420,6 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(
       quantized_decomposed.dequantize_per_tensor.default,
       dequantize_per_tensor_impl);
-  VK_REGISTER_OP(etvk.qdq8ta_conv2d_input.default, qdq8ta_conv2d_input);
 }
 
 } // namespace vkcompute

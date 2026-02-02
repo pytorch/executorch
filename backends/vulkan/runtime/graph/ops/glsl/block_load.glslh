@@ -1,0 +1,105 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Macros to generate block load functions for buffers and textures.
+ *
+ * Buffer usage:
+ *   define_load_buffer_fns(t_inp)
+ *
+ * Texture usage:
+ *   define_load_texture_fns(t_inp)
+ *
+ * Both generate functions with the same signature:
+ *   - load_fp_block_from_t_inp(meta, tidx_base, layout, block_outer_dim)
+ *
+ * The block_inner_dim is derived from the packed_dim of the hashed_layout.
+ * If the loaded block needs to be transposed to match a different output
+ * layout, that transposition must be done by the caller.
+ *
+ * Parameters:
+ *   buffer_name/texture_name: The name of the input buffer/texture (e.g., t_inp)
+ */
+
+#ifndef BLOCK_LOAD_GLSLH
+#define BLOCK_LOAD_GLSLH
+
+//
+// Buffer load functions
+//
+
+#define define_load_buffer_fns(buffer_name)                                  \
+                                                                             \
+  mat4 load_fp_block_from_##buffer_name(                                     \
+      const BufferMetadata meta,                                             \
+      const TensorIndex4D tidx_base,                                         \
+      const int hashed_layout,                                               \
+      const int block_outer_dim) {                                           \
+    const int block_inner_dim = get_packed_dim(hashed_layout);               \
+                                                                             \
+    /* Compute base buffer index once and use strides for iteration */       \
+    const uint base_idx =                                                    \
+        tensor4d_idx_to_buf_idx(meta, tidx_base, hashed_layout);             \
+    const uint outer_stride = stride_at(meta, block_outer_dim);              \
+    /* Inner stride is 1 since packed_dim == block_inner_dim */              \
+                                                                             \
+    /* Pre-compute bounds for efficient checking */                          \
+    const uint outer_size = size_at(meta, block_outer_dim);                  \
+    const uint inner_size = size_at(meta, block_inner_dim);                  \
+    const int base_outer_idx = tidx_base.data[block_outer_dim];              \
+    const int base_inner_idx = tidx_base.data[block_inner_dim];              \
+                                                                             \
+    mat4 block;                                                              \
+    [[unroll]] for (int block_y = 0; block_y < 4; ++block_y) {               \
+      if (base_outer_idx + block_y < int(outer_size)) {                      \
+        const uint row_idx = base_idx + block_y * outer_stride;              \
+        [[unroll]] for (int block_x = 0; block_x < 4; ++block_x) {           \
+          if (base_inner_idx + block_x < int(inner_size)) {                  \
+            block[block_y][block_x] = float(buffer_name[row_idx + block_x]); \
+          } else {                                                           \
+            block[block_y][block_x] = 0.0;                                   \
+          }                                                                  \
+        }                                                                    \
+      } else {                                                               \
+        block[block_y] = vec4(0.0);                                          \
+      }                                                                      \
+    }                                                                        \
+    return block;                                                            \
+  }
+
+//
+// Texture load functions
+//
+
+#define define_load_texture_fns(texture_name)                                 \
+                                                                              \
+  mat4 load_fp_block_from_##texture_name(                                     \
+      const TextureMetadata meta,                                             \
+      const TensorIndex4D tidx_base,                                          \
+      const int hashed_layout,                                                \
+      const int block_outer_dim) {                                            \
+    /* Convert tensor index to texture position */                            \
+    /* Use tensor4d_idx_to_texel_pos_simple to properly map the packed dim */ \
+    ivec3 tex_pos = tensor4d_idx_to_texel_pos_simple(meta, tidx_base);        \
+    const int tex_outer_dim = mod_4(block_outer_dim);                         \
+    const int outer_size = meta.sizes[block_outer_dim];                       \
+    const int base_outer_idx = tidx_base.data[block_outer_dim];               \
+                                                                              \
+    mat4 block;                                                               \
+    [[unroll]] for (int block_y = 0; block_y < 4; ++block_y) {                \
+      if (base_outer_idx + block_y < outer_size) {                            \
+        block[block_y] = vec4(texelFetch(texture_name, tex_pos, 0));          \
+      } else {                                                                \
+        block[block_y] = vec4(0.0);                                           \
+      }                                                                       \
+      tex_pos[tex_outer_dim]++;                                               \
+    }                                                                         \
+    return block;                                                             \
+  }
+
+#endif // BLOCK_LOAD_GLSLH
