@@ -15,8 +15,6 @@ namespace native {
 
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
-// using ::impl::generic::kernels::dequantize;
-// using ::impl::generic::kernels::quantize;
 
 void quantized_add_asym8sxasym8s_asym8s_per_tensor_out(
     KernelRuntimeContext& ctx,
