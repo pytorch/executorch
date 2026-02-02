@@ -32,21 +32,34 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     AddNode,
     AddScalarNode,
     ARangeNode,
+    AsTypeNode,
     BroadcastToNode,
     ConcatenateNode,
     ContiguousNode,
     Conv1DNode,
     Conv2DNode,
+    DivideNode,
+    EqualNode,
     ExpandDimsNode,
+    FullNode,
     GatherNode,
     GeluNode,
+    GreaterEqualNode,
+    GreaterNode,
     IdCopyNode,
     ItemIntNode,
     LayerNormNode,
+    LessEqualNode,
+    LessNode,
     LinearNode,
+    LogicalAndNode,
+    LogicalNotNode,
+    LogicalOrNode,
     LogNode,
     MaximumNode,
     MultiplyNode,
+    NotEqualNode,
+    OnesNode,
     PadNode,
     ReshapeNode,
     RMSNormNode,
@@ -91,6 +104,24 @@ def require_static_int(value: Any, param_name: str, op_name: str) -> None:
         raise NotImplementedError(
             f"{op_name} with dynamic {param_name} is not supported. "
             f"{param_name} requires a static int32 value, but got {value} (type={type(value).__name__})."
+        )
+
+
+def require_static_float(value: Any, param_name: str, op_name: str) -> None:
+    """
+    Validate that a parameter is a static float (not a Slot/SymFloat).
+
+    Raises NotImplementedError if the value is dynamic.
+
+    Args:
+        value: The parameter value to check
+        param_name: Name of the parameter (for error message)
+        op_name: Name of the operation (for error message)
+    """
+    if isinstance(value, Slot) or not isinstance(value, (int, float)):
+        raise NotImplementedError(
+            f"{op_name} with dynamic {param_name} is not supported. "
+            f"{param_name} requires a static float value, but got {value} (type={type(value).__name__})."
         )
 
 
@@ -408,9 +439,71 @@ try:
         )
         return out
 
+    # Handle Edge IR's dim_order_ops._to_dim_order_copy (dtype conversion)
+    # This is what x.to(dtype) becomes after to_edge() transformation
+    _dim_order_copy_target = exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+
+    @REGISTRY.register(target=[_dim_order_copy_target])
+    def _dim_order_copy_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+        # dim_order_ops._to_dim_order_copy(Tensor self, *, ScalarType? dtype=None, ...)
+        # If dtype is specified, this is a dtype conversion (use AsTypeNode)
+        # If dtype is None/same, this is just a memory layout copy (use ContiguousNode)
+        args = P.args(n)
+        x = args[0]
+        out = P.make_or_get_slot(n)
+
+        dtype = n.kwargs.get("dtype")
+        if dtype is not None:
+            # Dtype conversion
+            P._emit(
+                AsTypeNode(
+                    x=P._slot_to_tid(x),
+                    out=P._slot_to_tid(out),
+                    dtype=_torch_dtype_to_dtypeid(dtype),
+                )
+            )
+        else:
+            # No dtype change, just memory layout (contiguous)
+            P._emit(
+                ContiguousNode(
+                    x=P._slot_to_tid(x),
+                    out=P._slot_to_tid(out),
+                )
+            )
+        return out
+
 except ImportError:
     # Edge IR ops not available (e.g., when building from ATen dialect)
     pass
+
+
+@REGISTRY.register(target=[torch.ops.aten._to_copy.default])
+def _to_copy_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten._to_copy - lower-level dtype/device conversion."""
+    # aten._to_copy(Tensor self, *, ScalarType? dtype=None, ...)
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+
+    dtype = n.kwargs.get("dtype")
+    if dtype is not None:
+        # Dtype conversion
+        P._emit(
+            AsTypeNode(
+                x=P._slot_to_tid(x),
+                out=P._slot_to_tid(out),
+                dtype=_torch_dtype_to_dtypeid(dtype),
+            )
+        )
+    else:
+        # No dtype change, just copy (use contiguous)
+        P._emit(
+            ContiguousNode(
+                x=P._slot_to_tid(x),
+                out=P._slot_to_tid(out),
+            )
+        )
+    return out
 
 
 @REGISTRY.register(target=[torch.ops.aten.embedding.default])
@@ -468,34 +561,58 @@ def _add_scalar_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
-@REGISTRY.register(target=[torch.ops.aten.mul.Tensor])
+@REGISTRY.register(target=[torch.ops.aten.mul.Tensor, torch.ops.aten.mul.Scalar])
 def _mul_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    a, b = P.args(n)
+    """Handle aten.mul.Tensor and aten.mul.Scalar."""
     out = P.make_or_get_slot(n)
+    args = P.args(n)
+    a = args[0]
+    b = args[1]
 
-    # Check if both inputs are scalars (not tensors)
-    # We can't support scalar * scalar because:
-    # 1. Scalars get lifted to tensors during export
-    # 2. But the return type would be a tensor, not a scalar
-    # 3. ExecuTorch would expect a scalar return value
-    if is_static_value(a) and is_static_value(b):
-        raise ValueError(
-            "aten.mul.Tensor with both scalar inputs is not supported. "
-            "Use operator.mul for scalar arithmetic."
-        )
-
-    # Handle scalar multiplication by creating constants
-    if isinstance(a, float):
-        a = P.make_or_get_constant(
-            f"_scalar_{a}", torch.tensor([a], dtype=n.meta["val"].dtype)
-        )
-    if isinstance(b, float):
+    # Handle scalar b by creating a constant tensor
+    if not isinstance(b, Slot):
         b = P.make_or_get_constant(
             f"_scalar_{b}", torch.tensor([b], dtype=n.meta["val"].dtype)
         )
 
+    # Handle scalar a (for commutative mul)
+    if not isinstance(a, Slot):
+        a = P.make_or_get_constant(
+            f"_scalar_{a}", torch.tensor([a], dtype=n.meta["val"].dtype)
+        )
+
     P._emit(
         MultiplyNode(
+            a=P._slot_to_tid(a),
+            b=P._slot_to_tid(b),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.div.Tensor, torch.ops.aten.div.Scalar])
+def _div_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.div.Tensor and aten.div.Scalar."""
+    out = P.make_or_get_slot(n)
+    args = P.args(n)
+    a = args[0]
+    b = args[1]
+
+    # Handle scalar b by creating a constant tensor
+    if not isinstance(b, Slot):
+        b = P.make_or_get_constant(
+            f"_scalar_{b}", torch.tensor([b], dtype=n.meta["val"].dtype)
+        )
+
+    # Handle scalar a
+    if not isinstance(a, Slot):
+        a = P.make_or_get_constant(
+            f"_scalar_{a}", torch.tensor([a], dtype=n.meta["val"].dtype)
+        )
+
+    P._emit(
+        DivideNode(
             a=P._slot_to_tid(a),
             b=P._slot_to_tid(b),
             out=P._slot_to_tid(out),
@@ -1347,7 +1464,10 @@ def _constant_pad_nd_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     Note: PyTorch pads in reverse order (last dimensions first).
     """
-    x_node, pad, value = P.args(n)
+    args = P.args(n)
+    assert len(args) <= 3, f"aten.constant_pad_nd: expected <= 3 args, got {len(args)}"
+    x_node, pad = args[0], args[1]
+    value = args[2] if len(args) > 2 else 0
 
     # Validate pad is static list of ints
     require_static_ints(list(pad), "pad", "aten.constant_pad_nd")
@@ -1532,6 +1652,154 @@ def _expand_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten._native_batch_norm_legit_no_training.default])
+def _native_batch_norm_legit_no_training_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle batch norm inference (no training).
+
+    Formula: output = (input - mean) / sqrt(var + eps) * weight + bias
+
+    Args:
+        input: [N, C, ...] tensor
+        weight: [C] gamma parameter
+        bias: [C] beta parameter
+        running_mean: [C]
+        running_var: [C]
+        momentum: float (unused in inference)
+        eps: float
+
+    Returns:
+        Tuple of (output, empty, empty) - save_mean and save_invstd are empty for no_training
+    """
+    args = P.args(n)
+    x = args[0]  # input tensor
+    weight = args[1]  # gamma [C] - optional (None if affine=False)
+    bias = args[2]  # beta [C] - optional (None if affine=False)
+    mean = args[3]  # running_mean [C]
+    var = args[4]  # running_var [C]
+    # momentum = args[5] - not used in inference
+    eps = args[6]  # epsilon
+
+    # Get output slots (3 outputs: normalized, save_mean, save_invstd)
+    output_slots = P.make_or_get_slots(n)
+    out = output_slots[0]  # Main output
+
+    # Get input ndim to determine reshape dimensions
+    # For BatchNorm1d: input is [N, C, L] -> reshape params to [1, C, 1]
+    # For BatchNorm2d: input is [N, C, H, W] -> reshape params to [1, C, 1, 1]
+    input_node = n.args[0]
+    input_ndim = len(input_node.meta["val"].shape)
+
+    # Validate input dimensionality (only 3D and 4D supported)
+    if input_ndim not in (3, 4):
+        raise NotImplementedError(
+            f"MLX batch norm handler only supports 3D (BatchNorm1d) and 4D (BatchNorm2d) inputs. "
+            f"Got {input_ndim}D input."
+        )
+
+    def reshape_for_broadcast(slot, name_suffix):
+        """Reshape a [C] tensor for broadcasting with input."""
+        _, reshaped = P.slot_manager.make_tmp_slot()
+        # Build shape: [1, -1] + [1] * (ndim - 2)
+        shape = [P._to_int_or_vid(1), P._to_int_or_vid(-1)]
+        for _ in range(input_ndim - 2):
+            shape.append(P._to_int_or_vid(1))
+        P._emit(
+            ReshapeNode(
+                x=P._slot_to_tid(slot),
+                shape=shape,
+                out=P._slot_to_tid(reshaped),
+            )
+        )
+        return reshaped
+
+    mean_reshaped = reshape_for_broadcast(mean, "mean")
+    var_reshaped = reshape_for_broadcast(var, "var")
+
+    # Step 1: x_centered = x - mean
+    _, tmp_centered = P.slot_manager.make_tmp_slot()
+    P._emit(
+        SubtractNode(
+            a=P._slot_to_tid(x),
+            b=P._slot_to_tid(mean_reshaped),
+            out=P._slot_to_tid(tmp_centered),
+        )
+    )
+
+    # Step 2: var_eps = var + eps
+    # Create eps as a scalar using FullNode (broadcasts correctly with var)
+    _, eps_slot = P.slot_manager.make_tmp_slot()
+    P._emit(
+        FullNode(
+            out=P._slot_to_tid(eps_slot),
+            shape=[],  # 0-D scalar
+            v=float(eps),
+            dtype=_torch_dtype_to_dtypeid(torch.float32),
+        )
+    )
+    _, tmp_var_eps = P.slot_manager.make_tmp_slot()
+    P._emit(
+        AddNode(
+            a=P._slot_to_tid(var_reshaped),
+            b=P._slot_to_tid(eps_slot),
+            out=P._slot_to_tid(tmp_var_eps),
+        )
+    )
+
+    # Step 3: inv_std = rsqrt(var_eps)
+    _, tmp_inv_std = P.slot_manager.make_tmp_slot()
+    P._emit(RsqrtNode(x=P._slot_to_tid(tmp_var_eps), out=P._slot_to_tid(tmp_inv_std)))
+
+    # Step 4: x_normalized = x_centered * inv_std
+    _, tmp_normalized = P.slot_manager.make_tmp_slot()
+    P._emit(
+        MultiplyNode(
+            a=P._slot_to_tid(tmp_centered),
+            b=P._slot_to_tid(tmp_inv_std),
+            out=P._slot_to_tid(tmp_normalized),
+        )
+    )
+
+    # Step 5: x_scaled = x_normalized * weight (skip if weight is None, i.e. affine=False)
+    if weight is not None:
+        weight_reshaped = reshape_for_broadcast(weight, "weight")
+        _, tmp_scaled = P.slot_manager.make_tmp_slot()
+        P._emit(
+            MultiplyNode(
+                a=P._slot_to_tid(tmp_normalized),
+                b=P._slot_to_tid(weight_reshaped),
+                out=P._slot_to_tid(tmp_scaled),
+            )
+        )
+        current_result = tmp_scaled
+    else:
+        current_result = tmp_normalized
+
+    # Step 6: out = current_result + bias (skip if bias is None, i.e. affine=False)
+    if bias is not None:
+        bias_reshaped = reshape_for_broadcast(bias, "bias")
+        P._emit(
+            AddNode(
+                a=P._slot_to_tid(current_result),
+                b=P._slot_to_tid(bias_reshaped),
+                out=P._slot_to_tid(out),
+            )
+        )
+    else:
+        # No bias - just copy the result to output
+        P._emit(
+            IdCopyNode(
+                x=P._slot_to_tid(current_result),
+                out=P._slot_to_tid(out),
+            )
+        )
+
+    # For no_training mode, outputs 1 and 2 (save_mean, save_invstd) are empty
+    # They should already be allocated by make_or_get_slots but we don't write to them
+    # PyTorch returns empty tensors for these in no_training mode
+
+    return output_slots
+
+
 @REGISTRY.register(target=[torch.ops.aten.where.self])
 def _where_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle where: select from x or y according to condition.
@@ -1548,6 +1816,290 @@ def _where_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             x=P._slot_to_tid(x),
             y=P._slot_to_tid(y),
             out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.full.default])
+def _full_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.full - create tensor filled with a value."""
+    out = P.make_or_get_slot(n)
+
+    # aten.full(size, fill_value, *, dtype=None, ...)
+    # Use P.args to properly convert Nodes to Slots for dynamic shapes
+    args = P.args(n)
+    shape = args[0]  # List of int or Slot for dynamic dims
+    fill_value = args[1]  # Scalar
+    dtype = n.kwargs.get("dtype")
+
+    # Convert shape to IntOrVid (supports both static ints and dynamic Slots)
+    shape_iovs = [P._to_int_or_vid(d) for d in shape]
+
+    if dtype is None:
+        dtype = torch.float32  # default
+
+    P._emit(
+        FullNode(
+            out=P._slot_to_tid(out),
+            shape=shape_iovs,
+            v=float(fill_value),
+            dtype=_torch_dtype_to_dtypeid(dtype),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.zeros.default])
+def _zeros_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.zeros - create tensor filled with zeros."""
+    out = P.make_or_get_slot(n)
+
+    # aten.zeros(size, *, dtype=None, ...)
+    shape = n.args[0]  # List[int] or may contain Slots for dynamic dims
+    dtype = n.kwargs.get("dtype")
+
+    # Convert shape to IntOrVid (supports both static ints and dynamic Slots)
+    shape_iovs = [P._to_int_or_vid(d) for d in shape]
+
+    if dtype is None:
+        dtype = torch.float32  # default
+
+    P._emit(
+        ZerosNode(
+            out=P._slot_to_tid(out),
+            shape=shape_iovs,
+            dtype=_torch_dtype_to_dtypeid(dtype),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.ones.default])
+def _ones_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.ones - create tensor filled with ones."""
+    out = P.make_or_get_slot(n)
+
+    # aten.ones(size, *, dtype=None, ...)
+    shape = n.args[0]  # List[int] or may contain Slots for dynamic dims
+    dtype = n.kwargs.get("dtype")
+
+    # Convert shape to IntOrVid (supports both static ints and dynamic Slots)
+    shape_iovs = [P._to_int_or_vid(d) for d in shape]
+
+    if dtype is None:
+        dtype = torch.float32  # default
+
+    P._emit(
+        OnesNode(
+            out=P._slot_to_tid(out),
+            shape=shape_iovs,
+            dtype=_torch_dtype_to_dtypeid(dtype),
+        )
+    )
+    return out
+
+
+# =============================================================================
+# Comparison Ops
+# =============================================================================
+
+
+@REGISTRY.register(target=[torch.ops.aten.lt.Tensor])
+def _less_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.lt (less than) - element-wise a < b."""
+    args = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        LessNode(
+            a=P._slot_to_tid(args[0]),
+            b=P._slot_to_tid(args[1]),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.le.Tensor])
+def _less_equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.le (less than or equal) - element-wise a <= b."""
+    args = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        LessEqualNode(
+            a=P._slot_to_tid(args[0]),
+            b=P._slot_to_tid(args[1]),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.gt.Tensor])
+def _greater_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.gt (greater than) - element-wise a > b."""
+    args = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        GreaterNode(
+            a=P._slot_to_tid(args[0]),
+            b=P._slot_to_tid(args[1]),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.ge.Tensor])
+def _greater_equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.ge (greater than or equal) - element-wise a >= b."""
+    args = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        GreaterEqualNode(
+            a=P._slot_to_tid(args[0]),
+            b=P._slot_to_tid(args[1]),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.eq.Tensor])
+def _equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.eq (equal) - element-wise a == b."""
+    args = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        EqualNode(
+            a=P._slot_to_tid(args[0]),
+            b=P._slot_to_tid(args[1]),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.ne.Tensor])
+def _not_equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.ne (not equal) - element-wise a != b."""
+    args = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        NotEqualNode(
+            a=P._slot_to_tid(args[0]),
+            b=P._slot_to_tid(args[1]),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+# =============================================================================
+# Logical Ops
+# =============================================================================
+
+
+@REGISTRY.register(target=[torch.ops.aten.logical_not.default])
+def _logical_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.logical_not - element-wise logical NOT."""
+    args = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        LogicalNotNode(
+            a=P._slot_to_tid(args[0]),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.bitwise_not.default])
+def _bitwise_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.bitwise_not - for boolean tensors, dispatch to logical_not."""
+    args = P.args(n)
+    x_meta = n.args[0].meta.get("val")
+
+    if x_meta is not None and x_meta.dtype == torch.bool:
+        # For boolean tensors, bitwise_not is equivalent to logical_not
+        out = P.make_or_get_slot(n)
+        P._emit(
+            LogicalNotNode(
+                a=P._slot_to_tid(args[0]),
+                out=P._slot_to_tid(out),
+            )
+        )
+        return out
+    else:
+        raise NotImplementedError(
+            f"aten.bitwise_not is only supported for boolean tensors. "
+            f"Got dtype={x_meta.dtype if x_meta else 'unknown'}"
+        )
+
+
+@REGISTRY.register(target=[torch.ops.aten.logical_and.default])
+def _logical_and_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.logical_and - element-wise logical AND."""
+    args = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        LogicalAndNode(
+            a=P._slot_to_tid(args[0]),
+            b=P._slot_to_tid(args[1]),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.logical_or.default])
+def _logical_or_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.logical_or - element-wise logical OR."""
+    args = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        LogicalOrNode(
+            a=P._slot_to_tid(args[0]),
+            b=P._slot_to_tid(args[1]),
+            out=P._slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.scalar_tensor.default])
+def _scalar_tensor_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.scalar_tensor - create a 0-D tensor from a scalar value.
+
+    scalar_tensor(scalar, *, dtype=None, layout=None, device=None, pin_memory=None) -> Tensor
+
+    This is equivalent to torch.full([], scalar, dtype=dtype).
+    """
+    args = P.args(n)
+    scalar_value = args[0]
+
+    # Require static float value (not dynamic)
+    require_static_float(scalar_value, "scalar", "aten.scalar_tensor")
+
+    out = P.make_or_get_slot(n)
+
+    # Get dtype from kwargs, default to float32
+    dtype = n.kwargs.get("dtype")
+    if dtype is None:
+        # Infer dtype from scalar type
+        if isinstance(scalar_value, bool):
+            dtype = torch.bool
+        elif isinstance(scalar_value, int):
+            dtype = torch.int64
+        else:
+            dtype = torch.float32
+
+    P._emit(
+        FullNode(
+            out=P._slot_to_tid(out),
+            shape=[],  # 0-D tensor (scalar)
+            v=float(scalar_value),
+            dtype=_torch_dtype_to_dtypeid(dtype),
         )
     )
     return out

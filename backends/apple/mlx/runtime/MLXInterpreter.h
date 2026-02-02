@@ -325,7 +325,7 @@ exec_arange(const ARangeNode& n, ExecutionState& st, StreamOrDevice s) {
   int step_val = resolve_int(n.step, st);
 
   st.set_tensor(
-      n.out, arange(start_val, stop_val, step_val, to_mlx_dtype(n.dtype), s));
+      n.out, arange(start_val, stop_val, step_val, resolve_dtype(n.dtype), s));
 }
 
 // ----- SiLU -----
@@ -561,10 +561,11 @@ exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, slice(x, to_shape(vstart), to_shape(vstop), s));
 }
 
-// ----- Cast -----
-inline void exec_cast(const CastNode& n, ExecutionState& st, StreamOrDevice s) {
+// ----- AsType -----
+inline void
+exec_astype(const AsTypeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
-      n.out, astype(st.const_tensor_ref(n.x), to_mlx_dtype(n.dtype), s));
+      n.out, astype(st.const_tensor_ref(n.x), resolve_dtype(n.dtype), s));
 }
 
 // ----- Quantized Linear -----
@@ -597,8 +598,9 @@ inline void exec_quantized_linear(
     Y = add(Y, b, s);
   }
 
-  if (to_mlx_dtype(n.out_dtype) != Y.dtype()) {
-    Y = astype(Y, to_mlx_dtype(n.out_dtype), s);
+  Dtype out_dtype = resolve_dtype(n.out_dtype);
+  if (out_dtype != Y.dtype()) {
+    Y = astype(Y, out_dtype, s);
   }
 
   st.set_tensor(n.out, std::move(Y));
@@ -619,18 +621,19 @@ inline void exec_concatenate(
 
 // ----- Full -----
 inline void exec_full(const FullNode& n, ExecutionState& st, StreamOrDevice s) {
-  st.set_tensor(n.out, full(to_shape(n.shape), n.v, to_mlx_dtype(n.dtype), s));
+  st.set_tensor(
+      n.out, full(to_shape(n.shape, st), n.v, resolve_dtype(n.dtype), s));
 }
 
 // ----- Zeros -----
 inline void
 exec_zeros(const ZerosNode& n, ExecutionState& st, StreamOrDevice s) {
-  st.set_tensor(n.out, zeros(to_shape(n.shape), to_mlx_dtype(n.dtype), s));
+  st.set_tensor(n.out, zeros(to_shape(n.shape, st), resolve_dtype(n.dtype), s));
 }
 
 // ----- Ones -----
 inline void exec_ones(const OnesNode& n, ExecutionState& st, StreamOrDevice s) {
-  st.set_tensor(n.out, ones(to_shape(n.shape), to_mlx_dtype(n.dtype), s));
+  st.set_tensor(n.out, ones(to_shape(n.shape, st), resolve_dtype(n.dtype), s));
 }
 
 // ----- Argmax -----
@@ -714,11 +717,74 @@ inline void exec_quantized_gather(
       std::nullopt, // dtype - let MLX infer
       s);
 
-  if (to_mlx_dtype(n.out_dtype) != Y.dtype()) {
-    Y = astype(Y, to_mlx_dtype(n.out_dtype), s);
+  Dtype out_dtype = resolve_dtype(n.out_dtype);
+  if (out_dtype != Y.dtype()) {
+    Y = astype(Y, out_dtype, s);
   }
 
   st.set_tensor(n.out, std::move(Y));
+}
+
+// ----- Comparison Ops -----
+inline void exec_less(const LessNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, less(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void
+exec_less_equal(const LessEqualNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, less_equal(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void
+exec_greater(const GreaterNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, greater(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void exec_greater_equal(
+    const GreaterEqualNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      greater_equal(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void
+exec_equal(const EqualNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, equal(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void
+exec_not_equal(const NotEqualNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, not_equal(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+// ----- Logical Ops -----
+inline void exec_logical_not(
+    const LogicalNotNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(n.out, logical_not(st.const_tensor_ref(n.a), s));
+}
+
+inline void exec_logical_and(
+    const LogicalAndNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      logical_and(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void
+exec_logical_or(const LogicalOrNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, logical_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
 } // namespace ops
@@ -864,8 +930,8 @@ class Interpreter {
       case OpCode::SLICE:
         ops::exec_slice(std::get<SliceNode>(instr.node), st, s);
         break;
-      case OpCode::CAST:
-        ops::exec_cast(std::get<CastNode>(instr.node), st, s);
+      case OpCode::ASTYPE:
+        ops::exec_astype(std::get<AsTypeNode>(instr.node), st, s);
         break;
       case OpCode::QUANTIZED_LINEAR:
         ops::exec_quantized_linear(
@@ -892,6 +958,33 @@ class Interpreter {
       case OpCode::QUANTIZED_GATHER:
         ops::exec_quantized_gather(
             std::get<QuantizedGatherNode>(instr.node), st, s);
+        break;
+      case OpCode::LESS:
+        ops::exec_less(std::get<LessNode>(instr.node), st, s);
+        break;
+      case OpCode::LESS_EQUAL:
+        ops::exec_less_equal(std::get<LessEqualNode>(instr.node), st, s);
+        break;
+      case OpCode::GREATER:
+        ops::exec_greater(std::get<GreaterNode>(instr.node), st, s);
+        break;
+      case OpCode::GREATER_EQUAL:
+        ops::exec_greater_equal(std::get<GreaterEqualNode>(instr.node), st, s);
+        break;
+      case OpCode::EQUAL:
+        ops::exec_equal(std::get<EqualNode>(instr.node), st, s);
+        break;
+      case OpCode::NOT_EQUAL:
+        ops::exec_not_equal(std::get<NotEqualNode>(instr.node), st, s);
+        break;
+      case OpCode::LOGICAL_NOT:
+        ops::exec_logical_not(std::get<LogicalNotNode>(instr.node), st, s);
+        break;
+      case OpCode::LOGICAL_AND:
+        ops::exec_logical_and(std::get<LogicalAndNode>(instr.node), st, s);
+        break;
+      case OpCode::LOGICAL_OR:
+        ops::exec_logical_or(std::get<LogicalOrNode>(instr.node), st, s);
         break;
       case OpCode::SENTINEL:
         break;

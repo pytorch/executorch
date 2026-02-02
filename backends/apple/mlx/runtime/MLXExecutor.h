@@ -16,7 +16,9 @@
 #include <mlx/ops.h>
 
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 
+#include <iomanip>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
@@ -226,6 +228,63 @@ struct ExecutionState {
     return ss.str();
   }
 
+  // Compute tensor stats: min, max, mean, nan_count
+  // Uses MLX ops for GPU-accelerated computation
+  static inline std::string format_tensor_stats(const Tensor& t) {
+    using namespace ::mlx::core;
+
+    try {
+      std::ostringstream ss;
+
+      size_t numel = t.size();
+      if (numel == 0) {
+        ss << "[empty]";
+        return ss.str();
+      }
+
+      // Cast to float32 for stats computation (handles bf16/fp16/int/bool)
+      Tensor t_float = astype(t, float32);
+
+      // Use MLX ops for efficient GPU-based stats
+      Tensor nan_mask = isnan(t_float);
+      Tensor inf_mask = isinf(t_float);
+      Tensor nan_count_arr = sum(astype(nan_mask, int32));
+      Tensor inf_count_arr = sum(astype(inf_mask, int32));
+
+      // For min/max/mean, we need to handle NaN/Inf - replace with 0
+      Tensor valid_mask = logical_not(logical_or(nan_mask, inf_mask));
+      Tensor t_valid = where(valid_mask, t_float, zeros_like(t_float));
+
+      Tensor min_arr = min(t_valid);
+      Tensor max_arr = max(t_valid);
+      Tensor mean_arr = mean(t_valid);
+
+      // Evaluate all at once
+      eval({nan_count_arr, inf_count_arr, min_arr, max_arr, mean_arr});
+
+      int nan_count = nan_count_arr.item<int>();
+      int inf_count = inf_count_arr.item<int>();
+      float min_val = min_arr.item<float>();
+      float max_val = max_arr.item<float>();
+      float mean_val = mean_arr.item<float>();
+
+      ss << std::fixed << std::setprecision(4);
+      ss << "[min=" << min_val << " max=" << max_val << " mean=" << mean_val;
+      if (nan_count > 0) {
+        ss << " NaN=" << nan_count;
+      }
+      if (inf_count > 0) {
+        ss << " Inf=" << inf_count;
+      }
+      ss << "]";
+      return ss.str();
+    } catch (const std::exception& e) {
+      return std::string("[stats error: ") + e.what() + "]";
+    } catch (...) {
+      return "[stats error: unknown]";
+    }
+  }
+
   // Get tensor type prefix for logging: "c", "i", "o", "b", "t"
   inline const char* tensor_type_prefix(Tid id) const {
     if (!program)
@@ -316,7 +375,8 @@ struct ExecutionState {
     }
 
     if constexpr (kEnableOpLogging) {
-      std::cout << "  " << format_tensor_info(*t) << "\n";
+      std::cout << "  " << format_tensor_info(*t) << " "
+                << format_tensor_stats(*t) << "\n";
     }
     return *t;
   }
@@ -325,7 +385,8 @@ struct ExecutionState {
   inline void set_tensor(Tid id, Tensor arr) {
     if constexpr (kEnableOpLogging) {
       std::cout << "  out  " << tensor_type_prefix(id) << id.idx << "  "
-                << format_tensor_info(arr) << "\n";
+                << format_tensor_info(arr) << " " << format_tensor_stats(arr)
+                << "\n";
     }
     if (!program) {
       throw std::runtime_error("set_tensor: Program not bound");
@@ -398,7 +459,7 @@ struct ExecutionState {
 // Dtype conversion
 // =============================================================================
 
-inline ::mlx::core::Dtype to_mlx_dtype(DTypeId d) {
+inline runtime::Result<::mlx::core::Dtype> to_mlx_dtype(DTypeId d) {
   using namespace ::mlx::core;
   switch (d) {
     case DTypeId::f16:
@@ -420,8 +481,19 @@ inline ::mlx::core::Dtype to_mlx_dtype(DTypeId d) {
     case DTypeId::i8:
       return int8;
     default:
-      return float32;
+      ET_LOG(Error, "Unsupported DTypeId %d", static_cast<int>(d));
+      return runtime::Error::NotSupported;
   }
+}
+
+// Helper to resolve DTypeId to MLX Dtype, throwing on unsupported dtype
+inline ::mlx::core::Dtype resolve_dtype(DTypeId d) {
+  auto result = to_mlx_dtype(d);
+  if (!result.ok()) {
+    throw std::runtime_error(
+        "Unsupported dtype: " + std::to_string(static_cast<int>(d)));
+  }
+  return result.get();
 }
 
 // =============================================================================
@@ -532,7 +604,7 @@ inline ConstantTensorInfo get_constant_tensor_info(
 
   const auto& meta = *program.tensor_meta[tensor_id];
   Shape shape = to_shape(meta.shape);
-  Dtype dtype = to_mlx_dtype(meta.dtype);
+  Dtype dtype = resolve_dtype(meta.dtype);
 
   // Align to 16 bytes
   offset = (offset + 15) & ~15ULL;
@@ -727,7 +799,7 @@ inline void load_mutable_buffers(
 
     const auto& meta = *program.tensor_meta[tid.idx];
     auto shape = to_shape(meta.shape);
-    auto dtype = to_mlx_dtype(meta.dtype);
+    auto dtype = resolve_dtype(meta.dtype);
 
     // Initialize mutable buffer to zeros
     // This matches the typical initialization of KV cache buffers

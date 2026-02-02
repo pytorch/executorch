@@ -317,7 +317,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out",
-        "ET_MLX_ENABLE_OP_LOGGING": "ON"
+        "ET_MLX_ENABLE_OP_LOGGING": "ON",
+        "EXECUTORCH_LOG_LEVEL": "Debug"
       }
     }
   ],
