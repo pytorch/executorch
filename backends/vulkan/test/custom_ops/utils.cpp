@@ -9,6 +9,7 @@
 #include <cmath>
 #include <numeric>
 #include <random>
+#include <unordered_map>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -685,9 +686,66 @@ float collect_gpu_timing_us(
   return 0.0f;
 }
 
+// Helper function to collect per-shader GPU timing from querypool
+// Returns a map of shader_name -> timing_us for non-filtered shaders
+std::unordered_map<std::string, float> collect_per_shader_timing_us(
+    ComputeGraph& graph,
+    const std::vector<std::string>& shader_filter) {
+  std::unordered_map<std::string, float> shader_timings;
+
+  graph.context()->querypool().extract_results();
+  const auto results = graph.context()->querypool().get_shader_timestamp_data();
+  for (const auto& shader_result : results) {
+    bool filtered = false;
+    // Check if this shader matches any filter pattern
+    for (const auto& filter_pattern : shader_filter) {
+      if (shader_result.kernel_name.find(filter_pattern) != std::string::npos) {
+        filtered = true;
+        break;
+      }
+    }
+
+    if (!filtered) {
+      // Calculate duration from start and end times, convert from ns to μs
+      uint64_t duration_ns =
+          shader_result.end_time_ns - shader_result.start_time_ns;
+      float duration_us = static_cast<float>(duration_ns) / 1000.0f;
+      // Accumulate timing for shaders with the same name
+      shader_timings[shader_result.kernel_name] += duration_us;
+    }
+  }
+  return shader_timings;
+}
+
 // BenchmarkResult implementation
 void BenchmarkResult::add_iter_timing(float time_us) {
   iter_timings.push_back(time_us);
+}
+
+void BenchmarkResult::add_shader_timing(
+    const std::string& shader_name,
+    float time_us,
+    const uint32_t global_wg[3],
+    const uint32_t local_wg[3]) {
+  // Find existing shader timing or create new one
+  for (auto& st : shader_timings_) {
+    if (st.shader_name == shader_name) {
+      st.iter_timings_us.push_back(time_us);
+      // Work group sizes should be consistent across iterations
+      return;
+    }
+  }
+  // Not found, create new entry
+  ShaderTiming new_timing;
+  new_timing.shader_name = shader_name;
+  new_timing.iter_timings_us.push_back(time_us);
+  new_timing.global_wg_size[0] = global_wg[0];
+  new_timing.global_wg_size[1] = global_wg[1];
+  new_timing.global_wg_size[2] = global_wg[2];
+  new_timing.local_wg_size[0] = local_wg[0];
+  new_timing.local_wg_size[1] = local_wg[1];
+  new_timing.local_wg_size[2] = local_wg[2];
+  shader_timings_.push_back(std::move(new_timing));
 }
 
 float BenchmarkResult::get_avg_time_us() const {
@@ -739,11 +797,27 @@ void BenchmarkResult::print_summary(
     const std::string& size_info,
     float total_gflops) const {
   static constexpr int OPERATOR_NAME_WIDTH = 50;
-  static constexpr int KERNEL_NAME_WIDTH = 70;
+  static constexpr int GLOBAL_WG_WIDTH = 16;
+  static constexpr int LOCAL_WG_WIDTH = 12;
+  static constexpr int KERNEL_NAME_WIDTH = 60;
   static constexpr int SIZE_INFO_WIDTH = 20;
-  static constexpr int TIMING_WIDTH = 20;
-  static constexpr int GFLOPS_WIDTH = 20;
-  static constexpr int CORRECTNESS_WIDTH = 10;
+  static constexpr int TIMING_WIDTH = 16;
+  static constexpr int GFLOPS_WIDTH = 14;
+  static constexpr int CORRECTNESS_WIDTH = 8;
+
+  // Helper to truncate shader names longer than 46 chars to 44 chars + ".."
+  auto truncate_shader_name = [](const std::string& name) -> std::string {
+    if (name.length() > 46) {
+      return name.substr(0, 44) + "..";
+    }
+    return name;
+  };
+
+  // Helper to format work group size as (x,y,z)
+  auto format_wg_size = [](const uint32_t wg[3]) -> std::string {
+    return "(" + std::to_string(wg[0]) + "," + std::to_string(wg[1]) + "," +
+        std::to_string(wg[2]) + ")";
+  };
 
   std::string correctness_str;
   switch (correctness_status_) {
@@ -758,14 +832,74 @@ void BenchmarkResult::print_summary(
       break;
   }
 
-  std::cout << std::left << std::setw(OPERATOR_NAME_WIDTH)
-            << get_operator_name() << " " << std::left
-            << std::setw(KERNEL_NAME_WIDTH) << get_kernel_name() << std::right
-            << " " << std::setw(SIZE_INFO_WIDTH) << size_info
-            << std::setw(TIMING_WIDTH) << std::fixed << std::setprecision(3)
-            << get_avg_time_us() << " μs " << std::setw(GFLOPS_WIDTH)
-            << std::fixed << std::setprecision(3) << total_gflops << " GFLOP/s "
-            << std::setw(CORRECTNESS_WIDTH) << correctness_str << std::endl;
+  // If we have per-shader timing data, print one line per shader plus overall
+  if (!shader_timings_.empty()) {
+    // If only one shader, print a single combined row
+    if (shader_timings_.size() == 1) {
+      const auto& st = shader_timings_[0];
+      std::cout << std::left << std::setw(OPERATOR_NAME_WIDTH)
+                << truncate_shader_name(st.shader_name) << " " << std::left
+                << std::setw(GLOBAL_WG_WIDTH)
+                << format_wg_size(st.global_wg_size) << std::left
+                << std::setw(LOCAL_WG_WIDTH) << format_wg_size(st.local_wg_size)
+                << std::left << std::setw(KERNEL_NAME_WIDTH)
+                << get_kernel_name() << std::right << " "
+                << std::setw(SIZE_INFO_WIDTH) << size_info
+                << std::setw(TIMING_WIDTH) << std::fixed << std::setprecision(3)
+                << get_avg_time_us() << " μs " << std::setw(GFLOPS_WIDTH)
+                << std::fixed << std::setprecision(3) << total_gflops
+                << " GFLOP/s " << std::setw(CORRECTNESS_WIDTH)
+                << correctness_str << std::endl;
+    } else {
+      // Multiple shaders: print individual shader lines (without GFLOP/s)
+      for (size_t i = 0; i < shader_timings_.size(); ++i) {
+        const auto& st = shader_timings_[i];
+        float shader_avg_time = st.get_avg_time_us();
+
+        // Shader lines don't show test case info
+        std::cout << std::left << std::setw(OPERATOR_NAME_WIDTH)
+                  << truncate_shader_name(st.shader_name) << " " << std::left
+                  << std::setw(GLOBAL_WG_WIDTH)
+                  << format_wg_size(st.global_wg_size) << std::left
+                  << std::setw(LOCAL_WG_WIDTH)
+                  << format_wg_size(st.local_wg_size) << std::left
+                  << std::setw(KERNEL_NAME_WIDTH) << "" << std::right << " "
+                  << std::setw(SIZE_INFO_WIDTH) << "" << std::setw(TIMING_WIDTH)
+                  << std::fixed << std::setprecision(3) << shader_avg_time
+                  << " μs " << std::setw(GFLOPS_WIDTH) << "" << "          "
+                  << std::setw(CORRECTNESS_WIDTH) << "" << std::endl;
+      }
+
+      // Print overall row with operator name, test case info, total time, and
+      // GFLOP/s
+      std::cout << std::left << std::setw(OPERATOR_NAME_WIDTH)
+                << get_operator_name() << " " << std::left
+                << std::setw(GLOBAL_WG_WIDTH) << "" << std::left
+                << std::setw(LOCAL_WG_WIDTH) << "" << std::left
+                << std::setw(KERNEL_NAME_WIDTH) << get_kernel_name()
+                << std::right << " " << std::setw(SIZE_INFO_WIDTH) << size_info
+                << std::setw(TIMING_WIDTH) << std::fixed << std::setprecision(3)
+                << get_avg_time_us() << " μs " << std::setw(GFLOPS_WIDTH)
+                << std::fixed << std::setprecision(3) << total_gflops
+                << " GFLOP/s " << std::setw(CORRECTNESS_WIDTH)
+                << correctness_str << std::endl;
+    }
+
+    // Print separator line between test cases
+  } else {
+    // No per-shader timing data, use the original format
+    std::cout << std::left << std::setw(OPERATOR_NAME_WIDTH)
+              << get_operator_name() << " " << std::left
+              << std::setw(GLOBAL_WG_WIDTH) << "" << std::left
+              << std::setw(LOCAL_WG_WIDTH) << "" << std::left
+              << std::setw(KERNEL_NAME_WIDTH) << get_kernel_name() << std::right
+              << " " << std::setw(SIZE_INFO_WIDTH) << size_info
+              << std::setw(TIMING_WIDTH) << std::fixed << std::setprecision(3)
+              << get_avg_time_us() << " μs " << std::setw(GFLOPS_WIDTH)
+              << std::fixed << std::setprecision(3) << total_gflops
+              << " GFLOP/s " << std::setw(CORRECTNESS_WIDTH) << correctness_str
+              << std::endl;
+  }
 }
 
 // TestResult implementation
@@ -1200,9 +1334,38 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
     float cpu_time_us = static_cast<float>(cpu_duration.count());
     total_cpu_time_us += cpu_time_us;
 
-    // Collect GPU timing using helper function
-    float gpu_time_us =
-        collect_gpu_timing_us(graph, test_case.get_shader_filter());
+    // Collect per-shader GPU timing - get raw shader results to preserve
+    // metadata
+    graph.context()->querypool().extract_results();
+    const auto shader_results =
+        graph.context()->querypool().get_shader_timestamp_data();
+
+    // Calculate total GPU time from per-shader timings
+    float gpu_time_us = 0.0f;
+    for (const auto& shader_result : shader_results) {
+      // Check if this shader matches any filter pattern
+      bool filtered = false;
+      for (const auto& filter_pattern : test_case.get_shader_filter()) {
+        if (shader_result.kernel_name.find(filter_pattern) !=
+            std::string::npos) {
+          filtered = true;
+          break;
+        }
+      }
+
+      if (!filtered) {
+        uint64_t duration_ns =
+            shader_result.end_time_ns - shader_result.start_time_ns;
+        float duration_us = static_cast<float>(duration_ns) / 1000.0f;
+        gpu_time_us += duration_us;
+        // Store per-shader timing with work group sizes
+        result.add_shader_timing(
+            shader_result.kernel_name,
+            duration_us,
+            shader_result.metadata.global_workgroup_size,
+            shader_result.metadata.local_workgroup_size);
+      }
+    }
     total_gpu_time_us += gpu_time_us;
 
     // Add the appropriate timing based on the flag

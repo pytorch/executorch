@@ -58,6 +58,65 @@ inline const std::vector<std::string> kLayoutOnlyShaderFilter = {
     "to_nchw"};
 
 //
+// String utilities
+//
+
+// Helper function to get abbreviated layout names for test case naming
+inline std::string layout_abbrev(utils::GPUMemoryLayout layout) {
+  switch (layout) {
+    case utils::kWidthPacked:
+      return "WP";
+    case utils::kChannelsPacked:
+      return "CP";
+    case utils::kPackedInt8_4W:
+      return "4W";
+    case utils::kPackedInt8_4C:
+      return "4C";
+    case utils::kPackedInt8_4W4C:
+      return "4W4C";
+    case utils::kPackedInt8_4H4W:
+      return "4H4W";
+    case utils::kPackedInt8_4C1W:
+      return "4C1W";
+    default:
+      return "UNK";
+  }
+}
+
+// Helper function to get abbreviated storage type names for test case naming
+inline std::string storage_type_abbrev(utils::StorageType storage_type) {
+  switch (storage_type) {
+    case utils::kTexture3D:
+      return "Tex";
+    case utils::kBuffer:
+      return "Buf";
+    default:
+      return "UNK";
+  }
+}
+
+// Helper function to get combined storage type and layout representation
+// Example: (kBuffer, kPackedInt8_4W4C) -> "Buf_4W4C"
+inline std::string repr_str(
+    utils::StorageType storage_type,
+    utils::GPUMemoryLayout layout) {
+  return storage_type_abbrev(storage_type) + "(" + layout_abbrev(layout) + ")";
+}
+
+// Helper function to generate comma-separated shape string for test case naming
+// Example: {1, 128, 56, 56} -> "1,128,56,56"
+inline std::string shape_string(const std::vector<int64_t>& shape) {
+  std::string result;
+  for (size_t i = 0; i < shape.size(); ++i) {
+    if (i > 0) {
+      result += ",";
+    }
+    result += std::to_string(shape[i]);
+  }
+  return result;
+}
+
+//
 // ValueSpec class
 //
 
@@ -463,6 +522,25 @@ enum class CorrectnessStatus {
   FAILED // Reference function provided but validation failed
 };
 
+// Per-shader timing data for detailed reporting
+struct ShaderTiming {
+  std::string shader_name;
+  std::vector<float> iter_timings_us; // Individual iteration timings
+  uint32_t global_wg_size[3] = {0, 0, 0};
+  uint32_t local_wg_size[3] = {0, 0, 0};
+
+  float get_avg_time_us() const {
+    if (iter_timings_us.empty()) {
+      return 0.0f;
+    }
+    float sum = 0.0f;
+    for (float t : iter_timings_us) {
+      sum += t;
+    }
+    return sum / iter_timings_us.size();
+  }
+};
+
 class BenchmarkResult {
  public:
   BenchmarkResult() : correctness_status_(CorrectnessStatus::SKIPPED) {}
@@ -479,6 +557,18 @@ class BenchmarkResult {
 
   // Add timing for a single iteration
   void add_iter_timing(float time_us);
+
+  // Add per-shader timing for a single iteration
+  void add_shader_timing(
+      const std::string& shader_name,
+      float time_us,
+      const uint32_t global_wg[3],
+      const uint32_t local_wg[3]);
+
+  // Get per-shader timing data
+  const std::vector<ShaderTiming>& get_shader_timings() const {
+    return shader_timings_;
+  }
 
   // Getters
   const std::string& get_kernel_name() const {
@@ -530,6 +620,7 @@ class BenchmarkResult {
   std::string operator_name;
   std::vector<float>
       iter_timings; // Individual iteration timings in microseconds
+  std::vector<ShaderTiming> shader_timings_; // Per-shader timing data
   CorrectnessStatus correctness_status_;
 };
 
