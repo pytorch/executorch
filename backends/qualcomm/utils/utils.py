@@ -3,9 +3,11 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import json
 import operator
 import os
 import re
+import tempfile
 import warnings
 from collections import defaultdict, OrderedDict
 from enum import Enum
@@ -991,6 +993,8 @@ def generate_htp_compiler_spec(
     use_dlbc: bool = False,
     use_multi_contexts: bool = False,
     use_weight_sharing: bool = False,
+    device_id: int = 0,
+    core_ids: tuple[int] = (0,),
 ) -> QnnExecuTorchBackendOptions:
     """
     Helper function generating backend options for QNN HTP
@@ -1006,6 +1010,10 @@ def generate_htp_compiler_spec(
             could be re-used across all the splits.
         use_weight_sharing: Used with multiple_graphs, where model size will be
             reduced when operations have the same weights across multiple graphs.
+        device_id: When multiple devices appear in the same platform,
+            specify device id for preparing graphs
+        core_ids: When multiple cores appear in the same device,
+            specify core ids for preparing graphs
 
     Returns:
         QnnExecuTorchHtpBackendOptions: backend options for QNN HTP.
@@ -1023,6 +1031,8 @@ def generate_htp_compiler_spec(
     htp_options.use_multi_contexts = use_multi_contexts
     htp_options.use_weight_sharing = use_weight_sharing
     htp_options.use_dlbc = use_dlbc
+    htp_options.device_id = device_id
+    htp_options.core_ids = core_ids
     return QnnExecuTorchBackendOptions(
         backend_type=QnnExecuTorchBackendType.kHtpBackend,
         htp_options=htp_options,
@@ -1302,3 +1312,37 @@ def is_qnn_sdk_version_less_than(target_version):
     target_major, target_minor = map(int, target_version.split(".")[:2])
 
     return current_major == target_major and current_minor < target_minor
+
+
+def get_backend_type(backend: str):
+    return getattr(QnnExecuTorchBackendType, f"k{backend.title()}Backend")
+
+
+def get_platform_info(adb, backend):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        backend_lib_path = {
+            QnnExecuTorchBackendType.kHtpBackend: "libQnnHtp.so",
+            QnnExecuTorchBackendType.kGpuBackend: "libQnnGpu.so",
+        }
+        qnn_executor_runner_args = " ".join(
+            [
+                f"--output_folder_path {adb.output_folder}",
+                "--dump_platform_info",
+                f"--backend_lib_path {
+                        backend_lib_path[get_backend_type(backend)]
+                    }",
+            ]
+        )
+        qnn_executor_runner_cmds = " ".join(
+            [
+                f"cd {adb.workspace} &&",
+                "chmod +x ./qnn_executor_runner &&",
+                f"./qnn_executor_runner {qnn_executor_runner_args}",
+            ]
+        )
+        output_dir = f"{tmp_dir}/outputs"
+        adb.push()
+        adb.execute(custom_runner_cmd=qnn_executor_runner_cmds)
+        adb.pull(output_dir)
+        with open(f"{output_dir}/platform_info.json", "r") as f:
+            return json.load(f)

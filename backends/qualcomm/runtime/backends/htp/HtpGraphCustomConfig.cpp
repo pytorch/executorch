@@ -70,6 +70,11 @@ HtpGraphCustomConfig::CreateGraphCustomConfigCommon(
       htp_options_->use_dlbc() ? 1.0 : 0.0;
   ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
 
+  p_custom_config = AllocGraphCustomConfig();
+  p_custom_config->option = QNN_HTP_GRAPH_CONFIG_OPTION_NUM_CORES;
+  p_custom_config->numCores = htp_options_->core_ids()->size();
+  ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
+
   return ret;
 }
 } // namespace qnn

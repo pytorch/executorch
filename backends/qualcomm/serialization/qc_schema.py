@@ -166,6 +166,8 @@ class QnnExecuTorchHtpBackendOptions:
     use_fold_relu: bool = True
     use_multi_contexts: bool = False
     use_weight_sharing: bool = False
+    device_id: int = 0
+    core_ids: tuple[int] = (0,)
 
 
 @unique

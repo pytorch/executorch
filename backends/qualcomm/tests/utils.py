@@ -29,6 +29,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ZERO_POINT,
 )
 from executorch.backends.qualcomm.utils.utils import (
+    get_backend_type,
     get_soc_to_chipset_map,
     to_edge_transform_and_lower_to_qnn,
 )
@@ -36,7 +37,6 @@ from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
-    get_backend_type,
     make_output_dir,
     make_quantizer,
     SimpleADB,

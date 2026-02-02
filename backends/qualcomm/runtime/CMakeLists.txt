@@ -27,6 +27,9 @@ target_sources(
   INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/QnnManager.h>
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnManager.cpp
 )
+target_include_directories(
+  qnn_manager PRIVATE ${EXECUTORCH_SOURCE_DIR}/third-party/json/single_include
+)
 
 # qnn_backend_options
 target_sources(

@@ -15,7 +15,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
 
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -98,7 +97,6 @@ class SimpleADB:
         self.workspace = workspace
         self.device_id = device_id
         self.host_id = host_id
-        self.working_dir = Path(self.pte_path[0]).parent.absolute()
         self.input_list_filename = "input_list.txt"
         self.etdump_path = f"{self.workspace}/etdump.etdp"
         self.dump_intermediate_outputs = dump_intermediate_outputs
@@ -131,7 +129,7 @@ class SimpleADB:
                 cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
             )
 
-    def push(self, inputs=None, input_list=None, files=None, init_env=True):
+    def push(self, inputs=None, files=None, init_env=True):
         artifacts = []
         if init_env:
             self._adb(["shell", f"rm -rf {self.workspace}"])
@@ -175,7 +173,8 @@ class SimpleADB:
                 artifacts.append(input_list_file)
 
             for artifact in artifacts:
-                self._adb(["push", artifact, self.workspace])
+                if artifact is not None:
+                    self._adb(["push", artifact, self.workspace])
 
             # input data
             for file_name in input_files:
@@ -609,10 +608,6 @@ def evaluate_squad(predicted_texts: List[str], target_texts: List[str]):
     results["f1"] /= 100
     results["exact_match"] /= 100
     return results
-
-
-def get_backend_type(backend: str):
-    return getattr(QnnExecuTorchBackendType, f"k{backend.title()}Backend")
 
 
 def get_imagenet_dataset(

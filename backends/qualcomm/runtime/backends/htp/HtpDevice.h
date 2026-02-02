@@ -32,7 +32,8 @@ class HtpDevice : public QnnDevice {
         qcom_target_soc_info_(soc_info),
         htp_options_(htp_options) {
     htp_device_platform_info_config_ =
-        std::make_unique<HtpDevicePlatformInfoConfig>(htp_options);
+        std::make_unique<HtpDevicePlatformInfoConfig>(
+            htp_options, implementation, logger);
     htp_device_custom_config_ =
         std::make_unique<HtpDeviceCustomConfig>(htp_options);
   }

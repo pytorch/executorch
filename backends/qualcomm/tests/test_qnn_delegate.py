@@ -55,6 +55,8 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    get_backend_type,
+    get_platform_info,
     is_qnn_sdk_version_less_than,
     PyQnnManagerAdaptor,
     rewrite_prepared_observer,
@@ -64,7 +66,6 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 
 from executorch.examples.qualcomm.utils import (
-    get_backend_type,
     make_quantizer,
     setup_common_args_and_variables,
 )
@@ -6115,6 +6116,39 @@ class TestQNNQuantizedUtils(TestQNN):
                     prepared(*sample_input)
                 converted = convert_pt2e(prepared)
                 self.lower_module_and_test_output(converted, sample_input)
+
+    def test_qnn_backend_platform_info(self):
+        # fetch device info on connected device
+        result = get_platform_info(self.get_adb_tool(None), self.backend)
+        self.assertGreaterEqual(len(result["devices"]), 1)
+        self.assertGreaterEqual(len(result["devices"][0]["cores"]), 1)
+
+    def test_qnn_backend_multi_core(self):
+        if self.model not in {"SA8797"}:
+            self.skipTest("only for SoCs with multiple cores")
+
+        # define compile specs for multi-core
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+            device_id=0,
+            core_ids=(0, 1),
+        )
+        compile_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[self.model],
+            backend_options=backend_options,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module, sample_input, compile_specs
+        )
+        if not self.enable_x86_64:
+            self.verify_output(
+                module=module,
+                sample_inputs=sample_input,
+                executorch_prog=edge_prog_mgr.to_executorch(),
+            )
 
 
 class TestExampleLLMScript(TestQNN):
