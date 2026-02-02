@@ -88,6 +88,14 @@ DEFAULT_TOLERANCES = {
 #   - "rtol_<dtype>": float - Override relative tolerance for specific dtype (e.g., "rtol_bfloat16")
 #   - "skip": bool or str - Skip all tests for this module (True to skip, or string with reason)
 #   - "skip_<dtype>": bool or str - Skip tests for specific dtype (e.g., "skip_bfloat16")
+#
+# Model Parameter Initialization:
+#   Model parameters are initialized with their default dtype (typically float32) when the
+#   model class is instantiated. The parameters are then converted to the target dtype using
+#   model.to(dtype). For example:
+#     - nn.Parameter(torch.arange(20, dtype=torch.get_default_dtype()) creates float32 parameters
+#     - These are converted to bfloat16 when model.to(torch.bfloat16) is called
+#
 MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {}
 
 
@@ -129,7 +137,9 @@ MODULE_REGISTRY["mm"] = {
 class MmWeightParam(nn.Module):
     def __init__(self):
         super().__init__()
-        self.weight = nn.Parameter(torch.arange(20, dtype=torch.float).reshape(4, 5))
+        self.weight = nn.Parameter(
+            torch.arange(20, dtype=torch.get_default_dtype()).reshape(4, 5)
+        )
 
     def forward(self, x: torch.Tensor):
         return x.mm(self.weight)
@@ -468,7 +478,18 @@ def should_skip_model(model_name: str, dtype: torch.dtype) -> Tuple[bool, str]:
 def get_model_and_inputs(
     model_name: str, dtype: torch.dtype = torch.float32
 ) -> Tuple[nn.Module, Tuple[torch.Tensor, ...]]:
-    """Get model and example inputs based on model name."""
+    """Get model and example inputs based on model name.
+
+    Note: Model parameters are initialized with their default dtype (typically float32)
+    during model instantiation, then converted to the target dtype using model.to(dtype).
+
+    Args:
+        model_name: Name of the model to create
+        dtype: Target data type for the model (default: torch.float32)
+
+    Returns:
+        Tuple of (model, example_inputs)
+    """
     if model_name not in MODULE_REGISTRY:
         available_models = ", ".join(MODULE_REGISTRY.keys())
         raise ValueError(
@@ -479,7 +500,10 @@ def get_model_and_inputs(
     model_class = model_config["model_class"]
     input_shapes = model_config["input_shapes"]
 
+    # Create model with default parameter dtypes (typically float32)
     model = model_class().eval()
+
+    # Convert model parameters to target dtype if specified
     if dtype is not None:
         model = model.to(dtype)
 
@@ -510,17 +534,17 @@ def export_model_to_metal(
     return executorch_program
 
 
-def export_model_to_files(
+def export_model_to_pte(
     model: nn.Module,
     example_inputs: Tuple[torch.Tensor, ...],
     output_dir: Path,
     model_name: str,
-) -> Tuple[Path, Path, torch.Tensor]:
+) -> Tuple[Path, torch.Tensor]:
     """
-    Export model to .pte and .ptd files, and compute expected output.
+    Export model to .pte file, and compute expected output.
 
     Returns:
-        Tuple of (pte_path, ptd_path, expected_output)
+        Tuple of (pte_path, expected_output)
     """
     # Compute expected output using all-ones input (matching export_aoti_metal.py)
     all_ones_input = tuple(torch.ones_like(inp) for inp in example_inputs)
@@ -773,7 +797,7 @@ class TestMetalBackendModules(unittest.TestCase):
             model_output_dir.mkdir(parents=True, exist_ok=True)
 
             # Export model and get expected output
-            pte_path, expected_output = export_model_to_files(
+            pte_path, expected_output = export_model_to_pte(
                 model, example_inputs, model_output_dir, model_name
             )
 
