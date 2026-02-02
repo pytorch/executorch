@@ -1,9 +1,10 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "fuse_quantized_ops",
     srcs = ["fuse_quantized_ops.py"],
     visibility = [
@@ -20,7 +21,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "insert_prepack_nodes",
     srcs = ["insert_prepack_nodes.py"],
     visibility = [
@@ -34,7 +35,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "squeeze_unsqueeze_inputs",
     srcs = [
         "squeeze_unsqueeze_inputs.py",
@@ -50,7 +51,7 @@ runtime.python_library(
     ]
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "remove_asserts",
     srcs = ["remove_asserts.py"],
     visibility = [
@@ -63,7 +64,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "remove_redundant_ops",
     srcs = ["remove_redundant_ops.py"],
     visibility = [
@@ -76,7 +77,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "tag_memory_meta_pass",
     srcs = ["tag_memory_meta_pass.py"],
     visibility = [
@@ -91,7 +92,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "fold_qdq",
     srcs = ["fold_qdq.py"],
     visibility = [
@@ -104,7 +105,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "fuse_patterns",
     srcs = ["fuse_patterns.py"],
     visibility = [
@@ -120,7 +121,7 @@ runtime.python_library(
     typing = True,
 )
 
-runtime.python_library(
+fbcode_target(_kind = runtime.python_library,
     name = "vulkan_passes",
     srcs = [
         "__init__.py",
