@@ -8,11 +8,10 @@
 
 #pragma once
 
-#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
 
 namespace vkcompute {
 
-// This header is intentionally empty as all quantize/dequantize functions
-// have been moved to QuantizeDequantize.h
+// This header re-exports ConvolutionUtils.h for backward compatibility
 
 } // namespace vkcompute

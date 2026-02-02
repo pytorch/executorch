@@ -29,20 +29,9 @@ TestCase create_test_case_from_config(
     const Conv2dConfig& config,
     vkapi::ScalarType input_dtype,
     utils::StorageType fp_storage_type,
-    utils::StorageType int8_storage_type) {
+    utils::GPUMemoryLayout int8_memory_layout,
+    bool impl_selector = false) {
   TestCase test_case;
-  test_case.set_name(config.test_case_name);
-
-  std::string operator_suffix = ".test";
-  if (int8_storage_type == utils::kTexture3D) {
-    operator_suffix += "_texture";
-  } else {
-    operator_suffix += "_buffer";
-  }
-
-  // Set the operator name for the test case
-  std::string operator_name = "etvk." + config.op_name + operator_suffix;
-  test_case.set_operator_name(operator_name);
 
   // Calculate output dimensions
   int64_t H_out = config.get_output_height();
@@ -55,6 +44,26 @@ TestCase create_test_case_from_config(
   utils::GPUMemoryLayout fp_memory_layout = fp_storage_type == utils::kBuffer
       ? utils::kWidthPacked
       : utils::kChannelsPacked;
+
+  // Create test case name
+  // Format: ACCU/PERF  OC->IC  I=H,W  g=groups  k=kernel  Tex(CP)->Buf(4C1W)
+  std::string prefix = config.test_case_name.substr(0, 4); // "ACCU" or "PERF"
+  std::string test_name = prefix + "  " + std::to_string(config.channels.out) +
+      "->" + std::to_string(config.channels.in) + "  " +
+      "I=" + std::to_string(config.input_size.h) + "," +
+      std::to_string(config.input_size.w) + "  " +
+      "g=" + std::to_string(config.groups) + "  " +
+      "k=" + std::to_string(config.kernel.h) + "  " +
+      repr_str(fp_storage_type, fp_memory_layout) + "->" +
+      repr_str(utils::kBuffer, int8_memory_layout);
+  if (impl_selector) {
+    test_name += " L";
+  }
+  test_case.set_name(test_name);
+
+  // Set the operator name for the test case - use the new unified test operator
+  std::string operator_name = "test_etvk.test_q8ta_conv2d_dw.default";
+  test_case.set_operator_name(operator_name);
 
   ValueSpec input_tensor(
       input_size,
@@ -179,9 +188,25 @@ TestCase create_test_case_from_config(
   test_case.add_input_spec(dilation);
   test_case.add_input_spec(groups);
 
+  // Add memory layout parameter for the quantized tensors
+  ValueSpec layout_int(static_cast<int32_t>(int8_memory_layout));
+  test_case.add_input_spec(layout_int);
+
+  // Add impl_selector flag
+  ValueSpec impl_selector_int(static_cast<int32_t>(impl_selector ? 1 : 0));
+  test_case.add_input_spec(impl_selector_int);
+
   test_case.add_output_spec(output);
 
   test_case.set_abs_tolerance(output_scale_val + 1e-4f);
+
+  // Filter out quantize/dequantize shaders from timing measurements
+  test_case.set_shader_filter({
+      "nchw_to",
+      "to_nchw",
+      "q8ta_quantize",
+      "q8ta_dequantize",
+  });
 
   return test_case;
 }
@@ -203,16 +228,28 @@ std::vector<TestCase> generate_quantized_conv2d_dw_easy_cases() {
   };
   config.op_name = "conv2d_q8ta_q8csw_q8to";
 
-  std::vector<utils::StorageType> storage_types = {
+  std::vector<utils::StorageType> fp_storage_types = {
       utils::kTexture3D, utils::kBuffer};
 
+  // Memory layouts for int8 tensors - test both optimized (4W4C) and general
+  // paths
+  std::vector<utils::GPUMemoryLayout> int8_memory_layouts = {
+      utils::kPackedInt8_4C1W, utils::kPackedInt8_4W4C, utils::kPackedInt8_4C};
+
   // Generate test cases for each combination
-  for (const utils::StorageType fp_storage_type : storage_types) {
-    for (const utils::StorageType int8_storage_type : storage_types) {
-      config.test_case_name = make_test_case_name(
-          config, false, fp_storage_type, int8_storage_type);
+  for (const utils::StorageType fp_storage_type : fp_storage_types) {
+    for (const utils::GPUMemoryLayout int8_memory_layout :
+         int8_memory_layouts) {
+      config.test_case_name =
+          make_test_case_name(config, false, fp_storage_type, utils::kBuffer);
       test_cases.push_back(create_test_case_from_config(
-          config, vkapi::kFloat, fp_storage_type, int8_storage_type));
+          config, vkapi::kFloat, fp_storage_type, int8_memory_layout, false));
+
+      // For 4W4C layout, also test the legacy implementation
+      if (int8_memory_layout == utils::kPackedInt8_4W4C) {
+        test_cases.push_back(create_test_case_from_config(
+            config, vkapi::kFloat, fp_storage_type, int8_memory_layout, true));
+      }
     }
   }
 
@@ -310,8 +347,13 @@ std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
        32}};
 
   // Test with different storage types and data types
-  std::vector<utils::StorageType> storage_types = {
+  std::vector<utils::StorageType> fp_storage_types = {
       utils::kTexture3D, utils::kBuffer};
+
+  // Memory layouts for int8 tensors - test both optimized (4W4C) and general
+  // paths
+  std::vector<utils::GPUMemoryLayout> int8_memory_layouts = {
+      utils::kPackedInt8_4C1W, utils::kPackedInt8_4W4C, utils::kPackedInt8_4C};
 
   // Generate test cases for each combination
   for (auto& config : configs) {
@@ -322,12 +364,23 @@ std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
 
     config.op_name = "conv2d_q8ta_q8csw_q8to";
 
-    for (const utils::StorageType fp_storage_type : storage_types) {
-      for (const utils::StorageType int8_storage_type : storage_types) {
+    for (const utils::StorageType fp_storage_type : fp_storage_types) {
+      for (const utils::GPUMemoryLayout int8_memory_layout :
+           int8_memory_layouts) {
         config.test_case_name = make_test_case_name(
             config, is_performance, fp_storage_type, utils::kBuffer);
         test_cases.push_back(create_test_case_from_config(
-            config, vkapi::kFloat, fp_storage_type, int8_storage_type));
+            config, vkapi::kFloat, fp_storage_type, int8_memory_layout, false));
+
+        // For 4W4C layout, also test the legacy implementation
+        if (int8_memory_layout == utils::kPackedInt8_4W4C) {
+          test_cases.push_back(create_test_case_from_config(
+              config,
+              vkapi::kFloat,
+              fp_storage_type,
+              int8_memory_layout,
+              true));
+        }
       }
     }
   }
@@ -446,6 +499,9 @@ void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
               int64_t in_h = out_h * stride_h - pad_h + kh * dilation_h;
               int64_t in_w = out_w * stride_w - pad_w + kw * dilation_w;
 
+              int8_t quantized_input = 0;
+              int8_t quantized_weight = 0;
+
               // Check bounds (zero padding)
               if (in_h >= 0 && in_h < H_in && in_w >= 0 && in_w < W_in) {
                 // Get input value and quantize to int8
@@ -457,19 +513,12 @@ void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
                     input_zero_point;
                 quant_input_f =
                     std::min(std::max(quant_input_f, -128.0f), 127.0f);
-                int8_t quantized_input = static_cast<int8_t>(quant_input_f);
+                quantized_input = static_cast<int8_t>(quant_input_f);
 
                 // Get quantized weight using depthwise layout [K_h, K_w, OC]
                 int64_t weight_idx = kh * (K_w * C_out) + kw * C_out + out_c;
-                int8_t quantized_weight = weight_data[weight_idx];
+                quantized_weight = weight_data[weight_idx];
 
-                if (false && in_w == 0 && in_h == 0 && out_c == 0) {
-                  std::cout << "input: " << input_data[input_idx] << std::endl;
-                  std::cout << "quantized_input: " << (int)quantized_input
-                            << std::endl;
-                  std::cout << "quantized_weight: " << (int)quantized_weight
-                            << std::endl;
-                }
                 // Integer multiplication and accumulation
                 int_sum += static_cast<int32_t>(quantized_input) *
                     static_cast<int32_t>(quantized_weight);
@@ -481,7 +530,10 @@ void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
                 // in weight_sum when input is effectively 0 (but quantized 0
                 // is input_zero_point)
                 int64_t weight_idx = kh * (K_w * C_out) + kw * C_out + out_c;
-                int8_t quantized_weight = weight_data[weight_idx];
+                quantized_weight = weight_data[weight_idx];
+
+                // Use input_zero_point as the quantized input for padding
+                quantized_input = static_cast<int8_t>(input_zero_point);
 
                 // Add contribution from zero-padded input (quantized zero =
                 // input_zero_point)
@@ -511,12 +563,6 @@ void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
               std::round(float_result / output_scale) + output_zero_point;
           quant_output_f = std::min(std::max(quant_output_f, -128.0f), 127.0f);
           int8_t quantized_output = static_cast<int8_t>(quant_output_f);
-
-          if (false && out_c < 4 && out_h < 1 && out_w < 4) {
-            std::cout << "int_sum[" << out_c << ", " << out_h << ", " << out_w
-                      << "] = " << int_sum << ", " << float_result << ", "
-                      << output_scale << ", " << quant_output_f << std::endl;
-          }
 
           // Dequantize back to float
           float dequant_output =
@@ -593,8 +639,8 @@ int main(int argc, char* argv[]) {
       0,
       1,
 #else
-      3,
-      10,
+      5,
+      40,
 #endif
       ref_fn);
 

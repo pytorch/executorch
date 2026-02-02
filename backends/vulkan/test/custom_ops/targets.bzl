@@ -94,5 +94,5 @@ def define_common_targets(is_fbcode = False):
     define_custom_op_test_binary("qdq8ta_conv2d_activations")
     define_custom_op_test_binary("test_q_dq_8bit_per_tensor")
     define_custom_op_test_binary("q8ta_q8csw_q8to_conv2d")
-    define_custom_op_test_binary("q8ta_q8csw_q8to_conv2d_dw")
+    define_custom_op_test_binary("test_q8_conv2d_dw")
     define_custom_op_test_binary("q8ta_q8ta_q8to_add")
