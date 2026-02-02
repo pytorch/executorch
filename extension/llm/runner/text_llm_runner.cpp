@@ -51,27 +51,12 @@ TextLLMRunner::TextLLMRunner(
   // Initialize ring buffer configuration from metadata
   if (metadata_.count(kIsRingBuffer) && metadata_.at(kIsRingBuffer) > 0) {
     is_ring_buffer_ = true;
-    // Sliding window size defaults to max_context_len if not specified
-    if (metadata_.count(kSlidingWindowSize)) {
-      sliding_window_size_ = metadata_.at(kSlidingWindowSize);
-    } else if (metadata_.count(kMaxContextLen)) {
-      sliding_window_size_ = metadata_.at(kMaxContextLen);
-    }
-
-    // Validate sliding_window_size
-    if (sliding_window_size_ <= 0) {
-      ET_LOG(
-          Error,
-          "Ring buffer enabled but sliding_window_size is %" PRId64
-          ". Disabling ring buffer mode.",
-          sliding_window_size_);
-      is_ring_buffer_ = false;
-    } else {
-      ET_LOG(
-          Info,
-          "Ring buffer KV cache enabled with sliding window size: %" PRId64,
-          sliding_window_size_);
-    }
+    // Sliding window size equals max_context_len for ring buffer models
+    sliding_window_size_ = metadata_.at(kMaxContextLen);
+    ET_LOG(
+        Info,
+        "Ring buffer KV cache enabled with sliding window size: %" PRId64,
+        sliding_window_size_);
   }
 }
 

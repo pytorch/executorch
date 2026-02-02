@@ -22,10 +22,8 @@ inline constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 // Ring buffer KV cache configuration
 // When enabled, the model uses a ring buffer for KV cache allowing continuous
 // generation beyond the initial context length by wrapping positions.
+// The sliding window size equals max_context_len for ring buffer models.
 inline constexpr auto kIsRingBuffer = "is_ring_buffer";
-// The sliding window size for ring buffer models (typically equals
-// max_context_len)
-inline constexpr auto kSlidingWindowSize = "sliding_window_size";
 
 // Multimodal method name conventions
 inline constexpr auto kVisionEncoderMethod = "vision_encoder";

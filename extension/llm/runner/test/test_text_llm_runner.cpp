@@ -192,8 +192,7 @@ class RunnerTest : public Test {
   }
 
   std::unordered_map<std::string, int64_t> createRingBufferMetadata(
-      int64_t max_context_len = 128,
-      int64_t sliding_window_size = 0) {
+      int64_t max_context_len = 128) {
     std::unordered_map<std::string, int64_t> metadata = {
         {"enable_dynamic_shape", false},
         {"get_max_seq_len", max_context_len},
@@ -201,9 +200,6 @@ class RunnerTest : public Test {
         {"use_kv_cache", true},
         {"is_ring_buffer", 1},
     };
-    if (sliding_window_size > 0) {
-      metadata["sliding_window_size"] = sliding_window_size;
-    }
     return metadata;
   }
 
@@ -431,8 +427,8 @@ TEST_F(RunnerTest, RingBufferModeEnabledFromMetadata) {
   EXPECT_EQ(err, Error::Ok);
 }
 
-// Test that ring buffer mode uses explicit sliding_window_size when provided
-TEST_F(RunnerTest, RingBufferModeUsesExplicitSlidingWindowSize) {
+// Test that ring buffer mode works with max_context_len as sliding window size
+TEST_F(RunnerTest, RingBufferModeUsesMaxContextLenAsSlidingWindowSize) {
   // Create mock instances using helper functions
   auto tokenizer = createMockTokenizer();
   auto text_decoder_runner = createMockTextDecoderRunner();
@@ -458,14 +454,14 @@ TEST_F(RunnerTest, RingBufferModeUsesExplicitSlidingWindowSize) {
   auto text_token_generator = createTextTokenGenerator(
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
-  // Create a Runner with ring buffer metadata with explicit sliding_window_size
+  // Create a Runner with ring buffer metadata
   auto module = std::make_unique<MockModule>();
   auto io_manager =
       std::make_unique<executorch::extension::llm::IOManager>(*module);
 
-  // max_context_len=128, but sliding_window_size=32
+  // max_context_len=128, sliding_window_size will also be 128
   TextLLMRunner runner(
-      createRingBufferMetadata(128, 32),
+      createRingBufferMetadata(128),
       std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
       std::move(module),
       std::move(text_decoder_runner),
@@ -507,13 +503,14 @@ TEST_F(RunnerTest, RingBufferModeRejectsPromptExceedingSlidingWindow) {
   auto text_token_generator = createTextTokenGenerator(
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
-  // Create a Runner with ring buffer and small sliding_window_size=5
+  // Create a Runner with ring buffer and small max_context_len=5
+  // (which also becomes the sliding_window_size)
   auto module = std::make_unique<MockModule>();
   auto io_manager =
       std::make_unique<executorch::extension::llm::IOManager>(*module);
 
   TextLLMRunner runner(
-      createRingBufferMetadata(128, 5), // sliding_window_size=5
+      createRingBufferMetadata(5), // max_context_len=5, sliding_window_size=5
       std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
       std::move(module),
       std::move(text_decoder_runner),
@@ -530,7 +527,8 @@ TEST_F(RunnerTest, RingBufferModeRejectsPromptExceedingSlidingWindow) {
   config.echo = false;
 
   // Generate should fail because prompt (10 tokens) > sliding_window_size (5)
-  Error err = runner.generate("long prompt that exceeds window", config, nullptr);
+  Error err =
+      runner.generate("long prompt that exceeds window", config, nullptr);
   EXPECT_EQ(err, Error::InvalidArgument);
 }
 
@@ -685,7 +683,7 @@ TEST_F(RunnerTest, RingBufferModeAllowsContinuousGeneration) {
 
   // Small sliding_window_size to force wrapping
   TextLLMRunner runner(
-      createRingBufferMetadata(32, 32),
+      createRingBufferMetadata(32), // max_context_len=32, sliding_window_size=32
       std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
       std::move(module),
       std::move(text_decoder_runner),
