@@ -1,7 +1,26 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 oncall("executorch")
+
+fbcode_target(_kind = python_library,
+    name = "w2l_model",
+    srcs = [
+        "__init__.py",
+        "model.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models:model_base",
+        "//pytorch/audio/src:torchaudio_core",
+    ],
+)
+
+# !!!! fbcode/executorch/examples/models/wav2letter/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
 
 fbcode_target(_kind = python_library,
     name = "w2l_model",
