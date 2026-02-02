@@ -37,6 +37,7 @@ update_and_build_torchao() {
     if [[ -d "$TORCHAO_DIR" ]]; then
         cd "$TORCHAO_DIR"
         echo "Pulling latest changes from ao repository..."
+        git checkout main
         git pull origin main
         USE_CPP=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 pip install . --no-build-isolation
         cd "$EXECUTORCH_ROOT"
