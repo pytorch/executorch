@@ -50,7 +50,7 @@ RUN_METAL_TEST_SCRIPT = TESTS_DIR / "run_metal_test.sh"
 
 # Test output directory - use current working directory in CI for reliable write access
 if IS_CI:
-    TEST_OUTPUT_BASE_DIR = Path.cwd() / "aoti_debug_data"
+    TEST_OUTPUT_BASE_DIR = Path.cwd() / "metal_backend_module_outputs"
 else:
     TEST_OUTPUT_BASE_DIR = None  # Will use tempfile.TemporaryDirectory
 
@@ -126,7 +126,7 @@ MODULE_REGISTRY["mm"] = {
 
 
 # -------------------------------------------------------------------------
-class MmWeights(nn.Module):
+class MmWeightParam(nn.Module):
     def __init__(self):
         super().__init__()
         self.weight = nn.Parameter(torch.arange(20, dtype=torch.float).reshape(4, 5))
@@ -135,48 +135,10 @@ class MmWeights(nn.Module):
         return x.mm(self.weight)
 
 
-MODULE_REGISTRY["mm_weights"] = {
-    "model_class": MmWeights,
+MODULE_REGISTRY["mm_weight_param"] = {
+    "model_class": MmWeightParam,
     "input_shapes": [(3, 4)],
     "description": "Matrix multiplication with weight parameter",
-}
-
-
-# -------------------------------------------------------------------------
-class TwoMm(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.left_weight = nn.Parameter(
-            torch.arange(20, dtype=torch.float).reshape(4, 5)
-        )
-        self.right_weight = nn.Parameter(
-            torch.arange(42, dtype=torch.float).reshape(6, 7)
-        )
-
-    def forward(self, x: torch.Tensor):
-        return self.left_weight.mm(x).mm(self.right_weight)
-
-
-MODULE_REGISTRY["two_mm"] = {
-    "model_class": TwoMm,
-    "input_shapes": [(5, 6)],
-    "description": "Two consecutive matrix multiplications",
-}
-
-
-# -------------------------------------------------------------------------
-class ElementwiseMmReduction(nn.Module):
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
-        x1 = x.sin() + x
-        y2 = y.cos() + 3
-        z = x1.mm(y2)
-        return z + z.sum()
-
-
-MODULE_REGISTRY["elementwise_mm_reduction"] = {
-    "model_class": ElementwiseMmReduction,
-    "input_shapes": [(11, 45), (45, 8)],
-    "description": "Combining mm with elementwise and reduction ops",
 }
 
 
@@ -206,54 +168,7 @@ MODULE_REGISTRY["linear_nobias"] = {
 # -------------------------------------------------------------------------
 
 
-class SingleConv2d(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Conv2d(
-            in_channels=3, out_channels=5, kernel_size=3, stride=1, padding=1
-        )
-
-    def forward(self, x: torch.Tensor):
-        return self.conv(x)
-
-
-MODULE_REGISTRY["conv2d"] = {
-    "model_class": SingleConv2d,
-    "input_shapes": [(4, 3, 8, 8)],
-    "description": "Single Conv2d layer model",
-    "skip": True,
-}
-
-
-# -------------------------------------------------------------------------
-class DepthwiseConv(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Conv2d(
-            in_channels=32,
-            out_channels=32,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            dilation=1,
-            groups=32,
-            bias=False,
-        )
-
-    def forward(self, x):
-        return self.conv(x)
-
-
-MODULE_REGISTRY["depthwise_conv"] = {
-    "model_class": DepthwiseConv,
-    "input_shapes": [(1, 32, 112, 112)],
-    "description": "Single Depthwise Conv2d layer model",
-    "skip": True,
-}
-
-
-# -------------------------------------------------------------------------
-class SmallConv1d(nn.Module):
+class Conv1dNoBias(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = nn.Conv1d(
@@ -271,15 +186,15 @@ class SmallConv1d(nn.Module):
         return self.conv(x)
 
 
-MODULE_REGISTRY["small_conv1d"] = {
-    "model_class": SmallConv1d,
+MODULE_REGISTRY["conv1d_nobias"] = {
+    "model_class": Conv1dNoBias,
     "input_shapes": [(1, 8, 5)],
     "description": "Conv1d layer with 8 input channels, 6 output channels",
 }
 
 
 # -------------------------------------------------------------------------
-class MediumConv1d(nn.Module):
+class Conv1dBias(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = nn.Conv1d(
@@ -297,15 +212,15 @@ class MediumConv1d(nn.Module):
         return self.conv(x)
 
 
-MODULE_REGISTRY["conv1d"] = {
-    "model_class": MediumConv1d,
+MODULE_REGISTRY["conv1d_bias"] = {
+    "model_class": Conv1dBias,
     "input_shapes": [(1, 80, 3000)],
     "description": "Conv1d layer with 80 input channels, 384 output channels",
 }
 
 
 # -------------------------------------------------------------------------
-class VoxtralConv1d(nn.Module):
+class Conv1dVoxtral(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = nn.Conv1d(
@@ -323,8 +238,8 @@ class VoxtralConv1d(nn.Module):
         return self.conv(x)
 
 
-MODULE_REGISTRY["voxtral_conv1d"] = {
-    "model_class": VoxtralConv1d,
+MODULE_REGISTRY["conv1d_voxtral"] = {
+    "model_class": Conv1dVoxtral,
     "input_shapes": [(10, 128, 3000)],
     "description": "Conv1d layer with 128 input channels, 1280 output channels",
 }
@@ -335,7 +250,7 @@ MODULE_REGISTRY["voxtral_conv1d"] = {
 # -------------------------------------------------------------------------
 
 
-class SimpleSDPA(nn.Module):
+class SDPA(nn.Module):
     """Minimal SDPA test model."""
 
     def forward(
@@ -348,14 +263,14 @@ class SimpleSDPA(nn.Module):
 
 
 MODULE_REGISTRY["sdpa"] = {
-    "model_class": SimpleSDPA,
+    "model_class": SDPA,
     "input_shapes": [(2, 4, 16, 64), (2, 4, 16, 64), (2, 4, 16, 64)],
     "description": "Simple Scaled Dot Product Attention model",
 }
 
 
 # -------------------------------------------------------------------------
-class AddSDPA(nn.Module):
+class SDPAAdd(nn.Module):
     """SDPA model with Q, K, V as parameters that adds input to SDPA output."""
 
     def __init__(self, batch_size=2, num_heads=4, seq_len=16, head_dim=64):
@@ -371,15 +286,15 @@ class AddSDPA(nn.Module):
         return sdpa_output + x
 
 
-MODULE_REGISTRY["add_sdpa"] = {
-    "model_class": AddSDPA,
+MODULE_REGISTRY["sdpa_add"] = {
+    "model_class": SDPAAdd,
     "input_shapes": [(2, 4, 16, 64)],
     "description": "SDPA model with Q,K,V as parameters that adds input to output",
 }
 
 
 # -------------------------------------------------------------------------
-class BaseAddStridedSDPA(nn.Module):
+class BaseStridedSDPA(nn.Module):
     """SDPA model with strided Q, K, V parameters."""
 
     def __init__(
@@ -413,7 +328,7 @@ class BaseAddStridedSDPA(nn.Module):
 
 
 # -------------------------------------------------------------------------
-class AddStridedSDPA(BaseAddStridedSDPA):
+class SDPAStrided(BaseStridedSDPA):
     def __init__(self):
         super().__init__(
             q_size=(10, 20, 1500, 64),
@@ -425,8 +340,8 @@ class AddStridedSDPA(BaseAddStridedSDPA):
         )
 
 
-MODULE_REGISTRY["audio_encoder_sdpa1"] = {
-    "model_class": AddStridedSDPA,
+MODULE_REGISTRY["sdpa_strided"] = {
+    "model_class": SDPAStrided,
     "input_shapes": [(10, 20, 1500, 64)],
     "description": "Audio Encoder model with strided SDPA",
     "atol_float32": 1e-4,
@@ -435,7 +350,7 @@ MODULE_REGISTRY["audio_encoder_sdpa1"] = {
 
 
 # -------------------------------------------------------------------------
-class AddStridedSDPA1(BaseAddStridedSDPA):
+class SDPAStridedBroadcast(BaseStridedSDPA):
     def __init__(self):
         super().__init__(
             q_size=(1, 20, 1, 64),
@@ -447,15 +362,15 @@ class AddStridedSDPA1(BaseAddStridedSDPA):
         )
 
 
-MODULE_REGISTRY["whisper_strided_sdpa1"] = {
-    "model_class": AddStridedSDPA1,
+MODULE_REGISTRY["sdpa_strided_broadcast"] = {
+    "model_class": SDPAStridedBroadcast,
     "input_shapes": [(1, 20, 1, 64)],
     "description": "Whisper-like strided SDPA variant 1",
 }
 
 
 # -------------------------------------------------------------------------
-class AddStridedSDPA2(BaseAddStridedSDPA):
+class SDPAStridedBroadcastAttnMask(BaseStridedSDPA):
     def __init__(self):
         super().__init__(
             q_size=(1, 20, 1, 64),
@@ -468,128 +383,10 @@ class AddStridedSDPA2(BaseAddStridedSDPA):
         )
 
 
-MODULE_REGISTRY["whisper_strided_sdpa2"] = {
-    "model_class": AddStridedSDPA2,
+MODULE_REGISTRY["sdpa_strided_broadcast_attn_mask"] = {
+    "model_class": SDPAStridedBroadcastAttnMask,
     "input_shapes": [(1, 20, 1, 64)],
     "description": "Whisper-like strided SDPA variant 2",
-}
-
-
-# -------------------------------------------------------------------------
-# Normalization Modules
-# -------------------------------------------------------------------------
-
-
-class BatchNorm(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.bn = nn.BatchNorm2d(num_features=16)
-
-    def forward(self, x):
-        return self.bn(x)
-
-
-MODULE_REGISTRY["batchnorm"] = {
-    "model_class": BatchNorm,
-    "input_shapes": [(1, 16, 32, 32)],
-    "description": "Single BatchNorm2d layer model",
-}
-
-
-# -------------------------------------------------------------------------
-# Block/Composite Modules
-# -------------------------------------------------------------------------
-
-
-class SingleResNetBlock(nn.Module):
-    def __init__(self, in_channels=64, out_channels=64, stride=1):
-        super().__init__()
-        self.conv1 = nn.Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size=3,
-            stride=stride,
-            padding=1,
-            bias=False,
-        )
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv2d(
-            out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False
-        )
-        self.bn2 = nn.BatchNorm2d(out_channels)
-
-        self.skip_connection = None
-        if stride != 1 or in_channels != out_channels:
-            self.skip_connection = nn.Sequential(
-                nn.Conv2d(
-                    in_channels, out_channels, kernel_size=1, stride=stride, bias=False
-                ),
-                nn.BatchNorm2d(out_channels),
-            )
-
-    def forward(self, x):
-        identity = x
-
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-
-        out = self.conv2(out)
-        out = self.bn2(out)
-
-        if self.skip_connection is not None:
-            identity = self.skip_connection(x)
-
-        out += identity
-        out = self.relu(out)
-
-        return out
-
-
-MODULE_REGISTRY["single_resnet_block"] = {
-    "model_class": SingleResNetBlock,
-    "input_shapes": [(1, 64, 8, 8)],
-    "description": "Single ResNet block with skip connection",
-    "skip": True,
-}
-
-
-# -------------------------------------------------------------------------
-class TransformerBlock(nn.Module):
-    def __init__(self, embed_dim=256, num_heads=8, ff_dim=1024, dropout=0.1):
-        super().__init__()
-        self.embed_dim = embed_dim
-        self.num_heads = num_heads
-
-        self.self_attn = nn.MultiheadAttention(
-            embed_dim=embed_dim, num_heads=num_heads, dropout=dropout, batch_first=True
-        )
-
-        self.norm1 = nn.LayerNorm(embed_dim)
-        self.norm2 = nn.LayerNorm(embed_dim)
-
-        self.ffn = nn.Sequential(
-            nn.Linear(embed_dim, ff_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(ff_dim, embed_dim),
-            nn.Dropout(dropout),
-        )
-
-    def forward(self, x):
-        attn_output, _ = self.self_attn(x, x, x)
-        x = self.norm1(x + attn_output)
-        ff_output = self.ffn(x)
-        x = self.norm2(x + ff_output)
-        return x
-
-
-MODULE_REGISTRY["transformer_block"] = {
-    "model_class": TransformerBlock,
-    "input_shapes": [(4, 32, 256)],
-    "description": "Single transformer block with multi-head attention and FFN",
-    "skip": True,
 }
 
 
@@ -954,7 +751,7 @@ class TestMetalBackendModules(unittest.TestCase):
 
         def run_test_in_directory(test_dir: Path) -> None:
             """Run the actual test logic in the given directory."""
-            # Create model output directory: aoti_debug_data/<model_name>_<dtype>/
+            # Create model output directory: metal_backend_module_outputs/<model_name>_<dtype>/
             model_output_dir = test_dir / test_subdir_name
             model_output_dir.mkdir(parents=True, exist_ok=True)
 
