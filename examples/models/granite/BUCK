@@ -1,7 +1,33 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "granite",
+    srcs = [
+        "__init__.py",
+        "convert_weights.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.granite",
+    resources = {
+        "config/2b_config.json": "config/2b_config.json",
+    },
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama2_model",
+        "fbcode//pytorch/torchtune:lib",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+# !!!! fbcode/executorch/examples/models/granite/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
 
 fbcode_target(_kind = runtime.python_library,
     name = "granite",
