@@ -165,8 +165,8 @@ Error Runner<T>::load() {
   std::vector<std::string> method_names;
   switch (eval_mode_) {
     case EvalMode::kKVCached:
-      prompt_processor_method_name = "forward";
-      token_generator_method_name = "forward";
+      prompt_processor_method_name = "kv_forward";
+      token_generator_method_name = "kv_forward";
       method_names.emplace_back(token_generator_method_name);
       break;
     case EvalMode::kHybrid:

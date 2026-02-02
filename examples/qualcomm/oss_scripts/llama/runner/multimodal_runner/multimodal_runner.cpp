@@ -151,8 +151,8 @@ Error MultimodalRunner<T>::load() {
     case EvalMode::kKVCached:
       prompt_embedding_method_name = "tok_embedding_kv_forward";
       token_embedding_method_name = "tok_embedding_kv_forward";
-      prompt_processor_method_name = "forward";
-      token_generator_method_name = "forward";
+      prompt_processor_method_name = "kv_forward";
+      token_generator_method_name = "kv_forward";
       method_names.emplace_back(prompt_processor_method_name);
       method_names.emplace_back(token_generator_method_name);
       break;
