@@ -235,7 +235,14 @@ public class LlmModule {
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
   public int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
-    return generate(prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE);
+    return generate(
+        prompt,
+        seqLen,
+        llmCallback,
+        echo,
+        DEFAULT_TEMPERATURE,
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /**
