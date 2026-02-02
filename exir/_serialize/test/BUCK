@@ -1,0 +1,60 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+fbcode_target(_kind = python_unittest,
+    name = "test_program",
+    srcs = [
+        "test_program.py",
+    ],
+    deps = [
+        "//executorch/exir:schema",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/tests:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_flatbuffer",
+    srcs = [
+        "test_flatbuffer.py",
+    ],
+    deps = [
+        "//executorch/exir/_serialize:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_cord",
+    srcs = [
+        "test_cord.py",
+    ],
+    deps = [
+        "//executorch/exir/_serialize:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_named_data_store",
+    srcs = [
+        "test_named_data_store.py",
+    ],
+    deps = [
+        "//executorch/exir/_serialize:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_serialize",
+    srcs = [
+        "test_serialize.py",
+    ],
+    deps = [
+        "//executorch/exir:schema",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/emit:lib",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/tests:lib",
+    ],
+)

@@ -1,5 +1,36 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load(":targets.bzl", "define_common_targets")
 
 oncall("odai_jarvis")
 
-define_common_targets()
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/backends/cadence/runtime/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load(":targets.bzl", "define_common_targets")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+
+fbcode_target(_kind = runtime.python_library,
+    name = "runtime",
+    srcs = [
+        "__init__.py",
+        "executor.py",
+        "runtime.py",
+        "utils.py"
+    ] + glob([
+        "xtsc-cfg/**/*",
+    ]),
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/devtools:lib",
+        "//executorch/exir:lib",
+        ":etdump",
+    ],
+)
+
+fbcode_target(_kind = define_common_targets,)
