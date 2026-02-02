@@ -1,6 +1,7 @@
 """Export nvidia/parakeet-tdt-0.6b-v3 components to ExecuTorch."""
 
 import argparse
+import logging
 import os
 import shutil
 import tarfile
@@ -18,6 +19,8 @@ from executorch.exir import (
 )
 from executorch.exir.passes import MemoryPlanningPass
 from torch.export import Dim, export
+
+logger = logging.getLogger(__name__)
 
 
 def load_audio(audio_path: str, sample_rate: int = 16000) -> torch.Tensor:
@@ -561,15 +564,21 @@ def _create_cuda_partitioners(programs, is_windows=False):
 
 
 def _create_mlx_partitioners(programs):
-    """Create MLX partitioners for all programs."""
+    """Create MLX partitioners for all programs except preprocessor."""
     from executorch.backends.apple.mlx.partitioner import MLXPartitioner
 
     print("\nLowering to ExecuTorch with MLX...")
 
-    # MLX backend doesn't need decompositions
     partitioner = {}
     for key in programs.keys():
-        partitioner[key] = [MLXPartitioner()]
+        if key == "preprocessor":
+            # Skip preprocessor - FFT ops are not supported by MLX and fall back
+            # to portable pocketfft implementation. There is a bug in pocketfft
+            # that causes SIGABRT ("pointer being freed was not allocated") in
+            # release builds but not debug builds.
+            partitioner[key] = []
+        else:
+            partitioner[key] = [MLXPartitioner()]
 
     return partitioner, programs
 
@@ -610,6 +619,38 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
             do_quant_fusion_and_const_prop=True,
         ),
     )
+
+
+def apply_quantization(model, quantize: str) -> None:
+    """Apply quantization to the model using TorchAO.
+
+    Args:
+        model: The model to quantize
+        quantize: Quantization method ("int4" or "int8")
+    """
+    try:
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+    except ImportError:
+        logger.error("TorchAO not installed. Run: pip install torchao")
+        raise
+
+    logger.info(f"Applying {quantize} quantization to linear layers...")
+
+    if quantize == "int4":
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(128)),
+            lambda m, fqn: isinstance(m, torch.nn.Linear),
+        )
+    elif quantize == "int8":
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerGroup(128)),
+            lambda m, fqn: isinstance(m, torch.nn.Linear),
+        )
+    else:
+        logger.warning(f"Unknown quantization method: {quantize}")
 
 
 def main():
@@ -688,6 +729,13 @@ def main():
         help="Group size for embedding quantization (default: 0 = per-axis)",
     )
 
+    parser.add_argument(
+        "--quantize",
+        type=str,
+        choices=["int4", "int8"],
+        default=None,
+        help="Quantization method for linear layers (requires torchao)",
+    )
     args = parser.parse_args()
 
     # Validate dtype
@@ -715,6 +763,10 @@ def main():
     elif args.dtype == "fp16":
         print("Converting model to float16...")
         model = model.to(torch.float16)
+
+    # Apply quantization if requested
+    if args.quantize:
+        apply_quantization(model, args.quantize)
 
     print("\nExporting components...")
     export_dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float

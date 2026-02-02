@@ -310,7 +310,7 @@ table SliceNode {
     stop: IntOrVid (required);
 }
 
-table CastNode {
+table AsTypeNode {
     x: Tid (required);
     out: Tid (required);
     dtype: DTypeId;
@@ -337,20 +337,20 @@ table ConcatenateNode {
 
 table FullNode {
     out: Tid (required);
-    shape: [int32] (required);
+    shape: [IntOrVid] (required);
     v: float;
     dtype: DTypeId;
 }
 
 table ZerosNode {
     out: Tid (required);
-    shape: [int32] (required);
+    shape: [IntOrVid] (required);
     dtype: DTypeId;
 }
 
 table OnesNode {
     out: Tid (required);
-    shape: [int32] (required);
+    shape: [IntOrVid] (required);
     dtype: DTypeId;
 }
 
@@ -378,6 +378,61 @@ table QuantizedGatherNode {
     bits: int32;
     mode: string (required);
     out_dtype: DTypeId;
+}
+
+// Comparison ops (return bool arrays)
+table LessNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table LessEqualNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table GreaterNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table GreaterEqualNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table EqualNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table NotEqualNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+// Logical ops
+table LogicalNotNode {
+    a: Tid (required);
+    out: Tid (required);
+}
+
+table LogicalAndNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table LogicalOrNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
 }
 
 // =============================================================================
@@ -424,7 +479,7 @@ union OpNode {
     IdCopyNode,
     GatherNode,
     SliceNode,
-    CastNode,
+    AsTypeNode,
     QuantizedLinearNode,
     ConcatenateNode,
     FullNode,
@@ -432,7 +487,16 @@ union OpNode {
     OnesNode,
     ArgmaxNode,
     SliceUpdateNode,
-    QuantizedGatherNode
+    QuantizedGatherNode,
+    LessNode,
+    LessEqualNode,
+    GreaterNode,
+    GreaterEqualNode,
+    EqualNode,
+    NotEqualNode,
+    LogicalNotNode,
+    LogicalAndNode,
+    LogicalOrNode
 }
 
 // =============================================================================

@@ -1230,6 +1230,12 @@ def _table_name_to_opcode(name: str) -> str:
         "QuantizedLinear": "QUANTIZED_LINEAR",
         "QuantizedGather": "QUANTIZED_GATHER",
         "BroadcastTo": "BROADCAST_TO",
+        "LessEqual": "LESS_EQUAL",
+        "GreaterEqual": "GREATER_EQUAL",
+        "NotEqual": "NOT_EQUAL",
+        "LogicalNot": "LOGICAL_NOT",
+        "LogicalAnd": "LOGICAL_AND",
+        "LogicalOr": "LOGICAL_OR",
     }
 
     if name in special_cases:

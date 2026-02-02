@@ -25,8 +25,9 @@ python export_parakeet_tdt.py --audio /path/to/audio.wav
 | Argument | Description |
 |----------|-------------|
 | `--output-dir` | Output directory for exports (default: `./parakeet_tdt_exports`) |
-| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `cuda`, `cuda-windows` (default: `xnnpack`) |
+| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `mlx`, `cuda`, `cuda-windows` (default: `xnnpack`) |
 | `--dtype` | Data type: `fp32`, `bf16`, `fp16` (default: `fp32`). Metal backend supports `fp32` and `bf16` only (no `fp16`). |
+| `--quantize` | Quantization mode: `int4` for int4 weight-only quantization via TorchAO (default: none) |
 | `--audio` | Path to audio file for transcription test |
 
 **Note:** The preprocessor is always lowered with the portable backend regardless of the `--backend` setting.
@@ -171,6 +172,21 @@ python export_parakeet_tdt.py --backend cuda-windows --output-dir ./parakeet_cud
 This generates:
 - `model.pte` - The compiled Parakeet TDT model
 - `aoti_cuda_blob.ptd` - CUDA kernel blob required at runtime
+
+### MLX Export (macOS)
+
+Export with MLX backend:
+```bash
+python export_parakeet_tdt.py --backend mlx --output-dir ./parakeet_mlx
+```
+
+Export with int4 quantization (reduces model size ~4x):
+```bash
+python export_parakeet_tdt.py --backend mlx --quantize int4 --output-dir ./parakeet_mlx_int4
+```
+
+This generates:
+- `parakeet_tdt.pte` - The compiled model with MLX delegate
 - `tokenizer.model` - SentencePiece tokenizer
 
 ## C++ Runner
@@ -180,6 +196,21 @@ This generates:
 From the executorch root directory:
 
 ```bash
+# For CPU/XNNPACK
+cmake --workflow --preset llm-release
+
+# For Metal (macOS)
+cmake --workflow --preset llm-release-metal
+
+# For MLX (macOS)
+cmake --workflow --preset mlx-release
+```
+
+Then build the parakeet runner:
+
+```bash
+cd examples/models/parakeet
+
 # CPU/XNNPACK build
 make parakeet-cpu
 
@@ -188,8 +219,12 @@ make parakeet-metal
 
 # CUDA build (Linux)
 make parakeet-cuda
+
+# MLX build (macOS)
+make parakeet-mlx
 ```
 
+<<<<<<< HEAD
 On Windows (PowerShell), use CMake workflow presets directly:
 
 ```powershell
@@ -199,6 +234,13 @@ cmake --workflow --preset parakeet-cuda
 Pop-Location
 ```
 
+=======
+Available presets:
+- `parakeet-cpu` - CPU-only build
+- `parakeet-cuda` - CUDA acceleration (Linux/Windows)
+- `parakeet-metal` - Metal acceleration (macOS)
+- `parakeet-mlx` - MLX acceleration (macOS)
+>>>>>>> 5ca586a719 (up)
 ### Running
 
 From the executorch root directory:
