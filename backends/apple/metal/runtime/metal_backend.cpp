@@ -315,6 +315,8 @@ class ET_EXPERIMENTAL MetalBackend final
         "Failed to load shared library: %s",
         dlerror());
 
+    ET_LOG(Info, "MetalBackend::init - Loaded shared library: %s", so_path.c_str());
+
     processed->Free();
 
     // Create handle and load function pointers into it
