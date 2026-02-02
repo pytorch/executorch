@@ -252,7 +252,7 @@ class CoreMLPartitioner(Partitioner):
                 "This may result in decreased performance because ExecuTorch decomposes ops (e.g., SDPA) "
                 "that CoreML has optimized implementations for. "
                 "Please consider migrating to 'to_edge_transform_and_lower()' for better performance. "
-                "See: https://pytorch.org/executorch/main/backends/coreml/coreml-overview.html"
+                "See: https://docs.pytorch.org/executorch/main/backends/coreml/coreml-overview.html#using-the-core-ml-backend"
             )
 
         # Run the CapabilityBasedPartitioner to return the largest possible
