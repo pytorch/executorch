@@ -32,6 +32,3 @@ non_fbcode_target(_kind = runtime.cxx_library,
     platforms = [ANDROID],
     visibility = ["PUBLIC"],
 )
-
-# !!!! fbcode/executorch/backends/mediatek/runtime/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
-
