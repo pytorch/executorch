@@ -124,6 +124,14 @@ DEFAULT_TOLERANCES = {
 #         "rtol_float32": 5e-2,
 #     }
 #
+# Model Parameter Initialization:
+#   Model parameters are initialized with their default dtype (typically float32) when the
+#   model class is instantiated. The parameters are then converted to the target dtype using
+#   model.to(dtype). For example:
+#     - nn.Parameter(torch.arange(20, dtype=torch.get_default_dtype()) creates float32 parameters
+#     - These are converted to bfloat16 when model.to(torch.bfloat16) is called
+
+
 MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {}
 
 
@@ -165,7 +173,9 @@ MODULE_REGISTRY["mm"] = {
 class MmWeightParam(nn.Module):
     def __init__(self):
         super().__init__()
-        self.weight = nn.Parameter(torch.arange(20, dtype=torch.float).reshape(4, 5))
+        self.weight = nn.Parameter(
+            torch.arange(20, dtype=torch.get_default_dtype()).reshape(4, 5)
+        )
 
     def forward(self, x: torch.Tensor):
         return x.mm(self.weight)
@@ -534,9 +544,12 @@ def get_model_and_inputs(
 ) -> Tuple[nn.Module, Tuple[torch.Tensor, ...]]:
     """Get model and example inputs based on model name.
 
+    Note: Model parameters are initialized with their default dtype (typically float32)
+    during model instantiation, then converted to the target dtype using model.to(dtype).
+
     Args:
         model_name: Name of the model to create
-        dtype: Data type for the model (default: torch.float32)
+        dtype: Target data type for the model (default: torch.float32)
         qlinear: Optional quantization config (e.g., "fpa4w" for 4-bit weights).
                  If None, uses value from MODULE_REGISTRY if present.
         qlinear_group_size: Group size for quantization. If None, uses value from
@@ -561,7 +574,10 @@ def get_model_and_inputs(
     if qlinear_group_size is None:
         qlinear_group_size = model_config.get("qlinear_group_size", 32)
 
+    # Create model with default parameter dtypes (typically float32)
     model = model_class().eval()
+
+    # Convert model parameters to target dtype if specified
     if dtype is not None:
         model = model.to(dtype)
 
@@ -629,7 +645,7 @@ def export_model_to_metal(
     return executorch_program
 
 
-def export_model_to_files(
+def export_model_to_pte(
     model: nn.Module,
     example_inputs: Tuple[torch.Tensor, ...],
     output_dir: Path,
@@ -932,7 +948,7 @@ class TestMetalBackendModules(unittest.TestCase):
             )
 
             # Export model and get expected output
-            pte_path, expected_output = export_model_to_files(
+            pte_path, expected_output = export_model_to_pte(
                 model,
                 example_inputs,
                 model_output_dir,
