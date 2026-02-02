@@ -1,8 +1,35 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "smollm2",
+    srcs = [
+        "__init__.py",
+        "convert_weights.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.smollm2",
+    resources = {
+        "135M_config.json": "135M_config.json",
+    },
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models:model_base",
+        "//executorch/examples/models/llama:llama2_model",
+        "fbcode//pytorch/torchtune:lib",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+# !!!! fbcode/executorch/examples/models/smollm2/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
 
 fbcode_target(_kind = runtime.python_library,
     name = "smollm2",
