@@ -8,6 +8,7 @@
 # Script to build and run Metal backend tests
 # Usage:
 #   ./run_metal_test.sh --build              # Build the Metal runtime
+#   ./run_metal_test.sh --update-ao          # Update and build torchao with experimental MPS support
 #   ./run_metal_test.sh --run <pte>          # Run inference with given model file
 #   ./run_metal_test.sh --check-build        # Check if runtime is already built
 
@@ -26,6 +27,23 @@ check_build() {
     else
         echo "false"
         return 1
+    fi
+}
+
+# Function to update and build torchao
+update_and_build_torchao() {
+    echo "Building torchao..."
+    TORCHAO_DIR="$EXECUTORCH_ROOT/third-party/ao"
+    if [[ -d "$TORCHAO_DIR" ]]; then
+        cd "$TORCHAO_DIR"
+        echo "Pulling latest changes from ao repository..."
+        git pull origin main
+        USE_CPP=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 pip install . --no-build-isolation
+        cd "$EXECUTORCH_ROOT"
+        echo "torchao build complete"
+    else
+        echo "Error: torchao directory not found at $TORCHAO_DIR"
+        exit 1
     fi
 }
 
@@ -97,6 +115,9 @@ case "$1" in
     --build)
         build_runtime
         ;;
+    --update-ao)
+        update_and_build_torchao
+        ;;
     --run)
         if [[ -z "$2" ]]; then
             echo "Usage: $0 --run <pte_path>"
@@ -112,6 +133,7 @@ case "$1" in
         echo ""
         echo "Usage:"
         echo "  $0 --build              Build the Metal runtime"
+        echo "  $0 --update-ao          Update and build torchao with experimental MPS support"
         echo "  $0 --run <pte>          Run inference with given model file"
         echo "  $0 --check-build        Check if runtime is already built"
         exit 1

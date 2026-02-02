@@ -45,6 +45,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Build Metal Runtime"
+        ${CONDA_RUN} backends/apple/metal/tests/run_metal_test.sh --update-ao
         ${CONDA_RUN} backends/apple/metal/tests/run_metal_test.sh --build
         echo "::endgroup::"
 
