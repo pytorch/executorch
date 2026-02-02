@@ -74,6 +74,34 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 announce_configured_options(CMAKE_BUILD_TYPE)
 
+# Sanitizer support (ASAN + UBSAN)
+if(EXECUTORCH_USE_SANITIZER)
+  if(MSVC)
+    message(WARNING "Sanitizers are not fully supported on MSVC, skipping")
+  else()
+    set(EXECUTORCH_SANITIZER_FLAGS
+        "-fsanitize=address,undefined -fno-omit-frame-pointer"
+    )
+    # Suppress deprecation warnings on macOS (third-party code like flatcc uses
+    # deprecated sprintf)
+    if(APPLE)
+      set(EXECUTORCH_SANITIZER_FLAGS
+          "${EXECUTORCH_SANITIZER_FLAGS} -Wno-deprecated-declarations"
+      )
+    endif()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS
+        "${CMAKE_EXE_LINKER_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}"
+    )
+    set(CMAKE_SHARED_LINKER_FLAGS
+        "${CMAKE_SHARED_LINKER_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}"
+    )
+    message(STATUS "Sanitizers enabled: address, undefined")
+  endif()
+endif()
+announce_configured_options(EXECUTORCH_USE_SANITIZER)
+
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
