@@ -366,6 +366,10 @@ class NeutronPartitioner(Partitioner):
                                    `state_dict` attribute of an edge program.
         :return: True, if the partitioning result is valid.
         """
+        if len(partition_list) == 0:
+            # If there are no partitions, the partitioning is trivially valid.
+            return True
+
         partitioning_valid = True
 
         if not custom_delegation_options.allow_no_op_partitions:
