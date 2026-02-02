@@ -183,7 +183,7 @@ def main(args):
                 )
                 cnt += 1
 
-    adb.pull(output_path=args.artifact, callback=post_process)
+    adb.pull(host_output_path=args.artifact, callback=post_process)
 
     psnr_list = []
     ssim_list = []
