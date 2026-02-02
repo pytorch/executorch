@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
+from typing import cast, Dict, Protocol, Tuple
 
 import torch
 
@@ -17,6 +17,15 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 input_t = Tuple[torch.Tensor]  # Input x
 
 
+class ModuleWithMeanAttrs(Protocol):
+    ops_after_pass: Dict[str, int]
+    ops_not_after_pass: list[str]
+    u55_ops_after_pass: Dict[str, int]
+    u55_ops_not_after_pass: list[str]
+
+    def get_inputs(self) -> input_t: ...
+
+
 class MeanDim(torch.nn.Module):
     """
     Basic mean model using torch.mean with keepdim = True
@@ -28,7 +37,7 @@ class MeanDim(torch.nn.Module):
     }
 
     ops_not_after_pass = u55_ops_not_after_pass = [
-        "torch.ops.aten.view_copy.default",
+        "torch.ops.aten.reshape.default",
         "torch.ops.aten.avg_pool2d.default",
         "torch.ops.aten.mean.dim",
     ]
@@ -36,7 +45,7 @@ class MeanDim(torch.nn.Module):
     def __init__(self):
         super(MeanDim, self).__init__()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.mean(x, (0, 1), True)
 
     def get_inputs(self) -> input_t:
@@ -52,7 +61,7 @@ class MeanDimTensor(torch.nn.Module):
         "torch.ops.aten.sum.dim_IntList": 2,
         "torch.ops.aten.mul.Tensor": 1,
         "torch.ops.aten.avg_pool2d.default": 1,
-        "torch.ops.aten.view_copy.default": 1,
+        "torch.ops.aten.reshape.default": 1,
     }
 
     ops_not_after_pass = [
@@ -62,7 +71,7 @@ class MeanDimTensor(torch.nn.Module):
     u55_ops_after_pass = {
         "torch.ops.aten.sum.dim_IntList": 2,
         "torch.ops.aten.mul.Tensor": 1,
-        "torch.ops.aten.view_copy.default": 1,
+        "torch.ops.aten.reshape.default": 1,
     }
 
     u55_ops_not_after_pass = [
@@ -73,25 +82,25 @@ class MeanDimTensor(torch.nn.Module):
     def __init__(self):
         super(MeanDimTensor, self).__init__()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x.mean((0, 2), False)
 
     def get_inputs(self) -> input_t:
         return (torch.rand(4, 4, 4, 4),)
 
 
-modules = {"meandim_basic": MeanDim(), "meandim_tensor": MeanDimTensor()}
+modules: Dict[str, ModuleWithMeanAttrs] = {
+    "meandim_basic": MeanDim(),
+    "meandim_tensor": MeanDimTensor(),
+}
 
 
 @common.parametrize("module", modules)
-def test_decompose_meandim_tosa_INT(module):
+def test_decompose_mean_dim_tosa_INT(module: ModuleWithMeanAttrs) -> None:
     # Decompose meandim_pass requires initiating the pas with args, which is not supported
     # by RunPasses in the arm_tester -> PassPipeline cannot be used.
-    pipeline = TosaPipelineINT[input_t](
-        module,
-        module.get_inputs(),
-        [],
-    )
+    nn_module = cast(torch.nn.Module, module)
+    pipeline = TosaPipelineINT[input_t](nn_module, module.get_inputs(), [])
     pipeline.pop_stage("check_not.exir")
     pipeline.pop_stage("check_count.exir")
     pipeline.pop_stage("to_executorch")
@@ -106,11 +115,12 @@ def test_decompose_meandim_tosa_INT(module):
 
 
 @common.parametrize("module", modules)
-def test_decompose_meandim_u55_INT(module):
+def test_decompose_mean_dim_u55_INT(module: ModuleWithMeanAttrs) -> None:
     # Decompose meandim_pass requires initiating the pas with args, which is not supported
     # by RunPasses in the arm_tester -> PassPipeline cannot be used.
+    nn_module = cast(torch.nn.Module, module)
     pipeline = EthosU55PipelineINT[input_t](
-        module, module.get_inputs(), [], run_on_fvp=False
+        nn_module, module.get_inputs(), [], run_on_fvp=False
     )
     pipeline.pop_stage("check_not.exir")
     pipeline.pop_stage("check_count.exir")

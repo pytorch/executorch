@@ -38,10 +38,7 @@ def define_common_targets(is_fbcode = False):
             "glsl/*.glsl",
             "glsl/*.yaml",
         ]),
-        visibility = [
-            "//executorch/backends/vulkan/test/custom_ops/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     vulkan_spv_shader_lib(
@@ -57,21 +54,21 @@ def define_common_targets(is_fbcode = False):
         name = "prototyping_utils",
         srcs = [
             "utils.cpp",
+            "conv2d_utils.cpp",
         ],
         headers = [
             "utils.h",
+            "conv2d_utils.h",
         ],
         exported_headers = [
             "utils.h",
+            "conv2d_utils.h",
         ],
         platforms = get_platforms(),
         deps = [
             "//executorch/backends/vulkan:vulkan_graph_runtime",
         ],
-        visibility = [
-            "//executorch/backends/vulkan/test/custom_ops/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # Operator implementations library
@@ -85,10 +82,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/vulkan:vulkan_graph_runtime",
             ":custom_ops_shaderlib",
         ],
-        visibility = [
-            "//executorch/backends/vulkan/test/custom_ops/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         link_whole = True,
     )
 
@@ -97,3 +91,7 @@ def define_common_targets(is_fbcode = False):
     define_custom_op_test_binary("q8csw_conv2d")
     define_custom_op_test_binary("choose_qparams_per_row")
     define_custom_op_test_binary("q4gsw_linear")
+    define_custom_op_test_binary("qdq8ta_conv2d_activations")
+    define_custom_op_test_binary("q8ta_q8csw_q8to_conv2d")
+    define_custom_op_test_binary("q8ta_q8csw_q8to_conv2d_dw")
+    define_custom_op_test_binary("q8ta_q8ta_q8to_add")

@@ -1,16 +1,17 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 #
 
-# pyre-unsafe
+import operator
 from typing import Any, cast, Dict
 
 import numpy as np
-import serializer.tosa_serializer as ts
 import torch
 import torch.fx
+import tosa_serializer as ts
+
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
@@ -24,6 +25,23 @@ from torch._export.utils import (
     is_param,
 )
 from torch.export.exported_program import ExportedProgram
+
+
+def _tensor_to_numpy_with_dim_order(
+    tensor: torch.Tensor, dim_order: tuple[int, ...]
+) -> np.ndarray:
+    tensor = tensor.detach().cpu().contiguous()
+    if tensor.dtype == torch.bfloat16:
+        try:
+            import ml_dtypes  # type: ignore[import-not-found]
+        except ImportError as e:
+            raise RuntimeError(
+                "ml_dtypes is required to serialize bfloat16 tensors for TOSA. Have you run setup.sh?"
+            ) from e
+        np_tensor = tensor.view(torch.uint16).numpy().view(ml_dtypes.bfloat16)
+    else:
+        np_tensor = tensor.numpy()
+    return np.transpose(np_tensor, dim_order)
 
 
 def process_call_function(
@@ -46,14 +64,18 @@ def process_call_function(
             f"Failed processing call_function: {node.name}. "
             "Is the original torch function supported?"
         ) from e
-    tosa_graph.currRegion.currBasicBlock.addTensor(
-        output.name, tosa_shape(output.shape, output.dim_order), output.dtype
-    )
+
+    if not output.multiple_output_names:
+        tosa_graph.currRegion.currBasicBlock.addTensor(
+            output.name, tosa_shape(output.shape, output.dim_order), output.dtype
+        )
+
+    # Get item nodes just add tensors, no node visitor is needed.
+    if node.target == operator.getitem:
+        return
 
     # Visiting each Node
-    # pyre-ignore[16]: Undefined attribute.
     if node.target.__name__ in node_visitors:  # type: ignore[union-attr]
-        # pyre-ignore[16]: Undefined attribute.
         node_visitors[node.target.__name__].define_node(  # type: ignore[union-attr]
             node,
             tosa_graph,
@@ -85,7 +107,6 @@ def process_inputs(
         tosa_shape(input_shape, input_dim_order),
         tosa_arg.dtype,
         data=None,
-        placeholderFilename=tosa_arg.name + ".npy",
     )
     tosa_graph.addInputTensor(tensor)
 
@@ -106,13 +127,14 @@ def process_inputs_to_parameters(
         ) from e
     parameter_data = get_param(edge_program, node)
 
-    assert isinstance(parameter_data, torch.Tensor), "Expect Attr to be tensor"
-    parameter_values = parameter_data.detach().numpy()
-
-    if tosa_arg.dtype == torch.float32:
-        assert tosa_spec.support_float(), f"{tosa_spec} doesn't support float"
-
-    parameter_values = np.transpose(parameter_values, tosa_arg.dim_order)
+    if not isinstance(parameter_data, torch.Tensor):
+        raise TypeError(
+            f"Expected parameter '{node.name}' to be a torch.Tensor, got "
+            f"{type(parameter_data).__name__}"
+        )
+    parameter_values = _tensor_to_numpy_with_dim_order(
+        parameter_data, tosa_arg.dim_order  # type: ignore[arg-type]
+    )
 
     tosa_graph.addConst(
         parameter_values.shape, tosa_arg.dtype, parameter_values, name=tosa_arg.name
@@ -135,16 +157,15 @@ def process_inputs_to_buffers(
         ) from e
     buffer_data = get_buffer(edge_program, node)
 
-    assert isinstance(buffer_data, torch.Tensor), "Expect Attr to be tensor"
-    buffer_values = buffer_data.detach().numpy()
-
-    # TODO: fragile code for temporary fix
-    # the mean and var tensors are also stored here but they have shape (1, )
-    # we only transpose weights here
-    buffer_values = np.transpose(buffer_values, tosa_arg.dim_order)
+    if not isinstance(buffer_data, torch.Tensor):
+        raise TypeError(
+            f"Expected buffer '{node.name}' to be a torch.Tensor, got "
+            f"{type(buffer_data).__name__}"
+        )
+    buffer_values = _tensor_to_numpy_with_dim_order(buffer_data, tosa_arg.dim_order)  # type: ignore[arg-type]
 
     tosa_graph.addConst(
-        buffer_values.shape, tosa_arg.dtype, buffer_values, name=node.name
+        buffer_values.shape, tosa_arg.dtype, buffer_values, name=tosa_arg.name
     )
 
 
@@ -162,24 +183,43 @@ def process_inputs_to_lifted_tensor_constants(
             "Is the original torch function supported?"
         ) from e
     tensor = get_lifted_tensor_constant(edge_program, node)
-    tensor_data = tensor.detach().numpy()  # type: ignore[union-attr]
+    tensor_values = _tensor_to_numpy_with_dim_order(
+        tensor,  # type: ignore[arg-type]
+        tosa_arg.dim_order,  # type: ignore[arg-type]
+    )
 
     tosa_graph.addConst(
-        tensor_data.shape, tosa_arg.dtype, tensor_data, name=tosa_arg.name
+        tensor_values.shape, tosa_arg.dtype, tensor_values, name=tosa_arg.name
     )
+
+
+def _is_submodule_input(
+    node: torch.fx.Node, containing_graph_module: torch.fx.GraphModule
+) -> bool:
+    """Determines whether 'node' is an input to a submodule of 'containing_graph_module'."""
+    if node.op != "placeholder":
+        return False
+    return node.meta.get("is_input", False)
 
 
 def process_placeholder(
     node: torch.fx.Node,
     tosa_graph: Any,
     edge_program: ExportedProgram,
+    containing_graph_module: torch.fx.GraphModule | None,
     tosa_spec: TosaSpecification,
 ):
     """Wrapper for processing and serializing all types of placeholders"""
-    assert node.name == node.target, "Expect placeholder name and target to match"
-    assert 0 == len(node.args), "Can't handle default input values"
+    if node.name != node.target:
+        raise ValueError(
+            f"Placeholder name '{node.name}' does not match target '{node.target}'"
+        )
+    if len(node.args) != 0:
+        raise ValueError(f"Placeholder '{node.name}' must not have default values")
 
     if node.name in edge_program.graph_signature.user_inputs:
+        process_inputs(node, tosa_graph, tosa_spec)
+    elif containing_graph_module and _is_submodule_input(node, containing_graph_module):
         process_inputs(node, tosa_graph, tosa_spec)
     elif is_param(edge_program, node):
         process_inputs_to_parameters(node, tosa_graph, edge_program, tosa_spec)
@@ -197,11 +237,9 @@ def process_placeholder(
         raise RuntimeError(f"Placeholder '{node.name}' is of unknown type.")
 
 
-def process_output(
-    node: torch.fx.Node,
-    tosa_graph: Any,
-):
+def process_output(node: torch.fx.Node, tosa_graph: Any, tosa_spec: TosaSpecification):
     for output in cast(tuple[torch.fx.Node, ...], node.args[0]):
+        output_arg = TosaArg(output, tosa_spec)
         tosa_graph.addOutputTensor(
-            tosa_graph.currRegion.currBasicBlock.tensors[output.name]
+            tosa_graph.currRegion.currBasicBlock.tensors[output_arg.name]
         )

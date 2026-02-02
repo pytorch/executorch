@@ -5,13 +5,16 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import executorch.backends.samsung.python.PyGraphWrapperAdaptor as PyGraphWrapper
 
 import numpy as np
 
 import torch
+from executorch.backends.samsung.builders.utils import DATA_TYPE_STR_MAPPING
+from executorch.backends.samsung.utils.constants import QuantConstants
+from executorch.backends.samsung.utils.utils import quantize_tensor
 
 
 class EnnGraph:
@@ -23,6 +26,10 @@ class EnnGraph:
 
         self.inputs = []
         self.outputs = []
+
+    def init(self, name: str, soc_name):
+        self.name = name
+        self.soc_name = soc_name
 
     def define_op(
         self,
@@ -46,21 +53,53 @@ class EnnGraph:
                     py_param_wrapper.SetScalarValue(params[key])
                 else:
                     logging.error("Unsupported param type.")
+                # Set
                 op.AddOpParam(py_param_wrapper)
 
         self.graph.DefineOpNode(op)
 
-    def define_tensor(
+    def define_tensor(  # noqa: C901
         self,
         name: str,
         shape: List,
         data_type: str,
         tensor_type: str,
         data: Optional[Union[np.ndarray, torch.Tensor]] = None,
+        quant_param: Optional[Dict[str, Any]] = None,
     ) -> int:
         layout = "NCHW" if len(shape) == 4 else "UNDEFINED"
 
+        if quant_param is not None:
+            data_type = DATA_TYPE_STR_MAPPING[
+                quant_param[QuantConstants.QUANT_KEY.quant_dtype]
+            ]
+
         tensor = PyGraphWrapper.PyEnnTensorWrapper(name, shape, data_type, layout)
+
+        if quant_param is not None:
+            need_quantize = True
+
+            scales = self._affine_meta_param(
+                quant_param[QuantConstants.QUANT_KEY.scale]
+            )
+            zero_points = self._affine_meta_param(
+                quant_param[QuantConstants.QUANT_KEY.zero_point]
+            )
+            q_dtype = self._affine_meta_param(
+                quant_param[QuantConstants.QUANT_KEY.quant_dtype]
+            )
+            tensor.AddQuantizeParam(q_dtype, scales, zero_points)
+
+            if need_quantize and data is not None:
+                if isinstance(data, np.ndarray):
+                    data = torch.tensor(data)
+                data = quantize_tensor(
+                    data,
+                    scales,
+                    zero_points,
+                    quant_param[QuantConstants.QUANT_KEY.quant_dtype],
+                    axis=quant_param.get("axis"),
+                )
 
         if data is not None:
             if isinstance(data, torch.Tensor):
@@ -83,3 +122,20 @@ class EnnGraph:
 
     def serialize(self):
         return self.graph.Serialize()
+
+    @staticmethod
+    def _affine_meta_param(param: Any) -> str:
+        type_str_affine_table = {
+            torch.int8: "AINT8",
+        }
+        if isinstance(param, str):
+            return param
+        if isinstance(param, (float, int)):
+            return [param]
+        if hasattr(param, "tolist"):
+            return param.tolist()
+        if isinstance(param, torch.dtype):
+            # Convenient for debugging
+            param = type_str_affine_table.get(param, "")
+
+        return param

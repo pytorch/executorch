@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def _get_operator_lib(aten = False):
     if aten:
@@ -18,7 +18,7 @@ def get_qnn_dependency():
     return []
 
 def define_common_targets():
-    for aten in (True, False):
+    for aten in get_aten_mode_options():
         aten_suffix = "_aten" if aten else ""
         runtime.cxx_library(
             name = "runner" + aten_suffix,
@@ -28,12 +28,13 @@ def define_common_targets():
             exported_headers = [
                 "runner.h",
             ],
+            deps = [
+                "//executorch/devtools/etdump:etdump_flatcc",
+            ],
             preprocessor_flags = [
                 "-DUSE_ATEN_LIB",
             ] if aten else [],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             compiler_flags = [
                 "-Wno-missing-prototypes",
             ],
@@ -61,9 +62,7 @@ def define_common_targets():
         exported_headers = [
             "static_attention_io_manager.h",
         ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/executor:program",
         ]

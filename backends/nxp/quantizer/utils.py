@@ -9,17 +9,27 @@
 
 import itertools
 from collections import OrderedDict
+from collections.abc import Iterable
 from typing import Any, Dict, List, Tuple, Type
 
 import torch
 from torch import fx
 from torch._ops import OpOverload
+from torch.export import ExportedProgram
 from torch.fx.passes.utils.source_matcher_utils import (
     check_subgraphs_connected,
     SourcePartition,
 )
-from torchao.quantization.pt2e import ObserverOrFakeQuantize
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from torchao.quantization.pt2e import (
+    move_exported_model_to_eval,
+    ObserverOrFakeQuantize,
+)
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY, Quantizer
 
 
 def is_annotated(nodes: List[fx.Node]) -> bool:
@@ -49,7 +59,7 @@ def get_bias_qparams(
     act_scale, _ = obs_or_fqs[0].calculate_qparams()
     weight_scale, _ = obs_or_fqs[1].calculate_qparams()
     bias_scale = act_scale * weight_scale
-    bias_zero_point = torch.zeros_like(bias_scale, dtype=torch.int32)
+    bias_zero_point = torch.zeros_like(bias_scale, dtype=torch.int64)
     return bias_scale, bias_zero_point
 
 
@@ -149,3 +159,37 @@ def find_sequential_partitions_aten(
         if _partitions_sequential(candidate):
             fused_partitions.append(candidate)
     return fused_partitions
+
+
+def calibrate_and_quantize(
+    model: ExportedProgram | fx.GraphModule,
+    calibration_inputs: Iterable[tuple[torch.Tensor, ...]],
+    quantizer: Quantizer,
+    is_qat: bool = False,
+) -> fx.GraphModule:
+    """Quantize the provided model.
+
+    :param model: Aten model (or it's GraphModule representation) to quantize.
+    :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
+                                input. Or an iterator over such tuples.
+    :param quantizer: Quantizer to use.
+    :param is_qat: Whether quantization is done using Quantization Aware Training (QAT) or not.
+                    Note: In QAT mode, training is not performed. Only calibration (in eval mode) is done.
+
+    :return: Quantized GraphModule.
+    """
+
+    if isinstance(model, ExportedProgram):
+        model = model.module()
+
+    if is_qat:
+        m = prepare_qat_pt2e(model, quantizer)
+        m = move_exported_model_to_eval(m)
+    else:
+        m = prepare_pt2e(model, quantizer)
+
+    for data in calibration_inputs:
+        m(*data)
+    m = convert_pt2e(m)
+
+    return m

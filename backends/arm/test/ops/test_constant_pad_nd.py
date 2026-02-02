@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -33,6 +33,19 @@ test_data_suite = {
     "2dim_last2dim": lambda: (torch.rand(1, 1, 16), (1, 0, 1, 1), 2),
 }
 
+test_data_suite_bf16 = {
+    "4dim_last1dim_bf16": lambda: (
+        torch.rand(1, 1, 8, 8, dtype=torch.bfloat16),
+        (1, 1, 0, 0, 0, 0, 0, 0),
+        1.0,
+    ),
+    "3dim_last1dim_bf16": lambda: (
+        torch.rand(1, 1, 8, dtype=torch.bfloat16),
+        (1, 0, 1, 0, 0, 0),
+        -0.5,
+    ),
+}
+
 
 class ConstantPadND(torch.nn.Module):
     def __init__(self, pad: Tuple, value: float | None = None):
@@ -52,7 +65,7 @@ class ConstantPadND(torch.nn.Module):
 
 @common.parametrize(
     "test_data",
-    test_data_suite,
+    test_data_suite | test_data_suite_bf16,
 )
 def test_constant_pad_nd_tosa_FP(test_data: Tuple):
     test_data, padding, value = test_data()
@@ -61,6 +74,7 @@ def test_constant_pad_nd_tosa_FP(test_data: Tuple):
         (test_data,),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -78,28 +92,42 @@ def test_constant_pad_nd_tosa_INT(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-@common.SkipIfNoModelConverter
-def test_constant_pad_nd_vgf_FP(test_data: Tuple):
-    inp, padding, value = test_data()
-    pipeline = VgfPipeline[input_t1](
+def test_constant_pad_nd_tosa_INT_a16w8(test_data: Tuple):
+    """Test constant_pad_nd op with int16 I/O quantization for TOSA INT."""
+    test_data, padding, value = test_data()
+    pipeline = TosaPipelineINT[input_t1](
         ConstantPadND(padding, value),
-        (inp,),
+        (test_data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        tosa_extensions=["int16"],
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_constant_pad_nd_vgf_INT(test_data: Tuple):
+def test_constant_pad_nd_vgf_no_quant(test_data: Tuple):
     inp, padding, value = test_data()
     pipeline = VgfPipeline[input_t1](
         ConstantPadND(padding, value),
         (inp,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_constant_pad_nd_vgf_quant(test_data: Tuple):
+    inp, padding, value = test_data()
+    pipeline = VgfPipeline[input_t1](
+        ConstantPadND(padding, value),
+        (inp,),
+        aten_op,
+        exir_op,
+        quantize=True,
     )
     pipeline.run()

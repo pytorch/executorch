@@ -183,6 +183,25 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::optional<const std::string> data_path,
     float temperature) {
+  if (data_path.has_value()) {
+    std::vector<std::string> data_files;
+    data_files.push_back(data_path.value());
+    return create_text_llm_runner(
+        model_path, std::move(tokenizer), std::move(data_files), temperature);
+  }
+  return create_text_llm_runner(
+      model_path,
+      std::move(tokenizer),
+      std::vector<std::string>(),
+      temperature);
+}
+
+std::unique_ptr<TextLLMRunner> create_text_llm_runner(
+    const std::string& model_path,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    std::vector<std::string> data_files,
+    float temperature,
+    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer) {
   // Sanity check tokenizer
   if (!tokenizer || !tokenizer->is_loaded()) {
     ET_LOG(Error, "Tokenizer is null or not loaded");
@@ -191,11 +210,15 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 
   // Create the Module
   std::unique_ptr<Module> module;
-  if (data_path.has_value()) {
+  if (data_files.size() > 0) {
     module = std::make_unique<Module>(
-        model_path, data_path.value(), Module::LoadMode::File);
+        model_path,
+        data_files,
+        Module::LoadMode::File,
+        std::move(event_tracer));
   } else {
-    module = std::make_unique<Module>(model_path, Module::LoadMode::File);
+    module = std::make_unique<Module>(
+        model_path, Module::LoadMode::File, std::move(event_tracer));
   }
 
   // Get metadata from Module
@@ -250,7 +273,8 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 std::unique_ptr<MultimodalRunner> create_multimodal_runner(
     const std::string& model_path,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
-    std::optional<const std::string> data_path) {
+    std::optional<const std::string> data_path,
+    Module::LoadMode load_mode) {
   // Sanity check tokenizer
   if (!tokenizer || !tokenizer->is_loaded()) {
     ET_LOG(Error, "Tokenizer is null or not loaded");
@@ -260,10 +284,9 @@ std::unique_ptr<MultimodalRunner> create_multimodal_runner(
   // Create the Module
   std::unique_ptr<Module> module;
   if (data_path.has_value()) {
-    module = std::make_unique<Module>(
-        model_path, data_path.value(), Module::LoadMode::File);
+    module = std::make_unique<Module>(model_path, data_path.value(), load_mode);
   } else {
-    module = std::make_unique<Module>(model_path, Module::LoadMode::File);
+    module = std::make_unique<Module>(model_path, load_mode);
   }
 
   // Get metadata from Module

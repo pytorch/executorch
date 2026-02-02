@@ -18,11 +18,13 @@ readonly EXECUTORCH_ROOT="${SCRIPT_DIR}/../.."
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-9}"
 
 BUILD_COREML=OFF
+BUILD_XNNPACK=OFF
 
 usage() {
   echo "Builds example runner."
   echo "Options:"
   echo "  --coreml             Include this flag to enable Core ML backend when building the Developer Tools."
+  echo "  --xnnpack            Include this flag to enable XNNPACK backend when building the Developer Tools."
   exit 0
 }
 
@@ -30,6 +32,7 @@ for arg in "$@"; do
   case $arg in
       -h|--help) usage ;;
       --coreml) BUILD_COREML=ON ;;
+      --xnnpack) BUILD_XNNPACK=ON ;;
       *)
   esac
 done
@@ -39,19 +42,20 @@ main() {
 
   ./install_executorch.sh --clean
 
-  if [[ "${BUILD_COREML}" == "ON" ]]; then
+  if [[ "${BUILD_COREML}" == "ON" ]] || [[ "${BUILD_XNNPACK}" == "ON" ]]; then
     cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-        -DEXECUTORCH_BUILD_COREML=ON \
+        -DEXECUTORCH_BUILD_COREML=$BUILD_COREML \
+        -DEXECUTORCH_BUILD_XNNPACK=$BUILD_XNNPACK \
         -Dprotobuf_BUILD_TESTS=OFF \
         -Dprotobuf_BUILD_EXAMPLES=OFF \
         -DEXECUTORCH_ENABLE_LOGGING=ON \
         -Bcmake-out .
   else
    cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
-      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_BUILD_TYPE=Debug \
       -DEXECUTORCH_BUILD_DEVTOOLS=ON \
       -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
       -Bcmake-out .
@@ -61,11 +65,20 @@ main() {
 
   local example_dir=examples/devtools
   local build_dir="cmake-out/${example_dir}"
-  local cmake_prefix_path="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
+
+  # Check for both lib and lib64 directories
+  local executorch_dir="${PWD}/cmake-out/lib/cmake/ExecuTorch"
+  if [[ ! -d "${executorch_dir}" ]]; then
+    executorch_dir="${PWD}/cmake-out/lib64/cmake/ExecuTorch"
+  fi
+
+  local cmake_prefix_path="${executorch_dir};${PWD}/cmake-out/third-party/gflags"
+
   rm -rf ${build_dir}
   cmake -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
       -DCMAKE_BUILD_TYPE=Release \
       -DEXECUTORCH_BUILD_COREML=$BUILD_COREML \
+      -DEXECUTORCH_BUILD_XNNPACK=$BUILD_XNNPACK \
       -B"${build_dir}" \
       "${example_dir}"
   cmake --build "${build_dir}" --config Release

@@ -14,17 +14,13 @@ import numpy as np
 
 import torch
 import torchvision
-
-from executorch.backends.qualcomm._passes.expand_broadcast_tensor_shape import (
-    ExpandBroadcastTensorShape,
-)
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
     make_quantizer,
@@ -52,22 +48,26 @@ def main(args):
             crop_size=224,
         )
 
-    pte_filename = "convnext_small_qnn_q8"
+    pte_filename = "convnext_small_qnn"
     instance = torchvision.models.convnext_small(weights="IMAGENET1K_V1").eval()
-    passes_job = get_capture_program_passes()
-    passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
+    backend = get_backend_type(args.backend)
+    qnn_quantizer = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            per_channel_linear=True,
+        ),
+    }[backend]
     build_executorch_binary(
         instance,
         inputs[0],
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
-        custom_quantizer=make_quantizer(
-            quant_dtype=QuantDtype.use_8a8w,
-            per_channel_linear=True,
-        ),
-        passes_job=passes_job,
+        custom_quantizer=qnn_quantizer,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -82,6 +82,8 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
     adb.push(inputs=inputs)
     adb.execute()
@@ -90,7 +92,7 @@ def main(args):
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []

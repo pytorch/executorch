@@ -1,12 +1,13 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 from typing import Any, List
 
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -31,8 +32,6 @@ class ToDimOrderCopyVisitor(NodeVisitor):
 
     target = "dim_order_ops._to_dim_order_copy.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def define_node(
         self,
         node: torch.fx.Node,
@@ -40,10 +39,9 @@ class ToDimOrderCopyVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 1)
-
+        attr = ts.TosaSerializerAttribute()
+        attr.CastAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.TosaOp.Op().CAST, [inputs[0].name], [output.name]
+            node, tosa_graph, ts.Op.CAST, [inputs[0].name], [output.name], attr
         )

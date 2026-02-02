@@ -51,9 +51,11 @@ SCALAR_OPS = {
     # The scalar number arg[1] is missing when using default. Result in a corner case to deal
     aten.leaky_relu.default: TensorOpInfo(aten.prelu.default, True, False),
     aten.leaky_relu_.default: TensorOpInfo(aten.prelu.default, True, False),
+    aten.where.ScalarSelf: TensorOpInfo(aten.where.self, False, True),
     aten.where.ScalarOther: TensorOpInfo(aten.where.self, False, True),
     aten.where.Scalar: TensorOpInfo(aten.where.self, False, True),
     aten.masked_fill.Scalar: TensorOpInfo(aten.masked_fill.Tensor, False, False),
+    aten.masked_fill_.Scalar: TensorOpInfo(aten.masked_fill.Tensor, False, False),
     aten.bitwise_xor.Scalar: TensorOpInfo(aten.bitwise_xor.Tensor, False, False),
 }
 

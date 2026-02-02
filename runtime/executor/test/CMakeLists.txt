@@ -133,12 +133,17 @@ set_property(TEST method_test PROPERTY ENVIRONMENT ${test_env})
 # TODO(T191569140): Enable this test. et_cxx_test(method_meta_test SOURCES
 # method_meta_test.cpp EXTRA_LIBS extension_data_loader)
 
-# TODO(T191569140): Enable this test. et_cxx_test( program_test SOURCES
-# program_test.cpp EXTRA_LIBS extension_data_loader )
+et_cxx_test(
+  program_test SOURCES program_test.cpp EXTRA_LIBS extension_data_loader
+  program_schema
+)
+add_dependencies(program_test generated_pte_files)
+set_property(TEST program_test PROPERTY ENVIRONMENT ${test_env})
 
-# target_include_directories( program_test PRIVATE
-# "${CMAKE_INSTALL_PREFIX}/schema/include"
-# "${EXECUTORCH_ROOT}/third-party/flatbuffers/include" )
+target_include_directories(
+  program_test PRIVATE "${CMAKE_INSTALL_PREFIX}/schema/include"
+                       "${EXECUTORCH_ROOT}/third-party/flatbuffers/include"
+)
 
 et_cxx_test(
   kernel_resolution_test SOURCES kernel_resolution_test.cpp EXTRA_LIBS
@@ -191,4 +196,4 @@ target_link_libraries(test_backend_compiler_lib PUBLIC executorch_core)
 
 executorch_target_link_options_shared_lib(test_backend_compiler_lib)
 
-install(TARGETS test_backend_compiler_lib DESTINATION lib)
+install(TARGETS test_backend_compiler_lib DESTINATION ${CMAKE_INSTALL_LIBDIR})

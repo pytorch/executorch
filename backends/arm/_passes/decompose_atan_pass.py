@@ -8,6 +8,12 @@ from math import pi
 from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
+from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
+    ReplaceScalarWithTensorByProfilePass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -37,7 +43,12 @@ def _get_atan_ops(op):
 class DecomposeAtanPass(ArmPass):
     """Decomposes the atan operator into a rational (Padé) approximation."""
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        InsertTableOpsPass,
+        MatchArgRanksPass,
+        MatchArgDtypePass,
+        ReplaceScalarWithTensorByProfilePass,
+    }
 
     def _rational_approximation(self, z, ops, meta):
         """Creates a (2,1) Padé approximation for atan(x) on [-1, 1]."""
@@ -68,6 +79,14 @@ class DecomposeAtanPass(ArmPass):
     def call_operator(self, op, args, kwargs, meta):
         if op is not edge_atan:
             return super().call_operator(op, args, kwargs, meta, updated=False)
+
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta)
 
         logging.info(
             f"Approximating atan. This may introduce small numerical errors. For details, see {__file__}."

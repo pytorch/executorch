@@ -98,7 +98,7 @@ PYTHON_VERSION=$1
 # Check wheel does NOT contain qualcomm/sdk
 # ----------------------------
 echo "Checking wheel does not contain qualcomm/sdk..."
-SDK_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep "executorch/backends/qualcomm/sdk" || true)
+SDK_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep -E "executorch/backends/qualcomm/sdk" || true)
 if [ -n "$SDK_FILES" ]; then
     echo "ERROR: Wheel package contains unexpected qualcomm/sdk files:"
     echo "$SDK_FILES"
@@ -111,7 +111,7 @@ fi
 # Check .so files in the wheel
 # ----------------------------
 echo "Checking for .so files inside the wheel..."
-WHEEL_SO_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep "executorch/backends/qualcomm/python" || true)
+WHEEL_SO_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep -E "executorch/backends/qualcomm/python" || true)
 if [ -z "$WHEEL_SO_FILES" ]; then
     echo "ERROR: No .so files found in wheel under executorch/backends/qualcomm/python"
     exit 1
@@ -139,8 +139,32 @@ run_core_tests () {
   echo "=== [$LABEL] Installing wheel & deps ==="
   "$PIPBIN" install --upgrade pip
   "$PIPBIN" install "$WHEEL_FILE"
-  "$PIPBIN" install torch=="2.9.0.dev20250906" --index-url "https://download.pytorch.org/whl/nightly/cpu"
-  "$PIPBIN" install --pre torchao --index-url "https://download.pytorch.org/whl/nightly/cpu"
+  TORCH_VERSION=$(
+  "$PYBIN" - <<'PY'
+import runpy
+module_vars = runpy.run_path("torch_pin.py")
+print(module_vars["TORCH_VERSION"])
+PY
+)
+
+  NIGHTLY_VERSION=$(
+  "$PYBIN" - <<'PY'
+import runpy
+module_vars = runpy.run_path("torch_pin.py")
+print(module_vars["NIGHTLY_VERSION"])
+PY
+)
+  echo "=== [$LABEL] Install torch==${TORCH_VERSION}.${NIGHTLY_VERSION} ==="
+
+  # Install torchao based on the pinned PyTorch version
+  "$PIPBIN" install torch=="${TORCH_VERSION}.${NIGHTLY_VERSION}" --index-url "https://download.pytorch.org/whl/nightly/cpu"
+  "$PIPBIN" install wheel
+
+  # Install torchao based on the pinned commit from third-party/ao submodule
+  pushd "$REPO_ROOT/third-party/ao" > /dev/null
+  export USE_CPP=0
+  "$PIPBIN" install . --no-build-isolation
+  popd > /dev/null
 
   echo "=== [$LABEL] Import smoke tests ==="
   "$PYBIN" -c "import executorch; print('executorch imported successfully')"

@@ -75,51 +75,32 @@ public class ExecutorchRuntimeException extends RuntimeException {
   }
 
   static class ErrorHelper {
-    private static final boolean ENABLE_READ_LOG_BUFFER = false;
-    // Reusable StringBuilder instance
-    private static final StringBuilder sb = new StringBuilder();
-
     static String formatMessage(int errorCode, String details) {
-      synchronized (sb) {
-        sb.setLength(0); // Clear the StringBuilder before use
-
-        String baseMessage = ERROR_CODE_MESSAGES.get(errorCode);
-        if (baseMessage == null) {
-          baseMessage = "Unknown error code 0x" + Integer.toHexString(errorCode);
-        }
-
-        sb.append("[Executorch Error 0x")
-            .append(Integer.toHexString(errorCode))
-            .append("] ")
-            .append(baseMessage)
-            .append(": ")
-            .append(details);
-        if (ENABLE_READ_LOG_BUFFER) {
-          try {
-            sb.append("\nDetailed Logs:\n");
-            String[] logEntries = readLogBuffer(); // JNI call
-            formatLogEntries(sb, logEntries);
-          } catch (Exception e) {
-            sb.append("Failed to retrieve detailed logs: ").append(e.getMessage());
-          }
-        }
-
-        return sb.toString();
+      String baseMessage = ERROR_CODE_MESSAGES.get(errorCode);
+      if (baseMessage == null) {
+        baseMessage = "Unknown error code 0x" + Integer.toHexString(errorCode);
       }
+
+      String safeDetails = details != null ? details : "No details provided";
+      return String.format(
+          "[Executorch Error 0x%s] %s: %s",
+          Integer.toHexString(errorCode), baseMessage, safeDetails);
     }
 
-    // Native JNI method declaration
-    private static native String[] readLogBuffer();
-
-    // Append log entries to the provided StringBuilder
-    private static void formatLogEntries(StringBuilder sb, String[] logEntries) {
-      if (logEntries == null || logEntries.length == 0) {
-        sb.append("No detailed logs available.");
-        return;
+    static String getDetailedErrorLogs() {
+      StringBuilder sb = new StringBuilder();
+      try {
+        String[] logEntries = Module.readLogBufferStatic(); // JNI call
+        if (logEntries != null && logEntries.length > 0) {
+          sb.append("\nDetailed logs:\n");
+          for (String entry : logEntries) {
+            sb.append(entry).append("\n");
+          }
+        }
+      } catch (Exception e) {
+        sb.append("Failed to retrieve detailed logs: ").append(e.getMessage());
       }
-      for (String entry : logEntries) {
-        sb.append(entry).append("\n");
-      }
+      return sb.toString();
     }
   }
 
@@ -134,16 +115,14 @@ public class ExecutorchRuntimeException extends RuntimeException {
     return errorCode;
   }
 
-  // Idiomatic Java exception for invalid arguments.
-  public static class ExecutorchInvalidArgumentException extends IllegalArgumentException {
-    private final int errorCode = INVALID_ARGUMENT;
+  public String getDetailedError() {
+    return ErrorHelper.getDetailedErrorLogs();
+  }
 
+  // Idiomatic Java exception for invalid arguments - extends ExecutorchRuntimeException
+  public static class ExecutorchInvalidArgumentException extends ExecutorchRuntimeException {
     public ExecutorchInvalidArgumentException(String details) {
-      super(ErrorHelper.formatMessage(INVALID_ARGUMENT, details));
-    }
-
-    public int getErrorCode() {
-      return errorCode;
+      super(INVALID_ARGUMENT, details);
     }
   }
 

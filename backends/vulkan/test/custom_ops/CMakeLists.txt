@@ -48,7 +48,9 @@ if(TARGET vulkan_backend)
 
   # Prototyping utility files
   set(PROTOTYPING_UTILS_HEADERS ${CMAKE_CURRENT_SOURCE_DIR})
-  set(PROTOTYPING_UTILS_CPP ${CMAKE_CURRENT_SOURCE_DIR}/utils.cpp)
+  set(PROTOTYPING_UTILS_CPP ${CMAKE_CURRENT_SOURCE_DIR}/utils.cpp
+                            ${CMAKE_CURRENT_SOURCE_DIR}/conv2d_utils.cpp
+  )
 
   # Prototyping shaders
   message(STATUS "shader stuff")
@@ -95,4 +97,8 @@ if(TARGET vulkan_backend)
   add_operator_prototype(q8csw_conv2d)
   add_operator_prototype(q4gsw_linear)
   add_operator_prototype(choose_qparams_per_row)
+  add_operator_prototype(qdq8ta_conv2d_activations)
+  add_operator_prototype(q8ta_q8csw_q8to_conv2d)
+  add_operator_prototype(q8ta_q8csw_q8to_conv2d_dw)
+  add_operator_prototype(q8ta_q8ta_q8to_add)
 endif()

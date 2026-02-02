@@ -24,7 +24,7 @@ Quantization - the process of using reduced precision to reduce inference time a
 
 ExecuTorch backends provide hardware acceleration for a specific hardware target. In order to achieve maximum performance on target hardware, ExecuTorch optimizes the model for a specific backend during the export and lowering process. This means that the resulting .pte file is specialized for the specific hardware. In order to deploy to multiple backends, such as Core ML on iOS and Arm CPU on Android, it is common to generate a dedicated .pte file for each.
 
-The choice of hardware backend is informed by the hardware that the model is intended to be deployed on. Each backend has specific hardware requires and level of model support. See the documentation for each hardware backend for more details.
+The choice of hardware backend is informed by the hardware that the model is intended to be deployed on. Each backend has specific hardware requirements and level of model support. See the documentation for each hardware backend for more details.
 
 As part of the .pte file creation process, ExecuTorch identifies portions of the model (partitions) that are supported for the given backend. These sections are processed by the backend ahead of time to support efficient execution. Portions of the model that are not supported on the delegate, if any, are executed using the portable fallback implementation on CPU. This allows for partial model acceleration when not all model operators are supported on the backend, but may have negative performance implications. In addition, multiple partitioners can be specified in order of priority. This allows for operators not supported on GPU to run on CPU via XNNPACK, for example.
 
@@ -32,10 +32,10 @@ As part of the .pte file creation process, ExecuTorch identifies portions of the
 
 Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to `to_edge_transform_and_lower`. See the appropriate backend documentation and the [Export and Lowering](#export-and-lowering) section below for more information.
 
-- [XNNPACK (Mobile CPU)](backends-xnnpack.md)
-- [Core ML (iOS)](backends-coreml.md)
-- [Metal Performance Shaders (iOS GPU)](backends-mps.md)
-- [Vulkan (Android GPU)](backends-vulkan.md)
+- [XNNPACK (CPU)](backends/xnnpack/xnnpack-overview.md)
+- [Core ML (iOS)](backends/coreml/coreml-overview.md)
+- [Metal Performance Shaders (iOS GPU)](backends/mps/mps-overview.md)
+- [Vulkan (Android GPU)](backends/vulkan/vulkan-overview.md)
 - [Qualcomm NPU](backends-qualcomm.md)
 - [MediaTek NPU](backends-mediatek.md)
 - [Arm Ethos-U NPU](backends-arm-ethos-u.md)
@@ -141,7 +141,6 @@ delegate_external_constants_pass_unlifted(
 exported_program = export(tagged_module, inputs, dynamic_shapes=dynamic_shapes)
 executorch_program = to_edge_transform_and_lower(
     exported_program,
-    transform_passes = [partial_function],
     partitioner = [XnnpackPartitioner()]
 ).to_executorch()
 ```
@@ -177,13 +176,14 @@ In the above example, `"x"` corresponds to the parameter name in `Model.forward`
 
 ExecuTorch uses the shape bounds both to optimize the model and to plan memory for model execution. For this reason, it is advised to set the dimension upper bounds to no higher than needed, as higher bounds increase memory consumption.
 
-For more complex use cases, dynamic shape specification allows for mathematical relationships between dimensions. For more information on dynamic shape specification, see [Expressing Dynamism](https://pytorch.org/docs/stable/export.html#expressing-dynamism).
+For more complex use cases, dynamic shape specification allows for mathematical relationships between dimensions. For more information on dynamic shape specification, see [Expressing Dynamism](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/export.html#expressing-dynamism).
 
 ## Testing the Model
 
 Before integrating the runtime code, it is common to test the exported model from Python. This can be used to evaluate model accuracy and sanity check behavior before moving to the target device. Note that not all hardware backends are available from Python, as they may require specialized hardware to function. See the specific backend documentation for more information on hardware requirements and the availablilty of simulators. The XNNPACK delegate used in this example is always available on host machines.
 
 ```python
+import torch
 from executorch.runtime import Runtime
 
 runtime = Runtime.get()
@@ -194,9 +194,19 @@ method = program.load_method("forward")
 outputs = method.execute([input_tensor])
 ```
 
-Pybindings currently does not support loading program and data. To run a model with PTE and PTD components, please use the [Extension Module](extension-module.md). There is also an E2E demo in [executorch-examples](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation).
+To run a model with program and data separated, please use the [ExecuTorch Module pybindings](https://github.com/pytorch/executorch/blob/main/extension/pybindings/README.md).
+```python
+import torch
+from executorch.extension.pybindings import portable_lib
 
-For more information, see [Runtime API Reference](executorch-runtime-api-reference.md).
+input_tensor = torch.randn(1, 3, 32, 32)
+module = portable_lib._load_for_executorch("model.pte", "model.ptd")
+outputs = module.forward([input_tensor])
+```
+
+There is also an E2E demo in [executorch-examples](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation).
+
+For more information, see [Runtime API Reference](executorch-runtime-api-reference.rst).
 
 ## Advanced Topics
 
@@ -270,7 +280,7 @@ decode_ep = torch.export.export(DecodeWrapper(model), ...)
 
 ## Next Steps
 
-The PyTorch and ExecuTorch export and lowering APIs provide a high level of customizability to meet the needs of diverse hardware and models. See [torch.export](https://pytorch.org/docs/main/export.html) and [Export API Reference](export-to-executorch-api-reference.md) for more information.
+The PyTorch and ExecuTorch export and lowering APIs provide a high level of customizability to meet the needs of diverse hardware and models. See [torch.export](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/export.html) and [Export API Reference](export-to-executorch-api-reference.rst) for more information.
 
 For advanced use cases, see the following:
 - [Quantization Overview](quantization-overview.md) for information on quantizing models to reduce inference time and memory footprint.

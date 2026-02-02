@@ -24,7 +24,7 @@ class LayerNorm(torch.nn.Module):
         super(LayerNorm, self).__init__()
         self.layer_norm = torch.nn.LayerNorm(10)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.layer_norm(x)
         return x
 
@@ -32,7 +32,7 @@ class LayerNorm(torch.nn.Module):
         return (torch.rand(10),)
 
 
-def test_decompose_layernorm_tosa_FP():
+def test_decompose_layer_norm_tosa_FP():
     module = LayerNorm()
     pipeline = PassPipeline[input_t](
         module,

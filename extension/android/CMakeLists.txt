@@ -18,7 +18,10 @@ endif()
 
 set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+)
 if(NOT ANDROID_PLATFORM)
   set(ANDROID_PLATFORM android-30)
 endif()
@@ -167,8 +170,11 @@ if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
 endif()
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
-  target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
-  list(APPEND link_libraries extension_llm_runner)
+  target_sources(
+    executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/jni_layer_asr.cpp
+                           jni/log.cpp
+  )
+  list(APPEND link_libraries extension_llm_runner extension_asr_runner)
   target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
 
   if(QNN_SDK_ROOT)

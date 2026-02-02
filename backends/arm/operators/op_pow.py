@@ -1,11 +1,12 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, List
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -25,9 +26,7 @@ from torch.fx import Node
 class PowVisitor(NodeVisitor):
     target = "aten.pow.Tensor_Tensor"
 
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
+    tosa_specs = TosaSpecification.all_versions_for_profile("FP")
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -39,25 +38,24 @@ class PowVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
             self.target,
             [*inputs, output],
             [ts.DType.FP16, ts.DType.FP32],
-            output.tosa_spec,
+            self.tosa_spec,
         )
-
+        attr = ts.TosaSerializerAttribute()
+        attr.PowAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().POW,
+            ts.Op.POW,
             [
                 inputs[0].name,
                 inputs[1].name,
             ],
             [output.name],
-            None,
+            attr,
         )

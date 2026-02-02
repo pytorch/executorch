@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,19 +10,25 @@ from typing import Set, Type
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
+from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
 def get_meandim_decomposition(op) -> tuple:
-    if op == exir_ops.edge.aten.mean.dim:
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
         return (
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.mul.Tensor,
         )
-    if op == torch.ops.aten.mean.dim:
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
         return (
             torch.ops.aten.sum.dim_IntList,
             torch.ops.aten.full.default,
@@ -32,19 +38,28 @@ def get_meandim_decomposition(op) -> tuple:
 
 
 def get_avgpool(op):
-    if op == exir_ops.edge.aten.mean.dim:
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
         return exir_ops.edge.aten.avg_pool2d.default
-    if op == torch.ops.aten.mean.dim:
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
         return torch.ops.aten.avg_pool2d.default
     raise RuntimeError(f"Can't get meandim decomposition for op {op}")
 
 
 def get_view(op):
-    if op == exir_ops.edge.aten.mean.dim:
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
         return exir_ops.edge.aten.view_copy.default
-    if op == torch.ops.aten.mean.dim:
-        return torch.ops.aten.view_copy.default
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
+        return torch.ops.aten.reshape.default
     raise RuntimeError(f"Can't get meandim decomposition for op {op}")
+
+
+def get_quantization(op):
+    """Returns quant and dequant op of same type (per_channel/ tensor) as op if op is a dequant node, None otherwise."""
+    if op in DQ_OPS:
+        # Input of op can be placeholder, can't use that to get quant node directly.
+        quant_type_index = DQ_OPS.index(op)
+        return Q_OPS[quant_type_index], op
+    return None
 
 
 class DecomposeMeanDimPass(ArmPass):
@@ -64,10 +79,14 @@ class DecomposeMeanDimPass(ArmPass):
         x = view_copy.default(x, new_shape=(h)) # Squeeze dims since keepdims = False
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ComputeConstantOpsAOTPass,
+        DecomposeSumPass,
+        SizeAdjustInputPass,
+    }
 
-    def __init__(self, graph_module, tosa_spec):
-        super().__init__()
+    def __init__(self, graph_module, tosa_spec, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._graph_module = graph_module
         self._tosa_spec = tosa_spec
         # Lazy import to avoid circular dependency with operator_support
@@ -80,13 +99,20 @@ class DecomposeMeanDimPass(ArmPass):
         )
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (exir_ops.edge.aten.mean.dim, torch.ops.aten.mean.dim):
+        if op not in (
+            exir_ops.edge.aten.mean.dim,
+            torch.ops.aten.mean.dim,
+            exir_ops.edge.aten.mean.default,
+            torch.ops.aten.mean.default,
+        ) or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         x = get_node_arg(args, 0)
         input_shape = list(x.data.shape)
         output_shape = list(meta["val"].shape)
-        dims_to_reduce = get_node_arg(args, 1)
+        dims_to_reduce = get_node_arg(args, 1, range(len(input_shape)))
+        if dims_to_reduce is None:
+            dims_to_reduce = range(len(input_shape))
         dims_to_reduce = [dim % len(input_shape) for dim in dims_to_reduce]
         dims_to_reduce = [dim for dim in dims_to_reduce if input_shape[dim] != 1]
 
@@ -107,6 +133,7 @@ class DecomposeMeanDimPass(ArmPass):
                 dims_to_reduce = [dim - 1 for dim in dims_to_reduce]
 
             x = super().call_operator(view_op, (x, new_shape), {}, meta, True)
+            x = self._maybe_insert_q_dq_after(x, meta)
 
         # Reduce (h,w) dims by avg pool if possible
         x, dims_to_reduce = self._reduce_by_average_pool(op, x, dims_to_reduce, meta)
@@ -119,7 +146,7 @@ class DecomposeMeanDimPass(ArmPass):
             dims_to_reduce = [dim + len(original_dims) - 1 for dim in dims_to_reduce]
 
             x = super().call_operator(view_op, (x, temp_shape), {}, meta, True)
-
+            x = self._maybe_insert_q_dq_after(x, meta)
         # Reduce remaining dims by sum
         x = self._reduce_by_sum(op, x, dims_to_reduce, meta, dtype)
 
@@ -140,8 +167,51 @@ class DecomposeMeanDimPass(ArmPass):
 
         sum = super().call_operator(sum_op, (input_node, dims, True), {}, meta, True)
         full = super().call_operator(
-            full_op, ([1] * len(output_shape), 1 / N), {"dtype": dtype}, meta, True
+            full_op,
+            ([1] * len(output_shape), 1 / N),
+            {"dtype": dtype, "device": input_node.data.device},
+            meta,
+            True,
         )
+        if (quant_ops := get_quantization(input_node.node.target)) is not None:
+            # Insert Q and DQ nodes after full op.
+            # Since the value of full is known, we can compute quant params such that dq(q_max_value)
+            q_op, dq_op = quant_ops
+            qmax = input_node.node.args[4]
+            full_quant_args = (
+                1 / (N * qmax),  # Scale to map qmax to 1/N
+                0,  # Zero point
+                *input_node.node.args[3:],
+            )
+            q_args = (full, *full_quant_args)
+            full = super().call_operator(
+                q_op,
+                q_args,
+                kwargs={},
+                meta=meta,
+                updated=True,
+            )
+            dq_args = (full, *full_quant_args)
+            full = super().call_operator(
+                dq_op, dq_args, kwargs={}, meta=meta, updated=True
+            )
+
+            # Insert Q and DQ nodes after sum op.
+            # Scale needs to be adjusted with N, since it was computed on data after the division with N.
+            sum_quant_args = (input_node.node.args[1] * N, *input_node.node.args[2:])
+            q_args = (sum, *sum_quant_args)
+            sum = super().call_operator(
+                q_op,
+                q_args,
+                kwargs={},
+                meta=meta,
+                updated=True,
+            )
+            dq_args = (sum, *sum_quant_args)
+            sum = super().call_operator(
+                dq_op, dq_args, kwargs={}, meta=meta, updated=True
+            )
+
         return super().call_operator(mul_op, (sum, full), {}, meta, True)
 
     def _reduce_by_average_pool(self, op, input_node, dims, meta):
@@ -176,10 +246,38 @@ class DecomposeMeanDimPass(ArmPass):
         )
 
         if is_supported:
+            out = super().call_operator(avgpool_op, args, {}, meta, True)
+            out = self._maybe_insert_q_dq_after(out, meta)
             return (
-                super().call_operator(avgpool_op, args, {}, meta, True),
+                out,
                 dims_to_reduce_by_sum,
             )
 
         else:
             return input_node, dims
+
+    def _maybe_insert_q_dq_after(self, op, meta):
+        """If the input node of op is a dequant node, insert a q-dq pair after op with identical quantization parameters."""
+
+        if len(op.node.all_input_nodes) > 1:
+            raise ValueError(
+                f"Expected one input to {op.node}, got inputs {op.node.all_input_nodes}"
+            )
+        input_node = op.node.all_input_nodes[0]
+        if (quant_ops := get_quantization(input_node.target)) is not None:
+            q_op, dq_op = quant_ops
+            quant_args = list(input_node.args[1:])
+            q_args = (op, *quant_args)
+            out = super().call_operator(
+                q_op,
+                q_args,
+                kwargs={},
+                meta=meta,
+                updated=True,
+            )
+            dq_args = (out, *quant_args)
+            return super().call_operator(
+                dq_op, dq_args, kwargs={}, meta=meta, updated=True
+            )
+        else:
+            return op

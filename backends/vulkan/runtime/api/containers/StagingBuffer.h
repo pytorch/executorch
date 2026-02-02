@@ -19,6 +19,10 @@
 namespace vkcompute {
 namespace api {
 
+vkapi::ScalarType get_staging_dtype(
+    Context* context_p,
+    vkapi::ScalarType dtype);
+
 class StagingBuffer final {
  private:
   Context* context_p_;
@@ -31,12 +35,8 @@ class StagingBuffer final {
   StagingBuffer(
       Context* context_p,
       const vkapi::ScalarType dtype,
-      const size_t numel)
-      : context_p_(context_p),
-        dtype_(dtype),
-        vulkan_buffer_(context_p_->adapter_ptr()->vma().create_staging_buffer(
-            element_size(dtype_) * numel)),
-        mapped_data_(nullptr) {}
+      const size_t numel,
+      const vkapi::CopyDirection direction);
 
   StagingBuffer(const StagingBuffer&) = delete;
   StagingBuffer& operator=(const StagingBuffer&) = delete;
@@ -90,6 +90,12 @@ class StagingBuffer final {
     }
   }
 
+  void cast_half_to_float_and_copy_from(
+      const uint16_t* src,
+      const size_t numel);
+
+  void cast_float_to_half_and_copy_to(uint16_t* dst, const size_t numel);
+
   inline void copy_to(void* dst, const size_t nbytes) {
     VK_CHECK_COND(nbytes <= this->nbytes());
     vmaInvalidateAllocation(
@@ -111,6 +117,20 @@ class StagingBuffer final {
 
   inline void set_staging_zeros() {
     memset(data(), 0, nbytes());
+  }
+
+  template <typename T>
+  T select_element_at_dim(
+      const std::vector<int64_t>& sizes,
+      const int64_t dim,
+      const int64_t index) {
+    int64_t stride = 1;
+    for (size_t i = dim + 1; i < sizes.size(); ++i) {
+      stride *= sizes[i];
+    }
+    const int64_t offset = index * stride;
+    const T* typed_data = reinterpret_cast<const T*>(data());
+    return typed_data[offset];
   }
 };
 

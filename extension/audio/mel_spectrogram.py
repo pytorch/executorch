@@ -213,7 +213,7 @@ def export_processor(model=None, output_file="whisper_preprocess.pte"):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Export WhisperAudioProcessor to ExecutorTorch"
+        description="Export WhisperAudioProcessor to ExecuTorch"
     )
     parser.add_argument(
         "--feature_size",

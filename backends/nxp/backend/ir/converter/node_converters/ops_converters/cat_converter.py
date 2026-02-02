@@ -8,17 +8,24 @@ import torch
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.edge_helper import previous_non_qdq_node
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
+    apply_permutation_to,
+    create_channels_first_to_channels_last_permutation,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     _is_dequant_node,
     _is_quant_node,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.concatenation_options import (
     Concatenation,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from torch.fx import Node
+from torch.fx.passes.infra.partitioner import Partition
 from torch.nn import Parameter
 
 
@@ -72,51 +79,63 @@ class CatConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
         node: Node,
-        target: Target,
+        neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         if custom_delegation_options.force_delegate_cat:
             return True
 
-        match target:
-            case Target.RT700:
-                dim = CatConverter._get_normalized_dim(node)
+        dim = CatConverter._get_normalized_dim(node)
 
-                # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1491
-                if dim == 0:
-                    return False
+        # Neutron requires the channels to be a multiple of `num_macs`. The channels could either be the second or the
+        #  last dimension, depending on the formats of the node.
+        if node.meta[NXP_NODE_FORMAT].is_channels_first():
+            # During conversion to IR, the shape will be permuted to channels last, and the dimension on index
+            #  `1` will end up being the channels (last dim in NHWC).
+            channels_index = 1
+            to_nhwc_perm = create_channels_first_to_channels_last_permutation(
+                len(node.meta["val"].shape), True
+            )
+            dim = to_nhwc_perm.index(
+                dim
+            )  # Make sure the dim points to the NHWC dimension.
+        else:
+            # The shape will not be permuted during conversion, so the channels will remain the last dimension.
+            channels_index = -1
 
-                # Neutron requires the channels to be a multiple of `8`. The channels could either be the second or the
-                #  last dimension, depending on the formats of the node. The format, however, cannot be determined
-                #  during conversion, as it depends on what other nodes are delegated.
-                input_channels = [
-                    # The second dimension is the channels in PyTorch. If the inputs/output are not channels first, it
-                    #  will still be the channels in the IR.
-                    _get_shape(input_)[1]
-                    for input_ in node.all_input_nodes
-                ] + [
-                    # If the inputs/outputs are channels first, the last dimension will be the channels.
-                    _get_shape(input_)[-1]
-                    for input_ in node.all_input_nodes
-                ]
-                if any((input_channel % 8) != 0 for input_channel in input_channels):
-                    # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1492
-                    return False
+        input_channels = [
+            _get_shape(input_)[channels_index] for input_ in node.all_input_nodes
+        ]
+        output_channels = _get_shape(node)[channels_index]
 
-                output_channels = [_get_shape(node)[1], _get_shape(node)[-1]]
-                # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1493
-                if any((out_c % 8) != 0 for out_c in output_channels):
-                    return False
+        num_macs = neutron_target_spec.get_num_macs()
+        input_shapes = [_get_shape(input_) for input_ in node.all_input_nodes]
+        if any((input_channel % num_macs) != 0 for input_channel in input_channels):
+            # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1492
 
-                if len(node.all_input_nodes) < 2:  # Not supported on Neutron
-                    # TODO Try to skip the operator if this case is realistic.
-                    return False
-
-                return True
-
-            case _:
+            # If all input shapes are equal, the neutron is able to pad the last dimension of the inputs.
+            if not (
+                input_shapes.count(input_shapes[0]) == len(input_shapes)
+                and dim == len(input_shapes[0]) - 1
+            ):
                 return False
+
+        if (output_channels % num_macs) != 0:
+            # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1493
+
+            # If all input shapes are equal, the neutron is able to pad the last dimension of the output.
+            if not (
+                input_shapes.count(input_shapes[0]) == len(input_shapes)
+                and dim == len(input_shapes[0]) - 1
+            ):
+                return False
+
+        if len(node.all_input_nodes) < 2:  # Not supported on Neutron
+            # TODO Try to skip the operator if this case is realistic.
+            return False
+
+        return True
 
     @staticmethod
     def _is_supported_in_IR(
@@ -128,6 +147,48 @@ class CatConverter(NodeConverter):
             # The IR requires all inputs to have the same quantization parameters as the output.
             # The quantizer should quantize the operator so that this case does not happen.
             return False
+
+        return True
+
+    @classmethod
+    def supports_partitioning_result(
+        cls,
+        node: Node,
+        partition_list: list[Partition],
+        custom_delegation_options: CustomDelegationOptions,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+    ) -> bool:
+        # There is a bug in the NeutronConverter, where if none of the input dimensions before the one referenced by
+        #  `dim` are `!= 1`, the `Concat` is not delegated.
+        # This only happens when the inputs to the `Concat` are model inputs, and not outputs of other
+        #  operators.
+        cat_partition = [p for p in partition_list if node in p.nodes][0]
+        cat_inputs = map(previous_non_qdq_node, node.args[0])
+
+        if not all(
+            input_.op == "call_function" and input_ in cat_partition.nodes
+            for input_ in cat_inputs
+        ):
+            # Some inputs of the `cat` are NOT in the same partition as `cat`.
+            dim = CatConverter._get_normalized_dim(node)
+            input_shapes = [list(n.meta["val"].shape) for n in node.args[0]]
+            if node.meta[NXP_NODE_FORMAT].is_channels_first():
+                # Transform the shapes to channels last.
+                to_nhwc_perm = create_channels_first_to_channels_last_permutation(
+                    len(node.meta["val"].shape), True
+                )
+                input_shapes = [
+                    apply_permutation_to(shape, to_nhwc_perm) for shape in input_shapes
+                ]
+
+                # Transform the `dim` to refer to a channels last dimension.
+                dim = to_nhwc_perm.index(dim)
+
+            for input_shape in input_shapes:
+                if not any(d != 1 for d in input_shape[:dim]):
+                    # Do not delegate if there are no "non-1" dimensions in the shape before the `dim` dimension.
+                    return False
 
         return True
 

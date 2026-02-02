@@ -96,7 +96,6 @@ def test_div_tensor_mode_u55_INT(data):
         aten_ops=model.aten_ops_int,
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -113,14 +112,13 @@ def test_div_tensor_mode_u85_INT(data):
         aten_ops=model.aten_ops_int,
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
 @common.parametrize("data", test_data)
-def test_div_tensor_mode_vgf_INT(data):
+def test_div_tensor_mode_vgf_quant(data):
     mode, inputs = data()
     model = DivTensorModeFloat(mode)
 
@@ -129,8 +127,8 @@ def test_div_tensor_mode_vgf_INT(data):
         inputs,
         aten_op=model.aten_ops_int,
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
+        quantize=True,
     )
     pipeline.pop_stage("check_count.exir")
     pipeline.run()
@@ -138,7 +136,7 @@ def test_div_tensor_mode_vgf_INT(data):
 
 @common.SkipIfNoModelConverter
 @common.parametrize("data", test_data)
-def test_div_tensor_mode_vgf_FP(data):
+def test_div_tensor_mode_vgf_no_quant(data):
     mode, inputs = data()
     model = DivTensorModeFloat(mode)
 
@@ -147,7 +145,7 @@ def test_div_tensor_mode_vgf_FP(data):
         inputs,
         aten_op=model.aten_ops,
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()

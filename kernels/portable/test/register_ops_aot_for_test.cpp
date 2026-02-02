@@ -101,6 +101,35 @@ Tensor& _upsample_bilinear2d_aa_out_no_context(
 
   return ret;
 }
+
+Tensor& grid_sampler_2d_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& grid,
+    int64_t interpolation_mode,
+    int64_t padding_mode,
+    bool align_corners,
+    Tensor& out);
+
+Tensor& grid_sampler_2d_out_no_context(
+    const Tensor& input,
+    const Tensor& grid,
+    int64_t interpolation_mode,
+    int64_t padding_mode,
+    bool align_corners,
+    Tensor& out) {
+  KernelRuntimeContext ctx;
+  auto& ret = grid_sampler_2d_out(
+      ctx, input, grid, interpolation_mode, padding_mode, align_corners, out);
+
+  if (ctx.failure_state() != Error::Ok) {
+    throw std::runtime_error(
+        std::string("Kernel failed with error: ") +
+        std::to_string((int)ctx.failure_state()));
+  }
+
+  return ret;
+}
 // NOLINTEND(facebook-hte-ConstantArgumentPassByValue,
 // facebook-hte-ParameterMightThrowOnCopy)
 
@@ -114,6 +143,9 @@ TORCH_LIBRARY(et_test, m) {
   m.def(
       "_upsample_bilinear2d_aa.out(Tensor input, SymInt[] output_size, bool align_corners, float? scale_h, float? scale_w, *, Tensor(a!) out) -> Tensor(a!)",
       WRAP_TO_ATEN(_upsample_bilinear2d_aa_out_no_context, 5));
+  m.def(
+      "grid_sampler_2d.out(Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners, *, Tensor(a!) out) -> Tensor(a!)",
+      WRAP_TO_ATEN(grid_sampler_2d_out_no_context, 5));
 }
 
 } // namespace native

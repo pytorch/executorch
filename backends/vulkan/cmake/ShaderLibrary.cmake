@@ -24,22 +24,17 @@ if(NOT EXECUTORCH_ROOT)
   message("WARNING: EXECUTORCH_ROOT is not set! A failure is likely imminent.")
 endif()
 
-if(ANDROID)
-  if(NOT ANDROID_NDK)
-    message(FATAL_ERROR "ANDROID_NDK not set")
-  endif()
+find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
 
-  if(NOT GLSLC_PATH)
-    set(GLSLC_PATH
-        "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}/glslc"
-    )
-  endif()
-else()
-  find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
-
-  if(NOT GLSLC_PATH)
-    message(FATAL_ERROR "USE_VULKAN glslc not found")
-  endif()
+if(NOT GLSLC_PATH)
+  message(
+    FATAL_ERROR
+      "glslc from the Vulkan SDK must be installed to build the Vulkan backend. "
+      "Please install the Vulkan SDK 1.4.321.0 or newer from "
+      "https://vulkan.lunarg.com/sdk/home and ensure that the glslc binary is in your PATH. "
+      "Note that the glslc distributed with the Android NDK is not compatible since it "
+      "does not support the GL_EXT_integer_dot_product extension. "
+  )
 endif()
 
 # Required to enable linking with --whole-archive
@@ -58,6 +53,18 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
     endif()
   endif()
 
+  # Add nthreads argument for shader compilation
+  if(DEFINED EXECUTORCH_VULKAN_SHADER_COMPILE_NTHREADS)
+    list(APPEND GEN_SPV_ARGS "--nthreads"
+         "${EXECUTORCH_VULKAN_SHADER_COMPILE_NTHREADS}"
+    )
+  endif()
+
+  # Ninja cannot expand wildcards (*) in DEPENDS lists.
+  file(GLOB VULKAN_SHADERS "${shaders_path}/*.glsl" "${shaders_path}/*.glslh"
+       "${shaders_path}/*.yaml" "${shaders_path}/*.h"
+  )
+
   add_custom_command(
     COMMENT "Generating Vulkan Compute Shaders"
     OUTPUT ${VULKAN_SHADERGEN_OUT_PATH}/spv.cpp
@@ -68,7 +75,7 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
       --glslc-path=${GLSLC_PATH}
       --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH}/shader_cache/ --env
       ${VULKAN_GEN_ARG_ENV} ${GEN_SPV_ARGS}
-    DEPENDS ${shaders_path}/*
+    DEPENDS ${VULKAN_SHADERS}
             ${EXECUTORCH_ROOT}/backends/vulkan/runtime/gen_vulkan_spv.py
   )
 

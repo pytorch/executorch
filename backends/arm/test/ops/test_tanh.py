@@ -6,14 +6,9 @@
 
 from typing import Tuple
 
-import pytest
 import torch
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    get_symmetric_a16w8_quantization_config,
-    TOSAQuantizer,
-)
 
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -21,8 +16,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa.specification import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 
 aten_op = "torch.ops.aten.tanh.default"
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -77,7 +70,6 @@ def test_tanh_u55_INT(test_data: Tuple):
         (test_data(),),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -90,55 +82,35 @@ def test_tanh_u85_INT(test_data: Tuple):
         (test_data(),),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_tanh_vgf_FP(test_data: Tuple):
-    pipeline = VgfPipeline[input_t1](
-        Tanh(), (test_data(),), aten_op, tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite)
-@common.SkipIfNoModelConverter
-def test_tanh_vgf_INT(test_data: Tuple):
+def test_tanh_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Tanh(),
         (test_data(),),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
     )
     pipeline.run()
 
 
-def get_symmetric_a16w8_tanh_quantizer(per_channel_quantization=False):
-    tosa_version = conftest.get_option("tosa_version")
-    tosa_profiles = {
-        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
-    }
-
-    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-    quantizer.set_global(
-        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_tanh_vgf_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Tanh(),
+        (test_data(),),
+        aten_op,
+        quantize=True,
     )
-
-    return Quantize(
-        quantizer,
-        get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization
-        ),
-    )
+    pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.xfail(
-    reason="missing int16 tanh ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13975"
-)
 def test_tanh_16a8w_tosa_INT(test_data: torch.Tensor):
     """Test tanh operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -151,22 +123,14 @@ def test_tanh_16a8w_tosa_INT(test_data: torch.Tensor):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
         tosa_extensions=["int16"],
-    )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_tanh_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+        epsilon=2**-16,
+        rtol=2e-03,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 tanh operations"
-)
 def test_tanh_16a8w_u55_INT16(test_data: torch.Tensor):
     """Test tanh operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -178,24 +142,16 @@ def test_tanh_16a8w_u55_INT16(test_data: torch.Tensor):
         exir_ops=[],
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
-    )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_tanh_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+        a16w8_quantization=True,
+        epsilon=2**-16,
+        rtol=2e-03,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 tanh operations"
-)
-def test_tanh_16a8w_u85_INT16(test_data: torch.Tensor):
+def test_tanh_16a8w_u85_INT(test_data: torch.Tensor):
     """Test tanh operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -206,13 +162,8 @@ def test_tanh_16a8w_u85_INT16(test_data: torch.Tensor):
         exir_ops=[],
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
-    )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_tanh_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+        a16w8_quantization=True,
+        epsilon=2**-16,
+        rtol=2e-03,
     )
     pipeline.run()

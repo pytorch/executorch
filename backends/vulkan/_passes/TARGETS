@@ -64,19 +64,6 @@ runtime.python_library(
 )
 
 runtime.python_library(
-    name = "remove_local_scalar_dense",
-    srcs = ["remove_local_scalar_dense_ops.py"],
-    visibility = [
-        "//executorch/backends/...",
-    ],
-    deps = [
-        "//caffe2:torch",
-        "//executorch/exir:pass_base",
-        "//executorch/exir/dialects:lib",
-    ],
-)
-
-runtime.python_library(
     name = "remove_redundant_ops",
     srcs = ["remove_redundant_ops.py"],
     visibility = [
@@ -148,7 +135,6 @@ runtime.python_library(
         ":fuse_quantized_ops",
         ":insert_prepack_nodes",
         ":remove_asserts",
-        ":remove_local_scalar_dense",
         ":remove_redundant_ops",
         ":squeeze_unsqueeze_inputs",
         ":tag_memory_meta_pass",

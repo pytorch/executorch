@@ -13,19 +13,15 @@ from typing import Callable, List
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes import ExpandBroadcastTensorShape
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
-from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
+
 from executorch.examples.qualcomm.oss_scripts.efficientSAM.source_transformation import (
     replace_maskdecoder_with_custom_op,
     replace_pos_emb_with_custom_op,
 )
-
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     class_agnostic_mIoU,
+    get_backend_type,
     make_output_dir,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
@@ -236,8 +232,7 @@ def main(args):
     pte_filename = "efficientSAM_qnn"
 
     # lower to QNN
-    passes_job = get_capture_program_passes()
-    passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
+    backend = get_backend_type(args.backend)
     build_executorch_binary(
         model,
         inputs[0],
@@ -246,8 +241,9 @@ def main(args):
         dataset=inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        passes_job=passes_job,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -264,6 +260,9 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
     adb.push(inputs=inputs)
     adb.execute()
@@ -281,7 +280,7 @@ def main(args):
             output = torch.from_numpy(output).reshape(output_shape)
             outputs.append(output)
 
-    adb.pull(output_path=args.artifact, callback=post_process)
+    adb.pull(host_output_path=args.artifact, callback=post_process)
 
     # MIoU analysis
     miou = 0

@@ -16,7 +16,7 @@ from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 @register_node_visitor
 class BMMVisitor(NodeVisitor):
-    target = "aten.bmm.default"
+    target = ["aten.bmm.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -29,12 +29,15 @@ class BMMVisitor(NodeVisitor):
     ) -> None:
         input1 = node.args[0]
         input_id_1 = self.define_tensor(input1, enn_graph, vals_to_ids)
+
         input2 = node.args[1]
         input_id_2 = self.define_tensor(input2, enn_graph, vals_to_ids)
 
         # output
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
+        params = {}
+        self._update_params_qdtype(node, params)
         enn_graph.define_op(
-            node.name, "BATCH_MATMUL", [input_id_1, input_id_2], [output_id]
+            node.name, "BATCH_MATMUL", [input_id_1, input_id_2], [output_id], params
         )

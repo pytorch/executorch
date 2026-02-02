@@ -6,10 +6,13 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.decompose_sqrt_pass import DecomposeSqrtPass
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeLinearVectorNormPass(ExportPass):
+class DecomposeLinalgVectorNormPass(ArmPass):
     """
     This pass decomposes aten.linalg_vector_norm.default into more primitive ops.
     We need to add this pass before quantization for graph annotation.
@@ -30,12 +33,17 @@ class DecomposeLinearVectorNormPass(ExportPass):
           dtype prior, but we dont know this from FX graph.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        DecomposeSqrtPass,
+        DecomposeSumPass,
+    }
 
     torch_linalg_vector_norm = (torch.ops.aten.linalg_vector_norm.default,)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self.torch_linalg_vector_norm:
+        if op not in self.torch_linalg_vector_norm or not self.allowed_to_transform(
+            meta
+        ):
             return super().call_operator(op, args, kwargs, meta)
 
         # Extract inputs and optional arguments.

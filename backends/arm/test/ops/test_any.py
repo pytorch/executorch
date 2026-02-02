@@ -149,8 +149,6 @@ def test_any_tosa_INT(test_data: input_t1):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -177,41 +175,36 @@ def test_any_u85_INT(test_data: input_t1):
         test_input(),
         op.aten_op,
         op.exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data)
 @common.SkipIfNoModelConverter
-def test_any_vgf_FP(test_data: input_t1):
+def test_any_vgf_no_quant(test_data: input_t1):
     op, data_fn = test_data()
     pipeline = VgfPipeline[input_t1](
         op,
         data_fn(),
         op.aten_op,
         op.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data)
 @common.SkipIfNoModelConverter
-def test_any_vgf_INT(test_data: input_t1):
+def test_any_vgf_quant(test_data: input_t1):
     op, data_fn = test_data()
     pipeline = VgfPipeline[input_t1](
         op,
         data_fn(),
         op.aten_op,
         op.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

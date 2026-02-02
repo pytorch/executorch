@@ -16,7 +16,7 @@ if you are using Ubuntu, or use an equivalent install command.
 
 ### ModuleNotFoundError: No module named 'pytorch_tokenizers'
 
-The `pytorch_tokenizers` package is required for LLM export functionality. Install it from the ExecutorTorch source code:
+The `pytorch_tokenizers` package is required for LLM export functionality. Install it from the ExecuTorch source code:
 ```
 pip install -e ./extension/llm/tokenizers/
 ```
@@ -48,7 +48,11 @@ Thread count can be set with the following function. Ensure this is done prior t
 ::executorch::extension::threadpool::get_threadpool()->_unsafe_reset_threadpool(num_threads);
 ```
 
-For a deeper investgiation into model performance, ExecuTorch supports operator-level performance profiling. See [Using the ExecuTorch Developer Tools to Profile a Model](devtools-integration-tutorial.md) for more information.
+For a deeper investigation into model performance, ExecuTorch supports operator-level performance profiling. See [Using the ExecuTorch Developer Tools to Profile a Model](tutorials/devtools-integration-tutorial) <!-- @lint-ignore --> for more information.
+
+### Numerical Accuracy Issues
+
+If you encounter numerical accuracy issues or unexpected model outputs, ExecuTorch provides debugging tools to identify numerical discrepancies. See [Using the ExecuTorch Developer Tools to Debug a Model](tutorials/devtools-debugging-tutorial) <!-- @lint-ignore --> for a step-by-step guide on debugging numerical issues in delegated models.
 
 ### Missing Logs
 

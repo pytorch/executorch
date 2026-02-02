@@ -82,7 +82,7 @@ input_t = tuple[torch.Tensor]
     "test_data",
     module_tests,
 )
-def test_nn_functional_FP(test_data):
+def test_nn_functional_tosa_FP(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineFP[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=False
@@ -102,17 +102,18 @@ def test_nn_functional_FP(test_data):
 @parametrize(
     "test_data",
     module_tests,
-    {"normalize": "MLETORCH-1255: Unsupported dtype in InsertTableOpsPass"},
 )
-def test_nn_functional_INT(test_data):
+def test_nn_functional_tosa_INT(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineINT[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=True
     )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
-    pipeline.pop_stage("check.quant_nodes")
-    pipeline.pop_stage("check_not.quant_nodes")
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
+    if pipeline.has_stage("check_not.quant_nodes"):
+        pipeline.pop_stage("check_not.quant_nodes")
     try:
         pipeline.run()
     except RuntimeError as e:

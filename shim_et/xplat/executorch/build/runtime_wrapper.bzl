@@ -105,9 +105,9 @@ def _patch_build_mode_flags(kwargs):
         # @oss-disable: "ovr_config//build_mode:opt": ["-D__ET_BUILD_MODE_OPT=1"],
     }) + select({
         "DEFAULT": [],
-        # @oss-disable: "ovr_config//build_mode:asan": ["-D__ET_BUILD_MODE_ASAN=1"],
-        # @oss-disable: "ovr_config//build_mode:tsan": ["-D__ET_BUILD_MODE_TSAN=1"],
-        # @oss-disable: "ovr_config//build_mode:ubsan": ["-D__ET_BUILD_MODE_UBSAN=1"],
+        # @oss-disable: "ovr_config//build_mode:sanitizer_type[asan]": ["-D__ET_BUILD_MODE_ASAN=1"],
+        # @oss-disable: "ovr_config//build_mode:sanitizer_type[tsan]": ["-D__ET_BUILD_MODE_TSAN=1"],
+        # @oss-disable: "ovr_config//build_mode:sanitizer_type[ubsan]": ["-D__ET_BUILD_MODE_UBSAN=1"],
         # @oss-disable: "ovr_config//build_mode:lto-fat": ["-D__ET_BUILD_MODE_LTO=1"],
         # @oss-disable: "ovr_config//build_mode:code-coverage": ["-D__ET_BUILD_MODE_COV=1"],
     })
@@ -115,6 +115,12 @@ def _patch_build_mode_flags(kwargs):
     kwargs["compiler_flags"] = kwargs["compiler_flags"] + select({
             "DEFAULT": [],
             "ovr_config//os:macos": ["-fvisibility=default"],
+    })
+
+    # Add -O2 compiler flag when the compiler_flag_O2 config is set
+    kwargs["compiler_flags"] = kwargs["compiler_flags"] + select({
+        "DEFAULT": [],
+        # @oss-disable: "fbsource//xplat/assistant/oacr/native/scripts:compiler_flag_O2": ["-O2"],
     })
 
     return kwargs
@@ -178,17 +184,7 @@ def _patch_kwargs_common(kwargs):
     """
     env.remove_unsupported_kwargs(kwargs)
 
-    # Be careful about dependencies on executorch targets for now, so that we
-    # don't pick up unexpected clients while things are still in flux.
-    if not kwargs.pop("_is_external_target", False):
-        for target in kwargs.get("visibility", []):
-            if not (target == "PUBLIC" or target.startswith("//executorch") or target.startswith("//pytorch/tokenizers") or target.startswith("@")):
-                fail("Please manage all external visibility using the " +
-                     "EXECUTORCH_CLIENTS list in " +
-                     "//executorch/build/fb/clients.bzl. " +
-                     "Found external visibility target \"{}\".".format(target))
-    else:
-        kwargs.pop("_is_external_target", None)
+    kwargs.pop("_is_external_target", False)
 
     # Convert `[exported_]external_deps` entries into real deps if necessary.
     _resolve_external_deps(kwargs)
@@ -346,6 +342,7 @@ def _python_binary(*args, **kwargs):
 
 def _python_test(*args, **kwargs):
     _patch_kwargs_common(kwargs)
+    _remove_caffe2_deps(kwargs)
     env.python_test(*args, **kwargs)
 
 def get_oss_build_kwargs():

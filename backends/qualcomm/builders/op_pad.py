@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import cast, Dict, List
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -26,15 +26,15 @@ class Pad(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         pad_inp_tensor_wrapper = self.define_tensor(
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         pad_input_tensors = [pad_inp_tensor_wrapper]
@@ -44,7 +44,7 @@ class Pad(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         pad_output_tensors = [output_tensor_wrapper]
@@ -64,7 +64,7 @@ class Pad(NodeVisitor):
             pad_amount = pad_amount[list(node.meta[QCOM_AXIS_ORDER])]
         pad_amount_val = node.args[2]
 
-        pad_op = PyQnnWrapper.PyQnnOpWrapper(
+        pad_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpPad.op_name,
@@ -75,7 +75,7 @@ class Pad(NodeVisitor):
         # For now, we only support constant (0) padding due to torch implementation
         pad_op.AddScalarParam(
             OpPad.param_scheme,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(OpPad.Scheme.CONSTANT)},
         )
 
@@ -87,7 +87,7 @@ class Pad(NodeVisitor):
 
         pad_op.AddTensorParam(
             OpPad.param_pad_amount,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(pad_amount_shape),
             pad_amount_shape,
             pad_amount,

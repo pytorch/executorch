@@ -110,7 +110,6 @@ def test_select_int_u55_INT_copy(test_data: Tuple):
         test_data(),
         aten_op_copy,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -124,7 +123,6 @@ def test_select_int_u55_INT(test_data: Tuple):
         test_data(),
         aten_op_int,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -151,7 +149,6 @@ def test_select_int_u85_INT_copy(test_data: Tuple):
         test_data(),
         aten_op_copy,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -165,7 +162,6 @@ def test_select_int_u85_INT(test_data: Tuple):
         test_data(),
         aten_op_int,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -173,43 +169,51 @@ def test_select_int_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_select_int_vgf_FP_copy(test_data: Tuple):
-    pipeline = VgfPipeline[input_t1](
-        SelectCopy(), test_data(), aten_op_copy, [], tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite)
-@common.SkipIfNoModelConverter
-def test_select_int_vgf_FP(test_data: Tuple):
-    pipeline = VgfPipeline[input_t1](
-        SelectInt(), test_data(), aten_op_int, [], tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite)
-@common.SkipIfNoModelConverter
-def test_select_int_vgf_INT_copy(test_data: Tuple):
+def test_select_int_vgf_no_quant_copy(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SelectCopy(),
         test_data(),
         aten_op_copy,
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_select_int_vgf_INT(test_data: Tuple):
+def test_select_int_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SelectInt(),
         test_data(),
         aten_op_int,
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_select_int_vgf_quant_copy(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SelectCopy(),
+        test_data(),
+        aten_op_copy,
+        [],
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_select_int_vgf_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SelectInt(),
+        test_data(),
+        aten_op_int,
+        [],
+        quantize=True,
     )
     pipeline.run()

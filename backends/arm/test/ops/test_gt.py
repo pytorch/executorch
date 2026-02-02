@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -70,6 +70,17 @@ test_data_tensor = {
     "gt_tensor_rank4_randn": lambda: op_gt_tensor_rank4_randn,
 }
 
+test_data_tensor_bf16 = {
+    "gt_tensor_rank2_rand_bf16": lambda: Greater(
+        torch.rand(4, 5, dtype=torch.bfloat16),
+        torch.rand(1, 5, dtype=torch.bfloat16),
+    ),
+    "gt_tensor_rank3_randn_bf16": lambda: Greater(
+        torch.randn(2, 3, 4, dtype=torch.bfloat16),
+        torch.randn(2, 3, 4, dtype=torch.bfloat16),
+    ),
+}
+
 test_data_scalar = {
     "gt_scalar_rank1_ones": lambda: op_gt_scalar_rank1_ones,
     "gt_scalar_rank2_rand": lambda: op_gt_scalar_rank2_rand,
@@ -77,25 +88,36 @@ test_data_scalar = {
     "gt_scalar_rank4_randn": lambda: op_gt_scalar_rank4_randn,
 }
 
+test_data_scalar_bf16 = {
+    "gt_scalar_rank2_rand_bf16": lambda: Greater(
+        torch.rand(4, 5, dtype=torch.bfloat16), 0.2
+    ),
+    "gt_scalar_rank3_randn_bf16": lambda: Greater(
+        torch.randn(2, 3, 4, dtype=torch.bfloat16), -0.1
+    ),
+}
 
-@common.parametrize("test_module", test_data_tensor)
+
+@common.parametrize("test_module", test_data_tensor | test_data_tensor_bf16)
 def test_gt_tensor_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
         test_module().get_inputs(),
         Greater.aten_op_tensor,
         Greater.exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_scalar)
+@common.parametrize("test_module", test_data_scalar | test_data_scalar_bf16)
 def test_gt_scalar_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
         test_module().get_inputs(),
         Greater.aten_op_scalar,
         Greater.exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -118,6 +140,30 @@ def test_gt_scalar_tosa_INT(test_module):
         test_module().get_inputs(),
         Greater.aten_op_tensor,
         Greater.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+def test_gt_tensor_tosa_INT_a16w8(test_module):
+    pipeline = TosaPipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Greater.aten_op_tensor,
+        Greater.exir_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+def test_gt_scalar_tosa_INT_a16w8(test_module):
+    pipeline = TosaPipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Greater.aten_op_tensor,
+        Greater.exir_op,
+        tosa_extensions=["int16"],
     )
     pipeline.run()
 
@@ -162,7 +208,6 @@ def test_gt_tensor_u85_INT(test_module):
         test_module().get_inputs(),
         Greater.aten_op_tensor,
         Greater.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -178,58 +223,93 @@ def test_gt_scalar_u85_INT(test_module):
         test_module().get_inputs(),
         Greater.aten_op_tensor,
         Greater.exir_op,
-        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.XfailIfNoCorstone320
+def test_gt_tensor_16a8w_u85_INT(test_module):
+    """Test gt operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = EthosU85PipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Greater.aten_op_tensor,
+        Greater.exir_op,
+        per_channel_quantization=per_channel_quantization,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.XfailIfNoCorstone320
+def test_gt_scalar_16a8w_u85_INT(test_module):
+    """Test gt operation (scalar) with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = EthosU85PipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Greater.aten_op_tensor,
+        Greater.exir_op,
+        per_channel_quantization=per_channel_quantization,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_tensor)
 @common.SkipIfNoModelConverter
-def test_gt_tensor_vgf_FP(test_module):
+def test_gt_tensor_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         Greater.aten_op_tensor,
         Greater.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
 @common.SkipIfNoModelConverter
-def test_gt_scalar_vgf_FP(test_module):
+def test_gt_scalar_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         Greater.aten_op_scalar,
         Greater.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_tensor)
 @common.SkipIfNoModelConverter
-def test_gt_tensor_vgf_INT(test_module):
+def test_gt_tensor_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         Greater.aten_op_tensor,
         Greater.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
 @common.SkipIfNoModelConverter
-def test_gt_scalar_vgf_INT(test_module):
+def test_gt_scalar_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         Greater.aten_op_tensor,
         Greater.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

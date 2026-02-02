@@ -103,7 +103,6 @@ def test_vector_norm_u55_INT_fvp(test_module):
         input_tensor,
         aten_op_q_decomposed_q,
         exir_op_q_decomposed,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.pop_stage("check_not.exir")
@@ -121,7 +120,6 @@ def test_vector_norm_u85_INT_fvp(test_module):
         input_tensor,
         aten_op_q_decomposed_q,
         exir_op_q_decomposed,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.pop_stage("check_not.exir")
@@ -130,7 +128,7 @@ def test_vector_norm_u85_INT_fvp(test_module):
 
 @common.parametrize("test_module", test_modules)
 @common.SkipIfNoModelConverter
-def test_vector_norm_vgf_FP(test_module):
+def test_vector_norm_vgf_no_quant(test_module):
     model, input_tensor = test_module
     # FP VGF
     aten_op = "torch.ops.aten.linalg_vector_norm.default"
@@ -140,14 +138,14 @@ def test_vector_norm_vgf_FP(test_module):
         input_tensor,
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
 @common.SkipIfNoModelConverter
-def test_vector_norm_vgf_INT(test_module):
+def test_vector_norm_vgf_quant(test_module):
     model, input_tensor = test_module
     # Should not found this op
     exir_op = "executorch_exir_dialects_edge__ops_aten_linalg_vector_norm_default"
@@ -157,6 +155,6 @@ def test_vector_norm_vgf_INT(test_module):
         input_tensor,
         aten_op_q_decomposed_q,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

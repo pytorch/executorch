@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,6 +16,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -29,6 +30,7 @@ input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, Input y
 
 class Repeat(torch.nn.Module):
     aten_op = "torch.ops.aten.repeat.default"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_repeat_default"
 
     def __init__(self, multiples: Sequence[int]):
         super().__init__()
@@ -50,7 +52,7 @@ class RepeatInterleaveInt(torch.nn.Module):
         return x.repeat_interleave(self.repeats, self.dim)
 
 
-test_data_suite = {
+test_data_suite_u55 = {
     # test_name : lambda: (module, test_data)
     "1_x_1": lambda: (Repeat((2,)), (torch.randn(3),)),
     "2_x_2": lambda: (Repeat((2, 1)), (torch.randn(3, 4),)),
@@ -61,6 +63,13 @@ test_data_suite = {
     "1_x_4": lambda: (Repeat((2, 1, 2, 4)), (torch.randn((3, 3, 3)),)),
     "interleave_int_3_x_1": lambda: (RepeatInterleaveInt(3, 1), (torch.randn(3, 4),)),
 }
+test_data_suite_u55_reject = {
+    "1_x_1_bool": lambda: (
+        Repeat((2,)),
+        (torch.randint(0, 2, (3,), dtype=torch.bool),),
+    ),
+}
+test_data_suite = test_data_suite_u55 | test_data_suite_u55_reject
 
 
 @common.parametrize("test_data", test_data_suite)
@@ -87,7 +96,8 @@ def test_repeat_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite_u55)
+@common.XfailIfNoCorstone300
 def test_repeat_u55_INT(test_data: Tuple):
     module, test_data = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
@@ -95,12 +105,26 @@ def test_repeat_u55_INT(test_data: Tuple):
         test_data,
         module.aten_op,
         exir_ops=[],
-        run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_u55_reject)
+@common.XfailIfNoCorstone300
+def test_repeat_u55_INT_not_delegated(test_data: Tuple):
+    module, test_data = test_data()
+    pipeline = OpNotSupportedPipeline[input_t1](
+        module,
+        test_data,
+        non_delegated_ops={module.exir_op: 1},
+        u55_subset=True,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
 def test_repeat_u85_INT(test_data: Tuple):
     module, test_data = test_data()
     pipeline = EthosU85PipelineINT[input_t1](
@@ -108,32 +132,76 @@ def test_repeat_u85_INT(test_data: Tuple):
         test_data,
         module.aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_repeat_vgf_FP(test_data: Tuple):
+def test_repeat_vgf_no_quant(test_data: Tuple):
     module, args = test_data()
     pipeline = VgfPipeline[input_t1](
         module,
         args,
         module.aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_repeat_vgf_INT(test_data: Tuple):
+def test_repeat_vgf_quant(test_data: Tuple):
     module, args = test_data()
     pipeline = VgfPipeline[input_t1](
         module,
         args,
         module.aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+def test_repeat_tosa_INT_a16w8(test_data):
+    """Test repeat with 16A8W quantization for TOSA INT."""
+    module, args = test_data()
+    pipeline = TosaPipelineINT[Tuple[torch.Tensor]](
+        module,
+        args,
+        module.aten_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_u55)
+@common.XfailIfNoCorstone300
+def test_repeat_u55_INT_a16w8(test_data):
+    """Test repeat with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    module, args = test_data()
+    pipeline = EthosU55PipelineINT[Tuple[torch.Tensor]](
+        module,
+        args,
+        module.aten_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_repeat_u85_INT_a16w8(test_data):
+    """Test repeat with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    module, args = test_data()
+    pipeline = EthosU85PipelineINT[Tuple[torch.Tensor]](
+        module,
+        args,
+        module.aten_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

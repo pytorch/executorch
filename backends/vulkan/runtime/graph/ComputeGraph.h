@@ -25,6 +25,11 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
+#ifdef ET_EVENT_TRACER_ENABLED
+std::string& set_and_get_current_operator_json(const std::string& json);
+size_t get_current_operator_count(const bool increment = false);
+#endif
+
 namespace vkcompute {
 
 // Define valid scalar types that the Value class can
@@ -322,6 +327,8 @@ class ComputeGraph final {
 
   std::vector<int64_t> sizes_of(const ValueRef idx) const;
 
+  std::vector<int64_t> padded_sizes_of(const ValueRef idx) const;
+
   /*
    * Returns the size of the tensor at `idx` along the specified dimension.
    * Negative indexing is allowed.
@@ -345,16 +352,28 @@ class ComputeGraph final {
 
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
+  vkapi::ScalarType get_staging_dtype_for(const ValueRef idx) const;
+
   inline const utils::ivec3& logical_limits_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().logical_limits();
   }
 
   inline int32_t numel_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().numel();
+    return utils::safe_downcast<int32_t>(
+        values_.at(idx).toConstTensor().numel());
+  }
+
+  inline int32_t padded_numel_of(const ValueRef idx) const {
+    return utils::safe_downcast<int32_t>(
+        values_.at(idx).toConstTensor().padded_numel());
   }
 
   inline size_t staging_buffer_numel_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().staging_buffer_numel();
+  }
+
+  inline int64_t physical_numel_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().physical_numel();
   }
 
   inline utils::StorageType storage_type_of(const ValueRef idx) const {
@@ -437,6 +456,11 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().packed_dim();
   }
 
+  inline const api::PackedDimInfo& packed_dim_info_of(
+      const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().packed_dim_info();
+  }
+
   inline int32_t concat_dim_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().concat_dim();
   }
@@ -447,6 +471,18 @@ class ComputeGraph final {
 
   inline vkapi::BufferBindInfo buffer_meta_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().buffer_meta_ubo();
+  }
+
+  inline vkapi::BufferBindInfo texture_meta_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().texture_meta_ubo();
+  }
+
+  inline vkapi::BufferBindInfo meta_ubo(const ValueRef idx) {
+    if (is_buffer_storage(idx)) {
+      return buffer_meta_ubo(idx);
+    } else {
+      return texture_meta_ubo(idx);
+    }
   }
 
   inline vkapi::BufferBindInfo strides_ubo(const ValueRef idx) {
@@ -627,6 +663,10 @@ class ComputeGraph final {
 
   bool device_name_contains(const char* substr);
 
+  int64_t max_buffer_numel() {
+    return static_cast<int64_t>(context_->adapter_ptr()->max_buffer_numel());
+  }
+
   //
   // Graph Building
   //
@@ -746,7 +786,10 @@ class ComputeGraph final {
    * use memory that is visible to both the CPU and GPU, and therefore is used
    * as a intermediary when transferring data between the CPU and GPU.
    */
-  ValueRef add_staging(const vkapi::ScalarType dtype, const size_t numel);
+  ValueRef add_staging(
+      const vkapi::ScalarType dtype,
+      const size_t numel,
+      const vkapi::CopyDirection direction);
 
   ValueRef add_none();
 
@@ -811,6 +854,8 @@ class ComputeGraph final {
   inline void set_val_as_input(const ValueRef idx) {
     inputs_.push_back({idx, kDummyValueRef});
   }
+
+  ValueRef staging_of(const ValueRef idx);
 
   inline void set_val_as_output(const ValueRef idx) {
     outputs_.push_back({idx, kDummyValueRef});
@@ -954,16 +999,18 @@ class ComputeGraph final {
   // Input/Output
   //
 
+ private:
   void
   copy_into_staging(const ValueRef idx, const void* data, const size_t numel);
 
+  void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
+
+ public:
   void maybe_cast_and_copy_into_staging(
       const ValueRef idx,
       const void* data,
       const size_t numel,
       const vkapi::ScalarType src_data_dtype);
-
-  void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
 
   void maybe_cast_and_copy_from_staging(
       const ValueRef idx,
@@ -1016,6 +1063,12 @@ class ComputeGraph final {
   void prepack();
 
   //
+  // Optional Graph Execution
+  //
+
+  void optional_warmup_execute();
+
+  //
   // Graph Execution
   //
 
@@ -1061,12 +1114,24 @@ class ComputeGraph final {
     return context_->adapter_ptr()->supports_int16_shader_types();
   }
 
+  inline bool float16_buffers_enabled() const {
+    return context_->adapter_ptr()->has_full_float16_buffers_support();
+  }
+
   inline size_t execute_count() const {
     return execute_count_;
   }
 
   inline bool can_use_int8_dot_product() const {
     return can_use_int8_dot_product_;
+  }
+
+  inline void set_has_data_dependent_shapes() {
+    config_.has_data_dependent_shapes = true;
+  }
+
+  inline bool has_data_dependent_shapes() const {
+    return config_.has_data_dependent_shapes;
   }
 
   /*

@@ -185,6 +185,7 @@ def _load_for_executorch(
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch_from_buffer(
     buffer: bytes,
+    data_map_buffer: Optional[bytes] = None,
     enable_etdump: bool = False,
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.InternalConsistency,
@@ -199,7 +200,10 @@ def _load_for_executorch_from_buffer(
 
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch_from_bundled_program(
-    module: BundledModule, enable_etdump: bool = False, debug_buffer_size: int = 0
+    module: BundledModule,
+    data_map_buffer: Optional[bytes] = None,
+    enable_etdump: bool = False,
+    debug_buffer_size: int = 0,
 ) -> ExecuTorchModule:
     """Same as _load_for_executorch, but takes a bundled program instead of a file path.
 
@@ -278,6 +282,15 @@ def _reset_profile_results() -> None:
 
 @experimental("This API is experimental and subject to change without notice.")
 def _unsafe_reset_threadpool(num_threads: int) -> None:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _threadpool_get_thread_count() -> int:
     """
     .. warning::
 

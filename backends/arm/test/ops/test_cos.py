@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -9,7 +9,7 @@ from typing import Tuple
 import pytest
 
 import torch
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -31,6 +31,11 @@ test_data_suite = {
     "ramp": torch.arange(-16, 16, 0.2),
 }
 
+test_data_suite_bf16 = {
+    "rand_bf16": torch.rand(4, 4, dtype=torch.bfloat16) - 0.5,
+    "ramp_bf16": torch.arange(-8, 8, 0.5, dtype=torch.bfloat16),
+}
+
 
 class Cos(torch.nn.Module):
 
@@ -38,7 +43,7 @@ class Cos(torch.nn.Module):
         return torch.cos(x)
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 @pytest.mark.tosa_ref_model
 def test_cos_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
@@ -46,10 +51,9 @@ def test_cos_tosa_FP(test_data: Tuple):
         (test_data,),
         aten_op,
         exir_op=[],
-        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+        tosa_extensions=["bf16"],
     )
-    if conftest.get_option("tosa_version") == "1.0":
-        pipeline.run()
+    pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
@@ -60,56 +64,55 @@ def test_cos_tosa_INT(test_data: Tuple):
         (test_data,),
         aten_op,
         exir_op=[],
-        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
 def test_cos_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Cos(),
         (test_data,),
         aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
 def test_cos_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Cos(),
         (test_data,),
         aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_cos_vgf_FP(test_data: Tuple):
+def test_cos_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Cos(),
         (test_data,),
         aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_cos_vgf_INT(test_data: Tuple):
+def test_cos_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Cos(),
         (test_data,),
         aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

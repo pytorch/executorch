@@ -1,21 +1,66 @@
-# Backend Overview
+# Backends
 
-ExecuTorch backends provide hardware acceleration for a specific hardware target. In order to achieve maximum performance on target hardware, ExecuTorch optimizes the model for a specific backend during the export and lowering process. This means that the resulting .pte file is specialized for the specific hardware. In order to deploy to multiple backends, such as Core ML on iOS and Arm CPU on Android, it is common to generate a dedicated .pte file for each.
+## Backend Overview
 
-The choice of hardware backend is informed by the hardware that the model is intended to be deployed on. Each backend has specific hardware requires and level of model support. See the documentation for each hardware backend for more details.
+ExecuTorch backends provide hardware acceleration for specific hardware targets, enabling models to run efficiently on devices ranging from mobile phones to embedded systems and DSPs. During the export and lowering process, ExecuTorch optimizes your model for the chosen backend, resulting in a `.pte` file specialized for that hardware. To support multiple platforms (e.g., Core ML on iOS, Arm CPU on Android), you typically generate a dedicated `.pte` file for each backend.
 
-As part of the .pte file creation process, ExecuTorch identifies portions of the model (partitions) that are supported for the given backend. These sections are processed by the backend ahead of time to support efficient execution. Portions of the model that are not supported on the delegate, if any, are executed using the portable fallback implementation on CPU. This allows for partial model acceleration when not all model operators are supported on the backend, but may have negative performance implications. In addition, multiple partitioners can be specified in order of priority. This allows for operators not supported on GPU to run on CPU via XNNPACK, for example.
+The choice of backend is informed by the hardware your model will run on. Each backend has its own hardware requirements and level of model/operator support. See the documentation for each backend for details.
 
-### Available Backends
+As part of `.pte` file creation, ExecuTorch identifies model partitions supported by the backend. These are processed ahead of time for efficient execution. Operators not supported by the delegate are executed using the portable CPU fallback (e.g., XNNPACK), allowing for partial acceleration. You can also specify multiple partitioners in order of priority, so unsupported GPU ops can fall back to CPU, for example.
 
-Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to `to_edge_transform_and_lower`. See the appropriate backend documentation for more information.
+---
 
-- [XNNPACK (Mobile CPU)](backends-xnnpack.md)
-- [Core ML (iOS)](backends-coreml.md)
-- [Metal Performance Shaders (iOS GPU)](backends-mps.md)
-- [Vulkan (Android GPU)](backends-vulkan.md)
-- [Qualcomm NPU](backends-qualcomm.md)
-- [MediaTek NPU](backends-mediatek.md)
-- [ARM Ethos-U NPU](backends-arm-ethos-u.md)
-- [ARM VGF](backends-arm-vgf.md)
-- [Cadence DSP](backends-cadence.md)
+## Why Backends Matter
+
+Backends are the bridge between your exported model and the hardware it runs on. Choosing the right backend ensures your model takes full advantage of device-specific acceleration, balancing performance, compatibility, and resource usage.
+
+---
+
+## Choosing a Backend
+
+| Backend                                                      | Platform(s)   | Hardware Type | Typical Use Case                |
+|--------------------------------------------------------------|---------------|---------------|---------------------------------|
+| [XNNPACK](backends/xnnpack/xnnpack-overview.md)              | All           | CPU           | General-purpose, fallback       |
+| [CUDA](/backends/cuda/cuda-overview.md)                      | Linux/Windows | GPU           | NVIDIA GPU acceleration         |
+| [Core ML](/backends/coreml/coreml-overview.md)               | iOS, macOS    | NPU/GPU/CPU   | Apple devices, high performance |
+| [Metal Performance Shaders](/backends/mps/mps-overview.md)   | iOS, macOS    | GPU           | Apple GPU acceleration          |
+| [Vulkan ](/backends/vulkan/vulkan-overview.md)               | Android       | GPU           | Android GPU acceleration        |
+| [Qualcomm](backends-qualcomm)                                | Android     | NPU           | Qualcomm SoCs                   |
+| [MediaTek](backends-mediatek)                                | Android     | NPU           | MediaTek SoCs                   |
+| [Arm Ethos-U](/backends/arm-ethos-u/arm-ethos-u-overview.md) | Embedded    | NPU           | Arm MCUs                        |
+| [Arm VGF](/backends/arm-vgf/arm-vgf-overview.md)             | Android     | GPU           | Arm platforms                   |
+| [OpenVINO](build-run-openvino)                               | Embedded    | CPU/GPU/NPU   | Intel SoCs                      |
+| [NXP](backends/nxp/nxp-overview.md)                          | Embedded    | NPU           | NXP SoCs                        |
+| [Cadence](backends-cadence)                                  | Embedded    | DSP           | DSP-optimized workloads         |
+| [Samsung Exynos](/backends/samsung/samsung-overview.md)      | Android     | NPU           | Samsung SoCs                    |
+
+**Tip:** For best performance, export a `.pte` file for each backend you plan to support.
+
+---
+
+## Best Practices
+
+- **Test on all target devices:** Operator support may vary by backend.
+- **Use fallback wisely:** If a backend doesn't support an operator, ExecuTorch will run it on CPU.
+- **Consult backend docs:** Each backend has unique setup and tuning options.
+
+---
+
+```{toctree}
+:maxdepth: 3
+:hidden:
+:caption: Backend Overview
+
+backends/xnnpack/xnnpack-overview
+backends/cuda/cuda-overview
+backends/coreml/coreml-overview
+backends/mps/mps-overview
+backends/vulkan/vulkan-overview
+backends-qualcomm
+backends-mediatek
+backends/arm-ethos-u/arm-ethos-u-overview
+backends/arm-vgf/arm-vgf-overview
+build-run-openvino
+backends/nxp/nxp-overview
+backends-cadence
+backends/samsung/samsung-overview

@@ -131,8 +131,8 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
     )
 
     # tokenize dataset
-    encoded_data_train = tokenizer.batch_encode_plus(
-        data[data.data_type == "train"].Title.values,
+    encoded_data_train = tokenizer(
+        data[data.data_type == "train"].Title.values.tolist(),
         add_special_tokens=True,
         return_attention_mask=True,
         max_length=256,
@@ -140,8 +140,8 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
         truncation=True,
         return_tensors="pt",
     )
-    encoded_data_val = tokenizer.batch_encode_plus(
-        data[data.data_type == "val"].Title.values,
+    encoded_data_val = tokenizer(
+        data[data.data_type == "val"].Title.values.tolist(),
         add_special_tokens=True,
         return_attention_mask=True,
         max_length=256,
@@ -292,6 +292,7 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
     )
     adb.push(inputs=inputs)
     adb.execute()
@@ -300,7 +301,7 @@ def main(args):
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     # get torch cpu result
     cpu_preds, true_vals = evaluate(model, data_val)

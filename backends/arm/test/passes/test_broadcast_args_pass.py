@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-from typing import Tuple
+from typing import Callable, Tuple
 
 import torch
 from executorch.backends.arm._passes import BroadcastArgsPass
@@ -12,17 +12,19 @@ from executorch.backends.arm._passes import BroadcastArgsPass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
-input_t = Tuple[torch.Tensor]  # Input x
+input_t = Tuple[torch.Tensor, torch.Tensor]
 
 
 class NeedsMultipleBroadcastsModel(torch.nn.Module):
     test_data = (torch.rand(1, 10), torch.rand(10, 1))
 
-    def __init__(self, op: operator):
+    def __init__(
+        self, op: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+    ) -> None:
         self.op = op
         super().__init__()
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return self.op(x, y)
 
 
@@ -35,7 +37,7 @@ modules = {
 
 
 @common.parametrize("module", modules)
-def test_multiple_broacasts_model(module: NeedsMultipleBroadcastsModel):
+def test_broadcast_args_tosa_INT_multiple(module: NeedsMultipleBroadcastsModel):
     test_data = module.test_data
     ops_not_before_pass = [
         "executorch_exir_dialects_edge__ops_aten_repeat_default",
@@ -50,5 +52,6 @@ def test_multiple_broacasts_model(module: NeedsMultipleBroadcastsModel):
         ops_not_before_pass=ops_not_before_pass,
         ops_after_pass=ops_after_pass,
         pass_list=[BroadcastArgsPass],
+        tosa_extensions=["u55"],
     )
     pipeline.run()

@@ -130,7 +130,6 @@ if [[ "${MODE}" =~ .*qnn.* ]]; then
   cp schema/program.fbs exir/_serialize/program.fbs
   cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
   cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
-  cp -f build-x86/backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
 
 else
   QNN=OFF
@@ -159,6 +158,7 @@ cmake_install_executorch_libraries() {
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DEXECUTORCH_BUILD_QNN="$QNN" \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
         -DQNN_SDK_ROOT="$QNN_SDK_ROOT"
     cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
 }
@@ -170,15 +170,14 @@ cmake_build_llama_runner() {
     git submodule update --init
     popd
     dir="examples/models/llama"
-    retry cmake \
-        -DEXECUTORCH_BUILD_TESTS=ON \
-        -DBUILD_TESTING=OFF \
-        -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
-        -Bcmake-out/${dir} \
-        ${dir}
-    cmake --build cmake-out/${dir} -j9 --config "$CMAKE_BUILD_TYPE"
-
+    if [[ "$CMAKE_BUILD_TYPE" == "Debug" ]]; then
+        PRESET="llama-debug"
+    else
+        PRESET="llama-release"
+    fi
+    pushd "${dir}"
+    cmake --workflow --preset "${PRESET}"
+    popd
 }
 
 cleanup_files() {
@@ -236,7 +235,7 @@ if [[ "${CUSTOM}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} model.use_sdpa_with_kv_cache=true"
 fi
 if [[ "${QE}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} quantization.embedding_quantize=\"8,1024\""
+  EXPORT_ARGS="${EXPORT_ARGS} quantization.embedding_quantize=\"8,768\""
 fi
 if [[ "${MPS}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} backend.mps.enabled=true model.enable_dynamic_shape=false debug.verbose=true"

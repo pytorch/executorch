@@ -65,7 +65,6 @@ def test_unsqueeze_u55_INT(test_tensor: torch.Tensor):
         (*test_tensor, 0),
         aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
@@ -78,29 +77,31 @@ def test_unsqueeze_u85_INT(test_tensor: torch.Tensor):
         (*test_tensor, 0),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_tensor", Unsqueeze.test_parameters)
 @common.SkipIfNoModelConverter
-def test_unsqueeze_vgf_FP(test_tensor: torch.Tensor):
+def test_unsqueeze_vgf_no_quant(test_tensor: torch.Tensor):
     for i in range(-test_tensor[0].dim() - 1, test_tensor[0].dim() + 1):
         pipeline = VgfPipeline[input_t1](
-            Unsqueeze(), (*test_tensor, i), aten_op, tosa_version="TOSA-1.0+FP"
+            Unsqueeze(),
+            (*test_tensor, i),
+            aten_op,
+            quantize=False,
         )
         pipeline.run()
 
 
 @common.parametrize("test_tensor", Unsqueeze.test_parameters)
 @common.SkipIfNoModelConverter
-def test_unsqueeze_vgf_INT(test_tensor: torch.Tensor):
+def test_unsqueeze_vgf_quant(test_tensor: torch.Tensor):
     for i in range(-test_tensor[0].dim() - 1, test_tensor[0].dim() + 1):
         pipeline = VgfPipeline[input_t1](
             Unsqueeze(),
             (*test_tensor, i),
             aten_op,
-            tosa_version="TOSA-1.0+INT",
+            quantize=True,
         )
         pipeline.run()

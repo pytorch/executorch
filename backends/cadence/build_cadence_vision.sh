@@ -9,7 +9,7 @@ set -euo pipefail
 
 unset CMAKE_PREFIX_PATH
 unset XTENSA_CORE
-export XTENSA_CORE=XRC_Vision_130_AO
+export XTENSA_CORE=VANILLA_VISION
 git submodule sync
 git submodule update --init --recursive
 ./install_requirements.sh
@@ -32,6 +32,7 @@ if $STEPWISE_BUILD; then
         -DEXECUTORCH_ENABLE_LOGGING=ON \
         -DEXECUTORCH_USE_DL=OFF \
         -DEXECUTORCH_BUILD_CADENCE=OFF \
+        -DFLATCC_ALLOW_WERROR=OFF \
         -Bcmake-out .
 
     echo "Building any Cadence-specific binaries on top"
@@ -50,6 +51,7 @@ if $STEPWISE_BUILD; then
         -DPYTHON_EXECUTABLE=python3 \
         -DEXECUTORCH_VISION_OPT=ON \
         -DHAVE_FNMATCH_H=OFF \
+        -DFLATCC_ALLOW_WERROR=OFF \
         -Bcmake-out/backends/cadence \
         backends/cadence
     cmake --build cmake-out/backends/cadence  -j8
@@ -74,6 +76,7 @@ else
         -DPYTHON_EXECUTABLE=python3 \
         -DEXECUTORCH_VISION_OPT=ON \
         -DHAVE_FNMATCH_H=OFF \
+        -DFLATCC_ALLOW_WERROR=OFF \
         -Bcmake-out
     cmake --build cmake-out --target install --config Release -j8
 fi

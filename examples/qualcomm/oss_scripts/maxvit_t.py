@@ -18,8 +18,12 @@ import torch.nn.functional as F
 import torchvision
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
     make_quantizer,
@@ -140,7 +144,7 @@ def main(args):
             crop_size=224,
         )
 
-    pte_filename = "maxvit_t_qnn_q8"
+    pte_filename = "maxvit_t_qnn"
     instance = torchvision.models.maxvit_t(weights="IMAGENET1K_V1").eval()
     for block in instance.blocks:
         for layer in block.layers:
@@ -156,17 +160,24 @@ def main(args):
                                 forward, attn_sub_layer
                             )
 
+    backend = get_backend_type(args.backend)
+    quantizer = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            per_channel_linear=True,
+        ),
+    }[backend]
     build_executorch_binary(
         instance,
         inputs[0],
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
-        custom_quantizer=make_quantizer(
-            quant_dtype=QuantDtype.use_8a8w,
-            per_channel_linear=True,
-        ),
+        custom_quantizer=quantizer,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -181,6 +192,8 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
     adb.push(inputs=inputs)
     adb.execute()
@@ -189,7 +202,7 @@ def main(args):
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []

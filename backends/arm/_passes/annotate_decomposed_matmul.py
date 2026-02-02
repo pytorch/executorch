@@ -3,14 +3,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import itertools
 import operator
 from typing import cast, List, Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    FoldAndAnnotateQParamsPass,
+)
 
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -20,7 +23,7 @@ from torch.fx import GraphModule
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
-class AnnotateDecomposedMatmulPass(ExportPass):
+class AnnotateDecomposedMatmulPass(ArmPass):
     """
     torch.matmul and it's equivalent operator @ can be decomposed in many ways, for instance:
     dq -> matmul -> q can become
@@ -29,7 +32,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
     matmul-op (can be mm or bmm).
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {FoldAndAnnotateQParamsPass}
 
     def _match_partition_to_node(
         self, node: torch.fx.Node, partitioned_inputs: List[torch.fx.Node]
@@ -48,7 +51,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
         raise RuntimeError(f"Cannot find an input node which matches, {node}.")
 
     def call(self, graph_module: GraphModule) -> PassResult:
-        matmul_partitions = get_source_partitions(
+        matmul_partitions_map = get_source_partitions(
             graph_module.graph,
             [
                 torch.matmul,
@@ -57,10 +60,11 @@ class AnnotateDecomposedMatmulPass(ExportPass):
             None,
         )
         matmul_partitions = list(
-            itertools.chain.from_iterable(matmul_partitions.values())
+            itertools.chain.from_iterable(matmul_partitions_map.values())
         )
         matmul_targets = {
             exir_ops.edge.aten.bmm.default,
+            exir_ops.edge.aten.mm.default,
         }
         for partition in matmul_partitions:
             quantized_input = all(
@@ -70,7 +74,10 @@ class AnnotateDecomposedMatmulPass(ExportPass):
                 node for node in partition.nodes if node.target in matmul_targets
             ][0]
 
-            if quantized_input:
+            if quantized_input and not all(
+                input_node.target in DQ_OPS
+                for input_node in matmul_node.all_input_nodes
+            ):
                 matmul_args = matmul_node.all_input_nodes
                 for node in matmul_args:
                     # Find the dq-node connected to this mm/bmm arg
@@ -82,7 +89,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
                         # Create new dq-node before matmul
                         dq_node = create_node(
                             graph=graph_module.graph,
-                            op_target=cast(EdgeOpOverload, input_node.target),  # type: ignore[arg-type]
+                            op_target=cast(EdgeOpOverload, input_node.target),
                         )
                         dq_node.args = (node, *input_node.args[1:])
                         matmul_node.replace_input_with(node, dq_node)
@@ -96,12 +103,14 @@ class AnnotateDecomposedMatmulPass(ExportPass):
 
             partition_output = list(partition.output_nodes[0].users)[0]
             quantized_output = partition_output.target in Q_OPS
-            if quantized_output:
+            if quantized_output and not all(
+                user.target in Q_OPS for user in matmul_node.users
+            ):
                 with graph_module.graph.inserting_after(matmul_node):
                     # Create q-node after matmul
                     q_node = create_node(
                         graph=graph_module.graph,
-                        op_target=cast(EdgeOpOverload, partition_output.target),  # type: ignore[arg-type]
+                        op_target=cast(EdgeOpOverload, partition_output.target),
                     )
                     matmul_node.replace_all_uses_with(q_node)
                     q_node.args = (matmul_node, *partition_output.args[1:])

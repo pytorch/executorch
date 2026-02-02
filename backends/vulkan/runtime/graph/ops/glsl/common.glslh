@@ -9,6 +9,10 @@
 #ifndef COMMON_GLSLH
 #define COMMON_GLSLH
 
+#ifdef DEBUG_MODE
+#extension GL_EXT_debug_printf : enable
+#endif
+
 #define mul_2(x) ((x) << 1)
 #define mul_4(x) ((x) << 2)
 #define mul_8(x) ((x) << 3)
@@ -29,21 +33,66 @@
 #define mod_4(x) ((x) & 3)
 #define mod_8(x) ((x) & 7)
 
-struct TensorIndex4D {
-  ivec4 data;
-};
+int sign_extend_8bit(const int val) {
+  if ((val & 0x80) != 0) {
+    return val | (~0xFF);
+  }
+  return val;
+}
+
+int extract_8bit_from_packed_int_le(const int packed, const int i) {
+  // account for little endian
+  int byte = sign_extend_8bit(packed >> (8 * i) & 0xFF);
+  return byte;
+}
+
+ivec4 unpack_int8x4(const int packed) {
+  return ivec4(
+    extract_8bit_from_packed_int_le(packed, 0),
+    extract_8bit_from_packed_int_le(packed, 1),
+    extract_8bit_from_packed_int_le(packed, 2),
+    extract_8bit_from_packed_int_le(packed, 3));
+}
+
+int pack_4xqint_into_int32(
+    const int val0,
+    const int val1,
+    const int val2,
+    const int val3) {
+  int packed = (val0 & 0xFF) | ((val1 & 0xFF) << 8) | ((val2 & 0xFF) << 16) |
+      ((val3 & 0xFF) << 24);
+
+  return packed;
+}
+
+int pack_into_int32(const ivec4 quant_vals) {
+  int packed = ((quant_vals[0] & 0xFF) << 0) | ((quant_vals[1] & 0xFF) << 8) |
+      ((quant_vals[2] & 0xFF) << 16) | ((quant_vals[3] & 0xFF) << 24);
+
+  return packed;
+}
+
+vec4 unpack_and_dequantize(
+    const int packed_int8_vals,
+    const float scale,
+    const int zp) {
+  ivec4 unpacked = unpack_int8x4(packed_int8_vals);
+  return vec4(unpacked - zp) * scale;
+}
+
+int quantize_and_pack(const vec4 vals, const float inv_scale, const int zp) {
+  ivec4 quantized = ivec4(round(vals * inv_scale) + zp);
+  quantized = clamp(quantized, -128, 127);
+  return pack_into_int32(quantized);
+}
 
 #ifdef DEBUG_MODE
 
-#extension GL_EXT_debug_printf : require
+#define printf debugPrintfEXT
 
-void printTensorIndex4D(const TensorIndex4D index) {
+void printVec4(vec4 texel) {
   debugPrintfEXT(
-      "tensor_idx: %d, %d, %d, %d\\n",
-      index.data.x,
-      index.data.y,
-      index.data.z,
-      index.data.w);
+      "texel: %f, %f, %f, %f\\n", texel.x, texel.y, texel.z, texel.w);
 }
 
 #endif // DEBUG_MODE

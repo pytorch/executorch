@@ -1,11 +1,11 @@
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+${define_required_extensions("buffer", BUF_DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
-
-${define_required_extensions(DTYPE)}
-${define_required_extensions(BUF_DTYPE)}
 
 layout(std430) buffer;
 
@@ -29,10 +29,8 @@ void main() {
     return;
   }
 
-  TensorIndex outp_tidx;
+  TensorIndex outp_tidx = linear_idx_to_tensor_idx(outp, outp_bufi);
   uint nchwi;
-
-  linear_idx_to_tensor_idx(outp, outp_bufi, outp_tidx);
 
   if (transpose_hw == 1) {
     BufferMetadata transposed_meta = outp;

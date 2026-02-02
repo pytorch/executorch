@@ -17,10 +17,7 @@ runtime.python_library(
 )
 runtime.python_library(
     name = "common",
-    srcs = [
-        "common/__init__.py",
-        "common/debug.py",
-    ],
+    srcs = glob(["common/*.py"]),
     deps = [
         "fbsource//third-party/tosa_tools:serializer",
         "//caffe2:torch",
@@ -67,6 +64,7 @@ runtime.python_library(
         "vgf/__init__.py",
         "vgf/backend.py",
         "vgf/compile_spec.py",
+        "vgf/model_converter.py",
         "vgf/partitioner.py",
     ],
     deps = [
@@ -83,7 +81,6 @@ runtime.python_library(
         "fbsource//third-party/tosa_tools:tosa",
         "//executorch/backends/arm/operators:node_visitor",
         "//executorch/backends/arm/tosa:mapping",
-        "//executorch/backends/arm/tosa:quant_utils",
         "//executorch/backends/arm/tosa:utils",
         "//executorch/exir:lib",
     ],
@@ -104,5 +101,19 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
+    ]
+)
+runtime.python_library(
+    name = "_factory",
+    srcs = [
+        "util/_factory.py"
+    ],
+    deps = [
+        ":ethosu",
+        ":vgf",
+        ":arm_compile_spec",
+        "//executorch/backends/arm/quantizer:lib",
+        "//executorch/exir/backend:operator_support",
+        "//executorch/exir/backend:compile_spec_schema",
     ]
 )

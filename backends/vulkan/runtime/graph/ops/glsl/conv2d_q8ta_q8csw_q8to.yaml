@@ -1,0 +1,21 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+conv2d_q8ta_q8csw_q8to:
+  parameter_names_with_default_values:
+    DTYPE: float
+    IO_STORAGE: texture3d
+    WEIGHT_STORAGE: texture2d
+  generate_variant_forall:
+    combination:
+      parameter_names: [IO_STORAGE, WEIGHT_STORAGE]
+      combos:
+        - parameter_values: [buffer, texture2d]
+        - parameter_values: [texture3d, texture2d]
+    DTYPE:
+      - VALUE: float
+  shader_variants:
+    - NAME: conv2d_q8ta_q8csw_q8to

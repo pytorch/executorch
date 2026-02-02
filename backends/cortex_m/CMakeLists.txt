@@ -36,7 +36,7 @@ set(CMSIS_NN_LOCAL_PATH
 # library is downloaded via FetchContent in the default/regular case.
 if(CMSIS_NN_LOCAL_PATH AND EXISTS "${CMSIS_NN_LOCAL_PATH}")
   message(STATUS "Using CMSIS-NN from specified path: ${CMSIS_NN_LOCAL_PATH}")
-  add_subdirectory(${CMSIS_NN_LOCAL_PATH} cmsis_nn_build)
+  add_subdirectory(${CMSIS_NN_LOCAL_PATH} _deps/cmsis_nn-build)
 else()
   # Use FetchContent with automatic fallback
   message(STATUS "Using CMSIS-NN via FetchContent")
@@ -48,23 +48,7 @@ else()
     GIT_SHALLOW TRUE
   )
 
-  FetchContent_GetProperties(cmsis_nn)
-  if(NOT cmsis_nn_POPULATED)
-    FetchContent_Populate(cmsis_nn)
-    add_subdirectory(${cmsis_nn_SOURCE_DIR} ${cmsis_nn_BINARY_DIR})
-  endif()
-endif()
-
-# Add MVEI define to cmsis-nn target
-if(TARGET cmsis-nn)
-  target_compile_definitions(cmsis-nn PUBLIC ARM_MATH_MVEI=1)
-  get_target_property(CMSIS_NN_INCLUDES cmsis-nn INTERFACE_INCLUDE_DIRECTORIES)
-  message(STATUS "CMSIS-NN include dirs: ${CMSIS_NN_INCLUDES}")
-else()
-  message(
-    FATAL_ERROR
-      "CMSIS-NN target not found. Check your CMSIS_NN_LOCAL_PATH or network connection."
-  )
+  FetchContent_MakeAvailable(cmsis_nn)
 endif()
 
 # Cortex-M ops kernel sources
@@ -72,7 +56,16 @@ set(_cortex_m_kernels__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_add.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_avg_pool2d.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_conv2d.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_depthwise_conv2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_transpose_conv2d.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_minimum.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_maximum.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_softmax.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_transpose.cpp
 )
 
 # Generate C++ bindings to register kernels into Executorch
@@ -90,6 +83,7 @@ target_link_libraries(
   cortex_m_kernels
   PRIVATE cmsis-nn
   PRIVATE executorch
+  PRIVATE kernels_util_all_deps
 )
 
 # Include directories for cortex_m_kernels
@@ -106,6 +100,7 @@ gen_operators_lib(
 install(
   TARGETS cortex_m_kernels cortex_m_ops_lib cmsis-nn
   EXPORT ExecuTorchTargets
-  DESTINATION lib
-  PUBLIC_HEADER DESTINATION include/executorch/backends/cortex_m/ops/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  PUBLIC_HEADER
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/cortex_m/ops/
 )

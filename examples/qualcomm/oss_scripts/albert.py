@@ -13,34 +13,45 @@ from multiprocessing.connection import Client
 import evaluate
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_masked_language_model_dataset,
     make_output_dir,
+    make_quantizer,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
     SimpleADB,
 )
-from transformers import AlbertConfig, AutoModelForMaskedLM, AutoTokenizer
+from transformers import AutoModelForMaskedLM, AutoTokenizer
+from transformers.masking_utils import create_bidirectional_mask
 
 
 def main(args):
+    if args.compile_only and args.pre_gen_pte:
+        raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
+
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     os.makedirs(args.artifact, exist_ok=True)
     data_size = 100
-
     model_name = "albert/albert-base-v2"
-    tokenizer = AutoTokenizer.from_pretrained(model_name, hidden_act="gelu")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    module = AutoModelForMaskedLM.from_pretrained(model_name, hidden_act="gelu").eval()
+    pte_filename = "albert_qnn_q16"
 
     if args.ci:
         random_ids = torch.randint(low=0, high=100, size=(1, 100), dtype=torch.int32)
-        attention_mask = torch.ones((1, 100), dtype=torch.float32)
+        attention_mask = create_bidirectional_mask(
+            config=module.config,
+            input_embeds=module.albert.embeddings(random_ids),
+            attention_mask=torch.zeros((1, 100), dtype=torch.float32),
+        )
         inputs = [
             (
                 random_ids,
@@ -54,32 +65,52 @@ def main(args):
         inputs, targets = get_masked_language_model_dataset(
             args.dataset, tokenizer, data_size
         )
+        inputs = [
+            (
+                input_ids,
+                create_bidirectional_mask(
+                    config=module.config,
+                    input_embeds=module.albert.embeddings(input_ids),
+                    attention_mask=attention_mask,
+                ),
+            )
+            for input_ids, attention_mask in inputs
+        ]
 
-    config = AlbertConfig.from_pretrained(model_name)
-    config.hidden_act = "gelu"
-    module = AutoModelForMaskedLM.from_pretrained(model_name, config=config).eval()
-    pte_filename = "albert_qnn_q16"
-
-    # lower to QNN
-    passes_job = get_capture_program_passes()
-    build_executorch_binary(
-        module,
-        inputs[0],
-        args.model,
-        f"{args.artifact}/{pte_filename}",
-        dataset=inputs,
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_16a16w,
-        passes_job=passes_job,
-        shared_buffer=args.shared_buffer,
-    )
+    # Skip lowering/compilation if using pre-generated PTE
+    if not args.pre_gen_pte:
+        # lower to QNN
+        backend = get_backend_type(args.backend)
+        quantizer = {
+            QnnExecuTorchBackendType.kGpuBackend: None,
+            QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
+                quant_dtype=QuantDtype.use_16a16w,
+                eps=2**-20,
+            ),
+        }[backend]
+        build_executorch_binary(
+            module,
+            inputs[0],
+            args.model,
+            f"{args.artifact}/{pte_filename}",
+            dataset=inputs,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
+            backend=backend,
+            custom_quantizer=quantizer,
+            shared_buffer=args.shared_buffer,
+            online_prepare=args.online_prepare,
+        )
 
     if args.compile_only:
         return
 
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_filename}"
-    pte_path = f"{args.artifact}/{pte_filename}.pte"
+    pte_path = (
+        f"{args.pre_gen_pte}/{pte_filename}.pte"
+        if args.pre_gen_pte
+        else f"{args.artifact}/{pte_filename}.pte"
+    )
 
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
@@ -89,6 +120,9 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
@@ -96,7 +130,7 @@ def main(args):
     # accuracy analysis
     adb.push(inputs=inputs)
     adb.execute()
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
     # since the original nn.Module could not perform well on this task either
     # we only measure the relative accuracy here
     goldens, predictions, nominal_predictions = [], [], []

@@ -63,7 +63,8 @@
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "OS64",
-        "DEPLOYMENT_TARGET": "17.0"
+        "DEPLOYMENT_TARGET": "17.0",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -80,7 +81,8 @@
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "SIMULATORARM64",
-        "DEPLOYMENT_TARGET": "17.0"
+        "DEPLOYMENT_TARGET": "17.0",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -117,38 +119,136 @@
       }
     },
     {
-        "name": "llm",
-        "displayName": "Build LLM libraries",
-        "inherits": ["common"],
-        "cacheVariables": {
-            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/llm.cmake",
-            "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
-        },
-        "condition": {
-            "type": "inList",
-            "string": "${hostSystemName}",
-            "list": ["Darwin", "Linux", "Windows"]
-        }
+      "name": "llm",
+      "displayName": "Build LLM libraries",
+      "inherits": [
+        "common"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/llm.cmake",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Darwin", "Linux", "Windows"]
+      }
     },
     {
-        "name": "profiling",
-        "displayName": "Build ExecuTorch with Profiling Enabled",
-        "inherits": [
-            "common"
-        ],
-        "cacheVariables": {
-            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/profiling.cmake",
-            "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
-        },
-        "condition": {
-            "type": "inList",
-            "string": "${hostSystemName}",
-            "list": [
-                "Darwin",
-                "Linux",
-                "Windows"
-            ]
-        }
+      "name": "llm-release",
+      "displayName": "LLM release build",
+      "inherits": [
+        "llm"
+      ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out"
+      }
+    },
+    {
+      "name": "llm-release-cuda",
+      "displayName": "LLM release build with CUDA",
+      "inherits": [
+        "llm-release"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_CUDA": "ON"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
+      }
+    },
+    {
+      "name": "llm-release-metal",
+      "displayName": "LLM release build with Metal",
+      "inherits": [
+        "llm-release"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_METAL": "ON",
+        "EXECUTORCH_METAL_COLLECT_STATS": "OFF"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "llm-debug",
+      "displayName": "LLM debug build",
+      "inherits": [
+        "llm"
+      ],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out"
+      }
+    },
+    {
+      "name": "llm-debug-cuda",
+      "displayName": "LLM debug build with CUDA",
+      "inherits": [
+        "llm-debug"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_CUDA": "ON"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "llm-debug-metal",
+      "displayName": "LLM debug build with Metal",
+      "inherits": [
+        "llm-debug"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_METAL": "ON"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "llm-metal-stats",
+      "displayName": "LLM Metal build with stats collection and logging",
+      "inherits": [
+        "llm-release-metal"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_METAL_COLLECT_STATS": "ON",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "EXECUTORCH_LOG_LEVEL": "Info"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "profiling",
+      "displayName": "Build ExecuTorch with Profiling Enabled",
+      "inherits": [
+        "common"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/profiling.cmake",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Darwin", "Linux", "Windows"]
+      }
     },
     {
       "name": "windows",
@@ -175,13 +275,178 @@
         }
     },
     {
-        "name": "arm-baremetal",
-        "displayName": "Build ExecuTorch for Arm baremetal",
-        "inherits": ["common"],
-        "cacheVariables": {
-            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/arm_baremetal.cmake",
-            "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
-          }
+      "name": "arm-baremetal",
+      "displayName": "Build ExecuTorch for Arm baremetal",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/arm_baremetal.cmake",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "llm-release-install",
+      "displayName": "Build and install LLM extension release artifacts",
+      "configurePreset": "llm-release",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-release-cuda-install",
+      "displayName": "Build and install LLM extension release artifacts (CUDA)",
+      "configurePreset": "llm-release-cuda",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-release-metal-install",
+      "displayName": "Build and install LLM extension release artifacts (Metal)",
+      "configurePreset": "llm-release-metal",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-debug-install",
+      "displayName": "Build and install LLM extension debug artifacts",
+      "configurePreset": "llm-debug",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-debug-cuda-install",
+      "displayName": "Build and install LLM extension debug artifacts (CUDA)",
+      "configurePreset": "llm-debug-cuda",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-debug-metal-install",
+      "displayName": "Build and install LLM extension debug artifacts (Metal)",
+      "configurePreset": "llm-debug-metal",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-metal-stats-install",
+      "displayName": "Build and install LLM extension artifacts with Metal stats",
+      "configurePreset": "llm-metal-stats",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "llm-release",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with default CPU backend",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-release-cuda",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with CUDA enabled",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-cuda"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-cuda-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-release-metal",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Metal enabled",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-metal"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-metal-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-debug",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with default CPU backend (Debug)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-debug"
+        },
+        {
+          "type": "build",
+          "name": "llm-debug-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-debug-cuda",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with CUDA enabled (Debug)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-debug-cuda"
+        },
+        {
+          "type": "build",
+          "name": "llm-debug-cuda-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-debug-metal",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Metal enabled (Debug)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-debug-metal"
+        },
+        {
+          "type": "build",
+          "name": "llm-debug-metal-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-metal-stats",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Metal stats and logging",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-metal-stats"
+        },
+        {
+          "type": "build",
+          "name": "llm-metal-stats-install"
+        }
+      ]
     }
   ]
 }

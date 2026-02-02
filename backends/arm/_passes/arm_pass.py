@@ -3,22 +3,37 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import traceback
 from abc import abstractmethod
-from typing import List, Optional, Set, Type
+from typing import Any, List, Optional, Set, Type
 
-import torch
+from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.exir.pass_base import ExportPass, NodeMetadata
+from torch.fx import GraphModule
+from torch.fx.passes.infra.pass_base import PassResult
 
 
 class ArmPass(ExportPass):
     """Base class for Arm passes"""
 
-    def __init__(self, exported_program: Optional[torch.export.ExportedProgram] = None):
-        super(ArmPass, self).__init__()
-        self.exported_program = exported_program
+    def __init__(self, tfa_pass: bool = False, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.submodule_depth = 0
+        self.is_tfa_pass = tfa_pass
+
+    def allowed_to_transform(self, meta: NodeMetadata | dict[str, Any]) -> bool:
+        if not self.is_tfa_pass:
+            return True
+
+        if isinstance(meta, NodeMetadata):
+            meta_dict = meta.data
+        else:
+            meta_dict = meta
+
+        disallow_tfa = meta_dict.get(DISALLOW_TFA_META_KEY, False)
+
+        return not disallow_tfa
 
     @property
     @abstractmethod
@@ -62,3 +77,19 @@ class ArmPass(ExportPass):
         old_stack_trace = new_meta.get("stack_trace", "")
         new_meta["stack_trace"] = f"{old_stack_trace}\n{traceback.format_stack()[-2]}"
         return super().call_operator(op, args, kwargs, NodeMetadata(new_meta))
+
+    def call_submodule(
+        self, graph_module: GraphModule, inputs: tuple[Any, ...]
+    ) -> PassResult:
+        self.submodule_depth += 1
+        if self.submodule_depth == 1:
+            result = super().call_submodule(graph_module, inputs)
+        else:
+            # When we trace a submodule, we don't want to apply the calling pass.
+            # Temporarily replace call_operator to avoid this.
+            _call_operator_fn = self.call_operator
+            self.call_operator = super().call_operator  # type: ignore
+            result = super().call_submodule(graph_module, inputs)
+            self.call_operator = _call_operator_fn  # type: ignore
+        self.submodule_depth -= 1
+        return result

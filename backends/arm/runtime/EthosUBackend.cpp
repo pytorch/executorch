@@ -10,6 +10,11 @@
  * ethos-u-core-driver for hardware interaction.
  */
 
+// Workaround for runtime/core/portable_type/c10/c10/util/Float16-math.h
+#if defined(__GNUC__) && defined(__ZEPHYR__)
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
+#endif
+
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -326,7 +331,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       ET_LOG(Error, "Ethos-U invocation failed error (%d)", result);
       return Error::InvalidProgram;
     }
-    int tensor_dim = 0, io_dim = 0;
+    size_t tensor_bytes_total = 0;
+    size_t io_bytes_total = 0;
     // Write outputs from scratch into EValue pointers
     for (int i = 0; i < handles.outputs->count; i++) {
       int tensor_count = 1, io_count = 1;
@@ -338,23 +344,39 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       calculate_dimensions(
           tensor_out, &handles.outputs->io[i], &tensor_count, &io_count);
 
+      size_t tensor_bytes = tensor_out.nbytes();
+      size_t io_bytes = static_cast<size_t>(io_count) *
+          static_cast<size_t>(handles.outputs->io[i].elem_size);
+
+      if (tensor_bytes != io_bytes) {
+        Error status = copy_with_layout_adjustment(
+            handles.outputs->io[i], i, output_addr, tensor_out, tensor_bytes);
+        if (status != Error::Ok) {
+          return status;
+        }
+        io_bytes_total += tensor_bytes;
+      } else {
+        EXECUTORCH_PROF_SCOPE(
+            event_tracer, "+EthosUBackend::execute()handles.output.memcpy()");
+
+        memcpy(
+            tensor_out.mutable_data_ptr<char>(),
+            static_cast<const char*>(output_addr),
+            tensor_bytes);
+        io_bytes_total += io_bytes;
+      }
+
       // At times the topological order of the outputs may change.
-      // Lets instead ensure that the sum of dimensions match.
-      tensor_dim = tensor_dim + tensor_count;
-      io_dim = io_dim + io_count;
-
-      EXECUTORCH_PROF_SCOPE(
-          event_tracer, "+EthosUBackend::execute()handles.output.memcpy()");
-
-      memcpy(
-          tensor_out.mutable_data_ptr<char>(),
-          static_cast<const char*>(output_addr),
-          tensor_out.nbytes());
+      // Lets instead ensure that the sum of output bytes match.
+      tensor_bytes_total += tensor_bytes;
     }
-    if (tensor_dim != io_dim) {
+    if (tensor_bytes_total != io_bytes_total) {
       ET_LOG(Error, "Total output tensor sizes do not match");
       ET_LOG(
-          Error, "Program expects size of %d but got %d", tensor_dim, io_dim);
+          Error,
+          "Program expects %zu bytes but got %zu",
+          io_bytes_total,
+          tensor_bytes_total);
       return Error::InvalidProgram;
     }
     return Error::Ok;
@@ -365,6 +387,147 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
   }
 
  private:
+  // Copies Vela output into the ExecuTorch tensor, adjusting for padding or
+  // packed layouts produced by the delegate.
+  Error copy_with_layout_adjustment(
+      const VelaIO& output_io,
+      int output_index,
+      const char* src,
+      executorch::aten::Tensor& tensor_out,
+      size_t tensor_bytes) const {
+    const int elem_size = output_io.elem_size;
+    if (elem_size == 0) {
+      ET_LOG(
+          Error, "Ethos-U output %d reports zero element size", output_index);
+      return Error::InvalidProgram;
+    }
+
+    size_t chunk_count = 1;
+    for (int dim = 0; dim < shapeDim - 1; ++dim) {
+      const int vela_dim = output_io.shape[dim];
+      chunk_count *= static_cast<size_t>(vela_dim == 0 ? 1 : vela_dim);
+    }
+    const int last_dim = output_io.shape[shapeDim - 1];
+    const size_t vela_chunk_elems =
+        static_cast<size_t>(last_dim == 0 ? 1 : last_dim);
+    const size_t vela_chunk_size =
+        vela_chunk_elems * static_cast<size_t>(elem_size);
+
+    if (tensor_bytes % chunk_count != 0) {
+      ET_LOG(
+          Error,
+          "Ethos-U output %d tensor bytes %zu not divisible by chunk count %zu",
+          output_index,
+          tensor_bytes,
+          chunk_count);
+      return Error::InvalidProgram;
+    }
+
+    const size_t chunk_size = tensor_bytes / chunk_count;
+
+    // If Vela writes fewer bytes than the tensor expects we may need to
+    // expand 4-bit data to 8-bit. Ethos-U outputs may be
+    // packed 4-bit values but ExecuTorch tensors are at least 8-bit.
+    if (vela_chunk_size < chunk_size) {
+      if (chunk_size % vela_chunk_size != 0) {
+        ET_LOG(
+            Error,
+            "Ethos-U output %d chunk bytes %zu not divisible by vela chunk bytes %zu",
+            output_index,
+            chunk_size,
+            vela_chunk_size);
+        return Error::InvalidProgram;
+      }
+
+      const size_t expand_factor = chunk_size / vela_chunk_size;
+      if (expand_factor == 2 && elem_size == 1 &&
+          tensor_out.scalar_type() == ScalarType::Char) {
+        return unpack_chunks_4bit_to_int8(
+            reinterpret_cast<const uint8_t*>(src),
+            tensor_out.mutable_data_ptr<int8_t>(),
+            chunk_count,
+            chunk_size,
+            vela_chunk_size);
+      }
+
+      ET_LOG(
+          Error,
+          "Ethos-U output %d expansion factor %zu with element size %d not supported",
+          output_index,
+          expand_factor,
+          elem_size);
+      return Error::InvalidProgram;
+    }
+
+    return strip_delegate_padding(
+        src,
+        tensor_out.mutable_data_ptr<char>(),
+        chunk_count,
+        chunk_size,
+        vela_chunk_size);
+  }
+
+  Error unpack_chunks_4bit_to_int8(
+      const uint8_t* src,
+      int8_t* dest,
+      size_t chunk_count,
+      size_t dest_chunk_size,
+      size_t src_chunk_size) const {
+    const uint8_t* chunk_src = src;
+    int8_t* chunk_dest = dest;
+    for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
+      unpack_single_chunk_4bit_to_int8(chunk_src, chunk_dest, src_chunk_size);
+      chunk_src += src_chunk_size;
+      chunk_dest += dest_chunk_size;
+    }
+    return Error::Ok;
+  }
+
+  void unpack_single_chunk_4bit_to_int8(
+      const uint8_t* src,
+      int8_t* dest,
+      size_t chunk_size) const {
+    for (size_t byte_idx = 0; byte_idx < chunk_size; ++byte_idx) {
+      const uint8_t packed = src[byte_idx];
+      int8_t low = static_cast<int8_t>(packed & 0x0F);
+      int8_t high = static_cast<int8_t>((packed >> 4) & 0x0F);
+      if (low >= 8) {
+        low -= 16;
+      }
+      if (high >= 8) {
+        high -= 16;
+      }
+      dest[2 * byte_idx] = low;
+      dest[2 * byte_idx + 1] = high;
+    }
+  }
+
+  Error strip_delegate_padding(
+      const char* src,
+      char* dest,
+      size_t chunk_count,
+      size_t dest_chunk_size,
+      size_t src_chunk_size) const {
+    if (dest_chunk_size > src_chunk_size) {
+      ET_LOG(
+          Error,
+          "dest chunk size %zu must not exceed src chunk size %zu",
+          dest_chunk_size,
+          src_chunk_size);
+      return Error::InvalidProgram;
+    }
+    if (src == nullptr || dest == nullptr) {
+      ET_LOG(Error, "Ethos-U padded copy received null buffer");
+      return Error::InvalidState;
+    }
+    for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
+      memcpy(dest, src, dest_chunk_size);
+      src += src_chunk_size;
+      dest += dest_chunk_size;
+    }
+    return Error::Ok;
+  }
+
   void calculate_dimensions(
       const executorch::aten::Tensor tensor,
       VelaIO* io,
@@ -382,9 +545,33 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
 };
 
 namespace {
-auto backend = EthosUBackend();
-Backend backend_id{"EthosUBackend", &backend};
-static auto registered = register_backend(backend_id);
+auto EthosUBackend_backend = EthosUBackend();
+Backend EthosUBackend_id{"EthosUBackend", &EthosUBackend_backend};
+static executorch::runtime::Error EthosUBackend_registered =
+    register_backend(EthosUBackend_id);
+
+#ifdef __ZEPHYR__
+/**
+ * This function serves as a linker force-include mechanism to ensure the
+ * EthosU backend module gets properly linked into the final executable,
+ * even when it might otherwise be optimized out by the linker due to
+ * linker options that remove unused code or data for example
+ * if you link with --gc-sections
+ * This function can be called from your runner to force the inclusion of
+ * the EthosU backend module. As a bonus it will return the status of the
+ * backend registration, so you can also check if the registration was
+ * successful.
+ */
+
+// Warning: This should not be considered to be an API and might get removed
+// without notice in a future release if a better way to solve this is
+// implemented.
+extern "C" executorch::runtime::Error
+executorch_delegate_EthosUBackend_registered() {
+  return EthosUBackend_registered;
+}
+#endif
+
 } // namespace
 
 } // namespace arm

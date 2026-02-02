@@ -7,6 +7,8 @@ namespace flat_tensor_flatbuffer;
 file_identifier "FT01";
 file_extension "ptd";
 
+// Note: keep this in sync with the python definition in
+// executorch/exir/tensor_layout.py
 table TensorLayout {
   scalar_type: executorch_flatbuffer.ScalarType;
 

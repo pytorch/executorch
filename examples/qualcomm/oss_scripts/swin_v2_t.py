@@ -23,8 +23,12 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
     make_quantizer,
@@ -86,7 +90,7 @@ def main(args):
             crop_size=224,
         )
 
-    pte_filename = "swin_v2_t_qnn_q8"
+    pte_filename = "swin_v2_t_qnn"
     instance = torchvision.models.swin_v2_t(weights="IMAGENET1K_V1").eval()
     passes_job = get_capture_program_passes()
     passes_job[RewritePartition] = {
@@ -95,19 +99,26 @@ def main(args):
     }
     passes_dep = get_passes_dependency_for_capture_program()
     passes_dep[RewritePartition] = [FoldQDQ]
+    backend = get_backend_type(args.backend)
+    qnn_quantizer = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            per_channel_linear=True,
+        ),
+    }[backend]
     build_executorch_binary(
         instance,
         inputs[0],
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
-        custom_quantizer=make_quantizer(
-            quant_dtype=QuantDtype.use_8a8w,
-            per_channel_linear=True,
-        ),
+        custom_quantizer=qnn_quantizer,
+        backend=backend,
         shared_buffer=args.shared_buffer,
         passes_job=passes_job,
         passes_dependency=passes_dep,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -122,6 +133,8 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
     adb.push(inputs=inputs)
     adb.execute()
@@ -130,7 +143,7 @@ def main(args):
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []

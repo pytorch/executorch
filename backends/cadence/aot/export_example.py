@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -18,8 +19,8 @@ from typing import Any, Optional, Tuple
 
 from executorch.backends.cadence.aot.compiler import (
     _lower_ep_to_cadence_gen_etrecord,
+    apply_pre_edge_transform_passes,
     convert_pt2,
-    fuse_pt2,
     prepare_pt2,
 )
 
@@ -41,7 +42,7 @@ def export_model(
     example_inputs: Tuple[Any, ...],
     file_name: str = "CadenceDemoModel",
     working_dir: Optional[str] = None,
-):
+) -> ExecutorchProgramManager:
     # create work directory for outputs and model binary
     if working_dir is None:
         working_dir = tempfile.mkdtemp(dir="/tmp")
@@ -63,11 +64,10 @@ def export_model(
     # Get reference outputs from converted model
     ref_outputs = converted_model(*example_inputs)
 
-    # Quantize the model (note: quantizer needs to be the same as
-    # the one used in prepare_and_convert_pt2)
-    quantized_model = fuse_pt2(converted_model, quantizer)
+    ep = torch.export.export(converted_model, example_inputs, strict=True)
 
-    ep = torch.export.export(quantized_model, example_inputs, strict=True)
+    # Fuse the quantized patterns on the exported program (note: quantizer needs to be the same as the one used in prepare_and_convert_pt2)
+    ep = apply_pre_edge_transform_passes(ep, quantizer)
 
     # Get edge program after Cadence specific passes
     exec_prog: ExecutorchProgramManager = _lower_ep_to_cadence_gen_etrecord(
@@ -94,6 +94,8 @@ def export_model(
     logging.debug(
         f"Executorch bundled program buffer saved to {file_name} is {len(buffer)} total bytes"
     )
+
+    return exec_prog
 
 
 def export_and_run_model(

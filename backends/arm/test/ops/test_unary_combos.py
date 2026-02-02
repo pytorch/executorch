@@ -91,14 +91,14 @@ def _build(model_cls):
 
 
 @pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
-def test_unary_combos_tosa_FP(model_cls):
+def test_add_tensor_tosa_FP_combos(model_cls):
     m, inputs, exir = _build(model_cls)
     p = TosaPipelineFP[Tensor1](m, inputs, aten_op=[], exir_op=exir)
     p.run()
 
 
 @pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
-def test_unary_combos_tosa_INT(model_cls):
+def test_add_tensor_tosa_INT_combos(model_cls):
     m, inputs, exir = _build(model_cls)
     p = TosaPipelineINT[Tensor1](m, inputs, aten_op=[], exir_op=exir, qtol=1)
     p.run()
@@ -106,29 +106,39 @@ def test_unary_combos_tosa_INT(model_cls):
 
 @common.XfailIfNoCorstone300
 @pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
-def test_unary_combos_u55_INT(model_cls):
+def test_add_tensor_u55_INT_combos(model_cls):
     m, inputs, exir = _build(model_cls)
     p = EthosU55PipelineINT[Tensor1](
-        m, inputs, aten_ops=[], exir_ops=exir, run_on_fvp=True
+        m,
+        inputs,
+        aten_ops=[],
+        exir_ops=exir,
     )
     p.run()
 
 
 @common.XfailIfNoCorstone320
 @pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
-def test_unary_combos_u85_INT(model_cls):
+def test_add_tensor_u85_INT_combos(model_cls):
     m, inputs, exir = _build(model_cls)
     p = EthosU85PipelineINT[Tensor1](
-        m, inputs, aten_ops=[], exir_ops=exir, run_on_fvp=True
+        m,
+        inputs,
+        aten_ops=[],
+        exir_ops=exir,
     )
     p.run()
 
 
 @common.SkipIfNoModelConverter
 @pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
-def test_unary_combos_vgf_INT(model_cls):
+def test_add_tensor_vgf_quant_combos(model_cls):
     m, inputs, exir = _build(model_cls)
     p = VgfPipeline[Tensor1](
-        m, inputs, aten_op=[], exir_op=exir, tosa_version="TOSA-1.0+INT"
+        m,
+        inputs,
+        aten_op=[],
+        exir_op=exir,
+        quantize=True,
     )
     p.run()

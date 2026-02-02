@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,6 +12,7 @@ cmake_minimum_required(VERSION 3.19)
 project(devtools_example)
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
+option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
@@ -47,7 +49,9 @@ find_package(
 )
 
 add_executable(example_runner example_runner/example_runner.cpp)
-target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+target_compile_options(
+  executorch INTERFACE -DET_EVENT_TRACER_ENABLED -DET_BUNDLE_IO_ENABLED
+)
 
 target_include_directories(
   etdump INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../devtools/include
@@ -91,4 +95,15 @@ if(EXECUTORCH_BUILD_COREML)
     example_runner ${PROTOBUF_LITE} ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
     ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
   )
+endif()
+
+if(EXECUTORCH_BUILD_XNNPACK)
+  if(TARGET xnnpack_backend)
+    set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
+    if(TARGET kleidiai)
+      list(APPEND xnnpack_backend_libs kleidiai)
+    endif()
+    target_link_libraries(example_runner ${xnnpack_backend_libs})
+    executorch_target_link_options_shared_lib(xnnpack_backend)
+  endif()
 endif()

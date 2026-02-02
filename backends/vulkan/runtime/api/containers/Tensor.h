@@ -22,48 +22,82 @@ namespace api {
 static constexpr size_t kTensorDimLimit = 8;
 
 /*
- * Given a GPUMemoryLayout value, produce a dim order vector that matches the
- * given memory layout. The produced dim order vector will be in the NCHW
- * dimension order
- */
-std::vector<int64_t> calculate_dim_order(
-    const size_t ndim,
-    const int32_t packed_dim);
-
-/*
- * Given the sizes of a tensor and the dim order of the tensor (both in NCHW)
- * dimension order, calculate the strides of the tensor.
- */
-std::vector<int64_t> calculate_strides(
-    const std::vector<int64_t>& sizes,
-    const std::vector<int64_t>& dim_order);
-
-/*
- * When stored on the GPU, tensor data is stored using texels (i.e. a vector of
- * 4 scalar values) in order to take advantage of the GPU's native vectorization
- * capabilities. Furthermore, tensor metadata is passed in to shaders as ivec4
- * types.
+ * PackedDimInfo describes how tensor data is organized in physical memory.
+ * Specifically, it describes which dimensions are kept adjacent in memory, and
+ * which dimensions may be aligned to accomodate minimum load/store granularity
+ * of a selected storage type + memory layout combination.
  *
- * To accommodate these vectorized types, the sizes of a tensor will be modified
- * for GPU storage in the following ways:
+ * For non-quantized tensors that use GPU buffers, the tensor data is arranged
+ * as a linear array of data, and each data element can be loaded/stored
+ * individually. The PackedDimInfo describes which dimension of the tensor
+ * is kept contiguous in memory.
  *
- *   1. The dimensionality of the tensor will be padded to a multiple of 4.
- *   2. The size of the packed dimension will be padded to a multiple of 4.
+ * For non-quantized tensors that use GPU textures, the tensor data is arranged
+ * as a 3D cube, where each "texel" in the cube contains 4 elements. The minimum
+ * load/store granularity is therefore 4 elements; the 4 elements in the texel
+ * will be adjacent elements along particular dimension specified by the
+ * PackedDimInfo.
  *
- * The "packed dimension" is determined based on the utils::GPUMemoryLayout
- * argument.
+ * Quantized tensors will use the buffer storage type and the kInt8x4 dtype.
+ * Although the buffer storage type is used, the kInt8x4 dtype means that the
+ * minimum load/store granularity is still 1 texel int32 = 4x int8). Some
+ * memory layouts for quantized tensors will use block packing; this means that
+ * 4 adjacent texels loads a 4x4 square block of data composed of two dimensions
+ * rather than 16 elements from a single dimension.
+ *
+ * A generalization of all the above is to partition the tensor into a MxN block
+ * composed of 2 tensor dimensions. For non-quantized buffer tensors, the block
+ * size will be 1x1; for non-quantized texture tensors, the block size will be
+ * 4x1; for block-packed tensor layouts, the block size will be 4x4. For buffer
+ * backed tensors, the blocks are then arranged linearly in memory with the
+ * inner dimension of the block having the lowest stride and the outer dimension
+ * of the block having the next lowest stride.
+ *
+ * Note that all dimension indices contained in the struct use WHCN ordering
+ * (0 for width, 1 for height, 2 for channels, etc.) which is the ordering
+ * expected in GLSL compute shaders.
  */
-std::vector<int64_t> calculate_padded_sizes(
-    const std::vector<int64_t>& sizes,
-    const int32_t packed_dim);
+struct PackedDimInfo {
+  // Describes which dimension (WHCN index) is kept adjacent in physical memory.
+  // When doing a load/store for a texel/block, the first 4 elements of the data
+  // will be adjacent elements along the packed dimension.
+  int32_t packed_dim;
+  // The alignment size for the packed dimension. This value reflects the
+  // minimum load/store granularity of the storage type + memory layout config.
+  // In physical memory, the size of the packed dim is aligned to this size to
+  // ensure that data for the packed dim aligns with texel/block boundaries.
+  int32_t packed_dim_block_size;
+  // For block-packed layouts, represents the second tensor dimension that forms
+  // the "width" dimension of the MxN square that is kept contiguous in memory.
+  // For non block-packed layouts, represent the dimension with the next lowest
+  // stride after the contiguous/packed dim (i.e. second last in the dim order).
+  int32_t outer_packed_dim;
+  // The alignment size for the outer packed dimension. For non-block-packed
+  // layouts, this is 1 (no padding). For block-packed layouts like 4W4C and
+  // 4H4W, represents the "height" of the square block that is kept contiguous
+  // in memory.
+  int32_t outer_packed_dim_block_size;
+  // Typically the blocks of the tensor will be arranged such that the inner
+  // dim of the block (i.e. the packed dim) has the lowest stride, and the
+  // outer dim of the block (i.e. the outer packed dim) has the next lowest
+  // stride. However if this flag is set to true, then instead the outer packed
+  // dim will have the lowest stride, and the packed dim will have the next
+  // lowest stride.
+  bool block_transposed;
+  // The total number of elements in a packed block, computed as
+  // packed_dim_block_size * outer_packed_dim_block_size. For standard texture
+  // layouts, this is 4 (1 texel = 4 elements). For block-packed int8 layouts
+  // like 4W4C and 4H4W, this is 16 (4 elements along each of two dimensions).
+  // For contiguous buffer layouts, this is 1.
+  int32_t block_numel;
 
-/*
- * Calculate the image extents required of a texture backed tensor.
- */
-utils::uvec3 calculate_image_extents(
-    const std::vector<int64_t>& padded_sizes,
-    const std::vector<int64_t>& axis_map,
-    const int32_t packed_dim);
+  PackedDimInfo(
+      const int32_t dim,
+      const int32_t dim_block_size,
+      const int32_t outer_dim,
+      const int32_t outer_dim_block_size,
+      const bool is_block_transposed);
+};
 
 struct LastAccess {
   vkapi::PipelineStageFlags stage;
@@ -79,18 +113,6 @@ struct LastAccess {
       : stage{stage_flags}, access{access_flags} {}
 };
 
-/*
- * Calculate the number of elements that a GPU buffer would require to store the
- * contents of a tensor. This will depend on the storage type and dtype of the
- * tensor, as well as the features available on the device.
- */
-int64_t calculate_gpu_buffer_numel(
-    Context* const context,
-    const std::vector<int64_t>& sizes,
-    const utils::uvec3 image_extents,
-    const utils::StorageType storage_type,
-    const vkapi::ScalarType dtype);
-
 class vTensorStorage final {
  public:
   // Do not allow empty vTensorStorage construction
@@ -100,9 +122,10 @@ class vTensorStorage final {
       Context* context,
       const utils::StorageType storage_type,
       const std::vector<int64_t>& axis_map,
-      const int32_t packed_dim,
-      const std::vector<int64_t>& sizes,
+      const PackedDimInfo& packed_dim_info,
+      const std::vector<int64_t>& padded_sizes,
       const vkapi::ScalarType dtype,
+      const int64_t physical_numel,
       const bool allocate_memory = true);
 
   vTensorStorage(Context* const context, const vkapi::VulkanImage& image);
@@ -284,6 +307,25 @@ class vTensor final {
         size_t numel);
   };
 
+  struct TextureMetadata {
+    int32_t sizes[4];
+    int32_t logical_limits[4];
+    int32_t axis_map[4];
+    int32_t packed_dim;
+
+    TextureMetadata(
+        const std::vector<int64_t>& sizes,
+        const TextureLimits& logical_limits,
+        const std::vector<int64_t>& axis_map,
+        const PackedDimInfo& packed_dim_info);
+
+    void update(
+        const std::vector<int64_t>& sizes,
+        const TextureLimits& logical_limits,
+        const std::vector<int64_t>& axis_map,
+        const PackedDimInfo& packed_dim_info);
+  };
+
  private:
   /*
    * "Core" tensor metadata. They are the minimum amount of information required
@@ -292,14 +334,12 @@ class vTensor final {
 
   // Whether the tensor has elements of type float, int, etc.
   vkapi::ScalarType dtype_;
+  // Information about packed dimension padding and block packing
+  PackedDimInfo packed_dim_info_;
   // sizes of the tensor in NCHW dimension order
   std::vector<int64_t> sizes_;
-  // Describes which dimension is "tightly packed" using WHCN index (i.e. 0 for
-  // width, 1 for height, etc.). For texture backed tensors, this describes
-  // which dimension is packed along a texel. For buffer backed tensors, this
-  // describes which dimension has a stride of 1 (i.e. is last in the dim
-  // order).
-  int32_t packed_dim_;
+  // padded sizes of the tensor (pre-computed to avoid recalculation)
+  std::vector<int64_t> padded_sizes_;
 
   /*
    * "Layout" metadata. These describe with further detail how tensor data is
@@ -333,6 +373,13 @@ class vTensor final {
   // number of elements based on the canonical sizes
   size_t numel_;
 
+  // number of elements based on the padded sizes (before packing)
+  size_t padded_numel_;
+
+  // number of elements required for GPU buffer storage (with padding/packing)
+  // This is pre-computed to avoid recomputing calculate_gpu_buffer_numel
+  int64_t physical_numel_;
+
   // For texture backed tensors, this int32 contains the axis map data packed
   // into a single int32. For buffer backed tensors, this int32 contains the
   // wchn dim order data packed into a single int32.
@@ -358,6 +405,12 @@ class vTensor final {
    * Used to store data for BufferMetadata to pass to shaders as buffer_meta_ubo
    */
   ParamsBuffer buffer_meta_;
+
+  /*
+   * Used to store data for TextureMetadata to pass to shaders as
+   * texture_meta_ubo
+   */
+  ParamsBuffer texture_meta_;
 
   uint32_t uniforms_size_ = 0u;
   uint32_t sizes_uniform_offset_ = kUniformOffsetUnset;
@@ -457,7 +510,11 @@ class vTensor final {
   utils::GPUMemoryLayout estimate_memory_layout() const;
 
   inline int32_t packed_dim() const {
-    return packed_dim_;
+    return packed_dim_info_.packed_dim;
+  }
+
+  inline const PackedDimInfo& packed_dim_info() const {
+    return packed_dim_info_;
   }
 
   /*
@@ -488,8 +545,24 @@ class vTensor final {
     return strides_;
   }
 
+  inline const std::vector<int64_t>& padded_sizes() const {
+    return padded_sizes_;
+  }
+
   inline size_t numel() const {
     return numel_;
+  }
+
+  inline size_t padded_numel() const {
+    return padded_numel_;
+  }
+
+  inline int64_t physical_numel() const {
+    return physical_numel_;
+  }
+
+  inline utils::uvec3 image_extents() const {
+    return storage_->image_extents_;
   }
 
   inline size_t nbytes() const {
@@ -585,6 +658,8 @@ class vTensor final {
   const vkapi::BufferBindInfo numel_ubo();
 
   const vkapi::BufferBindInfo buffer_meta_ubo();
+
+  const vkapi::BufferBindInfo texture_meta_ubo();
 
  public:
   inline size_t staging_buffer_numel() const {

@@ -2,7 +2,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,6 +16,9 @@ if [[ $? -ne 0 ]]; then
     echo "Error: This script must be sourced."
     exit 1
 fi
+
+script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+source "${script_dir}/utils.sh"
 
 function gcc_select_toolchain() {
     if [[ "${ARCH}" == "x86_64" ]] ; then
@@ -34,26 +37,29 @@ function gcc_select_toolchain() {
         fi
     else
         # This should never happen, it should be covered by setup.sh but catch it anyway
-        echo "[gcc_select_toolchain]: Unsupported arch!"; exit 1
+        log_step "toolchain" "Error: Unsupported architecture ${ARCH}"
+        exit 1
     fi
 }
 
 function zephyr_select_toolchain() {
     if [[ "${OS}" != "Linux" ]] ; then
-        echo "[zephyr_select_toolchain] Error: Linux is only supported for zephyr!"; exit 1;
+        log_step "toolchain" "Error: Linux is required for Zephyr toolchain support"
+        exit 1
     fi
 
     if [[ "${ARCH}" == "x86_64" ]] ; then
-        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
+        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
         toolchain_dir="arm-zephyr-eabi"
-        toolchain_md5_checksum="93128be0235cf5cf5f1ee561aa6eac5f"
+        toolchain_md5_checksum="68ae71edc0106c3093055b97aaa47017"
     elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]] ; then
-        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
+        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
         toolchain_dir="arm-zephyr-eabi"
-        toolchain_md5_checksum="ef4ca56786204439a75270ba800cc64b"
+        toolchain_md5_checksum="d8a6dfd4314d55da713957d0b161d01f"
     else
         # This should never happen, it should be covered by setup.sh but catch it anyway
-        echo "[zephyr_select_toolchain]: Unsupported arch!"; exit 1
+        log_step "toolchain" "Error: Unsupported architecture ${ARCH}"
+        exit 1
     fi
 }
 
@@ -63,7 +69,7 @@ function select_toolchain() {
     else
         gcc_select_toolchain
     fi
-    echo "[main] Info selected ${toolchain_dir} for ${ARCH} - ${OS} platform"
+    log_step "toolchain" "Selected ${toolchain_dir} for ${ARCH}/${OS}"
 }
 
 function setup_toolchain() {
@@ -71,12 +77,12 @@ function setup_toolchain() {
     # setting --target-toolchain to zephyr sets this to arm-zephyr-eabi
     cd "${root_dir}"
     if [[ ! -e "${toolchain_dir}.tar.xz" ]]; then
-        echo "[${FUNCNAME[0]}] Downloading ${toolchain_dir} toolchain ..."
+        log_step "toolchain" "Downloading ${toolchain_dir} toolchain"
         curl --output "${toolchain_dir}.tar.xz" -L "${toolchain_url}"
         verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz" || exit 1
     fi
 
-    echo "[${FUNCNAME[0]}] Installing ${toolchain_dir} toolchain ..."
+    log_step "toolchain" "Installing ${toolchain_dir} toolchain"
     rm -rf "${toolchain_dir}"
     tar xf "${toolchain_dir}.tar.xz"
 }

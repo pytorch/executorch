@@ -417,6 +417,10 @@ class GenerateCatNopConstraints(PassBase):
             return not self.constraint.is_alias_of(source_info.source, node)
         return False
 
+    def has_relative_placement_constraint(self, node: torch.fx.Node) -> bool:
+        """Return if `node` already has any relative placement constraint."""
+        return self.constraint.get_relative_placement_source(node) is not None
+
     # Return true if the cat node performs concatenation along outermost dimension
     def is_cat_along_outermost_dim(
         self, graph_module: torch.fx.GraphModule, cat_node: torch.fx.Node
@@ -479,6 +483,10 @@ class GenerateCatNopConstraints(PassBase):
 
         # If any of the tensors to be concatenated is slice_nop or cat_nop, bail
         if any(self.is_slice_view(arg) for arg in cat_tensors):
+            return False
+        # If the same tensor appears multiple times in the cat inputs,
+        # we cannot place it at multiple different offsets relative to the output.
+        if len(cat_tensors) != len(set(cat_tensors)):
             return False
 
         # Many ops in HiFi require the input to be aligned to 8-byte boundary.

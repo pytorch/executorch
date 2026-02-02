@@ -95,24 +95,15 @@ def test_to_tosa_FP(test_data: Tuple):
 
 @common.parametrize("test_data", _TO_COPY_TEST_DATA_FP)
 @common.SkipIfNoModelConverter
-def test_to_vgf_FP(test_data: Tuple):
+def test_to_vgf_no_quant(test_data: Tuple):
     test_tensor, new_dtype = test_data()
     pipeline = VgfPipeline[input_t1](
         Cast(new_dtype),
         (test_tensor,),
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
-    # int to int cast is not supported in TOSA+FP profile
-    if not new_dtype.is_floating_point and not torch.is_floating_point(test_tensor):
-        pipeline.change_args(
-            "check_count.exir",
-            {
-                "torch.ops.higher_order.executorch_call_delegate": 0,
-                "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
-            },
-        )
     pipeline.run()
 
 
@@ -164,7 +155,7 @@ def test_to_tosa_INT_not_delegated(test_data: Tuple):
 
 @common.parametrize("test_data", _TO_COPY_TEST_DATA_INT)
 @common.SkipIfNoModelConverter
-def test_to_vgf_INT(test_data: Tuple):
+def test_to_vgf_quant(test_data: Tuple):
     # Op not supported
     pass
 
@@ -192,20 +183,15 @@ _TO_COPY_TEST_DATA_REDUNDANT_CAST = {
     ),
 }
 
-redundant_xfails_FP = {
+redundant_xfails = {
     "rand_fp16_fp16": "FP16 is not supported",
     "rand_int8_int8": "Tracing graph with quantized input is not supported.",
     "rand_int16_int16": "Tracing graph with quantized input is not supported.",
 }
 
-redundant_xfails_INT = {
-    "rand_fp16_fp16": "FP16 is not supported",
-    "rand_int8_int8": "Tracing graph with quantized input is not supported.",
-}
-
 
 @common.parametrize(
-    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails_FP
+    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails
 )
 def test_to_tosa_FP_REDUNDANT_CAST(test_data: Tuple):
     test_tensor, new_dtype = test_data()
@@ -220,7 +206,7 @@ def test_to_tosa_FP_REDUNDANT_CAST(test_data: Tuple):
 
 
 @common.parametrize(
-    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails_INT
+    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails
 )
 def test_to_tosa_INT_REDUNDANT_CAST(test_data: Tuple):
     test_tensor, new_dtype = test_data()
@@ -231,7 +217,6 @@ def test_to_tosa_INT_REDUNDANT_CAST(test_data: Tuple):
         exir_op=[],
     )
     pipeline.pop_stage("run_method_and_compare_outputs")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -242,5 +227,70 @@ def test_to_tosa_INT_not_delegated_REDUNDANT_CAST(test_data: Tuple):
         Cast(new_dtype),
         (test_tensor,),
         non_delegated_ops={},  # These are removed outside of the Arm backend so the graph is empty
+    )
+    pipeline.run()
+
+
+_TO_COPY_DATA_INT_U55_REJECT = {
+    "rand_bool_int8": lambda: (
+        torch.randint(0, 2, (1, 2, 3, 4), dtype=torch.bool),
+        torch.int8,
+    ),
+    "rand_int16_bool": lambda: (
+        torch.randint(-1000, 1000, (1, 2, 3, 4), dtype=torch.int16),
+        torch.bool,
+    ),
+    "rand_int32_int8": lambda: (
+        torch.randint(-1000, 1000, (1, 2, 3, 4), dtype=torch.int32),
+        torch.int8,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_DATA_INT_U55_REJECT)
+def test_to_u55_INT(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        u55_subset=True,
+        quantize=True,
+        non_delegated_ops={},  # These are removed outside of the Arm backend so the graph is empty
+    )
+    pipeline.run()
+
+
+_TO_COPY_TEST_DATA_INT_FP = {
+    "bool_fp32": lambda: (
+        torch.tensor([True, False], dtype=torch.bool),
+        torch.float32,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_INT_FP)
+@common.SkipIfNoModelConverter
+def test_to_vgf_no_quant_bool_fp32(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_INT_FP)
+@common.SkipIfNoModelConverter
+def test_to_vgf_quant_bool_fp32(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
+        quantize=True,
     )
     pipeline.run()

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -33,7 +33,7 @@ VERBS="Add|Fix|Update|Refactor|Improve|Remove|Change|Implement|Create|Modify|"\
 "Handle|Ignore|Interpret|Instantiate|Invoke|Limit|Load|Modify|Permit|Print|"\
 "Profile|Recalculate|Reconstruct|Redefine|Redesign|Reevaluate|Relocate|Remap|"\
 "Render|Reposition|Request|Revert|Sanitize|Specify|Strengthen|Stub|Substitute|"\
-"Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify|Rename"
+"Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify|Rename|Relax"
 
 # Remote branch
 REMOTE=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
@@ -68,6 +68,11 @@ if [ -z "$COMMITS" ]; then
 fi
 
 for COMMIT in ${COMMITS}; do
+    if [ -n "$REMOTE" ] && git merge-base --is-ancestor "$COMMIT" "$REMOTE"; then
+        echo -e "${INFO} Skipping commit ${COMMIT} (already on $REMOTE)"
+        continue
+    fi
+
     # If commit header contains WIP, everything is ok
     git rev-list --format=%s --max-count=1 ${COMMIT} | grep -q WIP && \
          continue
@@ -84,6 +89,9 @@ for COMMIT in ${COMMITS}; do
         echo -e "${SUCCESS} Lintrunner OK"
     fi
 
+    commit_files=$(git diff-tree --no-commit-id --name-only \
+        --diff-filter=ACMR ${COMMIT} -r)
+
     # Check license headers
     # We do a simple check of if all committed headers contain
     # "$current_year Arm". This does not guarantee OK in ci but should be ok
@@ -92,11 +100,15 @@ for COMMIT in ${COMMITS}; do
 
     current_year=$(date +%Y)
     failed_license_check=false
-    commit_files=$(git diff-tree --no-commit-id --name-only \
-        --diff-filter=ACMR ${COMMIT} -r)
     for commited_file in $commit_files; do
-        head $commited_file | grep -q "$current_year Arm"
-        if [[ $? != 0 ]]; then
+        file_header=$(head "$commited_file")
+        if ! echo "$file_header" | grep -qi "Arm"; then
+            echo -e "${WARNING} No Arm copyright header in ${commited_file}"\
+            " (skipping license year check)"
+            continue
+        fi
+
+        if ! echo "$file_header" | grep -q "$current_year Arm"; then
             echo -e "${ERROR} Header in $commited_file did not contain"\
             "'$current_year Arm'"
             failed_license_check=true
@@ -158,32 +170,51 @@ for COMMIT in ${COMMITS}; do
         FAILED=1
     fi
 
-    # Check subject format, should start with 'Arm backend: ' and be
-    # imperative mood.
-    if [[ ! "$SUBJECT" =~ ^"Arm backend":\ (${VERBS}) ]]; then
-        echo -e "${WARNING} Subject should start with 'Arm backend: '"\
-            "followed by an imperative verb." >&2
+    # Determine whether all modifications are under backends/arm or examples/arm
+    only_arm_changes=true
+    for commited_file in $commit_files; do
+        if [[ $commited_file != backends/arm/* && $commited_file != examples/arm/* ]]; then
+            only_arm_changes=false
+            break
+        fi
+    done
 
+    # Determine if subject has 'Arm backend: ' prefix
+    subject_prefix="Arm backend: "
+    has_arm_backend_prefix=false
+    subject_without_prefix="$SUBJECT"
+    if [[ "$SUBJECT" == ${subject_prefix}* ]]; then
+        has_arm_backend_prefix=true
+        subject_without_prefix=${SUBJECT#"${subject_prefix}"}
+    fi
+
+    # Require 'Arm backend: ' prefix when the commit only touches Arm backend/examples files
+    if [[ $only_arm_changes == true && $has_arm_backend_prefix == false ]]; then
+        echo -e "${ERROR} Subject must start with 'Arm backend: ' when only backends/arm or examples/arm files are modified." >&2
+        FAILED=1
+    fi
+
+    # Imperative mood check (after optional prefix removal)
+    if [[ ! "$subject_without_prefix" =~ ^(${VERBS})(\ |$) ]]; then
+        echo -e "${WARNING} Commit message should begin with an imperative verb." >&2
         if [ $is_script_interactive -eq 1 ]; then
             echo -n "There are warnings in your commit message. Do you want to"\
                 "ignore the warning (y/N): " > /dev/tty
 
             read USER_INPUT < /dev/tty
 
-            # Check user input for warnings
             if [[ ! "$USER_INPUT" =~ ^[Yy]$ ]]; then
                 FAILED=1
             fi
         fi
     fi
 
-    # Op test checks
-    op_test_files=$(echo $commit_files | grep -oE 'backends/arm/test/ops/\S+')
-    if [ "$op_test_files" ]; then
+    # Test name checks
+    test_files=$(echo $commit_files | grep -oE 'backends/arm/test/\S+')
+    if [ "$test_files" ]; then
 
-        # Check that the tested op and target is parsed correctly from the test name
-        test_names=$(grep -h "def test_" $op_test_files | cut -d"(" -f1 | cut -d" " -f2)
-        python ./backends/arm/scripts/parse_test_names.py $test_names
+        # Check that the test name follows the specified convention
+        python ./backends/arm/scripts/parse_test_names.py $test_files
         if [ $? -ne 0 ]; then
             echo -e "${ERROR} Failed op test name check." >&2
             FAILED=1

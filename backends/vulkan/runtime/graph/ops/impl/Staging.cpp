@@ -148,7 +148,10 @@ void add_prepack_standard_node(
     const ValueRef tensor,
     const bool transpose_hw = false) {
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
-      graph, tensor, graph.dtype_of(tensor_data), graph.int8_buffers_enabled());
+      graph,
+      tensor,
+      graph.get_staging_dtype_for(tensor_data),
+      graph.int8_buffers_enabled());
 
   vkapi::ParamsBindList param_buffers = {};
   if (graph.is_buffer_storage(tensor)) {
@@ -285,7 +288,7 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
   const int64_t N = qmat2_orig_sizes.at(ndim - 2);
   const int64_t N_div2 = N / int64_t(2);
 
-  utils::StorageType storage_type = utils::kTexture2D;
+  utils::StorageType storage_type = utils::kBuffer;
   uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
   if (N_div2 > max_extent * 4 || K > max_extent) {
     storage_type = utils::kBuffer;

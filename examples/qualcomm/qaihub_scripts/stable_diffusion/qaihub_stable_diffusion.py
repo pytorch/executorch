@@ -173,13 +173,6 @@ def build_args_parser():
     )
 
     parser.add_argument(
-        "--pre_gen_pte",
-        help="folder path to pre-compiled ptes",
-        default=None,
-        type=str,
-    )
-
-    parser.add_argument(
         "--fix_latents",
         help="Enable this option to fix the latents in the unet diffuse step.",
         action="store_true",
@@ -213,12 +206,12 @@ def save_result(output_image):
 
 
 def inference(args, compiler_specs, pte_files):
-    # Loading a pretrained EulerDiscreteScheduler from the https://huggingface.co/stabilityai/stable-diffusion-2-1-base.
+    # Loading a pretrained EulerDiscreteScheduler from the https://huggingface.co/stabilityai/stable-diffusion-2-1-base.  # @lint-ignore
     scheduler = EulerDiscreteScheduler.from_pretrained(
         "stabilityai/stable-diffusion-2-1-base", subfolder="scheduler", revision="main"
     )
 
-    #  Loading a pretrained UNet2DConditionModel (which includes the time embedding) from the https://huggingface.co/stabilityai/stable-diffusion-2-1-base.
+    #  Loading a pretrained UNet2DConditionModel (which includes the time embedding) from the https://huggingface.co/stabilityai/stable-diffusion-2-1-base.  # @lint-ignore
     time_embedding = UNet2DConditionModel.from_pretrained(
         "stabilityai/stable-diffusion-2-1-base", subfolder="unet", revision="main"
     ).time_embedding
@@ -255,6 +248,7 @@ def inference(args, compiler_specs, pte_files):
         host_id=args.host,
         soc_model=args.model,
         runner="examples/qualcomm/qaihub_scripts/stable_diffusion/qaihub_stable_diffusion_runner",
+        target=args.target,
     )
 
     input_unet = ()
@@ -342,7 +336,7 @@ def inference(args, compiler_specs, pte_files):
                 np.fromfile(f, dtype=np.float32).reshape(1, 512, 512, 3)
             )
 
-    adb.pull(output_path=args.artifact, callback=post_process_vae)
+    adb.pull(host_output_path=args.artifact, callback=post_process_vae)
 
     if args.fix_latents:
         broadcast_ut_result(output_image, seed)

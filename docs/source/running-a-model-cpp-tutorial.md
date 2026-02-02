@@ -6,13 +6,13 @@ In this tutorial, we will cover how to run an ExecuTorch model in C++ using the 
 
 For a high level overview of the ExecuTorch Runtime please see [Runtime Overview](runtime-overview.md), and for more in-depth documentation on
 each API please see the [Runtime API Reference](executorch-runtime-api-reference.rst).
-[Here](https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp) is a fully functional version C++ model runner, and the [Setting up ExecuTorch](getting-started-setup.md) doc shows how to build and run it.
+[Here](https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp) is a fully functional version C++ model runner, and the [Setting up ExecuTorch](getting-started-setup.rst) doc shows how to build and run it.
 
 
 ## Prerequisites
 
 You will need an ExecuTorch model to follow along. We will be using
-the model `SimpleConv` generated from the [Exporting to ExecuTorch tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial).
+the model `SimpleConv` generated from the [Exporting to ExecuTorch tutorial](tutorials/export-to-executorch-tutorial) <!-- @lint-ignore -->.
 
 ## Model Loading
 
@@ -96,7 +96,7 @@ MemoryManager memory_manager(&method_allocator, &planned_memory);
 
 ## Loading a Method
 
-In ExecuTorch we load and initialize from the `Program` at a method granularity. Many programs will only have one method 'forward'. `load_method` is where initialization is done, from setting up tensor metadata, to intializing delegates, etc.
+In ExecuTorch we load and initialize from the `Program` at a method granularity. Many programs will only have one method 'forward'. `load_method` is where initialization is done, from setting up tensor metadata, to initializing delegates, etc.
 
 ``` cpp
 Result<Method> method = program->load_method(method_name);

@@ -90,7 +90,7 @@ set(ET_PTE_FILE_PATH
     CACHE PATH "Path to ExecuTorch model pte"
 )
 set(ETHOS_SDK_PATH
-    "${ET_DIR_PATH}/examples/arm/ethos-u-scratch/ethos-u"
+    "${ET_DIR_PATH}/examples/arm/arm-scratch/ethos-u"
     CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
 set(PYTHON_EXECUTABLE
@@ -235,10 +235,10 @@ list(
   -Map=arm_executor_runner.map
 )
 
-# Prefer to generate kernel bindings from model file if possible, which is when
-# 1. Not building for semihosting 2. Not building with bundleio If that is not
-# the case, fallback to select_ops_list If the model file does not contain any
-# aten ops, a workaround is currently needed to avoid crashing.
+# Figure out which ops to include: For semihosting build, use
+# (user-set)SELECT_OPS_MODEL variable. For normal build, use
+# EXECUTORCH_SELECT_OPS_MODEL to include ops automatically. If the pte contains
+# no undelegated ops, use neither.
 execute_process(
   COMMAND
     python "${ET_DIR_PATH}/codegen/tools/gen_oplist.py"
@@ -263,11 +263,6 @@ elseif(${FOUND_OPS_IN_FILE})
   set(EXECUTORCH_SELECT_OPS_MODEL "${ET_PTE_FILE_PATH}")
   message(
     "gen_oplist:  EXECUTORCH_SELECT_OPS_MODEL=${ET_PTE_FILE_PATH} is used to auto generate ops from"
-  )
-elseif(NOT ${FOUND_OPS_IN_FILE} AND ${ET_BUNDLE_IO})
-  set(EXECUTORCH_SELECT_OPS_MODEL "")
-  message(
-    "gen_oplist: Building with ET_BUNDLE_IO and .bpte is not supported to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
   )
 else()
   set(EXECUTORCH_SELECT_OPS_LIST "")
@@ -331,11 +326,43 @@ endif()
 
 # Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
 # bin size as we link in a number of other symbols
-target_link_libraries(arm_executor_runner ${arm_executor_runner_link})
+target_link_libraries(arm_executor_runner PUBLIC ${arm_executor_runner_link})
 
 target_link_options(
   arm_executor_runner PUBLIC LINKER:-Map=arm_executor_runner.map
 )
+
+# Sanitizers
+if(CMAKE_BUILD_TYPE MATCHES "UndefinedSanitizer")
+  set(_et_runner_ubsan_flag -fsanitize=undefined)
+  target_compile_options(arm_executor_runner PRIVATE ${_et_runner_ubsan_flag})
+  target_link_options(arm_executor_runner PRIVATE ${_et_runner_ubsan_flag})
+  if(NOT TARGET executorch_ubsan)
+    add_subdirectory(
+      ${ET_DIR_PATH}/examples/arm/ubsan
+      ${CMAKE_CURRENT_BINARY_DIR}/ubsan_runtime
+    )
+  endif()
+  target_link_directories(
+    arm_executor_runner PRIVATE $<TARGET_FILE_DIR:executorch_ubsan>
+  )
+  target_link_libraries(arm_executor_runner PRIVATE executorch_ubsan)
+endif()
+
+if(CMAKE_BUILD_TYPE MATCHES "AddressSanitizer")
+  set(_et_runner_asan_flags -fsanitize=kernel-address -fasan-shadow-offset=0x0)
+  target_compile_options(arm_executor_runner PRIVATE ${_et_runner_asan_flags})
+  target_link_options(arm_executor_runner PRIVATE ${_et_runner_asan_flags})
+  if(NOT TARGET executorch_asan)
+    add_subdirectory(
+      ${ET_DIR_PATH}/examples/arm/asan ${CMAKE_CURRENT_BINARY_DIR}/asan_runtime
+    )
+  endif()
+  target_link_libraries(arm_executor_runner PRIVATE executorch_asan)
+  target_compile_definitions(
+    arm_executor_runner PRIVATE EXECUTORCH_ENABLE_ADDRESS_SANITIZER
+  )
+endif()
 
 # ET headers and generated headers includes
 target_include_directories(

@@ -80,7 +80,7 @@ Tensor& roll_out(
   size_t dim_shift_array_length = static_cast<size_t>(in.dim()); // NOLINT
   IntArrayRef dim_shifts(dim_shift_array, dim_shift_array_length);
 
-  constexpr auto name = "roll.out";
+  static constexpr auto name = "roll.out";
 
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();

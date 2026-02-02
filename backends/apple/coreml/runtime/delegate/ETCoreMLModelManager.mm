@@ -56,7 +56,7 @@ std::vector<std::string> canonical_path(NSString *path) {
     for (NSString *component in components) {
         result.emplace_back(component.UTF8String);
     }
-    
+
     return result;
 }
 
@@ -69,7 +69,7 @@ id<MLFeatureProvider> _Nullable get_feature_provider(NSArray<MLMultiArray *> *in
         NSString *input_name = [enumerator nextObject];
         features[input_name] = [MLFeatureValue featureValueWithMultiArray:input];
     }
-    
+
     return [[MLDictionaryFeatureProvider alloc] initWithDictionary:features error:error];
 }
 
@@ -84,7 +84,7 @@ BOOL is_backed_by_same_buffer(MLMultiArray *array1, MLMultiArray *array2) {
     } else {
         result = (array1.dataPointer == array2.dataPointer);
     }
-    
+
     return result;
 }
 
@@ -105,7 +105,7 @@ MLPredictionOptions *get_prediction_options(NSArray<MLMultiArray *> *outputs,
         }
         options.outputBackings = output_backings;
     }
-    
+
     return options;
 }
 
@@ -113,7 +113,7 @@ void copy(MLMultiArray *src, MLMultiArray *dst) {
     if (::is_backed_by_same_buffer(src, dst)) {
         return;
     }
-    
+
     [src copyInto:dst];
 }
 
@@ -150,10 +150,10 @@ void copy(MLMultiArray *src, executorchcoreml::MultiArray& dst) {
         if (bytes == dst.data()) {
             return;
         }
-            
+
         MultiArray::MemoryLayout src_layout(
-            get_data_type(src.dataType).value(), 
-            to_vector<size_t>(src.shape), 
+            get_data_type(src.dataType).value(),
+            to_vector<size_t>(src.shape),
             to_vector<ssize_t>(src.strides)
         );
         MultiArray(const_cast<void *>(bytes), std::move(src_layout)).copy(dst);
@@ -184,13 +184,13 @@ NSData * _Nullable get_file_data(const inmemoryfs::InMemoryFileSystem *inMemoryF
     if (!buffer ||  buffer->size() == 0) {
         return nil;
     }
-    
+
     NSData *file_data = [[NSData alloc] initWithBytesNoCopy:buffer->data()
                                                      length:buffer->size()
                                                 deallocator:^(void * _Nonnull __unused bytes, NSUInteger __unused length) {
         buffer.reset();
     }];
-    
+
     return file_data;
 }
 
@@ -199,7 +199,7 @@ std::optional<ModelMetadata> get_model_metadata(const inmemoryfs::InMemoryFileSy
     if (!file_data) {
         return std::nullopt;
     }
-    
+
     std::string contents;
     contents.assign(static_cast<const char *>(file_data.bytes), file_data.length);
     ModelMetadata metadata;
@@ -207,7 +207,7 @@ std::optional<ModelMetadata> get_model_metadata(const inmemoryfs::InMemoryFileSy
     if (metadata.is_valid()) {
         return metadata;
     }
-    
+
     return std::nullopt;
 }
 
@@ -216,7 +216,7 @@ NSOrderedSet<NSString *> *get_ordered_set(const std::vector<std::string>& values
     for (const auto& value : values) {
         [result addObject:@(value.c_str())];
     }
-    
+
     return result;
 }
 
@@ -235,7 +235,7 @@ NSURL * _Nullable write_model_files(NSURL *dst_url,
                                                 identifier);
         return nil;
     }
-    
+
     std::filesystem::path model_path(dst_url.fileSystemRepresentation);
     std::error_code ec;
     std::vector<std::string> file_path;
@@ -244,13 +244,13 @@ NSURL * _Nullable write_model_files(NSURL *dst_url,
             file_path = canonical_path(ETCoreMLStrings.modelFileRelativePath);
             break;
         }
-            
+
         case ModelAssetType::CompiledModel: {
             file_path = canonical_path(ETCoreMLStrings.compiledModelFileRelativePath);
             break;
         }
     }
-    
+
     if (!inmemory_fs->write_item_to_disk(file_path, model_path, true, ec)) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorModelSaveFailed,
@@ -258,7 +258,7 @@ NSURL * _Nullable write_model_files(NSURL *dst_url,
                                       identifier);
         return nil;
     }
-    
+
     switch (model_asset_type) {
         case ModelAssetType::Model: {
             return [dst_url URLByAppendingPathComponent:[NSString stringWithFormat:@"model.%@", ETCoreMLStrings.modelExtensionName]];
@@ -274,19 +274,24 @@ std::optional<ModelAssetType> get_model_asset_type(const inmemoryfs::InMemoryFil
     if (inmemory_fs->exists(canonical_path(ETCoreMLStrings.compiledModelFileRelativePath))) {
         return ModelAssetType::CompiledModel;
     }
-    
+
     if (inmemory_fs->exists(canonical_path(ETCoreMLStrings.modelFileRelativePath))) {
         return ModelAssetType::Model;
     }
-    
+
     return std::nullopt;
 }
 
 
 ETCoreMLModel * _Nullable get_model_from_asset(ETCoreMLAsset *asset,
                                                MLModelConfiguration *configuration,
-                                               const ModelMetadata& metadata,
+                                               const executorchcoreml::ModelMetadata& metadata,
                                                NSError * __autoreleasing *error) {
+    // Always use the metadata's ordered input/output names for consistency.
+    // The pytree flatten order during export determines the correct input order,
+    // and metadata captures this order. For multifunction models, the caller
+    // populates metadata.input_names/output_names from the specific method's
+    // metadata before calling this function.
     NSOrderedSet<NSString *> *orderedInputNames = ::get_ordered_set(metadata.input_names);
     NSOrderedSet<NSString *> *orderedOutputNames = ::get_ordered_set(metadata.output_names);
     ETCoreMLModel *model = [[ETCoreMLModel alloc] initWithAsset:asset
@@ -331,7 +336,7 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     if (!backingAsset) {
         return nil;
     }
-    
+
     return [[ETCoreMLAsset alloc] initWithBackingAsset:std::move(backingAsset.value())];
 }
 
@@ -343,6 +348,10 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
     }
 
     return [ETCoreMLModelDebugInfo modelDebugInfoFromData:file_data error:error];
+}
+
+NSString *raw_model_identifier(NSString *identifier) {
+    return [NSString stringWithFormat:@"raw_%@", identifier];
 }
 
 #endif
@@ -375,7 +384,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
         dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_DEFAULT, -1);
         _prewarmQueue = dispatch_queue_create("com.executorchcoreml.modelmanager.prewarm", attr);
     }
-    
+
     return self;
 }
 
@@ -387,7 +396,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
         executor = self.handleToExecutorMap[key];
         os_unfair_lock_unlock(&_lock);
     }
-    
+
     return executor;
 }
 
@@ -403,25 +412,26 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
         modelAsset = self.modelIdentifierToPrewarmedAssetMap[identifier];
         os_unfair_lock_unlock(&_lock);
     }
-    
+
     if (modelAsset) {
         return modelAsset;
     }
-    
-    NSError *localError = nil;
+
+    __block NSError *localError = nil;
     modelAsset = [self.assetManager assetWithIdentifier:identifier error:&localError];
     if (localError) {
         ETCoreMLLogError(localError,
                          "Failed to retrieve asset with identifier = %@.",
                          identifier);
     }
-    
+
     return modelAsset;
 }
 
 - (nullable NSURL *)compiledModelURLWithIdentifier:(NSString *)identifier
+                                          modelURL:(nullable NSURL *)modelURL
                                         inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
-                                      assetManager:(ETCoreMLAssetManager *)assetManager
+                                            dstURL:(NSURL *)dstURL
                                              error:(NSError * __autoreleasing *)error {
     auto modelAssetType = get_model_asset_type(inMemoryFS);
     if (!modelAssetType) {
@@ -430,78 +440,148 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                       "AOT blob is missing model file.");
         return nil;
     }
-    
-    NSURL *dstURL = [self.assetManager.trashDirectoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
-    NSURL *modelURL = ::write_model_files(dstURL, self.fileManager, identifier, modelAssetType.value(), inMemoryFS, error);
+
+    // If modelURL is not provided, write model files to the destination directory (dstURL)
+    // and obtain a URL pointing to them. Otherwise, use the provided modelURL.
+    modelURL = (modelURL == nil) ? ::write_model_files(dstURL, self.fileManager, identifier, modelAssetType.value(), inMemoryFS, error) : modelURL;
+    if (!modelURL) {
+        // Failed to generate or locate model files, return nil.
+        return nil;
+    }
+
+    // Handle based on the type of the model asset.
     switch (modelAssetType.value()) {
         case ModelAssetType::CompiledModel: {
             // Model is already compiled.
+            ETCoreMLLogInfo("The model in the pte file is pre-compiled.  Skipping compilation.");
             return modelURL;
         }
-            
+
         case ModelAssetType::Model: {
             // Compile the model.
+            ETCoreMLLogInfo("The model in the pte file is not pre-compiled.  Compiling with a 5 min timeout.");
             NSURL *compiledModelURL = [ETCoreMLModelCompiler compileModelAtURL:modelURL
                                                           maxWaitTimeInSeconds:(5 * 60)
                                                                          error:error];
-            
+            // Return the URL of the compiled model or nil if compilation fails.
             return compiledModelURL;
         }
     }
 }
 
-#if ET_EVENT_TRACER_ENABLED
-- (nullable id<ETCoreMLModelExecutor>)modelExecutorWithMetadata:(const ModelMetadata&)metadata
-                                                     inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
-                                                  configuration:(MLModelConfiguration *)configuration
-                                                          error:(NSError * __autoreleasing *)error {
+- (nullable ETCoreMLAsset *)compiledModelAssetWithMetadata:(const ModelMetadata&)metadata
+                                                  modelURL:(nullable NSURL *)modelURL
+                                                inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
+                                                     error:(NSError * __autoreleasing *)error {
     NSString *identifier = @(metadata.identifier.c_str());
-    // Otherwise try to retrieve the compiled asset.
-    ETCoreMLAsset *compiledModelAsset = [self assetWithIdentifier:identifier];
+    __block ETCoreMLAsset *compiledModelAsset = [self assetWithIdentifier:identifier];
     if (compiledModelAsset) {
+        ETCoreMLLogInfo("Cache Hit: Successfully retrieved compiled model with identifier=%@ from the models cache.", identifier);
+        return compiledModelAsset;
+    }
+
+    ETCoreMLLogInfo("Cache Miss: Compiled Model with identifier=%@ was not found in the models cache.", identifier);
+    __block NSURL *compiledModelURL;
+    [self.assetManager withTemporaryDirectory:^(NSURL * _Nonnull directoryURL) {
+        // The directory specified by `directoryURL` is unique and will be automatically cleaned up
+        // once the enclosing block completes.
+        compiledModelURL = [self compiledModelURLWithIdentifier:identifier
+                                                              modelURL:modelURL
+                                                            inMemoryFS:inMemoryFS
+                                                                dstURL:directoryURL
+                                                                 error:error];
+        if (compiledModelURL) {
+            // Move the compiled model to the asset manager to transfer ownership.
+            ETCoreMLLogInfo("Successfully got compiled model with identifier=%@.  Transferring ownership to assetManager.", identifier);
+            compiledModelAsset = [self.assetManager storeAssetAtURL:compiledModelURL withIdentifier:identifier error:error];
+        }
+    }];
+
+    if (!compiledModelAsset) {
+        ETCoreMLLogInfo("Failed to transfer ownership of asset with identifier=%@ to assetManager", identifier);
+        if (compiledModelURL && [self.fileManager fileExistsAtPath:compiledModelURL.path]) {
+            // Log what error was since we now attempt backup path, and previous error is overwritten
+            if (error && *error) {
+                ETCoreMLLogInfo("error=%@", (*error).localizedDescription);
+                *error = nil;
+            }
+            ETCoreMLLogInfo("Attempting to fall back by loading model without transferring ownership");
+            auto backingAsset = Asset::make(compiledModelURL, identifier, self.assetManager.fileManager, error);
+            if (backingAsset) {
+                compiledModelAsset = [[ETCoreMLAsset alloc] initWithBackingAsset:backingAsset.value()];
+            }
+        }
+    }
+
+    // compiledModelAsset can still be nil if our backup path failed
+
+    return compiledModelAsset;
+}
+
+#if ET_EVENT_TRACER_ENABLED
+- (nullable ETCoreMLAsset *)modelAssetWithMetadata:(const ModelMetadata&)metadata
+                                        inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
+                                             error:(NSError * __autoreleasing *)error {
+    NSString *identifier = @(metadata.identifier.c_str());
+    NSString *rawIdentifier = raw_model_identifier(identifier);
+    __block ETCoreMLAsset *modelAsset = [self assetWithIdentifier:rawIdentifier];
+    if (modelAsset) {
         ETCoreMLLogInfo("Cache Hit: Successfully retrieved model with identifier=%@ from the models cache.", identifier);
     } else {
         ETCoreMLLogInfo("Cache Miss: Model with identifier=%@ was not found in the models cache.", identifier);
     }
-    
-    // Create a unique directory for writing model files.
-    NSURL *dstURL = [self.assetManager.trashDirectoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
-    auto modelAssetType = get_model_asset_type(inMemoryFS);
-    ETCoreMLAsset *modelAsset = nil;
-    // Write the model files.
-    if (modelAssetType == ModelAssetType::Model) {
-        NSURL *modelURL = ::write_model_files(dstURL, self.fileManager, identifier, modelAssetType.value(), inMemoryFS, error);
-        if (modelURL) {
-            modelAsset = make_asset(modelURL,
-                                    identifier,
-                                    self.fileManager,
-                                    error);
+
+    [self.assetManager withTemporaryDirectory:^(NSURL * _Nonnull directoryURL) {
+        if (modelAsset) {
+            return;
         }
+
+        auto modelAssetType = get_model_asset_type(inMemoryFS);
+        if (modelAssetType != ModelAssetType::Model) {
+            return;
+        }
+
+        // The directory specified by `directoryURL` is unique and will be automatically cleaned up
+        // once the enclosing block completes.
+        NSURL *modelURL = ::write_model_files(directoryURL,
+                                              self.fileManager,
+                                              identifier,
+                                              modelAssetType.value(),
+                                              inMemoryFS,
+                                              error);
+        if (modelURL) {
+            // Move the model to the asset manager to transfer ownership.
+            modelAsset = [self.assetManager storeAssetAtURL:modelURL withIdentifier:rawIdentifier error:error];
+        }
+    }];
+
+    return modelAsset;
+}
+
+- (nullable id<ETCoreMLModelExecutor>)modelExecutorWithMetadata:(const ModelMetadata&)metadata
+                                                     inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
+                                                  configuration:(MLModelConfiguration *)configuration
+                                                          error:(NSError * __autoreleasing *)error {
+    NSError *localError = nil;
+    ETCoreMLAsset *modelAsset = [self modelAssetWithMetadata:metadata inMemoryFS:inMemoryFS error:&localError];
+    if (localError) {
+        if (error) {
+            *error = localError;
+        }
+
+        return nil;
     }
-   
-    if (!compiledModelAsset) {
-        // Compile the model.
-        NSURL *compiledModelURL = [self compiledModelURLWithIdentifier:identifier
-                                                            inMemoryFS:inMemoryFS
-                                                          assetManager:self.assetManager
-                                                                 error:error];
-        compiledModelAsset = make_asset(compiledModelURL,
-                                        identifier,
-                                        self.fileManager,
-                                        error);
-    }
-    
+
+    ETCoreMLAsset *compiledModelAsset = [self compiledModelAssetWithMetadata:metadata
+                                                                    modelURL:modelAsset.contentURL
+                                                                  inMemoryFS:inMemoryFS
+                                                                       error:error];
     if (!compiledModelAsset) {
         return nil;
     }
-    
-    NSError *localError = nil;
-    ETCoreMLModelDebugInfo *debug_info = get_model_debug_info(inMemoryFS, &localError);
-    if (localError) {
-        ETCoreMLLogError(localError, "Failed to parse debug info file");
-    }
-    
 
+    ETCoreMLModelDebugInfo *debug_info = get_model_debug_info(inMemoryFS, error);
+    // The analyzer requires both the raw (uncompiled) asset and the compiled model asset to perform analysis.
     return [[ETCoreMLModelAnalyzer alloc] initWithCompiledModelAsset:compiledModelAsset
                                                           modelAsset:modelAsset
                                                       modelDebugInfo:debug_info
@@ -510,46 +590,39 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                                         assetManager:self.assetManager
                                                                error:error];
 }
-
 #else
 - (nullable id<ETCoreMLModelExecutor>)modelExecutorWithMetadata:(const ModelMetadata&)metadata
                                                      inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
                                                   configuration:(MLModelConfiguration *)configuration
                                                           error:(NSError * __autoreleasing *)error {
-    NSString *identifier = @(metadata.identifier.c_str());
-    // Otherwise try to retrieve the compiled asset.
-    ETCoreMLAsset *asset = [self assetWithIdentifier:identifier];
-    ETCoreMLModel *model = asset ? get_model_from_asset(asset, configuration, metadata, error) : nil;
-    if (model) {
-        ETCoreMLLogInfo("Cache Hit: Successfully retrieved model with identifier=%@ from the models cache.", identifier);
-        return [[ETCoreMLDefaultModelExecutor alloc] initWithModel:model];
-    }
-    
-    ETCoreMLLogInfo("Cache Miss: Model with identifier=%@ was not found in the models cache.", identifier);
-    // Compile the model.
-    NSURL *compiledModelURL = [self compiledModelURLWithIdentifier:identifier
-                                                        inMemoryFS:inMemoryFS
-                                                      assetManager:self.assetManager
-                                                             error:error];
-    if (!compiledModelURL) {
+    ETCoreMLAsset *compiledModelAsset = [self compiledModelAssetWithMetadata:metadata
+                                                                    modelURL:nil
+                                                                  inMemoryFS:inMemoryFS
+                                                                       error:error];
+    if (!compiledModelAsset) {
         return nil;
     }
-    
-    model = [ETCoreMLModelLoader loadModelWithContentsOfURL:compiledModelURL
-                                              configuration:configuration
-                                                   metadata:metadata
-                                               assetManager:self.assetManager
-                                                      error:error];
-    
+
+    ETCoreMLModel *model = [ETCoreMLModelLoader loadModelWithCompiledAsset:compiledModelAsset
+                                                             configuration:configuration
+                                                                  metadata:metadata
+                                                                     error:error];
+    if (!model) {
+        return nil;
+    }
+
     return [[ETCoreMLDefaultModelExecutor alloc] initWithModel:model];
 }
 #endif
 
+
 - (nullable id<ETCoreMLModelExecutor>)_modelExecutorWithAOTData:(NSData *)data
-                                                  configuration:(MLModelConfiguration *)configuration
-                                                          error:(NSError * __autoreleasing *)error {
+                                                   configuration:(MLModelConfiguration *)configuration
+                                                      methodName:(nullable NSString *)methodName
+                                                    functionName:(nullable NSString *)functionName
+                                                           error:(NSError * __autoreleasing *)error {
     using namespace inmemoryfs;
-    
+
     auto buffer = MemoryBuffer::make_unowned(const_cast<void *>(data.bytes), data.length);
     std::unique_ptr<InMemoryFileSystem> inMemoryFS = inmemoryfs::make_from_buffer(std::move(buffer));
     if (!inMemoryFS) {
@@ -558,7 +631,8 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                       "Model data is corrupted.");
         return nil;
     }
-    
+
+    // Load the metadata from the in-memory filesystem.
     std::optional<ModelMetadata> metadata = ::get_model_metadata(inMemoryFS.get());
     if (!metadata) {
         ETCoreMLLogErrorAndSetNSError(error,
@@ -566,8 +640,74 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                       "Metadata is invalid or missing.");
         return nil;
     }
-    
+
     auto metadataValue = metadata.value();
+
+    // Check if this is a multifunction model
+    BOOL isMultifunction = metadataValue.is_multifunction();
+
+    // For multifunction models, populate the top-level input_names/output_names
+    // from the method's metadata. This ensures we get the correct names for this method.
+    if (isMultifunction) {
+        if (methodName == nil || methodName.length == 0) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "Multifunction CoreML models require a methodName for metadata lookup.");
+            return nil;
+        }
+        
+        std::string method_name_str = [methodName UTF8String];
+        const MethodMetadata* method_metadata = metadataValue.get_method_metadata(method_name_str);
+        if (method_metadata != nullptr) {
+            metadataValue.input_names = method_metadata->input_names;
+            metadataValue.output_names = method_metadata->output_names;
+        } else {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "Method '%@' not found in multifunction model metadata.",
+                                          methodName);
+            return nil;
+        }
+    }
+
+    // For multifunction CoreML models (ML Programs with multiple functions),
+    // we need to set functionName to select the correct function within the model.
+    // However, legacy single-function models require functionName to be nil.
+    //
+    // For multifunction models, functionName is required and specifies which
+    // CoreML function to invoke. It comes from the JSON reference in the
+    // processed bytes and may differ from methodName (e.g., "forward_partition0"
+    // vs "forward").
+    if (isMultifunction) {
+        if (functionName == nil || functionName.length == 0) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "Multifunction CoreML models require a functionName.");
+            return nil;
+        }
+        
+#if defined(__IPHONE_18_0) || defined(__MAC_15_0) || defined(__TVOS_18_0) || defined(__WATCHOS_11_0)
+        if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+            configuration.functionName = functionName;
+        } else {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "Multifunction CoreML models require iOS 18.0+ / macOS 15.0+.");
+            return nil;
+        }
+#else
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "Multifunction CoreML models require iOS 18.0+ / macOS 15.0+ SDK to build.");
+        return nil;
+#endif
+    }
+
+    // NOTE: For multifunction CoreML models, we intentionally do NOT include the
+    // function name or method name in the cache key. The multifunction model should be compiled
+    // only once since it contains ALL functions. The functionName setting on
+    // MLModelConfiguration determines which function is invoked at runtime when
+    // creating the MLModel from the cached compiled files.
     add_compute_unit(metadataValue.identifier, configuration.computeUnits);
     NSString *identifier = @(metadataValue.identifier.c_str());
     // If there are multiple calls to load the same model, we only want to compile it once.
@@ -580,7 +720,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                      configuration:configuration
                                              error:error];
     });
-    
+
     return executor;
 }
 
@@ -592,15 +732,29 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
         [self.modelIdentifierToLoadingQueueMap setObject:queue forKey:identifier];
     }
     os_unfair_lock_unlock(&_lock);
-    
+
     return queue;
 }
 
 - (ModelHandle *)loadModelFromAOTData:(NSData*)data
                         configuration:(MLModelConfiguration*)configuration
                                 error:(NSError* __autoreleasing*)error {
+    return [self loadModelFromAOTData:data
+                        configuration:configuration
+                           methodName:nil
+                         functionName:nil
+                                error:error];
+}
+
+- (ModelHandle *)loadModelFromAOTData:(NSData*)data
+                        configuration:(MLModelConfiguration*)configuration
+                           methodName:(nullable NSString*)methodName
+                         functionName:(nullable NSString*)functionName
+                                error:(NSError* __autoreleasing*)error {
     id<ETCoreMLModelExecutor> executor = [self _modelExecutorWithAOTData:data
                                                            configuration:configuration
+                                                              methodName:methodName
+                                                            functionName:functionName
                                                                    error:error];
     {
         os_unfair_lock_lock(&_lock);
@@ -610,7 +764,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
         }
         os_unfair_lock_unlock(&_lock);
     }
-    
+
     return (__bridge ModelHandle *)executor.model;
 }
 
@@ -627,15 +781,15 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
 - (void)prewarmRecentlyUsedAssetsWithMaxCount:(NSUInteger)maxCount {
     NSError *localError = nil;
     NSArray<ETCoreMLAsset *> *assets = [self.assetManager mostRecentlyUsedAssetsWithMaxCount:maxCount error:&localError];
-    
+
     if (localError) {
         ETCoreMLLogError(localError, "Failed to retrieve recently used assets.");
     }
-    
+
     if (assets.count == 0) {
         return;
     }
-    
+
     for (ETCoreMLAsset *asset in assets) {
         __weak __typeof(self) weakSelf = self;
         dispatch_async(self.prewarmQueue, ^{
@@ -643,7 +797,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
             if (!strongSelf) {
                 return;
             }
-            
+
             NSError *prewarmError = nil;
             if (![asset prewarmAndReturnError:&prewarmError]) {
                 ETCoreMLLogError(prewarmError,
@@ -651,7 +805,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                  asset.identifier);
                 return;
             }
-            
+
             [strongSelf addPrewarmedAsset:asset];
         });
     }
@@ -675,12 +829,12 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
     if (!predictionOptions) {
         return nil;
     }
-    
+
     id<MLFeatureProvider> inputFeatures = ::get_feature_provider(inputs, model.orderedInputNames, error);
     if (!inputFeatures) {
         return nil;
     }
-    
+
     NSArray<MLMultiArray *> *modelOutputs = [executor executeModelWithInputs:inputFeatures
                                                            predictionOptions:predictionOptions
                                                               loggingOptions:loggingOptions
@@ -702,7 +856,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
     if (error) {
         *error = localError;
     }
-    
+
     return modelOutputs;
 }
 
@@ -729,6 +883,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                       args.count);
         return result;
     }
+
     NSError *localError = nil;
     @autoreleasepool {
         NSArray<MLMultiArray *> *inputs = [args subarrayWithRange:NSMakeRange(0, model.orderedInputNames.count)];
@@ -748,11 +903,11 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
             result = YES;
         }
     }
-    if (!result) {
-        if (error) {
-            *error = localError;
-        }
+
+    if (localError && error) {
+        *error = localError;
     }
+
     return result;
 }
 
@@ -825,7 +980,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
         [self.handleToExecutorMap removeObjectForKey:key];
         os_unfair_lock_unlock(&_lock);
     }
-    
+
     return result;
 }
 

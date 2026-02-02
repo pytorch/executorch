@@ -23,7 +23,7 @@
 
 #extension GL_EXT_debug_printf : require
 
-#include "common.glslh"
+#include "indexing.glslh"
 #include "conv2d_common.glslh"
 #include "conv2d_fp_im2col_block.glslh"
 #include "linear_fp_input_tile.glslh"
@@ -64,8 +64,8 @@ void load_im2col_block_fast(
   // Due to the assumption that in_channels_per_group % 4 == 0, it is
   // guaranteed that the next 4 columns (including this one) is part of the
   // same group.
-  im2col_idx.group_idx = im2col_idx.col / conv2d_params.K_per_group;
-  im2col_idx.col_idx_in_group = im2col_idx.col % conv2d_params.K_per_group;
+  im2col_idx.group_idx = im2col_idx.col / conv2d_params_K_per_group;
+  im2col_idx.col_idx_in_group = im2col_idx.col % conv2d_params_K_per_group;
 
   [[unroll]] for (int m_off = 0; m_off < 4; ++m_off) {
     if (im2col_idx.row >= M) {
@@ -98,9 +98,9 @@ void load_im2col_block_slow(
   im2col_idx_base.col = mul_4(k4);
   im2col_idx_base.row = mul_4(m4);
 
-  im2col_idx_base.group_idx = im2col_idx_base.col / conv2d_params.K_per_group;
+  im2col_idx_base.group_idx = im2col_idx_base.col / conv2d_params_K_per_group;
   im2col_idx_base.col_idx_in_group =
-      im2col_idx_base.col % conv2d_params.K_per_group;
+      im2col_idx_base.col % conv2d_params_K_per_group;
 
   [[unroll]] for (int m_off = 0; m_off < 4; ++m_off) {
     [[unroll]] for (int k_off = 0; k_off < 4; ++k_off) {
@@ -109,7 +109,7 @@ void load_im2col_block_slow(
       im2col_idx.col_idx_in_group += k_off;
 
       // bounds checking
-      if (im2col_idx.col_idx_in_group >= conv2d_params.logical_K_per_group ||
+      if (im2col_idx.col_idx_in_group >= conv2d_params_logical_K_per_group ||
           im2col_idx.row >= M) {
         block.data[m_off][k_off] = T(0);
         continue;
@@ -129,7 +129,7 @@ void load_im2col_block(
     const int m4,
     const int logical_K,
     const int M) {
-  if (mod_4(conv2d_params.in_channels_per_group) == 0) {
+  if (mod_4(conv2d_params_in_channels_per_group) == 0) {
     load_im2col_block_fast(block, k4, m4, logical_K, M);
   } else {
     load_im2col_block_slow(block, k4, m4, logical_K, M);

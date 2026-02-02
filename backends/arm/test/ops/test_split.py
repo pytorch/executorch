@@ -22,7 +22,6 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 
 
 class Split(torch.nn.Module):
-
     test_data = {
         "split_1d_2_size_0_dim": lambda: (torch.rand(10), 2, 0),
         "split_2d_3_size_1_dim": lambda: (torch.rand(10, 10), 3, 1),
@@ -60,12 +59,24 @@ class SplitTwoOut(torch.nn.Module):
         return x.split(split_size=split_size_or_sections, dim=dim)[1:3]
 
 
+class SplitCopy(torch.nn.Module):
+    aten_op = "torch.ops.aten.split_copy.Tensor"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_split_copy_Tensor"
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        split_size: int,
+        dim: int,
+    ):
+        return torch.split_copy(x, split_size=split_size, dim=dim)
+
+
 @common.parametrize(
     "test_data",
     (Split.test_data | Split.test_data_list),
 )
 def test_split_with_sizes_tosa_FP(test_data: input_t1):
-
     pipeline = TosaPipelineFP[input_t1](
         Split(),
         test_data(),
@@ -77,7 +88,6 @@ def test_split_with_sizes_tosa_FP(test_data: input_t1):
 
 @common.parametrize("test_data", Split.test_data_list)
 def test_split_with_sizes_tosa_FP_2(test_data: input_t1):
-
     pipeline = TosaPipelineFP[input_t1](
         SplitWithSizes(),
         test_data(),
@@ -92,7 +102,6 @@ def test_split_with_sizes_tosa_FP_2(test_data: input_t1):
     (Split.test_data | Split.test_data_list),
 )
 def test_split_with_sizes_tosa_FP_one_out(test_data: input_t1):
-
     pipeline = TosaPipelineFP[input_t1](
         SplitSingleOut(),
         test_data(),
@@ -107,7 +116,6 @@ def test_split_with_sizes_tosa_FP_one_out(test_data: input_t1):
     (Split.test_data | Split.test_data_list),
 )
 def test_split_with_sizes_tosa_FP_two_out(test_data: input_t1):
-
     pipeline = TosaPipelineFP[input_t1](
         SplitTwoOut(),
         test_data(),
@@ -122,7 +130,6 @@ def test_split_with_sizes_tosa_FP_two_out(test_data: input_t1):
     (Split.test_data | Split.test_data_list),
 )
 def test_split_with_sizes_tosa_INT(test_data: input_t1):
-
     pipeline = TosaPipelineINT[input_t1](
         Split(),
         test_data(),
@@ -132,33 +139,26 @@ def test_split_with_sizes_tosa_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    (Split.test_data | Split.test_data_list),
-)
+@common.parametrize("test_data", (Split.test_data | Split.test_data_list))
+@common.XfailIfNoCorstone300
 def test_split_with_sizes_u55_INT(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
         Split(),
         test_data(),
         aten_ops=[],
         exir_ops=exir_op,
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    (Split.test_data | Split.test_data_list),
-)
+@common.parametrize("test_data", (Split.test_data | Split.test_data_list))
+@common.XfailIfNoCorstone320
 def test_split_with_sizes_u85_INT(test_data: input_t1):
-
     pipeline = EthosU85PipelineINT[input_t1](
         Split(),
         test_data(),
         aten_ops=[],
         exir_ops=exir_op,
-        run_on_fvp=False,
     )
     pipeline.run()
 
@@ -168,27 +168,26 @@ def test_split_with_sizes_u85_INT(test_data: input_t1):
     (Split.test_data | Split.test_data_list),
 )
 @common.SkipIfNoModelConverter
-def test_split_with_sizes_vgf_FP(test_data: input_t1):
+def test_split_with_sizes_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Split(),
         test_data(),
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Split.test_data_list)
 @common.SkipIfNoModelConverter
-def test_split_with_sizes_vgf_FP_2(test_data: input_t1):
-
+def test_split_with_sizes_vgf_no_quant_2(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         SplitWithSizes(),
         test_data(),
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
@@ -198,14 +197,13 @@ def test_split_with_sizes_vgf_FP_2(test_data: input_t1):
     (Split.test_data | Split.test_data_list),
 )
 @common.SkipIfNoModelConverter
-def test_split_with_sizes_vgf_FP_one_out(test_data: input_t1):
-
+def test_split_with_sizes_vgf_no_quant_one_out(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         SplitSingleOut(),
         test_data(),
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
@@ -215,14 +213,13 @@ def test_split_with_sizes_vgf_FP_one_out(test_data: input_t1):
     (Split.test_data | Split.test_data_list),
 )
 @common.SkipIfNoModelConverter
-def test_split_with_sizes_vgf_FP_two_out(test_data: input_t1):
-
+def test_split_with_sizes_vgf_no_quant_two_out(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         SplitTwoOut(),
         test_data(),
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
@@ -232,13 +229,84 @@ def test_split_with_sizes_vgf_FP_two_out(test_data: input_t1):
     (Split.test_data | Split.test_data_list),
 )
 @common.SkipIfNoModelConverter
-def test_split_with_sizes_vgf_INT(test_data: input_t1):
-
+def test_split_with_sizes_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Split(),
         test_data(),
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Split.test_data)
+def test_split_tensor_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
+        SplitCopy(),
+        test_data(),
+        aten_op=SplitCopy.aten_op,
+        exir_op=SplitCopy.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Split.test_data)
+def test_split_tensor_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
+        SplitCopy(),
+        test_data(),
+        aten_op=SplitCopy.aten_op,
+        exir_op=SplitCopy.exir_op,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone300
+@common.parametrize("test_data", Split.test_data)
+def test_split_tensor_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
+        SplitCopy(),
+        test_data(),
+        aten_ops=SplitCopy.aten_op,
+        exir_ops=SplitCopy.exir_op,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+@common.parametrize("test_data", Split.test_data)
+def test_split_tensor_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
+        SplitCopy(),
+        test_data(),
+        aten_ops=SplitCopy.aten_op,
+        exir_ops=SplitCopy.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Split.test_data)
+@common.SkipIfNoModelConverter
+def test_split_tensor_vgf_no_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SplitCopy(),
+        test_data(),
+        aten_op=SplitCopy.aten_op,
+        exir_op=SplitCopy.exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Split.test_data)
+@common.SkipIfNoModelConverter
+def test_split_tensor_vgf_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SplitCopy(),
+        test_data(),
+        aten_op=SplitCopy.aten_op,
+        exir_op=SplitCopy.exir_op,
+        quantize=True,
     )
     pipeline.run()

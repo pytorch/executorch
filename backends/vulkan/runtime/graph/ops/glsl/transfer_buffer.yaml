@@ -8,6 +8,7 @@ transfer_buffer:
       - VALUE: half
       - VALUE: float
       - VALUE: int32
+      - VALUE: uint8
   shader_variants:
     - NAME: select_buffer
       OP_NAME: select

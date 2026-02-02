@@ -109,11 +109,15 @@ void add_permute_node(
   {
     IntListPtr permute_dims_ptr = graph.get_int_list(permute_dims);
     const int32_t permute_ndim =
-        utils::safe_downcast<int>(permute_dims_ptr->size());
+        utils::safe_downcast<int32_t>(permute_dims_ptr->size());
 
     for (int32_t nchw_i = permute_ndim - 1, whcn_i = 0; nchw_i >= 0;
          nchw_i--, whcn_i++) {
-      const int32_t permute_dim_nchw = permute_dims_ptr->at(nchw_i);
+      int32_t permute_dim_nchw =
+          utils::safe_downcast<int32_t>(permute_dims_ptr->at(nchw_i));
+      if (permute_dim_nchw < 0) {
+        permute_dim_nchw += permute_ndim;
+      }
       const int32_t permute_dim_whcn = permute_ndim - 1 - permute_dim_nchw;
 
       whcn_permute_dims[whcn_i] = permute_dim_whcn;
@@ -183,6 +187,19 @@ struct WHCNPermuteDims {
       whcn_permute_dims[whcn_i] = whcn_i;
     }
   }
+
+  int32_t pack_into_int32() const {
+    // If kTensorDimLimit is increased, we will need to send in an additional
+    // int.
+    VK_CHECK_COND(api::kTensorDimLimit <= 8);
+    // Packs the 8 elements in whcn_permute_dims into a single int32_t. Each
+    // element is packed into 4 bits.
+    int32_t packed = 0;
+    for (int32_t i = 0; i < api::kTensorDimLimit; i++) {
+      packed |= (whcn_permute_dims[i] & 0x0F) << (i * 4);
+    }
+    return packed;
+  }
 };
 
 void add_permute_buffer_node(
@@ -195,7 +212,7 @@ void add_permute_buffer_node(
   WHCNPermuteDims whcn_permute_dims;
   // Convert the permute dims to WHCN dimension order, which is the standard in
   // our compute shaders. The following transformations are applied.
-  // 1. Change dimension index values from NCHW order valueto WHCN order value
+  // 1. Change dimension index values from NCHW order value to WHCN order value
   // 2. Extend the permute array to kTensorDimLimit
   {
     IntListPtr permute_dims_ptr = graph.get_int_list(permute_dims);
@@ -210,7 +227,6 @@ void add_permute_buffer_node(
   vkapi::ParamsBindList param_buffers = {
       graph.buffer_meta_ubo(out),
       graph.buffer_meta_ubo(in),
-      graph.create_params_buffer(whcn_permute_dims),
   };
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -224,7 +240,9 @@ void add_permute_buffer_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(in),
+       whcn_permute_dims.pack_into_int32()},
       // Resize Args
       {permute_dims},
       // Resizing Logic

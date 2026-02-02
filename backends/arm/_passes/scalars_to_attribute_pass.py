@@ -1,28 +1,29 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import cast, Set, Type, Union
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 
-class ScalarsToAttributePass(ExportPass):
+class ScalarsToAttributePass(ArmPass):
     """
     For ops in 'targeted_ops', convert inputs that are scalar values
     to attribute Nodes that output the same value.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {MatchArgRanksPass}
 
     targeted_ops = [
         torch.ops.aten.add.Tensor,
@@ -48,22 +49,24 @@ class ScalarsToAttributePass(ExportPass):
                     shape = get_first_fake_tensor(arg).shape
                     biggest_rank = max(biggest_rank, len(shape))
 
-            new_args = []
+            output_fake_tensor = get_first_fake_tensor(n)
+            new_args: list[Node | int] = []
             for arg in n.args:
                 if isinstance(arg, Node):
                     new_args.append(arg)
                     continue
                 if isinstance(arg, int) and not torch.is_floating_point(
-                    get_first_fake_tensor(n)
+                    output_fake_tensor
                 ):
-                    new_args.append(arg)  # type: ignore[arg-type]
+                    new_args.append(arg)
                     continue
 
                 prefix = "_tensor_constant_"
                 get_new_attr_name = get_new_attr_name_with_prefix(prefix)
                 tensor_constant_name = get_new_attr_name(graph_module)
                 float_tensor = torch.tensor(
-                    float(cast(Union[int, float], arg))
+                    float(cast(Union[int, float], arg)),
+                    device=output_fake_tensor.device,
                 ).reshape((1,) * biggest_rank)
                 graph_module.register_buffer(tensor_constant_name, float_tensor)
                 fake_mode = n.meta["val"].fake_mode

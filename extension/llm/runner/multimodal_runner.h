@@ -36,6 +36,10 @@
 // These are provided for backward compatibility
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 
+#ifdef CUDA_AVAILABLE
+#include <executorch/backends/cuda/runtime/memory_tracker.h>
+#endif
+
 namespace executorch {
 namespace extension {
 namespace llm {
@@ -149,6 +153,11 @@ class ET_EXPERIMENTAL MultimodalRunner {
   std::unique_ptr<IOManager> io_manager_;
   std::unique_ptr<TextTokenGenerator> text_token_generator_;
   std::unique_ptr<Stats> stats_;
+
+#ifdef CUDA_AVAILABLE
+  std::unique_ptr<::executorch::backends::cuda::CudaMemoryTracker>
+      cuda_memory_tracker_;
+#endif
 
   // Internal state
   int64_t pos_;

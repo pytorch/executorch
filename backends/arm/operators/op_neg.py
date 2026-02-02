@@ -1,12 +1,13 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 from typing import Any, List
 
 import torch.fx
+
+import tosa_serializer as ts
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -41,8 +42,6 @@ def get_negate_zero_points(node: torch.fx.Node, is_int8: bool) -> tuple[int, int
 class NegVisitor(NodeVisitor):
     target = "aten.neg.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -53,8 +52,6 @@ class NegVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         supported_dtypes = [
             ts.DType.INT8,
             ts.DType.INT16,
@@ -67,7 +64,7 @@ class NegVisitor(NodeVisitor):
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
-            self.target, [*inputs, output], supported_dtypes, output.tosa_spec
+            self.target, [*inputs, output], supported_dtypes, self.tosa_spec
         )
 
         input_zp, output_zp = get_negate_zero_points(
@@ -81,11 +78,13 @@ class NegVisitor(NodeVisitor):
         output_zp_tensor = tosa_graph.addConst(
             (1,), output.dtype, [output_zp], name=output.name + "_output_zp"
         )
-
+        attr = ts.TosaSerializerAttribute()
+        attr.NegateAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().NEGATE,
+            ts.Op.NEGATE,
             [inputs[0].name, input_zp_tensor.name, output_zp_tensor.name],
             [output.name],
+            attr,
         )

@@ -1,14 +1,14 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from itertools import chain
 from typing import Callable, cast, Dict, Iterator, Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.transforms.utils import create_constant_placeholder
@@ -37,6 +37,7 @@ class TableOps:
         exir_ops.edge.aten.expm1.default: torch.expm1,
         exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
+        exir_ops.edge.aten.log1p.default: torch.log1p,
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
@@ -53,6 +54,7 @@ class TableOps:
         exir_ops.edge.aten.asinh.default: torch.asinh,
         exir_ops.edge.aten.cosh.default: torch.cosh,
         exir_ops.edge.aten.acos.default: torch.acos,
+        exir_ops.edge.aten.tan.default: torch.tan,
     }
 
     # Targets that must be treated explicitly
@@ -109,7 +111,7 @@ class TableOps:
         return chain(TableOps.unary_table_ops, TableOps.special_table_ops)
 
 
-class InsertTableOpsPass(ExportPass):
+class InsertTableOpsPass(ArmPass):
     """
     For ops in self.table_ops they need to be serialized as a TOSA TABLE. This pass replaces these
     edge ops with a tosa._table(input: Tensor, target_str: str) where target_str == str(node.target).
@@ -235,8 +237,8 @@ class InsertTableOpsPass(ExportPass):
         for node in graph_module.graph.nodes:
             if node.op != "call_function" or node not in self.table_ops:
                 continue
-            input_qparams = node.meta["input_qparams"]
-            output_qparams = node.meta["output_qparams"]
+            input_qparams = node.meta.get("input_qparams", {})
+            output_qparams = node.meta.get("output_qparams", {})
             if len(input_qparams) == 0 or len(output_qparams) == 0:
                 # We only want to replace the node if it's quantized
                 continue
@@ -285,7 +287,7 @@ class InsertTableOpsPass(ExportPass):
                     rescale_node = create_node(
                         graph=graph_module.graph,
                         op_target=exir_ops.backend.tosa.RESCALE.default,
-                        args=(table_op_node, output_qparams[0].dtype, scale, 0, 0),
+                        args=(table_op_node, output_qparams[0].dtype, [scale], 0, 0),
                     )
                     output_node = rescale_node
 

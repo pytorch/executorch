@@ -156,12 +156,13 @@ def inference(args):
             host_id=args.host,
             soc_model=args.model,
             runner="examples/models/llama/llama_main",
+            target=args.target,
         )
         # No pregen inputs, input_list is not required
         adb.push(inputs=[], input_list="", files=[tokenizer_json_path])
         adb.execute(custom_runner_cmd=runner_cmd)
 
-        adb.pull(output_path=args.artifact, callback=post_process)
+        adb.pull(host_output_path=args.artifact, callback=post_process)
 
     if args.ip and args.port != -1:
         with Client((args.ip, args.port)) as conn:
@@ -206,12 +207,6 @@ if __name__ == "__main__":
         "--ptq",
         choices=["8a8w", "16a8w", "16a4w", "16a4w_block"],
         help="If specified, will do PTQ quantization.",
-        type=str,
-    )
-
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated Qwen in the given directory.",
         type=str,
     )
 

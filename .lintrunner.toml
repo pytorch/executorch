@@ -203,9 +203,12 @@ include_patterns = ['**']
 exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
+    'shim/**',
+    'shim',
     '**/*.png',
     '**/*.webp',
     '**/*.jpeg',
+    '**/*.mp3',
     '**/*.mp4',
     '**/*.pte',
     '**/*.pth',
@@ -216,6 +219,9 @@ exclude_patterns = [
     '**/*.jpg',
     '**/*.jar',
     '**/*.gif',
+    'extension/llm/tokenizers',
+    'extension/llm/tokenizers/**',
+    'examples/cuda',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
@@ -363,7 +369,7 @@ exclude_patterns = [
     '**/third-party/**',
     'scripts/check_binary_dependencies.py',
     'profiler/test/test_profiler_e2e.py',
-    'backends/arm/test/**',
+    'backends/arm/test/ops/*.py',
 ]
 command = [
     'python',
@@ -376,6 +382,37 @@ command = [
     '--',
     '--explicit-package-bases',
     '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
+code = 'BANDIT'
+include_patterns = [
+    'backends/arm/**/*.py',
+    'examples/arm/**/*.py',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'bandit_linter',
+    '--configfile',
+    '.bandit.yaml',
+    '--',
+    '@{{PATHSFILE}}',
 ]
 init_command = [
     'python',
@@ -444,4 +481,25 @@ command = [
   """,
   "--",
   "@{{PATHSFILE}}",
+]
+
+[[linter]]
+code = 'ETVKNODEBUG'
+include_patterns = [
+    "backends/vulkan/**/*.glsl",
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=((DEBUG_MODE)|(GL_EXT_debug_printf))',
+    '--linter-name=ETVKNODEBUG',
+    '--error-name=Using DEBUG_MODE or GL_EXT_debug_printf in Vulkan shader',
+    """--error-description=\
+        #define DEBUG_MODE or #extension GL_EXT_debug_printf should only be used during development!
+    """,
+    '--',
+    '@{{PATHSFILE}}',
 ]

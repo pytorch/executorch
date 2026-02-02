@@ -3,13 +3,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import logging
 from typing import cast, Set, Type
 
 import torch
 
+from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
+    UnsqueezeBeforeRepeatPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -17,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_multiples(args):
+    """Returns expand args converted to repeat args, and whether the expand changes the rank"""
     input_node_or_tensor = args[0]
 
     if isinstance(input_node_or_tensor, torch.fx.node.Node):
@@ -42,15 +46,15 @@ def calculate_multiples(args):
         multiples[i] if multiples[i] != -1 and extended_shape[i] == 1 else 1
         for i in range(expanded_rank)
     ]
-    return multiples
+    return multiples, expanded_rank != len(input_shape)
 
 
-class ConvertExpandCopyToRepeatPass(ExportPass):
+class ConvertExpandCopyToRepeatPass(ArmPass):
     """
     Replace expand copy with repeat since it is a repeat that can only repeat singleton dimensions.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {UnsqueezeBeforeRepeatPass}
 
     expand_copy = exir_ops.edge.aten.expand_copy.default
     repeat = exir_ops.edge.aten.repeat.default
@@ -59,9 +63,9 @@ class ConvertExpandCopyToRepeatPass(ExportPass):
         if op != self.expand_copy:
             return super().call_operator(op, args, kwargs, meta)
 
-        multiples = calculate_multiples(args)
+        multiples, changes_rank = calculate_multiples(args)
 
-        if all((x == 1 for x in multiples)):
+        if all((x == 1 for x in multiples)) and not changes_rank:
             # All dimensions/repetitions occur only once. Remove node
             # altogether since it's in practice just a copy.
             logger.warning("Found redundant expand node (no-op). Removing it.")

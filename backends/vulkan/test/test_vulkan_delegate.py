@@ -11,20 +11,14 @@ import unittest
 from typing import Tuple
 
 import executorch.backends.vulkan.test.utils as test_utils
-
 import torch
-
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
-
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
-
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
-
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -36,11 +30,8 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
 )
 from executorch.extension.pytree import tree_flatten
 from torch.export import Dim, export, ExportedProgram
-
 from torchao.quantization.granularity import PerGroup
-
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-
 from torchao.quantization.pt2e.quantizer import Quantizer
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 from torchao.utils import unwrap_tensor_subclass
@@ -69,9 +60,6 @@ def lower_module(
     edge_program = to_edge_transform_and_lower(
         program,
         compile_config=edge_compile_config,
-        transform_passes=[
-            I64toI32(edge_compile_config._skip_dim_order),
-        ],
         partitioner=[VulkanPartitioner(compile_options)],
     )
 
@@ -1073,6 +1061,24 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_batch_norm_after_linear(self):
+        class LinearBatchNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(128, 64)
+                self.bn = torch.nn.BatchNorm1d(num_features=64)
+
+            def forward(self, x):
+                x = self.linear(x)
+                return self.bn(x)
+
+        sample_inputs = (torch.randn(size=(4, 128), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            LinearBatchNormModule(),
+            sample_inputs,
+        )
+
     def test_vulkan_backend_full(self):
         class FullModule(torch.nn.Module):
             def __init__(self):
@@ -1779,6 +1785,52 @@ class TestVulkanBackend(unittest.TestCase):
             (torch.randn(size=(1, 6, 40, 50), dtype=torch.float32),),
         )
 
+    def test_vulkan_backend_div_with_padding_nan_propagation(self):
+        """
+        Test division operations with non-multiple-of-4 channels followed by convolution.
+
+        This test verifies the fix for NaN propagation in padding texels during division.
+        When the packed dimension (channels=3) is not a multiple of 4, texture-backed
+        tensors have padding elements in the last texel. Without proper masking, division
+        operations produce NaN values (0/0) in padding regions that propagate through
+        subsequent operations like convolution, corrupting results.
+
+        This simulates a common real-world pattern: per-channel image normalization
+        (subtract mean, divide by std) followed by convolution.
+        """
+
+        class NormalizationConvModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Per-channel mean and std for normalization (shape: [1, 3, 1, 1])
+                self.mean = torch.tensor([[[[0.485]], [[0.456]], [[0.406]]]])
+                self.std = torch.tensor([[[[0.229]], [[0.224]], [[0.215]]]])
+
+                # Conv2d layer to process normalized image
+                self.conv = torch.nn.Conv2d(
+                    in_channels=3,  # Non-multiple-of-4 to trigger padding
+                    out_channels=16,
+                    kernel_size=3,
+                    padding=1,
+                    stride=1,
+                    bias=True,
+                )
+
+            def forward(self, x):
+                # Simulate image normalization: (x - mean) / std
+                # This is where NaN could appear in padding texels without the fix
+                x = x - self.mean
+                x = x / self.std
+                # Convolution operation that would be corrupted by NaN propagation
+                x = self.conv(x)
+                return x
+
+        module = NormalizationConvModule()
+        # Use a typical image tensor size [batch=1, channels=3, height=256, width=256]
+        sample_inputs = (torch.randn(size=(1, 3, 256, 256), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(module, sample_inputs)
+
     def test_vulkan_backend_grid_priors(self):
         class GridPriorsModule(torch.nn.Module):
             def __init__(self):
@@ -1968,102 +2020,6 @@ class TestVulkanBackend(unittest.TestCase):
                     GroupNormModule(num_groups, num_channels),
                     sample_inputs,
                 )
-
-    def test_vulkan_backend_full_quantization_workflow(self):
-        class FullQuantizationWorkflowModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                # Step 1: Choose quantization parameters per tensor
-                scale, zero_point = (
-                    torch.ops.quantized_decomposed.choose_qparams.tensor(
-                        x,
-                        quant_min=-2147483648,  # int32 min
-                        quant_max=2147483647,  # int32 max
-                        eps=1e-5,
-                        dtype=torch.int32,
-                    )
-                )
-
-                # Step 2: Quantize using the calculated parameters
-                quantized = torch.ops.quantized_decomposed.quantize_per_tensor.tensor(
-                    x,
-                    scale,
-                    zero_point,
-                    quant_min=-2147483648,  # int32 min
-                    quant_max=2147483647,  # int32 max
-                    dtype=torch.int32,
-                )
-
-                # Step 3: Dequantize back to float
-                dequantized = (
-                    torch.ops.quantized_decomposed.dequantize_per_tensor.tensor(
-                        quantized,
-                        scale,
-                        zero_point,
-                        quant_min=-2147483648,  # int32 min
-                        quant_max=2147483647,  # int32 max
-                        dtype=torch.int32,
-                    )
-                )
-
-                return dequantized
-
-        full_workflow_module = FullQuantizationWorkflowModule()
-        sample_inputs = (torch.rand(size=(2, 3, 4), dtype=torch.float32),)
-
-        # Use higher tolerance since quantization introduces some error
-        self.lower_module_and_test_output(
-            full_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
-        )
-
-    def test_vulkan_backend_full_per_token_quantization_workflow(self):
-        class FullPerTokenQuantizationWorkflowModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                # Step 1: Choose quantization parameters per token
-                scale, zero_point = (
-                    torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
-                        x,
-                        dtype=torch.int32,
-                    )
-                )
-
-                # Step 2: Quantize using the calculated parameters per token
-                quantized = torch.ops.quantized_decomposed.quantize_per_token.default(
-                    x,
-                    scale,
-                    zero_point,
-                    quant_min=-2147483648,  # int32 min
-                    quant_max=2147483647,  # int32 max
-                    dtype=torch.int32,
-                )
-
-                # Step 3: Dequantize back to float per token
-                dequantized = (
-                    torch.ops.quantized_decomposed.dequantize_per_token.default(
-                        quantized,
-                        scale,
-                        zero_point,
-                        quant_min=-2147483648,  # int32 min
-                        quant_max=2147483647,  # int32 max
-                        dtype=torch.int32,
-                        output_dtype=torch.float32,
-                    )
-                )
-
-                return dequantized
-
-        full_per_token_workflow_module = FullPerTokenQuantizationWorkflowModule()
-        sample_inputs = (torch.rand(size=(6, 4), dtype=torch.float32),)
-
-        # Use higher tolerance since quantization introduces some error
-        self.lower_module_and_test_output(
-            full_per_token_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
-        )
 
     def test_vulkan_backend_different_required_reprs(self):
         class ComplexModule(torch.nn.Module):
@@ -2482,6 +2438,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
+    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence(self):
         """
         Test a sequence of convolution layers quantized with PT2E quantization.
@@ -2572,6 +2529,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
+    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence_all_reduced(self):
         """
         Test a sequence of convolution layers quantized with PT2E quantization.

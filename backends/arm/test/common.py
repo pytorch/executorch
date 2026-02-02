@@ -10,10 +10,11 @@ import tempfile
 from datetime import datetime
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional, ParamSpec, TypeVar
 
 import pytest
 from executorch.backends.arm.ethosu import EthosUCompileSpec
+
 from executorch.backends.arm.test.runner_utils import (
     arm_executor_runner_exists,
     corstone300_installed,
@@ -65,7 +66,7 @@ def maybe_get_tosa_collate_path() -> str | None:
 
 def get_tosa_compile_spec(
     tosa_spec: str | TosaSpecification,
-    custom_path=None,
+    custom_path: Optional[str] = None,
     tosa_debug_mode: TosaCompileSpec.DebugMode | None = None,
 ) -> TosaCompileSpec:
     """Get the compile spec for default TOSA tests."""
@@ -86,12 +87,14 @@ def get_u55_compile_spec(
     macs: int = 128,
     system_config: str = "Ethos_U55_High_End_Embedded",
     memory_mode: str = "Shared_Sram",
-    extra_flags: str = "--debug-force-regor --output-format=raw",
+    extra_flags: str = "--debug-force-regor --output-format=raw --arena-cache-size=2097152",
     custom_path: Optional[str] = None,
     config: Optional[str] = None,
     tosa_debug_mode: EthosUCompileSpec.DebugMode | None = None,
 ) -> EthosUCompileSpec:
     """Default compile spec for Ethos-U55 tests."""
+    if not custom_path:
+        custom_path = maybe_get_tosa_collate_path()
     artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u55_")
     if not os.path.exists(artifact_path):
         os.makedirs(artifact_path, exist_ok=True)
@@ -121,13 +124,15 @@ def get_u85_compile_spec(
     macs: int = 128,
     system_config="Ethos_U85_SYS_DRAM_Mid",
     memory_mode="Shared_Sram",
-    extra_flags="--output-format=raw",
+    extra_flags="--output-format=raw --arena-cache-size=2097152",
     custom_path: Optional[str] = None,
     config: Optional[str] = None,
     tosa_debug_mode: EthosUCompileSpec.DebugMode | None = None,
 ) -> EthosUCompileSpec:
     """Default compile spec for Ethos-U85 tests."""
 
+    if not custom_path:
+        custom_path = maybe_get_tosa_collate_path()
     artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u85_")
     if not os.path.exists(artifact_path):
         os.makedirs(artifact_path, exist_ok=True)
@@ -156,18 +161,30 @@ def get_u85_compile_spec(
 def get_vgf_compile_spec(
     tosa_spec: str | TosaSpecification,
     compiler_flags: Optional[str] = "",
-    custom_path=None,
+    custom_path: Optional[str] = None,
     tosa_debug_mode: VgfCompileSpec.DebugMode | None = None,
 ) -> VgfCompileSpec:
     """Get the ArmCompileSpec for the default VGF tests, to modify
     the compile spec before calling .build() to finalize it.
     """
+
+    if not custom_path:
+        custom_path = maybe_get_tosa_collate_path()
+    profiles = []
     if "FP" in repr(tosa_spec):
-        artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_vgf_fp_")
-    elif "INT" in repr(tosa_spec):
-        artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_vgf_int_")
-    else:
+        profiles.append("fp")
+    if "INT" in repr(tosa_spec):
+        profiles.append("int")
+    if len(profiles) == 0:
         raise ValueError(f"Unsupported vgf compile_spec: {repr(tosa_spec)}")
+
+    if custom_path is None:
+        artifact_path = "arm_vgf_"
+        for profile in profiles:
+            artifact_path = artifact_path + f"_{profile}"
+        artifact_path = tempfile.mkdtemp(artifact_path)
+    else:
+        artifact_path = custom_path
 
     if not os.path.exists(artifact_path):
         os.makedirs(artifact_path, exist_ok=True)
@@ -204,7 +221,7 @@ XfailIfNoCorstone320 = pytest.mark.xfail(
 )
 """Xfails a test if Corsone320 FVP is not installed, or if the executor runner is not built"""
 
-SkipIfNoModelConverter = pytest.mark.skipif(
+SkipIfNoModelConverter = pytest.mark.skipif(  # type: ignore[call-arg]
     condition=not (model_converter_installed()),
     raises=FileNotFoundError,
     reason="Did not find model-converter on path",
@@ -220,13 +237,19 @@ XfailfNoVKMLEmulationLayer = pytest.mark.xfail(
 
 xfail_type = str | tuple[str, type[Exception]]
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+Decorator = Callable[[Callable[_P, _R]], Callable[_P, _R]]
+
 
 def parametrize(
     arg_name: str,
     test_data: dict[str, Any],
     xfails: dict[str, xfail_type] | None = None,
+    skips: dict[str, str] | None = None,
     strict: bool = True,
-):
+    flakies: dict[str, int] | None = None,
+) -> Decorator:
     """
     Custom version of pytest.mark.parametrize with some syntatic sugar and added xfail functionality
         - test_data is expected as a dict of (id, test_data) pairs
@@ -236,12 +259,22 @@ def parametrize(
     """
     if xfails is None:
         xfails = {}
+    if skips is None:
+        skips = {}
+    if flakies is None:
+        flakies = {}
 
-    def decorator_func(func):
+    def decorator_func(func: Callable[_P, _R]) -> Callable[_P, _R]:
         """Test data is transformed from a dict of (id, data) pairs to a list of pytest params to work with the native pytests parametrize function"""
         pytest_testsuite = []
         for id, test_parameters in test_data.items():
-            if id in xfails:
+            if id in flakies:
+                # Mark this parameter as flaky with given reruns
+                marker = (pytest.mark.flaky(reruns=flakies[id]),)
+            elif id in skips:
+                # fail markers do not work with 'buck' based ci, so use skip instead
+                marker = (pytest.mark.skip(reason=skips[id]),)
+            elif id in xfails:
                 xfail_info = xfails[id]
                 reason = ""
                 raises = None
@@ -254,14 +287,16 @@ def parametrize(
                         "xfail info needs to be str, or tuple[str, type[Exception]]"
                     )
                 # Set up our fail marker
+                marker: tuple[pytest.MarkDecorator, ...]  # type: ignore[no-redef]
                 marker = (
                     pytest.mark.xfail(reason=reason, raises=raises, strict=strict),
                 )
             else:
-                marker = ()
+                marker = ()  # type: ignore[assignment]
 
             pytest_param = pytest.param(test_parameters, id=id, marks=marker)
             pytest_testsuite.append(pytest_param)
-        return pytest.mark.parametrize(arg_name, pytest_testsuite)(func)
+        decorator = pytest.mark.parametrize(arg_name, pytest_testsuite)
+        return decorator(func)
 
     return decorator_func

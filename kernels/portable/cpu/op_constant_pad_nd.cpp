@@ -30,11 +30,13 @@ void set_all_to_value(CTYPE* out_data, size_t step_len, CTYPE value) {
 
 template <typename CTYPE>
 void apply_padding_to_dim(
+    KernelRuntimeContext& ctx,
     size_t ndim,
     const CTYPE* self_data,
     IntArrayRef self_sizes,
     IntArrayRef self_strides,
     CTYPE* out_data,
+    CTYPE* out_data_end,
     IntArrayRef out_sizes,
     IntArrayRef out_strides,
     IntArrayRef pad,
@@ -57,7 +59,18 @@ void apply_padding_to_dim(
   size_t out_step_len = out_strides[dim];
   size_t in_step_len = self_strides[dim];
 
-  for ([[maybe_unused]] const auto i : c10::irange(pad_before)) {
+  // Do not copy padding beyond the out tensor bounds.
+  // Use division to avoid potential overflow in multiplication.
+  if (pad_before > 0) {
+    size_t remaining = out_data_end - out_data;
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        out_step_len > 0 && remaining / out_step_len >= pad_before,
+        InvalidArgument,
+        /* void */,
+        "Out tensor is too small for the requested padding.");
+  }
+  for (ET_UNUSED const auto i : c10::irange(pad_before)) {
     set_all_to_value(out_data, out_step_len, value);
     out_data += out_step_len;
   }
@@ -69,6 +82,24 @@ void apply_padding_to_dim(
     size_t copy_nbytes = copy_len * sizeof(CTYPE);
 
     if (copy_nbytes > 0) {
+      // Check that out_data and self_data do not overlap.
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          out_data != self_data &&
+              ((out_data + copy_len <= self_data) ||
+               (self_data + copy_len <= out_data)),
+          InvalidArgument,
+          /* void */,
+          "Out tensor overlaps with the input tensor. This is not supported.");
+      // Bounds check before memcpy
+      // Use overflow-safe check for remaining >= copy_len
+      size_t remaining = out_data_end - out_data;
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          remaining >= copy_len,
+          InvalidArgument,
+          /* void */,
+          "Out tensor is too small for the copy operation.");
       memcpy(out_data, self_data, copy_nbytes);
       out_data += copy_len;
       self_data += copy_len;
@@ -76,13 +107,15 @@ void apply_padding_to_dim(
   }
   // Otherwise, call this function recursively
   else {
-    for ([[maybe_unused]] const auto i : c10::irange(self_sizes[dim])) {
+    for (ET_UNUSED const auto i : c10::irange(self_sizes[dim])) {
       apply_padding_to_dim(
+          ctx,
           ndim,
           self_data,
           self_sizes,
           self_strides,
           out_data,
+          out_data_end,
           out_sizes,
           out_strides,
           pad,
@@ -95,7 +128,18 @@ void apply_padding_to_dim(
     }
   }
 
-  for ([[maybe_unused]] const auto i : c10::irange(pad_after)) {
+  // Do not copy padding beyond the out tensor bounds.
+  // Use division to avoid potential overflow in multiplication.
+  if (pad_after > 0) {
+    size_t remaining = out_data_end - out_data;
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        out_step_len > 0 && remaining / out_step_len >= pad_after,
+        InvalidArgument,
+        /* void */,
+        "Out tensor is too small for the requested padding.");
+  }
+  for (ET_UNUSED const auto i : c10::irange(pad_after)) {
     set_all_to_value(out_data, out_step_len, value);
     out_data += out_step_len;
   }
@@ -103,6 +147,7 @@ void apply_padding_to_dim(
 
 template <typename CTYPE>
 void constant_pad_nd_out_impl(
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     IntArrayRef pad,
     CTYPE value_v,
@@ -144,12 +189,16 @@ void constant_pad_nd_out_impl(
   IntArrayRef out_sizes_ref(out_sizes, ndim);
   IntArrayRef out_strides_ref(out_strides, ndim);
 
+  CTYPE* out_data_end = out_data + out.numel();
+
   apply_padding_to_dim(
+      ctx,
       ndim,
       self_data,
       self_sizes_ref,
       self_strides_ref,
       out_data,
+      out_data_end,
       out_sizes_ref,
       out_strides_ref,
       pad,
@@ -192,7 +241,7 @@ Tensor& constant_pad_nd_out(
         utils::internal::check_overflow_scalar_cast<CTYPE>(value);
     ET_KERNEL_CHECK(ctx, opt_value_casted.has_value(), InvalidArgument, );
     auto value_casted = opt_value_casted.value();
-    constant_pad_nd_out_impl<CTYPE>(in, pad, value_casted, out);
+    constant_pad_nd_out_impl<CTYPE>(ctx, in, pad, value_casted, out);
   });
 
   return out;

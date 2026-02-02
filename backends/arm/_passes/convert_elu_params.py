@@ -3,13 +3,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm.constants import DQ_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class ConvertELUParamsPass(ExportPass):
+class ConvertELUParamsPass(ArmPass):
     """
     Pass to convert the input_scale kwarg of ELU operator from float to
     int.
@@ -18,6 +22,8 @@ class ConvertELUParamsPass(ExportPass):
     the value of input_scale is, as long as that value is not 1.
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     def call(self, graph_module: torch.fx.GraphModule):
         modified_graph = False
         graph = graph_module.graph
@@ -25,8 +31,16 @@ class ConvertELUParamsPass(ExportPass):
             op="call_function", target=exir_ops.edge.aten.elu.default
         )
         for node in node_list:
+            input_node = node.all_input_nodes[0]
+            is_quantized = (
+                input_node.op == "call_function" and input_node.target in DQ_OPS
+            )
+            if not is_quantized or not self.allowed_to_transform(node.meta):
+                continue
             with graph.inserting_after(node):
-                replace_node = create_node(graph, exir_ops.edge.aten.elu.default)
+                replace_node = create_node(
+                    graph, exir_ops.edge.aten.elu.default, from_node=node
+                )
                 old_args = list(node.args)
 
                 alpha = old_args[1] if len(old_args) > 1 else 1.0

@@ -59,7 +59,11 @@ void resize_pool2d_node(
 
   if (is_max_pool2d) {
     const ValueRef indices = args.at(0).refs.at(1);
-    graph->virtual_resize(indices, new_out_sizes);
+    // For max_pool2d variant, indices tensor will be a 0-dim tensor - only
+    // resize the indices tensor if this is not the case.
+    if (graph->sizes_of(indices).size() > 0) {
+      graph->virtual_resize(indices, new_out_sizes);
+    }
   }
 }
 
@@ -137,7 +141,7 @@ void max_pool2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
 struct DivisorParams final {
   int32_t divisor_override;
-  bool count_include_pad;
+  int32_t count_include_pad;
 };
 
 DivisorParams create_divisor_params(
@@ -148,7 +152,7 @@ DivisorParams create_divisor_params(
       graph.val_is_int(divisor_override)
           ? static_cast<int32_t>(graph.get_int(divisor_override))
           : 0,
-      graph.get_bool(count_include_pad)};
+      int32_t(graph.get_bool(count_include_pad))};
 }
 
 void add_avg_pool2d_node(

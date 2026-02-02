@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -17,10 +18,19 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <limits>
+#include <optional>
+
+extern "C" {
+#include "arm_nn_types.h"
+}
+
 using Tensor = torch::executor::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 using Scalar = torch::executor::Scalar;
 using Error = executorch::runtime::Error;
+using Int64ArrayRef = executorch::aten::ArrayRef<int64_t>;
+using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
 // From arm_nn_math_types.h
 #define ARM_NN_Q31_MAX ((int32_t)(0x7FFFFFFFL))
@@ -32,7 +42,8 @@ inline void validate_cmsis_nn_tensor_requirements(
     const Tensor& input2,
     Tensor& output,
     ScalarType expected_dtype = ScalarType::Char,
-    bool require_channels_last = false) {
+    bool require_channels_last = false,
+    bool require_same_sizes = true) {
   // Basic dtype validation
   ET_CHECK_MSG(
       input1.scalar_type() == expected_dtype,
@@ -49,43 +60,36 @@ inline void validate_cmsis_nn_tensor_requirements(
       "Output dtype must be %hhd, got %hhd",
       expected_dtype,
       output.scalar_type());
+  if (require_same_sizes) {
+    ET_CHECK_MSG(
+        input1.sizes() == input2.sizes(),
+        "Input1 and Input2 must have the same sizes");
+    ET_CHECK_MSG(
+        output.sizes() == input1.sizes(),
+        "Output must have the same sizes as inputs");
+  }
 
-  // Dim order consistency
-  ET_CHECK_MSG(
-      executorch::runtime::tensors_have_same_dim_order(input1, input2, output),
-      "Tensors must have same dimension order");
-
+  // TBD (#16032): Validate dim_order
   // TBD: Validate memory alignment (CMSIS-NN requirement)
 }
 
 inline void validate_single_quant_params(
-    const Scalar& zero_point,
-    const Scalar& multiplier,
-    const Scalar& shift,
+    const int64_t zero_point,
+    const int64_t multiplier,
+    const int64_t shift,
     const char* param_name) {
-  int64_t zp_val = zero_point.to<int64_t>();
-  int64_t mult_val = multiplier.to<int64_t>();
-  int64_t shift_val = shift.to<int64_t>();
-
   ET_CHECK_MSG(
-      zp_val >= std::numeric_limits<int8_t>::min() &&
-          zp_val <= std::numeric_limits<int8_t>::max(),
-      "%s zero point must be in int8 range [Value: %d]",
-      param_name,
-      zp_val);
-
-  ET_CHECK_MSG(
-      mult_val >= std::numeric_limits<int32_t>::min() &&
-          mult_val <= std::numeric_limits<int32_t>::max(),
+      multiplier >= std::numeric_limits<int32_t>::min() &&
+          multiplier <= std::numeric_limits<int32_t>::max(),
       "%s multiplier must be in int32 range [Value: %d]",
       param_name,
-      mult_val);
+      multiplier);
 
   ET_CHECK_MSG(
-      shift_val >= -31 && shift_val <= 31,
+      shift >= -31 && shift <= 31,
       "%s shift must be in range [-31, 31] [Value: %d]",
       param_name,
-      shift_val);
+      shift);
 }
 
 /**
@@ -100,15 +104,15 @@ inline void validate_single_quant_params(
  * Raises errors via ET_KERNEL_CHECK if any check fails.
  */
 inline void validate_quantization_params(
-    const Scalar& zero_point1,
-    const Scalar& multiplier1,
-    const Scalar& shift1,
-    const Scalar& zero_point2,
-    const Scalar& multiplier2,
-    const Scalar& shift2,
-    const Scalar& output_zero_point,
-    const Scalar& output_multiplier,
-    const Scalar& output_shift,
+    const int64_t zero_point1,
+    const int64_t multiplier1,
+    const int64_t shift1,
+    const int64_t zero_point2,
+    const int64_t multiplier2,
+    const int64_t shift2,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
     Tensor& output) {
   validate_single_quant_params(
       zero_point1, multiplier1, shift1, "Single quant Input1");
@@ -121,13 +125,50 @@ inline void validate_quantization_params(
       "Single quant Output");
 }
 
+inline bool is_channels_last_tensor(const Tensor& tensor) {
+  if (tensor.dim() != 4) {
+    return false;
+  }
+
+  // When channels or spatial dims are 1 the layout information is ambiguous.
+  if (tensor.size(1) == 1 || (tensor.size(2) == 1 && tensor.size(3) == 1)) {
+    return true;
+  }
+
+  constexpr executorch::aten::DimOrderType kChannelsLastDimOrder[] = {
+      0, 2, 3, 1};
+  executorch::aten::ArrayRef<executorch::aten::DimOrderType>
+      channels_last_order(kChannelsLastDimOrder, 4);
+
+  return tensor.dim_order() == channels_last_order;
+}
+
+inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
+  if (tensor1.dim() != tensor2.dim()) {
+    return false;
+  }
+
+  if (tensor1.dim() != 4) {
+    return false;
+  }
+
+  if (tensor1.size(1) != tensor2.size(1)) {
+    return false;
+  }
+
+  const bool tensor1_channels_only = tensor1.numel() == tensor1.size(1);
+  const bool tensor2_channels_only = tensor2.numel() == tensor2.size(1);
+
+  return tensor1_channels_only || tensor2_channels_only;
+}
+
 // Refer to CMSIS-NN 'arm_nn_requantize' implementation for details:
 // https://github.com/ARM-software/CMSIS-NN/blob/main/Include/arm_nnsupportfunctions.h#L1625
 // multiplier: Range {ARM_NN_Q31_MIN + 1, Q32_MAX}
 // shift     : Range {-31, 30}
 inline bool validate_per_channel_quant_params(
-    const int32_t* multipliers,
-    const int32_t* shifts,
+    const Int64ArrayRef multipliers,
+    const Int64ArrayRef shifts,
     int num_channels) {
   for (int i = 0; i < num_channels; ++i) {
     // Multiplier: {ARM_NN_Q31_MIN + 1, ARM_NN_Q31_MAX}

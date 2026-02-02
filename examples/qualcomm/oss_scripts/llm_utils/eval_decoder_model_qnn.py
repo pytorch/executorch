@@ -105,6 +105,7 @@ class QNNRunnerEvalWrapper(EagerEvalWrapper):
         output_dir: str = ".",
         quant_attrs=None,
         build_folder: str = "build-android",
+        target="aarch64-android",
     ):
         super().__init__(None, tokenizer, max_seq_length)
         import getpass
@@ -123,6 +124,7 @@ class QNNRunnerEvalWrapper(EagerEvalWrapper):
             device_id=device,
             host_id=host,
             soc_model=soc_model,
+            target=target,
         )
         self.adb.push()
 
@@ -169,7 +171,7 @@ class QNNRunnerEvalWrapper(EagerEvalWrapper):
 
                 result_logits.append(output_tensor)
 
-        self.adb.pull(output_path=self.output_dir, callback=post_process)
+        self.adb.pull(host_output_path=self.output_dir, callback=post_process)
         return torch.cat(result_logits, dim=1)
 
 
@@ -201,6 +203,7 @@ def gen_eval_wrapper(
             output_dir=args.artifact,
             quant_attrs=quant_attrs,
             build_folder=args.build_folder,
+            target=args.target,
         )
     else:
         raise RuntimeError("Currently only support evaluate pte on device")

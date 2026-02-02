@@ -8,6 +8,11 @@
 
 #version 450 core
 
+${define_required_extensions(OUT_STORAGE, DTYPE)}
+
+$if WEIGHT_STORAGE == "buffer":
+  ${define_required_extensions("buffer", "int8")}
+
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
@@ -18,11 +23,6 @@
 
 #define NGROUPS 8
 #define NWORKERS 8
-
-${define_required_extensions(DTYPE)}
-
-$if WEIGHT_STORAGE == "buffer":
-  ${define_required_extensions("int8")}
 
 #extension GL_EXT_control_flow_attributes : require
 
@@ -98,12 +98,17 @@ void main() {
     // Preload weight tensor
     [[unroll]] for (int r = 0; r < 4; r++) {
       $if QUANT_NBITS == 4:
+        $if WEIGHT_STORAGE == "buffer":
+          u8vec4 packed_weight_tex;
+        $else:
+          uvec4 packed_weight_tex;
+
         $for c in range(0, TILE_TXCOLS, 2):
           $if WEIGHT_STORAGE == "buffer":
             qmat2_bufi = (pos + r) * weight_row_txstride + weight_txcol;
-            const u8vec4 packed_weight_tex = t_weight[qmat2_bufi + ${c}]
+            packed_weight_tex = t_weight[qmat2_bufi + ${c}]
           $else:
-            const uvec4 packed_weight_tex = texelFetch(
+            packed_weight_tex = texelFetch(
               t_weight, ivec2(weight_txcol + ${c}, pos + r), 0);
 
           qmat2[r][${c}] = (VEC4_T((packed_weight_tex & 0xF0) >> 4) - 8.0);

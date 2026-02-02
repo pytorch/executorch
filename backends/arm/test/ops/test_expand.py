@@ -30,7 +30,7 @@ input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, Input y
 
 class Expand(torch.nn.Module):
     # (input tensor, multiples)
-    test_parameters = {
+    base_test_set = {
         "rand_1d_both": lambda: (torch.rand(1), (2,)),
         "rand_1d": lambda: (torch.randn(1), (2, 2, 4)),
         "rand_4d": lambda: (torch.randn(1, 1, 1, 5), (1, 4, -1, -1)),
@@ -40,10 +40,14 @@ class Expand(torch.nn.Module):
         "rand_small_neg": lambda: (torch.rand(1, 1, 2, 2), (4, 3, -1, 2)),
     }
 
+    test_u55_reject_set = {
+        "randbool_1d": lambda: (torch.randint(0, 2, (1,), dtype=torch.bool), (5,)),
+    }
     test_reject_set = {
         "rand_2d": lambda: (torch.randn(1, 4), (1, -1)),
         "rand_neg_mul": lambda: (torch.randn(1, 1, 192), (1, -1, -1)),
     }
+    test_parameters = base_test_set | test_u55_reject_set
 
     def forward(self, x: torch.Tensor, m: Sequence):
         return x.expand(m)
@@ -71,16 +75,22 @@ def test_expand_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Expand.test_parameters)
+@common.parametrize(
+    "test_data",
+    Expand.base_test_set,
+)
 @common.XfailIfNoCorstone300
 def test_expand_u55_INT(test_data: Tuple):
+    inputs = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
         Expand(),
-        test_data(),
+        inputs,
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
+    if inputs[0].dtype == torch.bool:
+        pipeline.pop_stage("check_count.exir")
+        pipeline.tester.use_portable_ops = True
     pipeline.run()
 
 
@@ -92,40 +102,52 @@ def test_expand_u85_INT(test_data: Tuple):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Expand.test_parameters)
 @common.SkipIfNoModelConverter
-def test_expand_vgf_FP(test_data: Tuple):
+def test_expand_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Expand(),
         test_data(),
         aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Expand.test_parameters)
 @common.SkipIfNoModelConverter
-def test_expand_vgf_INT(test_data: Tuple):
+def test_expand_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Expand(),
         test_data(),
         aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Expand.test_reject_set)
+def test_expand_tosa_INT_not_delegated(test_data: Tuple):
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Expand(), test_data(), {exir_op: 1}, n_expected_delegates=0, quantize=True
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Expand.test_u55_reject_set)
 def test_expand_u55_INT_not_delegated(test_data: Tuple):
     pipeline = OpNotSupportedPipeline[input_t1](
-        Expand(), test_data(), {exir_op: 1}, n_expected_delegates=0
+        Expand(),
+        test_data(),
+        {exir_op: 1},
+        n_expected_delegates=0,
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()

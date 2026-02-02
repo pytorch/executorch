@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,13 +8,11 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
-    TOSAQuantizer,
 )
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -23,8 +21,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa.specification import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 
 input_t1 = Tuple[torch.Tensor]  # Input x
 
@@ -70,6 +66,39 @@ class Cat(torch.nn.Module):
         ),
     }
 
+    test_parameters_bf16 = {
+        "cat_rand_two_tensors_bf16": lambda: (
+            (
+                torch.randn(1, 2, 4, 4, dtype=torch.bfloat16),
+                torch.randn(1, 2, 4, 1, dtype=torch.bfloat16),
+            ),
+            3,
+        ),
+        "cat_rand_dim0_bf16": lambda: (
+            (
+                torch.randn(1, 2, 4, 4, dtype=torch.bfloat16),
+                torch.randn(1, 2, 4, 4, dtype=torch.bfloat16),
+            ),
+            0,
+        ),
+    }
+    test_parameters_fp16 = {
+        "cat_rand_two_tensors_fp16": lambda: (
+            (
+                torch.randn(1, 2, 4, 4, dtype=torch.float16),
+                torch.randn(1, 2, 4, 1, dtype=torch.float16),
+            ),
+            3,
+        ),
+        "cat_rand_dim0_fp16": lambda: (
+            (
+                torch.randn(1, 2, 4, 4, dtype=torch.float16),
+                torch.randn(1, 2, 4, 4, dtype=torch.float16),
+            ),
+            0,
+        ),
+    }
+
     def __init__(self):
         super().__init__()
 
@@ -77,19 +106,23 @@ class Cat(torch.nn.Module):
         return torch.cat(t, dim=dim)
 
 
-@common.parametrize("test_data", Cat.test_parameters)
+@common.parametrize(
+    "test_data",
+    Cat.test_parameters | Cat.test_parameters_bf16 | Cat.test_parameters_fp16,
+)
 def test_cat_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Cat(),
         test_data(),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
 
 def test_cat_tosa_FP_4d():
-    square = torch.ones((2, 2, 2, 2))
+    square = torch.ones((2, 2, 2, 2), dtype=torch.bfloat16)
     for dim in range(-3, 3):
         test_data = ((square, square.clone()), dim)
         pipeline = TosaPipelineFP[input_t1](
@@ -97,6 +130,7 @@ def test_cat_tosa_FP_4d():
             test_data,
             aten_op,
             exir_op,
+            tosa_extensions=["bf16"],
         )
         pipeline.run()
 
@@ -120,7 +154,6 @@ def test_cat_u55_INT(test_data: Tuple):
         test_data(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -133,56 +166,37 @@ def test_cat_u85_INT(test_data: Tuple):
         test_data(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Cat.test_parameters)
+@common.parametrize("test_data", Cat.test_parameters | Cat.test_parameters_fp16)
 @common.SkipIfNoModelConverter
-def test_cat_vgf_FP(test_data: Tuple):
-    pipeline = VgfPipeline[input_t1](
-        Cat(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", Cat.test_parameters)
-@common.SkipIfNoModelConverter
-def test_cat_vgf_INT(test_data: Tuple):
+def test_cat_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Cat(),
         test_data(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
     )
     pipeline.run()
 
 
-def get_symmetric_a16w8_cat_quantizer(per_channel_quantization=False):
-    tosa_version = conftest.get_option("tosa_version")
-    tosa_profiles = {
-        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
-    }
-
-    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-    quantizer.set_global(
-        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+@common.parametrize("test_data", Cat.test_parameters)
+@common.SkipIfNoModelConverter
+def test_cat_vgf_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Cat(),
+        test_data(),
+        aten_op,
+        exir_op,
+        quantize=True,
     )
-
-    return Quantize(
-        quantizer,
-        get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization
-        ),
-    )
+    pipeline.run()
 
 
 @common.parametrize("test_data", Cat.test_parameters)
-@pytest.mark.xfail(
-    reason="missing int16 cat ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13978"
-)
 def test_cat_16a8w_tosa_INT(test_data: Tuple):
     """Test cat operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -196,22 +210,15 @@ def test_cat_16a8w_tosa_INT(test_data: Tuple):
         use_to_edge_transform_and_lower=True,
         tosa_extensions=["int16"],
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_cat_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Cat.test_parameters)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 cat operations"
-)
-def test_cat_16a8w_u55_INT16(test_data: Tuple):
+def test_cat_16a8w_u55_INT(test_data: Tuple):
     """Test cat operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -222,24 +229,17 @@ def test_cat_16a8w_u55_INT16(test_data: Tuple):
         exir_op,
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
 
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_cat_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
-    )
     pipeline.run()
 
 
 @common.parametrize("test_data", Cat.test_parameters)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 cat operations"
-)
-def test_cat_16a8w_u85_INT16(test_data: Tuple):
+def test_cat_16a8w_u85_INT(test_data: Tuple):
     """Test cat operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -250,13 +250,8 @@ def test_cat_16a8w_u85_INT16(test_data: Tuple):
         exir_op,
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_cat_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()

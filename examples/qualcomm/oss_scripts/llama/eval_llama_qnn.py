@@ -212,7 +212,7 @@ def prepare_model(args):
 def prequant_algorithm(model, prefill_config, args):
     # TODO: use dtype of model checkpoint
     model = model.to(device=args.device, dtype=torch.float)
-    inputs = model.get_example_inputs(use_kv_cache=False)
+    inputs = model.get_example_inputs()
     tokens, atten_mask = inputs
     tokens.to(args.device)
     for mask in atten_mask.masks:
@@ -255,8 +255,6 @@ def prequant_algorithm(model, prefill_config, args):
         reverse_quantize_module_swap(wrapped_model)
 
     for layer in model.layers:
-        if getattr(layer.attention, "prepare_sha", None):
-            layer.attention.prepare_sha()
         if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
             layer.feed_forward.prepare_feedfoward_conv()
     if args.embedding_quantize:
@@ -316,10 +314,12 @@ def eval_llm(args):
     if args.ptq is not None:
         quant_dtype = getattr(QuantDtype, f"use_{args.ptq}")
         decoder_model_config = SUPPORTED_LLM_MODELS[args.decoder_model]
-        custom_annotations = decoder_model_config.custom_annotation
+        custom_annotations = (
+            decoder_model_config.quant_recipe().recipe.custom_quant_annotations
+        )
 
         quantizer = make_custom_quantizer(
-            quant_dtype, args.range_setting, custom_annotations, args.quant_linear_only
+            quant_dtype, custom_annotations, args.quant_linear_only
         )
 
         with torch.no_grad():
@@ -337,12 +337,11 @@ def eval_llm(args):
         logging.info("Observers added, starting calibration...")
         graph_module_inference(
             use_kv_cache=False,
-            get_example_inputs=lambda use_kv_cache=False: inputs,
+            get_example_inputs=lambda: inputs,
             module=model,
             tokenizer=tokenizer,
             ar_len=args.max_seq_len,
             max_seq_len=args.max_seq_len,
-            kv_updater=args.kv_updater,
             tasks=["wikitext"],
             tasks_limit=1,
             use_i64_token=use_i64_token,
@@ -359,12 +358,11 @@ def eval_llm(args):
 
         # graph_module_inference(
         #     use_kv_cache=False,
-        #     get_example_inputs=lambda use_kv_cache=False: inputs,
+        #     get_example_inputs=lambda: inputs,
         #     module=model,
         #     tokenizer=tokenizer,
         #     ar_len=args.max_seq_len,
         #     max_seq_len=args.max_seq_len,
-        #     kv_updater=args.kv_updater,
         #     prompt="Can you tell me about Facebook?",
         #     use_i64_token=use_i64_token,
         #     event_name="convert_pt2e_prompt",
@@ -378,7 +376,6 @@ def eval_llm(args):
         tokenizer=tokenizer,
         ar_len=args.max_seq_len,
         max_seq_len=args.max_seq_len,
-        kv_updater=args.kv_updater,
         tasks=["wikitext"],
         tasks_limit=0.1,
         use_i64_token=use_i64_token,
@@ -415,13 +412,6 @@ def main() -> None:
         "--quant_linear_only",
         help="if you select this option we quantize linear layers only",
         action="store_true",
-    )
-    parser.add_argument(
-        "--kv_updater",
-        help="Choose how to update kv cache during runtime",
-        choices=["smart_mask", "shift_pointer"],
-        default="smart_mask",
-        type=str,
     )
     parser.add_argument(
         "--decoder_model",

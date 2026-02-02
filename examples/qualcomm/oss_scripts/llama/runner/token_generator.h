@@ -46,8 +46,8 @@ class TokenGenerator {
   virtual ~TokenGenerator() = default;
   /**
    * @brief Initialize I/O tensor and allocate I/O data buffer.
-   * @param buffer_manager Pointer to IMemAlloc instance which depends on
-   * kv_updater.
+   * @param buffer_manager Pointer to IMemAlloc instance; by default, it uses a
+   * shared buffer with RPC memory.
    * @param method_meta Method metadata.
    */
   virtual void init_io(
@@ -99,15 +99,11 @@ class TokenGenerator {
   TensorStruct<uint16_t> window_attention_mask_;
   TensorStruct<uint16_t> logits_;
 
-  // layer -> head -> TensorImpl
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      k_cache_in_;
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      v_cache_in_;
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      k_cache_out_;
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      v_cache_out_;
+  // layer -> TensorImpl
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_in_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> v_cache_in_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_out_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> v_cache_out_;
 
   std::vector<executorch::runtime::EValue> inputs_;
   std::vector<executorch::aten::Tensor> input_tensors_;
@@ -116,14 +112,14 @@ class TokenGenerator {
   // stats
   executorch::llm::Stats* stats_;
 
- private:
   /**
    * @brief Fill in I/O buffers with prompt token and position.
    * @param cur_token Current token.
    * @param start_pos Starting position.
    */
-  void prepare_io(uint64_t cur_token, int64_t start_pos);
+  virtual void prepare_io(uint64_t cur_token, int64_t start_pos);
 
+ private:
   // metadata
   Metadata metadata_;
 

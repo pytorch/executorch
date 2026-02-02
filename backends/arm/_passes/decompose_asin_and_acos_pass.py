@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import logging
 from math import pi
@@ -12,6 +11,16 @@ from typing import Set, Type
 import torch
 
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
+    ConvertFullLikeToFullPass,
+)
+from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
+from executorch.backends.arm._passes.decompose_sqrt_pass import DecomposeSqrtPass
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
+from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
+    ReplaceScalarWithTensorByProfilePass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -56,7 +65,14 @@ class DecomposeAsinAndAcosPass(ArmPass):
 
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        DecomposeSqrtPass,
+        DecomposeDivPass,
+        ConvertFullLikeToFullPass,
+        MatchArgRanksPass,
+        MatchArgDtypePass,
+        ReplaceScalarWithTensorByProfilePass,
+    }
 
     def _build_polynomial(
         self, coefficients: list[float], variable: torch.Tensor, meta: dict[str, str]
@@ -107,6 +123,15 @@ class DecomposeAsinAndAcosPass(ArmPass):
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_asin_op + edge_acos_op):
             return super().call_operator(op, args, kwargs, meta)
+
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta)
+
         logging.info(
             f"Approximating {op}. This may introduce small numerical errors. For details, see {__file__}."
         )

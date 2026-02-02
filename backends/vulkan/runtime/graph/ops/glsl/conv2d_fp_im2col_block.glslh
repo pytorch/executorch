@@ -23,7 +23,7 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "common.glslh"
+#include "indexing.glslh"
 #include "conv2d_common.glslh"
 
 struct Im2ColMatrixIdx {
@@ -63,27 +63,27 @@ void im2col_idx_to_input_tidx(
   TensorIndex4D output_tidx;
   unwrap_m(output_tidx, im2col_idx.row);
 
-  const int in_channels_per_group = conv2d_params.in_channels_per_group;
+  const int in_channels_per_group = conv2d_params_in_channels_per_group;
   // Determine the corresponding position within the convolution window based
   // on the col index (more specifically, the col index within the group)
   const int channel_within_group =
       im2col_idx.col_idx_in_group % in_channels_per_group;
   const int kernel_x = (im2col_idx.col_idx_in_group / in_channels_per_group) %
-      conv2d_params.kernel_size.x;
+      conv2d_params_kernel_size_x;
   const int kernel_y = im2col_idx.col_idx_in_group /
-      (in_channels_per_group * conv2d_params.kernel_size.x);
+      (in_channels_per_group * conv2d_params_kernel_size_x);
 
   // Calculate the actual input channel index
   const int channel_idx =
-      im2col_idx.group_idx * conv2d_params.in_channels_per_group +
+      im2col_idx.group_idx * conv2d_params_in_channels_per_group +
       channel_within_group;
 
   // Calculate corresponding input coordinates based on output position
   // associated with the row index.
-  const int input_y = int(output_tidx.data.y * conv2d_params.stride.y) -
-      int(conv2d_params.padding.y) + int(kernel_y * conv2d_params.dilation.y);
-  const int input_x = int(output_tidx.data.x * conv2d_params.stride.x) -
-      int(conv2d_params.padding.x) + int(kernel_x * conv2d_params.dilation.x);
+  const int input_y = int(output_tidx.data.y * conv2d_params_stride_y) -
+      int(conv2d_params_padding_y) + int(kernel_y * conv2d_params_dilation_y);
+  const int input_x = int(output_tidx.data.x * conv2d_params_stride_x) -
+      int(conv2d_params_padding_x) + int(kernel_x * conv2d_params_dilation_x);
 
   input_tidx.data = ivec4(input_x, input_y, channel_idx, output_tidx.data.w);
 }

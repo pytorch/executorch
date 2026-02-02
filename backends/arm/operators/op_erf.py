@@ -1,11 +1,12 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-# pyre-unsafe
 from typing import Any, List
 
 import torch.fx
+
+import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -24,7 +25,7 @@ class ERFVisitor(NodeVisitor):
     target = "aten.erf.default"
 
     # INT case handled by op_table
-    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+FP")]
+    tosa_specs = TosaSpecification.all_versions_for_profile("FP")
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -36,18 +37,18 @@ class ERFVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            ts.DType.FP32,
-            output.tosa_spec,
+            [ts.DType.FP32, ts.DType.BF16],
+            self.tosa_spec,
         )
 
         # MI lowering
+        attr = ts.TosaSerializerAttribute()
+        attr.ErfAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.TosaOp.Op().ERF, [inputs[0].name], [output.name]
+            node, tosa_graph, ts.Op.ERF, [inputs[0].name], [output.name], attr
         )

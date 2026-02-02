@@ -23,7 +23,7 @@ def get_operators(model_file: str) -> List[Operator]:
     print("Processing model file: ", model_file)
     with open(model_file, "rb") as f:
         flatbuffer = f.read()
-    program = _deserialize_pte_binary(flatbuffer)
+    program = _deserialize_pte_binary(flatbuffer).program
     print(f"Program loaded from model file: {model_file}")
     operators = program.execution_plan[0].operators
     return operators

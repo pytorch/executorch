@@ -1,15 +1,13 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
-# All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree
 
-# pyre-unsafe
 
 from typing import Any, List, Tuple
 
-import numpy as np
 import torch
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -20,33 +18,34 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa import TosaSpecification
 
 from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
 @register_node_visitor
-class ClampVisitor_INT(NodeVisitor):
+class ClampVisitor(NodeVisitor):
     target = "aten.clamp.default"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-    ]
 
     def __init__(self, *args):
         super().__init__(*args)
 
     def _get_min_max_arguments(
-        self, node: Node, dtype_min: int | float, dtype_max: int | float
+        self, node: Node, dtype: torch.dtype
     ) -> Tuple[int | float, int | float]:
-
         def cast_type(value: Any) -> int | float:
             if isinstance(value, int):
                 return value
             else:
                 # Attempt to cast to float
                 return float(value)
+
+        if dtype.is_floating_point:
+            dtype_min = torch.finfo(dtype).min
+            dtype_max = torch.finfo(dtype).max
+        else:
+            dtype_min = torch.iinfo(dtype).min
+            dtype_max = torch.iinfo(dtype).max
 
         min_arg = dtype_min
         max_arg = dtype_max
@@ -60,56 +59,8 @@ class ClampVisitor_INT(NodeVisitor):
 
         return min_arg, max_arg
 
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, [2, 3])
-        validate_same_dtype(self.target, [inputs[0], output], ts)
-        validate_valid_dtype(
-            self.target, [inputs[0], output], [ts.DType.INT8], output.tosa_spec
-        )
-
-        # NOTE: Quantization of the min/max arguments is handled by QuantizeOperatorArguments
-        min_int8, max_int8 = self._get_min_max_arguments(
-            node,
-            torch.iinfo(torch.int8).min,
-            torch.iinfo(torch.int8).max,
-        )
-
-        attr = ts.TosaSerializerAttribute()
-        attr.ClampAttribute(
-            tosa_graph.builder,
-            np.int8(min_int8).tobytes(),
-            np.int8(max_int8).tobytes(),
-            nan_mode=1,
-        )
-
-        self._serialize_operator(
-            node,
-            tosa_graph,
-            ts.TosaOp.Op().CLAMP,
-            [inputs[0].name],
-            [output.name],
-            attr,
-        )
-
-
-@register_node_visitor
-class ClampVisitor_FP(ClampVisitor_INT):
-    # inheriting 'target' from INT class
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
-    def __init__(self, *args):
-        super().__init__(*args)
+    def _to_bytes(self, value: int | float, dtype: torch.dtype) -> bytes:
+        return torch.full((1,), value, dtype=dtype).view(torch.uint8).numpy().tolist()
 
     def define_node(
         self,
@@ -118,35 +69,38 @@ class ClampVisitor_FP(ClampVisitor_INT):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, [2, 3])
         validate_same_dtype(self.target, [inputs[0], output], ts)
+        supported_dtypes = [
+            ts.DType.INT8,
+            ts.DType.FP16,
+            ts.DType.BF16,
+            ts.DType.FP32,
+        ]
+        if self.tosa_spec.support_extension("int16"):
+            supported_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.FP16, ts.DType.FP32],
-            output.tosa_spec,
+            supported_dtypes,
+            self.tosa_spec,
         )
 
-        min_fp32, max_fp32 = self._get_min_max_arguments(
-            node,
-            torch.finfo(torch.float32).min,
-            torch.finfo(torch.float32).max,
-        )
+        node_input_dtype = node.meta["val"].dtype
+        # NOTE: Quantization of the min/max arguments is handled by QuantizeOperatorArguments
+        min_val, max_val = self._get_min_max_arguments(node, node_input_dtype)
 
         attr = ts.TosaSerializerAttribute()
         attr.ClampAttribute(
-            tosa_graph.builder,
-            np.float32(min_fp32).tobytes(),
-            np.float32(max_fp32).tobytes(),
-            nan_mode=1,
+            self._to_bytes(min_val, node_input_dtype),
+            self._to_bytes(max_val, node_input_dtype),
+            nan_mode=ts.NanPropagationMode.PROPAGATE,
         )
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().CLAMP,
+            ts.Op.CLAMP,
             [inputs[0].name],
             [output.name],
             attr,

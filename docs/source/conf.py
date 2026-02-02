@@ -24,7 +24,7 @@ import shutil
 import sys
 from typing import Any
 
-import pytorch_sphinx_theme
+import pytorch_sphinx_theme2  # type: ignore[import-not-found]
 
 # To let us import ./custom_directives.py
 sys.path.insert(0, os.path.abspath("."))
@@ -63,12 +63,9 @@ extensions = [
     "sphinx_design",
     "sphinx_gallery.gen_gallery",
     "sphinx_reredirects",
+    "sphinx_sitemap",
+    "sphinxcontrib.mermaid",
 ]
-
-if not FBCODE:
-    extensions += [
-        "executorch_custom_versions",
-    ]
 
 this_file_dir = os.path.abspath(os.path.dirname(__file__))
 doxygen_xml_dir = os.path.join(
@@ -77,36 +74,60 @@ doxygen_xml_dir = os.path.join(
     "xml",  # {repo_root}/docs/cpp/build/xml
 )
 
-html_favicon = "_static/img/ExecuTorch-Logo-cropped.svg"
+html_favicon = "_static/img/executorch-chip-logo.svg"
 
-# Get ET_VERSION_DOCS during the build.
-et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
-print(f"et_version_docs: {et_version_docs}")
+# Import executorch version
+# Adopted from PyTorch docs pattern
+from executorch import version as et_version  # type: ignore[attr-defined]
 
-# The code below will cut version displayed in the dropdown like this:
-# By default, set to "main".
-# If it's a tag like refs/tags/v1.2.3-rc4 or refs/tags/v1.2.3, then
-# cut to 1.2
-# the version varible is used in layout.html: https://github.com/pytorch/executorch/blob/main/docs/source/_templates/layout.html#L29
-version = release = "main"
-if et_version_docs:
-    if et_version_docs.startswith("refs/tags/v"):
-        version = ".".join(
-            et_version_docs.split("/")[-1].split("-")[0].lstrip("v").split(".")[:2]
-        )
-    elif et_version_docs.startswith("refs/heads/release/"):
-        version = et_version_docs.split("/")[-1]
-print(f"Version: {version}")
-html_title = " ".join((project, version, "documentation"))
+executorch_version = str(et_version.__version__)
+
+# Check if this is a release build from environment variable
+# The workflow sets RELEASE=true for tagged releases, RELEASE=false otherwise
+# We need to properly parse the string as a boolean (any non-empty string is truthy in Python)
+RELEASE = os.environ.get("RELEASE", "false").lower() == "true"
+
+# The version info for the project you're documenting, acts as replacement for
+# |version| and |release|, also used in various other places throughout the
+# built documents.
+#
+# The short X.Y version.
+version = "main"
+# The full version, including alpha/beta/rc tags.
+release = "main"
+
+# Customized html_title here.
+# Default is " ".join(project, release, "documentation") if not set
+if RELEASE:
+    # Turn 0.8.0a0+a90e907 into 0.8
+    # Note: the release candidates should no longer have the aHASH suffix, but in any
+    # case we wish to leave only major.minor, even for rc builds.
+    version = ".".join(executorch_version.split("+")[0].split(".")[:2])
+    html_title = " ".join((project, version, "documentation"))
+    release = version
+
+switcher_version = "main" if not RELEASE else version
+
+print(f"executorch_version: {executorch_version}")
+print(f"Version: {version}, RELEASE: {RELEASE}")
+
+html_baseurl = "https://docs.pytorch.org/executorch/"  # needed for sphinx-sitemap
+sitemap_locales = [None]
+sitemap_excludes = [
+    "search.html",
+    "genindex.html",
+]
+sitemap_url_scheme = "{link}"
 
 breathe_projects = {"ExecuTorch": "../build/xml/"}
 breathe_default_project = "ExecuTorch"
 
-templates_path = ["_templates"]
 autodoc_typehints = "description"
 
 myst_enable_extensions = [
     "colon_fence",
+    "deflist",
+    "html_image",
 ]
 
 myst_heading_anchors = 4
@@ -162,38 +183,93 @@ autosectionlabel_prefix_document = True
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "pytorch_sphinx_theme"
-html_theme_path = [pytorch_sphinx_theme.get_html_theme_path()]
+html_theme = "pytorch_sphinx_theme2"
+html_theme_path = [pytorch_sphinx_theme2.get_html_theme_path()]
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
 #
+
 html_theme_options = {
+    "logo": {
+        "image_light": "_static/img/et-logo.png",
+        "image_dark": "_static/img/et-logo.png",
+    },
+    "navigation_with_keys": False,
+    "canonical_url": "https://docs.pytorch.org/executorch/stable/",
+    "switcher": {
+        "json_url": "https://docs.pytorch.org/executorch/executorch-versions.json",  # for testing only, will need to replace to the correct json file on the executorch website when it's added in the repo.
+        "version_match": switcher_version,
+    },
+    "show_toc_level": 2,
+    "analytics_id": "GTM-T8XT4PS",
+    "icon_links": [
+        {
+            "name": "X",
+            "url": "https://x.com/PyTorch",
+            "icon": "fa-brands fa-x-twitter",
+        },
+        {
+            "name": "GitHub",
+            "url": "https://github.com/pytorch/executorch",
+            "icon": "fa-brands fa-github",
+        },
+        {
+            "name": "Discourse",
+            "url": "https://discuss.pytorch.org/",
+            "icon": "fa-brands fa-discourse",
+        },
+        {
+            "name": "PyPi",
+            "url": "https://pypi.org/project/executorch",
+            "icon": "fa-brands fa-python",
+        },
+    ],
+    "show_version_warning_banner": True,
+    "use_edit_page_button": True,
+    "header_links_before_dropdown": 8,
+    "navbar_align": "left",
+    "navbar_start": ["navbar-logo", "version-switcher"],
+    "navbar_center": ["navbar-nav"],
+    "navbar_end": ["search-field-custom", "theme-switcher", "navbar-icon-links"],
+    "navbar_persistent": [],
+}
+
+theme_variables = pytorch_sphinx_theme2.get_theme_variables()
+templates_path = [
+    "_templates",
+    os.path.join(os.path.dirname(pytorch_sphinx_theme2.__file__), "templates"),
+]
+
+html_context = {
+    "theme_variables": theme_variables,
+    "display_github": True,
+    "github_url": "https://github.com",
+    "github_user": "pytorch",
+    "github_repo": "executorch",
+    "feedback_url": "https://github.com/pytorch/executorch",
+    "github_version": "main",
+    "doc_path": "docs/source",
     "pytorch_project": "executorch",
     "display_version": True,
-    "logo_only": True,
-    "collapse_navigation": True,  # changed to True to enable 3rd level nav.
-    "sticky_navigation": False,
-    "navigation_depth": 4,
-    "includehidden": True,
-    "titles_only": False,
-    "analytics_id": "GTM-T8XT4PS",
 }
+
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 
-html_css_files = ["css/custom.css", "progress-bar.css"]
-html_js_files = ["js/progress-bar.js"]
+# Add custom 404 page for GitHub Pages
+html_additional_pages = {"404": "404.html"}
+
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
     "python": ("https://docs.python.org/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
-    "torch": ("https://pytorch.org/docs/stable/", None),
+    "torch": ("https://docs.pytorch.org/docs/stable/", None),
 }
 
 # Redirects for moved pages
@@ -202,7 +278,8 @@ redirects = {
     "export-overview": "using-executorch-export.html",
     "runtime-build-and-cross-compilation": "using-executorch-building-from-source.html",
     "tutorials/export-to-executorch-tutorial": "../using-executorch-export.html",
-    "build-run-vulkan": "backends-vulkan.html",
+    "build-run-vulkan": "backends/vulkan/vulkan-overview.html",
+    "backends-vulkan": "backends/vulkan/vulkan-overview.html",
     "executorch-arm-delegate-tutorial": "backends-arm-ethos-u.html",
     "build-run-coreml": "backends-coreml.html",
     "build-run-mediatek-backend": "backends-mediatek.html",

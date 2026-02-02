@@ -23,6 +23,19 @@ RpcMem::RpcMem(
   shared_buffer_base_ptr_ = QnnExecuTorchAllocCustomMem(
       total_bytes, MemoryAllocator::kDefaultAlignment);
 }
+RpcMem::RpcMem(
+    const size_t total_cache_size,
+    const size_t total_prompt_processor_io_size,
+    const size_t total_token_generator_io_size,
+    const size_t total_embedding_processor_io_size,
+    const size_t total_embedding_generator_io_size)
+    : calculated_offsets_(0) {
+  size_t total_bytes = total_cache_size + total_prompt_processor_io_size +
+      total_token_generator_io_size + total_embedding_processor_io_size +
+      total_embedding_generator_io_size;
+  shared_buffer_base_ptr_ = QnnExecuTorchAllocCustomMem(
+      total_bytes, MemoryAllocator::kDefaultAlignment);
+}
 RpcMem::~RpcMem() {
   QnnExecuTorchFreeCustomMem(shared_buffer_base_ptr_);
 }
@@ -44,20 +57,10 @@ void RpcMem::add_memory_info(
       it == io_pos_map_.end()) {
     ET_LOG(Error, "Shared buffer pointer %p is not found", data_ptr);
   }
-  size_t pos = io_pos_map_[static_cast<std::byte*>(data_ptr)];
-  uint32_t* shape = const_cast<uint32_t*>(
-      reinterpret_cast<const uint32_t*>(tensor_info.sizes().data()));
-  uint32_t rank = static_cast<uint32_t>(tensor_info.sizes().size());
-  executorch::aten::ScalarType scalar_type = tensor_info.scalar_type();
-  CustomMemTensorInfo info = {
-      shared_buffer_base_ptr_,
-      data_ptr,
-      pos,
-      data_size,
-      shape,
-      rank,
-      scalar_type};
-  QnnExecuTorchAddCustomMemTensorInfo(info);
+  if (binded_tensor_addr_set_.find(data_ptr) == binded_tensor_addr_set_.end()) {
+    QnnExecuTorchAddCustomMemTensorAddr(data_ptr, shared_buffer_base_ptr_);
+    binded_tensor_addr_set_.insert(data_ptr);
+  }
 };
 
 } // namespace example

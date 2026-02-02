@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -8,7 +8,7 @@ from typing import Tuple
 
 import torch
 
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -45,8 +45,7 @@ def test_sin_tosa_FP(test_data: Tuple):
         aten_op,
         exir_op=[],
     )
-    if conftest.get_option("tosa_version") == "1.0":
-        pipeline.run()
+    pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
@@ -61,45 +60,48 @@ def test_sin_tosa_INT(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
 def test_sin_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Sin(),
         (test_data,),
         aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
 def test_sin_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Sin(),
         (test_data,),
         aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_sin_vgf_FP(test_data: Tuple):
-    pipeline = VgfPipeline[input_t1](
-        Sin(), (test_data,), aten_op, tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite)
-@common.SkipIfNoModelConverter
-def test_sin_vgf_INT(test_data: Tuple):
+def test_sin_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Sin(),
         (test_data,),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_sin_vgf_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Sin(),
+        (test_data,),
+        aten_op,
+        quantize=True,
     )
     pipeline.run()

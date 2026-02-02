@@ -20,6 +20,7 @@ from executorch.backends.nxp.tests.executors import (
 from executorch.backends.nxp.tests.models import ConvWithSigmoid
 from torch import nn
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 @pytest.fixture(autouse=True)
@@ -28,12 +29,14 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-def test_conv_sigmoid(mocker, input_shape: tuple[int] = (1, 3, 112, 112)):
+def test_conv_sigmoid(mocker, use_qat, input_shape: tuple[int] = (1, 3, 112, 112)):
     model = ConvWithSigmoid(conv_in_channels=input_shape[1])
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
-    to_quantized_edge_program(model, input_shape).exported_program()
+    to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
+    ).exported_program()
 
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -59,12 +62,12 @@ def test_conv_sigmoid(mocker, input_shape: tuple[int] = (1, 3, 112, 112)):
         pytest.param((10, 3, 25, 25, 25), id="4D"),
     ],
 )
-def test_sigmoid_only(mocker, input_shape):
+def test_sigmoid_only(mocker, use_qat, input_shape):
     model = nn.Sigmoid()
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
-    to_quantized_edge_program(model, input_shape).exported_program()
+    to_quantized_edge_program(model, input_shape, use_qat=use_qat).exported_program()
 
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

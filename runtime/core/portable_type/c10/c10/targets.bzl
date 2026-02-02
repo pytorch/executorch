@@ -61,11 +61,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "aten_headers_for_executorch",
         srcs = [],
-        visibility = [
-            "//executorch/kernels/optimized/...",
-            "//executorch/kernels/portable/cpu/util/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         # select() on ovr_config//runtime:fbcode does not work
         # properly in all cases. I have seen
         # //xplat/executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch
@@ -78,11 +74,11 @@ def define_common_targets():
             ] if not runtime.is_oss else [],
         }),
         xplat_exported_deps = [
-            "//xplat/caffe2:aten_header",
-            "//xplat/caffe2/c10:c10_headers",
+            "fbsource//xplat/caffe2:aten_header",
+            "fbsource//xplat/caffe2/c10:c10_headers",
         ] + select({
-            "DEFAULT": ["//xplat/caffe2:generated_aten_config_header"],
-            "ovr_config//build_mode:arvr_mode": ["//xplat/caffe2:ovrsource_aten_Config.h"],
+            "DEFAULT": ["fbsource//xplat/caffe2:generated_aten_config_header"],
+            "ovr_config//build_mode:arvr_mode": ["fbsource//xplat/caffe2:ovrsource_aten_Config.h"],
         }) + get_sleef_deps(),
         fbcode_exported_deps = ([
             "//caffe2:aten-headers-cpu",
@@ -124,10 +120,7 @@ def define_common_targets():
                 "-DC10_USE_GLOG",
                 "-DC10_USE_MINIMAL_GLOG",
             ]),
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/runtime/core/portable_type/c10/torch/headeronly:torch_headeronly",
             ] + select({
@@ -142,8 +135,5 @@ def define_common_targets():
         runtime.cxx_library(
             name = "c10",
             exported_deps = [":aten_headers_for_executorch"],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )

@@ -14,6 +14,33 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
+# Usage:
+#   log_step <context> <message>
+# eg.
+# log_step "step" "information message"
+# outputs:
+#   [setup/step] information message
+function log_step() {
+    local context="${1:-main}"
+    shift || true
+    local message="$*"
+    printf "[Arm Setup/%s] %s\n" "${context}" "${message}"
+}
+
+function get_parallel_jobs() {
+    if command -v nproc >/dev/null 2>&1; then
+        nproc
+    elif command -v sysctl >/dev/null 2>&1 && sysctl hw.logicalcpu >/dev/null 2>&1; then
+        sysctl -n hw.logicalcpu
+    elif command -v getconf >/dev/null 2>&1; then
+        getconf _NPROCESSORS_ONLN
+    elif [[ -n "${NUMBER_OF_PROCESSORS:-}" ]]; then
+        echo "${NUMBER_OF_PROCESSORS}"
+    else
+        echo 1
+    fi
+}
+
 function verify_md5() {
     # Compare the md5 of a file with a provided expected value.
 

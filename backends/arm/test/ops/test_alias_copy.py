@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -36,6 +36,9 @@ class AliasCopy(torch.nn.Module):
         "3d_rand": lambda: (torch.rand(3, 5, 5),),
         "4d_zeros": lambda: (torch.zeros(1, 10, 10, 10),),
     }
+    test_data_bf16 = {
+        "3d_rand_bf16": lambda: (torch.rand(3, 5, 2, dtype=torch.bfloat16),)
+    }
 
     def __init__(self):
         super().__init__()
@@ -46,13 +49,14 @@ class AliasCopy(torch.nn.Module):
         )  # Multiply by one to make sure it is partitioned.
 
 
-@common.parametrize("test_data", AliasCopy.test_data)
+@common.parametrize("test_data", AliasCopy.test_data | AliasCopy.test_data_bf16)
 def test_alias_tosa_FP(test_data: input_t1):
     TosaPipelineFP[input_t1](
         AliasCopy(),
         test_data(),
         AliasCopy.aten_op,
         AliasCopy.exir_op,
+        tosa_extensions=["bf16"],
     ).run()
 
 
@@ -90,25 +94,25 @@ def test_alias_u85_INT(test_data: input_t1):
 
 @common.parametrize("test_data", AliasCopy.test_data)
 @common.SkipIfNoModelConverter
-def test_alias_vgf_FP(test_data: input_t1):
+def test_alias_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         AliasCopy(),
         test_data(),
         AliasCopy.aten_op,
         AliasCopy.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AliasCopy.test_data)
 @common.SkipIfNoModelConverter
-def test_alias_vgf_INT(test_data: input_t1):
+def test_alias_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         AliasCopy(),
         test_data(),
         AliasCopy.aten_op,
         AliasCopy.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

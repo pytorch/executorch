@@ -25,6 +25,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::get_op_function_from_registry;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::registry_has_op_function;
+using executorch::runtime::Span;
 using std::optional;
 
 Tensor& my_op_out(KernelRuntimeContext& ctx, const Tensor& a, Tensor& out) {
@@ -117,7 +118,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxLogicWorks) {
   EValue* stack[1];
   stack[0] = &values[0];
 
-  (*fn)(context, stack);
+  (*fn)(context, Span<EValue*>(stack));
 
   // check result
   EXPECT_EQ(a.const_data_ptr<int32_t>()[0], 1);
@@ -133,7 +134,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxArrayRef) {
   EValue evalues[2] = {storage[0], storage[1]};
   EValue* values_p[2] = {&evalues[0], &evalues[1]};
   BoxedEvalueList<Tensor> a_box(values_p, storage, 2);
-  EValue boxed_array_ref(a_box);
+  EValue boxed_array_ref(&a_box);
   // prepare out tensor.
   EValue out(tf.zeros({5}));
 
@@ -144,7 +145,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxArrayRef) {
   KernelRuntimeContext context;
   EValue values[2] = {boxed_array_ref, out};
   EValue* stack[2] = {&values[0], &values[1]};
-  (*fn)(context, stack);
+  (*fn)(context, Span<EValue*>(stack));
 
   // check result.
   for (int i = 0; i < 5; i++) {
@@ -170,7 +171,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptional) {
   KernelRuntimeContext context;
   EValue values[3] = {scalar, scalar_none, out};
   EValue* stack[3] = {&values[0], &values[1], &values[2]};
-  (*fn)(context, stack);
+  (*fn)(context, Span<EValue*>(stack));
 
   // check result.
   EXPECT_EQ(stack[2]->toTensor().const_data_ptr<int32_t>()[0], 4);
@@ -186,7 +187,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptionalArrayRef) {
   EValue evalues[2] = {EValue(tf.ones({5})), EValue()};
   EValue* values_p[2] = {&evalues[0], &evalues[1]};
   BoxedEvalueList<optional<Tensor>> a_box(values_p, storage, 2);
-  EValue boxed_array_ref(a_box);
+  EValue boxed_array_ref(&a_box);
 
   // prepare out tensor.
   EValue out(tf.zeros({5}));
@@ -197,7 +198,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptionalArrayRef) {
   KernelRuntimeContext context;
   EValue values[2] = {boxed_array_ref, out};
   EValue* stack[2] = {&values[0], &values[1]};
-  (*fn)(context, stack);
+  (*fn)(context, Span<EValue*>(stack));
 
   // check result.
   for (int i = 0; i < 5; i++) {

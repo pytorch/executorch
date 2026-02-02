@@ -7,43 +7,28 @@
 # pyre-unsafe
 
 import json
-import os
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import torch
 from executorch.examples.models.checkpoint import (
     get_checkpoint_dtype,
     get_default_model_resource_dir,
 )
+
 from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.rope import Rope
 
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 from torchao.utils import TorchAOBaseTensor
-
-try:
-    from .fairseq2 import convert_to_llama_checkpoint
-
-except ImportError:
-
-    def convert_to_llama_checkpoint(**kwargs):
-        raise NotImplementedError(
-            "Please install fairseq2 with `pip install fairseq2`."
-        )
-
 
 from ..model_base import EagerModelBase
 
 
 class Llama2Model(EagerModelBase):
     def __init__(self, llm_config: Optional[LlmConfig] = None):
-        resource_dir = get_default_model_resource_dir(__file__)
-
         self.llm_config = llm_config if llm_config else LlmConfig()
 
         checkpoint_path = self.llm_config.base.checkpoint
-        checkpoint_dir = self.llm_config.base.checkpoint_dir
         params_path = self.llm_config.base.params
 
         # Adapter checkpoint and config.
@@ -71,64 +56,12 @@ class Llama2Model(EagerModelBase):
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model.
         device = "cpu"
         # flake8: noqa: TOR102
-        cps = []
-        # Load sharded checkpoint.
         checkpoint = {}
-        if checkpoint_dir is not None:
-            # Load multiple checkpoint; ignore the single path.
-            checkpoint_path = None
-            for i in range(4):
-                cp_name = f"consolidated.{i}.pth"
-                print(f"Loading {cp_name}")
-                cps.append(
-                    torch.load(
-                        os.path.join(checkpoint_dir, cp_name),
-                        map_location=device,
-                        mmap=True,
-                    )
-                )
-            checkpoint = {}
-            for key in cps[0].keys():
-                if not torch.allclose(cps[0][key], cps[1][key]):
-                    values = (cps[0][key], cps[1][key], cps[2][key], cps[3][key])
-                    if "wo" in key or "w2" in key:
-                        # Concat on dim=1 for "wo" and "w2".
-                        checkpoint[key] = torch.cat(values, dim=1)
-                    else:
-                        # Concat on dim=0 for everything else.
-                        checkpoint[key] = torch.cat(values, dim=0)
-                else:
-                    # Do not duplicate layers shared between each checkpoint.
-                    checkpoint[key] = cps[0][key]
-        # Load single checkpoint.
-        elif checkpoint_path:
+        if checkpoint_path:
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
-
-        # If given checkpoint is fairseq, convert to llama checkpoint.
-        fairseq2_checkpoint = self.llm_config.base.fairseq2
-        if fairseq2_checkpoint:
-            print("Using fairseq2 checkpoint")
-            checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
         if "model" in checkpoint:
             # NB: some checkpoint contains a "model" field, which is the actual weights dict
             checkpoint = checkpoint["model"]
-
-        # Check if user gave a fairseq2 checkpoint unknowingly without specifying --fairseq2.
-        if (not fairseq2_checkpoint) and checkpoint.get(
-            "final_proj.weight", None
-        ) is not None:
-            raise ValueError(
-                """
-************************************************************
-This looks like a Fairseq2 checkpoint (based on the presence
-of `final_proj.weight`.
-
-You can import Fairseq2 checkpoints using the --fairseq2
-option, but --fairseq2 was not specified.  Please verify
-the checkpoint format to avoid generating faulty models.
-************************************************************
-"""
-            )
 
         # Get optional params.
         params = {}
@@ -140,14 +73,41 @@ the checkpoint format to avoid generating faulty models.
         adapter_checkpoint = {}
         adapter_config = {}
         if adapter_checkpoint_path:
-            adapter_checkpoint = torch.load(
-                adapter_checkpoint_path, map_location=device, mmap=True
-            )
-            from torchtune.models import convert_weights
+            if adapter_checkpoint_path.endswith(".pt"):
+                adapter_checkpoint = torch.load(
+                    adapter_checkpoint_path, map_location=device, mmap=True
+                )
+                from torchtune.models import convert_weights
 
-            adapter_checkpoint = convert_weights.tune_to_meta(adapter_checkpoint)
+                adapter_checkpoint = convert_weights.tune_to_meta(adapter_checkpoint)
+            elif adapter_checkpoint_path.endswith(".safetensors"):
+                from executorch.examples.models.llama.convert_weights import (
+                    load_and_convert_unsloth_to_meta,
+                )
+
+                adapter_checkpoint = load_and_convert_unsloth_to_meta(
+                    adapter_checkpoint_path
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported adapter checkpoint format: {adapter_checkpoint_path}"
+                )
+
             with open(adapter_config_path, "r") as f:
-                adapter_config = json.loads(f.read())
+                adapter_config_full = json.loads(f.read())
+                if (
+                    "r" not in adapter_config_full
+                    or "lora_alpha" not in adapter_config_full
+                    or "target_modules" not in adapter_config_full
+                ):
+                    raise ValueError(
+                        "Adapter config must contain r, lora_alpha, and target_modules."
+                    )
+                adapter_config = {
+                    "r": adapter_config_full["r"],
+                    "lora_alpha": adapter_config_full["lora_alpha"],
+                    "target_modules": adapter_config_full["target_modules"],
+                }
             checkpoint.update(adapter_checkpoint)
 
         output_prune_map = None
@@ -285,24 +245,27 @@ the checkpoint format to avoid generating faulty models.
             for param in self.model_.parameters():
                 if isinstance(param, TorchAOBaseTensor):
                     param.requires_grad = False
+            if missing:
+                missing_weights = [fqn for fqn in missing if fqn.endswith(".weight")]
+                if missing_weights:
+                    raise ValueError(
+                        f"The provided checkpoint is missing the following weights that are expected by the model: {missing_weights}. Please fix the fqn's in your checkpoint to match."
+                    )
+            if unexpected:
+                if self.verbose:
+                    print(f"Unexpected keys: {unexpected}")
         else:
-            print("Checkpoint not provided, defaulting weights to zeros.")
+            print("Checkpoint not provided, using default initialization.")
+            # Because we loaded onto meta device, it is annoying to now load onto cpu
+            # with the standard random initialization.
             self.model_.to_empty(device="cpu")
-            # Need to provide concrete values for meta-initialized tensors for quantization.
-            # otherwise it is just filled with nan's.
-            for p in self.model_.parameters():
-                p.data.fill_(0)
-            for b in self.model_.buffers():
-                b.data.fill_(0)
-        if missing:
-            missing_weights = [fqn for fqn in missing if fqn.endswith(".weight")]
-            if missing_weights:
-                raise ValueError(
-                    f"The provided checkpoint is missing the following weights that are expected by the model: {missing_weights}. Please fix the fqn's in your checkpoint to match."
-                )
-        if unexpected:
-            if self.verbose:
-                print(f"Unexpected keys: {unexpected}")
+
+            def weight_reset(m):
+                reset_parameters = getattr(m, "reset_parameters", None)
+                if callable(reset_parameters):
+                    m.reset_parameters()
+
+            self.model_.apply(weight_reset)
 
         # Prune the input layer if input_prune_map is provided
         if input_prune_map is not None:

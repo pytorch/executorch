@@ -72,7 +72,6 @@ def test_log_softmax_u55_INT(test_data):
         LogSoftmax(dim),
         data,
         [],
-        run_on_fvp=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
@@ -87,7 +86,6 @@ def test_log_softmax_u85_INT(test_data):
         LogSoftmax(dim),
         data,
         [],
-        run_on_fvp=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
@@ -96,10 +94,14 @@ def test_log_softmax_u85_INT(test_data):
 
 @common.parametrize("test_data", LogSoftmax.test_data)
 @common.SkipIfNoModelConverter
-def test_log_softmax_vgf_FP(test_data):
+def test_log_softmax_vgf_no_quant(test_data):
     data, dim = test_data()
     pipeline = VgfPipeline[input_t1](
-        LogSoftmax(dim), data, [], [], tosa_version="TOSA-1.0+FP"
+        LogSoftmax(dim),
+        data,
+        [],
+        [],
+        quantize=False,
     )
     pipeline.add_stage_after(
         "to_edge_transform_and_lower", pipeline.tester.check_not, [aten_op]
@@ -109,16 +111,14 @@ def test_log_softmax_vgf_FP(test_data):
 
 @common.parametrize("test_data", LogSoftmax.test_data)
 @common.SkipIfNoModelConverter
-def test_log_softmax_vgf_INT(test_data):
+def test_log_softmax_vgf_quant(test_data):
     data, dim = test_data()
     pipeline = VgfPipeline[input_t1](
         LogSoftmax(dim),
         data,
         [],
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
-    # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests
-    # pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

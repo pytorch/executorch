@@ -11,9 +11,29 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <executorch/backends/vulkan/runtime/api/containers/StagingBuffer.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
+
+#ifdef ET_EVENT_TRACER_ENABLED
+std::string& set_and_get_current_operator_json(const std::string& json) {
+  static std::string current_operator_json;
+  if (json.size() > 0) {
+    current_operator_json = json;
+  }
+  return current_operator_json;
+}
+
+size_t get_current_operator_count(const bool increment) {
+  static int count = 0;
+  if (increment) {
+    count++;
+  }
+  return count;
+}
+#endif /* ET_EVENT_TRACER_ENABLED */
 
 namespace vkcompute {
 
@@ -278,6 +298,14 @@ std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
   VK_THROW("Could not get sizes of value with type ", val.type());
 }
 
+std::vector<int64_t> ComputeGraph::padded_sizes_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().padded_sizes();
+  }
+  VK_THROW("Could not get padded sizes of value with type ", val.type());
+}
+
 int64_t ComputeGraph::dim_of(const ValueRef idx) const {
   const Value& val = values_.at(idx);
   if (val.isTensor()) {
@@ -322,6 +350,11 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
     return vkapi::ScalarType::Int;
   }
   VK_THROW("Could not get dtype of value with type ", val.type());
+}
+
+vkapi::ScalarType ComputeGraph::get_staging_dtype_for(
+    const ValueRef idx) const {
+  return api::get_staging_dtype(context_.get(), dtype_of(idx));
 }
 
 bool ComputeGraph::is_contiguous_buffer_tensor(const ValueRef idx) const {
@@ -543,10 +576,11 @@ ValueRef ComputeGraph::add_tensorref(
 
 ValueRef ComputeGraph::add_staging(
     const vkapi::ScalarType dtype,
-    const size_t numel) {
+    const size_t numel,
+    const vkapi::CopyDirection direction) {
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
-  values_.emplace_back(api::StagingBuffer(context(), dtype, numel));
+  values_.emplace_back(api::StagingBuffer(context(), dtype, numel, direction));
   return idx;
 }
 
@@ -593,7 +627,8 @@ ValueRef ComputeGraph::set_input_tensor(
   // For texture storage, the buffer size needs to account for the zero
   // padding applied by unused texel elements.
   size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
-  ValueRef staging_idx = add_staging(staging_dtype, buf_numel);
+  ValueRef staging_idx = add_staging(
+      staging_dtype, buf_numel, vkapi::CopyDirection::HOST_TO_DEVICE);
   add_staging_to_tensor_node(*this, staging_idx, idx);
   inputs_.push_back({idx, staging_idx});
   return staging_idx;
@@ -617,7 +652,8 @@ ValueRef ComputeGraph::set_output_tensor(
   // For texture storage, the buffer size needs to account for the zero
   // padding applied by unused texel elements.
   size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
-  ValueRef staging_idx = add_staging(staging_dtype, buf_numel);
+  ValueRef staging_idx = add_staging(
+      staging_dtype, buf_numel, vkapi::CopyDirection::DEVICE_TO_HOST);
   // We only run this when the tensor is non-empty.  When the underlying
   // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to
   // tensor, we will not be able to bind the node for execution.
@@ -681,6 +717,17 @@ void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
 
 int32_t ComputeGraph::read_symint(const ValueRef idx) {
   return get_symint(idx)->get();
+}
+
+ValueRef ComputeGraph::staging_of(const ValueRef idx) {
+  for (size_t i = 0; i < inputs_.size(); ++i) {
+    if (inputs_[i].value == idx) {
+      if (is_valid(inputs_[i].staging)) {
+        return inputs_[i].staging;
+      }
+    }
+  }
+  VK_THROW("Could not find staging buffer for value at index ", idx);
 }
 
 SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {
@@ -883,6 +930,10 @@ void ComputeGraph::maybe_cast_and_copy_into_staging(
         src_data_dtype == vkapi::kDouble && staging_dtype == vkapi::kFloat) {
       const double* casted_data = reinterpret_cast<const double*>(data);
       staging->cast_and_copy_from<double, float>(casted_data, numel);
+    } else if (
+        src_data_dtype == vkapi::kHalf && staging_dtype == vkapi::kFloat) {
+      const uint16_t* casted_data = reinterpret_cast<const uint16_t*>(data);
+      staging->cast_half_to_float_and_copy_from(casted_data, numel);
     } else {
       VK_THROW(
           "Unsupported type conversion from ",
@@ -922,6 +973,10 @@ void ComputeGraph::maybe_cast_and_copy_from_staging(
         dst_data_dtype == vkapi::kDouble && staging_dtype == vkapi::kFloat) {
       double* casted_data = reinterpret_cast<double*>(data);
       staging->cast_and_copy_to<float, double>(casted_data, numel);
+    } else if (
+        dst_data_dtype == vkapi::kHalf && staging_dtype == vkapi::kFloat) {
+      uint16_t* casted_data = reinterpret_cast<uint16_t*>(data);
+      staging->cast_float_to_half_and_copy_to(casted_data, numel);
     } else {
       VK_THROW(
           "Unsupported type conversion from staging dtype ",
@@ -1093,6 +1148,12 @@ void ComputeGraph::prepack() {
     if (values_.at(i).isTensor()) {
       create_dedicated_allocation_for(i);
     }
+  }
+}
+
+void ComputeGraph::optional_warmup_execute() {
+  if (config_.warmup_execute_after_compile) {
+    execute();
   }
 }
 

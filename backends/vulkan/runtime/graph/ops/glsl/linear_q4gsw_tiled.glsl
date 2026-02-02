@@ -8,6 +8,9 @@
 
 #version 450 core
 
+${define_required_extensions(IO_STORAGE, DTYPE)}
+${define_required_extensions("buffer", DTYPE)}
+
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, IO_STORAGE)}
 #define T ${texel_load_component_type(DTYPE, IO_STORAGE)}
@@ -27,8 +30,6 @@ $if WEIGHT_STORAGE == "buffer":
 #define TILE_M ${TILE_M4 * 4}
 #define TILE_K ${TILE_K4 * 4}
 #define TILE_N ${TILE_N8 * 8}
-
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
@@ -75,9 +76,6 @@ void main() {
   const int K4 = div_up_4(input_sizes.x);
   const int N4 = div_up_4(output_sizes.x); // number of texels in each row
   const int N8 = div_up_8(output_sizes.x); // number of texels in each row
-
-  bool should_print = (n8 == 0) && (m4 == 0);
-  should_print = false;
 
   // VEC4_T out_texels[4][2];
   FPOutTile out_tile;

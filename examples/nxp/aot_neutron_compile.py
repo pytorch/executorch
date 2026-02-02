@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,18 +9,28 @@ import argparse
 import io
 import logging
 from collections import defaultdict
-from typing import Iterator
 
 import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 
 import torch
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
+    NeutronEdgePassManager,
+)
+from executorch.backends.nxp.edge_passes.remove_additional_quantize_dequantize_nodes_pass import (
+    RemoveAdditionalQDQClustersPass,
+)
 from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
+from executorch.devtools.visualization.visualization_utils import (
+    visualize_with_clusters,
+)
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.exir import (
@@ -29,11 +39,18 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.extension.export_util import save_pte_program
+from torch.ao.quantization import (
+    move_exported_model_to_eval,
+    move_exported_model_to_train,
+)
 from torch.export import export
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
-from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
-
+from .experimental.cifar_net.cifar_net import (
+    CifarNet,
+    test_cifarnet_model,
+    train_cifarnet_model,
+)
 from .models.mobilenet_v2 import MobilenetV2
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -103,41 +120,6 @@ models = {
 }
 
 
-def post_training_quantize(
-    model, calibration_inputs: tuple[torch.Tensor] | Iterator[tuple[torch.Tensor]]
-):
-    """Quantize the provided model.
-
-    :param model: Aten model to quantize.
-    :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
-                                input. Or an iterator over such tuples.
-    """
-    # Based on executorch.examples.arm.aot_amr_compiler.quantize
-    logging.info("Quantizing model")
-    logging.debug(f"---> Original model: {model}")
-    quantizer = NeutronQuantizer()
-
-    m = prepare_pt2e(model, quantizer)
-    # Calibration:
-    logging.debug("Calibrating model")
-
-    def _get_batch_size(data):
-        return data[0].shape[0]
-
-    if not isinstance(
-        calibration_inputs, tuple
-    ):  # Assumption that calibration_inputs is finite.
-        for i, data in enumerate(calibration_inputs):
-            if i % (1000 // _get_batch_size(data)) == 0:
-                logging.debug(f"{i * _get_batch_size(data)} calibration inputs done")
-            m(*data)
-    else:
-        m(*calibration_inputs)
-    m = convert_pt2e(m)
-    logging.debug(f"---> Quantized model: {m}")
-    return m
-
-
 if __name__ == "__main__":  # noqa C901
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -164,9 +146,9 @@ if __name__ == "__main__":  # noqa C901
         "-c",
         "--neutron_converter_flavor",
         required=False,
-        default="SDK_25_06",
+        default="SDK_25_12",
         help="Flavor of installed neutron-converter module. Neutron-converter module named "
-        "'neutron_converter_SDK_24_12' has flavor 'SDK_24_12'.",
+        "'neutron_converter_SDK_25_12' has flavor 'SDK_25_12'.",
     )
     parser.add_argument(
         "-q",
@@ -175,6 +157,13 @@ if __name__ == "__main__":  # noqa C901
         required=False,
         default=False,
         help="Produce a quantized model",
+    )
+    parser.add_argument(
+        "--use_qat",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Use QAT mode for quantization (performs two QAT training epochs)",
     )
     parser.add_argument(
         "-s",
@@ -211,11 +200,29 @@ if __name__ == "__main__":  # noqa C901
         nargs="*",
         help="List of operators not to delegate. E.g., --operators_not_to_delegate aten::convolution aten::mm",
     )
+    parser.add_argument(
+        "--visualize",
+        choices=["show", "store"],
+        help="Visualize the lowered program. `show` launches a browser tab with the visualization. `store` stores the "
+        "visualization in a json file for later inspection. See `docs/source/visualize-with-clusters.md` for details.",
+    )
+    parser.add_argument(
+        "--use_channels_last_dim_order",
+        required=False,
+        default=False,
+        action="store_true",
+        help="The model (including the Neutron backend) will use the channels last dim order, which can result in faster "
+        "inference. The inputs must also be provided in the channels last dim order.",
+    )
 
     args = parser.parse_args()
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
+
+    neutron_target_spec = NeutronTargetSpec(
+        target=args.target, neutron_converter_flavor=args.neutron_converter_flavor
+    )
 
     # 1. pick model from one of the supported lists
     model, example_inputs, calibration_inputs = get_model_and_inputs_from_name(
@@ -223,22 +230,46 @@ if __name__ == "__main__":  # noqa C901
     )
     model = model.eval()
 
+    if args.use_channels_last_dim_order:
+        # Turn the model to channels last.
+        model.to(memory_format=torch.channels_last)
+
+        # The dim order of the example inputs will define the dim order of the intermediate tensors in the model.
+        example_inputs = tuple(
+            i.to(memory_format=torch.channels_last) for i in example_inputs
+        )
+
     # 2. Export the model to ATEN
     exported_program = torch.export.export(model, example_inputs, strict=True)
 
     module = exported_program.module()
 
-    # 4. Quantize if required
+    # 3. Quantize if required
     if args.quantize:
-        if calibration_inputs is None:
-            logging.warning(
-                "No calibration inputs available, using the example inputs instead"
-            )
-            calibration_inputs = example_inputs
-        module = post_training_quantize(module, calibration_inputs)
+        quantizer = NeutronQuantizer(neutron_target_spec, is_qat=args.use_qat)
+        if args.use_qat:
+            match args.model_name:
+                case "cifar10":
+                    print("Starting two epochs of QAT training with CifarNet model...")
+                    module = prepare_qat_pt2e(module, quantizer)
+                    module = move_exported_model_to_train(module)
+                    module = train_cifarnet_model(module, num_epochs=2)
+                    module = move_exported_model_to_eval(module)
+                    module = convert_pt2e(module)
+                case _:
+                    raise ValueError(
+                        f"QAT training is not supported for model '{args.model_name}'"
+                    )
+        else:
+            if calibration_inputs is None:
+                logging.warning(
+                    "No calibration inputs available, using the example inputs instead"
+                )
+                calibration_inputs = example_inputs
+            module = calibrate_and_quantize(module, calibration_inputs, quantizer)
 
     if args.so_library is not None:
-        logging.debug(f"Loading libraries: {args.so_library} and {args.portable_lib}")
+        logging.debug(f"Loading libraries: {args.so_library}")
         torch.ops.load_library(args.so_library)
 
     if args.test:
@@ -254,39 +285,38 @@ if __name__ == "__main__":  # noqa C901
         quantized_str = "quantized " if args.quantize else ""
         print(f"\nAccuracy of the {quantized_str}`{args.model_name}`: {accuracy}\n")
 
-    # 5. Export to edge program
-    partitioner_list = []
-    if args.delegate is True:
-        partitioner_list = [
-            NeutronPartitioner(
-                generate_neutron_compile_spec(
-                    args.target,
-                    args.neutron_converter_flavor,
-                    operators_not_to_delegate=args.operators_not_to_delegate,
-                )
-            )
-        ]
+    # 4. Transform and lower
 
-    edge_program = to_edge_transform_and_lower(
-        export(module, example_inputs, strict=True),
-        partitioner=partitioner_list,
-        compile_config=EdgeCompileConfig(
-            _check_ir_validity=False,
-        ),
+    compile_spec = generate_neutron_compile_spec(
+        args.target,
+        operators_not_to_delegate=args.operators_not_to_delegate,
+        neutron_converter_flavor=args.neutron_converter_flavor,
     )
-    logging.debug(f"Exported graph:\n{edge_program.exported_program().graph}")
+    partitioners = (
+        [NeutronPartitioner(compile_spec, neutron_target_spec)] if args.delegate else []
+    )
+
+    edge_program_manager = to_edge_transform_and_lower(
+        export(module, example_inputs, strict=True),
+        transform_passes=NeutronEdgePassManager(),
+        partitioner=partitioners,
+        compile_config=EdgeCompileConfig(),
+    )
 
     if args.remove_quant_io_ops:
-        edge_program = edge_program.transform(
-            [RemoveIOQuantOpsPass(edge_program_manager=edge_program)]
-        )
-        logging.debug(
-            f"Exported graph (RemoveIOQuantOpsPass):\n{edge_program.exported_program().graph}"
+        edge_program_manager = edge_program_manager.transform(
+            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
         )
 
-    # 6. Export to ExecuTorch program
+    edge_program_manager = edge_program_manager.transform(
+        NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])
+    )
+
+    logging.debug(f"Lowered graph:\n{edge_program_manager.exported_program().graph}")
+
+    # 5. Export to ExecuTorch program
     try:
-        exec_prog = edge_program.to_executorch(
+        exec_prog = edge_program_manager.to_executorch(
             config=ExecutorchBackendConfig(extract_delegate_segments=False)
         )
     except RuntimeError as e:
@@ -294,7 +324,7 @@ if __name__ == "__main__":  # noqa C901
             raise RuntimeError(
                 e.args[0]
                 + ".\nThis likely due to an external so library not being loaded. Supply a path to it with the "
-                "--portable_lib flag."
+                "--so_library flag."
             ).with_traceback(e.__traceback__) from None
         else:
             raise e
@@ -306,8 +336,18 @@ if __name__ == "__main__":  # noqa C901
 
     logging.debug(f"Executorch program:\n{executorch_program_to_str(exec_prog)}")
 
-    # 7. Serialize to *.pte
+    # 6. Serialize to *.pte
     model_name = f"{args.model_name}" + (
         "_nxp_delegate" if args.delegate is True else ""
     )
     save_pte_program(exec_prog, model_name)
+
+    # 7. Optionally visualize the model.
+    if args.visualize == "show":
+        visualize_with_clusters(exec_prog.exported_program())
+    elif args.visualize == "store":
+        file_name = f"{args.model_name}-visualization.json"
+        logging.info(
+            f"Saved the graph visualization in `{file_name}`. It can be opened using the ModelExplorer."
+        )
+        visualize_with_clusters(exec_prog.exported_program(), file_name)

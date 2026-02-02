@@ -6,7 +6,14 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -39,7 +46,7 @@ def _get_gelu_ops(op) -> tuple:
     raise RuntimeError(f"Can't get GeLU decomposition ops for op {op}")
 
 
-class DecomposeGeluPass(ExportPass):
+class DecomposeGeluPass(ArmPass):
     """
     This pass decomposes the GELU operator into primitive ops.
     Aiming to adhere closely to the reference implementations built into
@@ -79,10 +86,22 @@ class DecomposeGeluPass(ExportPass):
         %op7 = mul(%op6, %FULL_0_5)
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ComputeConstantOpsAOTPass,
+        InsertTableOpsPass,
+        MatchArgDtypePass,
+        MatchArgRanksPass,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in torch_gelu + edge_gelu:
+            return super().call_operator(op, args, kwargs, meta)
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 
         full_op, add_op, mul_op, tanh_op, erf_op = _get_gelu_ops(op)

@@ -5,11 +5,16 @@
 
 from typing import Set, Type
 
+from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
+
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class ConvertFullLikeToFullPass(ExportPass):
+class ConvertFullLikeToFullPass(ArmPass):
     """As per the full_like pytorch documentation,
     `torch.full_like(input, fill_value)` is equivalent to
     `torch.full(input.size(),
@@ -21,7 +26,7 @@ class ConvertFullLikeToFullPass(ExportPass):
     Skip layout and device since it's not relevant for our backend.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in [

@@ -23,6 +23,11 @@ using ::executorch::runtime::getLeadingDims;
   _(uint8_t, Byte)                           \
   _(int8_t, Char)
 
+#define ET_FORALL_CADENCE_QUANTIZED_TYPES_WITH_INT16(_) \
+  _(uint8_t, Byte)                                      \
+  _(int8_t, Char)                                       \
+  _(int16_t, Short)
+
 inline __attribute__((always_inline)) void linear_(
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& weight,
@@ -54,6 +59,42 @@ inline __attribute__((always_inline)) void linear_(
     }
   }
 }
+
+void quantized_conv2d_nchw_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    const ::executorch::aten::Tensor& weight,
+    const ::executorch::aten::Tensor& bias,
+    ::executorch::aten::IntArrayRef stride,
+    ::executorch::aten::IntArrayRef padding,
+    ::executorch::aten::IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    const ::executorch::aten::Tensor& weight_zero_point,
+    const ::executorch::aten::Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    const ::executorch::aten::Tensor& out_multiplier,
+    const ::executorch::aten::Tensor& out_shift,
+    ::executorch::aten::Tensor& out);
+
+void quantized_conv2d_nhwc_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    const ::executorch::aten::Tensor& weight,
+    const ::executorch::aten::Tensor& bias,
+    ::executorch::aten::IntArrayRef stride,
+    ::executorch::aten::IntArrayRef padding,
+    ::executorch::aten::IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    const ::executorch::aten::Tensor& weight_zero_point,
+    const ::executorch::aten::Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    const ::executorch::aten::Tensor& out_multiplier,
+    const ::executorch::aten::Tensor& out_shift,
+    ::executorch::aten::Tensor& out);
 
 } // namespace native
 } // namespace vision

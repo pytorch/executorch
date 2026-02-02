@@ -14,37 +14,42 @@ import evaluate
 import numpy as np
 import torch
 
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_masked_language_model_dataset,
     make_output_dir,
+    make_quantizer,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
     SimpleADB,
 )
 from transformers import AutoModelForMaskedLM, AutoTokenizer
-
-
-def get_instance(args):
-    module = AutoModelForMaskedLM.from_pretrained("xlm-roberta-base").eval()
-    return module
+from transformers.masking_utils import create_bidirectional_mask
 
 
 def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     os.makedirs(args.artifact, exist_ok=True)
-
-    tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
     data_size = 100
+    model_name = "xlm-roberta-base"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    module = AutoModelForMaskedLM.from_pretrained(model_name).eval()
+    pte_filename = "roberta_qnn_q16"
+
     if args.ci:
         random_ids = torch.randint(low=0, high=100, size=(1, 100), dtype=torch.int32)
-        attention_mask = torch.ones((1, 100), dtype=torch.float32)
+        attention_mask = create_bidirectional_mask(
+            config=module.config,
+            input_embeds=module.roberta.embeddings(random_ids),
+            attention_mask=torch.zeros((1, 100), dtype=torch.float32),
+        )
         inputs = [
             (
                 random_ids,
@@ -58,24 +63,39 @@ def main(args):
         inputs, targets = get_masked_language_model_dataset(
             args.dataset, tokenizer, data_size
         )
-
-    # Get the Roberta model.
-    model = get_instance(args)
-    pte_filename = "roberta_qnn_q16"
+        inputs = [
+            (
+                input_ids,
+                create_bidirectional_mask(
+                    config=module.config,
+                    input_embeds=module.roberta.embeddings(input_ids),
+                    attention_mask=attention_mask,
+                ),
+            )
+            for input_ids, attention_mask in inputs
+        ]
 
     # lower to QNN
-    passes_job = get_capture_program_passes()
+    backend = get_backend_type(args.backend)
+    quantizer = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
+            quant_dtype=QuantDtype.use_16a8w,
+            eps=2**-20,
+        ),
+    }[backend]
     build_executorch_binary(
-        model,
+        module,
         inputs[0],
         args.model,
         f"{args.artifact}/{pte_filename}",
         dataset=inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_16a8w,
-        passes_job=passes_job,
+        backend=backend,
+        custom_quantizer=quantizer,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -92,6 +112,9 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
@@ -106,12 +129,16 @@ def main(args):
         max_length=inputs[0][0].shape[1],
     )
     sample_input["input_ids"] = sample_input["input_ids"].to(torch.int32)
-    sample_input["attention_mask"] = sample_input["attention_mask"].to(torch.float32)
+    sample_input["attention_mask"] = create_bidirectional_mask(
+        config=module.config,
+        input_embeds=module.roberta.embeddings(sample_input["input_ids"]),
+        attention_mask=sample_input["attention_mask"],
+    )
     sample_input = tuple(sample_input.values())
-    golden = model(*sample_input)[0]
+    golden = module(*sample_input)[0]
     adb.push(inputs=[sample_input])
     adb.execute()
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     print(f"input: {tokenizer.batch_decode(sample_input[0])}")
     print(f"golden output: {tokenizer.batch_decode(golden.argmax(axis=2))}")
@@ -123,7 +150,7 @@ def main(args):
     # accuracy analysis
     adb.push(inputs=inputs)
     adb.execute()
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
     goldens, predictions = [], []
     for i in range(len(inputs)):
         indice = [i for i, x in enumerate(targets[i]) if x != -100]

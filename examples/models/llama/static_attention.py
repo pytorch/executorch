@@ -1,3 +1,4 @@
+import copy
 import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
@@ -239,7 +240,7 @@ class StaticAttentionIOManager:
 
     def __init__(
         self,
-        config: ModelArgs,
+        config_or_model: Union[ModelArgs, nn.Module],
         input_len: int,
         cache_lens: Union[int, List[int]],
         batch_size: int = 1,
@@ -248,8 +249,10 @@ class StaticAttentionIOManager:
         mask_val: float = float("-inf"),
     ):
         if isinstance(cache_lens, int):
-            cache_lens = [cache_lens] * config.n_layers
-        assert len(cache_lens) == config.n_layers
+            cache_lens_dict = defaultdict(lambda x=cache_lens: x)
+            cache_lens = [cache_lens]
+        else:
+            cache_lens_dict = dict(enumerate(cache_lens))
 
         self._masks = {
             cl: StaticAttentionMask(
@@ -258,8 +261,26 @@ class StaticAttentionIOManager:
             for cl in set(cache_lens)
         }
 
+        if isinstance(config_or_model, ModelArgs):
+            self._from_config(config_or_model, cache_lens_dict, batch_size, dtype)
+        else:
+            self._from_model(config_or_model, cache_lens_dict, batch_size, dtype)
+
+        self.input_len = input_len
+        self.style = style
+        self.mask_val = mask_val
+        self.pos = 0
+        self.cache_full = False
+
+    def _from_config(
+        self,
+        config: ModelArgs,
+        cache_lens: Dict[int, int],
+        batch_size: int,
+        dtype: torch.dtype,
+    ):
         rope = Rope(config)
-        freqs = rope.get_freqs(None, config.max_seq_len)
+        freqs = rope.get_freqs(None, config.max_context_len)
         self.freqs_cos = freqs[0].to(dtype)
         self.freqs_sin = freqs[1].to(dtype)
 
@@ -297,6 +318,7 @@ class StaticAttentionIOManager:
                     dtype=dtype,
                 )
                 for layer_id in range(config.n_layers)
+                if cache_lens[layer_id] > 0
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, 0): torch.zeros(
@@ -307,15 +329,66 @@ class StaticAttentionIOManager:
                     dtype=dtype,
                 )
                 for layer_id in range(config.n_layers)
+                if cache_lens[layer_id] > 0
             }
 
-        self.config = config
-        self.input_len = input_len
-        self.cache_lens = cache_lens
-        self.style = style
-        self.mask_val = mask_val
-        self.pos = 0
-        self.cache_full = False
+        self.generate_full_logits = config.generate_full_logits
+
+    def _from_model(
+        self,
+        config: nn.Module,
+        cache_lens: Dict[int, int],
+        batch_size: int,
+        dtype: torch.dtype,
+    ):
+        static_attentions = []
+        for module in config.modules():
+            if isinstance(module, StaticAttention):
+                static_attentions.append(module)
+
+        if not static_attentions:
+            raise ValueError("No StaticAttention modules found in the provided module")
+
+        config = copy.copy(static_attentions[0].rope.config)
+        config.use_hf_rope = static_attentions[0].rope.use_hf_rope
+        rope = Rope(config)
+        freqs = rope.get_freqs(None, config.max_context_len)
+        self.freqs_cos = freqs[0].to(dtype)
+        self.freqs_sin = freqs[1].to(dtype)
+
+        self.k_caches = {}
+        self.v_caches = {}
+        for attn in static_attentions:
+            if attn.split_mha:
+                for head_id in range(attn.n_heads):
+                    cache_key = StaticKVCache.calculate_cache_key(
+                        attn.layer_id, head_id
+                    )
+                    for cache in (self.k_caches, self.v_caches):
+                        assert (
+                            cache_key not in cache
+                        ), "Found StaticAttention modules with duplicated layer_id"
+                        cache[cache_key] = torch.zeros(
+                            batch_size,
+                            cache_lens[attn.layer_id],
+                            attn.head_dim,
+                            dtype=dtype,
+                        )
+            else:
+                cache_key = StaticKVCache.calculate_cache_key(attn.layer_id, 0)
+                for cache in (self.k_caches, self.v_caches):
+                    assert (
+                        cache_key not in cache
+                    ), "Found StaticAttention modules with duplicated layer_id"
+                    cache[cache_key] = torch.zeros(
+                        batch_size,
+                        attn.n_kv_heads,
+                        cache_lens[attn.layer_id],
+                        attn.head_dim,
+                        dtype=dtype,
+                    )
+
+        self.generate_full_logits = True
 
     @property
     def masks(self):
@@ -350,13 +423,13 @@ class StaticAttentionIOManager:
         all_logits = None
         for i in range(0, tokens.size(1), self.input_len):
             logits = self._run_once(model, tokens[:, i : i + self.input_len])[0]
-            if self.config.generate_full_logits:
+            if self.generate_full_logits:
                 if all_logits is None:
                     all_logits = logits
                 else:
                     all_logits = torch.cat([all_logits, logits], dim=1)
 
-        if self.config.generate_full_logits:
+        if self.generate_full_logits:
             return all_logits[:, : tokens.size(1), :]
 
         return logits
@@ -383,7 +456,10 @@ class StaticAttentionIOManager:
         new_tokens = [init_token]
         for _ in range(n):
             y = self._run_once(model, new_tokens[-1:])[0]
-            new_tokens.append(y[:, :1, ...].argmax().item())
+            if self.generate_full_logits:
+                new_tokens.append(y[:, :1, ...].argmax().item())
+            else:
+                new_tokens.append(y.argmax().item())
             if new_tokens[-1] in stop_tokens:
                 break
 
@@ -534,6 +610,12 @@ class StaticAttentionIOManager:
             freqs_cos_override = self.freqs_cos[self.pos : self.pos + self.input_len]
         if freqs_sin_override is None:
             freqs_sin_override = self.freqs_sin[self.pos : self.pos + self.input_len]
+        if not self.generate_full_logits:
+            extra_attn_options = {
+                "last_valid_token_pos": torch.tensor([n_tokens - 1], dtype=torch.long)
+            }
+        else:
+            extra_attn_options = {}
         y, attn_updates = model(
             tokens,
             {
@@ -541,6 +623,7 @@ class StaticAttentionIOManager:
                 "freqs_cos_override": freqs_cos_override,
                 "freqs_sin_override": freqs_sin_override,
                 "in_cache_state": (self.k_caches, self.v_caches),
+                **extra_attn_options,
             },
         )
         non_padded_len = non_padded_len or n_tokens
@@ -549,6 +632,8 @@ class StaticAttentionIOManager:
         return y, attn_updates
 
     def _update_states(self, attn_updates, update_pos, update_len):
+        if attn_updates["out_cache_state"] is None:
+            return
         for mask in self._masks.values():
             mask.unmask(update_len)
         k_cache_updates, v_cache_updates = attn_updates["out_cache_state"]
@@ -635,9 +720,10 @@ class StaticAttentionIOManager:
 
 
 class _Rope(nn.Module):
-    def __init__(self, use_hf_rope):
+    def __init__(self, config: ModelArgs):
         super().__init__()
-        self.use_hf_rope = use_hf_rope
+        self.config = config
+        self.use_hf_rope = config.use_hf_rope
 
     def forward(
         self, x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
@@ -693,6 +779,10 @@ class StaticAttention(Attention):
         self.split_mha = split_mha
         self.use_conv2d = False
         self.enable_qnn_masked_softmax = kwargs.get("enable_qnn_masked_softmax", False)
+
+        # This fixes numerics on iOS26 on Core ML
+        # Possibly disable in future, depending on bug fixes in Core ML runtime
+        self.decompose_sdpa_in_mha: bool = kwargs.get("decompose_sdpa_in_mha", False)
 
         if self.split_mha:
             self.wqs = nn.ModuleList(
@@ -753,7 +843,8 @@ class StaticAttention(Attention):
             self.v_caches = nn.ModuleList([StaticVCache(layer_id, 0)])
 
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
-        self.rope = _Rope(rope.params.use_hf_rope)
+        self.rope = _Rope(rope.params)
+        self.layer_id = layer_id
 
         if self.use_qk_norm:
             self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
@@ -761,6 +852,39 @@ class StaticAttention(Attention):
         else:
             self.q_norm = torch.nn.Identity()
             self.k_norm = torch.nn.Identity()
+
+    @classmethod
+    def from_attention_mha(
+        cls,
+        other: AttentionMHA,
+        split_mha: bool = True,
+        rms_norm_class=torch.nn.RMSNorm,
+        **kwargs: Any,
+    ) -> "StaticAttention":
+        config = ModelArgs(
+            dim=other.dim,
+            n_layers=1,  # Not used in attention layer
+            n_heads=other.n_heads,
+            n_kv_heads=other.n_kv_heads,
+            head_dim=other.head_dim,
+            max_batch_size=other.max_batch_size,
+            max_context_len=other.max_context_len,
+            attention_qkv_bias=other.attention_qkv_bias,
+            use_qk_norm=other.use_qk_norm,
+            qk_norm_before_rope=other.qk_norm_before_rope,
+            norm_eps=other.q_norm_fn.eps if other.use_qk_norm else 1e-5,
+        )
+
+        instance = cls(
+            config=config,
+            layer_id=other.layer_id,
+            rope=other.rope,
+            split_mha=split_mha,
+            **kwargs,
+        )
+        instance.load_weights_from_attention_mha(other, rms_norm_class=rms_norm_class)
+
+        return instance
 
     def forward(
         self,
@@ -919,16 +1043,56 @@ class StaticAttention(Attention):
         k, out_cache_state = self.k_caches[0].update(k, in_cache_state, out_cache_state)
         v, out_cache_state = self.v_caches[0].update(v, in_cache_state, out_cache_state)
 
-        if self.n_rep > 1:
-            k = k.repeat_interleave(self.n_rep, dim=1)
-            v = v.repeat_interleave(self.n_rep, dim=1)
-
         mask = None
         masks = kwargs.get("masks")
         if masks:
             cache_len = k.size(-2) - seq_len
             mask = masks[cache_len]
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+
+        if not self.decompose_sdpa_in_mha:
+            if self.n_rep > 1:
+                k = k.repeat_interleave(self.n_rep, dim=1)
+                v = v.repeat_interleave(self.n_rep, dim=1)
+            y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+        else:
+            # We remove bsz dim to keep matmul's on 4D tensors
+            # Core ML sometimes fails at runtime when given 5D tensors
+            assert bsz == 1, "Batch size > 1 not supported yet"
+
+            n_kv = self.n_kv_heads
+            n_rep = self.n_rep
+            D = self.head_dim
+
+            # Explicitly track lengths; they are NOT necessarily equal.
+            Tq = q.size(-2)  # query length (current step/window), e.g. 64
+            Tk = k.size(-2)  # key/value length (cache length), e.g. 2048
+
+            # Group Q to match KV layout
+            # q: (bsz=1, n_heads, Tq, D), with n_heads = n_kv * n_rep
+            # 1 * n_heads * Tq * D == n_kv * n_rep * Tq * D
+            # q_grouped: (n_kv, n_rep, Tq, D)
+            q_grouped = q.view(n_kv, n_rep, Tq, D)
+
+            # Prepare K for grouped KV matmul
+            # k: (1, n_kv, Tk, d) -> (n_kv, 1, Tk, D)
+            k_grouped = k.view(n_kv, 1, Tk, D)
+
+            # (n_kv, n_rep, Tq, Tk)
+            attn_grouped = q_grouped @ k_grouped.transpose(-2, -1)
+            attn_grouped = attn_grouped * self.inv_scale
+
+            # Ungroup, add mask, and regroup
+            attn_grouped = attn_grouped.view(1, self.n_heads, Tq, Tk)
+            attn_grouped = attn_grouped + mask
+            attn_grouped = F.softmax(attn_grouped, dim=-1)
+            attn_grouped = attn_grouped.view(n_kv, n_rep, Tq, Tk)
+
+            # Group v
+            v_grouped = v.view(n_kv, 1, Tk, D)
+            y_grouped = attn_grouped @ v_grouped
+
+            # Ungroup y
+            y = y_grouped.view(1, self.n_heads, Tq, D)
 
         return y.transpose(1, 2).contiguous().view(bsz, seq_len, -1), out_cache_state
 
@@ -1057,3 +1221,37 @@ class StaticAttention(Attention):
 class StaticAttentionMHA(StaticAttention):
     def __init__(self, config: ModelArgs, layer_id: int, rope: Rope, **kwargs: Any):
         super().__init__(config, layer_id, rope, split_mha=False, **kwargs)
+
+
+def transform_attention_mha_to_static_attention(
+    model: nn.Module,
+    split_mha: bool = True,
+    inplace: bool = True,
+    use_conv2d: bool = False,
+    use_hf_rope: bool = False,
+    **kwargs: Any,
+) -> nn.Module:
+    if not inplace:
+        import copy
+
+        model = copy.deepcopy(model)
+
+    def helper(m):
+        for name, child in list(m.named_children()):
+            if isinstance(child, AttentionMHA):
+                static_attn = StaticAttention.from_attention_mha(
+                    child, split_mha=split_mha, **kwargs
+                )
+                # Note: HF RoPE needs to be applied before linear to conv2d
+                if use_hf_rope:
+                    static_attn.adopt_hf_rope()
+                if use_conv2d:
+                    static_attn.linear_to_conv2d()
+
+                setattr(m, name, static_attn)
+            else:
+                helper(child)
+
+        return m
+
+    return helper(model)

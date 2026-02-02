@@ -3,13 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
 
 import logging
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -22,7 +21,7 @@ from executorch.exir.pass_base import ExportPass, PassResult
 logger = logging.getLogger(__name__)
 
 
-class ConvertInt64OutputOpsToInt32Pass(ExportPass):
+class ConvertInt64OutputOpsToInt32Pass(ArmPass):
     """
     Rewrites or removes operations that produce int64 outputs, converting them
     to int32 where possible.

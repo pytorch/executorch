@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -20,19 +21,26 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 Tensor& quantized_add_out(
     KernelRuntimeContext& context,
     const Tensor& input1_int8,
-    const Scalar& input1_zero_point,
-    const Scalar& input1_multiplier,
-    const Scalar& input1_shift,
+    const int64_t input1_zero_point,
+    const int64_t input1_multiplier,
+    const int64_t input1_shift,
     const Tensor& input2_int8,
-    const Scalar& input2_zero_point,
-    const Scalar& input2_multiplier,
-    const Scalar& input2_shift,
-    const Scalar& output_zero_point,
-    const Scalar& output_multiplier,
-    const Scalar& output_shift,
+    const int64_t input2_zero_point,
+    const int64_t input2_multiplier,
+    const int64_t input2_shift,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
     Tensor& out) {
   // Validate tensor types and dim order
-  validate_cmsis_nn_tensor_requirements(input1_int8, input2_int8, out);
+  bool channel_broadcast = is_channel_broadcast(input1_int8, input2_int8);
+  validate_cmsis_nn_tensor_requirements(
+      input1_int8,
+      input2_int8,
+      out,
+      ScalarType::Char,
+      /*require_channels_last=*/channel_broadcast,
+      /*require_same_sizes=*/!channel_broadcast);
 
   // Validate quantization parameters
   validate_quantization_params(
@@ -46,13 +54,6 @@ Tensor& quantized_add_out(
       output_multiplier,
       output_shift,
       out);
-
-  // Broadcast if needed
-  auto result = resize_to_broadcast_target_size(input1_int8, input2_int8, out);
-  ET_CHECK_MSG(
-      (result == Error::Ok),
-      "Failed to resize output tensor. Status: [%d]",
-      result);
 
   ET_LOG(
       Info,
@@ -68,8 +69,10 @@ Tensor& quantized_add_out(
   int32_t out_zp = extractScalarToInt32(output_zero_point);
   int32_t output_mult = extractScalarToInt32(output_multiplier);
   int output_shift_val = extractScalarToInt(output_shift);
+  int8_t* input1_ptr = input1_int8.data_ptr<int8_t>();
+  int8_t* input2_ptr = input2_int8.data_ptr<int8_t>();
 
-  // Left shift to maximize precision (tune as needed)
+  // Left shift to maximize precision
   const int32_t left_shift = 20;
   const int32_t activation_min = std::numeric_limits<int8_t>::min();
   const int32_t activation_max = std::numeric_limits<int8_t>::max();
@@ -84,66 +87,64 @@ Tensor& quantized_add_out(
       output_mult,
       output_shift_val);
 
-  // Call CMSIS-NN kernel with precomputed parameters
-  arm_cmsis_nn_status status = arm_elementwise_add_s8(
-      input1_int8.const_data_ptr<int8_t>(),
-      input2_int8.const_data_ptr<int8_t>(),
-      static_cast<int32_t>(zp1),
-      input1_mult,
-      input1_shift_val,
-      static_cast<int32_t>(zp2),
-      input2_mult,
-      input2_shift_val,
-      left_shift,
-      out.mutable_data_ptr<int8_t>(),
-      static_cast<int32_t>(out_zp),
-      output_mult,
-      output_shift_val,
-      static_cast<int32_t>(out.numel()),
-      activation_min,
-      activation_max);
+  // Note 1: The CMSIS-NN kernel implementation uses offsets which are always
+  // added to the data, whereas zero_points are subtracted when dequantizing
+  // (for the inputs) and added when quantizing (for the  output). Hence the
+  // negative signs required here.
 
-  if (status != ARM_CMSIS_NN_SUCCESS) {
-    ET_LOG(
-        Error,
-        "quantized_add_out: arm_elementwise_add_s8 failed with status [%d]",
-        status);
+  // Note 2: It is not possible to perform the same rewrite as for mul for
+  // addition. To preserve precision when rescaling the inputs, they are first
+  // upscaled as much as possible, Hence the left_shift parameter required here.
 
-    context.fail(Error::Internal); // Fail the execution context
-    return out;
+  int32_t adds_per_loop = 0;
+  if (channel_broadcast) {
+    if (input1_int8.numel() < input2_int8.numel()) {
+      std::swap<int32_t>(zp1, zp2);
+      std::swap<int32_t>(input1_mult, input2_mult);
+      std::swap<int>(input1_shift_val, input2_shift_val);
+      std::swap<int8_t*>(input1_ptr, input2_ptr);
+    }
+    adds_per_loop = input1_int8.size(1);
+  } else {
+    adds_per_loop = out.numel();
+  }
+
+  for (int32_t broadcast_offset = 0; broadcast_offset < out.numel();
+       broadcast_offset += adds_per_loop) {
+    // Call CMSIS-NN kernel with precomputed parameters
+    arm_cmsis_nn_status status = arm_elementwise_add_s8(
+        input1_ptr + broadcast_offset,
+        input2_ptr,
+        -static_cast<int32_t>(zp1),
+        input1_mult,
+        input1_shift_val,
+        -static_cast<int32_t>(zp2),
+        input2_mult,
+        input2_shift_val,
+        left_shift,
+        out.mutable_data_ptr<int8_t>() + broadcast_offset,
+        static_cast<int32_t>(out_zp),
+        output_mult,
+        output_shift_val,
+        activation_min,
+        activation_max,
+        adds_per_loop);
+
+    if (status != ARM_CMSIS_NN_SUCCESS) {
+      ET_LOG(
+          Error,
+          "quantized_add_out: arm_elementwise_add_s8 failed with status [%d]",
+          status);
+
+      context.fail(Error::Internal); // Fail the execution context
+      return out;
+    }
   }
   ET_LOG(
       Info,
       "quantized_add_out: Successfully completed with AoT-computed parameters!");
 
   return out;
-}
-
-// Stub Implementation: Non-out variant for compatibility (functional variant)
-// EXIR/ExecuTorch runs an out-variant pass that converts
-// .default operations to .out variants before memory planning.
-// In the pass we are calling quantized_add's default variant
-// but ExecuTorch's kernel dispatch mechanism will end up calling the out
-// variant. This stub is to make sure that compiler doesn't complain.
-Tensor quantized_add(
-    KernelRuntimeContext& context,
-    const Tensor& input1_int8,
-    const Scalar& input1_zero_point,
-    const Scalar& input1_multiplier,
-    const Scalar& input1_shift,
-    const Tensor& input2_int8,
-    const Scalar& input2_zero_point,
-    const Scalar& input2_multiplier,
-    const Scalar& input2_shift,
-    const Scalar& output_zero_point,
-    const Scalar& output_multiplier,
-    const Scalar& output_shift) {
-  ET_LOG(Info, "quantized_add: input1_int8.sizes() = %zu", input1_int8.sizes());
-
-  // Crash on Debug builds if invoked
-  assert(False);
-  // This is to make sure compiler doesn't complain.
-  return const_cast<Tensor&>(input1_int8);
 }
 
 } // namespace native

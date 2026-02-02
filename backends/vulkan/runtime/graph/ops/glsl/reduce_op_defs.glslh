@@ -1,0 +1,96 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef REDUCE_OP_DEFS_GLSLH
+#define REDUCE_OP_DEFS_GLSLH
+
+struct Accum {
+  ACCUM_T val;
+  uint idx;
+  uint count;
+};
+
+void init_accum(out Accum accum, T val, uint idx) {
+  accum.val = ACCUM_T(val);
+  accum.idx = idx;
+  accum.count = 1;
+}
+
+void init_accum_zero(out Accum accum) {
+  accum.val = T(0);
+  accum.idx = 0;
+  accum.count = 0;
+}
+
+// Sum / Mean
+
+void update_accum_sum(inout Accum accum, T val, uint idx) {
+  accum.val += ACCUM_T(val);
+  accum.count += 1;
+}
+
+void merge_accum_sum(inout Accum accum, const Accum other) {
+  accum.val += other.val;
+  accum.count += other.count;
+}
+
+void postprocess_accum_mean(inout Accum accum) {
+  accum.val /= T(accum.count);
+}
+
+// Amax (maximum value)
+
+void update_accum_amax(inout Accum accum, T in_val, uint idx) {
+  ACCUM_T val = ACCUM_T(in_val);
+  if (val > accum.val) {
+    accum.val = val;
+    accum.idx = idx;
+  }
+  // For equivalence, select the lower index
+  if (val == accum.val && idx < accum.idx) {
+    accum.idx = idx;
+  }
+}
+
+void merge_accum_amax(inout Accum accum, const Accum other) {
+  if (other.val > accum.val) {
+    accum.val = other.val;
+    accum.idx = other.idx;
+  }
+  // For equivalence, select the lower index
+  if (other.val == accum.val && other.idx < accum.idx) {
+    accum.idx = other.idx;
+  }
+}
+
+// Amin (minimum value)
+
+void update_accum_amin(inout Accum accum, T in_val, uint idx) {
+  ACCUM_T val = ACCUM_T(in_val);
+  if (val < accum.val) {
+    accum.val = val;
+    accum.idx = idx;
+  }
+  // For equivalence, select the lower index
+  if (val == accum.val && idx < accum.idx) {
+    accum.idx = idx;
+  }
+}
+
+void merge_accum_amin(inout Accum accum, const Accum other) {
+  if (other.count > 0 && (accum.count == 0 || other.val < accum.val)) {
+    accum.val = other.val;
+    accum.idx = other.idx;
+  }
+  // For equivalence, select the lower index
+  if (other.val == accum.val && other.idx < accum.idx) {
+    accum.idx = other.idx;
+  }
+}
+
+#endif // REDUCE_OP_DEFS_GLSLH

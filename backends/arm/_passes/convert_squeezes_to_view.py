@@ -1,23 +1,25 @@
 # Copyright 2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Set, Type
 
+from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.fuse_view_copy_transform_pass import (
+    FuseViewCopyTransformPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class ConvertSqueezesToViewPass(ExportPass):
+class ConvertSqueezesToViewPass(ArmPass):
     """
     Replaces squeeze/unsqueeze operators with view. These are simply special cases of the view op, so removing them gives us less cases to handle in the node visitiors.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {FuseViewCopyTransformPass}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in [

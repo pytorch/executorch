@@ -72,7 +72,7 @@ Tensor& repeat_interleave_Tensor_out(
 
   int64_t repeats_sum = 0;
 
-  constexpr auto name = "repeat_interleave.Tensor_out";
+  static constexpr auto name = "repeat_interleave.Tensor_out";
 
   ET_SWITCH_TWO_TYPES(Int, Long, repeats.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* repeats_data = repeats.const_data_ptr<CTYPE>();

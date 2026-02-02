@@ -5,29 +5,22 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-from typing import Any, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
-
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    VkDataType,
     VkMemoryLayout,
     VkStorageType,
 )
-
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
-
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
-
 from executorch.exir.tensor import TensorSpec
-
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
-
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorConverter
-
 from torch.export import ExportedProgram
-
 from torch.export.exported_program import InputKind
 from torch.export.graph_signature import TensorArgument
 
@@ -48,6 +41,17 @@ _Q_OPS = {
     "quantize_per_channel.default",
     "quantize_per_token.default",
     "quantize_affine.default",
+}
+
+_VULKAN_DTYPES: Dict[torch.dtype, VkDataType] = {
+    torch.bool: VkDataType.BOOL,
+    torch.uint8: VkDataType.UINT8,
+    torch.int8: VkDataType.INT8,
+    torch.int32: VkDataType.INT32,
+    torch.int64: VkDataType.INT64,
+    torch.float16: VkDataType.FLOAT16,
+    torch.float32: VkDataType.FLOAT32,
+    torch.float64: VkDataType.FLOAT64,
 }
 
 ##
@@ -128,7 +132,7 @@ def is_param_node(program: ExportedProgram, node: torch.fx.Node) -> bool:
         is_get_attr_node(node)
         or is_param(program, node)
         or is_buffer(program, node)
-        or is_constant(program, node)
+        or is_lifted_tensor_constant(program, node)
     )
 
 
@@ -206,6 +210,8 @@ def is_tensor_arg_node(node: Any) -> bool:
     if isinstance(node, torch.fx.Node):
         return is_tensor_node(node)
     elif isinstance(node, (list, tuple)):
+        if len(node) == 0:
+            return False
         return all(is_tensor_node(n) for n in node)
 
     return False
@@ -243,6 +249,73 @@ def num_tensors_in_node(node: torch.fx.Node) -> int:
     return 0
 
 
+def get_vk_datatype(torch_dtype: torch.dtype) -> VkDataType:
+    """
+    Returns Vulkan dtype corresponding to torch dtype
+    """
+    if torch_dtype not in _VULKAN_DTYPES:
+        raise AssertionError(f"Invalid dtype for vulkan_preprocess ({torch_dtype})")
+
+    return _VULKAN_DTYPES[torch_dtype]
+
+
+def output_dtypes_are_supported(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the output of the given tensor node has dtype that
+    is supported by the Vulkan backend.
+    """
+    if not is_tensor_node(node):
+        return True
+
+    # The val metadata must exist after previous check
+    node_val = node.meta.get("val", None)
+    assert node_val is not None
+
+    # Get all the tensor dtypes in the node
+    tensor_dtypes = []
+    if isinstance(node_val, FakeTensor):
+        tensor_dtypes = [node_val.dtype]
+    elif isinstance(node_val, list) or isinstance(node_val, tuple):
+        tensor_dtypes = [x.dtype for x in node_val]
+
+    # Verify that all the tensor_dtypes are in vk_torch_dtypes
+    return all(dtype in _VULKAN_DTYPES for dtype in tensor_dtypes)
+
+
+def input_dtypes_are_supported(node: torch.fx.Node) -> bool:
+    """
+    Returns true if all the inputs to the given tensor node have dtype that
+    is supported by the Vulkan backend.
+    """
+    if not is_tensor_node(node):
+        return True
+
+    # Iterate over all the args of the node
+    for arg_node in node.args:
+        # The arg could be a single node, or a list (e.g., first arg of cat)
+        if isinstance(arg_node, torch.fx.Node):
+            if not output_dtypes_are_supported(arg_node):
+                return False
+        elif isinstance(arg_node, (list, tuple)):
+            if not all(output_dtypes_are_supported(x) for x in arg_node):
+                return False
+
+    return True
+
+
+def io_dtypes_are_supported(node: torch.fx.Node) -> bool:
+    """
+    Returns true if all the inputs and outputs of the given tensor node have
+    dtype that is supported by the Vulkan backend.
+    """
+    if not output_dtypes_are_supported(node):
+        return False
+    if not input_dtypes_are_supported(node):
+        return False
+
+    return True
+
+
 def tensor_node_is_bool(node: torch.fx.Node) -> bool:
     """
     Returns true if a given node contains a tensor with bool dtype
@@ -254,6 +327,47 @@ def tensor_node_is_bool(node: torch.fx.Node) -> bool:
             if isinstance(fake_tensor, FakeTensor):
                 if fake_tensor.dtype == torch.bool:
                     return True
+    return False
+
+
+def ndim_of(node: Any) -> Optional[int]:
+    """
+    Returns the number of dimensions of the tensor produced by the given node
+    """
+    if not is_single_tensor_node(node):
+        return None
+
+    return node.meta["val"].ndim
+
+
+def is_unsqueezed_vector(node: torch.fx.Node) -> bool:
+    """
+    Returns True if the node's tensor has all dimensions equal to 1 except for the last dimension.
+    """
+    if not is_single_tensor_node(node):
+        return False
+
+    tensor = node.meta["val"]
+    assert isinstance(tensor, FakeTensor)
+
+    if len(tensor.shape) < 1:
+        return False
+    # All dims except last are 1, last can be any size
+    return all(dim == 1 for dim in tensor.shape[:-1])
+
+
+def op_contains_bool_tensor(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the operator used to compute the given node contains a bool tensor
+    """
+    if is_tensor_node(node) and tensor_node_is_bool(node):
+        return True
+
+    for arg_node in node.args:
+        # pyre-ignore[6]
+        if is_tensor_node(arg_node) and tensor_node_is_bool(arg_node):
+            return True
+
     return False
 
 
@@ -330,6 +444,18 @@ def find_quant_user(node: torch.fx.Node) -> Optional[torch.fx.Node]:
     return None
 
 
+def node_has_target(node: Any, target: str):
+    if not hasattr(node, "target"):
+        return False
+
+    if isinstance(node.target, str):
+        return node.target == target
+    elif hasattr(node.target, "name"):
+        return node.target.name() == target
+
+    return False
+
+
 ##
 ## Memory Layout, Storage Type Determination
 ##
@@ -344,10 +470,25 @@ all_storage_types: Set[VkStorageType] = {
     VkStorageType.TEXTURE_3D,
 }
 
+# Memory layouts available to non-quantized tensors
 all_memory_layouts: Set[VkMemoryLayout] = {
     VkMemoryLayout.TENSOR_WIDTH_PACKED,
     VkMemoryLayout.TENSOR_HEIGHT_PACKED,
     VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+}
+
+# Memory layouts available to quantized tensors
+all_quantized_memory_layouts: Set[VkMemoryLayout] = {
+    VkMemoryLayout.PACKED_INT8_4W4C,
+    VkMemoryLayout.PACKED_INT8_4H4W,
+}
+
+universal_memory_layout_set: Set[VkMemoryLayout] = {
+    VkMemoryLayout.TENSOR_WIDTH_PACKED,
+    VkMemoryLayout.TENSOR_HEIGHT_PACKED,
+    VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+    VkMemoryLayout.PACKED_INT8_4W4C,
+    VkMemoryLayout.PACKED_INT8_4H4W,
 }
 
 MemoryLayoutSet = Set[VkMemoryLayout]
@@ -400,6 +541,12 @@ def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageEx
         height = (height + 3) // 4
     elif layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED:
         channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4W4C:
+        width = (width + 3) // 4
+        channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4H4W:
+        height = (height + 3) // 4
+        width = (width + 3) // 4
     else:
         raise RuntimeError(f"Unsupported memory layout {layout}")
 
@@ -558,6 +705,16 @@ class TensorRepSet:
             self.valid_texture_layouts & other.valid_texture_layouts,
         )
 
+    def make_union(self, other: "TensorRepSet") -> "TensorRepSet":
+        """
+        Merge this TensorRepSet with another TensorRepSet, returning a new TensorRepSet
+        with the union of the two.
+        """
+        return TensorRepSet(
+            self.valid_buffer_layouts | other.valid_buffer_layouts,
+            self.valid_texture_layouts | other.valid_texture_layouts,
+        )
+
     def is_compatible(self, storage: TensorRepr) -> bool:
         """
         Check if this TensorRepr is compatible with the given TensorRepSet.
@@ -683,14 +840,12 @@ def make_filtered_tensor_repset(
     if len(tensor_val.shape) > 4:
         return TensorRepSet(tensor_repset.valid_buffer_layouts, set())
 
-    # Bool tensors are currently not supported
-    if tensor_val.dtype == torch.bool:
-        return NO_STORAGE
-
     return TensorRepSet(tensor_repset.valid_buffer_layouts, valid_texture_layouts)
 
 
 ## Convenience TensorRepSet definitions
+
+# Only includes memory layouts that can be used by non-quantized tensors
 
 CONTIGUOUS_ANY = TensorRepSet(
     {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_WIDTH_PACKED}
@@ -698,13 +853,31 @@ CONTIGUOUS_ANY = TensorRepSet(
 CONTIGUOUS_BUFFER = TensorRepSet({VkMemoryLayout.TENSOR_WIDTH_PACKED}, set())
 
 WIDTH_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_WIDTH_PACKED})
+HEIGHT_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_HEIGHT_PACKED})
 CHANNELS_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_CHANNELS_PACKED})
+
+CHANNELS_PACKED_ANY = TensorRepSet(
+    {VkMemoryLayout.TENSOR_CHANNELS_PACKED}, {VkMemoryLayout.TENSOR_CHANNELS_PACKED}
+)
+
+CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER = TensorRepSet(
+    {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_CHANNELS_PACKED}
+)
 
 ANY_TEXTURE = TensorRepSet(set(), all_memory_layouts)
 ANY_BUFFER = TensorRepSet(all_memory_layouts, set())
-
 ANY_STORAGE = TensorRepSet(all_memory_layouts, all_memory_layouts)
+
+# Only includes memory layouts that can be used by quantized tensors
+
+PACKED_INT8_4W4C_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W4C}, set())
+
+# Special use RepSets
+
 NO_STORAGE = TensorRepSet(set(), set())
+ALL_STORAGES_REPSET = TensorRepSet(
+    universal_memory_layout_set, universal_memory_layout_set
+)
 
 
 class TensorRepSetList:
@@ -828,19 +1001,19 @@ class OpRepSets:
         # Now, go through the arguments of the operator and create a filtered repset
         # for each based on the actual tensor value.
         args_repset_list = TensorRepSetList([])
-        common_arg_repset = ANY_STORAGE
+        common_arg_repset = ALL_STORAGES_REPSET
         for i, arg_node in enumerate(op_node.args):
             arg_repset = inputs_repsets[i]
 
-            # Use ANY_STORAGE for non-tensor nodes so they don't cause the op repsets to
-            # appear empty
+            # Use ALL_STORAGES_REPSET for non-tensor nodes so they don't cause the op
+            # repsets to appear empty
             if not is_tensor_arg_node(arg_node):
-                args_repset_list.append(ANY_STORAGE)
+                args_repset_list.append(ALL_STORAGES_REPSET)
             # NO_STORAGE is used to denote that an input is either a non tensor arg or
             # a weight tensor that is not prepacked. Similar to the above, use
-            # ANY_STORAGE in this case.
+            # ALL_STORAGES_REPSET in this case.
             elif arg_repset.is_empty():
-                args_repset_list.append(ANY_STORAGE)
+                args_repset_list.append(ALL_STORAGES_REPSET)
             else:
                 assert not arg_repset.is_empty()
 
@@ -853,7 +1026,7 @@ class OpRepSets:
 
         # Repeat for output tensors.
         outs_repset_list = TensorRepSetList([])
-        common_out_repset = ANY_STORAGE
+        common_out_repset = ALL_STORAGES_REPSET
         if num_tensors_in_node(op_node) == 1:
             common_out_repset = make_filtered_tensor_repset(
                 op_node.meta["val"], outputs_repsets[0], texture_limits
@@ -1022,6 +1195,25 @@ class OpRepSets:
             arg_i == self.primary_arg_idx or self.sync_args_repr
         ):
             self.outs_repset_list[0] = arg_current_repset.make_intersect(source_repset)
+
+        self.assert_sync_contraints()
+        return True
+
+    def try_constrain_with_out_repset(self, repset: TensorRepSet):
+        # Skip for operators that must synchronize the input and output representations
+        # or operators that have more than one output repset
+        if self.sync_primary_io_repr or len(self.outs_repset_list) > 1:
+            return False
+
+        out_current_repset = self.outs_repset_list[0]
+
+        if out_current_repset == repset:
+            return False
+
+        if not out_current_repset.any_in_common(repset):
+            return False
+
+        self.outs_repset_list[0] = out_current_repset.make_intersect(repset)
 
         self.assert_sync_contraints()
         return True
@@ -1218,6 +1410,36 @@ def is_in_8bit_range(tensor: torch.Tensor) -> bool:
 ##
 
 
+def normalize_dims(dims: Union[int, List[int]], ndim: int) -> Union[int, List[int]]:
+    """
+    Normalize dimension indices to be non-negative and within [0, ndim).
+    Accepts a single int or a list of ints.
+    """
+    if isinstance(dims, int):
+        if dims < 0:
+            dims += ndim
+
+        return dims
+
+    normalized = []
+    for d in dims:
+        if d < 0:
+            d += ndim
+        normalized.append(d)
+
+    return normalized
+
+
+def nchw_dim_to_whcn_dim(nchw_dim: int, ndim: int) -> int:
+    # Handle negative indices for nchw_dim
+    if nchw_dim < 0:
+        nchw_dim += ndim
+
+    assert nchw_dim >= 0 and nchw_dim < ndim
+    whcn_dim = (ndim - 1) - nchw_dim
+    return whcn_dim
+
+
 def get_tensor_val_str(tensor_val: FakeTensor) -> str:
     return f"{tensor_val.dtype}: {tensor_val.shape}"
 
@@ -1269,6 +1491,7 @@ def update_program_state_dict(
     updated_tensor: torch.Tensor,
 ) -> None:
     target_name = None
+    kind = None
     # Iterate over all the tensors in the graph signature, and find
     # the one corresponding to the parameter/buffer name
     for input_ in program.graph_signature.input_specs:
@@ -1277,6 +1500,7 @@ def update_program_state_dict(
             and isinstance(input_.arg, TensorArgument)
             and input_.arg.name == buffer_name
         ):
+            kind = input_.kind
             target_name = input_.target
             break
 
@@ -1285,6 +1509,9 @@ def update_program_state_dict(
         target_name is not None
     ), f"could not find {buffer_name} in source program signature"
     assert target_name in program.state_dict, f"could not find {target_name}"
+
+    if kind == InputKind.PARAMETER:
+        updated_tensor = torch.nn.Parameter(updated_tensor, requires_grad=False)
 
     # Finally, overwrite the current tensor with updated tensor
     program.state_dict[target_name] = updated_tensor

@@ -35,7 +35,10 @@ if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
   add_definitions(-DENABLE_XNNPACK_KLEIDI)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+)
 
 set(_xnnpack_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 # Paths to headers generated from the .fbs files.

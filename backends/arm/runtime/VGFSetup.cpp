@@ -24,6 +24,13 @@ namespace vgf {
 /* static function to map format to byte count */
 static uint32_t get_format_size(VkFormat format);
 
+// SPV_ARM_tensor does not support rank-0 representations according to the spec.
+// Use an unsqueezed dimension when the resource table contains an empty
+// shape. Tensors are output as rank 0 when copied back from the vgf backend.
+namespace {
+constexpr int64_t kScalarSentinelDimension = 1;
+}
+
 // Debug function to inspect memory properties
 static string memory_flags_to_string(VkMemoryPropertyFlags flags) {
   if (flags == 0)
@@ -264,7 +271,11 @@ static void debug_print_resources(
             the_shape.size(),
             the_stride.size());
         for (int j = 0; j < the_shape.size(); j++) {
-          ET_LOG(Info, "      %d: dim %ld", j, the_shape[j]);
+          ET_LOG(
+              Info,
+              "      %d: dim %lld",
+              j,
+              static_cast<long long>(the_shape[j]));
         }
         // Allocate a tensor with bound memory
         break;
@@ -387,6 +398,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
     // Get tensor shape and strides
     auto shape = resource_decoder->getTensorShape(i);
     auto stride = resource_decoder->getTensorStride(i);
+    const auto shape_size = shape.size();
 
     switch (resource_decoder->getCategory(i)) {
       case vgflib::ResourceCategory::INPUT:
@@ -409,9 +421,9 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
         result = allocate_tensor(
             vk_physical,
             vk_device,
-            vgflib::ToVkFormat(resource_decoder->getVkFormat(i)),
-            static_cast<uint32_t>(shape.size()),
-            shape.begin(),
+            resource_format,
+            shape_size == 0 ? 1 : static_cast<uint32_t>(shape_size),
+            shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
             static_cast<uint32_t>(stride.size()),
             stride.begin(),
             &tensor_description,
@@ -422,8 +434,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
           ET_LOG(Error, "Failed to allocate tensor for VGF resource %d", i);
           return false;
         }
-        size_t e_size = get_format_size(
-            vgflib::ToVkFormat(resource_decoder->getVkFormat(i)));
+        size_t e_size = get_format_size(resource_format);
         if (0 == e_size) {
           ET_LOG(Error, "failed to get element size of VkFormat");
           return false;
@@ -449,9 +460,11 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
             .sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
             .pNext = nullptr,
             .tiling = VK_TENSOR_TILING_LINEAR_ARM,
-            .format = vgflib::ToVkFormat(resource_decoder->getVkFormat(i)),
-            .dimensionCount = static_cast<uint32_t>(shape.size()),
-            .pDimensions = shape.begin(),
+            .format = resource_format,
+            .dimensionCount =
+                shape_size == 0 ? 1 : static_cast<uint32_t>(shape_size),
+            .pDimensions =
+                shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
             // Note: stride_data of 0's causes size==0, null means stride==size
             .pStrides = (0 == stride.size() ? nullptr : stride.begin()),
             .usage = VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM,
@@ -694,7 +707,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
   );
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create DataGraphPipeline");
-    return result;
+    return false;
   }
 
   // prepare the graph pipeline session
@@ -708,7 +721,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       vk_device, &pipeline_session_info, nullptr, &vk_session);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create DataGraphPipelineSession");
-    return result;
+    return false;
   }
 
   // Allocate command buffer
@@ -722,7 +735,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       vk_device, &buffer_allocate_info, &vk_execute_cmd);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to allocate command buffers");
-    return result;
+    return false;
   }
 
   // Allocate intermediates memory based on the pipeline requirements provided
@@ -740,7 +753,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       vk_device, &bind_point_requirements_info, &bind_point_count, nullptr);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to get session bind point count");
-    return result;
+    return false;
   }
 
   vector<VkDataGraphPipelineSessionBindPointRequirementARM>
@@ -753,7 +766,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       bind_point_requirements.data());
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to get session bind point requirements");
-    return result;
+    return false;
   }
 
   // Given the bind points, just make individual allocations and bind them
@@ -764,18 +777,18 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       ET_LOG(
           Error,
           "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM");
-      return VK_ERROR_UNKNOWN;
+      return false;
     }
     if (bind_point_requirement.bindPoint !=
         VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM) {
       ET_LOG(
           Error,
           "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM");
-      return VK_ERROR_UNKNOWN;
+      return false;
     }
     if (bind_point_requirement.numObjects != 1) {
       ET_LOG(Error, "Expected only one object for the bindpoint");
-      return VK_ERROR_UNKNOWN;
+      return false;
     }
 
     VkDataGraphPipelineSessionMemoryRequirementsInfoARM memory_requirements_info = {
@@ -808,7 +821,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
         vkAllocateMemory(vk_device, &memory_allocate_info, nullptr, &memory);
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "Failed to allocate memory for intermediates");
-      return result;
+      return false;
     }
     // so we can free this object in destructor
     intermediates.push_back(memory);
@@ -826,7 +839,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
     result = vkBindDataGraphPipelineSessionMemoryARM(vk_device, 1, &bind_info);
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "Failed to bind intermediates memory");
-      return result;
+      return false;
     }
   }
 

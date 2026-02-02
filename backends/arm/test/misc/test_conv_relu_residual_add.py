@@ -51,7 +51,7 @@ quant_test_data = {
 }
 
 
-def test_tosa_FP():
+def test_conv_relu_residual_add_tosa_FP():
     pipeline = TosaPipelineFP[input_t](
         model,
         model_inputs,
@@ -63,7 +63,7 @@ def test_tosa_FP():
 
 
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_tosa_INT(per_channel_quantization):
+def test_conv_relu_residual_add_tosa_INT(per_channel_quantization):
     pipeline = TosaPipelineINT[input_t](
         model,
         model_inputs,
@@ -79,13 +79,12 @@ def test_tosa_INT(per_channel_quantization):
 @pytest.mark.slow
 @common.XfailIfNoCorstone300
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_tosa_u55_INT(per_channel_quantization):
+def test_conv_relu_residual_add_u55_INT(per_channel_quantization):
     pipeline = EthosU55PipelineINT[input_t](
         model,
         model_inputs,
         [],
         [],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
         per_channel_quantization=per_channel_quantization,
         qtol=0,
@@ -96,13 +95,12 @@ def test_tosa_u55_INT(per_channel_quantization):
 @pytest.mark.slow
 @common.XfailIfNoCorstone320
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_tosa_u85_INT(per_channel_quantization):
+def test_conv_relu_residual_add_u85_INT(per_channel_quantization):
     pipeline = EthosU85PipelineINT[input_t](
         model,
         model_inputs,
         [],
         [],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
         per_channel_quantization=per_channel_quantization,
         qtol=0,

@@ -70,7 +70,6 @@ def test_sqrt_u55_INT(test_data: Sqrt.input_t):
         test_data(),
         Sqrt.aten_op_INT,
         Sqrt.exir_op_INT,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -83,32 +82,31 @@ def test_sqrt_u85_INT(test_data: Sqrt.input_t):
         test_data(),
         Sqrt.aten_op_INT,
         Sqrt.exir_op_INT,
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Sqrt.test_data)
 @common.SkipIfNoModelConverter
-def test_sqrt_vgf_FP(test_data: Sqrt.input_t):
+def test_sqrt_vgf_no_quant(test_data: Sqrt.input_t):
     pipeline = VgfPipeline[Sqrt.input_t](
         Sqrt(),
         test_data(),
         Sqrt.aten_op_FP,
         Sqrt.exir_op_FP,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Sqrt.test_data)
 @common.SkipIfNoModelConverter
-def test_sqrt_vgf_INT(test_data: Sqrt.input_t):
+def test_sqrt_vgf_quant(test_data: Sqrt.input_t):
     pipeline = VgfPipeline[Sqrt.input_t](
         Sqrt(),
         test_data(),
         Sqrt.aten_op_INT,
         Sqrt.exir_op_INT,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

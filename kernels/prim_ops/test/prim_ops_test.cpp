@@ -23,6 +23,7 @@
 using executorch::aten::SizesType;
 using torch::executor::Error;
 using torch::executor::resize_tensor;
+using torch::executor::Span;
 
 namespace torch {
 namespace executor {
@@ -57,7 +58,7 @@ TEST_F(RegisterPrimOpsTest, SymSizeReturnsCorrectValue) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("aten::sym_size.int")(context_, stack);
+  getOpsFn("aten::sym_size.int")(context_, Span<EValue*>(stack));
 
   int64_t expected = 5;
   EXPECT_EQ(stack[2]->toInt(), expected);
@@ -77,7 +78,7 @@ TEST_F(RegisterPrimOpsTest, SymNumelReturnsCorrectValue) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("aten::sym_numel")(context_, stack);
+  getOpsFn("aten::sym_numel")(context_, Span<EValue*>(stack));
 
   int64_t expected = 15;
   EXPECT_EQ(stack[1]->toInt(), expected);
@@ -97,21 +98,21 @@ TEST_F(RegisterPrimOpsTest, SymMaxReturnsCorrectValue) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("executorch_prim::sym_max.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::sym_max.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), 5);
 
   // Test with swapped values
   values[0] = EValue(b);
   values[1] = EValue(a);
   values[2] = EValue(out);
-  getOpsFn("executorch_prim::sym_max.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::sym_max.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), 5);
 
   // Test with equal values
   values[0] = EValue(a);
   values[1] = EValue(a);
   values[2] = EValue(out);
-  getOpsFn("executorch_prim::sym_max.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::sym_max.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), 5);
 
   // Test with negative values
@@ -120,7 +121,7 @@ TEST_F(RegisterPrimOpsTest, SymMaxReturnsCorrectValue) {
   values[0] = EValue(a);
   values[1] = EValue(b);
   values[2] = EValue(out);
-  getOpsFn("executorch_prim::sym_max.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::sym_max.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), -2);
 }
 
@@ -138,21 +139,21 @@ TEST_F(RegisterPrimOpsTest, SymMinReturnsCorrectValue) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("executorch_prim::sym_min.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::sym_min.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), 3);
 
   // Test with swapped values
   values[0] = EValue(b);
   values[1] = EValue(a);
   values[2] = EValue(out);
-  getOpsFn("executorch_prim::sym_min.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::sym_min.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), 3);
 
   // Test with equal values
   values[0] = EValue(a);
   values[1] = EValue(a);
   values[2] = EValue(out);
-  getOpsFn("executorch_prim::sym_min.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::sym_min.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), 5);
 
   // Test with negative values
@@ -161,7 +162,7 @@ TEST_F(RegisterPrimOpsTest, SymMinReturnsCorrectValue) {
   values[0] = EValue(a);
   values[1] = EValue(b);
   values[2] = EValue(out);
-  getOpsFn("executorch_prim::sym_min.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::sym_min.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), -5);
 }
 
@@ -181,28 +182,29 @@ TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
 
   EValue* stack2[2] = {&values[0], &values[1]};
 
-  getOpsFn("executorch_prim::add.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::add.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), 7);
 
-  getOpsFn("executorch_prim::sub.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::sub.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), -1);
 
-  getOpsFn("executorch_prim::mul.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::mul.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), 12);
 
-  getOpsFn("executorch_prim::floordiv.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::floordiv.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), 0);
 
-  getOpsFn("executorch_prim::truediv.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::truediv.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_FLOAT_EQ(stack[2]->toDouble(), 0.75);
 
-  getOpsFn("executorch_prim::mod.int")(context_, stack);
+  getOpsFn("executorch_prim::mod.int")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), 3);
 
-  getOpsFn("executorch_prim::mod.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::mod.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), 3);
 
-  getOpsFn("executorch_prim::sym_float.Scalar")(context_, stack2);
+  getOpsFn("executorch_prim::sym_float.Scalar")(
+      context_, Span<EValue*>(stack2));
   EXPECT_FLOAT_EQ(stack[1]->toDouble(), 3.0);
 }
 
@@ -239,7 +241,8 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
   stack[2] = &values[2];
 
   // Simple test to copy to index 0.
-  getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack);
+  getOpsFn("executorch_prim::et_copy_index.tensor")(
+      context_, Span<EValue*>(stack));
 
   EXPECT_EQ(copy_to.sizes()[0], 1);
   EXPECT_EQ(copy_to.sizes()[1], 2);
@@ -248,7 +251,8 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
   values[1] = tf.make({2}, {5, 6});
   values[2] = EValue((int64_t)1);
   // Copy to the next index, 1.
-  getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack);
+  getOpsFn("executorch_prim::et_copy_index.tensor")(
+      context_, Span<EValue*>(stack));
 
   EXPECT_EQ(copy_to.sizes()[0], 2);
   EXPECT_EQ(copy_to.sizes()[1], 2);
@@ -276,44 +280,10 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndexMismatchShape) {
   // Try to copy and replace at index 1. This will fail because
   // copy_to.sizes[1:] and to_copy.sizes[:] don't match each other
   // which is a pre-requisite for this operator.
-  ET_EXPECT_DEATH(
-      getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack), "");
-}
-
-TEST_F(RegisterPrimOpsTest, TestETCopyIndexStaticShape) {
-  int64_t index = 1;
-  testing::TensorFactory<ScalarType::Int> tf;
-
-  EValue values[3];
-  EValue* stack[3];
-
-  // Test with static shape tensors.
-  const std::vector<int> buf = {1, 2, 3, 4};
-  auto copy_to = tf.make({2, 2}, buf);
-  auto to_copy = tf.make({2}, {5, 6});
-
-  values[0] = EValue(copy_to);
-  values[1] = EValue(to_copy);
-  values[2] = EValue(index);
-
-  stack[0] = &values[0];
-  stack[1] = &values[1];
-  stack[2] = &values[2];
-
-  // Copy and replace at index 1.
-  getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack);
-  EXPECT_EQ(copy_to.sizes()[0], 2);
-  EXPECT_EQ(copy_to.sizes()[1], 2);
-  EXPECT_TENSOR_EQ(copy_to, tf.make({2, 2}, {1, 2, 5, 6}));
-
-#ifndef USE_ATEN_LIB
-  // Copy and replace at index 2. This should trigger an EXPECT
-  // in lean mode.
-  index = 2;
-  values[2] = EValue(index);
-  ET_EXPECT_DEATH(
-      getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack), "");
-#endif
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      getOpsFn("executorch_prim::et_copy_index.tensor")(
+          context_, Span<EValue*>(stack)));
 }
 
 TEST_F(RegisterPrimOpsTest, TestBooleanOps) {
@@ -330,19 +300,19 @@ TEST_F(RegisterPrimOpsTest, TestBooleanOps) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("executorch_prim::ge.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::ge.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toBool(), false);
 
-  getOpsFn("executorch_prim::gt.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::gt.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toBool(), false);
 
-  getOpsFn("executorch_prim::le.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::le.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toBool(), true);
 
-  getOpsFn("executorch_prim::lt.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::lt.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toBool(), true);
 
-  getOpsFn("executorch_prim::eq.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::eq.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toBool(), false);
 }
 
@@ -361,7 +331,7 @@ TEST_F(RegisterPrimOpsTest, LocalScalarDenseReturnsCorrectValue) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("aten::_local_scalar_dense")(context_, stack);
+  getOpsFn("aten::_local_scalar_dense")(context_, Span<EValue*>(stack));
 
   int64_t expected = 1;
   EXPECT_EQ(stack[1]->toInt(), expected);
@@ -379,7 +349,7 @@ TEST_F(RegisterPrimOpsTest, NegScalarReturnsCorrectValue) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("executorch_prim::neg.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::neg.Scalar")(context_, Span<EValue*>(stack));
 
   EXPECT_EQ(stack[1]->toDouble(), -5.0f);
 
@@ -389,7 +359,7 @@ TEST_F(RegisterPrimOpsTest, NegScalarReturnsCorrectValue) {
   values[0] = EValue(a);
   values[1] = EValue(b);
 
-  getOpsFn("executorch_prim::neg.Scalar")(context_, stack);
+  getOpsFn("executorch_prim::neg.Scalar")(context_, Span<EValue*>(stack));
 
   EXPECT_EQ(stack[1]->toInt(), -5l);
 }
@@ -412,7 +382,8 @@ TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorFails) {
 
   // Try to negate a tensor, which should cause a runtime error.
   ET_EXPECT_KERNEL_FAILURE(
-      context_, getOpsFn("executorch_prim::neg.Scalar")(context_, stack));
+      context_,
+      getOpsFn("executorch_prim::neg.Scalar")(context_, Span<EValue*>(stack)));
 }
 
 TEST_F(RegisterPrimOpsTest, TestETView) {
@@ -434,8 +405,9 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
   EValue* size_wrapped_vals[3] = {
       &size_as_evals[0], &size_as_evals[1], &size_as_evals[2]};
   int64_t size_unwrapped_vals[3] = {0, 0, 0};
-  EValue size_int_list_evalue = EValue(
-      BoxedEvalueList<int64_t>(size_wrapped_vals, size_unwrapped_vals, 3));
+  BoxedEvalueList<int64_t> size_boxed_list(
+      size_wrapped_vals, size_unwrapped_vals, 3);
+  EValue size_int_list_evalue = EValue(&size_boxed_list);
 
   int64_t bad_size1[3] = {-1, 3, -1}; // two inferred dimensions
   EValue bad_size_as_evals1[3] = {
@@ -443,8 +415,9 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
   EValue* bad_size_wrapped_vals1[3] = {
       &bad_size_as_evals1[0], &bad_size_as_evals1[1], &bad_size_as_evals1[2]};
   int64_t bad_size_unwrapped_vals1[3] = {0, 0, 0};
-  EValue bad_size_int_list_evalue1 = EValue(BoxedEvalueList<int64_t>(
-      bad_size_wrapped_vals1, bad_size_unwrapped_vals1, 3));
+  BoxedEvalueList<int64_t> bad_size_boxed_list1(
+      bad_size_wrapped_vals1, bad_size_unwrapped_vals1, 3);
+  EValue bad_size_int_list_evalue1 = EValue(&bad_size_boxed_list1);
 
   int64_t bad_size2[3] = {-2, -3, 1}; // negative size not supported
   EValue bad_size_as_evals2[3] = {
@@ -452,8 +425,9 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
   EValue* bad_size_wrapped_vals2[3] = {
       &bad_size_as_evals2[0], &bad_size_as_evals2[1], &bad_size_as_evals2[2]};
   int64_t bad_size_unwrapped_vals2[3] = {0, 0, 0};
-  EValue bad_size_int_list_evalue2 = EValue(BoxedEvalueList<int64_t>(
-      bad_size_wrapped_vals2, bad_size_unwrapped_vals2, 3));
+  BoxedEvalueList<int64_t> bad_size_boxed_list2(
+      bad_size_wrapped_vals2, bad_size_unwrapped_vals2, 3);
+  EValue bad_size_int_list_evalue2 = EValue(&bad_size_boxed_list2);
 
   // ***************************************************************************
   // Make outs for tests
@@ -497,7 +471,8 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
   for (int i = 0; i < N_BAD_STACKS; i++) {
     ET_EXPECT_KERNEL_FAILURE(
         context_,
-        getOpsFn("executorch_prim::et_view.default")(context_, bad_stacks[i]));
+        getOpsFn("executorch_prim::et_view.default")(
+            context_, Span<EValue*>(bad_stacks[i])));
   }
 
   constexpr int N_GOOD_STACKS = N_GOOD_OUTS;
@@ -507,7 +482,8 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
 
   // Good outs expect no death and correct output
   for (int i = 0; i < N_GOOD_STACKS; i++) {
-    getOpsFn("executorch_prim::et_view.default")(context_, good_out_stacks[i]);
+    getOpsFn("executorch_prim::et_view.default")(
+        context_, Span<EValue*>(good_out_stacks[i]));
     EXPECT_TENSOR_EQ(good_outs[i], tf.make({1, 3, 2}, {1, 2, 3, 4, 5, 6}));
     EXPECT_EQ(good_outs[i].const_data_ptr(), self.const_data_ptr());
   }
@@ -525,8 +501,9 @@ TEST_F(RegisterPrimOpsTest, TestETViewDynamic) {
   EValue* size_wrapped_vals[3] = {
       &size_as_evals[0], &size_as_evals[1], &size_as_evals[2]};
   int64_t size_unwrapped_vals[3] = {0, 0, 0};
-  EValue size_int_list_evalue = EValue(
-      BoxedEvalueList<int64_t>(size_wrapped_vals, size_unwrapped_vals, 3));
+  BoxedEvalueList<int64_t> size_boxed_list_2(
+      size_wrapped_vals, size_unwrapped_vals, 3);
+  EValue size_int_list_evalue = EValue(&size_boxed_list_2);
 
 #ifdef USE_ATEN_LIB
   // ATen mode tensors don't need dynamism specification.
@@ -541,7 +518,7 @@ TEST_F(RegisterPrimOpsTest, TestETViewDynamic) {
 
   EValue* stack[3] = {&self_evalue, &size_int_list_evalue, &out_evalue};
 
-  getOpsFn("executorch_prim::et_view.default")(context_, stack);
+  getOpsFn("executorch_prim::et_view.default")(context_, Span<EValue*>(stack));
 
   EXPECT_TENSOR_EQ(out, tf.make({1, 3, 1}, {1, 2, 3}));
   EXPECT_EQ(out.const_data_ptr(), self.const_data_ptr());
@@ -560,8 +537,9 @@ TEST_F(RegisterPrimOpsTest, TestETViewEmpty) {
   EValue* size_wrapped_vals[3] = {
       &size_as_evals[0], &size_as_evals[1], &size_as_evals[2]};
   int64_t size_unwrapped_vals[3] = {0, 0, 0};
-  EValue size_int_list_evalue = EValue(
-      BoxedEvalueList<int64_t>(size_wrapped_vals, size_unwrapped_vals, 3));
+  BoxedEvalueList<int64_t> size_boxed_list_3(
+      size_wrapped_vals, size_unwrapped_vals, 3);
+  EValue size_int_list_evalue = EValue(&size_boxed_list_3);
 
   int64_t bad_size[3] = {0, 1, -1}; // bad size: cannot infer with 0
   EValue bad_size_as_evals[3] = {
@@ -569,8 +547,9 @@ TEST_F(RegisterPrimOpsTest, TestETViewEmpty) {
   EValue* bad_size_wrapped_vals[3] = {
       &bad_size_as_evals[0], &bad_size_as_evals[1], &bad_size_as_evals[2]};
   int64_t bad_size_unwrapped_vals[3] = {0, 0, 0};
-  EValue bad_size_int_list_evalue = EValue(BoxedEvalueList<int64_t>(
-      bad_size_wrapped_vals, bad_size_unwrapped_vals, 3));
+  BoxedEvalueList<int64_t> bad_size_boxed_list(
+      bad_size_wrapped_vals, bad_size_unwrapped_vals, 3);
+  EValue bad_size_int_list_evalue = EValue(&bad_size_boxed_list);
 
   auto out = tf.make({3, 1, 0}, {}, {});
   EValue out_evalue = EValue(out);
@@ -578,7 +557,7 @@ TEST_F(RegisterPrimOpsTest, TestETViewEmpty) {
 
   // good size test
   EValue* stack[3] = {&self_evalue, &size_int_list_evalue, &out_evalue};
-  getOpsFn("executorch_prim::et_view.default")(context_, stack);
+  getOpsFn("executorch_prim::et_view.default")(context_, Span<EValue*>(stack));
   EXPECT_TENSOR_EQ(out, tf.make({3, 1, 0}, {}));
   EXPECT_EQ(out.const_data_ptr(), self.const_data_ptr());
 
@@ -586,7 +565,8 @@ TEST_F(RegisterPrimOpsTest, TestETViewEmpty) {
   EValue* bad_stack[3] = {&self_evalue, &bad_size_int_list_evalue, &out_evalue};
   ET_EXPECT_KERNEL_FAILURE(
       context_,
-      getOpsFn("executorch_prim::et_view.default")(context_, bad_stack));
+      getOpsFn("executorch_prim::et_view.default")(
+          context_, Span<EValue*>(bad_stack)));
 }
 
 TEST_F(RegisterPrimOpsTest, TestCeil) {
@@ -604,7 +584,7 @@ TEST_F(RegisterPrimOpsTest, TestCeil) {
       stack[j] = &values[j];
     }
 
-    getOpsFn("executorch_prim::ceil.Scalar")(context_, stack);
+    getOpsFn("executorch_prim::ceil.Scalar")(context_, Span<EValue*>(stack));
     EXPECT_EQ(stack[1]->toInt(), expected[i]);
   }
 }
@@ -625,7 +605,7 @@ TEST_F(RegisterPrimOpsTest, TestRound) {
       stack[j] = &values[j];
     }
 
-    getOpsFn("executorch_prim::round.Scalar")(context_, stack);
+    getOpsFn("executorch_prim::round.Scalar")(context_, Span<EValue*>(stack));
     EXPECT_EQ(stack[1]->toInt(), expected[i]);
   }
 }
@@ -645,7 +625,7 @@ TEST_F(RegisterPrimOpsTest, TestTrunc) {
       stack[j] = &values[j];
     }
 
-    getOpsFn("executorch_prim::trunc.Scalar")(context_, stack);
+    getOpsFn("executorch_prim::trunc.Scalar")(context_, Span<EValue*>(stack));
     EXPECT_EQ(stack[1]->toInt(), expected[i]);
   }
 }
@@ -668,7 +648,8 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     }
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("aten::sym_size.int")(context_, stack));
+        context_,
+        getOpsFn("aten::sym_size.int")(context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), torch::executor::Error::InvalidProgram);
   }
 
@@ -683,7 +664,7 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     stack[0] = &values[0];
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("aten::sym_numel")(context_, stack));
+        context_, getOpsFn("aten::sym_numel")(context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), torch::executor::Error::InvalidProgram);
   }
 
@@ -702,7 +683,9 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     }
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::sym_max.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::sym_max.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
   }
 
@@ -721,7 +704,9 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     }
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::sym_min.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::sym_min.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
   }
 
@@ -739,32 +724,44 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     }
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::add.Scalar")(context_, stack));
-    EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
-
-    ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::sub.Scalar")(context_, stack));
-    EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
-
-    ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::mul.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::add.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
 
     ET_EXPECT_KERNEL_FAILURE(
         context_,
-        getOpsFn("executorch_prim::floordiv.Scalar")(context_, stack));
+        getOpsFn("executorch_prim::sub.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::truediv.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::mul.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::mod.int")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::floordiv.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::mod.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::truediv.Scalar")(
+            context_, Span<EValue*>(stack)));
+    EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
+
+    ET_EXPECT_KERNEL_FAILURE(
+        context_,
+        getOpsFn("executorch_prim::mod.int")(context_, Span<EValue*>(stack)));
+    EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
+
+    ET_EXPECT_KERNEL_FAILURE(
+        context_,
+        getOpsFn("executorch_prim::mod.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
   }
 
@@ -780,7 +777,8 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
 
     ET_EXPECT_KERNEL_FAILURE(
         context_,
-        getOpsFn("executorch_prim::sym_float.Scalar")(context_, stack));
+        getOpsFn("executorch_prim::sym_float.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
   }
 
@@ -798,23 +796,28 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     }
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::ge.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::ge.Scalar")(context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::gt.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::gt.Scalar")(context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::le.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::le.Scalar")(context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::lt.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::lt.Scalar")(context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::eq.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::eq.Scalar")(context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
   }
 
@@ -829,7 +832,8 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     stack[0] = &values[0];
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("aten::_local_scalar_dense")(context_, stack));
+        context_,
+        getOpsFn("aten::_local_scalar_dense")(context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
   }
 
@@ -842,7 +846,9 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     stack[0] = &values[0];
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::neg.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::neg.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
   }
 
@@ -863,7 +869,8 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
 
     ET_EXPECT_KERNEL_FAILURE(
         context_,
-        getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack));
+        getOpsFn("executorch_prim::et_copy_index.tensor")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
   }
 
@@ -880,14 +887,16 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     EValue* size_wrapped_vals[3] = {
         &size_as_evals[0], &size_as_evals[1], &size_as_evals[2]};
     int64_t size_unwrapped_vals[3] = {0, 0, 0};
-    EValue size_int_list_evalue = EValue(
-        BoxedEvalueList<int64_t>(size_wrapped_vals, size_unwrapped_vals, 3));
+    BoxedEvalueList<int64_t> size_boxed_list_4(
+        size_wrapped_vals, size_unwrapped_vals, 3);
+    EValue size_int_list_evalue = EValue(&size_boxed_list_4);
 
     EValue* stack[2] = {&self_evalue, &size_int_list_evalue};
 
     ET_EXPECT_KERNEL_FAILURE(
         context_,
-        getOpsFn("executorch_prim::et_view.default")(context_, stack));
+        getOpsFn("executorch_prim::et_view.default")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
   }
 
@@ -900,15 +909,21 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     stack[0] = &values[0];
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::ceil.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::ceil.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::round.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::round.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, getOpsFn("executorch_prim::trunc.Scalar")(context_, stack));
+        context_,
+        getOpsFn("executorch_prim::trunc.Scalar")(
+            context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
   }
 }

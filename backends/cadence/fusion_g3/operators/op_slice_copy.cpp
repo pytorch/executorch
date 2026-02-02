@@ -13,7 +13,7 @@
 
 #include <xa_nnlib_kernels_api.h>
 
-#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
+#include <executorch/backends/cadence/common/xt_macros.h>
 #include <executorch/kernels/portable/cpu/util/slice_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -123,7 +123,7 @@ Tensor& slice_copy_Tensor_out(
         InvalidArgument,
         out);
 
-    torch::executor::compute_slice(in, dim, start, length, step, out);
+    torch::executor::compute_slice(ctx, in, dim, start, length, step, out);
   }
 
   return out;

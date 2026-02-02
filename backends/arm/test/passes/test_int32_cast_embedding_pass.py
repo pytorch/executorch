@@ -10,12 +10,12 @@ from executorch.backends.arm._passes import DecomposeEmbeddingPass
 
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
-input_t = Tuple[torch.Tensor]  # Input x
+input_t = Tuple[torch.Tensor, torch.Tensor]
 
 
 class Int32Embedding(torch.nn.Module):
 
-    def forward(self, weights: torch.Tensor, indices: torch.Tensor):
+    def forward(self, weights: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
         return torch.embedding(weights, indices)
 
     def get_inputs(self) -> input_t:
@@ -25,7 +25,7 @@ class Int32Embedding(torch.nn.Module):
         )
 
 
-def test_int64_model_tosa_FP():
+def test_decompose_embedding_tosa_FP_int32():
     module = Int32Embedding()
     op_checks_before = {
         "executorch_exir_dialects_edge__ops_aten_embedding_default": 1,

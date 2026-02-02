@@ -14,6 +14,8 @@ Before executing the scripts and runner, please ensure that you are using the QN
 
 4. scripts: This folder contains scripts to build models provided by ExecuTorch.
 
+5. util_scripts: This folder includes tutorial example scripts designed to showcase the utilities we've developed. For example, we provide a debugging tool [qnn_intermediate_debugger](./util_scripts/qnn_intermediate_debugger_demo.py) that allow users to compare the intermediate outputs of QNNs V.S. CPUs. By reviewing these scripts, we aim to help users smoothly integrate these utilities into their own projects.
+
 
 
 Please check helper of each examples for detailed arguments.
@@ -110,13 +112,36 @@ This section outlines the essential APIs and utilities provided to streamline th
 
    Creates a clean directory for storing model outputs or intermediate results. If the directory already exists, it will be deleted and recreated to ensure a consistent environment for each run.
 
+## Run Inference Using Shared Buffer
+This section shows how to use shared buffer for input/output tensors in QNN ExecuTorch, usually graph inputs and outputs on shared memory to reduce huge tensor copying time from CPU to HTP. This feature can accelerate inference speed. Users need to do shared memory resource management by themselves. The key idea is to use `QnnExecuTorchAllocCustomMem` to allocate a large chunk of memory on the device, then use `QnnExecuTorchFreeCustomMem` to free it after inference.
+
+### Run example scipts with shared buffer
+You can specify `--shared_buffer` flag to run example scripts with shared buffer such as:
+```
+python mobilenet_v2.py -s <device_serial> -m "SM8550" -b path/to/build-android/ -d /path/to/imagenet-mini/val --shared_buffer
+```
+
+### Workflow of using shared memory
+There are two ways to use shared buffer in QNN ExecuTorch:
+1. Use ION buffer (1 tensor to 1 rpc mem)
+    - For all I/O tensors, user call QnnExecuTorchAllocCustomMem to request n bytes RPC memory
+    - For all I/O tensors, user create TensorImpl with the above memory address
+    - Run inference with shared buffer
+    - For all I/O tensors, user call QnnExecuTorchFreeCustomMem to free RPC memory
+2. Use Custom Memory (many tensors to 1 rpc mem)
+    - Call QnnExecuTorchAllocCustomMem to allocate a large RPC memory block capable of holding all I/O tensors
+    - For all I/O tensors, create TensorImpl with a sufficient memory block derived from the base RPC memory address, then call QnnExecuTorchAddCustomMemTensorAddr to bind each tensor’s address to the base RPC memory.
+    - Run inference with shared buffer
+    - Call QnnExecuTorchFreeCustomMem to free RPC memory
+
 ## Additional Dependency
+This example requires the following Python packages:
+- pandas and scikit-learn: used in the mobilebert multi-class text classification example.
+- graphviz (optional): used for visualizing QNN graphs during debugging.
 
-The mobilebert multi-class text classification example requires `pandas` and `sklearn`.
 Please install them by something like
-
 ```bash
-pip install scikit-learn pandas
+pip install scikit-learn pandas graphviz
 ```
 
 ## Limitation

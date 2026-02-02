@@ -1,12 +1,12 @@
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+${define_required_extensions("buffer", BUF_DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
 #define DST_T ${buffer_scalar_type(BUF_DTYPE)}
-
-${define_required_extensions(DTYPE)}
-${define_required_extensions(BUF_DTYPE)}
 
 layout(std430) buffer;
 
@@ -29,8 +29,7 @@ void main() {
     return;
   }
 
-  TensorIndex inp_tidx;
-  linear_idx_to_tensor_idx(inp, inp_bufi, inp_tidx);
+  TensorIndex inp_tidx = linear_idx_to_tensor_idx(inp, inp_bufi);
 
   uint nchwi = tensor_idx_to_contiguous_idx(inp, inp_tidx);
 
