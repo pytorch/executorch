@@ -16,24 +16,7 @@ Please check `generate_qnn_executorch_compiler_spec()` in
 [utils.py](utils/utils.py) for supported SoC and inference type.
 
 ### Supported Chipset
-- Snapdragon 8 Gen 1
-- Snapdragon 8 Gen 1+
-- Snapdragon 8 Gen 2
-- Snapdragon 8 Gen 3
-- Snapdragon 8 Elite
-- Snapdragon 8 Elite Gen 5
-- SA8295
-- SA8255
-- SA8797 (also used by SA8397)
-- SSG2115P
-- SSG2125P
-- SXR1230P
-- SXR2230P
-- SXR2330P
-- QCS9100
-- SAR2230P
-- SW6100
-- SM8845
+The supported Qualcomm SoCs are detailed in `QcomChipset`. Please navigate to [qc_schema.py](serialization/qc_schema.py).
 
 ### Adding more supported Chipset
 Currently, users cannot add additional chipset models because the chipset ID is not accessible to community users. If you have specific chipset models you wish to add, please contact one of the authors in the `Code Reviews` section at the bottom of this page.
@@ -41,6 +24,15 @@ Currently, users cannot add additional chipset models because the chipset ID is 
 ### Supported Inference Type
 - Quantized
 - FP16
+
+### Supported Backend Type
+- QNN GPU
+- QNN HTP
+- QNN LPAI
+  - Currently, only LPAI Arch v6 is supported, which requires QNN SDK version 2.39 or higher.
+  - Please check `_soc_info_table` in [qc_schema.py](serialization/qc_schema.py) to find the supported chipsets.
+  - The skel library needs to be signed for LPAI to work. Please confirm if you are able to sign it. You can use [signed_library.sh](scripts/signed_library.sh) to sign the skel library.
+  
 
 ## Directory Structure
 

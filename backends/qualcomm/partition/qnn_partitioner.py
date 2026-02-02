@@ -12,10 +12,16 @@ import torch
 from executorch.backends.qualcomm.builders import node_visitor_manager
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
-from executorch.backends.qualcomm.utils.constants import QCOM_BYPASS_NODE
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_BYPASS_NODE,
+    QCOM_FALLBACK_NODE,
+)
 
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
     get_current_qnn_manager,
@@ -78,6 +84,9 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
             return False
 
+        if node.meta.get(QCOM_FALLBACK_NODE, False):
+            return False
+
         if (
             node.target in allow_list_operator
             # bypass if custom op appears
@@ -138,6 +147,9 @@ class QnnPartitioner(Partitioner):
             skip_mutable_buffer (bool, optional): If True, mutable buffers are not delegated to QNN.
         """
         self.compiler_specs_snapshot = copy.deepcopy(compiler_specs)
+        self.backend = flatbuffer_to_option(
+            generate_qnn_executorch_option(self.compiler_specs_snapshot)
+        ).backend_options.backend_type
 
         self.delegation_spec = DelegationSpec(
             QnnBackend.__name__, self.compiler_specs_snapshot
@@ -188,14 +200,34 @@ class QnnPartitioner(Partitioner):
                 # since they will all be removed in following stage
                 node.meta["delegation_tag"] = delegation_tag
 
+    @staticmethod
+    def check_partitions(
+        backend: QnnExecuTorchBackendType, partitions: List[Any]
+    ) -> bool:
+        pl = len(partitions)
+        if backend == QnnExecuTorchBackendType.kLpaiBackend:
+            # By default, there are two partitions that are always created in LPAI backend:
+            # one for the quantized and one for the dequantized.
+            bypass_nodes = [
+                node
+                for partition in partitions
+                for node in partition.nodes
+                if node.meta.get(QCOM_BYPASS_NODE, False)
+            ]
+            pl -= len(bypass_nodes)
+        if pl == 0:
+            logging.warning("Nothing can be partitioned!")
+        else:
+            logging.info(f"Found {pl} subgraphs to be partitioned.")
+        return pl != 0
+
     # override
     def partition(self, edge_program: torch.export.ExportedProgram) -> PartitionResult:
         # Generate partitions by QNN op_support checker
         partitions = self.generate_partitions(edge_program)
         del self.op_support_checker
-
         # If partitions are found, handle tagging of nodes, constant data, and mutated buffers for delegation
-        if len(partitions) != 0:
+        if self.check_partitions(self.backend, partitions):
             self.tag_nodes(partitions, edge_program)
             tag_constant_data(edge_program)
             if not self.skip_mutable_buffer:

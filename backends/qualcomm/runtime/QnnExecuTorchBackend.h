@@ -66,6 +66,11 @@ class QnnExecuTorchBackend final
   RuntimeOption qnn_runtime_log_level_{false, 0};
   RuntimeOption qnn_runtime_performance_mode_{false, 0};
   RuntimeOption qnn_runtime_profile_level_{false, 0};
+  RuntimeOption qnn_runtime_lapi_fps_{false, 0};
+  RuntimeOption qnn_runtime_lapi_ftrt_ratio_{false, 0};
+  RuntimeOption qnn_runtime_lpai_client_perf_type_{false, 0};
+  RuntimeOption qnn_runtime_lpai_affinity_{false, 0};
+  RuntimeOption qnn_runtime_lpai_core_selection_{false, 0};
 };
 
 } // namespace qnn

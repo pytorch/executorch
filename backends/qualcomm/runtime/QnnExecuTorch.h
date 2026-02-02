@@ -20,6 +20,11 @@
 #define QNN_RUNTIME_LOG_LEVEL "qnn_runtime_log_level"
 #define QNN_RUNTIME_HTP_PERFORMANCE_MODE "qnn_runtime_htp_performance_mode"
 #define QNN_RUNTIME_PROFILE_LEVEL "qnn_runtime_profile_level"
+#define QNN_RUNTIME_LPAI_FPS "qnn_runtime_lpai_fps"
+#define QNN_RUNTIME_LPAI_FTRT_RATIO "qnn_runtime_lpai_ftrt_ratio"
+#define QNN_RUNTIME_LPAI_CLIENT_PERF_TYPE "qnn_runtime_lpai_clent_perf_type"
+#define QNN_RUNTIME_LPAI_AFFINITY "qnn_runtime_lpai_affinity"
+#define QNN_RUNTIME_LPAI_CORE_SELECTION "qnn_runtime_lpai_core_selection"
 
 #ifdef __cplusplus
 extern "C" {

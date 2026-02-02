@@ -8,6 +8,10 @@ from enum import IntEnum, unique
 from functools import partial
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
+# To support quantize op lowering in AOT
+import executorch.extension.pybindings.portable_lib  # noqa[F401]
+import executorch.kernels.quantized  # noqa[F401]
+
 import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 

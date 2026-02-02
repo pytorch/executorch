@@ -30,6 +30,7 @@ from executorch.backends.qualcomm.debugger.utils import generate_optrace
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
+    QnnExecuTorchLpaiTargetEnv,
 )
 from executorch.backends.qualcomm.tests.utils import (
     convert_pt2e,
@@ -55,6 +56,7 @@ from executorch.backends.qualcomm.utils.utils import (
     from_context_binary,
     generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
+    generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     is_qnn_sdk_version_greater_than,
     is_qnn_sdk_version_less_than,
@@ -98,7 +100,6 @@ from executorch.exir.backend.backend_api import disable_validation
 
 
 class TestQNNFloatingPointOperator(TestQNN):
-    # TODO: refactor to support different backends
     def setUp(self):
         match get_backend_type(self.backend):
             case QnnExecuTorchBackendType.kHtpBackend:
@@ -2266,11 +2267,22 @@ class TestQNNFloatingPointModel(TestQNN):
 
 
 class TestQNNQuantizedOperator(TestQNN):
-    # TODO: refactor to support different backends
     def setUp(self):
+        match get_backend_type(self.backend):
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+            case QnnExecuTorchBackendType.kLpaiBackend:
+                backend_options = generate_lpai_compiler_spec(
+                    target_env=(
+                        QnnExecuTorchLpaiTargetEnv.kX86
+                        if self.enable_x86_64
+                        else QnnExecuTorchLpaiTargetEnv.kArm
+                    )
+                )
+            case _:
+                raise ValueError("Backend is not implemented yet")
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1
-        backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
@@ -4483,11 +4495,22 @@ class TestQNNQuantizedOperator(TestQNN):
 
 
 class TestQNNQuantizedModel(TestQNN):
-    # TODO: refactor to support different backends
     def setUp(self):
+        match get_backend_type(self.backend):
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+            case QnnExecuTorchBackendType.kLpaiBackend:
+                backend_options = generate_lpai_compiler_spec(
+                    target_env=(
+                        QnnExecuTorchLpaiTargetEnv.kX86
+                        if self.enable_x86_64
+                        else QnnExecuTorchLpaiTargetEnv.kArm
+                    )
+                )
+            case _:
+                raise ValueError("Backend is not implemented yet")
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1
-        backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
@@ -5497,11 +5520,22 @@ class TestQNNFloatingPointUtils(TestQNN):
 
 
 class TestQNNQuantizedUtils(TestQNN):
-    # TODO: refactor to support different backends
     def setUp(self):
+        match get_backend_type(self.backend):
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+            case QnnExecuTorchBackendType.kLpaiBackend:
+                backend_options = generate_lpai_compiler_spec(
+                    target_env=(
+                        QnnExecuTorchLpaiTargetEnv.kX86
+                        if self.enable_x86_64
+                        else QnnExecuTorchLpaiTargetEnv.kArm
+                    )
+                )
+            case _:
+                raise ValueError("Backend is not implemented yet")
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1
-        backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
@@ -5725,9 +5759,19 @@ class TestQNNQuantizedUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
         # define compile specs
-        backend_options = generate_htp_compiler_spec(
-            use_fp16=False,
-        )
+        match get_backend_type(self.backend):
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+            case QnnExecuTorchBackendType.kLpaiBackend:
+                backend_options = generate_lpai_compiler_spec(
+                    target_env=(
+                        QnnExecuTorchLpaiTargetEnv.kX86
+                        if self.enable_x86_64
+                        else QnnExecuTorchLpaiTargetEnv.kArm
+                    )
+                )
+            case _:
+                raise ValueError("Backend is not implemented yet")
         compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
@@ -5773,9 +5817,19 @@ class TestQNNQuantizedUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
         # define compile specs
-        backend_options = generate_htp_compiler_spec(
-            use_fp16=False,
-        )
+        match get_backend_type(self.backend):
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+            case QnnExecuTorchBackendType.kLpaiBackend:
+                backend_options = generate_lpai_compiler_spec(
+                    target_env=(
+                        QnnExecuTorchLpaiTargetEnv.kX86
+                        if self.enable_x86_64
+                        else QnnExecuTorchLpaiTargetEnv.kArm
+                    )
+                )
+            case _:
+                raise ValueError("Backend is not implemented yet")
         compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
@@ -6103,6 +6157,8 @@ class TestQNNQuantizedUtils(TestQNN):
     def test_qnn_backend_online_prepare(self):
         if self.enable_x86_64:
             self.skipTest("TODO: add online_prepare support on host platform")
+        if get_backend_type(self.backend) == QnnExecuTorchBackendType.kLpaiBackend:
+            self.skipTest("LPAI does not support online_prepare.")
 
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
@@ -6347,6 +6403,8 @@ class TestQNNQuantizedUtils(TestQNN):
             self.skipTest(
                 "At the moment, testing is only being conducted on the device."
             )
+        if get_backend_type(self.backend) == QnnExecuTorchBackendType.kLpaiBackend:
+            self.skipTest("LPAI does not support optrace generation.")
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
@@ -8910,6 +8968,7 @@ def setup_environment():
     )
 
     args, ns_args = parser.parse_known_args(namespace=unittest)
+    args.validate(args)
     TestQNN.host = args.host
     TestQNN.device = args.device
     TestQNN.model = args.model
