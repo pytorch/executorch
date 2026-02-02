@@ -44,6 +44,13 @@ class Maximum(torch.nn.Module):
         ),
     }
 
+    test_parameters_bf16 = {
+        "bf16_rand": lambda: (
+            torch.randn(1, 3, 4, 4, dtype=torch.bfloat16),
+            torch.randn(1, 3, 4, 4, dtype=torch.bfloat16),
+        ),
+    }
+
     def __init__(self):
         super().__init__()
 
@@ -53,14 +60,13 @@ class Maximum(torch.nn.Module):
 
 @common.parametrize(
     "test_data",
-    Maximum.test_parameters | Maximum.test_parameters_fp16,
+    Maximum.test_parameters
+    | Maximum.test_parameters_fp16
+    | Maximum.test_parameters_bf16,
 )
 def test_maximum_tosa_FP(test_data: Tuple):
     TosaPipelineFP[test_t](
-        Maximum(),
-        test_data(),
-        aten_op,
-        exir_op,
+        Maximum(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
     ).run()
 
 

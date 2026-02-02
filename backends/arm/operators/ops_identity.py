@@ -49,6 +49,8 @@ def identity_operator_factory(identity_target: str):
             ]
             if self.tosa_spec.support_float():
                 supported_dtypes += [ts.DType.FP32]
+            if self.tosa_spec.support_extension("bf16"):
+                supported_dtypes += [ts.DType.BF16]
             if self.tosa_spec.support_extension("int16"):
                 supported_dtypes += [ts.DType.INT48]
             if self.tosa_spec.support_extension("int4"):
