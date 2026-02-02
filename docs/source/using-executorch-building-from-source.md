@@ -45,7 +45,7 @@ portability details.
    ```bash
    git clone -b viable/strict https://github.com/pytorch/executorch.git
    cd executorch
-   conda create -yn executorch python=3.10.0
+   conda create -yn executorch python=3.12.0
    conda activate executorch
    ```
 
