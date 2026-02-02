@@ -252,6 +252,30 @@ MODULE_REGISTRY["linear_nobias_int4"] = {
 
 
 # -------------------------------------------------------------------------
+class LinearWithBiasInt4(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(128, 256, bias=True)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+
+MODULE_REGISTRY["linear_bias_int4"] = {
+    "model_class": LinearWithBiasInt4,
+    "input_shapes": [(127, 128)],
+    "description": "Linear layer with bias and int4 quantization",
+    "qlinear": "fpa4w",
+    "qlinear_group_size": 32,
+    "compare_to_unquantized": False,
+    "atol_float32": 5e-2,
+    "rtol_float32": 5e-2,
+    "atol_bfloat16": 1e-1,
+    "rtol_bfloat16": 1e-1,
+    "skip": not TORCHAO_AVAILABLE,
+}
+
+# -------------------------------------------------------------------------
 # Convolution Modules
 # -------------------------------------------------------------------------
 
