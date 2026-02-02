@@ -52,6 +52,17 @@ sub2_test_data = {
     "rand_3d_Scalar": lambda: (torch.rand(1, 6, 2), 1),
 }
 
+sub_test_data_bf16 = {
+    "rand_2D_bf16": lambda: (torch.rand(4, 4, dtype=torch.bfloat16),),
+}
+
+sub2_test_data_bf16 = {
+    "rand_2D_pair_bf16": lambda: (
+        torch.rand(2, 3, dtype=torch.bfloat16),
+        torch.rand(2, 3, dtype=torch.bfloat16),
+    ),
+}
+
 # Sub and tan - the tan has a really steep curve just before Pi/2 and a point of discontinuity at Pi/2
 # so if the sub result is inaccurate, the error will be amplified by the tan
 sub_tan_test_data = {
@@ -90,7 +101,7 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 
-@common.parametrize("test_data", sub_test_data)
+@common.parametrize("test_data", sub_test_data | sub_test_data_bf16)
 def test_sub_tensor_tosa_FP(test_data):
     """Test Subtraction (TOSA FP)"""
     pipeline = TosaPipelineFP[input_t1](
@@ -98,30 +109,25 @@ def test_sub_tensor_tosa_FP(test_data):
         test_data(),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", sub2_test_data)
+@common.parametrize("test_data", sub2_test_data | sub2_test_data_bf16)
 def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA FP)"""
     pipeline = TosaPipelineFP[input_t2](
-        Sub2(),
-        test_data(),
-        aten_op,
-        exir_op,
+        Sub2(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", sub_tan_test_data)
+@common.parametrize("test_data", sub_tan_test_data | sub2_test_data_bf16)
 def test_sub_tensor_tosa_FP_alpha(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction with alpha (TOSA FP)"""
     pipeline = TosaPipelineFP[input_t2](
-        SubAlpha(),
-        test_data(),
-        aten_op,
-        exir_op,
+        SubAlpha(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
     )
     pipeline.run()
 
