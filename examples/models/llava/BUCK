@@ -1,11 +1,72 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_common_targets")
 
-oncall("executorch")
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "model",
+    srcs = [
+        "model.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llava",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/examples/models/llama:llama2_model",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "export_lib",
+    srcs = [
+        "export_llava.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llava",
+    resources = {
+        "//executorch/examples/models/llama/params:params": "params.json",
+    },
+    visibility = [
+        "//bento/...",
+        "//bento_kernels/...",
+        "//executorch/...",
+    ],
+    deps = [
+        ":model",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "export",
+    main_function = "executorch.examples.models.llava.export_llava.main",
+    # visibility = ["//executorch/examples/..."],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/kernels/quantized:aot_lib",
+    ],
+    deps = [
+        ":export_lib",
+    ],
+)
+
+# !!!! fbcode/executorch/examples/models/llava/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
 
 fbcode_target(_kind = define_common_targets,)
 
