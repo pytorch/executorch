@@ -29,13 +29,19 @@ from .test_utils import OpTestCase, register_test, run_op_test_main
 class ArangeModel(nn.Module):
     """Model that creates a tensor using arange and multiplies with input."""
 
-    def __init__(self, stop: int):
+    def __init__(self, stop: int, use_dtype: bool = True):
         super().__init__()
         self.stop = stop
+        self.use_dtype = use_dtype
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Create arange and multiply with input to ensure arange goes through graph
-        indices = torch.arange(self.stop, dtype=x.dtype, device=x.device)
+        if self.use_dtype:
+            indices = torch.arange(self.stop, dtype=x.dtype, device=x.device)
+        else:
+            # No dtype - let MLX infer (defaults to int64 for integer inputs)
+            indices = torch.arange(self.stop, device=x.device)
+            indices = indices.to(x.dtype)  # Cast for multiplication
         return x * indices
 
 
@@ -79,24 +85,41 @@ class ArangeTest(OpTestCase):
     def __init__(
         self,
         stop: int = 10,
+        dtype: torch.dtype = torch.float32,
+        use_dtype: bool = True,
     ):
         self.stop = stop
-        self.name = f"arange_{stop}"
+        self.dtype = dtype
+        self.use_dtype = use_dtype
+        dtype_name = str(dtype).split(".")[-1]
+        if use_dtype:
+            self.name = f"arange_{stop}_{dtype_name}"
+        else:
+            self.name = f"arange_{stop}_no_dtype"
 
     @classmethod
     def get_test_configs(cls) -> List["ArangeTest"]:
         """Return all test configurations to run."""
         return [
-            cls(stop=10),
-            cls(stop=32),
-            cls(stop=100),
+            # With explicit dtype
+            cls(stop=10, dtype=torch.float32, use_dtype=True),
+            cls(stop=32, dtype=torch.float32, use_dtype=True),
+            cls(stop=100, dtype=torch.float32, use_dtype=True),
+            cls(stop=16, dtype=torch.int32, use_dtype=True),
+            cls(stop=16, dtype=torch.int64, use_dtype=True),
+            # Without dtype (let MLX infer)
+            cls(stop=10, dtype=torch.float32, use_dtype=False),
+            cls(stop=32, dtype=torch.float32, use_dtype=False),
         ]
 
     def create_model(self) -> nn.Module:
-        return ArangeModel(self.stop)
+        return ArangeModel(self.stop, use_dtype=self.use_dtype)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.stop)
+        if self.dtype in (torch.int32, torch.int64):
+            x = torch.randint(1, 10, (self.stop,), dtype=self.dtype)
+        else:
+            x = torch.randn(self.stop, dtype=self.dtype)
         return (x,)
 
     def get_dynamic_shapes(self):

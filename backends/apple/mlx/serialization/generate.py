@@ -1158,11 +1158,10 @@ def _fbs_type_to_cpp(
         table: Optional table context for type inference
         fld: Optional field context for the current field
 
-    Note: Scalar types (float, int, DTypeId, etc.) are NEVER optional in C++.
-    The Python serialization layer is responsible for ensuring all scalar fields
+    Note: Most scalar types (float, int, etc.) are never optional in C++.
+    The Python serialization layer is responsible for ensuring scalar fields
     have values (using defaults if user doesn't provide them).
-    Only reference types (Tid, Vid) can be optional since they represent
-    genuinely optional tensors/values.
+    Reference types (Tid, Vid) and DTypeId with '= null' default can be optional.
     """
     # Handle arrays
     if fbs_type.startswith("[") and fbs_type.endswith("]"):
@@ -1190,13 +1189,15 @@ def _fbs_type_to_cpp(
 
     cpp_type = type_map.get(fbs_type, fbs_type)
 
-    # Handle optional types - ONLY for reference types (Tid, Vid)
-    # Scalar types are never optional; Python serializer ensures values are present
+    # Handle optional types
     if not required:
         if fbs_type == "Tid":
             return "std::optional<Tid>"
         if fbs_type == "Vid":
             return "std::optional<Vid<int32_t>>"
+        # DTypeId with '= null' default should be optional
+        if fbs_type == "DTypeId" and fld is not None and fld.default == "null":
+            return "std::optional<DTypeId>"
 
     return cpp_type
 
@@ -1219,6 +1220,7 @@ def _table_name_to_opcode(name: str) -> str:
         "RMSNorm": "RMS_NORM",
         "LayerNorm": "LAYER_NORM",
         "Conv1D": "CONV1D",
+        "Conv2D": "CONV2D",
         "ARange": "ARANGE",
         "IdCopy": "ID_COPY",
         "SymSize": "SYM_SIZE",
@@ -1226,6 +1228,9 @@ def _table_name_to_opcode(name: str) -> str:
         "ExpandDims": "EXPAND_DIMS",
         "TakeAlongAxis": "TAKE_ALONG_AXIS",
         "AddScalar": "ADD_SCALAR",
+        "SubScalar": "SUB_SCALAR",
+        "MulScalar": "MUL_SCALAR",
+        "FloorDivScalar": "FLOOR_DIV_SCALAR",
         "SliceUpdate": "SLICE_UPDATE",
         "QuantizedLinear": "QUANTIZED_LINEAR",
         "QuantizedGather": "QUANTIZED_GATHER",
@@ -1236,6 +1241,11 @@ def _table_name_to_opcode(name: str) -> str:
         "LogicalNot": "LOGICAL_NOT",
         "LogicalAnd": "LOGICAL_AND",
         "LogicalOr": "LOGICAL_OR",
+        "FullLike": "FULL_LIKE",
+        # Math ops with compound names
+        "LogAddExp": "LOG_ADD_EXP",
+        "FloorDivide": "FLOOR_DIVIDE",
+        "LogSumExp": "LOG_SUM_EXP",
     }
 
     if name in special_cases:

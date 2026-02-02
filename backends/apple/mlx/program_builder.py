@@ -599,6 +599,20 @@ class MLXOpRegistry:
         """Return all registered op targets."""
         return set(self._handlers.keys())
 
+    def unregister(self, target: Union[str, Callable, list, tuple]) -> None:
+        """Remove a handler for one or more op targets.
+
+        This is useful for debugging - allows temporarily disabling specific
+        handlers to test if they are causing issues.
+
+        Args:
+            target: Single target or list of targets to unregister
+        """
+        targets = target if isinstance(target, (list, tuple)) else [target]
+        for t in targets:
+            if t in self._handlers:
+                del self._handlers[t]
+
     def register_pattern(self, name: str):
         """Decorator to register a pattern handler class."""
 

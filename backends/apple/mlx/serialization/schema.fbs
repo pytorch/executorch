@@ -143,6 +143,24 @@ table AddScalarNode {
     out: Vid (required);
 }
 
+table SubScalarNode {
+    a: IntOrVid (required);
+    b: IntOrVid (required);
+    out: Vid (required);
+}
+
+table MulScalarNode {
+    a: IntOrVid (required);
+    b: IntOrVid (required);
+    out: Vid (required);
+}
+
+table FloorDivScalarNode {
+    a: IntOrVid (required);
+    b: IntOrVid (required);
+    out: Vid (required);
+}
+
 table SymSizeNode {
     a: Tid (required);
     dim: int32;
@@ -342,22 +360,18 @@ table FullNode {
     dtype: DTypeId;
 }
 
-table ZerosNode {
+table FullLikeNode {
+    x: Tid (required);          // Input tensor to copy shape from
     out: Tid (required);
-    shape: [IntOrVid] (required);
-    dtype: DTypeId;
-}
-
-table OnesNode {
-    out: Tid (required);
-    shape: [IntOrVid] (required);
-    dtype: DTypeId;
+    v: float;                   // Fill value
+    dtype: DTypeId = null;      // Optional dtype override (if null, use x's dtype)
 }
 
 table ArgmaxNode {
     x: Tid (required);
     out: Tid (required);
     axis: int32;
+    keepdims: bool = false;
 }
 
 table SliceUpdateNode {
@@ -435,6 +449,261 @@ table LogicalOrNode {
     out: Tid (required);
 }
 
+// Triangular matrix ops
+table TriNode {
+    out: Tid (required);
+    n: IntOrVid (required);   // Number of rows
+    m: IntOrVid (required);   // Number of columns
+    k: int32 = 0;             // Diagonal offset: 0=main, +above, -below
+    dtype: DTypeId;
+}
+
+table TrilNode {
+    x: Tid (required);
+    out: Tid (required);
+    k: int32 = 0;  // Diagonal offset: 0=main, +above, -below
+}
+
+table TriuNode {
+    x: Tid (required);
+    out: Tid (required);
+    k: int32 = 0;  // Diagonal offset: 0=main, +above, -below
+}
+
+// =============================================================================
+// Math ops - Unary element-wise
+// =============================================================================
+
+table FloorNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table CeilNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SquareNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ExpNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SinNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table CosNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table TanNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArcsinNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArccosNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArctanNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SinhNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table CoshNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArcsinhNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArccoshNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArctanhNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table Log2Node {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table Log10Node {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table Log1pNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ErfNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table Expm1Node {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table RoundNode {
+    x: Tid (required);
+    out: Tid (required);
+    decimals: int32 = 0;
+}
+
+table ReciprocalNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SqrtNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table AbsNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table NegNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+// =============================================================================
+// Math ops - Binary element-wise
+// =============================================================================
+
+table Atan2Node {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table LogAddExpNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table FloorDivideNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table PowerNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+// =============================================================================
+// Math ops - Reduction
+// =============================================================================
+
+table LogSumExpNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];
+    keepdims: bool = false;
+}
+
+table SumNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table MeanNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table VarNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+    ddof: int32 = 0;         // Delta degrees of freedom (0=population var, 1=sample var)
+}
+
+table StdNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+    ddof: int32 = 0;         // Delta degrees of freedom
+}
+
+table ProdNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table MaxNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table MinNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table ArgminNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+    keepdims: bool = false;
+}
+
+table MedianNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
 // =============================================================================
 // Union of all op types
 // =============================================================================
@@ -453,6 +722,9 @@ union OpNode {
     SdpaNode,
     AddNode,
     AddScalarNode,
+    SubScalarNode,
+    MulScalarNode,
+    FloorDivScalarNode,
     SymSizeNode,
     MultiplyNode,
     DivideNode,
@@ -483,8 +755,7 @@ union OpNode {
     QuantizedLinearNode,
     ConcatenateNode,
     FullNode,
-    ZerosNode,
-    OnesNode,
+    FullLikeNode,
     ArgmaxNode,
     SliceUpdateNode,
     QuantizedGatherNode,
@@ -496,7 +767,52 @@ union OpNode {
     NotEqualNode,
     LogicalNotNode,
     LogicalAndNode,
-    LogicalOrNode
+    LogicalOrNode,
+    TriNode,
+    TrilNode,
+    TriuNode,
+    // Math ops - Unary
+    FloorNode,
+    CeilNode,
+    SquareNode,
+    ExpNode,
+    SinNode,
+    CosNode,
+    TanNode,
+    ArcsinNode,
+    ArccosNode,
+    ArctanNode,
+    SinhNode,
+    CoshNode,
+    ArcsinhNode,
+    ArccoshNode,
+    ArctanhNode,
+    Log2Node,
+    Log10Node,
+    Log1pNode,
+    ErfNode,
+    Expm1Node,
+    RoundNode,
+    ReciprocalNode,
+    SqrtNode,
+    AbsNode,
+    NegNode,
+    // Math ops - Binary
+    Atan2Node,
+    LogAddExpNode,
+    FloorDivideNode,
+    PowerNode,
+    // Math ops - Reduction
+    LogSumExpNode,
+    SumNode,
+    MeanNode,
+    VarNode,
+    StdNode,
+    ProdNode,
+    MaxNode,
+    MinNode,
+    ArgminNode,
+    MedianNode
 }
 
 // =============================================================================
