@@ -69,8 +69,7 @@ public class LlmModule {
     }
 
     mHybridData =
-        initHybrid(
-            modelType, modulePath, tokenizerPath, temperature, dataFiles, numBos, numEos);
+        initHybrid(modelType, modulePath, tokenizerPath, temperature, dataFiles, numBos, numEos);
   }
 
   /**
@@ -236,13 +235,7 @@ public class LlmModule {
    */
   public int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
     return generate(
-        prompt,
-        seqLen,
-        llmCallback,
-        echo,
-        DEFAULT_TEMPERATURE,
-        DEFAULT_BOS,
-        DEFAULT_EOS);
+        prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE, DEFAULT_BOS, DEFAULT_EOS);
   }
 
   /**
