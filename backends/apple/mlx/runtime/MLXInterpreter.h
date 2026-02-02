@@ -250,6 +250,39 @@ exec_add_scalar(const AddScalarNode& n, ExecutionState& st, StreamOrDevice) {
   st.set_value(n.out, a + b);
 }
 
+// ----- Sub Scalar -----
+inline void
+exec_sub_scalar(const SubScalarNode& n, ExecutionState& st, StreamOrDevice) {
+  int32_t a = resolve_int(n.a, st);
+  int32_t b = resolve_int(n.b, st);
+  st.set_value(n.out, a - b);
+}
+
+// ----- Mul Scalar -----
+inline void
+exec_mul_scalar(const MulScalarNode& n, ExecutionState& st, StreamOrDevice) {
+  int32_t a = resolve_int(n.a, st);
+  int32_t b = resolve_int(n.b, st);
+  st.set_value(n.out, a * b);
+}
+
+// ----- Floor Div Scalar -----
+inline void exec_floor_div_scalar(
+    const FloorDivScalarNode& n,
+    ExecutionState& st,
+    StreamOrDevice) {
+  int32_t a = resolve_int(n.a, st);
+  int32_t b = resolve_int(n.b, st);
+  // Floor division for integers (Python semantics: rounds towards negative
+  // infinity)
+  int32_t result = a / b;
+  // Adjust for floor division when signs differ and there's a remainder
+  if ((a % b != 0) && ((a < 0) != (b < 0))) {
+    result -= 1;
+  }
+  st.set_value(n.out, result);
+}
+
 // ----- Sym Size -----
 inline void
 exec_sym_size(const SymSizeNode& n, ExecutionState& st, StreamOrDevice) {
@@ -324,8 +357,15 @@ exec_arange(const ARangeNode& n, ExecutionState& st, StreamOrDevice s) {
   int stop_val = resolve_int(n.stop, st);
   int step_val = resolve_int(n.step, st);
 
-  st.set_tensor(
-      n.out, arange(start_val, stop_val, step_val, resolve_dtype(n.dtype), s));
+  if (n.dtype.has_value()) {
+    st.set_tensor(
+        n.out,
+        arange(
+            start_val, stop_val, step_val, resolve_dtype(n.dtype.value()), s));
+  } else {
+    // No dtype specified - use MLX's default (infers from inputs)
+    st.set_tensor(n.out, arange(start_val, stop_val, step_val, s));
+  }
 }
 
 // ----- SiLU -----
@@ -625,22 +665,13 @@ inline void exec_full(const FullNode& n, ExecutionState& st, StreamOrDevice s) {
       n.out, full(to_shape(n.shape, st), n.v, resolve_dtype(n.dtype), s));
 }
 
-// ----- Zeros -----
+// ----- FullLike -----
 inline void
-exec_zeros(const ZerosNode& n, ExecutionState& st, StreamOrDevice s) {
-  st.set_tensor(n.out, zeros(to_shape(n.shape, st), resolve_dtype(n.dtype), s));
-}
-
-// ----- Ones -----
-inline void exec_ones(const OnesNode& n, ExecutionState& st, StreamOrDevice s) {
-  st.set_tensor(n.out, ones(to_shape(n.shape, st), resolve_dtype(n.dtype), s));
-}
-
-// ----- Argmax -----
-inline void
-exec_argmax(const ArgmaxNode& n, ExecutionState& st, StreamOrDevice s) {
-  array idx = argmax(st.const_tensor_ref(n.x), n.axis, s);
-  st.set_tensor(n.out, std::move(idx));
+exec_full_like(const FullLikeNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  // Use input dtype if not specified
+  auto dtype = n.dtype.has_value() ? resolve_dtype(n.dtype.value()) : x.dtype();
+  st.set_tensor(n.out, full_like(x, n.v, dtype, s));
 }
 
 // ----- Slice Update -----
@@ -787,6 +818,318 @@ exec_logical_or(const LogicalOrNode& n, ExecutionState& st, StreamOrDevice s) {
       n.out, logical_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
+// ----- Tri -----
+inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
+  int rows = resolve_int(n.n, st);
+  int cols = resolve_int(n.m, st);
+  auto dtype = resolve_dtype(n.dtype);
+  st.set_tensor(n.out, tri(rows, cols, n.k, dtype, s));
+}
+
+// ----- Tril -----
+inline void exec_tril(const TrilNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(n.out, tril(x, n.k, s));
+}
+
+// ----- Triu -----
+inline void exec_triu(const TriuNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(n.out, triu(x, n.k, s));
+}
+
+// =============================================================================
+// Math ops - Unary element-wise
+// =============================================================================
+
+// ----- Floor -----
+inline void
+exec_floor(const FloorNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, floor(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Ceil -----
+inline void exec_ceil(const CeilNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, ceil(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Square -----
+inline void
+exec_square(const SquareNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, square(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Exp -----
+inline void exec_exp(const ExpNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, exp(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Sin -----
+inline void exec_sin(const SinNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, sin(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Cos -----
+inline void exec_cos(const CosNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, cos(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Tan -----
+inline void exec_tan(const TanNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, tan(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Arcsin -----
+inline void
+exec_arcsin(const ArcsinNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, arcsin(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Arccos -----
+inline void
+exec_arccos(const ArccosNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, arccos(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Arctan -----
+inline void
+exec_arctan(const ArctanNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, arctan(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Sinh -----
+inline void exec_sinh(const SinhNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, sinh(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Cosh -----
+inline void exec_cosh(const CoshNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, cosh(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Arcsinh -----
+inline void
+exec_arcsinh(const ArcsinhNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, arcsinh(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Arccosh -----
+inline void
+exec_arccosh(const ArccoshNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, arccosh(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Arctanh -----
+inline void
+exec_arctanh(const ArctanhNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, arctanh(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Log2 -----
+inline void exec_log2(const Log2Node& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, log2(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Log10 -----
+inline void
+exec_log10(const Log10Node& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, log10(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Log1p -----
+inline void
+exec_log1p(const Log1pNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, log1p(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Erf -----
+inline void exec_erf(const ErfNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, erf(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Expm1 -----
+inline void
+exec_expm1(const Expm1Node& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, expm1(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Round -----
+inline void
+exec_round(const RoundNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, round(st.const_tensor_ref(n.x), n.decimals, s));
+}
+
+// ----- Reciprocal -----
+inline void
+exec_reciprocal(const ReciprocalNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, reciprocal(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Sqrt -----
+inline void exec_sqrt(const SqrtNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, sqrt(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Abs -----
+inline void exec_abs(const AbsNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, abs(st.const_tensor_ref(n.x), s));
+}
+
+// ----- Neg -----
+inline void exec_neg(const NegNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, negative(st.const_tensor_ref(n.x), s));
+}
+
+// =============================================================================
+// Math ops - Binary element-wise
+// =============================================================================
+
+// ----- Atan2 -----
+inline void
+exec_atan2(const Atan2Node& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, arctan2(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+// ----- LogAddExp -----
+inline void
+exec_logaddexp(const LogAddExpNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, logaddexp(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+// ----- FloorDivide -----
+inline void exec_floor_divide(
+    const FloorDivideNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      floor_divide(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+// ----- Power -----
+inline void
+exec_power(const PowerNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, power(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+// =============================================================================
+// Math ops - Reduction
+// =============================================================================
+
+// ----- LogSumExp -----
+inline void
+exec_logsumexp(const LogSumExpNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, logsumexp(x, axes, n.keepdims, s));
+}
+
+// ----- Sum -----
+inline void exec_sum(const SumNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  if (axes.empty()) {
+    st.set_tensor(n.out, sum(x, n.keepdims, s));
+  } else {
+    st.set_tensor(n.out, sum(x, axes, n.keepdims, s));
+  }
+}
+
+// ----- Mean -----
+inline void exec_mean(const MeanNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  if (axes.empty()) {
+    st.set_tensor(n.out, mean(x, n.keepdims, s));
+  } else {
+    st.set_tensor(n.out, mean(x, axes, n.keepdims, s));
+  }
+}
+
+// ----- Var -----
+inline void exec_var(const VarNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  if (axes.empty()) {
+    st.set_tensor(n.out, var(x, n.keepdims, n.ddof, s));
+  } else {
+    st.set_tensor(n.out, var(x, axes, n.keepdims, n.ddof, s));
+  }
+}
+
+// ----- Std -----
+inline void exec_std(const StdNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  if (axes.empty()) {
+    st.set_tensor(n.out, ::mlx::core::std(x, n.keepdims, n.ddof, s));
+  } else {
+    st.set_tensor(n.out, ::mlx::core::std(x, axes, n.keepdims, n.ddof, s));
+  }
+}
+
+// ----- Prod -----
+inline void exec_prod(const ProdNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  if (axes.empty()) {
+    st.set_tensor(n.out, prod(x, n.keepdims, s));
+  } else {
+    st.set_tensor(n.out, prod(x, axes, n.keepdims, s));
+  }
+}
+
+// ----- Max (amax) -----
+inline void exec_max(const MaxNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  if (axes.empty()) {
+    st.set_tensor(n.out, max(x, n.keepdims, s));
+  } else {
+    st.set_tensor(n.out, max(x, axes, n.keepdims, s));
+  }
+}
+
+// ----- Min (amin) -----
+inline void exec_min(const MinNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  if (axes.empty()) {
+    st.set_tensor(n.out, min(x, n.keepdims, s));
+  } else {
+    st.set_tensor(n.out, min(x, axes, n.keepdims, s));
+  }
+}
+
+// ----- Argmax -----
+inline void
+exec_argmax(const ArgmaxNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(n.out, argmax(x, n.axis, n.keepdims, s));
+}
+
+// ----- Argmin -----
+inline void
+exec_argmin(const ArgminNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(n.out, argmin(x, n.axis, n.keepdims, s));
+}
+
+// ----- Median -----
+inline void
+exec_median(const MedianNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  if (axes.empty()) {
+    st.set_tensor(n.out, median(x, n.keepdims, s));
+  } else {
+    st.set_tensor(n.out, median(x, axes, n.keepdims, s));
+  }
+}
+
 } // namespace ops
 
 // =============================================================================
@@ -851,6 +1194,16 @@ class Interpreter {
         break;
       case OpCode::ADD_SCALAR:
         ops::exec_add_scalar(std::get<AddScalarNode>(instr.node), st, s);
+        break;
+      case OpCode::SUB_SCALAR:
+        ops::exec_sub_scalar(std::get<SubScalarNode>(instr.node), st, s);
+        break;
+      case OpCode::MUL_SCALAR:
+        ops::exec_mul_scalar(std::get<MulScalarNode>(instr.node), st, s);
+        break;
+      case OpCode::FLOOR_DIV_SCALAR:
+        ops::exec_floor_div_scalar(
+            std::get<FloorDivScalarNode>(instr.node), st, s);
         break;
       case OpCode::SYM_SIZE:
         ops::exec_sym_size(std::get<SymSizeNode>(instr.node), st, s);
@@ -943,11 +1296,8 @@ class Interpreter {
       case OpCode::FULL:
         ops::exec_full(std::get<FullNode>(instr.node), st, s);
         break;
-      case OpCode::ZEROS:
-        ops::exec_zeros(std::get<ZerosNode>(instr.node), st, s);
-        break;
-      case OpCode::ONES:
-        ops::exec_ones(std::get<OnesNode>(instr.node), st, s);
+      case OpCode::FULL_LIKE:
+        ops::exec_full_like(std::get<FullLikeNode>(instr.node), st, s);
         break;
       case OpCode::ARGMAX:
         ops::exec_argmax(std::get<ArgmaxNode>(instr.node), st, s);
@@ -985,6 +1335,135 @@ class Interpreter {
         break;
       case OpCode::LOGICAL_OR:
         ops::exec_logical_or(std::get<LogicalOrNode>(instr.node), st, s);
+        break;
+      case OpCode::TRI:
+        ops::exec_tri(std::get<TriNode>(instr.node), st, s);
+        break;
+      case OpCode::TRIL:
+        ops::exec_tril(std::get<TrilNode>(instr.node), st, s);
+        break;
+      case OpCode::TRIU:
+        ops::exec_triu(std::get<TriuNode>(instr.node), st, s);
+        break;
+      // Math ops - Unary
+      case OpCode::FLOOR:
+        ops::exec_floor(std::get<FloorNode>(instr.node), st, s);
+        break;
+      case OpCode::CEIL:
+        ops::exec_ceil(std::get<CeilNode>(instr.node), st, s);
+        break;
+      case OpCode::SQUARE:
+        ops::exec_square(std::get<SquareNode>(instr.node), st, s);
+        break;
+      case OpCode::EXP:
+        ops::exec_exp(std::get<ExpNode>(instr.node), st, s);
+        break;
+      case OpCode::SIN:
+        ops::exec_sin(std::get<SinNode>(instr.node), st, s);
+        break;
+      case OpCode::COS:
+        ops::exec_cos(std::get<CosNode>(instr.node), st, s);
+        break;
+      case OpCode::TAN:
+        ops::exec_tan(std::get<TanNode>(instr.node), st, s);
+        break;
+      case OpCode::ARCSIN:
+        ops::exec_arcsin(std::get<ArcsinNode>(instr.node), st, s);
+        break;
+      case OpCode::ARCCOS:
+        ops::exec_arccos(std::get<ArccosNode>(instr.node), st, s);
+        break;
+      case OpCode::ARCTAN:
+        ops::exec_arctan(std::get<ArctanNode>(instr.node), st, s);
+        break;
+      case OpCode::SINH:
+        ops::exec_sinh(std::get<SinhNode>(instr.node), st, s);
+        break;
+      case OpCode::COSH:
+        ops::exec_cosh(std::get<CoshNode>(instr.node), st, s);
+        break;
+      case OpCode::ARCSINH:
+        ops::exec_arcsinh(std::get<ArcsinhNode>(instr.node), st, s);
+        break;
+      case OpCode::ARCCOSH:
+        ops::exec_arccosh(std::get<ArccoshNode>(instr.node), st, s);
+        break;
+      case OpCode::ARCTANH:
+        ops::exec_arctanh(std::get<ArctanhNode>(instr.node), st, s);
+        break;
+      case OpCode::LOG2:
+        ops::exec_log2(std::get<Log2Node>(instr.node), st, s);
+        break;
+      case OpCode::LOG10:
+        ops::exec_log10(std::get<Log10Node>(instr.node), st, s);
+        break;
+      case OpCode::LOG1P:
+        ops::exec_log1p(std::get<Log1pNode>(instr.node), st, s);
+        break;
+      case OpCode::ERF:
+        ops::exec_erf(std::get<ErfNode>(instr.node), st, s);
+        break;
+      case OpCode::EXPM1:
+        ops::exec_expm1(std::get<Expm1Node>(instr.node), st, s);
+        break;
+      case OpCode::ROUND:
+        ops::exec_round(std::get<RoundNode>(instr.node), st, s);
+        break;
+      case OpCode::RECIPROCAL:
+        ops::exec_reciprocal(std::get<ReciprocalNode>(instr.node), st, s);
+        break;
+      case OpCode::SQRT:
+        ops::exec_sqrt(std::get<SqrtNode>(instr.node), st, s);
+        break;
+      case OpCode::ABS:
+        ops::exec_abs(std::get<AbsNode>(instr.node), st, s);
+        break;
+      case OpCode::NEG:
+        ops::exec_neg(std::get<NegNode>(instr.node), st, s);
+        break;
+      // Math ops - Binary
+      case OpCode::ATAN2:
+        ops::exec_atan2(std::get<Atan2Node>(instr.node), st, s);
+        break;
+      case OpCode::LOG_ADD_EXP:
+        ops::exec_logaddexp(std::get<LogAddExpNode>(instr.node), st, s);
+        break;
+      case OpCode::FLOOR_DIVIDE:
+        ops::exec_floor_divide(std::get<FloorDivideNode>(instr.node), st, s);
+        break;
+      case OpCode::POWER:
+        ops::exec_power(std::get<PowerNode>(instr.node), st, s);
+        break;
+      // Math ops - Reduction
+      case OpCode::LOG_SUM_EXP:
+        ops::exec_logsumexp(std::get<LogSumExpNode>(instr.node), st, s);
+        break;
+      case OpCode::SUM:
+        ops::exec_sum(std::get<SumNode>(instr.node), st, s);
+        break;
+      case OpCode::MEAN:
+        ops::exec_mean(std::get<MeanNode>(instr.node), st, s);
+        break;
+      case OpCode::VAR:
+        ops::exec_var(std::get<VarNode>(instr.node), st, s);
+        break;
+      case OpCode::STD:
+        ops::exec_std(std::get<StdNode>(instr.node), st, s);
+        break;
+      case OpCode::PROD:
+        ops::exec_prod(std::get<ProdNode>(instr.node), st, s);
+        break;
+      case OpCode::MAX:
+        ops::exec_max(std::get<MaxNode>(instr.node), st, s);
+        break;
+      case OpCode::MIN:
+        ops::exec_min(std::get<MinNode>(instr.node), st, s);
+        break;
+      case OpCode::ARGMIN:
+        ops::exec_argmin(std::get<ArgminNode>(instr.node), st, s);
+        break;
+      case OpCode::MEDIAN:
+        ops::exec_median(std::get<MedianNode>(instr.node), st, s);
         break;
       case OpCode::SENTINEL:
         break;

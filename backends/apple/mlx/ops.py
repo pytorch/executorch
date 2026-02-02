@@ -16,7 +16,7 @@ Each handler converts a specific PyTorch operation to the corresponding MLX grap
 from __future__ import annotations
 
 import operator
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import torch
 from executorch.backends.apple.mlx.program_builder import (
@@ -28,19 +28,39 @@ from executorch.backends.apple.mlx.program_builder import (
     Slot,
 )
 from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
+    AbsNode,
     AddmmNode,
     AddNode,
     AddScalarNode,
     ARangeNode,
+    ArccoshNode,
+    ArccosNode,
+    ArcsinhNode,
+    ArcsinNode,
+    ArctanhNode,
+    ArctanNode,
+    ArgmaxNode,
+    ArgminNode,
     AsTypeNode,
+    Atan2Node,
     BroadcastToNode,
+    CeilNode,
     ConcatenateNode,
     ContiguousNode,
     Conv1DNode,
     Conv2DNode,
+    CoshNode,
+    CosNode,
     DivideNode,
     EqualNode,
+    ErfNode,
     ExpandDimsNode,
+    Expm1Node,
+    ExpNode,
+    FloorDivideNode,
+    FloorDivScalarNode,
+    FloorNode,
+    FullLikeNode,
     FullNode,
     GatherNode,
     GeluNode,
@@ -52,34 +72,57 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     LessEqualNode,
     LessNode,
     LinearNode,
+    Log10Node,
+    Log1pNode,
+    Log2Node,
+    LogAddExpNode,
     LogicalAndNode,
     LogicalNotNode,
     LogicalOrNode,
     LogNode,
+    LogSumExpNode,
     MaximumNode,
+    MaxNode,
+    MeanNode,
+    MinNode,
+    MulScalarNode,
     MultiplyNode,
+    NegNode,
     NotEqualNode,
-    OnesNode,
     PadNode,
+    PowerNode,
+    ProdNode,
+    ReciprocalNode,
     ReshapeNode,
     RMSNormNode,
     RopeNode,
+    RoundNode,
     RsqrtNode,
     SigmoidNode,
     SiluNode,
+    SinhNode,
+    SinNode,
     SliceNode,
     SliceUpdateNode,
     SoftmaxNode,
     SplitNode,
+    SqrtNode,
+    SquareNode,
     SqueezeNode,
+    StdNode,
+    SubScalarNode,
     SubtractNode,
+    SumNode,
     SymSizeNode,
     TakeAlongAxisNode,
     TanhNode,
+    TanNode,
     TileNode,
     TransposeNode,
+    TrilNode,
+    TriuNode,
+    VarNode,
     WhereNode,
-    ZerosNode,
 )
 from torch.fx.node import Node
 
@@ -153,6 +196,38 @@ def is_static_value(value: Any) -> bool:
         True if the value is a static scalar (int, float, bool), False otherwise
     """
     return not isinstance(value, Slot)
+
+
+def normalize_reduction_dim(
+    args: List[Any], start_idx: int = 1
+) -> Tuple[Optional[List[int]], bool]:
+    """
+    Normalize dim argument for reduction operations.
+
+    Extracts and normalizes the dim argument from handler args, returning a list of axes
+    and the keepdim flag. Handles both list-based dims (e.g., sum.dim_IntList) and
+    single int dims (e.g., prod.dim_int).
+
+    Args:
+        args: The handler args list
+        start_idx: Index where the dim argument starts (default 1, after self)
+
+    Returns:
+        Tuple of (axes, keepdim) where:
+        - axes: List of dimension indices, or empty list for reduce-all
+        - keepdim: Boolean keepdim flag (default False)
+    """
+    if len(args) > start_idx and isinstance(args[start_idx], (list, tuple)):
+        dim = list(args[start_idx])
+        keepdim = args[start_idx + 1] if len(args) > start_idx + 1 else False
+    elif len(args) > start_idx and isinstance(args[start_idx], int):
+        dim = [args[start_idx]]
+        keepdim = args[start_idx + 1] if len(args) > start_idx + 1 else False
+    else:
+        dim = []
+        keepdim = False
+
+    return dim, keepdim
 
 
 # =============================================================================
@@ -561,6 +636,51 @@ def _add_scalar_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[operator.sub])
+def _sub_scalar_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle Python operator.sub for scalar arithmetic (symbolic shapes)."""
+    a, b = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        SubScalarNode(
+            a=P._to_int_or_vid(a),
+            b=P._to_int_or_vid(b),
+            out=P._slot_to_vid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[operator.mul])
+def _mul_scalar_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle Python operator.mul for scalar arithmetic (symbolic shapes)."""
+    a, b = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        MulScalarNode(
+            a=P._to_int_or_vid(a),
+            b=P._to_int_or_vid(b),
+            out=P._slot_to_vid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[operator.floordiv])
+def _floordiv_scalar_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle Python operator.floordiv (//) for scalar arithmetic (symbolic shapes)."""
+    a, b = P.args(n)
+    out = P.make_or_get_slot(n)
+    P._emit(
+        FloorDivScalarNode(
+            a=P._to_int_or_vid(a),
+            b=P._to_int_or_vid(b),
+            out=P._slot_to_vid(out),
+        )
+    )
+    return out
+
+
 @REGISTRY.register(target=[torch.ops.aten.mul.Tensor, torch.ops.aten.mul.Scalar])
 def _mul_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.mul.Tensor and aten.mul.Scalar."""
@@ -618,6 +738,52 @@ def _div_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             out=P._slot_to_tid(out),
         )
     )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.div.Tensor_mode])
+def _div_tensor_mode_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.div.Tensor_mode with rounding mode."""
+    out = P.make_or_get_slot(n)
+    args = P.args(n)
+    a = args[0]
+    b = args[1]
+    rounding_mode = n.kwargs.get("rounding_mode", None)
+
+    # Handle scalar b by creating a constant tensor
+    if not isinstance(b, Slot):
+        b = P.make_or_get_constant(
+            f"_scalar_{b}", torch.tensor([b], dtype=n.meta["val"].dtype)
+        )
+
+    # Handle scalar a
+    if not isinstance(a, Slot):
+        a = P.make_or_get_constant(
+            f"_scalar_{a}", torch.tensor([a], dtype=n.meta["val"].dtype)
+        )
+
+    if rounding_mode == "trunc":
+        raise NotImplementedError(
+            "aten.div.Tensor_mode with rounding_mode='trunc' is not supported. "
+            "MLX does not have a truncate operation."
+        )
+    elif rounding_mode == "floor":
+        P._emit(
+            FloorDivideNode(
+                a=P._slot_to_tid(a),
+                b=P._slot_to_tid(b),
+                out=P._slot_to_tid(out),
+            )
+        )
+    else:
+        # rounding_mode is None - true division
+        P._emit(
+            DivideNode(
+                a=P._slot_to_tid(a),
+                b=P._slot_to_tid(b),
+                out=P._slot_to_tid(out),
+            )
+        )
     return out
 
 
@@ -1400,11 +1566,12 @@ def _relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     # Create a temporary slot for scalar zero using slot_manager
     _, zero_slot = P.slot_manager.make_tmp_slot()
 
-    # Emit ZerosNode to create a scalar zero (shape=[])
+    # Emit FullNode to create a scalar zero (shape=[])
     # Maximum will broadcast this scalar to match input shape
     P._emit(
-        ZerosNode(
+        FullNode(
             shape=[],  # Scalar (will be broadcast in maximum)
+            v=0.0,
             dtype=_torch_dtype_to_dtypeid(dtype),
             out=P._slot_to_tid(zero_slot),
         )
@@ -1426,29 +1593,32 @@ def _relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 def _log_softmax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten._log_softmax.default - log of softmax.
 
-    LogSoftmax(x, dim) = log(softmax(x, dim))
+    LogSoftmax(x, dim) = x - logsumexp(x, dim, keepdims=True)
 
-    Implemented by emitting two nodes: SoftmaxNode → LogNode
+    This is numerically stable because it avoids computing softmax
+    (which can underflow to 0) followed by log (which gives -inf for 0).
     """
     x, dim, _half_to_float = P.args(n)  # x is already a Slot
 
-    # Create temporary slot for softmax output
-    _, softmax_slot = P.slot_manager.make_tmp_slot()
+    # Create temporary slot for logsumexp output
+    _, logsumexp_slot = P.slot_manager.make_tmp_slot()
 
-    # Emit SoftmaxNode first
+    # Emit LogSumExpNode with keepdims=True
     P._emit(
-        SoftmaxNode(
+        LogSumExpNode(
             x=P._slot_to_tid(x),
-            axis=dim,
-            out=P._slot_to_tid(softmax_slot),
+            axes=[dim],
+            keepdims=True,
+            out=P._slot_to_tid(logsumexp_slot),
         )
     )
 
-    # Emit LogNode on the softmax output
+    # Emit SubtractNode: x - logsumexp(x)
     out = P.make_or_get_slot(n)
     P._emit(
-        LogNode(
-            x=P._slot_to_tid(softmax_slot),
+        SubtractNode(
+            a=P._slot_to_tid(x),
+            b=P._slot_to_tid(logsumexp_slot),
             out=P._slot_to_tid(out),
         )
     )
@@ -1866,9 +2036,10 @@ def _zeros_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         dtype = torch.float32  # default
 
     P._emit(
-        ZerosNode(
+        FullNode(
             out=P._slot_to_tid(out),
             shape=shape_iovs,
+            v=0.0,
             dtype=_torch_dtype_to_dtypeid(dtype),
         )
     )
@@ -1891,10 +2062,78 @@ def _ones_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         dtype = torch.float32  # default
 
     P._emit(
-        OnesNode(
+        FullNode(
             out=P._slot_to_tid(out),
             shape=shape_iovs,
+            v=1.0,
             dtype=_torch_dtype_to_dtypeid(dtype),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.zeros_like.default])
+def _zeros_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.zeros_like - create zero-filled tensor with same shape as input."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+
+    # aten.zeros_like(input, *, dtype=None, ...)
+    # If dtype is None, don't pass it - the C++ will use input's dtype
+    dtype = n.kwargs.get("dtype")
+
+    P._emit(
+        FullLikeNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+            v=0.0,
+            dtype=_torch_dtype_to_dtypeid(dtype) if dtype is not None else None,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.ones_like.default])
+def _ones_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.ones_like - create one-filled tensor with same shape as input."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+
+    # aten.ones_like(input, *, dtype=None, ...)
+    # If dtype is None, don't pass it - the C++ will use input's dtype
+    dtype = n.kwargs.get("dtype")
+
+    P._emit(
+        FullLikeNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+            v=1.0,
+            dtype=_torch_dtype_to_dtypeid(dtype) if dtype is not None else None,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.full_like.default])
+def _full_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.full_like - create tensor filled with value, same shape as input."""
+    args = P.args(n)
+    x = args[0]
+    fill_value = args[1]
+    out = P.make_or_get_slot(n)
+
+    # aten.full_like(input, fill_value, *, dtype=None, ...)
+    # If dtype is None, don't pass it - the C++ will use input's dtype
+    dtype = n.kwargs.get("dtype")
+
+    P._emit(
+        FullLikeNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+            v=float(fill_value),
+            dtype=_torch_dtype_to_dtypeid(dtype) if dtype is not None else None,
         )
     )
     return out
@@ -2102,4 +2341,659 @@ def _scalar_tensor_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             dtype=_torch_dtype_to_dtypeid(dtype),
         )
     )
+    return out
+
+
+# =============================================================================
+# Triangular Matrix Ops
+# =============================================================================
+
+
+@REGISTRY.register(target=[torch.ops.aten.tril.default])
+def _tril_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.tril - extract lower triangular part of matrix.
+
+    tril(input, diagonal=0) -> Tensor
+
+    Returns the lower triangular part of the matrix, with all elements above
+    the diagonal set to zero. The diagonal parameter controls which diagonal
+    to consider: 0 = main diagonal, positive = above main, negative = below main.
+    """
+    args = P.args(n)
+    x = args[0]
+    diagonal = args[1] if len(args) > 1 else 0
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        TrilNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+            k=diagonal,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.triu.default])
+def _triu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.triu - extract upper triangular part of matrix.
+
+    triu(input, diagonal=0) -> Tensor
+
+    Returns the upper triangular part of the matrix, with all elements below
+    the diagonal set to zero. The diagonal parameter controls which diagonal
+    to consider: 0 = main diagonal, positive = above main, negative = below main.
+    """
+    args = P.args(n)
+    x = args[0]
+    diagonal = args[1] if len(args) > 1 else 0
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        TriuNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+            k=diagonal,
+        )
+    )
+    return out
+
+
+# Note: TriNode is available in the schema for creating triangular matrices directly
+# (without needing an input tensor). There's no direct PyTorch aten.tri op - the typical
+# pattern is torch.ones(n, m).tril(k). A fusion pass could optimize this to use TriNode.
+# For now, TriNode can be used directly via the serialization API if needed.
+
+
+# =============================================================================
+# Math Ops - Unary Element-wise
+# =============================================================================
+
+
+@REGISTRY.register(target=[torch.ops.aten.floor.default])
+def _floor_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.floor - floor of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(FloorNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.ceil.default])
+def _ceil_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.ceil - ceiling of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(CeilNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.square.default])
+def _square_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.square - square of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(SquareNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.exp.default])
+def _exp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.exp - exponential of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(ExpNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.sin.default])
+def _sin_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.sin - sine of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(SinNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.cos.default])
+def _cos_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.cos - cosine of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(CosNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.tan.default])
+def _tan_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.tan - tangent of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(TanNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.asin.default])
+def _asin_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.asin - arc sine of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(ArcsinNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.acos.default])
+def _acos_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.acos - arc cosine of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(ArccosNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.atan.default])
+def _atan_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.atan - arc tangent of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(ArctanNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.sinh.default])
+def _sinh_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.sinh - hyperbolic sine of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(SinhNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.cosh.default])
+def _cosh_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.cosh - hyperbolic cosine of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(CoshNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.asinh.default])
+def _asinh_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.asinh - inverse hyperbolic sine of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(ArcsinhNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.acosh.default])
+def _acosh_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.acosh - inverse hyperbolic cosine of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(ArccoshNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.atanh.default])
+def _atanh_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.atanh - inverse hyperbolic tangent of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(ArctanhNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.log.default])
+def _log_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.log - natural logarithm of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(LogNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.log2.default])
+def _log2_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.log2 - base-2 logarithm of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(Log2Node(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.log10.default])
+def _log10_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.log10 - base-10 logarithm of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(Log10Node(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.log1p.default])
+def _log1p_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.log1p - natural logarithm of (1 + x)."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(Log1pNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.erf.default])
+def _erf_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.erf - error function of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(ErfNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.expm1.default])
+def _expm1_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.expm1 - exp(x) - 1 of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(Expm1Node(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.round.default])
+def _round_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.round - round elements to nearest integer.
+
+    Note: round.decimals variant is not supported as it's not in Core ATen.
+    """
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(RoundNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out), decimals=0))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.reciprocal.default])
+def _reciprocal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.reciprocal - 1/x of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(ReciprocalNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.sqrt.default])
+def _sqrt_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.sqrt - square root of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(SqrtNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.abs.default])
+def _abs_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.abs - absolute value of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(AbsNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.neg.default])
+def _neg_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.neg - negation of elements."""
+    args = P.args(n)
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P._emit(NegNode(x=P._slot_to_tid(x), out=P._slot_to_tid(out)))
+    return out
+
+
+# =============================================================================
+# Math Ops - Binary Element-wise
+# =============================================================================
+
+
+@REGISTRY.register(target=[torch.ops.aten.atan2.default])
+def _atan2_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.atan2 - arc tangent of y/x."""
+    args = P.args(n)
+    a, b = args[0], args[1]
+    out = P.make_or_get_slot(n)
+    P._emit(
+        Atan2Node(a=P._slot_to_tid(a), b=P._slot_to_tid(b), out=P._slot_to_tid(out))
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.logaddexp.default])
+def _logaddexp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.logaddexp - log(exp(a) + exp(b))."""
+    args = P.args(n)
+    a, b = args[0], args[1]
+    out = P.make_or_get_slot(n)
+    P._emit(
+        LogAddExpNode(a=P._slot_to_tid(a), b=P._slot_to_tid(b), out=P._slot_to_tid(out))
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.floor_divide.default])
+def _floor_divide_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.floor_divide - floor(a / b)."""
+    args = P.args(n)
+    a, b = args[0], args[1]
+    out = P.make_or_get_slot(n)
+    P._emit(
+        FloorDivideNode(
+            a=P._slot_to_tid(a), b=P._slot_to_tid(b), out=P._slot_to_tid(out)
+        )
+    )
+    return out
+
+
+@REGISTRY.register(
+    target=[torch.ops.aten.pow.Tensor_Tensor, torch.ops.aten.pow.Tensor_Scalar]
+)
+def _pow_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.pow - a raised to the power of b."""
+    args = P.args(n)
+    a = args[0]
+    b = args[1]
+
+    # Handle scalar exponent by creating a scalar full tensor that will broadcast
+    if not isinstance(b, Slot):
+        # Get dtype from input tensor's meta
+        input_meta = n.args[0].meta.get("val")
+        dtype = input_meta.dtype if input_meta is not None else torch.float32
+
+        # Create a scalar (0-D) tensor for the exponent
+        _, b_slot = P.slot_manager.make_tmp_slot()
+        P._emit(
+            FullNode(
+                out=P._slot_to_tid(b_slot),
+                shape=[],  # 0-D scalar - broadcasts correctly
+                v=float(b),
+                dtype=_torch_dtype_to_dtypeid(dtype),
+            )
+        )
+        b = b_slot
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        PowerNode(a=P._slot_to_tid(a), b=P._slot_to_tid(b), out=P._slot_to_tid(out))
+    )
+    return out
+
+
+# =============================================================================
+# Math Ops - Reduction
+# =============================================================================
+
+
+@REGISTRY.register(target=[torch.ops.aten.logsumexp.default])
+def _logsumexp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.logsumexp - log(sum(exp(x))) along axes."""
+    args = P.args(n)
+    x = args[0]
+    dim = args[1] if len(args) > 1 else None
+    keepdim = args[2] if len(args) > 2 else False
+
+    # Normalize dim to list
+    if dim is None:
+        axes = []
+    elif isinstance(dim, int):
+        axes = [dim]
+    else:
+        axes = list(dim)
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        LogSumExpNode(
+            x=P._slot_to_tid(x), out=P._slot_to_tid(out), axes=axes, keepdims=keepdim
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.sum.dim_IntList, torch.ops.aten.sum.default])
+def _sum_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.sum - sum of elements along axes."""
+    args = P.args(n)
+    x = args[0]
+    axes, keepdim = normalize_reduction_dim(args)
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        SumNode(
+            x=P._slot_to_tid(x), out=P._slot_to_tid(out), axes=axes, keepdims=keepdim
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.mean.dim, torch.ops.aten.mean.default])
+def _mean_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.mean - mean of elements along axes."""
+    args = P.args(n)
+    x = args[0]
+    axes, keepdim = normalize_reduction_dim(args)
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        MeanNode(
+            x=P._slot_to_tid(x), out=P._slot_to_tid(out), axes=axes, keepdims=keepdim
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.var.correction, torch.ops.aten.var.dim])
+def _var_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.var - variance of elements along axes."""
+    args = P.args(n)
+    x = args[0]
+    axes, _ = normalize_reduction_dim(args)
+
+    # Get correction/ddof and keepdim from kwargs
+    correction = n.kwargs.get("correction", None)
+    keepdim = n.kwargs.get("keepdim", False)
+    ddof = int(correction) if correction is not None else 1
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        VarNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+            axes=axes,
+            keepdims=keepdim,
+            ddof=ddof,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.std.correction])
+def _std_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.std - standard deviation of elements along axes."""
+    args = P.args(n)
+    x = args[0]
+    axes, _ = normalize_reduction_dim(args)
+
+    correction = n.kwargs.get("correction", None)
+    keepdim = n.kwargs.get("keepdim", False)
+    ddof = int(correction) if correction is not None else 1
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        StdNode(
+            x=P._slot_to_tid(x),
+            out=P._slot_to_tid(out),
+            axes=axes,
+            keepdims=keepdim,
+            ddof=ddof,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.prod.dim_int, torch.ops.aten.prod.default])
+def _prod_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.prod - product of elements along axes."""
+    args = P.args(n)
+    x = args[0]
+    axes, keepdim = normalize_reduction_dim(args)
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        ProdNode(
+            x=P._slot_to_tid(x), out=P._slot_to_tid(out), axes=axes, keepdims=keepdim
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.amax.default])
+def _amax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.amax - max of elements along axes."""
+    args = P.args(n)
+    x = args[0]
+    axes, keepdim = normalize_reduction_dim(args)
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        MaxNode(
+            x=P._slot_to_tid(x), out=P._slot_to_tid(out), axes=axes, keepdims=keepdim
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.amin.default])
+def _amin_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.amin - min of elements along axes."""
+    args = P.args(n)
+    x = args[0]
+    axes, keepdim = normalize_reduction_dim(args)
+
+    out = P.make_or_get_slot(n)
+    P._emit(
+        MinNode(
+            x=P._slot_to_tid(x), out=P._slot_to_tid(out), axes=axes, keepdims=keepdim
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.argmax.default])
+def _argmax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.argmax - index of max element along axis."""
+    args = P.args(n)
+    x = args[0]
+    dim = args[1] if len(args) > 1 else None
+    keepdim = args[2] if len(args) > 2 else False
+
+    out = P.make_or_get_slot(n)
+
+    if dim is None:
+        # argmax without dim: flatten tensor to 1D, then argmax over axis 0
+        # Result is a scalar index into the flattened tensor
+        _, flat_slot = P.slot_manager.make_tmp_slot()
+
+        # Get total number of elements from input shape
+        x_meta = n.args[0].meta.get("val")
+        if x_meta is None:
+            raise ValueError("Input tensor metadata not found for argmax")
+        numel = x_meta.numel()
+
+        P._emit(
+            ReshapeNode(
+                x=P._slot_to_tid(x),
+                out=P._slot_to_tid(flat_slot),
+                shape=[P._to_int_or_vid(numel)],
+            )
+        )
+        P._emit(
+            ArgmaxNode(
+                x=P._slot_to_tid(flat_slot),
+                out=P._slot_to_tid(out),
+                axis=0,
+                keepdims=False,
+            )
+        )
+    else:
+        P._emit(
+            ArgmaxNode(
+                x=P._slot_to_tid(x), out=P._slot_to_tid(out), axis=dim, keepdims=keepdim
+            )
+        )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.argmin.default])
+def _argmin_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.argmin - index of min element along axis."""
+    args = P.args(n)
+    x = args[0]
+    dim = args[1] if len(args) > 1 else None
+    keepdim = args[2] if len(args) > 2 else False
+
+    out = P.make_or_get_slot(n)
+
+    if dim is None:
+        # argmin without dim: flatten tensor to 1D, then argmin over axis 0
+        # Result is a scalar index into the flattened tensor
+        _, flat_slot = P.slot_manager.make_tmp_slot()
+
+        # Get total number of elements from input shape
+        x_meta = n.args[0].meta.get("val")
+        if x_meta is None:
+            raise ValueError("Input tensor metadata not found for argmin")
+        numel = x_meta.numel()
+
+        P._emit(
+            ReshapeNode(
+                x=P._slot_to_tid(x),
+                out=P._slot_to_tid(flat_slot),
+                shape=[P._to_int_or_vid(numel)],
+            )
+        )
+        P._emit(
+            ArgminNode(
+                x=P._slot_to_tid(flat_slot),
+                out=P._slot_to_tid(out),
+                axis=0,
+                keepdims=False,
+            )
+        )
+    else:
+        P._emit(
+            ArgminNode(
+                x=P._slot_to_tid(x), out=P._slot_to_tid(out), axis=dim, keepdims=keepdim
+            )
+        )
     return out

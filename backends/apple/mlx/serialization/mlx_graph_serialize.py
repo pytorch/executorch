@@ -47,6 +47,7 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (  # no
     DTypeId,
     ExpandDimsNode,
     FloatOrVid,
+    FloorDivScalarNode,
     FullNode,
     GatherNode,
     GeluNode,
@@ -57,10 +58,10 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (  # no
     LayerNormNode,
     LinearNode,
     MLXGraph,
+    MulScalarNode,
     MultiplyNode,
     NamedSlot,
     NoopNode,
-    OnesNode,
     OpNodeUnion,
     QuantizedGatherNode,
     QuantizedLinearNode,
@@ -73,6 +74,7 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (  # no
     SliceUpdateNode,
     SlotType,
     SlotVariant,
+    SubScalarNode,
     SymSizeNode,
     TakeAlongAxisNode,
     TensorMeta,
@@ -80,7 +82,6 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (  # no
     TileNode,
     TransposeNode,
     Vid,
-    ZerosNode,
 )
 from executorch.exir._serialize._program import Cord
 
