@@ -27,7 +27,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
   switch (options->backend_options()->backend_type()) {
     case QnnExecuTorchBackendType::kHtpBackend: {
       auto htp_options = options->backend_options()->htp_options();
-      if (get_option(options->log_level()) >=
+      if (get_option(options->log_level(), QNN_RUNTIME_LOG_LEVEL) >=
           QnnExecuTorchLogLevel::kLogLevelInfo) {
         QNN_EXECUTORCH_LOG_INFO(
             "htp_arch in htp_info: %s",
@@ -37,8 +37,9 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
             options->soc_info()->htp_info()->vtcm_size_in_mb());
         QNN_EXECUTORCH_LOG_INFO(
             "performance_mode in htp_options: %s",
-            EnumNameQnnExecuTorchHtpPerformanceMode(
-                get_option(htp_options->performance_mode())));
+            EnumNameQnnExecuTorchHtpPerformanceMode(get_option(
+                htp_options->performance_mode(),
+                QNN_RUNTIME_HTP_PERFORMANCE_MODE)));
         QNN_EXECUTORCH_LOG_INFO(
             "precision in htp_options: %s",
             EnumNameQnnExecuTorchHtpPrecision(htp_options->precision()));
@@ -76,7 +77,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           implementation_ptr,
           qnn_backend_ptr,
           backend_params->qnn_context_ptr_.get(),
-          get_option(options->profile_level()),
+          get_option(options->profile_level(), QNN_RUNTIME_PROFILE_LEVEL),
           options->soc_info(),
           htp_options);
     } break;
@@ -121,6 +122,49 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           backend_params->qnn_context_ptr_.get(),
           options->profile_level(),
           gpu_options);
+    } break;
+    case QnnExecuTorchBackendType::kLpaiBackend: {
+      auto lpai_options = options->backend_options()->lpai_options();
+      if (options->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+        QNN_EXECUTORCH_LOG_INFO(
+            "fps in lpai_options: %d",
+            get_option(lpai_options->fps(), QNN_RUNTIME_LPAI_FPS));
+        QNN_EXECUTORCH_LOG_INFO(
+            "ftrt_ratio in lpai_options: %d",
+            get_option(
+                lpai_options->ftrt_ratio(), QNN_RUNTIME_LPAI_FTRT_RATIO));
+        QNN_EXECUTORCH_LOG_INFO(
+            "client_perf_type in lpai_options: %s",
+            EnumNameQnnExecuTorchLpaiClientPerf(get_option(
+                lpai_options->client_perf_type(),
+                QNN_RUNTIME_LPAI_CLIENT_PERF_TYPE)));
+        QNN_EXECUTORCH_LOG_INFO(
+            "affinity in lpai_options: %d",
+            get_option(lpai_options->affinity(), QNN_RUNTIME_LPAI_AFFINITY));
+        QNN_EXECUTORCH_LOG_INFO(
+            "core_selection in lpai_options: %d",
+            get_option(
+                lpai_options->core_selection(),
+                QNN_RUNTIME_LPAI_CORE_SELECTION));
+        QNN_EXECUTORCH_LOG_INFO(
+            "target_env in lpai_options: %d", lpai_options->target_env());
+      }
+      backend_params->qnn_backend_cache_ptr_ =
+          std::make_unique<QnnBackendCache>(qnn_context_blob);
+
+      backend_params->qnn_context_ptr_ = std::make_unique<LpaiContext>(
+          implementation_ptr,
+          qnn_backend_ptr,
+          qnn_device_ptr,
+          backend_params->qnn_backend_cache_ptr_.get(),
+          qnn_dlc_manager);
+
+      backend_params->qnn_graph_ptr_ = std::make_unique<LpaiGraph>(
+          implementation_ptr,
+          qnn_backend_ptr,
+          backend_params->qnn_context_ptr_.get(),
+          options->profile_level(),
+          lpai_options);
     } break;
     case QnnExecuTorchBackendType::kDspBackend:
     case QnnExecuTorchBackendType::kUndefinedBackend:

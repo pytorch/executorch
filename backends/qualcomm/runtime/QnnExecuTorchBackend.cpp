@@ -221,6 +221,31 @@ executorch::runtime::Error QnnExecuTorchBackend::set_option(
         qnn_runtime_profile_level_.value = *val;
         qnn_runtime_profile_level_.is_set = true;
       }
+    } else if (strcmp(option.key, QNN_RUNTIME_LPAI_FPS) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_lapi_fps_.value = *val;
+        qnn_runtime_lapi_fps_.is_set = true;
+      }
+    } else if (strcmp(option.key, QNN_RUNTIME_LPAI_FTRT_RATIO) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_lapi_ftrt_ratio_.value = *val;
+        qnn_runtime_lapi_ftrt_ratio_.is_set = true;
+      }
+    } else if (strcmp(option.key, QNN_RUNTIME_LPAI_CLIENT_PERF_TYPE) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_lpai_client_perf_type_.value = *val;
+        qnn_runtime_lpai_client_perf_type_.is_set = true;
+      }
+    } else if (strcmp(option.key, QNN_RUNTIME_LPAI_AFFINITY) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_lpai_affinity_.value = *val;
+        qnn_runtime_lpai_affinity_.is_set = true;
+      }
+    } else if (strcmp(option.key, QNN_RUNTIME_LPAI_CORE_SELECTION) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_lpai_core_selection_.value = *val;
+        qnn_runtime_lpai_core_selection_.is_set = true;
+      }
     } else {
       ET_LOG(
           Error,
@@ -258,6 +283,27 @@ executorch::runtime::Error QnnExecuTorchBackend::get_option(
         strcmp(backend_options[i].key, QNN_RUNTIME_PROFILE_LEVEL) == 0 &&
         qnn_runtime_profile_level_.is_set) {
       backend_options[i].value = qnn_runtime_profile_level_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_FPS) == 0 &&
+        qnn_runtime_lapi_fps_.is_set) {
+      backend_options[i].value = qnn_runtime_lapi_fps_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_FTRT_RATIO) == 0 &&
+        qnn_runtime_lapi_ftrt_ratio_.is_set) {
+      backend_options[i].value = qnn_runtime_lapi_ftrt_ratio_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_CLIENT_PERF_TYPE) ==
+            0 &&
+        qnn_runtime_lpai_client_perf_type_.is_set) {
+      backend_options[i].value = qnn_runtime_lpai_client_perf_type_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_AFFINITY) == 0 &&
+        qnn_runtime_lpai_affinity_.is_set) {
+      backend_options[i].value = qnn_runtime_lpai_affinity_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_CORE_SELECTION) == 0 &&
+        qnn_runtime_lpai_core_selection_.is_set) {
+      backend_options[i].value = qnn_runtime_lpai_core_selection_.value;
     } else {
       // either runtime never called set_option or key does not exist
       matches--;
