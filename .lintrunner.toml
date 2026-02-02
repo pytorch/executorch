@@ -503,3 +503,17 @@ command = [
     '--',
     '@{{PATHSFILE}}',
 ]
+
+[[linter]]
+code = 'DOCFORMATTER'
+include_patterns = []
+exclude_patterns = ['**']
+command = [
+  'python','-m','lintrunner_adapters','run','docformatter_linter','--config=pyproject.toml','--','@{{PATHSFILE}}'
+]
+init_command = [
+  'python','-m','lintrunner_adapters','run','pip_init',
+  '--dry-run={{DRYRUN}}',
+  '--requirement=requirements-lintrunner.txt',
+]
+is_formatter = true
