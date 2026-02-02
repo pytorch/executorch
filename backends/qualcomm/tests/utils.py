@@ -184,25 +184,7 @@ class TestQNN(unittest.TestCase):
     dump_intermediate_outputs: bool = False
     inference_speed: float = 0.0
     inference_speed_output_path = "outputs/inference_speed.txt"
-
-    @classmethod
-    def setUpClass(cls):
-        if not cls.enable_x86_64 and not cls.compile_only:
-            # init device once
-            adb = SimpleADB(
-                qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-                build_path=cls.build_folder,
-                pte_path=[],
-                workspace="/data/local/tmp/qnn_executorch_test",
-                device_id=cls.device,
-                host_id=cls.host,
-                soc_model=cls.model,
-                error_only=cls.error_only,
-                target=cls.target,
-            )
-            adb.push(
-                init_env=True,
-            )
+    static_llm_eval_method = ""
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -508,7 +490,6 @@ class TestQNN(unittest.TestCase):
                 adb.push(
                     inputs=[processed_inputs],
                     files=op_package_paths,
-                    init_env=False,
                 )
                 adb.extra_cmds += extra_cmds
                 if save_inference_speed:
@@ -516,7 +497,7 @@ class TestQNN(unittest.TestCase):
                         f" --performance_output_path {self.inference_speed_output_path}"
                     )
                 adb.execute(method_index=method_index, output_callback=output_callback)
-                adb.pull(output_path=tmp_dir, callback=post_process)
+                adb.pull(host_output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
 
                 if expected_profile_events != -1:

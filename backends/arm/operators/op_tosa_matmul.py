@@ -46,6 +46,8 @@ class MatmulVisitor(NodeVisitor):
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs], ts)
         supported_input_dtypes = [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32]
+        if self.tosa_spec.support_extension("bf16"):
+            supported_input_dtypes.append(ts.DType.BF16)
         if self.tosa_spec.support_extension("int16"):
             supported_input_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
