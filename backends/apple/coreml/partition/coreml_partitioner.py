@@ -2,6 +2,7 @@
 #
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
+import inspect
 import logging
 from typing import Callable, List, Optional, Tuple
 
@@ -222,7 +223,38 @@ class CoreMLPartitioner(Partitioner):
                 self.take_over_mutable_buffer
             ), "When lower_full_graph=True, you must set take_over_mutable_buffer=True"
 
+    def _check_if_called_from_to_backend(self) -> bool:
+        """
+        Check if the partition method is being called from the deprecated to_backend workflow.
+        Returns True if called from deprecated direct to_backend, False if called from to_edge_transform_and_lower.
+        """
+        stack = inspect.stack()
+
+        for frame_info in stack:
+            if frame_info.function == "to_edge_transform_and_lower":
+                return False
+
+        for frame_info in stack:
+            if frame_info.function == "to_backend":
+                filename = frame_info.filename
+                if "program/_program.py" in filename:
+                    return True
+        return False
+
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        """
+        Override partition to add deprecation warning when called from to_backend.
+        """
+        # Check if we're being called from the deprecated to_backend workflow
+        if self._check_if_called_from_to_backend():
+            logger.warning(
+                "\nDEPRECATION WARNING: You are using the deprecated 'to_edge() + to_backend()' workflow. "
+                "This may result in decreased performance because ExecuTorch decomposes ops (e.g., SDPA) "
+                "that CoreML has optimized implementations for. "
+                "Please consider migrating to 'to_edge_transform_and_lower()' for better performance. "
+                "See: https://pytorch.org/executorch/main/backends/coreml/coreml-overview.html"
+            )
+
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
         logger.info("CoreMLPartitioner::partition")
