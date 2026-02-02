@@ -5,10 +5,15 @@
     "url": "https://docs.pytorch.org/executorch/main/"
   },
   {
-    "name": "v1.0 (stable)",
-    "version": "1.0",
-    "url": "https://docs.pytorch.org/executorch/1.0/",
+    "name": "v1.1 (stable)",
+    "version": "1.1",
+    "url": "https://docs.pytorch.org/executorch/1.1/",
     "preferred": true
+  },
+  {
+    "name": "v1.0",
+    "version": "1.0",
+    "url": "https://docs.pytorch.org/executorch/1.0/"
   },
   {
     "name": "v0.7",
