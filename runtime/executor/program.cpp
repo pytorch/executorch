@@ -139,7 +139,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     return Error::InvalidProgram;
   }
 
-  // Do extra verification if requested.
+  // Do verification based on the requested level.
   if (verification == Verification::InternalConsistency) {
 #if ET_ENABLE_PROGRAM_VERIFICATION
     EXECUTORCH_SCOPE_PROF("Program::verify_internal_consistency");
@@ -160,8 +160,22 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         "Program validation failed: likely a corrupt file");
 #else
     ET_LOG(
-        Info, "InternalConsistency verification requested but not available");
+        Error,
+        "InternalConsistency verification requested but not available; "
+        "build with ET_ENABLE_PROGRAM_VERIFICATION=1");
+    return Error::NotSupported;
 #endif
+  } else {
+    // Minimal verification: check that the root table offset is within bounds.
+    // The first 4 bytes of the flatbuffer contain an offset to the root table.
+    uint32_t root_offset = flatbuffers::ReadScalar<flatbuffers::uoffset_t>(
+        program_data->data());
+    ET_CHECK_OR_RETURN_ERROR(
+        root_offset < program_data->size(),
+        InvalidProgram,
+        "Root table offset %u >= program size %zu",
+        root_offset,
+        program_data->size());
   }
 
   // The flatbuffer data must start at an aligned address to ensure internal
