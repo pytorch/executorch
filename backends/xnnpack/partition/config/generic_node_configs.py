@@ -722,3 +722,10 @@ class CosConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class UnsqueezeConfig(GenericNodePartitionerConfig):
+    target_name = "unsqueeze_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]

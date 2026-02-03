@@ -363,6 +363,15 @@ class XNNCopy(XNNNode1x1):
 
 
 @dataclass
+class XNNStaticExpandDims:
+    num_new_dims: int
+    new_dim_positions: List[int]
+    input_id: int
+    output_id: int
+    flags: int
+
+
+@dataclass
 class XNNScaledDotProductAttention:
     query_id: int
     key_id: int
@@ -419,8 +428,9 @@ XNodeUnion = Union[
     XNNTanh,
     XNNExp,
     XNNSin,
-    XNNCopy,
     XNNCos,
+    XNNCopy,
+    XNNStaticExpandDims,
 ]
 
 

@@ -13,6 +13,7 @@ from executorch.backends.xnnpack.operators.node_visitor import (
 )
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNGraph,
+    XNNStaticExpandDims,
     XNNStaticReshape,
     XNode,
 )
@@ -100,13 +101,22 @@ class UnsqueezeVisitor(NodeVisitor):
     ) -> None:
 
         dim = cast(int, node.args[1])
+        input_node = get_input_node(node, 0)
+        input_shape = input_node.meta["val"].shape
+        input_ndim = len(input_shape)
+
+        # Handle negative dimensions - convert to position in output tensor
+        # Output tensor has input_ndim + 1 dimensions
+        output_ndim = input_ndim + 1
+        if dim < 0:
+            dim = output_ndim + dim
+
         check_or_raise(
-            dim == -1 or dim == len(node.args[0].meta["val"].shape),
-            "XNNPACK currently only supports unsqueezing in last dimension",
+            0 <= dim < output_ndim,
+            f"Dimension {dim} is out of range for tensor with {input_ndim} dimensions",
         )
 
         self.define_nodes_tensor_inputs_outputs(node, xnn_graph, vals_to_ids)
-        input_node = get_input_node(node, 0)
 
         # input
         input_id = vals_to_ids[input_node]
@@ -114,30 +124,13 @@ class UnsqueezeVisitor(NodeVisitor):
         # output
         output_id = vals_to_ids[node]
 
-        check_or_raise(
-            "val" in input_node.meta,
-            "Missing val in tensor metadata for input when serializing XNNStaticReshape node",
-        )
-        dynamic_shape = node.meta["val"].shape
-        new_shape = []
-
-        num_dynamic_dims = 0
-        for dim in dynamic_shape:
-            if free_symbols(dim):
-                num_dynamic_dims += 1
-                new_shape.append(0)
-            else:
-                new_shape.append(dim)
-
-        check_or_raise(
-            num_dynamic_dims <= 1,
-            "XNNPACK reshape only supports 1 dynamic dimension. This may occur when ",
-        )
+        # For unsqueeze, we add 1 new dimension at the specified position
+        new_dim_positions = [dim]
 
         ser_node = XNode(
-            xnode_union=XNNStaticReshape(
-                num_dims=len(new_shape),
-                new_shape=new_shape,
+            xnode_union=XNNStaticExpandDims(
+                num_new_dims=1,
+                new_dim_positions=new_dim_positions,
                 input_id=input_id,
                 output_id=output_id,
                 flags=0,

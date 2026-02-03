@@ -159,6 +159,7 @@ union XNodeUnion {
   XNNSin: _XNNNode1x1,
   XNNCopy: _XNNNode1x1,
   XNNCos: _XNNNode1x1,
+  XNNStaticExpandDims,
 }
 
 union XValueUnion {
@@ -331,6 +332,14 @@ table XNNArgMaxPooling2d {
 
 table XNNLeakyReLU {
   negative_slope: float;
+  input_id: uint;
+  output_id: uint;
+  flags: uint;
+}
+
+table XNNStaticExpandDims {
+  num_new_dims: uint;
+  new_dim_positions: [uint];
   input_id: uint;
   output_id: uint;
   flags: uint;

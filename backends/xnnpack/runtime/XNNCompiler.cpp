@@ -1130,6 +1130,36 @@ Error defineStaticReshapeNode(
   return Error::Ok;
 }
 
+Error defineStaticExpandDimsNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node,
+    const fb_xnnpack::XNNGraph* graph) noexcept {
+  MAYBE_UNUSED(graph);
+
+  auto graph_node = node->xnode_union_as_XNNStaticExpandDims();
+
+  std::vector<size_t> new_dim_positions =
+      flatbufferDimsToVector(graph_node->new_dim_positions());
+
+  xnn_status status = xnn_define_static_expand_dims(
+      subgraph_ptr,
+      graph_node->num_new_dims(),
+      new_dim_positions.data(),
+      remapped_ids.at(graph_node->input_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create static expand dims node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
 /*
 Define serialized maxpool2d node into the subgraph, using the remapped ids
 to map the serialized ids, to the new ids generated when defining the
@@ -1792,6 +1822,7 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(Concatenate4)
     _DEFINE(Concatenate5)
     _DEFINE(StaticSlice)
+    _DEFINE(StaticExpandDims)
     _DEFINE(BatchMatrixMultiply)
     _DEFINE(Copy)
     case fb_xnnpack::XNodeUnion::NONE:
