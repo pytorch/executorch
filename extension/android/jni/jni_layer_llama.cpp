@@ -127,7 +127,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   std::unique_ptr<llm::IRunner> runner_;
   std::unique_ptr<executorch::extension::llm::MultimodalRunner>
       multi_modal_runner_;
-  std::vector<llm::MultimodalInput> prefill_inputs_;
 
  public:
   constexpr static auto kJavaDescriptor =
@@ -244,8 +243,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint num_eos) {
     float effective_temperature = temperature >= 0 ? temperature : temperature_;
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
-      prefill_inputs_.clear();
+      std::vector<llm::MultimodalInput> inputs;
       if (!prompt->toStdString().empty()) {
         inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
       }
@@ -299,13 +297,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return static_cast<jint>(Error::InvalidArgument);
   }
 
-  // Deprecated: Use prefill_text instead. This method caches input to buffer
-  // and does not actually prefill until generate() is called.
-  jint append_text_input(facebook::jni::alias_ref<jstring> prompt) {
-    prefill_inputs_.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-    return 0;
-  }
-
   // Returns status_code
   jint prefill_image(
       facebook::jni::alias_ref<jintArray> image,
@@ -334,126 +325,116 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return static_cast<jint>(multi_modal_runner_->prefill(std::move(inputs)));
   }
 
-  // Deprecated: Use prefill_image instead.
-  jint append_images_input(
-      facebook::jni::alias_ref<jintArray> image,
-      jint width,
-      jint height,
-      jint channels) {
-    std::vector<llm::Image> images;
-    if (image == nullptr) {
-      return static_cast<jint>(Error::EndOfMethod);
-    }
-    auto image_size = image->size();
-    if (image_size != 0) {
-      std::vector<jint> image_data_jint(image_size);
-      std::vector<uint8_t> image_data(image_size);
-      image->getRegion(0, image_size, image_data_jint.data());
-      for (int i = 0; i < image_size; i++) {
-        image_data[i] = image_data_jint[i];
-      }
-      llm::Image image_runner{std::move(image_data), width, height, channels};
-      prefill_inputs_.emplace_back(
-          llm::MultimodalInput{std::move(image_runner)});
-    }
-
-    return 0;
-  }
-
   // Returns status_code
-  jint append_normalized_images_input(
+  jint prefill_normalized_image(
       facebook::jni::alias_ref<jfloatArray> image,
       jint width,
       jint height,
       jint channels) {
-    std::vector<llm::Image> images;
+    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
     if (image == nullptr) {
       return static_cast<jint>(Error::EndOfMethod);
     }
     auto image_size = image->size();
-    if (image_size != 0) {
-      std::vector<jfloat> image_data_jfloat(image_size);
-      std::vector<float> image_data(image_size);
-      image->getRegion(0, image_size, image_data_jfloat.data());
-      for (int i = 0; i < image_size; i++) {
-        image_data[i] = image_data_jfloat[i];
-      }
-      llm::Image image_runner{std::move(image_data), width, height, channels};
-      prefill_inputs_.emplace_back(
-          llm::MultimodalInput{std::move(image_runner)});
+    if (image_size == 0) {
+      return static_cast<jint>(Error::InvalidArgument);
     }
-
-    return 0;
+    std::vector<jfloat> image_data_jfloat(image_size);
+    std::vector<float> image_data(image_size);
+    image->getRegion(0, image_size, image_data_jfloat.data());
+    for (int i = 0; i < image_size; i++) {
+      image_data[i] = image_data_jfloat[i];
+    }
+    llm::Image image_runner{std::move(image_data), width, height, channels};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
+    return static_cast<jint>(multi_modal_runner_->prefill(std::move(inputs)));
   }
 
   // Returns status_code
-  jint append_audio_input(
+  jint prefill_audio(
       facebook::jni::alias_ref<jbyteArray> data,
       jint batch_size,
       jint n_bins,
       jint n_frames) {
+    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
     if (data == nullptr) {
       return static_cast<jint>(Error::EndOfMethod);
     }
     auto data_size = data->size();
-    if (data_size != 0) {
-      std::vector<jbyte> data_jbyte(data_size);
-      std::vector<uint8_t> data_u8(data_size);
-      data->getRegion(0, data_size, data_jbyte.data());
-      for (int i = 0; i < data_size; i++) {
-        data_u8[i] = data_jbyte[i];
-      }
-      llm::Audio audio{std::move(data_u8), batch_size, n_bins, n_frames};
-      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+    if (data_size == 0) {
+      return static_cast<jint>(Error::InvalidArgument);
     }
-    return 0;
+    std::vector<jbyte> data_jbyte(data_size);
+    std::vector<uint8_t> data_u8(data_size);
+    data->getRegion(0, data_size, data_jbyte.data());
+    for (int i = 0; i < data_size; i++) {
+      data_u8[i] = data_jbyte[i];
+    }
+    llm::Audio audio{std::move(data_u8), batch_size, n_bins, n_frames};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
+    return static_cast<jint>(multi_modal_runner_->prefill(std::move(inputs)));
   }
 
   // Returns status_code
-  jint append_audio_input_float(
+  jint prefill_audio_float(
       facebook::jni::alias_ref<jfloatArray> data,
       jint batch_size,
       jint n_bins,
       jint n_frames) {
+    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
     if (data == nullptr) {
       return static_cast<jint>(Error::EndOfMethod);
     }
     auto data_size = data->size();
-    if (data_size != 0) {
-      std::vector<jfloat> data_jfloat(data_size);
-      std::vector<float> data_f(data_size);
-      data->getRegion(0, data_size, data_jfloat.data());
-      for (int i = 0; i < data_size; i++) {
-        data_f[i] = data_jfloat[i];
-      }
-      llm::Audio audio{std::move(data_f), batch_size, n_bins, n_frames};
-      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+    if (data_size == 0) {
+      return static_cast<jint>(Error::InvalidArgument);
     }
-    return 0;
+    std::vector<jfloat> data_jfloat(data_size);
+    std::vector<float> data_f(data_size);
+    data->getRegion(0, data_size, data_jfloat.data());
+    for (int i = 0; i < data_size; i++) {
+      data_f[i] = data_jfloat[i];
+    }
+    llm::Audio audio{std::move(data_f), batch_size, n_bins, n_frames};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
+    return static_cast<jint>(multi_modal_runner_->prefill(std::move(inputs)));
   }
 
   // Returns status_code
-  jint append_raw_audio_input(
+  jint prefill_raw_audio(
       facebook::jni::alias_ref<jbyteArray> data,
       jint batch_size,
       jint n_channels,
       jint n_samples) {
+    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
     if (data == nullptr) {
       return static_cast<jint>(Error::EndOfMethod);
     }
     auto data_size = data->size();
-    if (data_size != 0) {
-      std::vector<jbyte> data_jbyte(data_size);
-      std::vector<uint8_t> data_u8(data_size);
-      data->getRegion(0, data_size, data_jbyte.data());
-      for (int i = 0; i < data_size; i++) {
-        data_u8[i] = data_jbyte[i];
-      }
-      llm::RawAudio audio{
-          std::move(data_u8), batch_size, n_channels, n_samples};
-      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+    if (data_size == 0) {
+      return static_cast<jint>(Error::InvalidArgument);
     }
-    return 0;
+    std::vector<jbyte> data_jbyte(data_size);
+    std::vector<uint8_t> data_u8(data_size);
+    data->getRegion(0, data_size, data_jbyte.data());
+    for (int i = 0; i < data_size; i++) {
+      data_u8[i] = data_jbyte[i];
+    }
+    llm::RawAudio audio{std::move(data_u8), batch_size, n_channels, n_samples};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
+    return static_cast<jint>(multi_modal_runner_->prefill(std::move(inputs)));
   }
 
   void stop() {
@@ -508,19 +489,13 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod("prefillText", ExecuTorchLlmJni::prefill_text),
         makeNativeMethod("prefillImage", ExecuTorchLlmJni::prefill_image),
         makeNativeMethod(
-            "appendImagesInput", ExecuTorchLlmJni::append_images_input),
+            "prefillNormalizedImage",
+            ExecuTorchLlmJni::prefill_normalized_image),
+        makeNativeMethod("prefillAudioBytes", ExecuTorchLlmJni::prefill_audio),
         makeNativeMethod(
-            "appendNormalizedImagesInput",
-            ExecuTorchLlmJni::append_normalized_images_input),
+            "prefillAudioFloat", ExecuTorchLlmJni::prefill_audio_float),
         makeNativeMethod(
-            "appendAudioInput", ExecuTorchLlmJni::append_audio_input),
-        makeNativeMethod(
-            "appendAudioInputFloat",
-            ExecuTorchLlmJni::append_audio_input_float),
-        makeNativeMethod(
-            "appendRawAudioInput", ExecuTorchLlmJni::append_raw_audio_input),
-        makeNativeMethod(
-            "appendTextInput", ExecuTorchLlmJni::append_text_input),
+            "prefillRawAudioNative", ExecuTorchLlmJni::prefill_raw_audio),
         makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }

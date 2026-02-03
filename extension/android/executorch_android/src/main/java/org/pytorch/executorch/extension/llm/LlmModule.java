@@ -415,15 +415,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillImages(float[] image, int width, int height, int channels) {
-    int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
+    int nativeResult = prefillNormalizedImage(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendNormalizedImagesInput(
-      float[] image, int width, int height, int channels);
+  private native int prefillNormalizedImage(float[] image, int width, int height, int channels);
 
   /**
    * Prefill a multimodal Module with the given audio input.
@@ -438,14 +437,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
-    int nativeResult = appendAudioInput(audio, batch_size, n_bins, n_frames);
+    int nativeResult = prefillAudioBytes(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
+  private native int prefillAudioBytes(byte[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
    * Prefill a multimodal Module with the given audio input.
@@ -460,14 +459,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
-    int nativeResult = appendAudioInputFloat(audio, batch_size, n_bins, n_frames);
+    int nativeResult = prefillAudioFloat(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
+  private native int prefillAudioFloat(float[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
    * Prefill a multimodal Module with the given raw audio input.
@@ -482,15 +481,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
-    int nativeResult = appendRawAudioInput(audio, batch_size, n_channels, n_samples);
+    int nativeResult = prefillRawAudioNative(audio, batch_size, n_channels, n_samples);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendRawAudioInput(
-      byte[] audio, int batch_size, int n_channels, int n_samples);
+  private native int prefillRawAudioNative(byte[] audio, int batch_size, int n_channels, int n_samples);
 
   /**
    * Prefill a multimodal Module with the given text input.
@@ -502,15 +500,29 @@ public class LlmModule {
    */
   @Experimental
   public long prefillPrompt(String prompt) {
-    int nativeResult = appendTextInput(prompt);
+    return prefillPrompt(prompt, 0, 0);
+  }
+
+  /**
+   * Prefill a multimodal Module with the given text input.
+   *
+   * @param prompt The text prompt to prefill.
+   * @param numBos number of BOS tokens to prepend
+   * @param numEos number of EOS tokens to append
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public long prefillPrompt(String prompt, int numBos, int numEos) {
+    int nativeResult = prefillText(prompt, numBos, numEos);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  // returns status
-  private native int appendTextInput(String prompt);
+  private native int prefillText(String prompt, int numBos, int numEos);
 
   /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
