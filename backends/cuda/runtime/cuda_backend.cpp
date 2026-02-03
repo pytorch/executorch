@@ -423,15 +423,15 @@ class ET_EXPERIMENTAL CudaBackend final
 
     const bool copy_outputs = !should_skip_copy_for_method(handle->method_name);
 
-    // Synchronize CUDA stream to ensure kernel execution is complete
-    // before accessing output data (either for copy or skip-copy path)
-    cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
-    cudaError_t sync_err = cudaStreamSynchronize(cuda_stream);
-    ET_CHECK_OR_RETURN_ERROR(
-        sync_err == cudaSuccess,
-        Internal,
-        "cudaStreamSynchronize failed: %s",
-        cudaGetErrorString(sync_err));
+    // // Synchronize CUDA stream to ensure kernel execution is complete
+    // // before accessing output data (either for copy or skip-copy path)
+    // cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
+    // cudaError_t sync_err = cudaStreamSynchronize(cuda_stream);
+    // ET_CHECK_OR_RETURN_ERROR(
+    //     sync_err == cudaSuccess,
+    //     Internal,
+    //     "cudaStreamSynchronize failed: %s",
+    //     cudaGetErrorString(sync_err));
 
     if (copy_outputs) {
       // Deep copy GPU SlimTensor results back to CPU ETensors
