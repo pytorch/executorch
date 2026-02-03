@@ -157,10 +157,11 @@ pip list
 if [ "$MODEL_NAME" = "parakeet" ]; then
   pip install -r examples/models/parakeet/install_requirements.txt
 
-  python examples/models/parakeet/export_parakeet_tdt.py \
+  python -m executorch.examples.models.parakeet.export_parakeet_tdt \
       --backend "$DEVICE" \
       --output-dir "${OUTPUT_DIR}" \
-      --dtype bf16
+      --dtype bf16 \
+      ${EXTRA_ARGS}
 
   test -f "${OUTPUT_DIR}/model.pte"
   # CUDA saves named data to separate .ptd file, Metal embeds in .pte
