@@ -138,33 +138,21 @@ bool validate_cache_params(
 
   ET_CHECK_OR_RETURN_FALSE(v_cache.dim() == 4, "v_cache must be a 4D tensor");
 
+  // For ring buffer support, we allow start_pos >= cache_size.
+  // The cache will wrap around, and the SDPA implementation handles
+  // the causal masking appropriately.
+  // We only require that start_pos is non-negative and that a single
+  // sequence fits within the cache.
   ET_CHECK_OR_RETURN_FALSE(
-      start_pos < k_cache.size(1),
-      "start_pos must be less than key cache at dim 1");
+      start_pos >= 0,
+      "start_pos must be non-negative, got: %" PRId64,
+      start_pos);
 
   ET_CHECK_OR_RETURN_FALSE(
-      start_pos < v_cache.size(1),
-      "start_pos must be less than value cache at dim 1");
-
-  ET_CHECK_OR_RETURN_FALSE(
-      (start_pos + seq_length) <= k_cache.size(1),
-      "start_post + seq_length must be less than max seq length supported by key cache."
-      "start pos: %" PRId64 ", seq_length: %" PRId64
-      "."
-      "key cache size: %zd",
-      start_pos,
+      seq_length <= k_cache.size(1),
+      "seq_length (%" PRId64 ") must be <= cache size (%zd)",
       seq_length,
       k_cache.size(1));
-
-  ET_CHECK_OR_RETURN_FALSE(
-      (start_pos + seq_length) <= v_cache.size(1),
-      "start_post + seq_length must be less than max seq length supported by key cache."
-      "start pos: %" PRId64 ", seq_length: %" PRId64
-      "."
-      "value cache size: %zd",
-      start_pos,
-      seq_length,
-      v_cache.size(1));
 
   // Make sure they are in contiguous dim order
   ET_CHECK_OR_RETURN_FALSE(
@@ -218,23 +206,72 @@ void update_cache(
   auto value_strides = projected_value.strides();
   ::executorch::aten::StridesType value_batch_dim_stride = value_strides[0];
 
+  // Ring buffer support: wrap start_pos if it exceeds cache size
+  int64_t cache_seq_len = cache.size(1);
+  int64_t value_seq_len = projected_value.size(1);
+  int64_t wrapped_start_pos = start_pos % cache_seq_len;
+
   ::executorch::aten::SizesType num_bytes_to_copy =
       (projected_value.numel() / projected_value.size(0)) *
       projected_value.element_size();
 
   for (int64_t batch_line = 0; batch_line < projected_value.size(0);
        ++batch_line) {
-    ::executorch::aten::SizesType cache_pos_offset =
-        (batch_line * cache_batch_dim_stride +
-         start_pos * cache_seq_dim_stride) *
-        cache.element_size();
-    ::executorch::aten::SizesType value_pos_offset =
-        (batch_line * value_batch_dim_stride) * cache.element_size();
+    // Check if we need to handle wrapping
+    if (wrapped_start_pos + value_seq_len <= cache_seq_len) {
+      // No wrapping needed - single contiguous copy
+      ::executorch::aten::SizesType cache_pos_offset =
+          (batch_line * cache_batch_dim_stride +
+           wrapped_start_pos * cache_seq_dim_stride) *
+          cache.element_size();
+      ::executorch::aten::SizesType value_pos_offset =
+          (batch_line * value_batch_dim_stride) * cache.element_size();
 
-    std::memcpy(
-        (uint8_t*)cache_data + cache_pos_offset,
-        (uint8_t*)projected_value_data + value_pos_offset,
-        num_bytes_to_copy);
+      std::memcpy(
+          (uint8_t*)cache_data + cache_pos_offset,
+          (uint8_t*)projected_value_data + value_pos_offset,
+          num_bytes_to_copy);
+    } else {
+      // Ring buffer wrapping needed - copy in two parts
+      // Part 1: from wrapped_start_pos to end of cache
+      int64_t first_part_len = cache_seq_len - wrapped_start_pos;
+      // Part 2: from beginning of cache (wrapped around)
+      int64_t second_part_len = value_seq_len - first_part_len;
+
+      ::executorch::aten::SizesType bytes_per_token =
+          (projected_value.numel() / (projected_value.size(0) * projected_value.size(1))) *
+          projected_value.element_size();
+
+      // Copy first part (wrapped_start_pos to end of cache)
+      if (first_part_len > 0) {
+        ::executorch::aten::SizesType cache_pos_offset =
+            (batch_line * cache_batch_dim_stride +
+             wrapped_start_pos * cache_seq_dim_stride) *
+            cache.element_size();
+        ::executorch::aten::SizesType value_pos_offset =
+            (batch_line * value_batch_dim_stride) * cache.element_size();
+
+        std::memcpy(
+            (uint8_t*)cache_data + cache_pos_offset,
+            (uint8_t*)projected_value_data + value_pos_offset,
+            first_part_len * bytes_per_token);
+      }
+
+      // Copy second part (beginning of cache, wrapped)
+      if (second_part_len > 0) {
+        ::executorch::aten::SizesType cache_pos_offset =
+            (batch_line * cache_batch_dim_stride) * cache.element_size();
+        ::executorch::aten::SizesType value_pos_offset =
+            (batch_line * value_batch_dim_stride +
+             first_part_len * value_strides[1]) *
+            projected_value.element_size();
+
+        std::memcpy(
+            (uint8_t*)cache_data + cache_pos_offset,
+            (uint8_t*)projected_value_data + value_pos_offset,
+            second_part_len * bytes_per_token);
+      }
+    }
   }
 }
 
@@ -403,8 +440,26 @@ Tensor& custom_sdpa_out_impl(
 
   ET_CHECK_MSG(q.dim() == 4, "query must be a 4D tensor");
 
-  const int64_t num_keys_for_causal_attention =
+  // For ring buffer mode: cap num_keys_for_causal_attention to KV cache size
+  // When start_pos + seq_len exceeds cache size, we should only attend to
+  // the tokens that are actually in the cache (the last cache_size tokens)
+  int64_t kv_cache_size = k.size(2); // KV cache sequence dimension
+  int64_t num_keys_for_causal_attention =
       attn_mask.has_value() ? -1 : start_pos + seq_len;
+
+  // In ring buffer mode, the effective number of keys is capped by cache size
+  bool ring_buffer_active = num_keys_for_causal_attention > kv_cache_size;
+  if (ring_buffer_active) {
+    ET_LOG(
+        Info,
+        "SDPA: Ring buffer active - start_pos=%" PRId64 " seq_len=%" PRId64 
+        " num_keys=%" PRId64 " > kv_cache_size=%" PRId64 ", capping to cache size",
+        start_pos,
+        seq_len,
+        num_keys_for_causal_attention,
+        kv_cache_size);
+    num_keys_for_causal_attention = kv_cache_size;
+  }
 
   ET_KERNEL_CHECK(
       ctx,

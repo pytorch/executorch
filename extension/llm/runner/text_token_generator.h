@@ -97,14 +97,12 @@ class ET_EXPERIMENTAL TextTokenGenerator {
 
     // Generate our tokens
     while (pos < start_pos + max_new_tokens) {
-      // In ring buffer mode, wrap position for the model
-      int64_t model_pos = pos;
-      if (is_ring_buffer_ && sliding_window_size_ > 0 && pos >= sliding_window_size_) {
-        model_pos = pos % sliding_window_size_;
-      }
+      // Pass absolute position to the model - the model's custom ops will handle
+      // cache wrapping internally. The absolute position is needed for correct
+      // RoPE (Rotary Position Embedding) computation.
 
       // Run the model
-      auto logits_res = text_decoder_runner_->step(tokens_managed, model_pos);
+      auto logits_res = text_decoder_runner_->step(tokens_managed, pos);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
       executorch::aten::Tensor& logits_tensor = logits_res.get();

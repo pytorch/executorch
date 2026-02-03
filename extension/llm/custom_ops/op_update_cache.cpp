@@ -188,13 +188,16 @@ Tensor& update_cache_impl(
     int64_t cache_seq_len = cache.size(1);
     int64_t value_seq_len = value.size(1);
 
+    // Wrap start_pos for ring buffer mode
+    int64_t wrapped_start_pos = start_pos % cache_seq_len;
+
     for (int64_t batch_line = 0; batch_line < value.size(0); ++batch_line) {
       // Check if we need to handle wrapping
-      if (start_pos + value_seq_len <= cache_seq_len) {
+      if (wrapped_start_pos + value_seq_len <= cache_seq_len) {
         // No wrapping needed - single contiguous copy
         executorch::aten::SizesType cache_pos_offset =
             (batch_line * cache_batch_dim_stride +
-             start_pos * cache_seq_dim_stride) *
+             wrapped_start_pos * cache_seq_dim_stride) *
             cache.element_size();
         executorch::aten::SizesType value_pos_offset =
             (batch_line * value_batch_dim_stride) * cache.element_size();
@@ -205,8 +208,8 @@ Tensor& update_cache_impl(
             num_bytes_to_copy);
       } else {
         // Ring buffer wrapping needed - copy in two parts
-        // Part 1: from start_pos to end of cache
-        int64_t first_part_len = cache_seq_len - start_pos;
+        // Part 1: from wrapped_start_pos to end of cache
+        int64_t first_part_len = cache_seq_len - wrapped_start_pos;
         // Part 2: from beginning of cache (wrapped around)
         int64_t second_part_len = value_seq_len - first_part_len;
 
@@ -214,11 +217,11 @@ Tensor& update_cache_impl(
             (value.numel() / (value.size(0) * value.size(1))) *
             value.element_size();
 
-        // Copy first part (start_pos to end of cache)
+        // Copy first part (wrapped_start_pos to end of cache)
         if (first_part_len > 0) {
           executorch::aten::SizesType cache_pos_offset =
               (batch_line * cache_batch_dim_stride +
-               start_pos * cache_seq_dim_stride) *
+               wrapped_start_pos * cache_seq_dim_stride) *
               cache.element_size();
           executorch::aten::SizesType value_pos_offset =
               (batch_line * value_batch_dim_stride) * cache.element_size();

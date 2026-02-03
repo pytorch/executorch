@@ -853,8 +853,18 @@ void cpu_flash_attention(
       // but that requires storing attention mask in float as the current
       // code doesnt support bool attention mask.
       // However, lets just fix that as well.
+      //
+      // Ring buffer support: When start_pos >= kvSize (cache size), the entire
+      // cache is filled with past tokens. In this case, we should NOT apply
+      // causal masking because all cached tokens are logically "before" the
+      // current query position. We skip causal masking entirely.
+      bool ring_buffer_full = start_pos >= kvSize;
+          
+      // For ring buffer mode when cache is full, we attend to all keys
+      // without causal masking (effectively is_causal = false for this case)
+      bool apply_causal_mask = is_causal && !ring_buffer_full;
       int64_t num_keys =
-          is_causal ? std::min(m + start_pos + qBlockSize, kvSize) : kvSize;
+          apply_causal_mask ? std::min(m + start_pos + qBlockSize, kvSize) : kvSize;
       int64_t m_start_pos = m + start_pos;
       auto j_kv = j / num_reps;
       fill_stub(dst_data, static_cast<accum_t>(0), qSplitSize * headSize);
@@ -957,7 +967,8 @@ void cpu_flash_attention(
         take care of this case because the loop for (int64_t n = 0; n <
         num_keys; n += kvSplitSize) will exit before that.
         */
-        if (is_causal && m_start_pos <= n + kvSplitSize) {
+        // Use apply_causal_mask instead of is_causal to skip masking when ring buffer is full
+        if (apply_causal_mask && m_start_pos <= n + kvSplitSize) {
           // For this fn to work k_split_size > q_split_size
           for (int32_t row = 0;
                row < qBlockSize && (m_start_pos + row < n + (kvSplitSize - 1));
