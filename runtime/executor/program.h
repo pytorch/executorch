@@ -81,12 +81,12 @@ class Program final {
    */
   ET_NODISCARD static Result<Program> load(
       DataLoader* loader,
-      Verification verification = Verification::Minimal);
+      Verification verification = Verification::InternalConsistency);
 
   /// DEPRECATED: Use the lowercase `load()` instead.
   ET_DEPRECATED ET_NODISCARD static Result<Program> Load(
       DataLoader* loader,
-      Verification verification = Verification::Minimal) {
+      Verification verification = Verification::InternalConsistency) {
     return load(loader, verification);
   }
 

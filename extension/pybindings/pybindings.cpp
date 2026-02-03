@@ -1276,7 +1276,7 @@ struct PyProgram final {
       std::unique_ptr<ETDumpGen> tracer = nullptr,
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
-          Program::Verification::Minimal)
+          Program::Verification::InternalConsistency)
       : state_(load_program(std::move(loader), program_verification)),
         event_tracer_(std::move(tracer)),
         debug_buffer_size_(debug_buffer_size) {
@@ -1323,7 +1323,7 @@ struct PyProgram final {
       bool enable_etdump,
       size_t debug_buffer_size,
       Program::Verification program_verification =
-          Program::Verification::Minimal) {
+          Program::Verification::InternalConsistency) {
     std::unique_ptr<DataLoader> loader = loader_from_buffer(
         buffer.cast<std::string_view>().data(), py::len(buffer));
     return std::make_unique<PyProgram>(
@@ -1339,7 +1339,7 @@ struct PyProgram final {
       bool enable_etdump,
       size_t debug_buffer_size,
       Program::Verification program_verification =
-          Program::Verification::Minimal) {
+          Program::Verification::InternalConsistency) {
     std::unique_ptr<DataLoader> loader = loader_from_file(path);
     return std::make_unique<PyProgram>(
         std::move(loader),
@@ -1656,7 +1656,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("path"),
       py::arg("enable_etdump") = false,
       py::arg("debug_buffer_size") = 0,
-      py::arg("program_verification") = Program::Verification::Minimal,
+      py::arg("program_verification") = Program::Verification::InternalConsistency,
       call_guard);
   m.def(
       "_load_program_from_buffer",
@@ -1664,7 +1664,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("buffer"),
       py::arg("enable_etdump") = false,
       py::arg("debug_buffer_size") = 0,
-      py::arg("program_verification") = Program::Verification::Minimal,
+      py::arg("program_verification") = Program::Verification::InternalConsistency,
       call_guard);
   py::class_<PyProgram>(m, "ExecuTorchProgram")
       .def("num_methods", &PyProgram::num_methods, call_guard)

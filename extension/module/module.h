@@ -151,7 +151,7 @@ class Module {
    */
   ET_NODISCARD virtual runtime::Error load(
       const Program::Verification verification =
-          Program::Verification::Minimal);
+          Program::Verification::InternalConsistency);
 
   /**
    * Checks if the program is loaded.

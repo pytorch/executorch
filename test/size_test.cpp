@@ -43,7 +43,8 @@ int main(int argc, char** argv) {
       static_cast<uint32_t>(loader.error()));
 
   uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("de-serialize model");
-  const auto program = Program::load(&loader.get());
+  const auto program =
+      Program::load(&loader.get(), Program::Verification::Minimal);
   EXECUTORCH_END_PROF(prof_tok);
   ET_CHECK_MSG(
       program.ok(),

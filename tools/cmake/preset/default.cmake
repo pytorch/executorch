@@ -43,7 +43,7 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_ENABLE_PROGRAM_VERIFICATION
-  "Build with ET_ENABLE_PROGRAM_VERIFICATION" BOOL ${_is_build_type_debug}
+  "Build with ET_ENABLE_PROGRAM_VERIFICATION" BOOL ON
 )
 define_overridable_option(
   EXECUTORCH_ENABLE_EVENT_TRACER "Build with ET_EVENT_TRACER_ENABLED" BOOL OFF
