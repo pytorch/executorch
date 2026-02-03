@@ -96,7 +96,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup ExecuTorch"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} ./install_executorch.sh
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
         echo "::endgroup::"
 
         echo "::group::Pip List"

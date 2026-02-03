@@ -48,6 +48,7 @@ class MetalBackend(AotiBackend, BackendDetails):
         from executorch.backends.apple.metal.passes.decompose_linear_pass import (
             DecomposeLinearPass,
         )
+
         return [DecomposeLinearPass()]
 
     @classmethod
@@ -72,6 +73,7 @@ class MetalBackend(AotiBackend, BackendDetails):
         }
 
         from torchao.experimental.ops.mps.cshim import torchao_op_c_shim
+
         inductor_configs["aot_inductor.custom_ops_to_c_shims"] = torchao_op_c_shim
 
         return inductor_configs
