@@ -186,10 +186,9 @@ class CachePositionsManager(nn.Module):
     def calculate_positions_and_update_indices(self, input_pos: torch.Tensor, seq_len):
         """
         Calculate indices, into k_cache, v_cache, where to put k_val tensor.
-        Given the input_pos and length of k_val at sequence dim, the input pos may
-        have to wrap around if it is smaller than the cache capacity.
-        If it is larger than the cache capacity then just pick the last
-        self.max_context_length entries.
+        Positions [input_pos, input_pos + seq_len) are mapped to cache indices
+        via modulo max_context_length. Wrap-around occurs when any position
+        reaches or exceeds the cache capacity.
 
         Additionally:
         Update the cache positions buffer with the new indices.
