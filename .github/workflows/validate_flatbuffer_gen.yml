@@ -1,0 +1,33 @@
+name: Validate Flatbuffer Generation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "schema/**"
+      - "executorch_flatbuffer/**"
+
+jobs:
+  exir-flatbuffer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install flatc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatbuffers-compiler
+          flatc --version
+
+      - name: Generate flatbuffer Python
+        run: python exir/_serialize/generate_program.py
+
+      - name: Validate executorch_flatbuffer is unchanged
+        run: |
+          git add -A executorch_flatbuffer
+          if ! git diff --cached --quiet -- executorch_flatbuffer; then
+            echo "Error: executorch_flatbuffer has uncommitted changes."
+            echo "Please run 'python exir/_serialize/generate_program.py' to regenerate the files and commit the changes."
+            exit 1
+          fi
