@@ -104,6 +104,7 @@ OPERATORS = [
     "split_with_sizes_copy",
     "sub",
     "tanh",
+    "transpose_copy",
     "view_copy",
     "where"
 ]
