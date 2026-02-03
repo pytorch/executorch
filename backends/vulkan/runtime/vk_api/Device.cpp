@@ -88,7 +88,7 @@ PhysicalDevice::PhysicalDevice(
   const VkMemoryPropertyFlags unified_memory_flags =
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
   for (size_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
-    if (memory_properties.memoryTypes[i].propertyFlags | unified_memory_flags) {
+    if (memory_properties.memoryTypes[i].propertyFlags & unified_memory_flags) {
       has_unified_memory = true;
       break;
     }
