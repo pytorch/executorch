@@ -19,11 +19,12 @@ from executorch.backends.arm.tosa.specification import (
     TosaSpecification.all_versions_and_profiles(),
 )
 def GATHER(values: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
-    """
-    Expected signature (per TOSA):
-      values:  [N, K, C]  (rank 3)
-      indices: [N, W]     (rank 2, int32)
-      output:  [N, W, C]  (rank 3)
+    """Expected signature (per TOSA):
+
+    values:  [N, K, C]  (rank 3)
+    indices: [N, W]     (rank 2, int32)
+    output:  [N, W, C]  (rank 3)
+
     """
     tosa_spec = get_context_spec()
 

@@ -23,8 +23,11 @@ def RESCALE(
     x: torch.Tensor, dtype: torch.dtype, scales: List[float], in_zp: int, out_zp: int
 ) -> torch.Tensor:
     tosa_spec = get_context_spec()
-    """Casts the input tensor to dtype `dtype` to produce the correct tensor meta for a _rescale op.
+    """Casts the input tensor to dtype `dtype` to produce the correct tensor
+    meta for a _rescale op.
+
     Additionally validates TOSA constraints of a RESCALE op.
+
     """
     if not tosa_spec.support_integer():
         raise TosaValueError(
