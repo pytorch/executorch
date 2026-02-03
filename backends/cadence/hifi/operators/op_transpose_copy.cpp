@@ -64,7 +64,7 @@ Tensor& transpose_copy_int_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  const auto in_type = out.scalar_type();
+  const auto in_type = in.scalar_type();
   constexpr int kNnlibMaxDim = 5;
 
   bool optimized = false;
@@ -85,14 +85,12 @@ Tensor& transpose_copy_int_out(
     WORD32 p_out_shape[kNnlibMaxDim];
     WORD32 p_permute_vec[kNnlibMaxDim];
 
-    for (int i = 0; i < in.dim(); i++) {
+    for (int i = 0; i < num_inp_dims; i++) {
       p_inp_shape[i] = in.size(i);
-    }
-    for (int i = 0; i < out.dim(); i++) {
       p_out_shape[i] = out.size(i);
     }
 
-    for (int i = 0; i < in.dim(); i++) {
+    for (int i = 0; i < num_inp_dims; i++) {
       p_permute_vec[i] = i;
     }
 
