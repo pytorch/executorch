@@ -171,7 +171,7 @@ std::vector<Runtime::DeviceMapping> create_physical_devices(
   std::vector<Runtime::DeviceMapping> device_mappings;
   device_mappings.reserve(device_count);
   for (VkPhysicalDevice physical_device : devices) {
-    device_mappings.emplace_back(PhysicalDevice(physical_device), -1);
+    device_mappings.emplace_back(PhysicalDevice(instance, physical_device), -1);
   }
 
   return device_mappings;
