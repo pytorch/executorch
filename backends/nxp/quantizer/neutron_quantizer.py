@@ -47,6 +47,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     TanhInPlacePattern,
     TanhPattern,
     TransposeIntPattern,
+    UpsampleBilinear2DPattern,
     UpsampleNearest2DPattern,
     ViewPattern,
 )
@@ -274,6 +275,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(TanhPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(TanhInPlacePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(TransposeIntPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(UpsampleBilinear2DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(UpsampleNearest2DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(ViewPattern(is_qat=is_qat), static_qconfig),
             ]

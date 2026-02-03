@@ -27,6 +27,7 @@ class NodeFormatInference:
         exir_ops.edge.aten.convolution.default: {"inputs": [0, 1]},
         exir_ops.edge.aten.max_pool2d_with_indices.default: {"inputs": [0]},
         exir_ops.edge.aten.max_pool2d.default: {"inputs": [0]},
+        exir_ops.edge.aten.upsample_bilinear2d.vec: {"inputs": [0]},
         exir_ops.edge.aten.upsample_nearest2d.vec: {"inputs": [0]},
     }
 

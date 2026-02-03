@@ -944,6 +944,15 @@ class TanhInPlacePattern(QuantizationPattern):
         )
 
 
+class UpsampleBilinear2DPattern(SharedSpecPattern):
+    """
+    Quantizer for `aten.upsample_bilinear2d.vec` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.upsample_bilinear2d.vec]
+
+
 class UpsampleNearest2DPattern(SharedSpecPattern):
     """
     Quantizer for `aten.upsample_nearest2d.vec` operator.
