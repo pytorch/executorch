@@ -42,7 +42,7 @@ class TestSchema(unittest.TestCase):
         for copy_path in copies:
             with self.subTest(copy=copy_path):
                 self.assertTrue(
-                    filecmp.cmp(canonical_path, copy_path),
+                    filecmp.cmp(canonical_path, copy_path, shallow=False),
                     f"scalar_type.fbs is out of sync: {copy_path} differs from {canonical_path}. "
                     f"Please sync the schema by copying from {canonical_path}.",
                 )
