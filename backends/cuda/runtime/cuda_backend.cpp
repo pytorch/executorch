@@ -474,7 +474,7 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     // Cleanup gpu_inputs - they are no longer needed after kernel execution
-    delete_slimtensor_vector(gpu_inputs);
+    // delete_slimtensor_vector(gpu_inputs);
 
     return Error::Ok;
   }
