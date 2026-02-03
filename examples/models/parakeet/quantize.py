@@ -89,6 +89,7 @@ def quantize_model_(  # noqa: C901
             config = Int8DynamicActivationIntxWeightConfig(
                 weight_dtype=torch.int4,
                 weight_granularity=granularity,
+                intx_choose_qparams_algorithm="hqq_scale_only",
             )
         elif qlinear_config == "8da8w":
             config = Int8DynamicActivationIntxWeightConfig(
