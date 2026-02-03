@@ -109,3 +109,125 @@ TEST_F(DeviceTest, Hash) {
   EXPECT_EQ(hasher(cpu1), hasher(cpu2));
   EXPECT_NE(hasher(cpu1), hasher(cpu3));
 }
+
+// =============================================================================
+// CUDA DeviceType Tests
+// =============================================================================
+
+class CUDADeviceTypeTest : public ::testing::Test {};
+
+TEST_F(CUDADeviceTypeTest, CUDAEnumValue) {
+  // Verify CUDA has the correct enum value (1) to match PyTorch
+  EXPECT_EQ(static_cast<int>(DeviceType::CUDA), 1);
+}
+
+TEST_F(CUDADeviceTypeTest, DeviceTypeName) {
+  // Verify DeviceTypeName returns correct strings for CUDA
+  EXPECT_EQ(DeviceTypeName(DeviceType::CUDA, false), "CUDA");
+  EXPECT_EQ(DeviceTypeName(DeviceType::CUDA, true), "cuda");
+}
+
+TEST_F(CUDADeviceTypeTest, IsValidDeviceType) {
+  // Verify isValidDeviceType works correctly for CUDA
+  EXPECT_TRUE(isValidDeviceType(DeviceType::CUDA));
+}
+
+TEST_F(CUDADeviceTypeTest, KCUDAConstant) {
+  // Verify kCUDA constant
+  EXPECT_EQ(kCUDA, DeviceType::CUDA);
+}
+
+// =============================================================================
+// CUDA Device Tests
+// =============================================================================
+
+class CUDADeviceTest : public ::testing::Test {};
+
+TEST_F(CUDADeviceTest, ConstructFromDeviceType) {
+  // Construct Device from DeviceType
+  Device cuda_device(DeviceType::CUDA);
+
+  EXPECT_TRUE(cuda_device.is_cuda());
+  EXPECT_FALSE(cuda_device.is_cpu());
+  EXPECT_EQ(cuda_device.type(), DeviceType::CUDA);
+  EXPECT_EQ(cuda_device.index(), -1);
+  EXPECT_FALSE(cuda_device.has_index());
+}
+
+TEST_F(CUDADeviceTest, ConstructWithIndex) {
+  // Construct CUDA Device with explicit index
+  Device cuda_device(DeviceType::CUDA, 0);
+
+  EXPECT_TRUE(cuda_device.is_cuda());
+  EXPECT_FALSE(cuda_device.is_cpu());
+  EXPECT_EQ(cuda_device.type(), DeviceType::CUDA);
+  EXPECT_EQ(cuda_device.index(), 0);
+  EXPECT_TRUE(cuda_device.has_index());
+}
+
+TEST_F(CUDADeviceTest, ConstructWithNonZeroIndex) {
+  // Construct CUDA Device with non-zero index (multi-GPU)
+  Device cuda_device(DeviceType::CUDA, 3);
+
+  EXPECT_TRUE(cuda_device.is_cuda());
+  EXPECT_EQ(cuda_device.index(), 3);
+  EXPECT_TRUE(cuda_device.has_index());
+}
+
+TEST_F(CUDADeviceTest, ConstructFromString) {
+  // Construct CUDA Device from string
+  Device cuda1("cuda");
+  EXPECT_TRUE(cuda1.is_cuda());
+  EXPECT_EQ(cuda1.index(), 0);
+
+  Device cuda2("CUDA");
+  EXPECT_TRUE(cuda2.is_cuda());
+  EXPECT_EQ(cuda2.index(), 0);
+
+  Device cuda3("cuda:0");
+  EXPECT_TRUE(cuda3.is_cuda());
+  EXPECT_EQ(cuda3.index(), 0);
+
+  Device cuda4("cuda:1");
+  EXPECT_TRUE(cuda4.is_cuda());
+  EXPECT_EQ(cuda4.index(), 1);
+
+  Device cuda5("CUDA:2");
+  EXPECT_TRUE(cuda5.is_cuda());
+  EXPECT_EQ(cuda5.index(), 2);
+}
+
+TEST_F(CUDADeviceTest, Equality) {
+  Device cuda1(DeviceType::CUDA, 0);
+  Device cuda2(DeviceType::CUDA, 0);
+  Device cuda3(DeviceType::CUDA, 1);
+  Device cpu(DeviceType::CPU, 0);
+
+  EXPECT_EQ(cuda1, cuda2);
+  EXPECT_NE(cuda1, cuda3);
+  EXPECT_NE(cuda1, cpu);
+}
+
+TEST_F(CUDADeviceTest, Str) {
+  Device cuda1(DeviceType::CUDA);
+  EXPECT_EQ(cuda1.str(), "cuda");
+
+  Device cuda2(DeviceType::CUDA, 0);
+  EXPECT_EQ(cuda2.str(), "cuda:0");
+
+  Device cuda3(DeviceType::CUDA, 1);
+  EXPECT_EQ(cuda3.str(), "cuda:1");
+}
+
+TEST_F(CUDADeviceTest, Hash) {
+  // Verify CUDA Device can be hashed
+  Device cuda1(DeviceType::CUDA, 0);
+  Device cuda2(DeviceType::CUDA, 0);
+  Device cuda3(DeviceType::CUDA, 1);
+  Device cpu(DeviceType::CPU, 0);
+
+  std::hash<Device> hasher;
+  EXPECT_EQ(hasher(cuda1), hasher(cuda2));
+  EXPECT_NE(hasher(cuda1), hasher(cuda3));
+  EXPECT_NE(hasher(cuda1), hasher(cpu));
+}

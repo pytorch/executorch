@@ -25,7 +25,10 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
-# Common AOTI functionality - combines all AOTI common components
+# ==============================================================================
+# AOTI common shims using ETensor (for Metal backend)
+# TODO(gasoonjia): Remove this after metal migration
+# ==============================================================================
 set(_aoti_common_sources common_shims.cpp)
 add_library(aoti_common STATIC ${_aoti_common_sources})
 target_include_directories(
@@ -56,6 +59,45 @@ executorch_target_link_options_shared_lib(aoti_common)
 
 install(
   TARGETS aoti_common
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+# ==============================================================================
+# AOTI common shims using SlimTensor (for CUDA backend) Uses SlimTensor for all
+# tensor operations
+# TODO(gasoonjia): Replace aoti_common with this one after metal migration
+# ==============================================================================
+add_library(aoti_common_shims_slim STATIC common_shims_slim.cpp)
+target_include_directories(
+  aoti_common_shims_slim
+  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
+         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+)
+target_compile_options(
+  aoti_common_shims_slim
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+)
+target_compile_definitions(
+  aoti_common_shims_slim PUBLIC $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
+)
+
+# Add CUDA include directories and link CUDA runtime when building with CUDA
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  target_include_directories(
+    aoti_common_shims_slim PUBLIC ${CUDAToolkit_INCLUDE_DIRS}
+  )
+  target_link_libraries(aoti_common_shims_slim PUBLIC CUDA::cudart)
+endif()
+
+target_link_libraries(
+  aoti_common_shims_slim PUBLIC slimtensor extension_tensor ${CMAKE_DL_LIBS}
+)
+
+install(
+  TARGETS aoti_common_shims_slim
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )

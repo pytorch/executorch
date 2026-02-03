@@ -1,4 +1,17 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # add this empty BUCK file to unblock landing. Without this, we get land error:
 #   "No build file at xplat/executorch/devtools/bundled_program/test/BUCK when resolving target fbsource//xplat/executorch/devtools/bundled_program/test/BUCK:."
 
-oncall("executorch")
+
+# !!!! fbcode/executorch/devtools/bundled_program/schema/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+
+fbcode_target(_kind = python_unittest,
+    name = "schema",
+    srcs = [
+        "test_schema.py",
+    ],
+)

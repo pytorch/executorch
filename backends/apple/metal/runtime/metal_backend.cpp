@@ -12,10 +12,12 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <unistd.h>
+#include <chrono>
 #include <cstdio>
 
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -29,8 +31,95 @@
 #include <executorch/backends/apple/metal/runtime/shims/shim_mps.h>
 #include <executorch/backends/apple/metal/runtime/shims/tensor_attribute.h>
 #include <executorch/backends/apple/metal/runtime/shims/utils.h>
+#include <executorch/backends/apple/metal/runtime/stats.h>
 
 namespace executorch::backends::metal {
+
+#ifdef EXECUTORCH_METAL_COLLECT_STATS
+
+// Per-method timing statistics
+struct MethodStats {
+  double total_ms = 0.0;
+  int64_t call_count = 0;
+};
+
+// Singleton struct containing all timing statistics and mutex
+struct StatsData {
+  std::mutex mutex;
+  double execute_total_ms = 0.0;
+  int64_t execute_call_count = 0;
+  double init_total_ms = 0.0;
+  int64_t init_call_count = 0;
+  std::unordered_map<std::string, MethodStats> method_stats;
+  std::unordered_map<std::string, MethodStats> init_method_stats;
+};
+
+// Thread-safe singleton accessor using C++11 magic statics
+static StatsData& get_stats_data() {
+  static StatsData instance;
+  return instance;
+}
+
+// Accessor functions for execute timing statistics
+double get_metal_backend_execute_total_ms() {
+  auto& stats = get_stats_data();
+  std::lock_guard<std::mutex> lock(stats.mutex);
+  return stats.execute_total_ms;
+}
+
+int64_t get_metal_backend_execute_call_count() {
+  auto& stats = get_stats_data();
+  std::lock_guard<std::mutex> lock(stats.mutex);
+  return stats.execute_call_count;
+}
+
+// Accessor functions for init timing statistics
+double get_metal_backend_init_total_ms() {
+  auto& stats = get_stats_data();
+  std::lock_guard<std::mutex> lock(stats.mutex);
+  return stats.init_total_ms;
+}
+
+int64_t get_metal_backend_init_call_count() {
+  auto& stats = get_stats_data();
+  std::lock_guard<std::mutex> lock(stats.mutex);
+  return stats.init_call_count;
+}
+
+void reset_metal_backend_stats() {
+  auto& stats = get_stats_data();
+  std::lock_guard<std::mutex> lock(stats.mutex);
+  stats.execute_total_ms = 0.0;
+  stats.execute_call_count = 0;
+  stats.init_total_ms = 0.0;
+  stats.init_call_count = 0;
+  stats.method_stats.clear();
+  stats.init_method_stats.clear();
+}
+
+std::unordered_map<std::string, std::pair<double, int64_t>>
+get_metal_backend_per_method_stats() {
+  auto& stats = get_stats_data();
+  std::lock_guard<std::mutex> lock(stats.mutex);
+  std::unordered_map<std::string, std::pair<double, int64_t>> result;
+  for (const auto& entry : stats.method_stats) {
+    result[entry.first] = {entry.second.total_ms, entry.second.call_count};
+  }
+  return result;
+}
+
+std::unordered_map<std::string, std::pair<double, int64_t>>
+get_metal_backend_init_per_method_stats() {
+  auto& stats = get_stats_data();
+  std::lock_guard<std::mutex> lock(stats.mutex);
+  std::unordered_map<std::string, std::pair<double, int64_t>> result;
+  for (const auto& entry : stats.init_method_stats) {
+    result[entry.first] = {entry.second.total_ms, entry.second.call_count};
+  }
+  return result;
+}
+
+#endif // EXECUTORCH_METAL_COLLECT_STATS
 
 #define LOAD_SYMBOL(handle, member, name, so_handle)                        \
   do {                                                                      \
@@ -137,6 +226,9 @@ class ET_EXPERIMENTAL MetalBackend final
       FreeableBuffer* processed, // This will be a empty buffer
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
+#ifdef EXECUTORCH_METAL_COLLECT_STATS
+    auto init_start = std::chrono::high_resolution_clock::now();
+#endif
     ET_LOG(Info, "MetalBackend::init - Starting initialization");
 
     std::string method_name;
@@ -261,6 +353,29 @@ class ET_EXPERIMENTAL MetalBackend final
     }
 
     ET_LOG(Info, "MetalBackend::init - Initialization completed successfully");
+
+#ifdef EXECUTORCH_METAL_COLLECT_STATS
+    // Accumulate init timing statistics
+    auto init_end = std::chrono::high_resolution_clock::now();
+    double elapsed_ms =
+        std::chrono::duration<double, std::milli>(init_end - init_start)
+            .count();
+
+    {
+      auto& stats_data = get_stats_data();
+      std::lock_guard<std::mutex> lock(stats_data.mutex);
+      stats_data.init_total_ms += elapsed_ms;
+      stats_data.init_call_count++;
+
+      // Track per-method init timing
+      if (!method_name.empty()) {
+        auto& method_stats = stats_data.init_method_stats[method_name];
+        method_stats.total_ms += elapsed_ms;
+        method_stats.call_count++;
+      }
+    }
+#endif
+
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -269,6 +384,9 @@ class ET_EXPERIMENTAL MetalBackend final
       BackendExecutionContext& context,
       DelegateHandle* handle_,
       Span<EValue*> args) const override {
+#ifdef EXECUTORCH_METAL_COLLECT_STATS
+    auto execute_start = std::chrono::high_resolution_clock::now();
+#endif
     ET_LOG(Debug, "MetalBackend execute");
 
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
@@ -300,7 +418,7 @@ class ET_EXPERIMENTAL MetalBackend final
 
     int32_t mps_device_type = aoti_torch_device_type_mps(); // Returns 13
 
-    // NOTE: ExecutorTorch tensors are always on CPU/host memory
+    // NOTE: ExecuTorch tensors are always on CPU/host memory
     // We need to create GPU copies for Metal kernel execution
     std::vector<AOTITensorHandle> gpu_inputs(
         n_inputs); // GPU copies for kernel execution
@@ -309,14 +427,14 @@ class ET_EXPERIMENTAL MetalBackend final
 
     ET_LOG(Debug, "MetalBackend input/output vectors generated");
 
-    // Process input tensors: ExecutorTorch provides CPU tensors, create GPU
+    // Process input tensors: ExecuTorch provides CPU tensors, create GPU
     // copies
     for (int i = 0; i < n_inputs; i++) {
       ET_LOG(Debug, "Processing input %d from args to inputs vector", i);
       ET_LOG(
           Debug, "is %d input a tensor input? %d", i, int(args[i]->isTensor()));
 
-      // Get tensor dimensions and properties from ExecutorTorch CPU tensor
+      // Get tensor dimensions and properties from ExecuTorch CPU tensor
       auto cpu_tensor = &(args[i]->toTensor());
       auto sizes = cpu_tensor->sizes();
       auto scalar_type = cpu_tensor->scalar_type();
@@ -391,10 +509,10 @@ class ET_EXPERIMENTAL MetalBackend final
 
     ET_LOG(Debug, "MetalBackend GPU inputs generated");
 
-    // Process output tensors: create GPU counterparts for ExecutorTorch CPU
+    // Process output tensors: create GPU counterparts for ExecuTorch CPU
     // tensors
     for (int i = 0; i < n_outputs; i++) {
-      // Get output tensor dimensions from ExecutorTorch CPU tensor
+      // Get output tensor dimensions from ExecuTorch CPU tensor
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       auto sizes = cpu_output_tensor->sizes();
       auto scalar_type = cpu_output_tensor->scalar_type();
@@ -500,7 +618,7 @@ class ET_EXPERIMENTAL MetalBackend final
       ET_LOG(Debug, "Copied GPU output %d back to CPU", i);
     }
 
-    // Clean up GPU tensors that we created (ExecutorTorch tensors are always
+    // Clean up GPU tensors that we created (ExecuTorch tensors are always
     // CPU, so all GPU tensors are our copies)
     for (int i = 0; i < n_inputs; i++) {
       // All GPU input tensors were created by us, delete them
@@ -513,6 +631,29 @@ class ET_EXPERIMENTAL MetalBackend final
     }
 
     ET_LOG(Debug, "MetalBackend execution completed successfully");
+
+#ifdef EXECUTORCH_METAL_COLLECT_STATS
+    // Accumulate timing statistics
+    auto execute_end = std::chrono::high_resolution_clock::now();
+    double elapsed_ms =
+        std::chrono::duration<double, std::milli>(execute_end - execute_start)
+            .count();
+
+    {
+      auto& stats_data = get_stats_data();
+      std::lock_guard<std::mutex> lock(stats_data.mutex);
+      stats_data.execute_total_ms += elapsed_ms;
+      stats_data.execute_call_count++;
+
+      // Track per-method timing
+      const char* method_name = context.get_method_name();
+      if (method_name != nullptr) {
+        auto& method_stats = stats_data.method_stats[method_name];
+        method_stats.total_ms += elapsed_ms;
+        method_stats.call_count++;
+      }
+    }
+#endif
 
     return Error::Ok;
   }

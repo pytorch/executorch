@@ -6,6 +6,7 @@
 
 # pyre-strict
 import copy
+import itertools
 import os
 import tempfile
 import unittest
@@ -41,6 +42,7 @@ from executorch.exir.emit import emit_program
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import (
+    convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     DebugPass,
     HintBasedSymShapeEvalPass,
@@ -83,6 +85,9 @@ from functorch.experimental import control_flow
 
 from torch import nn
 from torch._prims_common import ELEMENTWISE_TYPE_PROMOTION_KIND
+
+# Import passes
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
@@ -537,28 +542,40 @@ class TestPasses(unittest.TestCase):
             self.assertEqual(new_node.target, old_node.target)
 
     def test_export_scalar_to_tensor_pass(self) -> None:
-        class Mul(torch.nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x * 3.14
-
-        mul = Mul()
-
-        expo_prog = to_edge(export(mul, (torch.ones(1),), strict=True))
-        new_prog = expo_prog.transform([ScalarToTensorPass()])
-        self.assertIsNotNone(new_prog.exported_program().graph_module)
-        new_graph_module = new_prog.exported_program().graph_module
-
-        inp = torch.zeros(1)
-        self.assertTrue(
-            torch.allclose(
-                expo_prog.exported_program().module()(inp),
-                new_prog.exported_program().module()(inp),
-            )
+        # Build a graph with a scalar argument where schema expects tensor
+        graph = torch.fx.Graph()
+        test_input = torch.randn(
+            1,
         )
-        for node in new_graph_module.graph.nodes:
+        with FakeTensorMode() as fake_mode:
+            fake_input = fake_mode.from_tensor(test_input)
+            x = graph.placeholder("x")
+            x.meta["val"] = fake_input
+
+        # Pass 3.14 as scalar - this should be converted to tensor by the pass
+        mul_node = graph.call_function(
+            torch.ops.aten.mul.Tensor,
+            args=(x, 3.14),
+        )
+        graph.output(mul_node)
+
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+        original_output = gm(test_input)
+
+        result = ScalarToTensorPass()(gm)
+        new_gm = result.graph_module
+        self.assertTrue(result.modified)
+        # All scalars should be tensors by this point, so running a second time should not modify
+        self.assertFalse(ScalarToTensorPass()(new_gm).modified)
+
+        # All scalars should be converted into nodes
+        for node in new_gm.graph.nodes:
             if node.op == "call_function":
-                for arg in node.args + tuple(node.kwargs.values()):
-                    self.assertFalse(isinstance(arg, float))
+                for arg in node.args:
+                    self.assertTrue(isinstance(arg, torch.fx.Node))
+
+        new_output = new_gm(test_input)
+        self.assertTrue(torch.equal(original_output, new_output))
 
     def test_remove_mixed_types_symfloats(self) -> None:
         class Foo(torch.nn.Module):
@@ -2330,3 +2347,155 @@ class TestPasses(unittest.TestCase):
             prop_tensor.is_contiguous(),
             f"Propagated tensor is not contiguous: {prop_tensor.stride()}",
         )
+
+    class AddConstant(torch.nn.Module):
+        def __init__(self, constant: torch.Tensor, use_buffer: bool = False):
+            super().__init__()
+            if use_buffer:
+                self.register_buffer("constant", constant)
+            else:
+                self.constant = constant
+
+        def forward(self, x):
+            return x + self.constant
+
+    def test_convert_constant_dim_order_noop(self):
+        """
+        Verify that the convert_constant_dim_order_pass does not modify
+        constant tensors in contiguous or channels last format.
+        """
+
+        memory_formats = [
+            torch.contiguous_format,
+            torch.channels_last,
+        ]
+
+        use_buffer_options = [False, True]
+
+        for memory_format, use_buffer in itertools.product(
+            memory_formats, use_buffer_options
+        ):
+            constant = torch.randn(2, 3, 4, 5).to(memory_format=memory_format)
+            model = self.AddConstant(constant, use_buffer=use_buffer)
+            inputs = (torch.randn(2, 3, 4, 5).to(memory_format=memory_format),)
+
+            ep = torch.export.export(model, inputs)
+            modified_ep = (
+                convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                    copy.deepcopy(ep)
+                )
+            )
+
+            # Check the outputs - they should match in both data and dim order.
+            original_outputs = ep.module()(*inputs)
+            modified_outputs = modified_ep.module()(*inputs)
+
+            torch.testing.assert_close(
+                original_outputs, modified_outputs, check_stride=True
+            )
+
+            # Verify that the constant/buffer tensor is not modified. The interface for
+            # constants and buffers is just different enough to make it hard to unify the
+            # below logic.
+            if use_buffer:
+                original_buffers = dict(ep.named_buffers())
+                modified_buffers = dict(modified_ep.named_buffers())
+
+                self.assertEqual(len(original_buffers), 1)
+                self.assertEqual(len(modified_buffers), 1)
+
+                buffer_key = next(iter(original_buffers.keys()))
+                original_buffer = original_buffers[buffer_key]
+                modified_buffer = modified_buffers[buffer_key]
+
+                torch.testing.assert_close(
+                    original_buffer, modified_buffer, check_stride=True
+                )
+            else:
+                self.assertEqual(len(ep.constants), 1)
+                self.assertEqual(len(modified_ep.constants), 1)
+
+                const_key = next(iter(ep.constants.keys()))
+                original_const = ep.constants[const_key]
+                modified_const = modified_ep.constants[const_key]
+
+                torch.testing.assert_close(
+                    original_const, modified_const, check_stride=True
+                )
+
+    def test_convert_constant_dim_order_to_contiguous(self):
+        """
+        Verify that the convert_constant_dim_order_pass converts constant/buffer
+        tensors with dim orders / memory formats outside the allowed list
+        (contiguous and channels_last) to contiguous.
+        """
+
+        # Test cases using transpose/permute to create non-contiguous tensors.
+        # Each case is (base_shape, permutation, description) where we create a
+        # contiguous tensor of base_shape and then permute/transpose it.
+        test_cases = [
+            # Rank 2 - transposed matrix (non-contiguous strides)
+            ((5, 4), (1, 0), "2D transposed"),
+            # Rank 3 - permuted dimensions
+            ((4, 3, 2), (2, 0, 1), "3D permuted"),
+            # Rank 3 - another permutation
+            ((2, 4, 3), (1, 2, 0), "3D permuted v2"),
+            # Rank 4 - permuted (not contiguous, not channels_last)
+            ((5, 4, 3, 2), (3, 1, 0, 2), "4D permuted"),
+            # Rank 5 - permuted
+            ((6, 5, 4, 3, 2), (4, 2, 0, 3, 1), "5D permuted"),
+        ]
+
+        use_buffer_options = [False, True]
+
+        for (base_shape, permutation, description), use_buffer in itertools.product(
+            test_cases, use_buffer_options
+        ):
+            with self.subTest(description=description, use_buffer=use_buffer):
+                # Create a contiguous tensor and permute it to make it non-contiguous
+                base_tensor = torch.randn(base_shape)
+                constant = base_tensor.permute(permutation)
+
+                # Sanity check the tensor construction
+                self.assertFalse(
+                    constant.is_contiguous(),
+                    "Test setup error: tensor should be non-contiguous",
+                )
+
+                model = self.AddConstant(constant, use_buffer=use_buffer)
+                inputs = (torch.randn(constant.shape),)
+
+                ep = torch.export.export(model, inputs)
+                modified_ep = (
+                    convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                        copy.deepcopy(ep)
+                    )
+                )
+
+                # Check the outputs - they should match in data.
+                original_outputs = ep.module()(*inputs)
+                modified_outputs = modified_ep.module()(*inputs)
+                torch.testing.assert_close(original_outputs, modified_outputs)
+
+                # Verify that the constant/buffer tensor is now contiguous.
+                if use_buffer:
+                    modified_buffers = dict(modified_ep.named_buffers())
+                    self.assertEqual(len(modified_buffers), 1)
+
+                    buffer_key = next(iter(modified_buffers.keys()))
+                    modified_buffer = modified_buffers[buffer_key]
+
+                    self.assertTrue(
+                        modified_buffer.is_contiguous(),
+                        f"Buffer should be contiguous after pass, got strides {modified_buffer.stride()}",
+                    )
+                else:
+                    self.assertEqual(len(modified_ep.constants), 1)
+
+                    const_key = next(iter(modified_ep.constants.keys()))
+                    modified_const = modified_ep.constants[const_key]
+
+                    self.assertTrue(
+                        modified_const.is_contiguous(),
+                        f"Constant should be contiguous after pass, got strides {modified_const.stride()}",
+                    )

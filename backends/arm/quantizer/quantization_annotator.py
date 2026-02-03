@@ -11,7 +11,7 @@ annotations to FX graphs using TorchAO qspecs.
 
 import logging
 import operator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, cast, List, Optional, Sequence
 
 import torch
@@ -25,6 +25,7 @@ from torch.fx import Node
 from torchao.quantization.pt2e.quantizer import (
     annotate_input_qspec_map,
     annotate_output_qspec,
+    QuantizationSpec,
     QuantizationSpecBase,
     SharedQuantizationSpec,
 )
@@ -80,6 +81,25 @@ def _as_list(x):
         return [
             x,
         ]
+
+
+def _adjust_weight_qspec_for_conv_transpose(node: Node, weight_qspec):
+    if (
+        node.target == torch.ops.aten.conv_transpose2d.input
+        and isinstance(weight_qspec, QuantizationSpec)
+        and weight_qspec.qscheme == torch.per_channel_symmetric
+        and weight_qspec.ch_axis != 1
+    ):
+        return QuantizationSpec(
+            dtype=weight_qspec.dtype,
+            observer_or_fake_quant_ctr=weight_qspec.observer_or_fake_quant_ctr,
+            quant_min=weight_qspec.quant_min,
+            quant_max=weight_qspec.quant_max,
+            qscheme=weight_qspec.qscheme,
+            ch_axis=1,
+            is_dynamic=weight_qspec.is_dynamic,
+        )
+    return weight_qspec
 
 
 def _is_ok_for_quantization(
@@ -339,6 +359,7 @@ _conv_ops = [
     torch.ops.aten.conv1d.default,
     torch.ops.aten.conv2d.default,
     torch.ops.aten.conv2d.padding,
+    torch.ops.aten.conv_transpose2d.input,
     torch.ops.aten.conv3d.default,
     torch.ops.aten.conv3d.padding,
 ]
@@ -385,6 +406,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.squeeze.default,
     torch.ops.aten.squeeze_copy.default,
     torch.ops.aten.squeeze_copy.dim,
+    torch.ops.aten.squeeze_.dim,
     torch.ops.aten.squeeze.dim,
     torch.ops.aten.squeeze.dims,
     torch.ops.aten.unbind.int,
@@ -428,8 +450,11 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.clamp.default,
     torch.ops.aten.clamp.Tensor,
     torch.ops.aten.unflatten.int,
+    torch.ops.aten.gather.default,
+    torch.ops.aten.unfold_copy.default,
     torch.ops.aten.index_select.default,
     torch.ops.aten.index.Tensor,
+    torch.ops.aten.as_strided_copy.default,
     # Neg operator flips the range, but keps the magnitude the same.
     # That is why we force it to use the same qparams and avoid
     # dequant -> neg -> requant chain.
@@ -477,6 +502,12 @@ def get_quant_properties(  # noqa: C901
             node is unsupported or not suitable for quantization.
 
     """
+    if node.target == torch.ops.aten.conv_transpose2d.input:
+        weight_qspec = _adjust_weight_qspec_for_conv_transpose(
+            node, quantization_config.get_weight_qspec()
+        )
+        quantization_config = replace(quantization_config, weight=weight_qspec)
+
     input_act_qspec = quantization_config.get_input_act_qspec()
     weight_qspec = quantization_config.get_weight_qspec()
     output_act_qspec = quantization_config.get_output_act_qspec()
@@ -586,7 +617,6 @@ def get_quant_properties(  # noqa: C901
         torch.ops.aten.add_.Tensor,
         torch.ops.aten.sub.Tensor,
         torch.ops.aten.sub_.Tensor,
-        torch.ops.aten.matmul.default,
         torch.ops.aten.mm.default,
         torch.ops.aten.bmm.default,
         torch.ops.aten.mul.Tensor,
@@ -659,7 +689,17 @@ def get_quant_properties(  # noqa: C901
                 [input_act_qspec if n == inputs[0] else shared_qspec for n in inputs],
             )
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+    elif node.target in (
+        torch.ops.aten.index_put.default,
+        torch.ops.aten.index_put_.default,
+    ):
+        shared_qspec = SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
+        quant_properties.quant_inputs = [
+            _QuantProperty(0, input_act_qspec),
+            _QuantProperty(2, shared_qspec),
+        ]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
@@ -800,16 +840,3 @@ def annotate_graph(  # type: ignore[return]
             _annotate_output(node, quant_properties.quant_output)
 
         mark_node_as_annotated(node)  # type: ignore[attr-defined]
-
-        # Quantization does not allow kwargs for some reason.
-        # Remove from ops we know have and where we know it does not break anything.
-        if node.target in [
-            torch.ops.aten.full_like.default,
-            torch.ops.aten.full.default,
-            torch.ops.aten.full,
-            torch.ops.aten.fill_.Scalar,
-            torch.ops.aten.scalar_tensor.default,
-            torch.ops.aten.zeros.default,
-            torch.ops.aten.ones.default,
-        ]:
-            node.kwargs = {}

@@ -5,10 +5,12 @@ import os
 import shutil
 import tarfile
 import tempfile
+from typing import Optional
 
 import torch
-
 import torchaudio
+
+from executorch.examples.models.parakeet.quantize import quantize_model_
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -296,38 +298,107 @@ class PreprocessorWrapper(torch.nn.Module):
         return mel, mel_len
 
 
-def export_all(model):
+def export_all(
+    model,
+    dtype=torch.float,
+    backend: Optional[str] = None,
+    # Encoder quantization args
+    qlinear_encoder: Optional[str] = None,
+    qlinear_encoder_group_size: int = 32,
+    qlinear_encoder_packing_format: Optional[str] = None,
+    # Decoder quantization args
+    qlinear: Optional[str] = None,
+    qlinear_group_size: int = 32,
+    qlinear_packing_format: Optional[str] = None,
+    # Embedding quantization args (decoder has the embedding layer)
+    qembedding: Optional[str] = None,
+    qembedding_group_size: int = 0,
+):
+    """Export all model components.
+
+    The maximum audio duration is determined by the model's internal
+    max_audio_length (~50 seconds for Parakeet with max_audio_length=5000).
+
+    Args:
+        model: The NeMo ASR model to export.
+        dtype: Data type for floating-point tensors (default: torch.float).
+        backend: Target backend ("cuda", "xnnpack", etc.).
+        qlinear_encoder: Quantization config for encoder linear layers.
+        qlinear_encoder_group_size: Group size for encoder linear quantization.
+        qlinear_encoder_packing_format: Packing format for encoder linear layers.
+        qlinear: Quantization config for decoder linear layers.
+        qlinear_group_size: Group size for decoder linear quantization.
+        qlinear_packing_format: Packing format for decoder linear layers.
+        qembedding: Quantization config for embedding layers ("4w", "8w").
+        qembedding_group_size: Group size for embedding quantization (default: 0 = per-axis).
+    """
     programs = {}
+
+    # Determine device based on backend (preprocessor always stays on CPU)
+    device = torch.device("cuda" if backend == "cuda" else "cpu")
+
+    # Get audio parameters from model config
+    sample_rate = model.preprocessor._cfg.sample_rate
+    window_stride = float(model.preprocessor._cfg.window_stride)
+
+    # Get encoder's actual limit from NeMo model
+    encoder_max_frames = model.encoder.max_audio_length  # typically 5000
+    max_audio_sec = int(encoder_max_frames * window_stride)
+
+    max_audio_samples = int(sample_rate * max_audio_sec)
+    max_mel_frames = int(max_audio_sec / window_stride)
 
     preprocessor_wrapper = PreprocessorWrapper(model.preprocessor)
     preprocessor_wrapper.eval()
-    sample_audio = torch.randn(16000 * 10)
+
+    sample_audio = torch.randn(max_audio_samples, dtype=torch.float)
     sample_length = torch.tensor([sample_audio.shape[0]], dtype=torch.int64)
-    # The preprocessor definition changes if cuda is available (likely due to making it cuda graphable).
-    # Unfortunately that new definition is not supported by export, so we need to stop that from happening.
+    # The preprocessor uses different code paths when CUDA is available, which include
+    # data-dependent conditionals that torch.export cannot handle. Force CPU path.
     old_cuda_is_available = torch.cuda.is_available
     torch.cuda.is_available = lambda: False
     programs["preprocessor"] = export(
         preprocessor_wrapper,
         (sample_audio, sample_length),
         dynamic_shapes={
-            "audio": {0: Dim("audio_len", min=1600, max=16000 * 600)},
+            # min=1600 samples = 0.1 sec @ 16kHz, max aligned with encoder limit
+            "audio": {0: Dim("audio_len", min=1600, max=max_audio_samples)},
             "length": {},
         },
         strict=False,
     )
     torch.cuda.is_available = old_cuda_is_available
 
+    # Move model to CUDA after preprocessor export (preprocessor must stay on CPU)
+    if backend == "cuda":
+        model.cuda()
+
     feat_in = getattr(model.encoder, "_feat_in", 128)
-    audio_signal = torch.randn(1, feat_in, 100)
-    length = torch.tensor([100], dtype=torch.int64)
+    # Use max_mel_frames as example to ensure Dim.AUTO infers the full range.
+    # Smaller examples cause Dim.AUTO to infer narrow bounds.
+    audio_signal = torch.randn(1, feat_in, max_mel_frames, dtype=dtype, device=device)
+    length = torch.tensor([max_mel_frames], dtype=torch.int64, device=device)
     encoder_with_proj = EncoderWithProjection(model.encoder, model.joint)
     encoder_with_proj.eval()
+
+    if qlinear_encoder:
+        print("Quantizing encoder...")
+        quantize_model_(
+            encoder_with_proj,
+            qlinear_config=qlinear_encoder,
+            qlinear_group_size=qlinear_encoder_group_size,
+            qlinear_packing_format=qlinear_encoder_packing_format,
+        )
+
     programs["encoder"] = export(
         encoder_with_proj,
         (),
         kwargs={"audio_signal": audio_signal, "length": length},
-        dynamic_shapes={"audio_signal": {2: Dim.AUTO}, "length": {}},
+        dynamic_shapes={
+            # Use Dim.AUTO - explicit bounds fail due to different size guards on different devices
+            "audio_signal": {2: Dim.AUTO},
+            "length": {},
+        },
         strict=False,
     )
 
@@ -335,9 +406,21 @@ def export_all(model):
     pred_hidden = model.decoder.pred_hidden
     decoder_step = DecoderStep(model.decoder, model.joint)
     decoder_step.eval()
-    token = torch.tensor([[0]], dtype=torch.long)
-    h = torch.zeros(num_layers, 1, pred_hidden)
-    c = torch.zeros(num_layers, 1, pred_hidden)
+
+    if qlinear or qembedding:
+        print("Quantizing decoder...")
+        quantize_model_(
+            decoder_step,
+            qlinear_config=qlinear,
+            qlinear_group_size=qlinear_group_size,
+            qlinear_packing_format=qlinear_packing_format,
+            qembedding_config=qembedding,
+            qembedding_group_size=qembedding_group_size,
+        )
+
+    token = torch.tensor([[0]], dtype=torch.long, device=device)
+    h = torch.zeros(num_layers, 1, pred_hidden, dtype=dtype, device=device)
+    c = torch.zeros(num_layers, 1, pred_hidden, dtype=dtype, device=device)
     programs["decoder_step"] = export(
         decoder_step,
         (token, h, c),
@@ -348,8 +431,8 @@ def export_all(model):
     joint_hidden = model.joint.joint_hidden
     num_token_classes = model.tokenizer.vocab_size + 1  # +1 for blank
 
-    f_proj = torch.randn(1, 1, joint_hidden)
-    g_proj = torch.randn(1, 1, joint_hidden)
+    f_proj = torch.randn(1, 1, joint_hidden, dtype=dtype, device=device)
+    g_proj = torch.randn(1, 1, joint_hidden, dtype=dtype, device=device)
     programs["joint"] = export(
         JointWithArgmax(model.joint, num_token_classes),
         (f_proj, g_proj),
@@ -526,11 +609,66 @@ def main():
         choices=["fp32", "fp16", "bf16"],
         help="Model dtype for Metal/CUDA backends (default: fp32)",
     )
+
+    # Decoder quantization arguments
+    parser.add_argument(
+        "--qlinear",
+        type=str,
+        choices=["4w", "8w", "8da4w", "8da8w"],
+        help="Quantization config for decoder linear layers",
+    )
+    parser.add_argument(
+        "--qlinear_group_size",
+        type=int,
+        default=32,
+        help="Group size for decoder linear quantization (default: 32)",
+    )
+    parser.add_argument(
+        "--qlinear_packing_format",
+        type=str,
+        choices=["tile_packed_to_4d"],
+        help="Packing format for decoder linear layers",
+    )
+
+    # Encoder quantization arguments
+    parser.add_argument(
+        "--qlinear_encoder",
+        type=str,
+        choices=["4w", "8w", "8da4w", "8da8w"],
+        help="Quantization config for encoder linear layers",
+    )
+    parser.add_argument(
+        "--qlinear_encoder_group_size",
+        type=int,
+        default=32,
+        help="Group size for encoder linear quantization (default: 32)",
+    )
+    parser.add_argument(
+        "--qlinear_encoder_packing_format",
+        type=str,
+        choices=["tile_packed_to_4d"],
+        help="Packing format for encoder linear layers",
+    )
+
+    # Embedding quantization arguments (decoder has the embedding layer)
+    parser.add_argument(
+        "--qembedding",
+        type=str,
+        choices=["4w", "8w"],
+        help="Quantization config for decoder embedding layer",
+    )
+    parser.add_argument(
+        "--qembedding_group_size",
+        type=int,
+        default=0,
+        help="Group size for embedding quantization (default: 0 = per-axis)",
+    )
+
     args = parser.parse_args()
 
-    # Validate dtype for Metal backend
-    if args.backend == "metal" and args.dtype == "fp16":
-        parser.error("Metal backend only supports fp32 and bf16, not fp16")
+    # Validate dtype
+    if args.dtype == "fp16":
+        parser.error("fp16 is not yet supported")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -549,11 +687,27 @@ def main():
         model = model.to(torch.float16)
 
     print("\nExporting components...")
-    programs, metadata = export_all(model)
+    export_dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float
+    programs, metadata = export_all(
+        model,
+        dtype=export_dtype,
+        backend=args.backend,
+        # Encoder quantization
+        qlinear_encoder=args.qlinear_encoder,
+        qlinear_encoder_group_size=args.qlinear_encoder_group_size,
+        qlinear_encoder_packing_format=args.qlinear_encoder_packing_format,
+        # Decoder quantization
+        qlinear=args.qlinear,
+        qlinear_group_size=args.qlinear_group_size,
+        qlinear_packing_format=args.qlinear_packing_format,
+        # Embedding quantization
+        qembedding=args.qembedding,
+        qembedding_group_size=args.qembedding_group_size,
+    )
 
     et = lower_to_executorch(programs, metadata=metadata, backend=args.backend)
 
-    pte_path = os.path.join(args.output_dir, "parakeet_tdt.pte")
+    pte_path = os.path.join(args.output_dir, "model.pte")
     print(f"\nSaving ExecuTorch program to: {pte_path}")
     with open(pte_path, "wb") as f:
         et.write_to_file(f)

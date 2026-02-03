@@ -1,0 +1,24 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "vulkan_partitioner",
+    srcs = [
+        "vulkan_partitioner.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/backends/vulkan:op_registry",
+        "//executorch/backends/vulkan:utils_lib",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/backends/vulkan/patterns:vulkan_patterns",
+        "//executorch/exir:delegate",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+    ],
+    typing = True,
+)

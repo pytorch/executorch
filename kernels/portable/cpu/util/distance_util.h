@@ -116,7 +116,7 @@ void pdist(const Tensor& in, Tensor& out, double p) {
     pdist<CTYPE, L1<CTYPE>>(in, out, p);
   } else if (p == 2.0) {
     pdist<CTYPE, L2<CTYPE>>(in, out, p);
-  } else if (p == INFINITY) {
+  } else if (p == static_cast<double>(INFINITY)) {
     pdist<CTYPE, Linf<CTYPE>>(in, out, p);
   } else {
     pdist<CTYPE, Lp<CTYPE>>(in, out, p);

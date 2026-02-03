@@ -9,16 +9,16 @@ def cuda_shim_cpp_unittest(name):
             "test_" + name + ".cpp",
         ],
         deps = [
-            "//executorch/backends/aoti:common_shims",
             "//executorch/backends/cuda/runtime:runtime_shims",
-            "//executorch/extension/tensor:tensor",
+            "//executorch/backends/aoti:aoti_common_slim",
             "//executorch/runtime/core:core",
             "//executorch/runtime/platform:platform",
-            "//executorch/runtime/core/exec_aten:lib",
         ],
+
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",

@@ -240,8 +240,10 @@ class SimpleADB:
             ["shell", f"{qnn_executor_runner_cmds}"], output_callback=output_callback
         )
 
-    def pull(self, output_path, callback=None):
-        self._adb(["pull", "-a", self.output_folder, output_path])
+    def pull(self, host_output_path, device_output_path=None, callback=None):
+        if device_output_path is None:
+            device_output_path = self.output_folder
+        self._adb(["pull", "-a", device_output_path, host_output_path])
         if callback:
             callback()
 
@@ -756,7 +758,6 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
                     max_length=self.max_hidden_seq_length,
                     return_tensors="pt",
                 )
-
                 label = tokenizer(
                     target_text,
                     truncation=True,
@@ -766,7 +767,9 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
                 )
                 return {
                     "input_ids": model_input["input_ids"].squeeze(0),
-                    "attention_mask": model_input["attention_mask"].squeeze(0),
+                    "attention_mask": model_input["attention_mask"]
+                    .reshape(1, 1, -1)
+                    .to(torch.float32),
                     "decoder_input_ids": torch.tensor([0], dtype=torch.long),
                     "labels": label["input_ids"].squeeze(0),
                 }
@@ -795,7 +798,7 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
         inputs.append(
             (
                 input_ids.to(torch.long),
-                attention_mask.to(torch.long),
+                torch.where(attention_mask == 0.0, -255.0, 0.0),
                 decoder_input_ids,
             )
         )

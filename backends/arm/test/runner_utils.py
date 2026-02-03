@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -60,7 +60,7 @@ _torch_to_numpy_dtype_dict = {
     torch.float16: np.float16,
     torch.float32: np.float32,
     torch.float64: np.float64,
-    torch.bfloat16: np.float32,
+    torch.bfloat16: np.uint16,
     torch.complex32: np.complex64,
     torch.complex64: np.complex64,
     torch.complex128: np.complex128,
@@ -172,16 +172,17 @@ def get_output_quantization_params(
 
 
 def torch_tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
-    dtype = _torch_to_numpy_dtype_dict[tensor.dtype]
-    array = tensor.detach().numpy().astype(dtype)  # type: ignore[var-annotated]
     dim_order = tensor.dim_order()
     if dim_order == NHWC_ORDER:
-        a = array.transpose(NHWC_ORDER)
-        return a
+        tensor = tensor.permute(NHWC_ORDER)
     elif dim_order == NNHWC_ORDER:
-        return array.transpose(NNHWC_ORDER)
-    else:
-        return array
+        tensor = tensor.permute(NNHWC_ORDER)
+
+    tensor = tensor.detach()
+    if tensor.dtype == torch.bfloat16:
+        # Numpy doesn't support bfloat16, use, uint16 instead. Dtype is inferred from model anyways.
+        tensor = tensor.view(torch.uint16)
+    return tensor.numpy()
 
 
 def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
@@ -197,8 +198,12 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
         tensor = torch.from_numpy(array).reshape(shape_with_dim_order)
         return tensor.permute(NNHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
     else:
-        tensor = torch.from_numpy(array).reshape(shape)
-        return tensor
+        if type(array.dtype) is np.dtypes.VoidDType:
+            # If dtype is void, "cheat" and use the output_tensor dtype.
+            tensor = torch.frombuffer(array, dtype=output_tensor.dtype)
+        else:
+            tensor = torch.from_numpy(array)
+        return tensor.reshape(shape)
 
 
 class TosaReferenceModelDispatch(TorchFunctionMode):
@@ -633,7 +638,7 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     major = version._Major()
     minor = version._Minor()
     patch = version._Patch()
-    if not ((major == 1 and minor == 0)):
+    if not ((major == 1 and minor <= 1)):
         raise RuntimeError(
             f"Unsupported version in TOSA flatbuffer: version={major}.{minor}.{patch}"
         )
