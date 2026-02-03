@@ -22,7 +22,6 @@ Overall, Llama models are powerful and versatile language models that can be use
 
 Please note that the models are subject to the [Llama 2 Acceptable Use Policy](https://github.com/facebookresearch/llama/blob/main/USE_POLICY.md), [Llama 3 Acceptable Use Policy](https://github.com/meta-llama/llama3/blob/main/USE_POLICY.md) and [Responsible Use Guide](https://ai.meta.com/static-resource/responsible-use-guide/).
 
-
 # Results
 
 ## Llama 3.2 1B/3B and quantized 1B/3B models
