@@ -116,7 +116,7 @@ def emit_stop_position(
     """
     Emit nodes to compute stop = start + length for slice operations.
 
-    May emit SymSizeNode and/or AddScalarNode depending on whether
+    May emit SymSizeNode and/or AddIntNode depending on whether
     start and length are static or dynamic.
 
     Args:
@@ -130,7 +130,7 @@ def emit_stop_position(
         stop position as int (if fully static) or Slot (if any dynamic)
     """
     from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
-        AddScalarNode,
+        AddIntNode,
         IntOrVid,
         SymSizeNode,
     )
@@ -149,23 +149,23 @@ def emit_stop_position(
     if seq_len_is_symbolic or length_meta is None:
         # Dynamic seq_len: emit SymSizeNode to get length at runtime
         _, seq_len_slot = P.slot_manager.make_tmp_value_slot()
-        P._emit(
+        P.emit(
             SymSizeNode(
-                a=P._slot_to_tid(length_tensor),
+                a=P.slot_to_tid(length_tensor),
                 dim=length_dim,
-                out=P._slot_to_vid(seq_len_slot),
+                out=P.slot_to_vid(seq_len_slot),
             )
         )
         _, stop_slot = P.slot_manager.make_tmp_value_slot()
         if isinstance(start, Slot):
-            start_iov = P._to_int_or_vid(start)
+            start_iov = P.to_int_or_vid(start)
         else:
             start_iov = IntOrVid.from_literal(int(start))
-        P._emit(
-            AddScalarNode(
+        P.emit(
+            AddIntNode(
                 a=start_iov,
-                b=IntOrVid.from_vid(P._slot_to_vid(seq_len_slot)),
-                out=P._slot_to_vid(stop_slot),
+                b=IntOrVid.from_vid(P.slot_to_vid(seq_len_slot)),
+                out=P.slot_to_vid(stop_slot),
             )
         )
         return stop_slot
@@ -174,11 +174,11 @@ def emit_stop_position(
         if isinstance(start, Slot):
             # Dynamic start + static length
             _, stop_slot = P.slot_manager.make_tmp_value_slot()
-            P._emit(
-                AddScalarNode(
-                    a=P._to_int_or_vid(start),
+            P.emit(
+                AddIntNode(
+                    a=P.to_int_or_vid(start),
                     b=IntOrVid.from_literal(seq_len_concrete),
-                    out=P._slot_to_vid(stop_slot),
+                    out=P.slot_to_vid(stop_slot),
                 )
             )
             return stop_slot
@@ -676,7 +676,7 @@ class MLXProgramBuilder:
     # Op emission helpers
     # -------------------------------------------------------------------------
 
-    def _emit(self, op: OpNodeUnion) -> None:
+    def emit(self, op: OpNodeUnion) -> None:
         self._instrs.append(Instruction(op=op))
 
     # -------------------------------------------------------------------------
@@ -726,6 +726,14 @@ class MLXProgramBuilder:
     def set_slot(self, node: Node, slot: Slot):
         self.slot_manager.set_slot(node, slot)
 
+    def make_tmp_slot(self) -> Tuple[str, Slot]:
+        """Create a temporary tensor slot."""
+        return self.slot_manager.make_tmp_slot()
+
+    def make_tmp_value_slot(self) -> Tuple[str, Slot]:
+        """Create a temporary value (SymInt) slot."""
+        return self.slot_manager.make_tmp_value_slot()
+
     def make_or_get_constant(self, name: str, tensor: torch.Tensor) -> Slot:
         """
         Creates an extra constant outside of the ExportedProgram state_dict.
@@ -771,7 +779,7 @@ class MLXProgramBuilder:
     # Slot to Tid/Vid conversion
     # -------------------------------------------------------------------------
 
-    def _slot_to_tid(self, slot: Slot) -> Tid:
+    def slot_to_tid(self, slot: Slot) -> Tid:
         """Convert a tensor Slot to a Tid, recording it for later remapping."""
         assert slot.id_type == IdType.Tensor
         # Use local slot.idx as placeholder - will be remapped to global idx in build()
@@ -779,32 +787,19 @@ class MLXProgramBuilder:
         self._tid_slot_map.append((tid, slot))
         return tid
 
-    def _slot_to_vid(self, slot: Slot) -> Vid:
+    def slot_to_vid(self, slot: Slot) -> Vid:
         """Convert a value Slot to a Vid, recording it for later remapping."""
         assert slot.id_type != IdType.Tensor
         vid = Vid(idx=slot.idx)
         self._vid_slot_map.append((vid, slot))
         return vid
 
-    def make_tmp_vid(self) -> Vid:
-        """
-        Create a temporary Vid for intermediate value computations.
-
-        This is useful for op handlers that need to emit intermediate scalar
-        computations (e.g., computing end = start + length in narrow).
-
-        Returns:
-            A new Vid that can be used as an output for scalar operations.
-        """
-        idx = self.slot_manager.vid_managers[IdSpace.Temp].get_id()
-        return Vid(idx=idx)
-
-    def _to_int_or_vid(self, v: Union[int, Slot]) -> IntOrVid:
+    def to_int_or_vid(self, v: Union[int, Slot]) -> IntOrVid:
         if isinstance(v, Slot):
-            return IntOrVid.from_vid(self._slot_to_vid(v))
+            return IntOrVid.from_vid(self.slot_to_vid(v))
         return IntOrVid.from_literal(int(v))
 
-    def _to_float_or_vid(self, v: Union[float, int, Slot]) -> FloatOrVid:
+    def to_float_or_vid(self, v: Union[float, int, Slot]) -> FloatOrVid:
         if isinstance(v, Slot):
             return FloatOrVid.from_vid(self._slot_to_vid(v))
         return FloatOrVid.from_literal(float(v))

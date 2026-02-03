@@ -34,10 +34,8 @@ Usage:
 import argparse
 import importlib
 import multiprocessing
-import pkgutil
 import sys
 from concurrent.futures import as_completed, ProcessPoolExecutor
-from pathlib import Path
 from typing import List, Optional, Tuple
 
 from .test_utils import (
@@ -52,16 +50,10 @@ from .test_utils import (
 
 def discover_and_import_tests():
     """
-    Auto-discover and import all test_*.py modules in the test directory.
+    Import test_ops.py module which contains all test definitions.
     This triggers registration of all tests.
     """
-    test_dir = Path(__file__).parent
-
-    # Find all test_*.py files
-    for module_info in pkgutil.iter_modules([str(test_dir)]):
-        if module_info.name.startswith("test_") and module_info.name != "test_utils":
-            # Import the module to trigger registration
-            importlib.import_module(f".{module_info.name}", package=__package__)
+    importlib.import_module(".test_ops", package=__package__)
 
 
 # =============================================================================

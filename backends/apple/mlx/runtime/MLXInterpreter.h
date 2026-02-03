@@ -80,7 +80,8 @@ inline std::vector<int> infer_shape_with_minus_one(
 }
 
 // ----- GELU implementation (tanh approximation) -----
-inline array gelu_impl(const array& x, StreamOrDevice s = {}) {
+// Formula: 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x³)))
+inline array gelu_tanh_impl(const array& x, StreamOrDevice s = {}) {
   constexpr float sqrt_2_over_pi = 0.7978845608f;
   auto dtype = x.dtype();
 
@@ -91,6 +92,20 @@ inline array gelu_impl(const array& x, StreamOrDevice s = {}) {
   auto tanh_val = tanh(inner, s);
   auto one_plus_tanh = add(array(1.0f, dtype), tanh_val, s);
   auto out = multiply(x, one_plus_tanh, s);
+  out = multiply(array(0.5f, dtype), out, s);
+  return out;
+}
+
+// ----- GELU implementation (exact, using erf) -----
+// Formula: 0.5 * x * (1 + erf(x / sqrt(2)))
+inline array gelu_none_impl(const array& x, StreamOrDevice s = {}) {
+  constexpr float inv_sqrt_2 = 0.7071067812f;
+  auto dtype = x.dtype();
+
+  auto scaled = multiply(array(inv_sqrt_2, dtype), x, s);
+  auto erf_val = erf(scaled, s);
+  auto one_plus_erf = add(array(1.0f, dtype), erf_val, s);
+  auto out = multiply(x, one_plus_erf, s);
   out = multiply(array(0.5f, dtype), out, s);
   return out;
 }
@@ -244,31 +259,35 @@ inline void exec_add(const AddNode& n, ExecutionState& st, StreamOrDevice s) {
 
 // ----- Add Scalar -----
 inline void
-exec_add_scalar(const AddScalarNode& n, ExecutionState& st, StreamOrDevice) {
+exec_add_int(const AddIntNode& n, ExecutionState& st, StreamOrDevice) {
   int32_t a = resolve_int(n.a, st);
   int32_t b = resolve_int(n.b, st);
   st.set_value(n.out, a + b);
 }
 
 // ----- Sub Scalar -----
-inline void
-exec_sub_scalar(const SubScalarNode& n, ExecutionState& st, StreamOrDevice) {
+inline void exec_subtract_int(
+    const SubtractIntNode& n,
+    ExecutionState& st,
+    StreamOrDevice) {
   int32_t a = resolve_int(n.a, st);
   int32_t b = resolve_int(n.b, st);
   st.set_value(n.out, a - b);
 }
 
 // ----- Mul Scalar -----
-inline void
-exec_mul_scalar(const MulScalarNode& n, ExecutionState& st, StreamOrDevice) {
+inline void exec_multiply_int(
+    const MultiplyIntNode& n,
+    ExecutionState& st,
+    StreamOrDevice) {
   int32_t a = resolve_int(n.a, st);
   int32_t b = resolve_int(n.b, st);
   st.set_value(n.out, a * b);
 }
 
 // ----- Floor Div Scalar -----
-inline void exec_floor_div_scalar(
-    const FloorDivScalarNode& n,
+inline void exec_floor_divide_int(
+    const FloorDivideIntNode& n,
     ExecutionState& st,
     StreamOrDevice) {
   int32_t a = resolve_int(n.a, st);
@@ -346,7 +365,12 @@ exec_conv2d(const Conv2DNode& n, ExecutionState& st, StreamOrDevice s) {
 // ----- GELU -----
 inline void exec_gelu(const GeluNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
-  st.set_tensor(n.out, gelu_impl(x, s));
+  if (n.approximate == "tanh") {
+    st.set_tensor(n.out, gelu_tanh_impl(x, s));
+  } else {
+    // "none" or any other value uses exact GELU
+    st.set_tensor(n.out, gelu_none_impl(x, s));
+  }
 }
 
 // ----- ARange -----
@@ -464,13 +488,23 @@ exec_rsqrt(const RsqrtNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 // ----- Maximum -----
+
 inline void
 exec_maximum(const MaximumNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, maximum(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
+// ----- Minimum -----
+
+inline void
+exec_minimum(const MinimumNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, minimum(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
 // ----- Log -----
+
 inline void exec_log(const LogNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, log(x, s));
@@ -1192,18 +1226,18 @@ class Interpreter {
       case OpCode::ADD:
         ops::exec_add(std::get<AddNode>(instr.node), st, s);
         break;
-      case OpCode::ADD_SCALAR:
-        ops::exec_add_scalar(std::get<AddScalarNode>(instr.node), st, s);
+      case OpCode::ADD_INT:
+        ops::exec_add_int(std::get<AddIntNode>(instr.node), st, s);
         break;
-      case OpCode::SUB_SCALAR:
-        ops::exec_sub_scalar(std::get<SubScalarNode>(instr.node), st, s);
+      case OpCode::SUBTRACT_INT:
+        ops::exec_subtract_int(std::get<SubtractIntNode>(instr.node), st, s);
         break;
-      case OpCode::MUL_SCALAR:
-        ops::exec_mul_scalar(std::get<MulScalarNode>(instr.node), st, s);
+      case OpCode::MULTIPLY_INT:
+        ops::exec_multiply_int(std::get<MultiplyIntNode>(instr.node), st, s);
         break;
-      case OpCode::FLOOR_DIV_SCALAR:
-        ops::exec_floor_div_scalar(
-            std::get<FloorDivScalarNode>(instr.node), st, s);
+      case OpCode::FLOOR_DIVIDE_INT:
+        ops::exec_floor_divide_int(
+            std::get<FloorDivideIntNode>(instr.node), st, s);
         break;
       case OpCode::SYM_SIZE:
         ops::exec_sym_size(std::get<SymSizeNode>(instr.node), st, s);
@@ -1249,6 +1283,9 @@ class Interpreter {
         break;
       case OpCode::MAXIMUM:
         ops::exec_maximum(std::get<MaximumNode>(instr.node), st, s);
+        break;
+      case OpCode::MINIMUM:
+        ops::exec_minimum(std::get<MinimumNode>(instr.node), st, s);
         break;
       case OpCode::LOG:
         ops::exec_log(std::get<LogNode>(instr.node), st, s);
