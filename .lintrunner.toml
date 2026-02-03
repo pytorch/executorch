@@ -8,6 +8,7 @@ exclude_patterns = [
     '**/third-party/**',
     '.github/scripts/**',
     'exir/serde/**',
+    'exir/_serialize/generated/executorch_flatbuffer/**',
 ]
 command = [
     'python',
@@ -39,6 +40,7 @@ exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
     'exir/serde/**',
+    'exir/_serialize/generated/executorch_flatbuffer/**',
 ]
 command = [
     'python',
