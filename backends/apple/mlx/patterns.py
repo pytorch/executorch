@@ -165,13 +165,13 @@ class SliceUpdateHandler(PatternHandler):
         dst, update, axis, start, stop = P.slot_map(
             [self.dst, self.update, self.axis, self.start, self.stop]
         )
-        P._emit(
+        P.emit(
             SliceUpdateNode(
-                dst=P._slot_to_tid(dst),
-                update=P._slot_to_tid(update),
-                axis=P._to_int_or_vid(axis),
-                start=P._to_int_or_vid(start),
-                stop=P._to_int_or_vid(stop),
+                dst=P.slot_to_tid(dst),
+                update=P.slot_to_tid(update),
+                axis=P.to_int_or_vid(axis),
+                start=P.to_int_or_vid(start),
+                stop=P.to_int_or_vid(stop),
             )
         )
         # The slice_scatter node output is logically the same as the dst buffer
@@ -180,10 +180,10 @@ class SliceUpdateHandler(PatternHandler):
         existing_slot = P.slot_manager.get_slot(n)
         if existing_slot is not None and existing_slot != dst:
             # Node already has a slot (e.g., Output), need to copy dst to it
-            P._emit(
+            P.emit(
                 IdCopyNode(
-                    x=P._slot_to_tid(dst),
-                    out=P._slot_to_tid(existing_slot),
+                    x=P.slot_to_tid(dst),
+                    out=P.slot_to_tid(existing_slot),
                 )
             )
             return existing_slot
@@ -367,23 +367,23 @@ class UpdateCacheHandler(PatternHandler):
         # cache is [B, H, S, D], update is [B, H, S_step, D]
         # This updates cache[:, :, start:stop, :] = update
         # No transpose needed! Both are in SDPA format [B, H, S, D]
-        P._emit(
+        P.emit(
             SliceUpdateNode(
-                dst=P._slot_to_tid(cache_slot),
-                update=P._slot_to_tid(update_slot),
+                dst=P.slot_to_tid(cache_slot),
+                update=P.slot_to_tid(update_slot),
                 axis=IntOrVid.from_literal(2),  # S dimension in [B, H, S, D]
-                start=P._to_int_or_vid(start_slot),
-                stop=P._to_int_or_vid(stop_slot),
+                start=P.to_int_or_vid(start_slot),
+                stop=P.to_int_or_vid(stop_slot),
             )
         )
 
         # SliceUpdate mutates dst in-place and returns the updated dst
         # The output is cache_slot which is [B, H, S, D] - exactly what we need!
         # Copy cache to out_slot for the output
-        P._emit(
+        P.emit(
             IdCopyNode(
-                x=P._slot_to_tid(cache_slot),
-                out=P._slot_to_tid(out_slot),
+                x=P.slot_to_tid(cache_slot),
+                out=P.slot_to_tid(out_slot),
             )
         )
 
@@ -485,14 +485,14 @@ class SDPAHandler(PatternHandler):
 
         q, k, v, attn_mask = P.slot_map([q, k, v, attn_mask])
         out = P.make_or_get_slot(n)
-        P._emit(
+        P.emit(
             SdpaNode(
-                q=P._slot_to_tid(q),
-                k=P._slot_to_tid(k),
-                v=P._slot_to_tid(v),
-                out=P._slot_to_tid(out),
+                q=P.slot_to_tid(q),
+                k=P.slot_to_tid(k),
+                v=P.slot_to_tid(v),
+                out=P.slot_to_tid(out),
                 scale=scale,
-                mask=P._slot_to_tid(attn_mask) if attn_mask else None,
+                mask=P.slot_to_tid(attn_mask) if attn_mask else None,
                 causal=is_causal,
             )
         )
@@ -653,14 +653,14 @@ class QuantizedLinearHandler(PatternHandler):
 
         x, scale_slot, b = P.slot_map([x, self.scale, b])
         out = P.make_or_get_slot(n)
-        P._emit(
+        P.emit(
             QuantizedLinearNode(
-                x=P._slot_to_tid(x),
-                w=P._slot_to_tid(w),
-                scales=P._slot_to_tid(scale_slot),
-                out=P._slot_to_tid(out),
-                biases=P._slot_to_tid(biases),
-                bias=P._slot_to_tid(b) if b else None,
+                x=P.slot_to_tid(x),
+                w=P.slot_to_tid(w),
+                scales=P.slot_to_tid(scale_slot),
+                out=P.slot_to_tid(out),
+                biases=P.slot_to_tid(biases),
+                bias=P.slot_to_tid(b) if b else None,
                 group_size=self.group_size,
                 bits=self.bits,
                 mode="affine",
@@ -761,13 +761,13 @@ class QuantizedEmbeddingHandler(PatternHandler):
 
         x, scale_slot = P.slot_map([x, self.scale])
         out = P.make_or_get_slot(n)
-        P._emit(
+        P.emit(
             QuantizedGatherNode(
-                table_q=P._slot_to_tid(w),
-                scales=P._slot_to_tid(scale_slot),
-                ids=P._slot_to_tid(x),
-                out=P._slot_to_tid(out),
-                biases=P._slot_to_tid(biases),
+                table_q=P.slot_to_tid(w),
+                scales=P.slot_to_tid(scale_slot),
+                ids=P.slot_to_tid(x),
+                out=P.slot_to_tid(out),
+                biases=P.slot_to_tid(biases),
                 group_size=self.group_size,
                 bits=self.bits,
                 mode="affine",
