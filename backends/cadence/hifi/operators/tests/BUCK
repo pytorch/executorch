@@ -220,3 +220,24 @@ jarvis_wrapper.cxx_test(
         "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ],
 )
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_transpose_copy",
+    srcs = [
+        "test_op_transpose_copy.cpp",
+    ],
+    compatible_backends = ["hifi"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_transpose_copy",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
