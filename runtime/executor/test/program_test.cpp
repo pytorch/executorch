@@ -250,6 +250,35 @@ TEST_F(ProgramTest, VerificationCatchesCorruption) {
 
 #endif // ET_ENABLE_PROGRAM_VERIFICATION
 
+TEST_F(ProgramTest, MinimalVerificationCatchesInvalidRootOffset) {
+  // Make a local copy of the data.
+  size_t data_len = add_loader_->size().get();
+  auto data = std::make_unique<char[]>(data_len);
+  {
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    ASSERT_EQ(src.error(), Error::Ok);
+    ASSERT_EQ(src->size(), data_len);
+    memcpy(data.get(), src->data(), data_len);
+  }
+
+  // Corrupt the root offset (first 4 bytes) to point beyond the buffer.
+  // Set it to a value larger than the buffer size.
+  uint32_t invalid_offset = static_cast<uint32_t>(data_len + 1000);
+  memcpy(data.get(), &invalid_offset, sizeof(invalid_offset));
+
+  // Wrap the corrupted data in a loader.
+  BufferDataLoader data_loader(data.get(), data_len);
+
+  // Should fail with Minimal verification due to invalid root offset.
+  Result<Program> program =
+      Program::load(&data_loader, Program::Verification::Minimal);
+  ASSERT_EQ(program.error(), Error::InvalidProgram);
+}
+
 TEST_F(ProgramTest, UnalignedProgramDataFails) {
   // Make a local copy of the data, on an odd alignment.
   size_t data_len = add_loader_->size().get();
