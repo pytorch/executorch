@@ -338,7 +338,7 @@ def main(args):
             files=[runtime_tokenizer_path],
         )
         adb.execute(custom_runner_cmd=runner_cmd)
-        adb.pull(output_path=args.artifact, callback=post_process)
+        adb.pull(host_output_path=args.artifact, callback=post_process)
 
     result = Seq2SeqLMExportableModulePipeline.evaluate_with_ground_truth(
         tokenizer, outputs, targets, evaluate_squad
