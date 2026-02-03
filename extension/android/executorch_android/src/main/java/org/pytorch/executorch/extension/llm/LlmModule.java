@@ -488,7 +488,8 @@ public class LlmModule {
     return 0;
   }
 
-  private native int prefillRawAudioNative(byte[] audio, int batch_size, int n_channels, int n_samples);
+  private native int prefillRawAudioNative(
+      byte[] audio, int batch_size, int n_channels, int n_samples);
 
   /**
    * Prefill a multimodal Module with the given text input.

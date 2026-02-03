@@ -291,8 +291,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
       return static_cast<jint>(multi_modal_runner_->prefill(std::move(inputs)));
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      return static_cast<jint>(
-          runner_->prefill(prompt->toStdString(), config));
+      return static_cast<jint>(runner_->prefill(prompt->toStdString(), config));
     }
     return static_cast<jint>(Error::InvalidArgument);
   }
