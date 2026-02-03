@@ -32,11 +32,10 @@ from torch.export import export
 from torch.nn.attention import SDPBackend
 
 try:
-    from torchao.quantization.quant_api import quantize_
-    from torchao.experimental.quant_api import UIntxWeightOnlyConfig
-
     # Need to import to load the ops
     import torchao.experimental.ops.mps  # noqa: F401
+    from torchao.experimental.quant_api import UIntxWeightOnlyConfig
+    from torchao.quantization.quant_api import quantize_
 
     TORCHAO_AVAILABLE = True
 except ImportError:

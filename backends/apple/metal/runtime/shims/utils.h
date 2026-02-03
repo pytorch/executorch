@@ -19,7 +19,7 @@ namespace metal {
 
 // Enum for supported data types in et-metal backend
 enum class SupportedDTypes : int32_t {
-  UINT8 = 0,    // PyTorch's uint8 dtype code
+  UINT8 = 0, // PyTorch's uint8 dtype code
   // INT8 = 1,     // PyTorch's int8 dtype code
   // INT16 = 2,    // PyTorch's int16 dtype code
   // INT32 = 3,    // PyTorch's int32 dtype code
