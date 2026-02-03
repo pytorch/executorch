@@ -76,6 +76,14 @@ TextPrefiller::TextPrefiller(
   // When kv cache is not used, start pos is ignored
   int32_t num_prompt_tokens = prompt_tokens.size();
 
+  // In ring buffer mode, wrap position for the model
+  auto get_model_pos = [this](int64_t pos) -> int64_t {
+    if (is_ring_buffer_ && sliding_window_size_ > 0 && pos >= sliding_window_size_) {
+      return pos % sliding_window_size_;
+    }
+    return pos;
+  };
+
   // store the token
   uint64_t cur_token;
   if (enable_parallel_prefill_ || !use_kv_cache_) {
@@ -85,7 +93,8 @@ TextPrefiller::TextPrefiller(
         {1, num_prompt_tokens},
         executorch::aten::ScalarType::Long);
 
-    auto outputs_res = text_decoder_runner_->step(tokens, start_pos);
+    int64_t model_pos = get_model_pos(start_pos);
+    auto outputs_res = text_decoder_runner_->step(tokens, model_pos);
 
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_LOG(
@@ -104,7 +113,8 @@ TextPrefiller::TextPrefiller(
 
     // run the first token and get back logits tensor. Assuming the first token
     // is bos so don't callback.
-    auto logits_result = text_decoder_runner_->step(tokens, start_pos);
+    int64_t model_pos = get_model_pos(start_pos);
+    auto logits_result = text_decoder_runner_->step(tokens, model_pos);
     if (!logits_result.ok()) {
       return logits_result.error();
     }
@@ -118,7 +128,8 @@ TextPrefiller::TextPrefiller(
       // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
       cur_token = prompt_tokens[pos];
 
-      auto step_result = text_decoder_runner_->step(tokens, start_pos);
+      model_pos = get_model_pos(start_pos);
+      auto step_result = text_decoder_runner_->step(tokens, model_pos);
       if (!step_result.ok()) {
         return step_result.error();
       }

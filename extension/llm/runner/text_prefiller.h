@@ -26,6 +26,17 @@ class ET_EXPERIMENTAL TextPrefiller {
       int64_t max_seq_len = 128);
 
   virtual ~TextPrefiller() = default;
+
+  /**
+   * Configure ring buffer mode for continuous generation past context length.
+   * @param is_ring_buffer Whether ring buffer KV cache is enabled.
+   * @param sliding_window_size The size of the sliding window (context length).
+   */
+  void set_ring_buffer_config(bool is_ring_buffer, int64_t sliding_window_size) {
+    is_ring_buffer_ = is_ring_buffer;
+    sliding_window_size_ = sliding_window_size;
+  }
+
   /**
    * Prefill an LLM Module with the given text input.
    * @param prompt_tokens The text prompt tokens to the LLM Module. Encoded by
@@ -77,6 +88,10 @@ class ET_EXPERIMENTAL TextPrefiller {
   bool use_kv_cache_;
   bool enable_parallel_prefill_;
   int64_t max_seq_len_;
+
+  // Ring buffer configuration
+  bool is_ring_buffer_ = false;
+  int64_t sliding_window_size_ = 0;
 };
 
 } // namespace llm

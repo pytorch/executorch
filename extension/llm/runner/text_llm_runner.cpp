@@ -49,14 +49,20 @@ TextLLMRunner::TextLLMRunner(
   // already have references to the Module and TextDecoderRunner they need
 
   // Initialize ring buffer configuration from metadata
-  if (metadata_.count(kIsRingBuffer) && metadata_.at(kIsRingBuffer) > 0) {
+  // TODO: Remove this forced enable after testing - currently forcing ring buffer mode
+  // Original check: if (metadata_.count(kIsRingBuffer) && metadata_.at(kIsRingBuffer) > 0)
+  {
     is_ring_buffer_ = true;
     // Sliding window size equals max_context_len for ring buffer models
     sliding_window_size_ = metadata_.at(kMaxContextLen);
     ET_LOG(
         Info,
-        "Ring buffer KV cache enabled with sliding window size: %" PRId64,
+        "Ring buffer KV cache FORCE ENABLED with sliding window size: %" PRId64,
         sliding_window_size_);
+
+    // Configure prefiller and token generator for ring buffer mode
+    text_prefiller_->set_ring_buffer_config(true, sliding_window_size_);
+    text_token_generator_->set_ring_buffer_config(true, sliding_window_size_);
   }
 }
 
@@ -226,6 +232,8 @@ Error TextLLMRunner::generate(
   uint64_t cur_token = prefill_res.get();
   stats_->first_token_ms = time_in_ms();
   stats_->prompt_eval_end_ms = time_in_ms();
+
+  // Note: pos_ is already updated by prefill via the reference parameter
 
   // print the first token from prefill. No prev_token so use cur_token for it.
   auto decode_result = tokenizer_->decode(cur_token, cur_token);

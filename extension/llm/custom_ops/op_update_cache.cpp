@@ -56,19 +56,16 @@ bool validate_cache_params(
             indices_tensor.dim_order().data(), indices_tensor.dim()),
         "indices must be in contiguous dim order");
   } else {
+    // For ring buffer support, we only check that seq_length fits in the cache
+    // and that start_pos is non-negative. The actual positions will wrap around.
     ET_CHECK_OR_RETURN_FALSE(
-        start_pos < quantized_cache.size(1),
-        "start_pos: %" PRId64 " must be less than cache size at dim 1: %zd",
-        start_pos,
-        quantized_cache.size(1));
+        start_pos >= 0,
+        "start_pos must be non-negative, got: %" PRId64,
+        start_pos);
 
     ET_CHECK_OR_RETURN_FALSE(
-        (start_pos + seq_length) <= quantized_cache.size(1),
-        "start_post + seq_length must be less than max seq length supported by cache."
-        "start pos: %" PRId64 ", seq_length: %" PRId64
-        "."
-        "cache size: %zd",
-        start_pos,
+        seq_length <= quantized_cache.size(1),
+        "seq_length (%" PRId64 ") must be <= cache size (%zd)",
         seq_length,
         quantized_cache.size(1));
   }
@@ -187,18 +184,66 @@ Tensor& update_cache_impl(
     }
   } else {
     // Use the original implementation with start_pos
-    for (int64_t batch_line = 0; batch_line < value.size(0); ++batch_line) {
-      executorch::aten::SizesType cache_pos_offset =
-          (batch_line * cache_batch_dim_stride +
-           start_pos * cache_seq_dim_stride) *
-          cache.element_size();
-      executorch::aten::SizesType value_pos_offset =
-          (batch_line * value_batch_dim_stride) * cache.element_size();
+    // Support ring buffer by wrapping positions if they exceed cache size
+    int64_t cache_seq_len = cache.size(1);
+    int64_t value_seq_len = value.size(1);
 
-      std::memcpy(
-          (uint8_t*)cache_data + cache_pos_offset,
-          (uint8_t*)value_data + value_pos_offset,
-          num_bytes_to_copy);
+    for (int64_t batch_line = 0; batch_line < value.size(0); ++batch_line) {
+      // Check if we need to handle wrapping
+      if (start_pos + value_seq_len <= cache_seq_len) {
+        // No wrapping needed - single contiguous copy
+        executorch::aten::SizesType cache_pos_offset =
+            (batch_line * cache_batch_dim_stride +
+             start_pos * cache_seq_dim_stride) *
+            cache.element_size();
+        executorch::aten::SizesType value_pos_offset =
+            (batch_line * value_batch_dim_stride) * cache.element_size();
+
+        std::memcpy(
+            (uint8_t*)cache_data + cache_pos_offset,
+            (uint8_t*)value_data + value_pos_offset,
+            num_bytes_to_copy);
+      } else {
+        // Ring buffer wrapping needed - copy in two parts
+        // Part 1: from start_pos to end of cache
+        int64_t first_part_len = cache_seq_len - start_pos;
+        // Part 2: from beginning of cache (wrapped around)
+        int64_t second_part_len = value_seq_len - first_part_len;
+
+        executorch::aten::SizesType bytes_per_token =
+            (value.numel() / (value.size(0) * value.size(1))) *
+            value.element_size();
+
+        // Copy first part (start_pos to end of cache)
+        if (first_part_len > 0) {
+          executorch::aten::SizesType cache_pos_offset =
+              (batch_line * cache_batch_dim_stride +
+               start_pos * cache_seq_dim_stride) *
+              cache.element_size();
+          executorch::aten::SizesType value_pos_offset =
+              (batch_line * value_batch_dim_stride) * cache.element_size();
+
+          std::memcpy(
+              (uint8_t*)cache_data + cache_pos_offset,
+              (uint8_t*)value_data + value_pos_offset,
+              first_part_len * bytes_per_token);
+        }
+
+        // Copy second part (beginning of cache, wrapped)
+        if (second_part_len > 0) {
+          executorch::aten::SizesType cache_pos_offset =
+              (batch_line * cache_batch_dim_stride) * cache.element_size();
+          executorch::aten::SizesType value_pos_offset =
+              (batch_line * value_batch_dim_stride +
+               first_part_len * value_strides[1]) *
+              value.element_size();
+
+          std::memcpy(
+              (uint8_t*)cache_data + cache_pos_offset,
+              (uint8_t*)value_data + value_pos_offset,
+              second_part_len * bytes_per_token);
+        }
+      }
     }
   }
 
