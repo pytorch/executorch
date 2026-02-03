@@ -193,6 +193,28 @@ class TestWeightsOnlyQuantization(unittest.TestCase):
                     self.reference_scales[config["name"]],
                 )
 
+    def test_scale_estimation_requires_calibration_params(self):
+        builder = self._create_builder("missing_calibration_data", calibration_data=None)
+        builder.export()
+
+        quantizer = OpenVINOQuantizer(
+            mode=QuantizationMode.INT4WO_SYM, group_size=-1, all_layers=True
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            apply_nncf_data_aware_compression(
+                builder,
+                quantizer=quantizer,
+                awq=False,
+                scale_estimation=True,
+            )
+
+        err = str(cm.exception)
+        self.assertIn("Missing required calibration parameter(s)", err)
+        self.assertIn("calibration_data", err)
+        self.assertIn("calibration_seq_length", err)
+        self.assertIn("tokenizer_path", err)
+
 
 class TestCalibrationDataGeneration(unittest.TestCase):
 
