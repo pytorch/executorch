@@ -161,7 +161,7 @@ def main(args):
                 output = output.reshape(output_shape)
                 output.argmax(0).astype(np.uint8).tofile(filename)
 
-    adb.pull(output_path=args.artifact, callback=post_process)
+    adb.pull(host_output_path=args.artifact, callback=post_process)
 
     # segmentation metrics
     predictions = []

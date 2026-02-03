@@ -92,7 +92,6 @@ class TokenizerWrapper:
                 file.seek(0)
                 json.dump(data, file, indent=4)
                 file.truncate()
-
         runtime_tokenizer_path = tokenizer_artifacts[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path, tokenizer_config)
         if self.decoder_model == "codegen2_1b":

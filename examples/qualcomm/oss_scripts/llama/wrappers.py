@@ -51,6 +51,7 @@ from executorch.examples.qualcomm.oss_scripts.llama import (
 )
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
+    DECODE_QDQ_FILENAME,
     DECODER_GRAPH_NAMES,
     TEXT_DECODER,
     TEXT_EMBEDDING,
@@ -407,37 +408,6 @@ class TextDecoder(Component):
                 "Audio encoder modality is not currently supported. "
                 "Please provide a valid modality_placeholder_token_id in kwargs."
             )
-        # Language-only Model (LLM) configuration
-        # Handle architecture-specific parameters for models that require special configurations
-        # beyond the general Static LLaMA architecture
-        else:
-            match self.control_args.decoder_model:
-                case "gemma3-1b":
-                    # Gemma3 requires additional configuration parameters:
-                    # - layer_types: Specifies the type of each layer (e.g., casual vs. sliding window attention)
-                    # - rope_local_base_freq: Base frequency for local RoPE
-                    # - sliding_window: Size of the sliding attention window for efficient long-context processing
-                    from transformers import Gemma3Config
-
-                    hf_config = Gemma3Config.from_pretrained(self.config.repo_id)
-                    kwargs["layer_types"] = hf_config.text_config.layer_types
-                    kwargs["rope_local_base_freq"] = (
-                        hf_config.text_config.rope_local_base_freq
-                    )
-                    kwargs["sliding_window"] = hf_config.sliding_window
-                case "gemma2-2b":
-                    from transformers import Gemma2Config
-
-                    hf_config = Gemma2Config.from_pretrained(self.config.repo_id)
-                    kwargs["layer_types"] = hf_config.layer_types
-                    kwargs["rope_local_base_freq"] = hf_config.rope_parameters[
-                        "rope_theta"
-                    ]
-                    kwargs["sliding_window"] = hf_config.sliding_window
-                    kwargs["final_logit_softcapping"] = (
-                        hf_config.final_logit_softcapping
-                    )
-                    kwargs["attn_logit_softcapping"] = hf_config.attn_logit_softcapping
 
         return kwargs
 
@@ -493,7 +463,6 @@ class TextDecoder(Component):
             **self._get_model_specific_kwargs(),
         )
         # get example input
-        self.meta = decoder.get_metadata()
         self.example_input = decoder.get_example_inputs()
         self.get_example_inputs = decoder.get_example_inputs
         self.export_input = (
@@ -801,8 +770,17 @@ class TextDecoder(Component):
                 tok_embedding=self.tok_embedding,
                 intermediate_outputs=image_embedding,
             )
-
             self.decoder = convert_pt2e(self.decoder)
+
+            # Saving Decode QDQ Model EP for SQNR evaluation
+            if self.mode == self.Mode.DECODE:
+                qdq_ep = torch.export.export(
+                    self.decoder, self.export_input, strict=True
+                )
+                qdq_ep_path = f"{self.control_args.artifact}/{DECODE_QDQ_FILENAME}"
+                torch.export.save(qdq_ep, qdq_ep_path)
+                logging.info(f"QDQ EP saved to {qdq_ep_path}")
+
             if self.apply_embedding:
                 self.tok_embedding = convert_pt2e(self.tok_embedding)
 
@@ -943,8 +921,7 @@ class HybridTextDecoder(Component):
         data = request.method_data[TEXT_DECODER]
         models = [d for d in [self.decode, self.prefill] if d.decoder is not None]
         example_inputs = [m.export_input for m in models if m is not None]
-        # For backward compatibility, we keep the graph name as forward if we use kv mode for evaluation LLM models
-        graph_names = ["forward"] if len(models) == 1 else DECODER_GRAPH_NAMES
+        graph_names = DECODER_GRAPH_NAMES[: len(models)]
 
         # start lowering
         if self.apply_embedding:
@@ -1008,7 +985,7 @@ class HybridTextDecoder(Component):
 
         if self.config.num_sharding > 1 and self.control_args.model_mode == "kv":
             # weight-sharing based context binaries cannot be opened in x86 host
-            update_spill_fill_size(edge_prog_mgr.exported_program())
+            update_spill_fill_size(edge_prog_mgr.exported_program("kv_forward"))
 
         if self.control_args.verbose:
             for ep in edge_prog_mgr._edge_programs.values():

@@ -8,9 +8,9 @@
 
 #include <gtest/gtest.h>
 
-#include <executorch/backends/aoti/slim/core/Storage.h>
-#include <executorch/backends/aoti/slim/factory/Empty.h>
-#include <executorch/backends/aoti/slim/factory/FromBlob.h>
+#include <executorch/backends/aoti/slim/core/storage.h>
+#include <executorch/backends/aoti/slim/factory/empty.h>
+#include <executorch/backends/aoti/slim/factory/from_blob.h>
 
 #ifdef CUDA_AVAILABLE
 #include <cuda_runtime.h>
@@ -313,6 +313,37 @@ TEST(FromBlobTest, WithArrayRef) {
   EXPECT_EQ(tensor.stride(0), 3);
   EXPECT_EQ(tensor.stride(1), 1);
   EXPECT_TRUE(tensor.is_contiguous());
+}
+
+// =============================================================================
+// Dtype and Device Type Validation Tests
+// =============================================================================
+
+TEST(FromBlobTest, InvalidDtypeUndefined) {
+  constexpr size_t kNumFloats = 6;
+  float external_data[kNumFloats];
+
+  EXPECT_DEATH(
+      from_blob(external_data, {2, 3}, c10::ScalarType::Undefined), "");
+}
+
+TEST(FromBlobTest, InvalidDtypeDouble) {
+  constexpr size_t kNumFloats = 6;
+  float external_data[kNumFloats];
+
+  EXPECT_DEATH(
+      from_blob(external_data, {2, 3}, static_cast<c10::ScalarType>(7)), "");
+}
+
+TEST(FromBlobTest, InvalidDeviceType) {
+  constexpr size_t kNumFloats = 6;
+  float external_data[kNumFloats];
+
+  c10::Device invalid_device(static_cast<c10::DeviceType>(100), 0);
+
+  EXPECT_DEATH(
+      from_blob(external_data, {2, 3}, c10::ScalarType::Float, invalid_device),
+      "");
 }
 
 // =============================================================================

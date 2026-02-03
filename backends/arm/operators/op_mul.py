@@ -20,17 +20,11 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.specification import TosaSpecification
 
 
 @register_node_visitor
 class MulVisitor(NodeVisitor):
     target = "aten.mul.Tensor"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-    ]
 
     def define_node(
         self,
@@ -44,7 +38,13 @@ class MulVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.FP32],
+            [
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.FP32,
+                ts.DType.BF16,
+            ],
             self.tosa_spec,
         )
 

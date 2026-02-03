@@ -37,6 +37,13 @@ test_data_suite = {
     ),
 }
 
+test_data_suite_fp16 = {
+    "ones_slice_4_fp16": lambda: (
+        torch.ones((1, 12, 10, 10), dtype=torch.float16),
+        [(0, 1), (0, 5), (3, 5), (4, 10)],
+    ),
+}
+
 
 class Slice(torch.nn.Module):
     def forward(self, x: torch.Tensor, s: list[tuple[int, int]]):
@@ -44,7 +51,7 @@ class Slice(torch.nn.Module):
         return x[slices]
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 def test_slice_tensor_tosa_FP(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](Slice(), test_data(), aten_op, exir_op)
     pipeline.run()
@@ -96,7 +103,7 @@ def test_slice_tensor_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_slice_tensor_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
