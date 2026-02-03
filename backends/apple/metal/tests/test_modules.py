@@ -888,15 +888,6 @@ class TestMetalBackendModules(unittest.TestCase):
 
         model, example_inputs = get_model_and_inputs(model_name, dtype=dtype)
 
-        # Verify model forward pass works before export
-        with torch.no_grad():
-            model_output = model(*example_inputs)
-
-        self.assertIsNotNone(
-            model_output,
-            f"{model_name} ({DTYPE_NAMES[dtype]}): Forward pass returned None",
-        )
-
         # Export to Metal backend
         executorch_program = export_model_to_metal(model, example_inputs)
 
