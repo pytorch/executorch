@@ -1,3 +1,5 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain xplat-only targets.
 
@@ -5,9 +7,8 @@ load("@fbsource//tools/build_defs:fb_xplat_resource.bzl", "fb_xplat_resource")
 load("@fbsource//tools/build_defs:fb_xplat_cxx_test.bzl", "fb_xplat_cxx_test")
 load("@fbsource//tools/build_defs:platform_defs.bzl", "APPLE", "ANDROID", "CXX", "IOS", "MACOSX")
 
-oncall("executorch")
 
-fb_xplat_resource(
+non_fbcode_target(_kind = fb_xplat_resource,
     name = "resources",
     srcs = [
         "resources/test_tiktoken_tokenizer.model",
@@ -21,7 +22,7 @@ fb_xplat_resource(
     visibility = ["PUBLIC"],
 )
 
-fb_xplat_cxx_test(
+non_fbcode_target(_kind = fb_xplat_cxx_test,
     name = "test_tiktoken",
     srcs = [
         "test_tiktoken.cpp",
@@ -34,3 +35,13 @@ fb_xplat_cxx_test(
     test_resource = ":resources",
     preprocessor_flags = ["-DEXECUTORCH_FB_BUCK"],
 )
+
+# !!!! fbcode/executorch/examples/models/llama/tokenizer/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)

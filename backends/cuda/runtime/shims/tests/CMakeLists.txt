@@ -57,17 +57,11 @@ foreach(test_name ${CUDA_SHIM_TESTS})
                          ${CUDAToolkit_INCLUDE_DIRS}
   )
 
+  target_compile_definitions(${test_name} PRIVATE CUDA_AVAILABLE=1)
+
   target_link_libraries(
-    ${test_name}
-    PRIVATE GTest::gtest
-            GTest::gtest_main
-            aoti_cuda_shims
-            aoti_cuda_backend
-            cuda_tensor_maker
-            cuda_platform
-            executorch_core
-            extension_tensor
-            CUDA::cudart
+    ${test_name} PRIVATE GTest::gtest GTest::gtest_main aoti_cuda_shims
+                         executorch_core CUDA::cudart
   )
 
   add_test(NAME ${test_name} COMMAND ${test_name})

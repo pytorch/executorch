@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/attention_sink_rope_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
@@ -74,7 +75,8 @@ class TokenGenerator {
       int64_t start_pos,
       int32_t seq_len,
       std::function<void(const std::string&)> token_callback,
-      bool dump_logits);
+      bool dump_logits,
+      AttentionSinkRopeRunner* attention_sink_rope_runner);
   inline const size_t total_token_generator_io_size_in_bytes() const {
     if (metadata_.cache_mode == CacheMode::HybridCache) {
       return input_toks_.size + input_pos_.size + attention_mask_.size +
@@ -108,18 +110,20 @@ class TokenGenerator {
   std::vector<executorch::runtime::EValue> inputs_;
   std::vector<executorch::aten::Tensor> input_tensors_;
   std::vector<executorch::aten::Tensor> output_tensors_;
+  // Used for attention sink to evict KV cache.
+  std::vector<executorch::runtime::EValue> cache_inputs_;
 
   // stats
   executorch::llm::Stats* stats_;
 
- private:
   /**
    * @brief Fill in I/O buffers with prompt token and position.
    * @param cur_token Current token.
    * @param start_pos Starting position.
    */
-  void prepare_io(uint64_t cur_token, int64_t start_pos);
+  virtual void prepare_io(uint64_t cur_token, int64_t start_pos);
 
+ private:
   // metadata
   Metadata metadata_;
 

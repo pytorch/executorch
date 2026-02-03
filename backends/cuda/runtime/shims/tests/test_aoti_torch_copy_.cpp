@@ -7,392 +7,483 @@
  */
 
 #include <cuda_runtime.h>
-#include <executorch/backends/aoti/common_shims.h>
+#include <gtest/gtest.h>
+#include <vector>
+
+#include <executorch/backends/aoti/common_shims_slim.h>
+#include <executorch/backends/aoti/slim/c10/core/Device.h>
+#include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
-#include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
-#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/platform.h>
-#include <gtest/gtest.h>
-#include <cmath>
-#include <vector>
 
 using namespace executorch::backends::cuda;
 using namespace executorch::backends::aoti;
-using namespace executorch::runtime;
+using executorch::runtime::Error;
 
-// Test fixture for aoti_torch_copy_ tests
-class AOTITorchCopyTest : public ::testing::Test {
+namespace slim_c10 = executorch::backends::aoti::slim::c10;
+
+namespace {
+
+bool isCudaAvailable() {
+  int device_count = 0;
+  cudaError_t err = cudaGetDeviceCount(&device_count);
+  return (err == cudaSuccess && device_count > 0);
+}
+
+std::vector<int64_t> calculateContiguousStrides(
+    const std::vector<int64_t>& sizes) {
+  std::vector<int64_t> strides(sizes.size());
+  if (sizes.empty()) {
+    return strides;
+  }
+  strides[sizes.size() - 1] = 1;
+  for (int64_t i = static_cast<int64_t>(sizes.size()) - 2; i >= 0; i--) {
+    strides[i] = strides[i + 1] * sizes[i + 1];
+  }
+  return strides;
+}
+
+} // namespace
+
+class AOTITorchCopySlimTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    // Initialize ExecuTorch Platform Abstraction Layer
     et_pal_init();
-
-    // Check if CUDA is available
-    int device_count = 0;
-    cudaError_t err = cudaGetDeviceCount(&device_count);
-    if (err != cudaSuccess || device_count == 0) {
-      GTEST_SKIP() << "CUDA not available, skipping CUDA tests";
-    }
-
-    // Clean up any existing cached metadata before each test
-    cleanup_tensor_metadata();
-
-    // Clear any remaining tensors from previous tests
-    clear_all_tensors();
   }
 
-  void TearDown() override {
-    // Clean up metadata
-    cleanup_tensor_metadata();
-
-    // Clear the global tensor storage using the provided function
-    clear_all_tensors();
-  }
-
-  // Helper to create test tensors with specific data
-  Tensor* create_test_tensor_with_data(
+  Tensor* createTestTensor(
       const std::vector<int64_t>& sizes,
-      const std::vector<float>& data,
       const std::vector<int64_t>& strides = {},
-      int32_t dtype = static_cast<int32_t>(SupportedDTypes::FLOAT32),
-      int32_t device_type = static_cast<int32_t>(SupportedDevices::CUDA),
+      int32_t dtype = static_cast<int32_t>(slim_c10::ScalarType::Float),
+      int32_t device_type = static_cast<int32_t>(slim_c10::DeviceType::CPU),
       int32_t device_index = 0) {
-    Tensor* tensor;
+    Tensor* tensor = nullptr;
 
-    const int64_t* strides_ptr = strides.empty() ? nullptr : strides.data();
+    std::vector<int64_t> effective_strides = strides;
+    if (strides.empty()) {
+      effective_strides = calculateContiguousStrides(sizes);
+    }
 
     AOTITorchError error = aoti_torch_empty_strided(
         sizes.size(),
         sizes.data(),
-        strides_ptr,
+        effective_strides.data(),
         dtype,
         device_type,
         device_index,
         &tensor);
 
-    if (error != Error::Ok || tensor == nullptr) {
-      return nullptr;
-    }
-
-    // Fill tensor with data
-    size_t total_bytes = data.size() * sizeof(float);
-    if (device_type == static_cast<int32_t>(SupportedDevices::CUDA)) {
-      cudaError_t memcpy_err = cudaMemcpy(
-          tensor->mutable_data_ptr(),
-          data.data(),
-          total_bytes,
-          cudaMemcpyHostToDevice);
-      // Note: Error is checked but we don't fail the function
-      // This allows tests to proceed and handle errors as needed
-      (void)memcpy_err; // Suppress unused variable warning
-    } else { // CPU
-      std::memcpy(tensor->mutable_data_ptr(), data.data(), total_bytes);
-    }
-
-    return tensor;
-  }
-
-  // Helper to get data from tensor
-  std::vector<float> get_tensor_data(Tensor* tensor) {
-    if (!tensor) {
-      return {};
-    }
-
-    size_t num_elements = tensor->numel();
-    std::vector<float> data(num_elements);
-
-    // Determine if this is a CUDA tensor
-    cudaPointerAttributes attributes{};
-    cudaError_t err = cudaPointerGetAttributes(&attributes, tensor->data_ptr());
-    bool is_device =
-        (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice);
-
-    if (is_device) {
-      cudaError_t memcpy_err = cudaMemcpy(
-          data.data(),
-          tensor->data_ptr(),
-          num_elements * sizeof(float),
-          cudaMemcpyDeviceToHost);
-      // Note: Error is checked but we don't fail the function
-      // This allows tests to proceed and handle errors as needed
-      (void)memcpy_err; // Suppress unused variable warning
-    } else {
-      std::memcpy(
-          data.data(), tensor->data_ptr(), num_elements * sizeof(float));
-    }
-
-    return data;
-  }
-
-  // Helper to verify two tensors have same data
-  bool tensors_equal(Tensor* a, Tensor* b, float tolerance = 1e-6f) {
-    if (!a || !b) {
-      return false;
-    }
-    if (a->numel() != b->numel()) {
-      return false;
-    }
-
-    auto data_a = get_tensor_data(a);
-    auto data_b = get_tensor_data(b);
-
-    for (size_t i = 0; i < data_a.size(); ++i) {
-      if (std::abs(data_a[i] - data_b[i]) > tolerance) {
-        return false;
-      }
-    }
-    return true;
+    return (error == Error::Ok) ? tensor : nullptr;
   }
 };
 
-// Test basic copy functionality - same schema (fast path)
-TEST_F(AOTITorchCopyTest, BasicCopySameSchema) {
-  // Create source tensor with test data
+// ============================================================================
+// Basic Functionality Tests
+// ============================================================================
+
+TEST_F(AOTITorchCopySlimTest, BasicCopy_CPU) {
+  std::vector<int64_t> sizes = {3, 4};
+  Tensor* src = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(src, nullptr);
+
+  float* src_data = static_cast<float*>(src->data_ptr());
+  for (int64_t i = 0; i < src->numel(); i++) {
+    src_data[i] = static_cast<float>(i + 1);
+  }
+
+  Tensor* dst = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(dst, nullptr);
+
+  AOTITorchError error = aoti_torch_copy_(dst, src, 0);
+  EXPECT_EQ(error, Error::Ok);
+
+  float* dst_data = static_cast<float*>(dst->data_ptr());
+  for (int64_t i = 0; i < dst->numel(); i++) {
+    EXPECT_FLOAT_EQ(dst_data[i], static_cast<float>(i + 1));
+  }
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(src), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(dst), Error::Ok);
+}
+
+TEST_F(AOTITorchCopySlimTest, NullSelf) {
   std::vector<int64_t> sizes = {2, 3};
-  std::vector<float> src_data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
-
-  Tensor* src = create_test_tensor_with_data(sizes, src_data);
-  EXPECT_NE(src, nullptr);
-
-  // Create destination tensor with same schema
-  Tensor* dst =
-      create_test_tensor_with_data(sizes, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
-  EXPECT_NE(dst, nullptr);
-
-  // Perform copy
-  AOTITorchError error = aoti_torch_copy_(dst, src, 0);
-  EXPECT_EQ(error, Error::Ok);
-
-  // Verify copy was successful
-  EXPECT_TRUE(tensors_equal(dst, src));
-}
-
-// Test copy with different strides (pointwise fallback)
-TEST_F(AOTITorchCopyTest, CopyDifferentStrides) {
-  // Create source tensor (2x3) with contiguous layout
-  std::vector<int64_t> src_sizes = {2, 3};
-  std::vector<float> src_data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
-
-  Tensor* src = create_test_tensor_with_data(src_sizes, src_data);
-  EXPECT_NE(src, nullptr);
-
-  // Create destination tensor with transposed strides
-  std::vector<int64_t> dst_strides = {1, 2}; // Column-major layout
-  Tensor* dst = create_test_tensor_with_data(
-      src_sizes, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, dst_strides);
-  EXPECT_NE(dst, nullptr);
-
-  // Perform copy - this should use pointwise fallback
-  AOTITorchError error = aoti_torch_copy_(dst, src, 0);
-  EXPECT_EQ(error, Error::Ok);
-
-  // Verify the copy worked correctly by checking specific elements
-  auto dst_data = get_tensor_data(dst);
-  auto src_data_check = get_tensor_data(src);
-
-  // For transposed layout, the data should be rearranged
-  EXPECT_EQ(dst_data.size(), 6);
-  EXPECT_EQ(src_data_check.size(), 6);
-}
-
-// Test copy between CPU and CUDA tensors
-TEST_F(AOTITorchCopyTest, CopyCPUToCUDA) {
-  std::vector<int64_t> sizes = {2, 2};
-  std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f};
-
-  // Create CPU tensor
-  Tensor* cpu_tensor = create_test_tensor_with_data(
+  Tensor* src = createTestTensor(
       sizes,
-      data,
       {},
-      static_cast<int32_t>(SupportedDTypes::FLOAT32),
-      static_cast<int32_t>(SupportedDevices::CPU)); // CPU
-  EXPECT_NE(cpu_tensor, nullptr);
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(src, nullptr);
 
-  // Create CUDA tensor
-  Tensor* cuda_tensor = create_test_tensor_with_data(
-      sizes,
-      {0.0f, 0.0f, 0.0f, 0.0f},
-      {},
-      static_cast<int32_t>(SupportedDTypes::FLOAT32),
-      static_cast<int32_t>(SupportedDevices::CUDA)); // CUDA
-  EXPECT_NE(cuda_tensor, nullptr);
-
-  // Copy from CPU to CUDA
-  AOTITorchError error = aoti_torch_copy_(cuda_tensor, cpu_tensor, 0);
-  EXPECT_EQ(error, Error::Ok);
-
-  // Verify copy
-  EXPECT_TRUE(tensors_equal(cuda_tensor, cpu_tensor));
-}
-
-// Test copy between CUDA and CPU tensors
-TEST_F(AOTITorchCopyTest, CopyCUDAToCPU) {
-  std::vector<int64_t> sizes = {2, 2};
-  std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f};
-
-  // Create CUDA tensor
-  Tensor* cuda_tensor = create_test_tensor_with_data(
-      sizes,
-      data,
-      {},
-      static_cast<int32_t>(SupportedDTypes::FLOAT32),
-      static_cast<int32_t>(SupportedDevices::CUDA)); // CUDA
-  EXPECT_NE(cuda_tensor, nullptr);
-
-  // Create CPU tensor
-  Tensor* cpu_tensor = create_test_tensor_with_data(
-      sizes,
-      {0.0f, 0.0f, 0.0f, 0.0f},
-      {},
-      static_cast<int32_t>(SupportedDTypes::FLOAT32),
-      static_cast<int32_t>(SupportedDevices::CPU)); // CPU
-  EXPECT_NE(cpu_tensor, nullptr);
-
-  // Copy from CUDA to CPU
-  AOTITorchError error = aoti_torch_copy_(cpu_tensor, cuda_tensor, 0);
-  EXPECT_EQ(error, Error::Ok);
-
-  // Verify copy
-  EXPECT_TRUE(tensors_equal(cpu_tensor, cuda_tensor));
-}
-
-// Test copy with bf16 dtype support
-TEST_F(AOTITorchCopyTest, CopyBf16Tensors) {
-  // Test that bf16 tensors can be created and copied
-  std::vector<int64_t> sizes = {2, 3};
-  std::vector<float> src_data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
-
-  // Note: We create float32 data but the tensor will be created with bf16 dtype
-  // This simulates creating bf16 tensors
-  Tensor* src = create_test_tensor_with_data(
-      sizes,
-      src_data,
-      {}, // default strides
-      static_cast<int32_t>(SupportedDTypes::BFLOAT16), // bf16 dtype
-      static_cast<int32_t>(SupportedDevices::CUDA), // CUDA device
-      0 // device_index = 0
-  );
-  EXPECT_NE(src, nullptr);
-
-  // Create destination tensor with bf16 dtype
-  std::vector<float> dst_init(6, 0.0f);
-  Tensor* dst = create_test_tensor_with_data(
-      sizes,
-      dst_init,
-      {}, // default strides
-      static_cast<int32_t>(SupportedDTypes::BFLOAT16), // bf16 dtype
-      static_cast<int32_t>(SupportedDevices::CUDA), // CUDA device
-      0 // device_index = 0
-  );
-  EXPECT_NE(dst, nullptr);
-
-  // Perform copy between bf16 tensors
-  AOTITorchError error = aoti_torch_copy_(dst, src, 0);
-  EXPECT_EQ(error, Error::Ok);
-
-  // Verify that both tensors have the expected dtype
-  int32_t src_dtype, dst_dtype;
-  aoti_torch_get_dtype(src, &src_dtype);
-  aoti_torch_get_dtype(dst, &dst_dtype);
-
-  EXPECT_EQ(src_dtype, static_cast<int32_t>(SupportedDTypes::BFLOAT16));
-  EXPECT_EQ(dst_dtype, static_cast<int32_t>(SupportedDTypes::BFLOAT16));
-
-  // Verify copy was successful by checking numel matches
-  EXPECT_EQ(src->numel(), dst->numel());
-  EXPECT_EQ(src->numel(), 6);
-}
-
-// Test copy between different dtypes should fail
-TEST_F(AOTITorchCopyTest, CopyDTypeMismatchError) {
-  std::vector<int64_t> sizes = {2, 2};
-  std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f};
-
-  // Create float32 tensor
-  Tensor* float32_tensor = create_test_tensor_with_data(
-      sizes,
-      data,
-      {}, // default strides
-      static_cast<int32_t>(SupportedDTypes::FLOAT32), // float32 dtype
-      static_cast<int32_t>(SupportedDevices::CUDA), // CUDA device
-      0 // device_index = 0
-  );
-  EXPECT_NE(float32_tensor, nullptr);
-
-  // Create bf16 tensor
-  Tensor* bf16_tensor = create_test_tensor_with_data(
-      sizes,
-      {0.0f, 0.0f, 0.0f, 0.0f},
-      {}, // default strides
-      static_cast<int32_t>(SupportedDTypes::BFLOAT16), // bf16 dtype
-      static_cast<int32_t>(SupportedDevices::CUDA), // CUDA device
-      0 // device_index = 0
-  );
-  EXPECT_NE(bf16_tensor, nullptr);
-
-  // Attempting to copy between different dtypes should fail
-  AOTITorchError error = aoti_torch_copy_(bf16_tensor, float32_tensor, 0);
+  AOTITorchError error = aoti_torch_copy_(nullptr, src, 0);
   EXPECT_EQ(error, Error::InvalidArgument);
 
-  // Reverse direction should also fail
-  error = aoti_torch_copy_(float32_tensor, bf16_tensor, 0);
-  EXPECT_EQ(error, Error::InvalidArgument);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(src), Error::Ok);
 }
 
-// Test error conditions
-TEST_F(AOTITorchCopyTest, ErrorHandling) {
+TEST_F(AOTITorchCopySlimTest, NullSrc) {
   std::vector<int64_t> sizes = {2, 3};
-  std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+  Tensor* dst = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(dst, nullptr);
 
-  Tensor* valid_tensor = create_test_tensor_with_data(sizes, data);
-  EXPECT_NE(valid_tensor, nullptr);
-
-  // Test null pointers
-  AOTITorchError error = aoti_torch_copy_(nullptr, valid_tensor, 0);
-  EXPECT_NE(error, Error::Ok);
-
-  error = aoti_torch_copy_(valid_tensor, nullptr, 0);
-  EXPECT_NE(error, Error::Ok);
-
-  // Test numel mismatch (different total number of elements)
-  std::vector<int64_t> different_numel_sizes = {
-      2, 3, 4}; // 24 elements vs 6 elements
-  std::vector<float> different_data(24, 1.0f);
-  Tensor* different_numel =
-      create_test_tensor_with_data(different_numel_sizes, different_data);
-  EXPECT_NE(different_numel, nullptr);
-
-  error = aoti_torch_copy_(valid_tensor, different_numel, 0);
+  AOTITorchError error = aoti_torch_copy_(dst, nullptr, 0);
   EXPECT_EQ(error, Error::InvalidArgument);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(dst), Error::Ok);
 }
 
-// Test copy from 1D to 3D with same total elements
-TEST_F(AOTITorchCopyTest, Copy1DTo3DSameNumel) {
-  // Source tensor: 8 elements in 1D
-  std::vector<int64_t> src_sizes = {8};
-  std::vector<float> src_data = {
-      1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
+// ============================================================================
+// Different Dtype Tests
+// ============================================================================
 
-  Tensor* src = create_test_tensor_with_data(src_sizes, src_data);
-  EXPECT_NE(src, nullptr);
+TEST_F(AOTITorchCopySlimTest, Int64Copy_CPU) {
+  std::vector<int64_t> sizes = {2, 3};
+  Tensor* src = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Long),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(src, nullptr);
 
-  // Destination tensor: 2x2x2 = 8 elements (different shape, same total)
-  std::vector<int64_t> dst_sizes = {2, 2, 2};
-  std::vector<float> dst_init(8, 0.0f);
-  Tensor* dst = create_test_tensor_with_data(dst_sizes, dst_init);
-  EXPECT_NE(dst, nullptr);
+  int64_t* src_data = static_cast<int64_t*>(src->data_ptr());
+  for (int64_t i = 0; i < src->numel(); i++) {
+    src_data[i] = i * 100;
+  }
 
-  // This should work - same total number of elements
+  Tensor* dst = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Long),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(dst, nullptr);
+
   AOTITorchError error = aoti_torch_copy_(dst, src, 0);
   EXPECT_EQ(error, Error::Ok);
 
-  // Verify the data was copied correctly
-  auto dst_data = get_tensor_data(dst);
-  EXPECT_EQ(dst_data.size(), 8);
+  int64_t* dst_data = static_cast<int64_t*>(dst->data_ptr());
+  for (int64_t i = 0; i < dst->numel(); i++) {
+    EXPECT_EQ(dst_data[i], i * 100);
+  }
 
-  // Check some specific elements to verify correct copying
-  EXPECT_FLOAT_EQ(dst_data[0], 1.0f);
-  EXPECT_FLOAT_EQ(dst_data[7], 8.0f);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(src), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(dst), Error::Ok);
+}
+
+TEST_F(AOTITorchCopySlimTest, BoolCopy_CPU) {
+  std::vector<int64_t> sizes = {4};
+  Tensor* src = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Bool),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(src, nullptr);
+
+  bool* src_data = static_cast<bool*>(src->data_ptr());
+  src_data[0] = true;
+  src_data[1] = false;
+  src_data[2] = true;
+  src_data[3] = false;
+
+  Tensor* dst = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Bool),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(dst, nullptr);
+
+  AOTITorchError error = aoti_torch_copy_(dst, src, 0);
+  EXPECT_EQ(error, Error::Ok);
+
+  bool* dst_data = static_cast<bool*>(dst->data_ptr());
+  EXPECT_EQ(dst_data[0], true);
+  EXPECT_EQ(dst_data[1], false);
+  EXPECT_EQ(dst_data[2], true);
+  EXPECT_EQ(dst_data[3], false);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(src), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(dst), Error::Ok);
+}
+
+// ============================================================================
+// Tensor Shape Tests
+// ============================================================================
+
+TEST_F(AOTITorchCopySlimTest, ScalarTensorCopy_CPU) {
+  std::vector<int64_t> sizes = {};
+  Tensor* src = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(src, nullptr);
+  EXPECT_EQ(src->dim(), 0);
+  EXPECT_EQ(src->numel(), 1);
+
+  float* src_data = static_cast<float*>(src->data_ptr());
+  *src_data = 42.0f;
+
+  Tensor* dst = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(dst, nullptr);
+
+  AOTITorchError error = aoti_torch_copy_(dst, src, 0);
+  EXPECT_EQ(error, Error::Ok);
+
+  float* dst_data = static_cast<float*>(dst->data_ptr());
+  EXPECT_FLOAT_EQ(*dst_data, 42.0f);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(src), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(dst), Error::Ok);
+}
+
+TEST_F(AOTITorchCopySlimTest, LargeTensorCopy_CPU) {
+  std::vector<int64_t> sizes = {100, 100};
+  Tensor* src = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(src, nullptr);
+
+  float* src_data = static_cast<float*>(src->data_ptr());
+  for (int64_t i = 0; i < src->numel(); i++) {
+    src_data[i] = static_cast<float>(i);
+  }
+
+  Tensor* dst = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(dst, nullptr);
+
+  AOTITorchError error = aoti_torch_copy_(dst, src, 0);
+  EXPECT_EQ(error, Error::Ok);
+
+  float* dst_data = static_cast<float*>(dst->data_ptr());
+  for (int64_t i = 0; i < dst->numel(); i++) {
+    EXPECT_FLOAT_EQ(dst_data[i], static_cast<float>(i));
+  }
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(src), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(dst), Error::Ok);
+}
+
+// ============================================================================
+// CUDA Tests
+// ============================================================================
+
+TEST_F(AOTITorchCopySlimTest, CudaToCuda) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+
+  std::vector<int64_t> sizes = {3, 4};
+
+  std::vector<float> host_src_data(12);
+  for (size_t i = 0; i < host_src_data.size(); i++) {
+    host_src_data[i] = static_cast<float>(i + 1);
+  }
+
+  Tensor* src = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  ASSERT_NE(src, nullptr);
+  EXPECT_TRUE(src->is_cuda());
+
+  cudaMemcpy(
+      src->data_ptr(),
+      host_src_data.data(),
+      host_src_data.size() * sizeof(float),
+      cudaMemcpyHostToDevice);
+
+  Tensor* dst = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  ASSERT_NE(dst, nullptr);
+  EXPECT_TRUE(dst->is_cuda());
+
+  AOTITorchError error = aoti_torch_copy_(dst, src, 0);
+  EXPECT_EQ(error, Error::Ok);
+
+  std::vector<float> host_dst_data(12);
+  cudaMemcpy(
+      host_dst_data.data(),
+      dst->data_ptr(),
+      host_dst_data.size() * sizeof(float),
+      cudaMemcpyDeviceToHost);
+
+  for (size_t i = 0; i < host_dst_data.size(); i++) {
+    EXPECT_FLOAT_EQ(host_dst_data[i], static_cast<float>(i + 1));
+  }
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(src), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(dst), Error::Ok);
+}
+
+TEST_F(AOTITorchCopySlimTest, CpuToCuda) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+
+  std::vector<int64_t> sizes = {2, 3};
+  Tensor* src = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(src, nullptr);
+  EXPECT_TRUE(src->is_cpu());
+
+  float* src_data = static_cast<float*>(src->data_ptr());
+  for (int64_t i = 0; i < src->numel(); i++) {
+    src_data[i] = static_cast<float>(i * 10);
+  }
+
+  Tensor* dst = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  ASSERT_NE(dst, nullptr);
+  EXPECT_TRUE(dst->is_cuda());
+
+  AOTITorchError error = aoti_torch_copy_(dst, src, 0);
+  EXPECT_EQ(error, Error::Ok);
+
+  std::vector<float> host_dst_data(6);
+  cudaMemcpy(
+      host_dst_data.data(),
+      dst->data_ptr(),
+      host_dst_data.size() * sizeof(float),
+      cudaMemcpyDeviceToHost);
+
+  for (size_t i = 0; i < host_dst_data.size(); i++) {
+    EXPECT_FLOAT_EQ(host_dst_data[i], static_cast<float>(i * 10));
+  }
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(src), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(dst), Error::Ok);
+}
+
+TEST_F(AOTITorchCopySlimTest, CudaToCpu) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+
+  std::vector<int64_t> sizes = {2, 3};
+
+  std::vector<float> host_src_data(6);
+  for (size_t i = 0; i < host_src_data.size(); i++) {
+    host_src_data[i] = static_cast<float>(i * 5);
+  }
+
+  Tensor* src = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  ASSERT_NE(src, nullptr);
+
+  cudaMemcpy(
+      src->data_ptr(),
+      host_src_data.data(),
+      host_src_data.size() * sizeof(float),
+      cudaMemcpyHostToDevice);
+
+  Tensor* dst = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(dst, nullptr);
+  EXPECT_TRUE(dst->is_cpu());
+
+  AOTITorchError error = aoti_torch_copy_(dst, src, 0);
+  EXPECT_EQ(error, Error::Ok);
+
+  float* dst_data = static_cast<float*>(dst->data_ptr());
+  for (int64_t i = 0; i < dst->numel(); i++) {
+    EXPECT_FLOAT_EQ(dst_data[i], static_cast<float>(i * 5));
+  }
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(src), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(dst), Error::Ok);
+}
+
+// ============================================================================
+// Non-blocking Tests
+// ============================================================================
+
+TEST_F(AOTITorchCopySlimTest, NonBlockingFlag_CPU) {
+  std::vector<int64_t> sizes = {2, 3};
+  Tensor* src = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(src, nullptr);
+
+  float* src_data = static_cast<float*>(src->data_ptr());
+  for (int64_t i = 0; i < src->numel(); i++) {
+    src_data[i] = static_cast<float>(i);
+  }
+
+  Tensor* dst = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(dst, nullptr);
+
+  AOTITorchError error = aoti_torch_copy_(dst, src, 1);
+  EXPECT_EQ(error, Error::Ok);
+
+  float* dst_data = static_cast<float*>(dst->data_ptr());
+  for (int64_t i = 0; i < dst->numel(); i++) {
+    EXPECT_FLOAT_EQ(dst_data[i], static_cast<float>(i));
+  }
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(src), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(dst), Error::Ok);
 }

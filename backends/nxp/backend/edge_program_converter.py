@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -56,7 +56,7 @@ class EdgeProgramToIRConverter:
     """
 
     _default_conversion_config = ConversionConfig()
-    _default_target_spec = NeutronTargetSpec("imxrt700", "SDK_25_09")
+    _default_target_spec = NeutronTargetSpec("imxrt700", "SDK_25_12")
     _default_delegation_options = CustomDelegationOptions()
 
     def convert_program(

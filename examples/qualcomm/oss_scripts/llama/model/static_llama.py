@@ -45,6 +45,228 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 
+class AttentionSinkRope(nn.Module):
+    def __init__(
+        self,
+        config: ModelArgs,
+        sink_size: int,
+        eviction_batch_size: int,
+        ar_len: int,
+        **kwargs,
+    ):
+        super().__init__()
+        self.config = config
+        self.sink_size = sink_size
+        self.eviction_batch_size = eviction_batch_size
+        self.n_layers = config.n_layers
+        self.original_position = eviction_batch_size + sink_size
+        self.new_position = sink_size
+        self.num_to_keep = (
+            config.max_context_len - sink_size - eviction_batch_size - ar_len
+        )
+        self.evict_k_cache_shape = [
+            config.max_batch_size,
+            config.n_kv_heads,
+            config.head_dim,
+            eviction_batch_size,
+        ]
+        self.evict_v_cache_shape = [
+            config.max_batch_size,
+            config.n_kv_heads,
+            eviction_batch_size,
+            config.head_dim,
+        ]
+        self.kv_cache_shape = {
+            # single head, k input
+            "k": (
+                config.max_batch_size,
+                config.n_kv_heads,
+                config.head_dim,
+                config.max_context_len - ar_len,
+            ),
+            # single head, v input
+            "v": (
+                config.max_batch_size,
+                config.n_kv_heads,
+                config.max_context_len - ar_len,
+                config.head_dim,
+            ),
+        }
+
+        if getattr(config, "enable_r3", False):
+            self.register_buffer(
+                "r3_weight",
+                torch.tensor(
+                    scipy.linalg.hadamard(config.head_dim, dtype=float)
+                    / math.sqrt(config.head_dim),
+                    dtype=torch.float32,
+                    device="cpu",
+                ),
+                persistent=False,
+            )
+
+        if config.partial_rotary_factor < 1:
+            self.apply_rope_emb = ROTARY_EMB_REGISTRY["partial"]
+        else:
+            self.apply_rope_emb = ROTARY_EMB_REGISTRY["default"]
+
+        if config.use_hf_rope:
+            freqs_cos, freqs_sin = hf_precompute_freqs_cis(
+                config.head_dim,
+                config.max_context_len,
+                config.rope_freq_base,
+                config.partial_rotary_factor,
+            )
+            freqs_cos = freqs_cos[:, : freqs_cos.shape[-1] // 2]
+            freqs_sin = freqs_sin[:, : freqs_sin.shape[-1] // 2]
+        else:
+            freqs_cos, freqs_sin = precompute_freqs_cis(
+                config.head_dim,
+                config.max_context_len,
+                config.rope_freq_base,
+                config.use_scaled_rope,
+                config.rope_scale_factor,
+            )
+        original_freqs_cos = freqs_cos.narrow(
+            0, self.original_position, self.num_to_keep
+        )
+        original_freqs_sin = freqs_sin.narrow(
+            0, self.original_position, self.num_to_keep
+        )
+        new_freqs_cos = freqs_cos.narrow(0, self.new_position, self.num_to_keep)
+        new_freqs_sin = freqs_sin.narrow(0, self.new_position, self.num_to_keep)
+        rerotation_cos = (
+            new_freqs_cos * original_freqs_cos + new_freqs_sin * original_freqs_sin
+        )
+        rerotation_sin = (
+            new_freqs_sin * original_freqs_cos - new_freqs_cos * original_freqs_sin
+        )
+        self.register_buffer("rerotation_cos", rerotation_cos, persistent=False)
+        self.register_buffer("rerotation_sin", rerotation_sin, persistent=False)
+
+        self.sliding_window = kwargs.get("sliding_window", False)
+        if self.sliding_window:
+            # Get attention type for each layer
+            self.layer_types = kwargs["layer_types"]
+            # Get local freq base for sliding attention
+            rope_freq_base = kwargs["rope_local_base_freq"]
+            local_freqs_cos, local_freqs_sin = hf_precompute_freqs_cis(
+                config.head_dim,
+                config.max_context_len,
+                rope_freq_base,
+                config.partial_rotary_factor,
+            )
+            local_freqs_cos = local_freqs_cos[:, : local_freqs_cos.shape[-1] // 2]
+            local_freqs_sin = local_freqs_sin[:, : local_freqs_sin.shape[-1] // 2]
+            local_original_freqs_cos = local_freqs_cos.narrow(
+                0, self.original_position, self.num_to_keep
+            )
+            local_original_freqs_sin = local_freqs_sin.narrow(
+                0, self.original_position, self.num_to_keep
+            )
+            local_new_freqs_cos = local_freqs_cos.narrow(
+                0, self.new_position, self.num_to_keep
+            )
+            local_new_freqs_sin = local_freqs_sin.narrow(
+                0, self.new_position, self.num_to_keep
+            )
+            local_rerotation_cos = (
+                local_new_freqs_cos * local_original_freqs_cos
+                + local_new_freqs_sin * local_original_freqs_sin
+            )
+            local_rerotation_sin = (
+                local_new_freqs_sin * local_original_freqs_cos
+                - local_new_freqs_cos * local_original_freqs_sin
+            )
+            self.register_buffer(
+                "local_rerotation_cos", local_rerotation_cos, persistent=False
+            )
+            self.register_buffer(
+                "local_rerotation_sin", local_rerotation_sin, persistent=False
+            )
+
+    def forward(self, k_caches: List[torch.Tensor], v_caches: List[torch.Tensor]):
+        """
+        Rerotate k_cache from original_position to new_position, and return the kv cache after eviction. This is done by rerotating
+        k_cache with (new_position * theta - original_position * theta) with the following matrix:
+        (cos(delta), -sin(delta)
+         sin(delta), cos(delta))
+         where delta = new_position * theta - original_position * theta
+
+         Based on https://github.com/huggingface/transformers/pull/26681
+        """
+
+        output_k_caches, output_v_caches = [], []
+        for ind, (k_cache, v_cache) in enumerate(zip(k_caches, v_caches)):
+            # k_cache: (batch_size, n_kv_heads, head_dim, seq_len)
+            # v_cache: (batch_size, n_kv_heads, seq_len, head_dim)
+            k_dim_to_slice = 3
+            v_dim_to_slice = 2
+
+            k_to_keep = k_cache.narrow(
+                k_dim_to_slice,
+                self.original_position,
+                self.num_to_keep,
+            )
+            k_to_keep = k_to_keep.transpose(2, 3)
+            if getattr(self.config, "enable_r3", False):
+                # We need to revert the key from spin quant before applying RoPE
+                k_to_keep = torch.matmul(k_to_keep, self.r3_weight.T)
+
+            if self.sliding_window and self.layer_types[ind] == "sliding_attention":
+                k_to_keep = self.apply_rope_emb(
+                    k_to_keep, self.local_rerotation_cos, self.local_rerotation_sin
+                )
+            else:
+                k_to_keep = self.apply_rope_emb(
+                    k_to_keep, self.rerotation_cos, self.rerotation_sin
+                )
+            if getattr(self.config, "enable_r3", False):
+                k_to_keep = torch.matmul(k_to_keep, self.r3_weight)
+            k_to_keep = k_to_keep.transpose(2, 3)
+            new_k_cache = torch.cat(
+                [
+                    k_cache.narrow(k_dim_to_slice, 0, self.sink_size),
+                    k_to_keep,
+                    torch.zeros(self.evict_k_cache_shape),
+                ],
+                dim=k_dim_to_slice,
+            )
+
+            new_v_cache = torch.cat(
+                [
+                    v_cache.narrow(v_dim_to_slice, 0, self.sink_size),
+                    v_cache.narrow(
+                        v_dim_to_slice,
+                        self.original_position,
+                        self.num_to_keep,
+                    ),
+                    torch.zeros(self.evict_v_cache_shape),
+                ],
+                dim=v_dim_to_slice,
+            )
+
+            output_k_caches.append(new_k_cache)
+            output_v_caches.append(new_v_cache)
+
+        return output_k_caches, output_v_caches
+
+    def get_example_inputs(self):
+        k_cache, v_cache = [], []
+
+        for _ in range(self.n_layers):
+            k_cache.append(torch.zeros(self.kv_cache_shape["k"]))
+            v_cache.append(torch.zeros(self.kv_cache_shape["v"]))
+        return k_cache, v_cache
+
+    def get_metadata(self):
+        return {
+            "get_eviction_batch_size": self.eviction_batch_size,
+            "get_max_context_len": self.config.max_context_len,
+            "get_sink_size": self.sink_size,
+        }
+
+
 class LlamaAttention(nn.Module):
     def __init__(self, layer_idx: int, config: ModelArgs, output_new_cache_only=False):
         super().__init__()
@@ -55,6 +277,7 @@ class LlamaAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.num_key_value_groups = config.n_heads // self.n_kv_heads
         self.max_seq_len = config.max_seq_len
+        self.max_context_len = config.max_context_len
         self.use_kv_cache = config.use_kv_cache
         self.output_new_cache_only = output_new_cache_only
         self.enable_masked_softmax = getattr(config, "enable_masked_softmax", False)
@@ -101,6 +324,9 @@ class LlamaAttention(nn.Module):
             if config.attention_multiplier is None
             else 1.0 / config.attention_multiplier
         )
+
+        # gemma 2 uses soft-capping on attention and logits
+        self.attn_logit_softcapping = config.attn_logit_softcapping
 
         if getattr(config, "enable_r3", False):
             self.register_buffer(
@@ -276,6 +502,11 @@ class LlamaAttention(nn.Module):
         vh = repeat_kv(vh, self.num_key_value_groups)
 
         attn = q @ kh
+        # gemma2-2b
+        if self.attn_logit_softcapping is not None:
+            attn = attn / self.attn_logit_softcapping
+            attn = torch.tanh(attn)
+            attn = attn * self.attn_logit_softcapping
         attn = attn / self.scale
         if self.enable_masked_softmax:
             attn_min = torch.amin(attn, dim=-1, keepdim=True)
@@ -421,6 +652,7 @@ class LlamaModel(nn.Module):
         self.head_dim = config.head_dim
         self.max_batch_size = config.max_batch_size
         self.max_seq_len = config.max_seq_len
+        self.max_context_len = config.max_context_len
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
         self.n_layers = config.n_layers
@@ -448,7 +680,7 @@ class LlamaModel(nn.Module):
         if config.use_hf_rope:
             freqs_cos, freqs_sin = hf_precompute_freqs_cis(
                 config.head_dim,
-                config.max_seq_len,
+                config.max_context_len,
                 config.rope_freq_base,
                 config.partial_rotary_factor,
             )
@@ -457,7 +689,7 @@ class LlamaModel(nn.Module):
         else:
             freqs_cos, freqs_sin = precompute_freqs_cis(
                 config.head_dim,
-                config.max_seq_len,
+                config.max_context_len,
                 config.rope_freq_base,
                 config.use_scaled_rope,
                 config.rope_scale_factor,
@@ -536,7 +768,7 @@ class LlamaModel(nn.Module):
             self.vocab_size, (self.max_batch_size, self.ar_len), dtype=dtype
         )
         atten_mask = AttentionMask(
-            CausalAttentionMask(self.max_batch_size, self.ar_len, self.max_seq_len)
+            CausalAttentionMask(self.max_batch_size, self.ar_len, self.max_context_len)
         )
         if self.use_kv_cache:
             pos_ids = torch.zeros((self.max_batch_size, self.ar_len), dtype=torch.int32)
@@ -548,14 +780,14 @@ class LlamaModel(nn.Module):
                         self.max_batch_size,
                         self.n_kv_heads,
                         self.head_dim,
-                        self.max_seq_len - self.ar_len,
+                        self.max_context_len - self.ar_len,
                     )
                 )
                 v_cache.append(
                     torch.zeros(
                         self.max_batch_size,
                         self.n_kv_heads,
-                        self.max_seq_len - self.ar_len,
+                        self.max_context_len - self.ar_len,
                         self.head_dim,
                     )
                 )
@@ -573,7 +805,6 @@ class LlamaModel(nn.Module):
         )
 
     def get_metadata(self):
-        # TODO: modify this when enabling LLAMA 7B
         return {
             "get_ar_len": self.ar_len,
             "get_bos_id": 1,
@@ -582,6 +813,7 @@ class LlamaModel(nn.Module):
             "get_head_dim": self.head_dim,
             "get_max_batch_size": self.max_batch_size,
             "get_max_seq_len": self.max_seq_len,
+            "get_max_context_len": self.max_context_len,
             "get_n_bos": 1,
             "get_n_eos": 1,
             "get_n_kv_heads": self.n_kv_heads,
@@ -731,22 +963,30 @@ class MultiScopeAwareLlamaModel(LlamaModel):
             output_new_cache_only=output_new_cache_only,
             output_cache=output_cache,
             use_i64_token=use_i64_token,
+            **kwargs,
         )
+        # Parameter final_logit_softcapping is not necessary for all
+        self.final_logit_softcapping = config.final_logit_softcapping
 
-        for key in ["layer_types", "sliding_window", "rope_local_base_freq"]:
-            assert key in kwargs, f"Missing required argument: '{key}' in kwargs"
+        # Gemma2/Gemma3 requires additional configuration parameters:
+        # - layer_types: Specifies the type of each layer (e.g., full vs. sliding attention)
+        # - local_rope_theta: Base frequency for local RoPE
+        # - sliding_window: Size of the sliding window for local attention
+        self.layer_types = config.layer_types
+        if self.layer_types is not None:
+            assert len(self.layer_types) == self.n_layers, (
+                f"Length of layer_types ({len(self.layer_types)}) must match "
+                f"n_layers ({self.n_layers})"
+            )
+        assert (
+            config.local_rope_theta is not None
+        ), "local_rope_theta should not be None, please set it explicitly in config."
 
-        # Get attention type for each layer
-        self.layer_types = kwargs["layer_types"]
-        # Get sliding window size (used in local/global attention)
-        self.sliding_window = kwargs["sliding_window"]
-        # Get local freq base for sliding attention
-        rope_freq_base = kwargs["rope_local_base_freq"]
-
+        self.sliding_window = config.sliding_window
         local_freqs_cos, local_freqs_sin = hf_precompute_freqs_cis(
             config.head_dim,
-            config.max_seq_len,
-            rope_freq_base,
+            config.max_context_len,
+            config.local_rope_theta,
             config.partial_rotary_factor,
         )
         local_freqs_cos = local_freqs_cos[:, : local_freqs_cos.shape[-1] // 2]
@@ -817,6 +1057,11 @@ class MultiScopeAwareLlamaModel(LlamaModel):
 
         hidden_states = self.norm(hidden_states)
         logits = self.output(hidden_states)
+        if self.final_logit_softcapping:
+            logits = logits / self.final_logit_softcapping
+            logits = torch.tanh(logits)
+            logits = logits * self.final_logit_softcapping
+
         if self.output_cache:
             return logits, output_k_cache, output_v_cache
         return logits
@@ -824,12 +1069,12 @@ class MultiScopeAwareLlamaModel(LlamaModel):
     def get_example_inputs(self):
         inputs = list(super().get_example_inputs())
         causal_mask = CausalAttentionMask(
-            self.max_batch_size, self.ar_len, self.max_seq_len
+            self.max_batch_size, self.ar_len, self.max_context_len
         )
         sliding_window_mask = SlidingWindowAttentionMask(
             self.max_batch_size,
             self.ar_len,
-            self.max_seq_len,
+            self.max_context_len,
             sliding_window=self.sliding_window,
         )
         # Don't reverse the order of attention mask

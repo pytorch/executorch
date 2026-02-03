@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,9 +11,8 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
-    TOSAQuantizer,
 )
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -23,8 +22,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 
 input_t1 = Tuple[torch.Tensor]  # Input x
 
@@ -49,6 +46,10 @@ test_data_suite_u55_reject = {
     "rank2_bool": lambda: (torch.randint(0, 2, (5, 5), dtype=torch.bool), [1, 0]),
 }
 test_data_suite = test_data_suite_u55.copy() | test_data_suite_u55_reject.copy()
+test_data_suite_bf16 = {
+    "rank_2_bf16": lambda: (torch.rand(6, 4, dtype=torch.bfloat16), [1, 0]),
+    "rank_3_bf16": lambda: (torch.rand(2, 3, 5, dtype=torch.bfloat16), [2, 0, 1]),
+}
 
 
 class SimplePermute(torch.nn.Module):
@@ -62,7 +63,7 @@ class SimplePermute(torch.nn.Module):
         return torch.permute(x, self.dims)
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_permute_tosa_FP(test_data: torch.Tensor):
     test_data, dims = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -70,6 +71,7 @@ def test_permute_tosa_FP(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -156,27 +158,6 @@ def test_permute_vgf_quant(test_data):
     pipeline.run()
 
 
-def get_symmetric_a16w8_permute_quantizer(
-    u55_config=False, per_channel_quantization=False
-):
-    tosa_version = conftest.get_option("tosa_version")
-    tosa_profiles = {
-        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
-    }
-
-    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-    quantizer.set_global(
-        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
-    )
-
-    return Quantize(
-        quantizer,
-        get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization
-        ),
-    )
-
-
 @common.parametrize("test_data", test_data_suite)
 def test_permute_16a8w_tosa_INT(test_data: torch.Tensor):
     """Test permute operation with int16 quantization"""
@@ -190,12 +171,9 @@ def test_permute_16a8w_tosa_INT(test_data: torch.Tensor):
         use_to_edge_transform_and_lower=True,
         tosa_extensions=["int16"],
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_permute_quantizer(per_channel_quantization=False),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=False)
     )
-    # Run the pipeline
     pipeline.run()
 
 
@@ -225,10 +203,8 @@ def test_permute_16a8w_u55_INT(test_data: torch.Tensor):
         rtol=1e-02,
         run_on_fvp=True,
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_permute_quantizer(per_channel_quantization=False),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=False)
     )
     pipeline.run()
 
@@ -248,9 +224,7 @@ def test_permute_16a8w_u85_INT(test_data: torch.Tensor):
         rtol=1e-03,
         run_on_fvp=True,
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_permute_quantizer(per_channel_quantization=False),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=False)
     )
     pipeline.run()

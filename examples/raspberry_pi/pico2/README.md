@@ -45,7 +45,7 @@ For more details , refer to the following guides:
 ## (Prerequisites) Prepare the Environment for Arm
 
 Setup executorch development environment. Also see instructions for setting up the environment for Arm.
-Make sure you have the toolchain configured correctly. Refer to this [setup](https://docs.pytorch.org/executorch/main/backends-arm-ethos-u.html#development-requirements) for more details.
+Make sure you have the toolchain configured correctly. Refer to this [setup](https://docs.pytorch.org/executorch/main/backends/arm-ethos-u/arm-ethos-u-overview.html#development-requirements) for more details.
 
 ```bash
 which arm-none-eabi-gcc
@@ -67,7 +67,7 @@ python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte
 
 ```bash
 # In the dir examples/raspberry_pi/pico2
-build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte # This creates executorch_pico.uf2, a firmware image for Pico2
+./build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte # This creates executorch_pico.uf2, a firmware image for Pico2
 ```
 
 ### Flash Firmware

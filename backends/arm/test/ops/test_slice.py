@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -8,13 +8,11 @@
 from typing import Tuple
 
 import torch
+
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
-    TOSAQuantizer,
 )
-
-from executorch.backends.arm.test import common, conftest
-
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -22,8 +20,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa.specification import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 
 aten_op = "torch.ops.aten.slice.Tensor"
 exir_op = "executorch_exir_dialects_edge__ops_aten_slice_copy"
@@ -41,6 +37,13 @@ test_data_suite = {
     ),
 }
 
+test_data_suite_fp16 = {
+    "ones_slice_4_fp16": lambda: (
+        torch.ones((1, 12, 10, 10), dtype=torch.float16),
+        [(0, 1), (0, 5), (3, 5), (4, 10)],
+    ),
+}
+
 
 class Slice(torch.nn.Module):
     def forward(self, x: torch.Tensor, s: list[tuple[int, int]]):
@@ -48,7 +51,7 @@ class Slice(torch.nn.Module):
         return x[slices]
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 def test_slice_tensor_tosa_FP(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](Slice(), test_data(), aten_op, exir_op)
     pipeline.run()
@@ -100,7 +103,7 @@ def test_slice_tensor_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_slice_tensor_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
@@ -126,25 +129,6 @@ def test_slice_tensor_vgf_quant(test_data: torch.Tensor):
     pipeline.run()
 
 
-def get_symmetric_a16w8_slice_quantizer(per_channel_quantization=False):
-    tosa_version = conftest.get_option("tosa_version")
-    tosa_profiles = {
-        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
-    }
-
-    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-    quantizer.set_global(
-        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
-    )
-
-    return Quantize(
-        quantizer,
-        get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization
-        ),
-    )
-
-
 @common.parametrize("test_data", test_data_suite)
 def test_slice_tensor_16a8w_tosa_INT(test_data: torch.Tensor):
     """Test slice operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
@@ -159,12 +143,8 @@ def test_slice_tensor_16a8w_tosa_INT(test_data: torch.Tensor):
         use_to_edge_transform_and_lower=True,
         tosa_extensions=["int16"],
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_slice_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 
@@ -183,12 +163,8 @@ def test_slice_tensor_16a8w_u55_INT(test_data: torch.Tensor):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_slice_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 
@@ -207,11 +183,7 @@ def test_slice_tensor_16a8w_u85_INT(test_data: torch.Tensor):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_slice_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
