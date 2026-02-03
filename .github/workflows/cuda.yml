@@ -150,15 +150,6 @@ jobs:
               repo: "google"
               name: "gemma-3-4b-it"
             quant: "quantized-int4-weight-only"
-          # Parakeet only supports non-quantized
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
-            quant: "quantized-int4-tile-packed"
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
-            quant: "quantized-int4-weight-only"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -218,15 +209,6 @@ jobs:
           - model:
               repo: "google"
               name: "gemma-3-4b-it"
-            quant: "quantized-int4-weight-only"
-          # Parakeet only supports non-quantized
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
-            quant: "quantized-int4-tile-packed"
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
             quant: "quantized-int4-weight-only"
     with:
       timeout: 90
