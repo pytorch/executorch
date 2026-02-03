@@ -461,6 +461,7 @@ def export_all(
 def _create_xnnpack_partitioners(programs):
     """Create XNNPACK partitioners for all programs except preprocessor."""
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+        XnnpackDynamicallyQuantizedPartitioner,
         XnnpackPartitioner,
     )
 
@@ -470,7 +471,13 @@ def _create_xnnpack_partitioners(programs):
         if key == "preprocessor":
             partitioner[key] = []
         else:
-            partitioner[key] = [XnnpackPartitioner()]
+            # Use both partitioners:
+            # 1. XnnpackDynamicallyQuantizedPartitioner for dynamic quantization (8da4w)
+            # 2. XnnpackPartitioner for remaining ops
+            partitioner[key] = [
+                XnnpackDynamicallyQuantizedPartitioner(),
+                XnnpackPartitioner(),
+            ]
     return partitioner, programs
 
 
@@ -584,6 +591,7 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            do_quant_fusion_and_const_prop=True,
         ),
     )
 

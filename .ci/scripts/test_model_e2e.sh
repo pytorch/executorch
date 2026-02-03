@@ -5,16 +5,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Test CUDA/Metal model end-to-end, need to run .ci/scripts/export_model_artifact.sh first
+# Test CUDA/Metal/XNNPACK model end-to-end, need to run .ci/scripts/export_model_artifact.sh first
 
 show_help() {
   cat << EOF
 Usage: test_model_e2e.sh <device> <hf_model> <quant_name> [model_dir]
 
-Build and run end-to-end tests for CUDA/Metal models.
+Build and run end-to-end tests for CUDA/Metal/XNNPACK models.
 
 Arguments:
-  device      cuda or metal (required)
+  device      cuda, metal, or xnnpack (required)
 
   hf_model    HuggingFace model ID (required)
               Supported models:
@@ -28,6 +28,7 @@ Arguments:
                 - non-quantized
                 - quantized-int4-tile-packed
                 - quantized-int4-weight-only
+                - quantized-8da4w (XNNPACK only)
 
   model_dir   Directory containing model artifacts (optional, default: current directory)
               Expected files: model.pte, aoti_cuda_blob.ptd (CUDA only)
@@ -37,6 +38,7 @@ Examples:
   test_model_e2e.sh metal "openai/whisper-small" "non-quantized"
   test_model_e2e.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed" "./model_output"
   test_model_e2e.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./model_output"
+  test_model_e2e.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./model_output"
 EOF
 }
 
@@ -174,12 +176,17 @@ echo "::endgroup::"
 
 echo "::group::Build $MODEL_NAME Runner"
 
-if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ]; then
-  echo "Error: Unsupported device '$DEVICE'. Must be 'cuda' or 'metal'."
+if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ] && [ "$DEVICE" != "xnnpack" ]; then
+  echo "Error: Unsupported device '$DEVICE'. Must be 'cuda', 'metal', or 'xnnpack'."
   exit 1
 fi
 
-MAKE_TARGET="${RUNNER_PATH}-${DEVICE}"
+# Map device to make target (xnnpack uses cpu target which includes XNNPACK)
+if [ "$DEVICE" = "xnnpack" ]; then
+  MAKE_TARGET="${RUNNER_PATH}-cpu"
+else
+  MAKE_TARGET="${RUNNER_PATH}-${DEVICE}"
+fi
 make "${MAKE_TARGET}"
 echo "::endgroup::"
 
