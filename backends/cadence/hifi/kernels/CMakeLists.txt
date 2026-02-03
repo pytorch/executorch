@@ -18,6 +18,7 @@ add_library(
   ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_div_mode_f32_broadcast.c
   ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_fmod_broadcast_f32.c
   ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_greater_lesser_equal_f32.c
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_im2row.c
   ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_logicalxor_bool_bool.c
   ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_minimum_maximum_f32.c
   ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_mul_f32_broadcast.c
