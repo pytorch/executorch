@@ -137,25 +137,25 @@ table AddNode {
     out: Tid (required);
 }
 
-table AddScalarNode {
+table AddIntNode {
     a: IntOrVid (required);
     b: IntOrVid (required);
     out: Vid (required);
 }
 
-table SubScalarNode {
+table SubtractIntNode {
     a: IntOrVid (required);
     b: IntOrVid (required);
     out: Vid (required);
 }
 
-table MulScalarNode {
+table MultiplyIntNode {
     a: IntOrVid (required);
     b: IntOrVid (required);
     out: Vid (required);
 }
 
-table FloorDivScalarNode {
+table FloorDivideIntNode {
     a: IntOrVid (required);
     b: IntOrVid (required);
     out: Vid (required);
@@ -211,6 +211,7 @@ table Conv2DNode {
 table GeluNode {
     x: Tid (required);
     out: Tid (required);
+    approximate: string (required);  // "none" or "tanh"
 }
 
 table ARangeNode {
@@ -255,6 +256,12 @@ table RsqrtNode {
 }
 
 table MaximumNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table MinimumNode {
     a: Tid (required);
     b: Tid (required);
     out: Tid (required);
@@ -721,10 +728,10 @@ union OpNode {
     RopeNode,
     SdpaNode,
     AddNode,
-    AddScalarNode,
-    SubScalarNode,
-    MulScalarNode,
-    FloorDivScalarNode,
+    AddIntNode,
+    SubtractIntNode,
+    MultiplyIntNode,
+    FloorDivideIntNode,
     SymSizeNode,
     MultiplyNode,
     DivideNode,
@@ -740,6 +747,7 @@ union OpNode {
     SplitNode,
     RsqrtNode,
     MaximumNode,
+    MinimumNode,
     LogNode,
     SoftmaxNode,
     BroadcastToNode,

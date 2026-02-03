@@ -22,54 +22,23 @@ Options:
 - `--clean-after`: Clean up generated test files after running
 - `--rebuild`: Rebuild the C++ test runner before running (use after C++ runtime changes)
 - `--list`: List available tests and exit
+- `-v` / `--verbose`: Verbose output
 
 ### Run a Specific Test
 
-To run a specific test (e.g., `linear`):
+To run a specific test by name (e.g., `linear`):
 
 ```bash
-python -m executorch.backends.apple.mlx.test.test_linear run
+python -m executorch.backends.apple.mlx.test.run_all_tests linear
 ```
 
 With verbose output:
 
 ```bash
-python -m executorch.backends.apple.mlx.test.test_linear run --verbose
+python -m executorch.backends.apple.mlx.test.run_all_tests -v linear
 ```
 
-### Run Test Variants
-
-Some tests have multiple configurations. For example, `test_permute` tests both `permute` and `transpose`:
-
-```bash
-# Run permute variant (default)
-python -m executorch.backends.apple.mlx.test.test_permute run
-
-# Run transpose variant
-python -m executorch.backends.apple.mlx.test.test_permute run --variant transpose
-```
-
-### Custom Test Parameters
-
-Most tests accept custom parameters:
-
-```bash
-# Linear with custom dimensions
-python -m executorch.backends.apple.mlx.test.test_linear run --in-features 128 --out-features 256
-
-# Quantized linear with different group size
-python -m executorch.backends.apple.mlx.test.test_quantized_linear run --group-size 64
-```
-
-Run with `--help` to see available options:
-
-```bash
-python -m executorch.backends.apple.mlx.test.test_linear run --help
-```
-
-## Available Tests
-
-Test files are named `test_<op_name>.py`. To see all available tests, list the directory or run:
+### List Available Tests
 
 ```bash
 python -m executorch.backends.apple.mlx.test.run_all_tests --list
@@ -77,7 +46,7 @@ python -m executorch.backends.apple.mlx.test.run_all_tests --list
 
 ## Test Architecture
 
-Each test follows a common pattern:
+All tests are defined in `test_ops.py`. Each test follows a common pattern:
 
 1. **Define a model** - A simple `nn.Module` that uses the op being tested
 2. **Create test inputs** - Generate random input tensors
@@ -124,7 +93,7 @@ Test artifacts are saved to `op_tests/<test_name>/`:
 
 ## Adding a New Test
 
-1. Create `test_<op_name>.py` following the pattern of existing tests
-2. Implement the `OpTestCase` subclass with `@register_test` decorator
-3. Add factory function `_create_from_args` and `_add_args` for CLI support
+1. Add a new model class and `OpTestCase` subclass to `test_ops.py`
+2. Use the `@register_test` decorator on the test class
+3. Implement `create_model()`, `create_inputs()`, and `get_test_configs()`
 4. Run the test to verify it works E2E
