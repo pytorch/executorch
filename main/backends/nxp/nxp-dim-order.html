@@ -1202,85 +1202,209 @@ document.write(`
                   
   <section id="nxp-eiq-dim-order-support">
 <h1>NXP eIQ Dim Order Support<a class="headerlink" href="#nxp-eiq-dim-order-support" title="Link to this heading">#</a></h1>
-<p>The NXP ExecuTorch backend supports two different dim orders (memory formats):</p>
+<p>The NXP ExecuTorch backend supports two different dimension orders (memory formats):</p>
 <ul class="simple">
-<li><p><strong>contiguous</strong> (default)</p></li>
-<li><p><strong>channels last</strong></p></li>
+<li><p><strong>Contiguous</strong> (default, also known as channels first)</p></li>
+<li><p><strong>Channels last</strong></p></li>
 </ul>
-<p>Any other dim order will cause an exception during runtime.</p>
-<section id="using-the-channels-last-dim-order">
-<h2>Using the channels last dim order<a class="headerlink" href="#using-the-channels-last-dim-order" title="Link to this heading">#</a></h2>
-<p>If you want to use the NXP backend to accelerate your model, it may be beneficial to use the <em>channels last</em> dim order.</p>
-<p>The Neutron NPU computes on channels last data, whereas ExecuTorch uses the channels first format. This mismatch
-requires the execution of some extra transpositions during runtime, which can noticeably impact the performance. By
-forcing the ExecuTorch operators to use the channels last dim order, some of these transpositions can be eliminated.</p>
-<p>There are <strong>two</strong> options for using the <strong>channels last</strong> dim order:</p>
-<ol class="arabic simple">
-<li><p>Maintaining the same model inputs</p></li>
-<li><p>Changing the inputs to <strong>channels last</strong></p></li>
-</ol>
-<section id="maintaining-the-same-model-inputs">
-<h3>Maintaining the same model inputs<a class="headerlink" href="#maintaining-the-same-model-inputs" title="Link to this heading">#</a></h3>
-<p>The <strong>first</strong> option requires a change to the <em>python</em> definition of your model. The model inputs remain unchanged
-(contiguous/channels first), and an extra operator is inserted to change their dim order to <strong>channels last</strong>. This
-approach does not change how the model is used later on at all. End-to-end, it behaves as if we did nothing to the dim
-order.</p>
-<p>Example use-case:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">MyModel</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="c1"># Transform the inputs to the channels last dim order.</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">memory_format</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">channels_last</span><span class="p">)</span>
-
-        <span class="o">...</span>  <span class="c1"># Rest of your model definition</span>
-
-
-<span class="o">...</span>
-
-<span class="c1"># Turn the weights to the channels last dim order.</span>
-<span class="n">model</span> <span class="o">=</span> <span class="n">MyModel</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">memory_format</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">channels_last</span><span class="p">)</span>
-
-<span class="o">...</span>  <span class="c1"># Export and lower the model using the NXP backend.</span>
-</pre></div>
-</div>
-<p>Depending on the model, the NXP backend may be able to utilize the channels last dim order to achieve faster inference.
-In many cases, there will be no improvement, and it is even possible (though rare) for the performance to get worse. So
-you should compare the inference speed of the contiguous and channels last variants.</p>
+<blockquote>
+<div><p><strong>Note:</strong> Any other dimension order will cause a runtime exception.</p>
+</div></blockquote>
+<hr class="docutils" />
+<section id="why-use-channels-last">
+<h2>Why Use Channels Last?<a class="headerlink" href="#why-use-channels-last" title="Link to this heading">#</a></h2>
+<p>The Neutron NPU computes on channels last data (NHWC), while ExecuTorch uses channels the first format (NCHW) by
+default. This mismatch requires extra transpositions during runtime, which can significantly impact performance.</p>
+<p><strong>Benefits of using channels last:</strong></p>
+<ul class="simple">
+<li><p>Eliminates or reduces runtime data transpositions</p></li>
+<li><p>Improves inference performance on the Neutron NPU</p></li>
+<li><p>May align with sensor data formats (e.g., camera sensors often output NHWC)</p></li>
+</ul>
 </section>
-<section id="changing-the-inputs-to-channels-last">
-<h3>Changing the inputs to channels last<a class="headerlink" href="#changing-the-inputs-to-channels-last" title="Link to this heading">#</a></h3>
-<p>The <strong>second</strong> option does not require the model definition to be altered, but it also changes the model inputs.</p>
-<p><strong>Note:</strong> Instead of the original <strong>contiguous/channels_first</strong> (NCHW) format, the <strong>input data must be provided in the
-channels last</strong> (NHWC) format during runtime.</p>
-<p>This approach may provide <strong>significant speed improvements</strong> by greatly reducing the number
-of added transpositions (even to 0).</p>
-<p>Example use-case:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Turn the weights to the channels last dim order.</span>
+<hr class="docutils" />
+<section id="implementation-options">
+<h2>Implementation Options<a class="headerlink" href="#implementation-options" title="Link to this heading">#</a></h2>
+<p>There are <strong>two approaches</strong> to using the channels last dimension order:</p>
+<section id="option-1-channels-last-inputs-recommended">
+<h3>Option 1: Channels Last Inputs (Recommended)<a class="headerlink" href="#option-1-channels-last-inputs-recommended" title="Link to this heading">#</a></h3>
+<p>This approach provides the <strong>best performance</strong> and often completely eliminates runtime transpositions.</p>
+<p><strong>Trade-off:</strong> Model inputs must be provided in channels last format instead of the native channels first format.</p>
+<section id="example">
+<h4>Example<a class="headerlink" href="#example" title="Link to this heading">#</a></h4>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Convert model weights to channels last dimension order</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">YourModel</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">memory_format</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">channels_last</span><span class="p">)</span>
 
-<span class="c1"># Turn the example inputs to the channels last dim order.</span>
-<span class="c1"># This will define the dim order of the inputs and the internal data at runtime.</span>
+<span class="c1"># Convert example inputs to channels last dimension order</span>
+<span class="c1"># This defines the dim order for the model inputs and internal data at runtime</span>
 <span class="n">example_inputs</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
     <span class="n">i</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">memory_format</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">channels_last</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">your_example_inputs</span>
 <span class="p">)</span>
 
-<span class="c1"># Use the channels last example inputs to export the model.</span>
+<span class="c1"># Export the model using channels last example inputs</span>
 <span class="n">exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
 
-<span class="o">...</span>  <span class="c1"># Lower the model using the NXP backend.</span>
-</pre></div>
-</div>
-<p>A full example of this use case can be found in the
-<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/nxp/aot_neutron_compile.py">aot_neutron_compile.py</a>. The
-following command will create the <code class="docutils literal notranslate"><span class="pre">cifar10_nxp_delegate.pte</span></code> model, which takes channels first inputs, contains no
-transpositions, and can be run on the <code class="docutils literal notranslate"><span class="pre">i.MX</span> <span class="pre">RT700</span></code> board using the <strong>MCUXpresso SDK 25.06</strong>. For details on the
-installation see <a class="reference internal" href="nxp-overview.html"><span class="doc">NXP eIQ Neutron Backend</span></a>.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">nxp</span><span class="o">.</span><span class="n">aot_neutron_compile</span> <span class="o">--</span><span class="n">quantize</span> \
-    <span class="o">--</span><span class="n">delegate</span> <span class="o">--</span><span class="n">neutron_converter_flavor</span> <span class="n">SDK_25_12</span> <span class="o">-</span><span class="n">m</span> <span class="n">cifar10</span> \
-    <span class="o">--</span><span class="n">use_channels_last_dim_order</span>
+<span class="c1"># Lower the model using the NXP backend</span>
+<span class="o">...</span>
 </pre></div>
 </div>
 </section>
+<section id="complete-example">
+<h4>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">#</a></h4>
+<p>A full implementation is available
+in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/nxp/aot_neutron_compile.py">aot_neutron_compile.py</a>.</p>
+<p>The following command creates a <code class="docutils literal notranslate"><span class="pre">cifar10_nxp_delegate.pte</span></code> model with channels last inputs and no transpositions,
+compatible with the <code class="docutils literal notranslate"><span class="pre">i.MX</span> <span class="pre">RT700</span></code> board using <strong>MCUXpresso SDK 25.06</strong>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.nxp.aot_neutron_compile<span class="w"> </span>--quantize<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--delegate<span class="w"> </span>--neutron_converter_flavor<span class="w"> </span>SDK_25_12<span class="w"> </span>-m<span class="w"> </span>cifar10<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--use_channels_last_dim_order
+</pre></div>
+</div>
+<p>For installation details, see <a class="reference internal" href="nxp-overview.html"><span class="doc">NXP eIQ Neutron Backend</span></a>.</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="option-2-preserve-channels-first-inputs">
+<h3>Option 2: Preserve Channels First Inputs<a class="headerlink" href="#option-2-preserve-channels-first-inputs" title="Link to this heading">#</a></h3>
+<p>This approach maintains <strong>contiguous/channels first model inputs</strong> while potentially improving performance through
+internal channels last processing.</p>
+<p><strong>How it works:</strong></p>
+<ul class="simple">
+<li><p>Model inputs remain unchanged (channels first)</p></li>
+<li><p>An extra operator is inserted at the model’s start to convert inputs to channels last</p></li>
+<li><p>The model behaves identically from an external perspective</p></li>
+<li><p>Internal processing may save on runtime transpositions</p></li>
+</ul>
+<section id="id1">
+<h4>Example<a class="headerlink" href="#id1" title="Link to this heading">#</a></h4>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">MyModel</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="c1"># Transform inputs to channels last dimension order</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">memory_format</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">channels_last</span><span class="p">)</span>
+
+        <span class="c1"># Rest of your model definition</span>
+        <span class="o">...</span>
+
+
+<span class="c1"># Convert model weights to channels last dimension order</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">MyModel</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">memory_format</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">channels_last</span><span class="p">)</span>
+
+<span class="c1"># Export and lower the model using the NXP backend</span>
+<span class="o">...</span>
+</pre></div>
+</div>
+</section>
+<section id="performance-considerations">
+<h4>Performance Considerations<a class="headerlink" href="#performance-considerations" title="Link to this heading">#</a></h4>
+<ul class="simple">
+<li><p>Performance improvement depends on the specific model</p></li>
+<li><p>In many cases, there may be no significant improvement</p></li>
+<li><p>Rarely, performance could slightly decrease</p></li>
+<li><p><strong>Always benchmark</strong> both contiguous and channels last variants</p></li>
+</ul>
+</section>
+</section>
+</section>
+<hr class="docutils" />
+<section id="limitations">
+<h2>Limitations<a class="headerlink" href="#limitations" title="Link to this heading">#</a></h2>
+<section id="d-input-support-only">
+<h3>4D Input Support Only<a class="headerlink" href="#d-input-support-only" title="Link to this heading">#</a></h3>
+<p>Due to internal limitations of PyTorch, only models with 4D and 5D inputs can take advantage of the channels last
+dimension order, and only the 4D case is currently supported by the NXP backend. Models processing serial data (with 3D
+inputs (NCW)) would have to be manually extended to 4D with a spatial dimension of size 1 (NC1W).</p>
+</section>
+<section id="partial-delegation-issues">
+<h3>Partial Delegation Issues<a class="headerlink" href="#partial-delegation-issues" title="Link to this heading">#</a></h3>
+<p>Models that are <strong>not fully delegated to Neutron</strong> may experience runtime issues when using channels last dimension
+order, including:</p>
+<ul class="simple">
+<li><p>Runtime crashes</p></li>
+<li><p>Incorrect output data</p></li>
+</ul>
+<p>This affects models with partitions running in ExecuTorch edge dialect on the CPU.</p>
+<p><strong>Recommendation:</strong> Manually verify model correctness by testing the final <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file and validating outputs.</p>
+</section>
+<section id="fully-delegated-models">
+<h3>Fully Delegated Models<a class="headerlink" href="#fully-delegated-models" title="Link to this heading">#</a></h3>
+<p>Models that are <strong>fully delegated to Neutron</strong> should <strong>not experience runtime issues</strong> with channels last dimension
+order.</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="verifying-full-delegation">
+<h2>Verifying Full Delegation<a class="headerlink" href="#verifying-full-delegation" title="Link to this heading">#</a></h2>
+<p>Use one of the following methods to confirm your model is fully delegated:</p>
+<section id="method-1-list-graph-nodes">
+<h3>Method 1: List Graph Nodes<a class="headerlink" href="#method-1-list-graph-nodes" title="Link to this heading">#</a></h3>
+<p>After lowering your model, inspect the graph nodes:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">))</span>
+</pre></div>
+</div>
+<p><strong>Example output for a fully delegated model</strong> (containing no compute <code class="docutils literal notranslate"><span class="pre">aten</span></code> operators except (de)quantize):</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">x</span><span class="p">,</span> <span class="n">alloc</span><span class="p">,</span> <span class="n">quantized_decomposed_quantize_per_tensor_default</span><span class="p">,</span> <span class="n">lowered_module_0</span><span class="p">,</span> <span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="n">getitem</span><span class="p">,</span>
+ <span class="n">alloc_1</span><span class="p">,</span> <span class="n">quantized_decomposed_dequantize_per_tensor_default_1</span><span class="p">,</span> <span class="n">output_1</span><span class="p">]</span>
+</pre></div>
+</div>
+</section>
+<section id="method-2-visualize-with-model-explorer">
+<h3>Method 2: Visualize with Model Explorer<a class="headerlink" href="#method-2-visualize-with-model-explorer" title="Link to this heading">#</a></h3>
+<p>Launch a browser-based visualization of your model:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.visualization.visualization_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">visualize_with_clusters</span>
+
+<span class="n">visualize_with_clusters</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">exported_program</span><span class="p">())</span>
+</pre></div>
+</div>
+<p><strong>Example visualization</strong> of a fully delegated model is shown in <strong>Figure 1</strong> below (containing no compute <code class="docutils literal notranslate"><span class="pre">aten</span></code>
+operators except (de)quantize):</p>
+<figure id="fig1">
+    <img src="../../_static/img/nxp/example_fully_delegated_model.png" width="500" alt="Example of a fully delegated model visualization">
+    <figcaption>
+        <b>Figure 1:</b> Example of a fully delegated model. Contains no compute <code>aten</code> operators other than 
+        <code>quantize</code> and <code>dequantize</code>. The entire model is delegated to Neutron via the 
+        `executorch_call_delegate` node.
+    </figcaption>
+</figure>
+</section>
+</section>
+<hr class="docutils" />
+<section id="summary">
+<h2>Summary<a class="headerlink" href="#summary" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Approach</p></th>
+<th class="head"><p>Input Format</p></th>
+<th class="head"><p>Internal Format</p></th>
+<th class="head"><p>Performance</p></th>
+<th class="head"><p>Use Case</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Option 1</strong></p></td>
+<td><p>Channels last</p></td>
+<td><p>Channels last</p></td>
+<td><p><strong>Best</strong></p></td>
+<td><p>When you can provide channels last inputs</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Option 2</strong></p></td>
+<td><p>Contiguous</p></td>
+<td><p>Channels last</p></td>
+<td><p>Variable</p></td>
+<td><p>When input format must be preserved</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Default</strong></p></td>
+<td><p>Contiguous</p></td>
+<td><p>Contiguous</p></td>
+<td><p>Baseline</p></td>
+<td><p>For non-4D models, or when <strong>Option 2</strong> is slower, crashes, or produces incorrect outputs</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Choose the approach that best fits your deployment requirements and always benchmark to verify performance improvements.</p>
 </section>
 </section>
 
@@ -1401,11 +1525,32 @@ installation see <a class="reference internal" href="nxp-overview.html"><span cl
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-channels-last-dim-order">Using the channels last dim order</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#maintaining-the-same-model-inputs">Maintaining the same model inputs</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#changing-the-inputs-to-channels-last">Changing the inputs to channels last</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#why-use-channels-last">Why Use Channels Last?</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#implementation-options">Implementation Options</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#option-1-channels-last-inputs-recommended">Option 1: Channels Last Inputs (Recommended)</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#example">Example</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#complete-example">Complete Example</a></li>
 </ul>
 </li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#option-2-preserve-channels-first-inputs">Option 2: Preserve Channels First Inputs</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#id1">Example</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#performance-considerations">Performance Considerations</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#limitations">Limitations</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#d-input-support-only">4D Input Support Only</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#partial-delegation-issues">Partial Delegation Issues</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#fully-delegated-models">Fully Delegated Models</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#verifying-full-delegation">Verifying Full Delegation</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#method-1-list-graph-nodes">Method 1: List Graph Nodes</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#method-2-visualize-with-model-explorer">Method 2: Visualize with Model Explorer</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#summary">Summary</a></li>
 </ul>
   </nav></div>
     
@@ -1631,7 +1776,7 @@ installation see <a class="reference internal" href="nxp-overview.html"><span cl
        "headline": "NXP eIQ Dim Order Support",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/backends/nxp/nxp-dim-order.html",
-       "articleBody": "NXP eIQ Dim Order Support# The NXP ExecuTorch backend supports two different dim orders (memory formats): contiguous (default) channels last Any other dim order will cause an exception during runtime. Using the channels last dim order# If you want to use the NXP backend to accelerate your model, it may be beneficial to use the channels last dim order. The Neutron NPU computes on channels last data, whereas ExecuTorch uses the channels first format. This mismatch requires the execution of some extra transpositions during runtime, which can noticeably impact the performance. By forcing the ExecuTorch operators to use the channels last dim order, some of these transpositions can be eliminated. There are two options for using the channels last dim order: Maintaining the same model inputs Changing the inputs to channels last Maintaining the same model inputs# The first option requires a change to the python definition of your model. The model inputs remain unchanged (contiguous/channels first), and an extra operator is inserted to change their dim order to channels last. This approach does not change how the model is used later on at all. End-to-end, it behaves as if we did nothing to the dim order. Example use-case: class MyModel(nn.Module): def forward(self, x): # Transform the inputs to the channels last dim order. x = x.to(memory_format=torch.channels_last) ... # Rest of your model definition ... # Turn the weights to the channels last dim order. model = MyModel().to(memory_format=torch.channels_last) ... # Export and lower the model using the NXP backend. Depending on the model, the NXP backend may be able to utilize the channels last dim order to achieve faster inference. In many cases, there will be no improvement, and it is even possible (though rare) for the performance to get worse. So you should compare the inference speed of the contiguous and channels last variants. Changing the inputs to channels last# The second option does not require the model definition to be altered, but it also changes the model inputs. Note: Instead of the original contiguous/channels_first (NCHW) format, the input data must be provided in the channels last (NHWC) format during runtime. This approach may provide significant speed improvements by greatly reducing the number of added transpositions (even to 0). Example use-case: # Turn the weights to the channels last dim order. model = YourModel().to(memory_format=torch.channels_last) # Turn the example inputs to the channels last dim order. # This will define the dim order of the inputs and the internal data at runtime. example_inputs = tuple( i.to(memory_format=torch.channels_last) for i in your_example_inputs ) # Use the channels last example inputs to export the model. exported_program = torch.export.export(model, example_inputs) ... # Lower the model using the NXP backend. A full example of this use case can be found in the aot_neutron_compile.py. The following command will create the cifar10_nxp_delegate.pte model, which takes channels first inputs, contains no transpositions, and can be run on the i.MX RT700 board using the MCUXpresso SDK 25.06. For details on the installation see NXP eIQ Neutron Backend. python -m examples.nxp.aot_neutron_compile --quantize \\ --delegate --neutron_converter_flavor SDK_25_12 -m cifar10 \\ --use_channels_last_dim_order",
+       "articleBody": "NXP eIQ Dim Order Support# The NXP ExecuTorch backend supports two different dimension orders (memory formats): Contiguous (default, also known as channels first) Channels last Note: Any other dimension order will cause a runtime exception. Why Use Channels Last?# The Neutron NPU computes on channels last data (NHWC), while ExecuTorch uses channels the first format (NCHW) by default. This mismatch requires extra transpositions during runtime, which can significantly impact performance. Benefits of using channels last: Eliminates or reduces runtime data transpositions Improves inference performance on the Neutron NPU May align with sensor data formats (e.g., camera sensors often output NHWC) Implementation Options# There are two approaches to using the channels last dimension order: Option 1: Channels Last Inputs (Recommended)# This approach provides the best performance and often completely eliminates runtime transpositions. Trade-off: Model inputs must be provided in channels last format instead of the native channels first format. Example# # Convert model weights to channels last dimension order model = YourModel().to(memory_format=torch.channels_last) # Convert example inputs to channels last dimension order # This defines the dim order for the model inputs and internal data at runtime example_inputs = tuple( i.to(memory_format=torch.channels_last) for i in your_example_inputs ) # Export the model using channels last example inputs exported_program = torch.export.export(model, example_inputs) # Lower the model using the NXP backend ... Complete Example# A full implementation is available in aot_neutron_compile.py. The following command creates a cifar10_nxp_delegate.pte model with channels last inputs and no transpositions, compatible with the i.MX RT700 board using MCUXpresso SDK 25.06: python -m examples.nxp.aot_neutron_compile --quantize \\ --delegate --neutron_converter_flavor SDK_25_12 -m cifar10 \\ --use_channels_last_dim_order For installation details, see NXP eIQ Neutron Backend. Option 2: Preserve Channels First Inputs# This approach maintains contiguous/channels first model inputs while potentially improving performance through internal channels last processing. How it works: Model inputs remain unchanged (channels first) An extra operator is inserted at the model\u2019s start to convert inputs to channels last The model behaves identically from an external perspective Internal processing may save on runtime transpositions Example# class MyModel(nn.Module): def forward(self, x): # Transform inputs to channels last dimension order x = x.to(memory_format=torch.channels_last) # Rest of your model definition ... # Convert model weights to channels last dimension order model = MyModel().to(memory_format=torch.channels_last) # Export and lower the model using the NXP backend ... Performance Considerations# Performance improvement depends on the specific model In many cases, there may be no significant improvement Rarely, performance could slightly decrease Always benchmark both contiguous and channels last variants Limitations# 4D Input Support Only# Due to internal limitations of PyTorch, only models with 4D and 5D inputs can take advantage of the channels last dimension order, and only the 4D case is currently supported by the NXP backend. Models processing serial data (with 3D inputs (NCW)) would have to be manually extended to 4D with a spatial dimension of size 1 (NC1W). Partial Delegation Issues# Models that are not fully delegated to Neutron may experience runtime issues when using channels last dimension order, including: Runtime crashes Incorrect output data This affects models with partitions running in ExecuTorch edge dialect on the CPU. Recommendation: Manually verify model correctness by testing the final .pte file and validating outputs. Fully Delegated Models# Models that are fully delegated to Neutron should not experience runtime issues with channels last dimension order. Verifying Full Delegation# Use one of the following methods to confirm your model is fully delegated: Method 1: List Graph Nodes# After lowering your model, inspect the graph nodes: exec_prog = edge_program_manager.to_executorch() print(list(exec_prog.exported_program().graph.nodes)) Example output for a fully delegated model (containing no compute aten operators except (de)quantize): [x, alloc, quantized_decomposed_quantize_per_tensor_default, lowered_module_0, executorch_call_delegate, getitem, alloc_1, quantized_decomposed_dequantize_per_tensor_default_1, output_1] Method 2: Visualize with Model Explorer# Launch a browser-based visualization of your model: exec_prog = edge_program_manager.to_executorch() from executorch.devtools.visualization.visualization_utils import visualize_with_clusters visualize_with_clusters(exec_prog.exported_program()) Example visualization of a fully delegated model is shown in Figure 1 below (containing no compute aten operators except (de)quantize): Figure 1: Example of a fully delegated model. Contains no compute aten operators other than quantize and dequantize. The entire model is delegated to Neutron via the `executorch_call_delegate` node. Summary# Approach Input Format Internal Format Performance Use Case Option 1 Channels last Channels last Best When you can provide channels last inputs Option 2 Contiguous Channels last Variable When input format must be preserved Default Contiguous Contiguous Baseline For non-4D models, or when Option 2 is slower, crashes, or produces incorrect outputs Choose the approach that best fits your deployment requirements and always benchmark to verify performance improvements.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
