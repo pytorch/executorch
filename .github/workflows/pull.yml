@@ -953,8 +953,6 @@ jobs:
 
   test-samsung-quantmodels-linux:
     name: test-samsung-quantmodels-linux
-    # Temporarily disabled - api key invalid
-    # if: false
     # if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
@@ -996,9 +994,6 @@ jobs:
 
   test-samsung-models-linux:
     name: test-samsung-models-linux
-    # Temporarily disabled - edb (Exynos device bridge) failures and device reservation issues
-    # See: https://github.com/pytorch/executorch/issues/16678
-    # if: false
     # if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
