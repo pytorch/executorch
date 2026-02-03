@@ -194,7 +194,9 @@ class TestWeightsOnlyQuantization(unittest.TestCase):
                 )
 
     def test_scale_estimation_requires_calibration_params(self):
-        builder = self._create_builder("missing_calibration_data", calibration_data=None)
+        builder = self._create_builder(
+            "missing_calibration_data", calibration_data=None
+        )
         builder.export()
 
         quantizer = OpenVINOQuantizer(
