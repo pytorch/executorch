@@ -95,8 +95,8 @@ def apply_nncf_data_aware_compression(
     ):
         tokenizer = get_tokenizer(builder_exported.tokenizer_path)
         nncf_calibration_data = nncf.Dataset(
-            get_calibration_data(  # type: ignore[arg-type]
-                builder_exported.pre_autograd_graph_module,
+            get_calibration_data(
+                builder_exported.pre_autograd_graph_module,  # type: ignore[arg-type]
                 tokenizer,
                 builder_exported.calibration_data,
                 builder_exported.calibration_seq_length,
@@ -114,11 +114,12 @@ def apply_nncf_data_aware_compression(
         if builder_exported.tokenizer_path is None:
             missing_params.append("tokenizer_path")
         if missing_params:
-            msg += (
+            msg = (
                 " Missing required calibration parameter(s): "
                 + ", ".join(missing_params)
                 + ". Please provide calibration_data, calibration_seq_length, and tokenizer_path."
             )
+            raise ValueError(msg)
 
     builder_exported.pre_autograd_graph_module = (
         nncf.experimental.torch.fx.compress_pt2e(
