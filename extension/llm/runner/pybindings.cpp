@@ -13,7 +13,7 @@
 #include <torch/python.h>
 
 #include <executorch/extension/llm/runner/audio.h>
-#include <executorch/extension/llm/runner/chat_templates.h>
+#include <executorch/extension/llm/chat_template/chat_templates.h>
 #include <executorch/extension/llm/runner/chat_types.h>
 #include <executorch/extension/llm/runner/jinja_chat_formatter.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>

@@ -111,7 +111,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "runner_lib" + aten_suffix,
             exported_headers = [
-                "chat_templates.h",
+                "../chat_template/chat_templates.h",
                 "chat_types.h",
                 "jinja_chat_formatter.h",
                 "text_llm_runner.h",

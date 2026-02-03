@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/extension/llm/runner/chat_templates.h>
+#include <executorch/extension/llm/chat_template/chat_templates.h>
 #include <executorch/extension/llm/runner/chat_types.h>
 
 #include <filesystem>
