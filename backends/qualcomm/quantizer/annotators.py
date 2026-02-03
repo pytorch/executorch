@@ -780,7 +780,16 @@ def annotate_sign(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.slice.Tensor])
 def annotate_slice(node: Node, quantization_config: QuantizationConfig) -> None:
-    annotate_single_in_share_out(node, quantization_config)
+    annotate_in_out_obs_sharing_op(node, quantization_config)
+    if not _is_annotated([node]):
+        annotate_single_in_share_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.narrow.default])
+def annotate_narrow(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_in_out_obs_sharing_op(node, quantization_config)
+    if not _is_annotated([node]):
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.slice_scatter.default])
