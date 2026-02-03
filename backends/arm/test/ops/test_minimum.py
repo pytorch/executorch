@@ -44,6 +44,13 @@ class Minimum(torch.nn.Module):
         ),
     }
 
+    test_parameters_bf16 = {
+        "bf16_rand": lambda: (
+            torch.randn(1, 3, 4, 4, dtype=torch.bfloat16),
+            torch.randn(1, 3, 4, 4, dtype=torch.bfloat16),
+        ),
+    }
+
     def __init__(self):
         super().__init__()
 
@@ -53,14 +60,13 @@ class Minimum(torch.nn.Module):
 
 @common.parametrize(
     "test_data",
-    Minimum.test_parameters | Minimum.test_parameters_fp16,
+    Minimum.test_parameters
+    | Minimum.test_parameters_fp16
+    | Minimum.test_parameters_bf16,
 )
 def test_minimum_tosa_FP(test_data: Tuple):
     TosaPipelineFP[test_t](
-        Minimum(),
-        test_data(),
-        aten_op,
-        exir_op,
+        Minimum(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
     ).run()
 
 
