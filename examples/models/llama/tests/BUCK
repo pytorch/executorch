@@ -98,6 +98,7 @@ fbcode_target(_kind = python_unittest,
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/arm/quantizer:lib",
         "//executorch/examples/models/llama:export_library",
         "//executorch/examples/models/llama:llama_transformer",
         "//executorch/extension/pybindings:portable_lib",
