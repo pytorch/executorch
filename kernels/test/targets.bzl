@@ -1,13 +1,19 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/kernels/test:util.bzl", "codegen_function_header_wrapper", "op_test")
 
-def _common_op_test(name, kernels):
+def _common_op_test(name, kernels, extra_deps = []):
     """
     Defines test targets in format of <kernel>_op_<op-name>_test
     For ATen kernel testing, let's use portable functions.yaml for tested ops.
+
+    Args:
+        name: The test name (e.g., "op_add_test").
+        kernels: List of kernel names to test (e.g., ["aten", "portable"]).
+        extra_deps: Optional list of additional dependencies to add to all
+            kernel variants of this test.
     """
     for kernel in kernels:
-        deps = [":function_header_wrapper_{}".format(kernel)]
+        deps = [":function_header_wrapper_{}".format(kernel)] + extra_deps
         op_test(name, kernel_name = kernel, use_kernel_prefix = True, deps = deps)
 
 def define_common_targets():
@@ -178,7 +184,10 @@ def define_common_targets():
     _common_op_test("op_arange_test", ["aten", "portable"])
     _common_op_test("op_argmax_test", ["aten", "portable"])
     _common_op_test("op_argmin_test", ["aten", "portable"])
-    _common_op_test("op_as_strided_copy_test", ["aten", "portable"])
+    _common_op_test("op_as_strided_copy_test", ["aten", "portable"], extra_deps = [
+        "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        "//executorch/test/utils:utils",
+    ])
     _common_op_test("op_asin_test", ["aten", "portable"])
     _common_op_test("op_asinh_test", ["aten", "portable"])
     _common_op_test("op_atan_test", ["aten", "portable"])
