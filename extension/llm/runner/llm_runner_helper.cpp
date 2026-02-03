@@ -183,8 +183,8 @@ std::unordered_set<uint64_t> get_eos_ids(
     }
     for (const auto& eos_id : execute_result.get()) {
       auto value = eos_id.toScalar().to<int64_t>();
-      if (eos_ids.find(value) == eos_ids.end()) {
-        eos_ids.emplace(value);
+      auto [_, inserted] = eos_ids.emplace(value);
+      if (inserted) {
         ET_LOG(Info, "Added eos_id from model metadata: %" PRId64, value);
       }
     }
