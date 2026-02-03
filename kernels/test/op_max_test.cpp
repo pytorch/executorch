@@ -254,7 +254,7 @@ class OpMaxUnaryOutTest : public OperatorTest {
     TensorFactory<IN_DTYPE> tf_in;
     Tensor input = tf_in.make({2, 0}, {});
     Tensor out = tf_in.zeros({});
-    Tensor expected = tf_in.make({}, {-INFINITY});
+    Tensor expected = tf_in.make({}, {static_cast<CTYPE>(-INFINITY)});
     op_max_unary_out(input, out);
     EXPECT_TENSOR_CLOSE(out, expected);
   }

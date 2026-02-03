@@ -56,8 +56,7 @@ define_overridable_option(
   "Build executorch runtime optimizing for binary size" BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_USE_SANITIZER
-  "Build with AddressSanitizer and UndefinedBehaviorSanitizer enabled" BOOL OFF
+  EXECUTORCH_USE_SANITIZER "Sanitizer to use: OFF, asan, tsan" STRING "OFF"
 )
 define_overridable_option(
   EXECUTORCH_BUILD_ARM_BAREMETAL
