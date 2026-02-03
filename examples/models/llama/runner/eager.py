@@ -83,13 +83,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--chat_format",
-        type=str,
-        default="llama3",
-        help="Chat template format for chat mode (llama3, gemma3, none).",
-    )
-
-    parser.add_argument(
         "--system_prompt",
         type=str,
         default="",
@@ -100,7 +93,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--chat_template_file",
         type=str,
         default="",
-        help="Path to a custom Jinja2 chat template file (overrides --chat_format).",
+        help="Path to a custom Jinja2 chat template file for chat mode.",
     )
 
     parser.add_argument(
@@ -125,7 +118,6 @@ def execute_runner(runner_class: Type[LlamaRunner]) -> None:
     temperature = args.temperature
     show_tokens = args.show_tokens
     chat_mode = args.chat
-    chat_format = args.chat_format
     system_prompt = args.system_prompt
     chat_template_file = args.chat_template_file
     tokenizer_config_path = args.tokenizer_config_path
@@ -137,7 +129,6 @@ def execute_runner(runner_class: Type[LlamaRunner]) -> None:
             llm_config=llm_config,
             tokenizer_config_path=tokenizer_config_path,
             use_attention_sink=use_attention_sink,
-            chat_format=chat_format,
             system_prompt=system_prompt,
             chat_template_file=chat_template_file or None,
         )
