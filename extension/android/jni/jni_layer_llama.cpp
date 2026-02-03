@@ -280,12 +280,61 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 
   // Returns status_code
   // Contract is valid within an AAR (JNI + corresponding Java code)
+  jint prefill_text(
+      facebook::jni::alias_ref<jstring> prompt,
+      jint num_bos,
+      jint num_eos) {
+    executorch::extension::llm::GenerationConfig config{
+        .num_bos = num_bos,
+        .num_eos = num_eos,
+    };
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      std::vector<llm::MultimodalInput> inputs;
+      inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
+      return static_cast<jint>(multi_modal_runner_->prefill(std::move(inputs)));
+    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      return static_cast<jint>(
+          runner_->prefill(prompt->toStdString(), config));
+    }
+    return static_cast<jint>(Error::InvalidArgument);
+  }
+
+  // Deprecated: Use prefill_text instead. This method caches input to buffer
+  // and does not actually prefill until generate() is called.
   jint append_text_input(facebook::jni::alias_ref<jstring> prompt) {
     prefill_inputs_.emplace_back(llm::MultimodalInput{prompt->toStdString()});
     return 0;
   }
 
   // Returns status_code
+  jint prefill_image(
+      facebook::jni::alias_ref<jintArray> image,
+      jint width,
+      jint height,
+      jint channels) {
+    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    if (image == nullptr) {
+      return static_cast<jint>(Error::EndOfMethod);
+    }
+    auto image_size = image->size();
+    if (image_size == 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    std::vector<jint> image_data_jint(image_size);
+    std::vector<uint8_t> image_data(image_size);
+    image->getRegion(0, image_size, image_data_jint.data());
+    for (int i = 0; i < image_size; i++) {
+      image_data[i] = image_data_jint[i];
+    }
+    llm::Image image_runner{std::move(image_data), width, height, channels};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
+    return static_cast<jint>(multi_modal_runner_->prefill(std::move(inputs)));
+  }
+
+  // Deprecated: Use prefill_image instead.
   jint append_images_input(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
@@ -456,6 +505,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod("generate", ExecuTorchLlmJni::generate),
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
         makeNativeMethod("load", ExecuTorchLlmJni::load),
+        makeNativeMethod("prefillText", ExecuTorchLlmJni::prefill_text),
+        makeNativeMethod("prefillImage", ExecuTorchLlmJni::prefill_image),
         makeNativeMethod(
             "appendImagesInput", ExecuTorchLlmJni::append_images_input),
         makeNativeMethod(

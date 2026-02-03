@@ -393,14 +393,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillImages(int[] image, int width, int height, int channels) {
-    int nativeResult = appendImagesInput(image, width, height, channels);
+    int nativeResult = prefillImage(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendImagesInput(int[] image, int width, int height, int channels);
+  private native int prefillImage(int[] image, int width, int height, int channels);
 
   /**
    * Prefill a multimodal Module with the given images input.
