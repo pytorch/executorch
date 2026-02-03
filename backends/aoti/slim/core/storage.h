@@ -240,7 +240,11 @@ class MaybeOwningStorage {
         data_(data),
         capacity_(nbytes),
         deleter_(detail::noop),
-        is_owning_(false) {}
+        is_owning_(false) {
+    if (!device.is_cuda() && !device.is_cpu()) {
+      ET_CHECK_MSG(false, "Unsupported device type: %s", device.str().c_str());
+    }
+  }
 
   /// Default constructor is deleted - storage must have a device.
   MaybeOwningStorage() = delete;
