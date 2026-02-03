@@ -127,13 +127,13 @@ struct DeviceTraits<c10::DeviceType::CUDA> {
   /// @param ptr Pointer to device memory to free.
   static void free(void* ptr) {
     // Get the current stream for the current device
+    // Currently all cuda slimtensors should be on the same device same stream,
+    // so we can just use the stream on current device.
+    // TODO(gasoonjia): add cuda stream as a member of MaybeOwningStorage to
+    // support multiple devices.
     auto stream_result = executorch::backends::cuda::getCurrentCUDAStream(-1);
-    if (stream_result.ok()) {
-      ET_CUDA_LOG_WARN(cudaFreeAsync(ptr, stream_result.get()));
-    } else {
-      // Fallback to synchronous free if we can't get the stream
-      ET_CUDA_LOG_WARN(cudaFree(ptr));
-    }
+    ET_CHECK_MSG(stream_result.ok(), "Failed to get current CUDA stream");
+    ET_CUDA_LOG_WARN(cudaFreeAsync(ptr, stream_result.get()));
   }
 
   /// Copies memory between CPU and CUDA or CUDA and CUDA.
