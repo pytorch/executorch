@@ -349,7 +349,9 @@ int main(int argc, char** argv) {
          << "\nload: " + std::to_string(interval_load)
          << "\n1st: " + std::to_string(interval_1st_infs)
          << "\navg: " +
-            std::to_string((interval_infs + interval_1st_infs) / ((float)FLAGS_num_executions + 1.f))
+            std::to_string(
+                (interval_infs + interval_1st_infs) /
+                ((float)FLAGS_num_executions + 1.f))
          << std::endl;
     fout.close();
   }
