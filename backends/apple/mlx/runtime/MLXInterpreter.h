@@ -280,7 +280,9 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
 
   if (n.mask) {
     array M = st.const_tensor_ref(*n.mask);
-    if (M.dtype() != Q.dtype()) {
+    // MLX's SDPA handles bool masks natively (True=attend, False=masked)
+    // For non-bool masks, ensure dtype matches Q
+    if (M.dtype() != bool_ && M.dtype() != Q.dtype()) {
       M = astype(M, Q.dtype(), s);
     }
     mask_arr = std::move(M);
@@ -697,6 +699,11 @@ inline void exec_quantized_linear(
     const QuantizedLinearNode& n,
     ExecutionState& st,
     StreamOrDevice s) {
+  // scale_only means biases should be computed, not provided
+  assert(
+      !(n.scale_only && n.biases) &&
+      "scale_only=true but biases tensor also provided");
+
   array X = st.const_tensor_ref(n.x);
   array Wq = st.const_tensor_ref(n.w);
   array Sc = st.const_tensor_ref(n.scales);
@@ -704,6 +711,10 @@ inline void exec_quantized_linear(
   std::optional<array> Qb = std::nullopt;
   if (n.biases) {
     Qb = st.const_tensor_ref(*n.biases);
+  } else if (n.scale_only) {
+    // Compute biases from scales: B = -scales * 2^(bits-1)
+    float offset = static_cast<float>(1 << (n.bits - 1));
+    Qb = multiply(Sc, array(-offset, Sc.dtype()), s);
   }
 
   array Y = quantized_matmul(
