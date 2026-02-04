@@ -1,0 +1,31 @@
+name: Android Release on Tag
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
+
+jobs:
+  release-xnnpack:
+    uses: ./.github/workflows/android-release-artifacts.yml
+    secrets: inherit
+    with:
+      version: ${{ github.ref_name }}
+      flavor: xnnpack
+      upload_to_maven: true
+
+  release-vulkan:
+    uses: ./.github/workflows/android-release-artifacts.yml
+    secrets: inherit
+    with:
+      version: ${{ github.ref_name }}
+      flavor: vulkan
+      upload_to_maven: true
+
+  release-qnn:
+    uses: ./.github/workflows/android-release-artifacts.yml
+    secrets: inherit
+    with:
+      version: ${{ github.ref_name }}
+      flavor: qnn
+      upload_to_maven: true

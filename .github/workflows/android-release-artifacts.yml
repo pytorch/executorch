@@ -1,6 +1,20 @@
 name: Android Release Artifacts
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version name to be uploaded for AAR release
+        required: false
+        type: string
+      upload_to_maven:
+        description: Upload the AAR to maven staging repository
+        required: false
+        type: boolean
+      flavor:
+        description: Build flavor
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       version:
