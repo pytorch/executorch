@@ -27,6 +27,7 @@ class EthosUCompileSpec(ArmCompileSpec):
             Vela.
         config_ini (str | None): Path to a Vela .ini configuration file.
             Defaults to ``"Arm/vela.ini"``.
+
     """
 
     _TARGET_KEY = "target"
