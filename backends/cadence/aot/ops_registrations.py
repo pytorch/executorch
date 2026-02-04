@@ -667,6 +667,10 @@ lib.define(
     "quantized_w8a32_gru.out(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_i_scale, Tensor bias_hidden, float b_h_scale, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
+lib.define(
+    "slice_scatter_(Tensor(a!) self, Tensor src, int dim=0, SymInt? start=None, SymInt? end=None, SymInt step=1) -> Tensor(a!)"
+)
+
 
 # Custom ops with aten namespace. Need to specify the lib var as FRAGMENT type as aten library is already defined
 aten_lib = Library("aten", "FRAGMENT")
@@ -2855,6 +2859,18 @@ def quantized_w8a32_gru_meta(
     b_h_scale: float,
 ) -> torch.Tensor:
     return hidden.new_empty((2, hidden.shape[-1]), dtype=torch.float32)
+
+
+@register_fake("cadence::slice_scatter_")
+def slice_scatter_meta(
+    self: torch.Tensor,
+    src: torch.Tensor,
+    dim: int = 0,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+    step: int = 1,
+) -> torch.Tensor:
+    return self.new_empty(self.shape, dtype=self.dtype)
 
 
 # Validate that all meta kernels have reference implementations

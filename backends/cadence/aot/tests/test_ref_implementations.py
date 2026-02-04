@@ -3149,3 +3149,80 @@ class TestRefImplementations(unittest.TestCase):
             input_tensor.shape,
             "Output shape should match input shape",
         )
+
+    @expand(
+        [
+            # Basic 1D slice_scatter tests
+            ("1d_basic", (10,), (3,), 0, 2, 5, 1),
+            ("1d_with_step", (10,), (2,), 0, 0, 6, 3),
+            ("1d_end_slice", (10,), (3,), 0, 7, 10, 1),
+            # 2D slice_scatter tests
+            ("2d_dim0", (4, 5), (2, 5), 0, 1, 3, 1),
+            ("2d_dim1", (4, 5), (4, 2), 1, 2, 4, 1),
+            ("2d_dim1_with_step", (4, 6), (4, 2), 1, 0, 6, 3),
+            # 3D slice_scatter tests
+            ("3d_dim0", (3, 4, 5), (1, 4, 5), 0, 1, 2, 1),
+            ("3d_dim1", (3, 4, 5), (3, 2, 5), 1, 1, 3, 1),
+            ("3d_dim2", (3, 4, 5), (3, 4, 2), 2, 2, 4, 1),
+        ]
+    )
+    def test_slice_scatter_(
+        self,
+        name: str,
+        self_shape: typing.Tuple[int, ...],
+        src_shape: typing.Tuple[int, ...],
+        dim: int,
+        start: int,
+        end: int,
+        step: int,
+    ) -> None:
+        self_tensor = torch.randn(self_shape)
+        src_tensor = torch.randn(src_shape)
+        self_tensor_copy = self_tensor.clone()
+
+        # Call the in-place slice_scatter_ op
+        torch.ops.cadence.slice_scatter_(self_tensor, src_tensor, dim, start, end, step)
+
+        # Compute expected result using aten slice_scatter
+        expected = torch.ops.aten.slice_scatter.default(
+            self_tensor_copy, src_tensor, dim, start, end, step
+        )
+
+        self.assertEqual(
+            self_tensor.shape,
+            expected.shape,
+            f"Shape mismatch in {name}",
+        )
+        self.assertTrue(
+            torch.allclose(self_tensor, expected, rtol=1e-5, atol=1e-5),
+            f"Values don't match in {name}: got {self_tensor}, expected {expected}",
+        )
+
+    def test_slice_scatter_inplace_mutation(self) -> None:
+        self_tensor = torch.zeros(10)
+        src_tensor = torch.ones(3)
+
+        ref = self_tensor
+
+        torch.ops.cadence.slice_scatter_(self_tensor, src_tensor, 0, 2, 5, 1)
+
+        self.assertTrue(ref is self_tensor)
+
+        expected = torch.tensor([0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        self.assertTrue(
+            torch.equal(self_tensor, expected),
+            f"Values don't match: got {self_tensor}, expected {expected}",
+        )
+
+    def test_slice_scatter_with_none_start_end(self) -> None:
+        self_tensor = torch.zeros(10)
+        src_tensor = torch.ones(10)
+
+        # When start=None and end=None, the entire slice should be replaced
+        torch.ops.cadence.slice_scatter_(self_tensor, src_tensor, 0, None, None, 1)
+
+        expected = torch.ones(10)
+        self.assertTrue(
+            torch.equal(self_tensor, expected),
+            f"Values don't match: got {self_tensor}, expected {expected}",
+        )
