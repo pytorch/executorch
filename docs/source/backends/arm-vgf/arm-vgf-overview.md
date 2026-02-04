@@ -38,11 +38,13 @@ The full user-facing API is documented below.
 ```python
 class VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specification.TosaSpecification | str | None = None, compiler_flags: list[str] | None = None)
 ```
-Compile spec for VGF compatible targets.
+Normalise inputs and populate the underlying Arm compile spec.
 
 Args:
-- **tosa_spec**: TOSA specification that should be targeted.
-- **compiler_flags**: Extra compiler flags for converter_backend.
+- **tosa_spec (TosaSpecification | str | None)**: TOSA specification to
+        target. Strings are parsed via ``TosaSpecification.create_from_string``.
+        Defaults to ``"TOSA-1.0+FP+INT"``.
+- **compiler_flags (list[str] | None)**: Optional converter-backend flags.
 
 ```python
 def VgfCompileSpec.dump_debug_info(self, debug_mode: executorch.backends.arm.common.arm_compile_spec.ArmCompileSpec.DebugMode | None):
@@ -71,13 +73,41 @@ Returns:
 ```python
 def VgfCompileSpec.get_output_format() -> str:
 ```
-Returns a constant string that is the output format of the class.
+Return the artifact format emitted by this compile spec.
+
+```python
+def VgfCompileSpec.get_output_order_workaround(self) -> bool:
+```
+Gets whether the output order workaround is being applied.
+
+```python
+def VgfCompileSpec.get_pass_pipeline_config(self) -> executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig:
+```
+Returns configuration that controls how the Arm pass pipeline should behave.
+Subclasses may override to tweak defaults for specific targets.
+
+```python
+def VgfCompileSpec.set_output_order_workaround(self, output_order_workaround: bool):
+```
+Sets whether to apply the output order workaround.
+
+Args:
+- **output_order_workaround**: Boolean indicating whether to apply the workaround.
+
+```python
+def VgfCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
+```
+Sets the configuration that controls how the Arm pass pipeline should behave.
+Subclasses may override to tweak defaults for specific targets.
+
+Args:
+- **config**: The custom ArmPassPipelineConfig to set.
 
 
 
 ### Partitioner API
 
-See [Partitioner API](arm-vgf-partitioner.md) for more information of the Partitioner API.
+See [Partitioner API](arm-vgf-partitioner.md) for more information of the Partitioner API. <!-- @lint-ignore -->
 
 ## Quantization
 
@@ -86,11 +116,11 @@ and [Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutoria
 
 Partial quantization is supported, allowing users to quantize only specific parts of the model while leaving others in floating-point.
 
-For more information on quantization, see [Quantization](arm-vgf-quantization.md).
+For more information on quantization, see [Quantization](arm-vgf-quantization.md). <!-- @lint-ignore -->
 
 ## Runtime Integration
 
-The VGF backend can use the default ExecuTorch runner. The steps required for building and running it are explained in the [VGF Backend Tutorial](tutorials/vgf-getting-started.md).
+The VGF backend can use the default ExecuTorch runner. The steps required for building and running it are explained in the [VGF Backend Tutorial](tutorials/vgf-getting-started.md). <!-- @lint-ignore -->
 The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
 
 ## Reference

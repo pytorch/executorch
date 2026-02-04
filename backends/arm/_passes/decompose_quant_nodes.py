@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -62,6 +62,11 @@ class DecomposeQuantNodesPass(ArmPass):
             args = node.args
             input_rank = args[0].meta["val"].ndim
             x, scale, zero_point, qmin, qmax, dtype = args
+            input_dtype = x.meta["val"].dtype
+            output_dtype = node.meta["val"].dtype
+            fp_dtype = (
+                output_dtype if node.target == DEQUANT_PER_TENSOR_OP else input_dtype
+            )
             # Instead of dividing by scale in quantization, we multiply by 1/scale
             # when quantizing.
             scale = cast(float, scale)
@@ -71,7 +76,7 @@ class DecomposeQuantNodesPass(ArmPass):
                     graph_module.graph,
                     exir_ops.edge.aten.full.default,
                     args=((1,) * input_rank, scale),
-                    kwargs={"dtype": torch.float32},
+                    kwargs={"dtype": fp_dtype},
                 )
                 zp_const = create_node(
                     graph_module.graph,
@@ -79,7 +84,7 @@ class DecomposeQuantNodesPass(ArmPass):
                     args=((1,) * input_rank, zero_point),
                     kwargs={
                         "dtype": (
-                            torch.float32
+                            fp_dtype
                             if node.target == QUANT_PER_TENSOR_OP
                             else torch.int32
                         )
@@ -137,7 +142,7 @@ class DecomposeQuantNodesPass(ArmPass):
                         graph_module.graph,
                         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
                         args=(shifted,),
-                        kwargs={"dtype": torch.float32},
+                        kwargs={"dtype": fp_dtype},
                         from_node=node,
                     )
                     dequantized = create_node(
