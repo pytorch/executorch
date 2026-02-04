@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -221,6 +221,13 @@ class ArmCompileSpec(ABC):
         return self._pipeline_config
 
     def set_pass_pipeline_config(self, config: ArmPassPipelineConfig) -> None:
+        """
+        Sets the configuration that controls how the Arm pass pipeline should behave.
+        Subclasses may override to tweak defaults for specific targets.
+
+        Args:
+            config: The custom ArmPassPipelineConfig to set.
+        """
         self._pipeline_config = config
 
     def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
@@ -259,10 +266,19 @@ class ArmCompileSpec(ABC):
         return self
 
     def set_output_order_workaround(self, output_order_workaround: bool):
+        """
+        Sets whether to apply the output order workaround.
+
+        Args:
+            output_order_workaround: Boolean indicating whether to apply the workaround.
+        """
         self.output_order_workaround = output_order_workaround
         return self
 
     def get_output_order_workaround(self) -> bool:
+        """
+        Gets whether the output order workaround is being applied.
+        """
         return self.output_order_workaround
 
     @classmethod

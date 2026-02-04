@@ -12,7 +12,6 @@ from collections.abc import Sequence
 import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
-    AnnotateDecomposedMatmulPass,
     AnnotateOutputDimOrderPass,
     BroadcastArgsPass,
     CanonicalizeGatherPass,
@@ -38,6 +37,7 @@ from executorch.backends.arm._passes import (
     DecomposeAnyPass,
     DecomposeAsinAndAcosPass,
     DecomposeAsinhPass,
+    DecomposeAsStridedCopyPass,
     DecomposeAtanhPass,
     DecomposeAtanPass,
     DecomposeAvgPool2dPass,
@@ -56,6 +56,7 @@ from executorch.backends.arm._passes import (
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
+    DecomposeIndexSelectToGatherPass,
     DecomposeIntPowPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -64,6 +65,7 @@ from executorch.backends.arm._passes import (
     DecomposeLog1pPass,
     DecomposeLogitPass,
     DecomposeMaskedFillPass,
+    DecomposeMatmulPass,
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
@@ -82,6 +84,7 @@ from executorch.backends.arm._passes import (
     DecomposeSumPass,
     DecomposeTanPass,
     DecomposeTOSAUnsupportedClampPass,
+    DecomposeUnfoldToGatherPass,
     DecomposeVarPass,
     DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
@@ -236,7 +239,6 @@ class ArmPassManager(PassManager):
                 DecomposeLayerNormPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
-                AnnotateDecomposedMatmulPass(),
                 ConvertELUParamsPass(),
                 NormalizeWhileInitialArgsPass(use_exir_clone=True),
             ]
@@ -287,6 +289,9 @@ class ArmPassManager(PassManager):
                 DecomposeGeluPass(),
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupedConvPass(),
+                DecomposeUnfoldToGatherPass(),
+                DecomposeEmbeddingPass(),
+                DecomposeIndexSelectToGatherPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
@@ -312,7 +317,6 @@ class ArmPassManager(PassManager):
                 RewriteIndexPutPass(),
                 DecomposeRemainderPass(),
                 DecomposeDivTensorModePass(),
-                DecomposeEmbeddingPass(),
                 FuseBatchNorm2dPass(exported_program),
                 ConvertMmToBmmPass(),
                 DecomposeGluPass(),
@@ -329,6 +333,7 @@ class ArmPassManager(PassManager):
                 ConvertExpandCopyToRepeatPass(),
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
+                DecomposeAsStridedCopyPass(),
                 DecomposeMaxPool2dPass(),
                 SizeAdjustInputPass(),
                 DecomposeSelectPass(),
@@ -373,10 +378,7 @@ class ArmPassManager(PassManager):
 
         if not tosa_spec_in_set(
             self.tosa_spec,
-            {
-                TosaSpecification.create_from_string("TOSA-1.0+FP"),
-                TosaSpecification.create_from_string("TOSA-1.0+INT"),
-            },
+            set(TosaSpecification.all_versions_and_profiles()),
         ):
             raise RuntimeError(
                 f"No pass pipeline found for TOSA specification: {self.tosa_spec}"
@@ -438,6 +440,7 @@ class ArmPassManager(PassManager):
                 DecomposeSoftmaxPass(tfa_pass=True),
                 ConvertMinMaxPass(tfa_pass=True),
                 AccumulateIndexPutPass(tfa_pass=True),
+                DecomposeMatmulPass(tfa_pass=True),
             ]
         )
 

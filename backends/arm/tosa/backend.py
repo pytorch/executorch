@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -55,6 +55,7 @@ def _annotate_external_ids(ep_graph: Graph) -> Dict[str, int]:
 
     Returns:
         dict[str, int]: Mapping from *leaf output node name* to external output index.
+
     """
     node2external_id = {}
 
@@ -116,8 +117,8 @@ def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
 
 
 def _get_matching_fake_tensor(node: Node):
-    """Return a fake tensor with the same properties as node,
-    but with .dim_order() == node.meta["tosa_dim_order"]
+    """Return a fake tensor with the same properties as node, but with
+    .dim_order() == node.meta["tosa_dim_order"]
     """
     fake_tensor = node.meta["val"]
     desired_dim_order = node.meta["tosa_dim_order"]
@@ -221,7 +222,7 @@ class TOSABackend(BackendDetails):
             targetMajor=version.major,
             targetMinor=version.minor,
             targetPatch=version.micro,
-            targetDraft=False,
+            targetDraft=True if version.minor > 0 else False,
         )
 
         if not (
@@ -267,7 +268,8 @@ class TOSABackend(BackendDetails):
 
     @staticmethod
     def _regularize_submodule(submodule: GraphModule, submodule_node: Node):
-        """To make a submodule fit into the normal flow of a graph_module, we need to do some regularizations.
+        """To make a submodule fit into the normal flow of a graph_module, we
+        need to do some regularizations.
 
         - Buffers created before passes are treated as input to the submodule. Buffers created during passes
             are treated as "normal" buffers, i.e. gathered from the state_dict.
@@ -275,6 +277,7 @@ class TOSABackend(BackendDetails):
         - Make sure output node args[0] is always iterable.
         - Match the dim_order() of the input tensors with the dim orders of the submodule_node inputs.
         - Match the dim_order() of the out tensors with the dim orders of the submodule_node outputs.
+
         """
         submodule_inputs: list[Node] = []
         for node in submodule.graph.nodes:

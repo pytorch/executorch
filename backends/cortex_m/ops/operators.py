@@ -265,12 +265,16 @@ lib.define("minimum.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(
 
 @register_fake("cortex_m::minimum")
 def minimum_meta(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
-    assert self.dtype == other.dtype, (
-        "Cortex-M minimum: dtype mismatch — "
-        f"got self.dtype={self.dtype}, other.dtype={other.dtype}"
-    )
-    broadcasted_shape = torch.broadcast_shapes(self.shape, other.shape)
-    return torch.empty(broadcasted_shape, dtype=self.dtype, device=self.device)
+    # other is a scalar, so use initial shape.
+    if other.numel() == 1:
+        return torch.empty_like(self)
+    else:
+        # otherwise broadcast the shape.
+        return torch.empty(
+            torch.broadcast_shapes(self.shape, other.shape),
+            dtype=self.dtype,
+            device=self.device,
+        )
 
 
 @impl(lib, "minimum", "CompositeExplicitAutograd")
@@ -288,8 +292,16 @@ def maximum_meta(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
         "Cortex-M maximum: dtype mismatch — "
         f"got self.dtype={self.dtype}, other.dtype={other.dtype}"
     )
-    broadcasted_shape = torch.broadcast_shapes(self.shape, other.shape)
-    return torch.empty(broadcasted_shape, dtype=self.dtype, device=self.device)
+    # other is a scalar, so use initial shape.
+    if other.numel() == 1:
+        return torch.empty_like(self)
+    else:
+        # otherwise broadcast the shape.
+        return torch.empty(
+            torch.broadcast_shapes(self.shape, other.shape),
+            dtype=self.dtype,
+            device=self.device,
+        )
 
 
 @impl(lib, "maximum", "CompositeExplicitAutograd")
@@ -673,7 +685,9 @@ def quantized_conv2d_impl(
     result += output_offset
     result = torch.clamp(result, activation_min, activation_max)
 
-    return result.to(torch.int8)
+    # TODO - this enforces all convolution layers to result in channels last.
+    # This issue does comes min/mul layers from decomposition of hard swish
+    return result.to(torch.int8, memory_format=torch.channels_last)
 
 
 # ===================================================================
@@ -816,7 +830,207 @@ def quantized_depthwise_conv2d_impl(
     result += output_offset
     result = torch.clamp(result, activation_min, activation_max)
 
-    return result.to(torch.int8)
+    return result.to(torch.int8, memory_format=torch.channels_last)
+
+
+# ===================================================================
+# QUANTIZED TRANSPOSE_CONV2D OPERATION DEFINITION
+# ===================================================================
+
+lib.define(
+    "quantized_transpose_conv2d("
+    "Tensor input, "
+    "Tensor weight, "
+    "Tensor? bias, "
+    "int[] stride, "
+    "int[] padding, "
+    "int[] output_padding, "
+    "int[] dilation, "
+    "int input_offset, "
+    "int output_offset, "
+    "Tensor requantize_multipliers, "
+    "Tensor requantize_shifts, "
+    "int activation_min, "
+    "int activation_max"
+    ") -> Tensor"
+)
+
+lib.define(
+    "quantized_transpose_conv2d.out("
+    "Tensor input, "
+    "Tensor weight, "
+    "Tensor? bias, "
+    "int[] stride, "
+    "int[] padding, "
+    "int[] output_padding, "
+    "int[] dilation, "
+    "int input_offset, "
+    "int output_offset, "
+    "Tensor requantize_multipliers, "
+    "Tensor requantize_shifts, "
+    "int activation_min, "
+    "int activation_max, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+def _compute_conv_transpose2d_output_shape(
+    input_shape: torch.Size,
+    weight_shape: torch.Size,
+    stride: list[int],
+    padding: list[int],
+    output_padding: list[int],
+    dilation: list[int],
+) -> torch.Size:
+    """
+    Compute output shape for transposed 2D convolution.
+
+    Formula for each dimension:
+    out_size = (in_size - 1) * stride - 2 * padding + dilation * (kernel_size - 1) + output_padding + 1
+    """
+    batch = input_shape[0]
+    in_height = input_shape[2]
+    in_width = input_shape[3]
+
+    # Weight is in OHWI format after permutation
+    out_channels = weight_shape[0]
+    kernel_height = weight_shape[1]
+    kernel_width = weight_shape[2]
+
+    stride_h, stride_w = stride
+    pad_h, pad_w = padding
+    out_pad_h, out_pad_w = output_padding
+    dilation_h, dilation_w = dilation
+
+    out_height = (
+        (in_height - 1) * stride_h
+        - 2 * pad_h
+        + dilation_h * (kernel_height - 1)
+        + out_pad_h
+        + 1
+    )
+    out_width = (
+        (in_width - 1) * stride_w
+        - 2 * pad_w
+        + dilation_w * (kernel_width - 1)
+        + out_pad_w
+        + 1
+    )
+
+    return torch.Size([batch, out_channels, out_height, out_width])
+
+
+@register_fake("cortex_m::quantized_transpose_conv2d")
+def quantized_transpose_conv2d_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    output_padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    stride_vals = list(stride)
+    padding_vals = list(padding)
+    output_padding_vals = list(output_padding)
+    dilation_vals = list(dilation)
+
+    output_shape = _compute_conv_transpose2d_output_shape(
+        input.shape,
+        weight.shape,
+        stride_vals,
+        padding_vals,
+        output_padding_vals,
+        dilation_vals,
+    )
+
+    return torch.empty(
+        output_shape,
+        dtype=torch.int8,
+        device=input.device,
+        memory_format=torch.channels_last,
+    )
+
+
+@impl(lib, "quantized_transpose_conv2d", "CompositeExplicitAutograd")
+def quantized_transpose_conv2d_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    output_padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    """
+    Reference implementation of quantized transposed convolution.
+    Simulates CMSIS-NN behavior for testing.
+    """
+    if input.dim() != 4 or weight.dim() != 4:
+        raise RuntimeError(
+            "quantized_conv_transpose2d expects 4D input and weight tensors"
+        )
+
+    # Convert to int32 for accumulation and apply offsets
+    input_int32 = input.to(torch.int32) + int(input_offset)
+    weight_int32 = weight.to(torch.int32)
+
+    if bias is None:
+        bias_int32 = torch.zeros(
+            weight.shape[0], dtype=torch.int32, device=input.device
+        )
+    else:
+        bias_int32 = bias.to(torch.int32)
+
+    input_channels = input.shape[1]
+    kernel_input_channels = weight.shape[3]
+    groups = input_channels // kernel_input_channels
+
+    # Convert weights from OHWI to IOHW layout for torch.nn.functional.conv_transpose2d
+    # Weight is in OHWI (out_channels, H, W, in_channels)
+    # F.conv_transpose2d expects IOHW (in_channels, out_channels, H, W)
+    weight_iohw = weight_int32.permute(3, 0, 1, 2).contiguous()
+
+    # PyTorch doesn't support int32 for conv_transpose2d, so convert to float
+    # Perform transposed convolution with float tensors
+    conv_transpose_acc = F.conv_transpose2d(
+        input_int32.to(torch.float32),
+        weight_iohw.to(torch.float32),
+        bias_int32.to(torch.float32),
+        stride=tuple(stride),
+        padding=tuple(padding),
+        output_padding=tuple(output_padding),
+        dilation=tuple(dilation),
+        groups=groups,
+    ).to(torch.int32)
+
+    # Apply per-channel requantization
+    result_channels = []
+    for output_channel_i in range(conv_transpose_acc.shape[1]):
+        result_channel = requantize_cmsis(
+            conv_transpose_acc[:, output_channel_i, :, :],
+            int(requantize_multipliers[output_channel_i]),
+            int(requantize_shifts[output_channel_i]),
+        )
+        result_channels.append(result_channel)
+
+    result = torch.stack(result_channels, dim=1)
+    result += output_offset
+    result = result.clamp(activation_min, activation_max)
+
+    return result.to(torch.int8).to(memory_format=torch.channels_last)
 
 
 # ===================================================================

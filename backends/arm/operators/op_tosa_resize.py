@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -26,8 +26,6 @@ from executorch.backends.arm.tosa.utils import get_resize_parameters
 class ResizeVisitor(NodeVisitor):
     target = "tosa.RESIZE.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -39,16 +37,18 @@ class ResizeVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, [3, 4])
-        supported_input_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        supported_input_dtypes = [ts.DType.INT8, ts.DType.FP32, ts.DType.BF16]
         if self.tosa_spec.support_extension("int16"):
             supported_input_dtypes.append(ts.DType.INT16)
+        if self.tosa_spec.support_extension("bf16"):
+            supported_input_dtypes.append(ts.DType.BF16)
         validate_valid_dtype(
             self.target,
             [inputs[0]],
             supported_input_dtypes,
-            output.tosa_spec,
+            self.tosa_spec,
         )
-        supported_output_dtypes = [ts.DType.FP32]
+        supported_output_dtypes = [ts.DType.FP32, ts.DType.BF16]
         if node.kwargs.get("resize_mode") == "bilinear":
             resize_mode = ts.ResizeMode.BILINEAR
             align_corners = bool(node.args[2])
@@ -63,7 +63,7 @@ class ResizeVisitor(NodeVisitor):
             if self.tosa_spec.support_extension("int16"):
                 supported_output_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
-            self.target, [output], supported_output_dtypes, output.tosa_spec
+            self.target, [output], supported_output_dtypes, self.tosa_spec
         )
         # tosa_shape output is NHWC, take HW
         input_size_yx = tuple([inputs[0].shape[dim] for dim in inputs[0].dim_order])[

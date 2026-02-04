@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -20,7 +20,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
 )
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta, TosaArg
-from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
 
 
@@ -46,7 +45,7 @@ class CommonIndexTensorVisitor(NodeVisitor):
 
         """
         if isinstance(tensor, Node):
-            dtype, shape, _ = extract_tensor_meta(tensor.meta, self.tosa_spec)
+            dtype, shape, _ = extract_tensor_meta(tensor.meta)
             return tensor.name, dtype, shape
         else:
             return tensor.name, tensor.dtype, tensor.shape
@@ -94,11 +93,6 @@ class CommonIndexTensorVisitor(NodeVisitor):
 
 @register_node_visitor
 class IndexTensorVisitor(CommonIndexTensorVisitor):
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -133,9 +127,7 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
         index_nodes = indices.special
 
         # Broadcast indices
-        broadcasted_tensors = tutils.broadcast_tensors(
-            tosa_graph, index_nodes, self.tosa_spec
-        )
+        broadcasted_tensors = tutils.broadcast_tensors(tosa_graph, index_nodes)
 
         # Calculate strides so we can shift indices down the line.
         values_strides = self._calculate_value_strides(values.shape)

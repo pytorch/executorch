@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -23,7 +23,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import TosaArg
 
 
@@ -32,11 +31,6 @@ class MatmulVisitor(NodeVisitor):
     """Provide a visitor that serializes TOSA ``MATMUL``."""
 
     target = "tosa.MATMUL.default"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -52,13 +46,15 @@ class MatmulVisitor(NodeVisitor):
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs], ts)
         supported_input_dtypes = [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32]
+        if self.tosa_spec.support_extension("bf16"):
+            supported_input_dtypes.append(ts.DType.BF16)
         if self.tosa_spec.support_extension("int16"):
             supported_input_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
             self.target,
             [*inputs],
             supported_input_dtypes,
-            output.tosa_spec,
+            self.tosa_spec,
         )
         supported_output_dtypes = [ts.DType.INT32, ts.DType.FP32]
         if self.tosa_spec.support_extension("int16"):
@@ -67,7 +63,7 @@ class MatmulVisitor(NodeVisitor):
             self.target,
             [output],
             supported_output_dtypes,
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         # We need to get the zero points and add an intermediate tensor for INT16 case

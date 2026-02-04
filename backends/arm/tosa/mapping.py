@@ -11,7 +11,7 @@ TOSA serializer types and shapes used during initial compilation.
 
 import operator
 from enum import Enum
-from typing import Any, Optional, Sequence
+from typing import Any, Sequence
 
 import torch
 import tosa_serializer as ts
@@ -76,12 +76,11 @@ class TosaSpecialDtype(Enum):
                 raise ValueError(f"Unrecognized TosaSpecialDtype {self}.")
 
 
-def map_dtype(data_type: torch.dtype, tosa_spec: TosaSpecification) -> Any:
+def map_dtype(data_type: torch.dtype) -> Any:
     """Map a ``torch.dtype`` to a ``ts.DType``.
 
     Args:
         data_type (torch.dtype): PyTorch dtype to convert.
-        tosa_spec (TosaSpecification): Active spec (reserved for future checks).
 
     Returns:
         ts.DType: Matching serializer dtype.
@@ -114,12 +113,11 @@ def map_dtype(data_type: torch.dtype, tosa_spec: TosaSpecification) -> Any:
 # Returns the shape and type of a node
 # TODO: other types, can be
 # SymInt, FakeTensor, a List[Union[FakeTensor, SymInt]], or None
-def extract_tensor_meta(meta, tosa_spec: TosaSpecification):
+def extract_tensor_meta(meta):
     """Extract dtype, shape, and dimension order from FX metadata.
 
     Args:
         meta (dict): FX node ``meta`` containing a ``val`` FakeTensor (or tuple).
-        tosa_spec (TosaSpecification): Active TOSA spec for dtype mapping.
 
     Returns:
         tuple[ts.DType, tuple[int, ...], tuple[int, ...]]: Tuple containing
@@ -140,7 +138,7 @@ def extract_tensor_meta(meta, tosa_spec: TosaSpecification):
         raise ValueError(
             f"Expected first value in node.meta['val'] to be FakeTensor, got {val.__class__}"
         )
-    dtype = map_dtype(val.dtype, tosa_spec)
+    dtype = map_dtype(val.dtype)
     shape = tuple(val.size())
 
     if meta.get("tosa_dim_order") is not None:
@@ -165,8 +163,8 @@ class TosaArg:
             ``range(len(shape))``.
         special (list | None): Captured list when the argument is a sequence.
         number (float | int | None): Captured numeric value when provided.
-        tosa_spec (TosaSpecification): Active specification used for mapping.
         multiple_output_name (list[str]): Output node names when node has multiple outputs; empty otherwise.
+
     """
 
     def __process_node(self, argument: torch.fx.Node):
@@ -181,9 +179,8 @@ class TosaArg:
 
         if "val" in argument.meta:
             output_dtype, self.shape, self.dim_order = extract_tensor_meta(
-                argument.meta, self.tosa_spec
-            )
-            # Handle special case of types not representable in torch (i.e. i48_t)
+                argument.meta
+            )  # Handle special case of types not representable in torch (i.e. i48_t)
             if special_type := argument.meta.get(TosaSpecialDtype.meta_key(), None):
                 output_dtype = special_type.get_tosa_dtype()
 
@@ -198,11 +195,6 @@ class TosaArg:
             self.name = self.multiple_output_names[0]
         else:
             self.multiple_output_names = []
-
-        if not self.__validate():
-            raise ValueError(
-                f"{self.tosa_spec} doesn't support tensor {self.__repr__()}"
-            )
 
     def __process_list(self, argument):
         """Capture a sequence argument as ``special``.
@@ -222,20 +214,21 @@ class TosaArg:
         """
         self.number: float | int = argument
 
-    def __validate(self) -> bool:
+    def __validate(self, tosa_spec: TosaSpecification) -> bool:
         match getattr(self, "dtype", None):
             case ts.DType.FP32:
-                if not self.tosa_spec.support_float():
+                if not tosa_spec.support_float():
                     return False
             case ts.DType.INT4:
-                if not self.tosa_spec.support_extension("int4"):
+                if not tosa_spec.support_extension("int4"):
+                    return False
+            case ts.DType.BF16:
+                if not tosa_spec.support_extension("bf16"):
                     return False
 
         return True
 
-    def __init__(
-        self, argument: Any, tosa_spec: Optional[TosaSpecification] = None
-    ) -> None:
+    def __init__(self, argument: Any, tosa_spec: TosaSpecification) -> None:
         """Initialize the argument wrapper and populate fields.
 
         Args:
@@ -245,20 +238,17 @@ class TosaArg:
                 required for metadata extraction.
 
         Raises:
-            ValueError: If ``tosa_spec`` is missing or has the wrong type.
             RuntimeError: If ``argument`` is of an unsupported type.
 
         """
-        if tosa_spec is None:
-            raise ValueError("tosa_spec is None")
-        elif not isinstance(tosa_spec, TosaSpecification):
-            raise ValueError(
-                f"Expected tosa_spec to be a TosaSpecification, but got {tosa_spec}"
-            )
-        self.tosa_spec = tosa_spec
 
         if isinstance(argument, torch.fx.Node):
             self.__process_node(argument)
+            if not self.__validate(tosa_spec):
+                raise ValueError(
+                    f"{tosa_spec} doesn't support tensor {self.__repr__()}"
+                )
+
             return
         if isinstance(argument, Sequence):
             self.__process_list(argument)
@@ -302,8 +292,7 @@ class TosaArg:
             attrs.append(f"special={self.special!r}")
         if hasattr(self, "number") and self.number is not None:
             attrs.append(f"number={self.number!r}")
-        if hasattr(self, "tosa_spec") and self.tosa_spec is not None:
-            attrs.append(f"tosa_spec={self.tosa_spec!r}")
         if hasattr(self, "multiple_output_names"):
-            attrs.append(f"names={self.multiple_output_names!r}")
+            if len(self.multiple_output_names) > 0:
+                attrs.append(f"names={self.multiple_output_names!r}")
         return f"{self.__class__.__name__}({', '.join(attrs)})"

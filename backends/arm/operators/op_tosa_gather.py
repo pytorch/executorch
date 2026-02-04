@@ -32,7 +32,6 @@ class GatherVisitor(NodeVisitor):
     """
 
     target = "tosa.GATHER.default"
-    tosa_specs = NodeVisitor.tosa_specs
 
     def define_node(
         self,
@@ -52,7 +51,7 @@ class GatherVisitor(NodeVisitor):
             self.target,
             [indices],
             [ts.DType.INT32],
-            output.tosa_spec,
+            self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
@@ -63,8 +62,9 @@ class GatherVisitor(NodeVisitor):
                 ts.DType.INT32,
                 ts.DType.FP16,
                 ts.DType.FP32,
+                ts.DType.BF16,
             ],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()

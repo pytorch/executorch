@@ -386,6 +386,55 @@ test_data_FP = {
     "groups_bias": lambda: conv2d_groups_bias,
 }
 
+test_data_FP_bf16 = {
+    "bf16_3x3": lambda: Conv2d(
+        height=12,
+        width=12,
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3),
+        stride=(1, 1),
+        padding=(1, 1),
+        bias=True,
+        dtype=torch.bfloat16,
+    ),
+    "bf16_1x1": lambda: Conv2d(
+        height=8,
+        width=8,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=(1, 1),
+        stride=(2, 1),
+        padding=(0, 3),
+        bias=False,
+        dtype=torch.bfloat16,
+    ),
+}
+test_data_FP_fp16 = {
+    "fp16_3x3": lambda: Conv2d(
+        height=12,
+        width=12,
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3),
+        stride=(1, 1),
+        padding=(1, 1),
+        bias=True,
+        dtype=torch.float16,
+    ),
+    "fp16_1x1": lambda: Conv2d(
+        height=8,
+        width=8,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=(1, 1),
+        stride=(2, 1),
+        padding=(0, 3),
+        bias=False,
+        dtype=torch.float16,
+    ),
+}
+
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -406,7 +455,7 @@ def _get_dtype_count(model: torch.nn.Module):
     }
 
 
-@common.parametrize("test_data", test_data_FP)
+@common.parametrize("test_data", test_data_FP | test_data_FP_bf16 | test_data_FP_fp16)
 def test_convolution_2d_tosa_FP(test_data):
     model = test_data()
     pipeline = TosaPipelineFP[input_t](
@@ -414,6 +463,7 @@ def test_convolution_2d_tosa_FP(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -513,7 +563,7 @@ def test_convolution_2d_u85_INT_a8w4(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_FP)
+@common.parametrize("test_data", test_data_FP | test_data_FP_fp16)
 @common.SkipIfNoModelConverter
 def test_convolution_2d_vgf_no_quant(test_data):
     model = test_data()
@@ -588,7 +638,7 @@ def test_convolution_2d_u55_INT_not_delegated(module: Conv2d):
 
 
 @common.parametrize("test_data", test_data_INT)
-def test_conv2d_tosa_INT_a16w8(test_data: input_t):
+def test_convolution_2d_tosa_INT_a16w8(test_data: input_t):
     """Test conv2d with 16A8W quantization for TOSA INT."""
     model, per_channel_quantization = test_data()
     pipeline = TosaPipelineINT[input_t](
@@ -604,7 +654,7 @@ def test_conv2d_tosa_INT_a16w8(test_data: input_t):
 
 @common.parametrize("test_data", test_data_INT)
 @common.XfailIfNoCorstone300
-def test_conv2d_u55_INT_a16w8(test_data: input_t):
+def test_convolution_2d_u55_INT_a16w8(test_data: input_t):
     """Test conv2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineINT[input_t](
@@ -621,7 +671,7 @@ def test_conv2d_u55_INT_a16w8(test_data: input_t):
 
 @common.parametrize("test_data", test_data_INT)
 @common.XfailIfNoCorstone320
-def test_conv2d_u85_INT_a16w8(test_data: input_t):
+def test_convolution_2d_u85_INT_a16w8(test_data: input_t):
     """Test conv2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineINT[input_t](

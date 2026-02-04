@@ -167,6 +167,35 @@ test_data_conv2d_FP = {
     "two_dw_conv2d": lambda: two_dw_conv2d,
 }
 
+test_data_conv2d_FP_bf16 = {
+    "bf16_3x3_gp3_bf16": lambda: Conv2d(
+        in_channels=3,
+        out_channels=3,
+        kernel_size=(3, 3),
+        stride=(1, 1),
+        groups=3,
+        padding=2,
+        width=16,
+        height=16,
+        batches=1,
+        dtype=torch.bfloat16,
+    ),
+}
+test_data_conv2d_FP_fp16 = {
+    "fp16_3x3_gp3_fp16": lambda: Conv2d(
+        in_channels=3,
+        out_channels=3,
+        kernel_size=(3, 3),
+        stride=(1, 1),
+        groups=3,
+        padding=2,
+        width=16,
+        height=16,
+        batches=1,
+        dtype=torch.float16,
+    ),
+}
+
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_conv2d_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -210,13 +239,20 @@ def _get_dtype_count(model: torch.nn.Module):
     }
 
 
-@common.parametrize("test_data", test_data_conv1d_FP | test_data_conv2d_FP)
+@common.parametrize(
+    "test_data",
+    test_data_conv1d_FP
+    | test_data_conv2d_FP
+    | test_data_conv2d_FP_bf16
+    | test_data_conv2d_FP_fp16,
+)
 def test_convolution_2d_tosa_FP_depthwise(test_data: torch.nn.Module):
     pipeline = TosaPipelineFP[input_t](
         test_data(),
         test_data().get_inputs(),
         aten_op=[],
         exir_op=exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -256,7 +292,9 @@ def test_convolution_2d_tosa_INT_a8w4_depthwise(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_conv1d_FP | test_data_conv2d_FP)
+@common.parametrize(
+    "test_data", test_data_conv1d_FP | test_data_conv2d_FP | test_data_conv2d_FP_fp16
+)
 @common.SkipIfNoModelConverter
 def test_convolution_2d_vgf_no_quant_depthwise(test_data: torch.nn.Module):
     model = test_data()

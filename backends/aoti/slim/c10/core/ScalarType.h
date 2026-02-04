@@ -133,6 +133,24 @@ inline bool isBoolType(ScalarType t) {
   return t == ScalarType::Bool;
 }
 
+/// Checks if the scalar type is a valid/supported type.
+/// @param t The scalar type to check.
+/// @return true if the scalar type is valid, false otherwise.
+inline bool isValidScalarType(ScalarType t) {
+  switch (t) {
+    case ScalarType::Char:
+    case ScalarType::Short:
+    case ScalarType::Int:
+    case ScalarType::Long:
+    case ScalarType::Float:
+    case ScalarType::Bool:
+    case ScalarType::BFloat16:
+      return true;
+    default:
+      return false;
+  }
+}
+
 inline std::ostream& operator<<(std::ostream& stream, ScalarType scalar_type) {
   return stream << toString(scalar_type);
 }

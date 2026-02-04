@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,6 +13,10 @@ from typing import cast
 
 import torch
 import torch.fx as fx
+from executorch.backends.arm._passes.arm_pass_utils import (
+    expand_around_channel,
+    get_first_fake_tensor,
+)
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
@@ -28,11 +32,6 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
 
     targets = [exir_ops.edge.aten.convolution.default]
 
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:
@@ -42,18 +41,58 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
         padding. Apply additional hardware-specific constraints for U55.
 
         """
-        # Not implemented
         transposed = cast(bool, node.args[6])
         output_padding = cast(list[int], node.args[7])
-        if transposed:
-            return False
+        groups = cast(int, node.args[8])
 
-        for pad in output_padding:
-            if pad != 0:
+        if transposed:
+            if groups != 1:
                 self.reporter.report_reject(
-                    node, "Convolutions with non-zero output padding not implemented."
+                    node, "Grouped transpose convolutions are not supported."
                 )
                 return False
+
+            dilation = expand_around_channel(cast(list[int], node.args[5]), 2)
+            if any(d != 1 for d in dilation):
+                self.reporter.report_reject(
+                    node, "Transpose convolutions with dilation are not supported."
+                )
+                return False
+
+            pad = expand_around_channel(cast(list[int], node.args[4]), 2)
+            out_pad = expand_around_channel(output_padding, 2)
+            weight_shape = get_first_fake_tensor(cast(fx.Node, node.args[1])).shape
+            if len(weight_shape) != 4:
+                self.reporter.report_reject(
+                    node, "Only 2D transpose convolutions are supported."
+                )
+                return False
+            kernel_h = weight_shape[2]
+            kernel_w = weight_shape[3]
+
+            out_pad_top = -pad[0]
+            out_pad_bottom = -pad[0] + out_pad[0]
+            out_pad_left = -pad[1]
+            out_pad_right = -pad[1] + out_pad[1]
+
+            if out_pad_top <= -kernel_h or out_pad_bottom <= -kernel_h:
+                self.reporter.report_reject(
+                    node, "Transpose convolution out_pad exceeds kernel height."
+                )
+                return False
+            if out_pad_left <= -kernel_w or out_pad_right <= -kernel_w:
+                self.reporter.report_reject(
+                    node, "Transpose convolution out_pad exceeds kernel width."
+                )
+                return False
+        else:
+            for output_pad in output_padding:
+                if output_pad != 0:
+                    self.reporter.report_reject(
+                        node,
+                        "Convolutions with non-zero output padding not implemented.",
+                    )
+                    return False
 
         # Hardware specific constraints
         if tosa_spec.is_U55_subset:
@@ -74,6 +113,26 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
             bool: True if supported; otherwise, False.
 
         """
+        transposed = cast(bool, node.args[6])
+        if transposed:
+            kernel = cast(fx.Node, node.args[1]).meta["val"].shape
+            kernel_h = kernel[2]
+            kernel_w = kernel[3] if len(kernel) > 3 else 1
+            if kernel_h != kernel_w:
+                self.reporter.report_reject(
+                    node,
+                    f"Transpose convolution on U55 requires square kernels, got ({kernel_w}, {kernel_h}).",
+                )
+                return False
+
+            strides = expand_around_channel(cast(list[int], node.args[3]), 2)
+            if strides[0] != strides[1]:
+                self.reporter.report_reject(
+                    node,
+                    f"Transpose convolution on U55 requires equal strides, got {strides}.",
+                )
+                return False
+
         shape_in = cast(torch.Tensor, node.all_input_nodes[0].meta["val"]).shape
         shape_out = node.meta["val"].shape
         kernel = cast(fx.Node, node.args[1]).meta["val"].shape

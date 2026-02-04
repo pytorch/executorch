@@ -5,6 +5,7 @@
 
 
 from . import (  # noqa
+    as_strided_copy_support,
     clone_dim_order_support,
     control_flow_support,
     convolution_support,
@@ -20,5 +21,6 @@ from . import (  # noqa
     slice_copy_support,
     to_dim_order_copy_support,
     tosa_supported_operators,
+    unfold_copy_support,
     where_support,
 )

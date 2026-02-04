@@ -113,6 +113,12 @@ class ProgramTestFriend final {
       const Program* program) {
     return program->internal_program_;
   }
+  static Result<const void*> get_constant_buffer_data(
+      const Program* program,
+      size_t buffer_index,
+      size_t nbytes) {
+    return program->get_constant_buffer_data(buffer_index, nbytes);
+  }
 };
 } // namespace testing
 } // namespace runtime
@@ -779,4 +785,67 @@ TEST_F(ProgramTest, GetOutputFlatteningEncodingWithMissingEncodedOutStr) {
       loaded_program->get_output_flattening_encoding("forward");
 
   EXPECT_EQ(encoding.error(), Error::InvalidProgram);
+}
+
+TEST_F(ProgramTest, NullPlanNameDoesNotCrash) {
+  flatbuffers::FlatBufferBuilder builder(1024);
+
+  // Create dummy execution_plan with null plan_name.
+  auto execution_plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      0,
+      0, // name=null, container_meta_type=null
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>{}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{}),
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{}),
+      builder.CreateVector(std::vector<int64_t>{0}));
+
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      0,
+      builder.CreateVector({execution_plan}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Buffer>>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<
+              executorch_flatbuffer::BackendDelegateInlineData>>{}),
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{}));
+
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+
+  alignas(16) uint8_t buf[2048];
+  std::memcpy(buf, builder.GetBufferPointer(), builder.GetSize());
+  BufferDataLoader loader(buf, builder.GetSize());
+
+  Result<Program> p = Program::load(&loader, Program::Verification::Minimal);
+  ASSERT_EQ(p.error(), Error::Ok);
+
+  // Should return error, not crash
+  EXPECT_EQ(p->method_meta("forward").error(), Error::InvalidArgument);
+}
+
+TEST_F(ProgramTest, GetConstantBufferDataRejectsOversizedRequest) {
+  const char* path =
+      std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
+  Result<FileDataLoader> loader = FileDataLoader::from(path);
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Request way more bytes than any buffer could contain
+  Result<const void*> data = ProgramTestFriend::get_constant_buffer_data(
+      &program.get(), /*buffer_index=*/0, /*nbytes=*/SIZE_MAX);
+
+  EXPECT_EQ(data.error(), Error::InvalidArgument);
 }

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,9 +9,6 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.annotate_decomposed_matmul import (
-    AnnotateDecomposedMatmulPass,
-)
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -30,6 +27,18 @@ def _is_input(node: torch.fx.Node, exported_program: ExportedProgram) -> bool:
     Returns True if the node is an input node, i.e. a placeholder or a parameter.
     """
     return node.op == "placeholder" and not is_param_node(exported_program, node)
+
+
+def _is_transpose_conv2d_weight(node: torch.fx.Node) -> bool:
+    for user in node.users:
+        if (
+            user.op == "call_function"
+            and user.target == exir_ops.backend.tosa.TRANSPOSE_CONV2D.default
+            and len(user.args) > 1
+            and user.args[1] is node
+        ):
+            return True
+    return False
 
 
 class ToTosaMemoryFormatPass(ArmPass):
@@ -357,9 +366,7 @@ class ToTosaMemoryFormatPass(ArmPass):
             )
         output_dim_orders = output_node.meta.get("original_dim_orders")
         if output_dim_orders is None:
-            raise RuntimeError(
-                f"{AnnotateDecomposedMatmulPass.__name__} is required to run at the beginning of the pass pipeline when using {ToTosaMemoryFormatPass.__name__}."
-            )
+            raise RuntimeError(f"{output_dim_orders=} is not supported.")
 
         for output_node_input, output_dim_order in zip(
             outputs, output_dim_orders, strict=True
@@ -415,7 +422,9 @@ class ToTosaMemoryFormatPass(ArmPass):
             if _is_input(node, self.exported_program) or node.op == "output":
                 dim_order = node_data.dim_order()
             else:
-                if node_data.dim() >= 4:
+                if node_data.dim() == 4 and _is_transpose_conv2d_weight(node):
+                    dim_order = (1, 2, 3, 0)
+                elif node_data.dim() >= 4:
                     dim_order = self._channels_last_order(node_data.dim(), spatial_rank)
                 else:
                     dim_order = tuple(range(node_data.dim()))  # type: ignore[assignment]

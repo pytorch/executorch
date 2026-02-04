@@ -7,12 +7,38 @@ def define_common_targets():
     runtime.cxx_library(
         name = "empty",
         headers = [
-            "Empty.h",
+            "empty.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [
             "//executorch/backends/aoti/slim/core:slimtensor",
             "//executorch/backends/aoti/slim/util:array_ref_util",
             "//executorch/backends/aoti/slim/util:size_util",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "from_blob",
+        headers = [
+            "from_blob.h",
+        ],
+        visibility = ["@EXECUTORCH_CLIENTS"],
+        exported_deps = [
+            "//executorch/backends/aoti/slim/core:slimtensor",
+            "//executorch/backends/aoti/slim/util:array_ref_util",
+            "//executorch/backends/aoti/slim/util:size_util",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "from_etensor",
+        headers = [
+            "from_etensor.h",
+        ],
+        visibility = ["@EXECUTORCH_CLIENTS"],
+        exported_deps = [
+            "//executorch/backends/aoti/slim/factory:empty",
+            "//executorch/backends/aoti/slim/util:array_ref_util",
+            "//executorch/runtime/core/portable_type:portable_type",
         ],
     )

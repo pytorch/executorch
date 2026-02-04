@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -344,3 +344,66 @@ if __name__ == "__main__":
     a[2, 1, 0, 0] = 0
 
     print_error_diffs(a, b)
+
+
+def compare_rel_frobenius_and_cosine_similarity(
+    reference_output: torch.Tensor,
+    test_output: torch.Tensor,
+    quantization_parameters,
+    frobenius_threshold: float = 0.05,
+    cosine_threshold: float = 0.95,
+    clean_reference: bool = True,
+):
+    """Frobenius test: computes the frobenius norm (sum of elementwise squared tensor values) of the *error*, and
+     divides it with the frobenius norm of the reference output. Lower is better.
+    Cosine similarity test: The cosine similiarity of the flattened reference and test tensor. Closer to 1 is better.
+
+    If clean_reference is set to True the following is done to the reference :
+        - NaN-values will be set to 0
+        - Inf values will be set to max/min representable by the dtype * quantization scale
+        - Values lower than the scale will be set to 0.0
+    If the reference is all zeros, the function returns without testing.
+    """
+
+    if clean_reference:
+        if quantization_parameters:
+            scale = quantization_parameters.scale
+            dtype_info = torch.iinfo(quantization_parameters.dtype)
+            _max = dtype_info.max * scale
+            _min = dtype_info.min * scale
+            reference_output = reference_output.where(
+                torch.abs(reference_output) >= scale, 0.0
+            )
+        else:
+            _max = None
+            _min = None
+        reference_output = reference_output.nan_to_num(
+            nan=0.0, posinf=_max, neginf=_min
+        )
+
+    reference_all_zeros = torch.count_nonzero(reference_output).item() == 0
+    if reference_all_zeros:
+        return
+
+    reference_output = reference_output.to(torch.float32)
+    test_output = test_output.to(torch.float32)
+
+    reference_frobenius_norm = torch.linalg.norm(reference_output).item()
+    error_frobenius_norm = torch.linalg.norm(test_output - reference_output).item()
+
+    relative_frobenius_error = error_frobenius_norm / (reference_frobenius_norm + 1e-8)
+    cosine_similarity = torch.nn.functional.cosine_similarity(
+        test_output.flatten(), reference_output.flatten(), dim=0
+    ).item()
+
+    if relative_frobenius_error > frobenius_threshold:
+        raise AssertionError(
+            f"Tensor-wise comparison failed: Relative frobenius norm error {relative_frobenius_error} exceeds threshold {frobenius_threshold}."
+            f" (Cosine similarity: {cosine_similarity}, threshold {cosine_threshold})."
+        )
+
+    if cosine_similarity < cosine_threshold and not reference_all_zeros:
+        raise AssertionError(
+            f"Tensor-wise comparison failed: Cosine similarity {cosine_similarity} is below threshold {cosine_threshold}."
+            f" (Relative frobenius error: {relative_frobenius_error}, threshold {frobenius_threshold})."
+        )

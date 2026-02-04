@@ -7,7 +7,6 @@
 from . import arm_pass_utils  # noqa
 from .arm_pass import ArmPass  # noqa  # usort: skip
 from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
-from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
 from .annotate_output_dim_order_pass import AnnotateOutputDimOrderPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
@@ -31,6 +30,7 @@ from .decompose_adaptive_avg_pool2d_pass import DecomposeAdaptiveAvgPool2dPass  
 from .decompose_add_sub_alpha_pass import DecomposeAddSubAlphaPass  # noqa
 from .decompose_addmm_pass import DecomposeAddmmPass  # noqa
 from .decompose_any_pass import DecomposeAnyPass  # noqa
+from .decompose_as_strided_copy_pass import DecomposeAsStridedCopyPass  # noqa
 from .decompose_asin_and_acos_pass import DecomposeAsinAndAcosPass  # noqa
 from .decompose_asinh_pass import DecomposeAsinhPass  # noqa
 from .decompose_atan_pass import DecomposeAtanPass  # noqa
@@ -50,6 +50,9 @@ from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
+from .decompose_index_select_to_gather_pass import (  # noqa
+    DecomposeIndexSelectToGatherPass,
+)
 from .decompose_int16_activation_conv_pass import (  # noqa
     DecomposeConvWithInt16ActivationPass,
 )
@@ -61,6 +64,7 @@ from .decompose_linear_pass import DecomposeLinearPass  # noqa
 from .decompose_log1p_pass import DecomposeLog1pPass  # noqa
 from .decompose_logit_pass import DecomposeLogitPass  # noqa
 from .decompose_masked_fill_pass import DecomposeMaskedFillPass  # noqa
+from .decompose_matmul import DecomposeMatmulPass  # noqa
 from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
@@ -81,6 +85,7 @@ from .decompose_tan_pass import DecomposeTanPass  # noqa
 from .decompose_tosa_unsupported_clamp_pass import (  # noqa
     DecomposeTOSAUnsupportedClampPass,
 )
+from .decompose_unfold_to_gather_pass import DecomposeUnfoldToGatherPass  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa

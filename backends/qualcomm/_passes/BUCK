@@ -1,0 +1,19 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "passes",
+    srcs = glob([
+        "*.py",
+    ]),
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/backends/transforms:addmm_mm_to_linear",
+        "//executorch/backends/transforms:decompose_sdpa",
+        "//executorch/exir/backend:backend_details",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/backends/qualcomm/quantizer:quantizer",
+    ],
+)

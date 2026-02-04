@@ -22,39 +22,81 @@ namespace api {
 static constexpr size_t kTensorDimLimit = 8;
 
 /*
- * PackedDimInfo encapsulates metadata about packed dimensions in GPU tensors.
- * This includes information about which dimension is packed, whether it's
- * padded, and block packing information for special layouts like 4W4C and 4H4W.
+ * PackedDimInfo describes how tensor data is organized in physical memory.
+ * Specifically, it describes which dimensions are kept adjacent in memory, and
+ * which dimensions may be aligned to accomodate minimum load/store granularity
+ * of a selected storage type + memory layout combination.
+ *
+ * For non-quantized tensors that use GPU buffers, the tensor data is arranged
+ * as a linear array of data, and each data element can be loaded/stored
+ * individually. The PackedDimInfo describes which dimension of the tensor
+ * is kept contiguous in memory.
+ *
+ * For non-quantized tensors that use GPU textures, the tensor data is arranged
+ * as a 3D cube, where each "texel" in the cube contains 4 elements. The minimum
+ * load/store granularity is therefore 4 elements; the 4 elements in the texel
+ * will be adjacent elements along particular dimension specified by the
+ * PackedDimInfo.
+ *
+ * Quantized tensors will use the buffer storage type and the kInt8x4 dtype.
+ * Although the buffer storage type is used, the kInt8x4 dtype means that the
+ * minimum load/store granularity is still 1 texel int32 = 4x int8). Some
+ * memory layouts for quantized tensors will use block packing; this means that
+ * 4 adjacent texels loads a 4x4 square block of data composed of two dimensions
+ * rather than 16 elements from a single dimension.
+ *
+ * A generalization of all the above is to partition the tensor into a MxN block
+ * composed of 2 tensor dimensions. For non-quantized buffer tensors, the block
+ * size will be 1x1; for non-quantized texture tensors, the block size will be
+ * 4x1; for block-packed tensor layouts, the block size will be 4x4. For buffer
+ * backed tensors, the blocks are then arranged linearly in memory with the
+ * inner dimension of the block having the lowest stride and the outer dimension
+ * of the block having the next lowest stride.
+ *
+ * Note that all dimension indices contained in the struct use WHCN ordering
+ * (0 for width, 1 for height, 2 for channels, etc.) which is the ordering
+ * expected in GLSL compute shaders.
  */
 struct PackedDimInfo {
-  // Describes which dimension is "tightly packed" using WHCN index (i.e. 0 for
-  // width, 1 for height, etc.). For texture backed tensors, this describes
-  // which dimension is packed along a texel. For buffer backed tensors, this
-  // describes which dimension has a stride of 1 (i.e. is last in the dim
-  // order).
+  // Describes which dimension (WHCN index) is kept adjacent in physical memory.
+  // When doing a load/store for a texel/block, the first 4 elements of the data
+  // will be adjacent elements along the packed dimension.
   int32_t packed_dim;
-  // Describes if the packed dimension is padded to a multiple of 4. This will
-  // be true for all tensors that use texture storage, and will also be true
-  // for the PACKED_PADDED memory layouts.
-  bool packed_dim_padded;
-  // Describes a second level of packing, if applicable (which will only apply
-  // to the 4W4C and 4H4W layouts). If there is no second level of packing,
-  // then this will be equal to packed_dim. Otherwise, it will represent the
-  // outer dim used to construct block packing. For example, 4W4C will have
-  // packed_dim = 2 and outer_packed_dim = 0.
+  // The alignment size for the packed dimension. This value reflects the
+  // minimum load/store granularity of the storage type + memory layout config.
+  // In physical memory, the size of the packed dim is aligned to this size to
+  // ensure that data for the packed dim aligns with texel/block boundaries.
+  int32_t packed_dim_block_size;
+  // For block-packed layouts, represents the second tensor dimension that forms
+  // the "width" dimension of the MxN square that is kept contiguous in memory.
+  // For non block-packed layouts, represent the dimension with the next lowest
+  // stride after the contiguous/packed dim (i.e. second last in the dim order).
   int32_t outer_packed_dim;
-  // Whether the outer packed dim is padded to the next multiple of 4. This is
-  // true only for block-packed layouts.
-  bool outer_packed_dim_padded;
-  // True if this layout uses block packing (i.e., outer_packed_dim !=
-  // packed_dim). Block packing is used for layouts like 4W4C and 4H4W.
-  bool is_block_packed;
+  // The alignment size for the outer packed dimension. For non-block-packed
+  // layouts, this is 1 (no padding). For block-packed layouts like 4W4C and
+  // 4H4W, represents the "height" of the square block that is kept contiguous
+  // in memory.
+  int32_t outer_packed_dim_block_size;
+  // Typically the blocks of the tensor will be arranged such that the inner
+  // dim of the block (i.e. the packed dim) has the lowest stride, and the
+  // outer dim of the block (i.e. the outer packed dim) has the next lowest
+  // stride. However if this flag is set to true, then instead the outer packed
+  // dim will have the lowest stride, and the packed dim will have the next
+  // lowest stride.
+  bool block_transposed;
+  // The total number of elements in a packed block, computed as
+  // packed_dim_block_size * outer_packed_dim_block_size. For standard texture
+  // layouts, this is 4 (1 texel = 4 elements). For block-packed int8 layouts
+  // like 4W4C and 4H4W, this is 16 (4 elements along each of two dimensions).
+  // For contiguous buffer layouts, this is 1.
+  int32_t block_numel;
 
   PackedDimInfo(
-      int32_t dim,
-      bool dim_padded,
-      int32_t outer_dim,
-      bool outer_dim_padded);
+      const int32_t dim,
+      const int32_t dim_block_size,
+      const int32_t outer_dim,
+      const int32_t outer_dim_block_size,
+      const bool is_block_transposed);
 };
 
 struct LastAccess {
@@ -290,10 +332,10 @@ class vTensor final {
    * to construct a tensor.
    */
 
-  // Information about packed dimension padding and block packing
-  PackedDimInfo packed_dim_info_;
   // Whether the tensor has elements of type float, int, etc.
   vkapi::ScalarType dtype_;
+  // Information about packed dimension padding and block packing
+  PackedDimInfo packed_dim_info_;
   // sizes of the tensor in NCHW dimension order
   std::vector<int64_t> sizes_;
   // padded sizes of the tensor (pre-computed to avoid recalculation)
@@ -330,6 +372,9 @@ class vTensor final {
 
   // number of elements based on the canonical sizes
   size_t numel_;
+
+  // number of elements based on the padded sizes (before packing)
+  size_t padded_numel_;
 
   // number of elements required for GPU buffer storage (with padding/packing)
   // This is pre-computed to avoid recomputing calculate_gpu_buffer_numel
@@ -506,6 +551,10 @@ class vTensor final {
 
   inline size_t numel() const {
     return numel_;
+  }
+
+  inline size_t padded_numel() const {
+    return padded_numel_;
   }
 
   inline int64_t physical_numel() const {
