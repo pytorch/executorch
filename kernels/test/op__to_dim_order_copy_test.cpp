@@ -659,3 +659,93 @@ TEST_F(OpToDimOrderCopyTest, PreserveChanneslLast) {
   EXPECT_TENSOR_EQ(out, expected);
   EXPECT_TENSOR_EQ(ret, expected);
 }
+
+//
+// Complex Type Tests
+//
+
+TEST_F(OpToDimOrderCopyTest, ComplexFloatToComplexFloat) {
+  TensorFactory<ScalarType::ComplexFloat> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor self = tf.make(
+      sizes,
+      {executorch::aten::complex<float>(1.0f, 2.0f),
+       executorch::aten::complex<float>(3.0f, 4.0f),
+       executorch::aten::complex<float>(5.0f, 6.0f),
+       executorch::aten::complex<float>(7.0f, 8.0f)});
+
+  Tensor out = tf.zeros(sizes);
+
+  op__to_dim_order_copy_out(
+      self, /*non_blocking=*/false, executorch::aten::nullopt, out);
+
+  EXPECT_TENSOR_EQ(out, self);
+}
+
+TEST_F(OpToDimOrderCopyTest, FloatToComplexFloat) {
+  TensorFactory<ScalarType::Float> tf_in;
+  TensorFactory<ScalarType::ComplexFloat> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor self = tf_in.make(sizes, {1.0f, 2.0f, 3.0f, 4.0f});
+  Tensor out = tf_out.zeros(sizes);
+
+  op__to_dim_order_copy_out(
+      self, /*non_blocking=*/false, executorch::aten::nullopt, out);
+
+  // Real values should become complex with zero imaginary part
+  Tensor expected = tf_out.make(
+      sizes,
+      {executorch::aten::complex<float>(1.0f, 0.0f),
+       executorch::aten::complex<float>(2.0f, 0.0f),
+       executorch::aten::complex<float>(3.0f, 0.0f),
+       executorch::aten::complex<float>(4.0f, 0.0f)});
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpToDimOrderCopyTest, ComplexFloatToFloat) {
+  TensorFactory<ScalarType::ComplexFloat> tf_in;
+  TensorFactory<ScalarType::Float> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  // Only the real part should be preserved
+  Tensor self = tf_in.make(
+      sizes,
+      {executorch::aten::complex<float>(1.0f, 10.0f),
+       executorch::aten::complex<float>(2.0f, 20.0f),
+       executorch::aten::complex<float>(3.0f, 30.0f),
+       executorch::aten::complex<float>(4.0f, 40.0f)});
+
+  Tensor out = tf_out.zeros(sizes);
+
+  op__to_dim_order_copy_out(
+      self, /*non_blocking=*/false, executorch::aten::nullopt, out);
+
+  Tensor expected = tf_out.make(sizes, {1.0f, 2.0f, 3.0f, 4.0f});
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpToDimOrderCopyTest, ComplexDoubleToComplexDouble) {
+  TensorFactory<ScalarType::ComplexDouble> tf;
+
+  const std::vector<int32_t> sizes = {3};
+
+  Tensor self = tf.make(
+      sizes,
+      {executorch::aten::complex<double>(1.5, 2.5),
+       executorch::aten::complex<double>(-3.5, 4.5),
+       executorch::aten::complex<double>(0.0, -1.0)});
+
+  Tensor out = tf.zeros(sizes);
+
+  op__to_dim_order_copy_out(
+      self, /*non_blocking=*/false, executorch::aten::nullopt, out);
+
+  EXPECT_TENSOR_EQ(out, self);
+}
