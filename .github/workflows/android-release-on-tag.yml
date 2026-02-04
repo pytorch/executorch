@@ -3,29 +3,41 @@ name: Android Release on Tag
 on:
   push:
     tags:
-      - '[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+    steps:
+      - id: get-version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
   release-xnnpack:
+    needs: prepare
     uses: ./.github/workflows/android-release-artifacts.yml
     secrets: inherit
     with:
-      version: ${{ github.ref_name }}
+      version: ${{ needs.prepare.outputs.version }}
       flavor: xnnpack
       upload_to_maven: true
 
   release-vulkan:
+    needs: prepare
     uses: ./.github/workflows/android-release-artifacts.yml
     secrets: inherit
     with:
-      version: ${{ github.ref_name }}
+      version: ${{ needs.prepare.outputs.version }}
       flavor: vulkan
       upload_to_maven: true
 
   release-qnn:
+    needs: prepare
     uses: ./.github/workflows/android-release-artifacts.yml
     secrets: inherit
     with:
-      version: ${{ github.ref_name }}
+      version: ${{ needs.prepare.outputs.version }}
       flavor: qnn
       upload_to_maven: true
