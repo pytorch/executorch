@@ -147,6 +147,19 @@ test_data_suite = {
         ),
         0,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
     ),
+    "broadcast_indices_mismatch": (
+        lambda: (
+            torch.zeros((1, 2, 3, 4), dtype=torch.float32),
+            (
+                torch.tensor([0], dtype=torch.int64),
+                torch.tensor([0, 1], dtype=torch.int64),
+                torch.tensor([1], dtype=torch.int64),
+            ),
+            torch.randn((2, 4), dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
 }
 
 
