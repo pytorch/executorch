@@ -26,6 +26,7 @@
 #include "types.h"
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/runner/wav_loader.h>
 #include <executorch/extension/llm/tokenizers/third-party/llama.cpp-unicode/include/unicode.h>
@@ -334,6 +335,10 @@ std::vector<Token> greedy_decode_executorch(
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
+  // Initialize stats for benchmarking
+  ::executorch::extension::llm::Stats stats;
+  stats.model_load_start_ms = ::executorch::extension::llm::time_in_ms();
+
   TimestampOutputMode timestamp_mode;
   try {
     timestamp_mode = parse_timestamp_output_mode(FLAGS_timestamps);
@@ -362,6 +367,8 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Failed to load model.");
     return 1;
   }
+  stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
+  stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
 
   // Load audio
   ET_LOG(Info, "Loading audio from: %s", FLAGS_audio_path.c_str());
@@ -465,11 +472,14 @@ int main(int argc, char** argv) {
       window_stride,
       encoder_subsampling_factor);
 
+  stats.prompt_eval_end_ms = ::executorch::extension::llm::time_in_ms();
+
   ET_LOG(Info, "Running TDT greedy decode...");
   auto decoded_tokens = greedy_decode_executorch(
       *model, f_proj, encoded_len, blank_id, num_rnn_layers, pred_hidden);
 
   ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
+  stats.first_token_ms = stats.prompt_eval_end_ms; // For ASR, first token is at end of encoding
 
   // Load tokenizer
   ET_LOG(Info, "Loading tokenizer from: %s", FLAGS_tokenizer_path.c_str());
@@ -487,6 +497,14 @@ int main(int argc, char** argv) {
   std::string text = parakeet::tokenizer_utils::decode_token_sequence(
       decoded_tokens, *tokenizer);
   std::cout << "Transcribed text: " << text << std::endl;
+
+  // Record inference end time and token counts
+  stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
+  stats.num_prompt_tokens = encoded_len; // Use encoder output length as "prompt" tokens
+  stats.num_generated_tokens = static_cast<int64_t>(decoded_tokens.size());
+
+  // Print PyTorchObserver stats for benchmarking
+  ::executorch::extension::llm::print_report(stats);
 
 #ifdef ET_BUILD_METAL
   executorch::backends::metal::print_metal_backend_stats();
