@@ -50,6 +50,7 @@ import contextlib
 
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
+import importlib.util
 import logging
 import os
 import re
@@ -61,6 +62,12 @@ from distutils import log  # type: ignore[import-not-found]
 from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path
 from typing import List, Optional
+
+# Clean dynamic import using importlib
+_install_utils_path = Path(__file__).parent / "install_utils.py"
+_spec = importlib.util.spec_from_file_location("install_utils", _install_utils_path)
+install_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(install_utils)
 
 from setuptools import Extension, setup
 from setuptools.command.build import build
@@ -688,6 +695,13 @@ class CustomBuild(build):
             item for item in re.split(r"\s+", os.environ.get("CMAKE_ARGS", "")) if item
         ]
 
+        # Check if CUDA is available, and if so, enable building the CUDA
+        # backend by default.
+        if install_utils.is_cuda_available() and install_utils.is_cmake_option_on(
+            cmake_configuration_args, "EXECUTORCH_BUILD_CUDA", default=True
+        ):
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_CUDA=ON"]
+
         with Buck2EnvironmentFixer():
             # Generate the cmake cache from scratch to ensure that the cache state
             # is predictable.
@@ -740,8 +754,13 @@ class CustomBuild(build):
             cmake_build_args += ["--target", "portable_lib"]
             cmake_build_args += ["--target", "selective_build"]
 
+
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
             cmake_build_args += ["--target", "_llm_runner"]
+
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
+            cmake_build_args += ["--target", "aoti_cuda_backend"]
+            cmake_build_args += ["--target", "aoti_common_shims_slim"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
             cmake_build_args += ["--target", "extension_module"]

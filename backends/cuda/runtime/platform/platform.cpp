@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <filesystem>
+#include <mutex>
 #include <string>
 
 #ifdef _WIN32
@@ -41,6 +42,24 @@ executorch::runtime::Result<void*> load_library(
   }
 
 #else
+  // Before loading the delegate .so, we need to ensure symbols from the current
+  // process (e.g., _portable_lib.so) are globally visible. Python loads modules
+  // with RTLD_LOCAL by default, so we re-open the current module with
+  // RTLD_GLOBAL | RTLD_NOLOAD to promote its symbols to global visibility.
+  // This allows the delegate .so to resolve symbols like aoti_torch_dtype_*.
+  static std::once_flag symbols_promoted_flag;
+  std::call_once(symbols_promoted_flag, []() {
+    Dl_info info;
+    // Get info about a symbol we know exists in _portable_lib.so
+    if (dladdr((void*)&load_library, &info) && info.dli_fname) {
+      // Re-open with RTLD_GLOBAL | RTLD_NOLOAD to promote symbols
+      void* handle = dlopen(info.dli_fname, RTLD_NOW | RTLD_GLOBAL | RTLD_NOLOAD);
+      if (!handle) {
+        ET_LOG(Error, "Failed to promote symbols: %s", dlerror());
+      }
+    }
+  });
+
   std::string path_str = path.string();
   void* lib_handle = dlopen(path_str.c_str(), RTLD_LAZY | RTLD_LOCAL);
   if (lib_handle == nullptr) {

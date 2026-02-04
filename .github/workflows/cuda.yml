@@ -221,3 +221,47 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         source .ci/scripts/test_model_e2e.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+
+  test-cuda-pybind:
+    name: test-cuda-pybind
+    needs: export-model-cuda-artifact
+    # This job downloads models exported by export-model-cuda-artifact and runs them using pybind.
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ["gemma3-4b"]
+        quantize: ["", "--quantize"]
+    with:
+      timeout: 120
+      download-artifact: google-gemma-3-4b-it-cuda-${{ matrix.quantize && 'quantized-int4-tile-packed' || 'non-quantized' }}
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch"
+        ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Install optimum-executorch"
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        echo "::endgroup::"
+
+        echo "::group::Test CUDA Multimodal: ${{ matrix.model }} ${{ matrix.quantize }}"
+        python .ci/scripts/test_huggingface_optimum_model.py \
+          --model ${{ matrix.model }} \
+          --recipe cuda \
+          --model_dir "${RUNNER_ARTIFACT_DIR}" \
+          --run_only \
+          ${{ matrix.quantize }}
+        echo "::endgroup::"

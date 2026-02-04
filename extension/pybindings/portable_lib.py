@@ -51,6 +51,12 @@ if sys.platform == "win32":
 # wouldn't preserve the static type annotations.
 #
 # Note that all of these are experimental, and subject to change without notice.
+
+# Set dlopen flags to RTLD_GLOBAL to ensure that the symbols in _portable_lib can
+# be found by another shared library (for example, in AOTI where we want to load
+# an AOTI compiled .so file with needed symbols defined in _portable_lib).
+prev = sys.getdlopenflags()
+sys.setdlopenflags(prev | os.RTLD_GLOBAL)
 from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     # Disable "imported but unused" (F401) checks.
     _create_profile_block,  # noqa: F401
@@ -74,6 +80,8 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     MethodMeta,  # noqa: F401
     Verification,  # noqa: F401
 )
+
+sys.setdlopenflags(prev)
 
 # Clean up so that `dir(portable_lib)` is the same as `dir(_portable_lib)`
 # (apart from some __dunder__ names).

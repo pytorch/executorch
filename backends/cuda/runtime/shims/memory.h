@@ -173,6 +173,33 @@ aoti_torch_item_bool(SlimTensor* tensor, bool* ret_value);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_assign_tensors_out(SlimTensor* src, SlimTensor** ret_dst);
 
+/**
+ * Creates a deep copy of a tensor, preserving its strides.
+ *
+ * Allocates new storage and copies all data from the source tensor.
+ * The new tensor will have the same shape, strides, dtype, and device
+ * as the original. Handles CPU and CUDA tensors.
+ *
+ * @param self Source tensor to clone (must not be null)
+ * @param ret_new_tensor Output parameter for the cloned tensor
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_clone_preserve_strides(
+    SlimTensor* self,
+    SlimTensor** ret_new_tensor);
+
+/**
+ * Creates a deep copy of a tensor.
+ *
+ * Same as aoti_torch_clone_preserve_strides for SlimTensor.
+ *
+ * @param self Source tensor to clone (must not be null)
+ * @param ret_new_tensor Output parameter for the cloned tensor
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_clone(SlimTensor* self, SlimTensor** ret_new_tensor);
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda

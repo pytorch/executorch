@@ -226,8 +226,7 @@ AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_clone_preserve_strides(Tensor* self, Tensor** ret_new_tensor) {
   (void)self;
   (void)ret_new_tensor;
-  throw std::runtime_error(
-      "Not implemented: aoti_torch_clone_preserve_strides");
+  throw std::runtime_error("Not implemented: aoti_torch_clone_preserve_strides");
   return Error::Internal;
 }
 

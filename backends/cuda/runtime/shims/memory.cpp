@@ -275,6 +275,36 @@ AOTITorchError aoti_torch_assign_tensors_out(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_clone_preserve_strides(
+    SlimTensor* self,
+    SlimTensor** ret_new_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr,
+      InvalidArgument,
+      "aoti_torch_clone_preserve_strides: self is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_clone_preserve_strides: ret_new_tensor is null");
+
+  // Create a new tensor with the same shape and strides
+  SlimTensor* cloned = new SlimTensor(empty_strided(
+      self->sizes(), self->strides(), self->dtype(), self->device()));
+
+  // Copy the data using SlimTensor's copy_ method which handles
+  // CPU-CPU, CPU-CUDA, CUDA-CPU, and CUDA-CUDA copies
+  cloned->copy_(*self);
+
+  *ret_new_tensor = cloned;
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_clone(SlimTensor* self, SlimTensor** ret_new_tensor) {
+  // For SlimTensor, clone and clone_preserve_strides do the same thing
+  return aoti_torch_clone_preserve_strides(self, ret_new_tensor);
+}
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda

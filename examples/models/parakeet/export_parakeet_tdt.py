@@ -119,9 +119,10 @@ def greedy_decode_executorch(
     decoder_step_method = program.load_method("decoder_step")
     joint_method = program.load_method("joint")
 
+    dtype = f_proj.dtype
     # Initialize decoder state
-    h = torch.zeros(num_rnn_layers, 1, pred_hidden)
-    c = torch.zeros(num_rnn_layers, 1, pred_hidden)
+    h = torch.zeros(num_rnn_layers, 1, pred_hidden, dtype=dtype)
+    c = torch.zeros(num_rnn_layers, 1, pred_hidden, dtype=dtype)
 
     # Prime decoder with SOS (blank_id) to match NeMo TDT behavior
     sos_token = torch.tensor([[blank_id]], dtype=torch.long)

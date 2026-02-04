@@ -92,8 +92,9 @@ if(EXECUTORCH_BUILD_CUDA)
   target_link_libraries(aoti_common_shims_slim PUBLIC CUDA::cudart)
 endif()
 
+# SlimTensor is header-only, no library to link against
 target_link_libraries(
-  aoti_common_shims_slim PUBLIC slimtensor extension_tensor ${CMAKE_DL_LIBS}
+  aoti_common_shims_slim PUBLIC extension_tensor ${CMAKE_DL_LIBS}
 )
 
 install(
