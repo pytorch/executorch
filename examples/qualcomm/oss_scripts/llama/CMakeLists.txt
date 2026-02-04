@@ -39,6 +39,8 @@ list(
   ${CMAKE_CURRENT_LIST_DIR}/runner/client_mem.h
   ${CMAKE_CURRENT_LIST_DIR}/runner/lhd_token_generator.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/lhd_token_generator.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/attention_sink_rope_runner.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/attention_sink_rope_runner.h
   ${CMAKE_CURRENT_LIST_DIR}/runner/rpc_mem.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/rpc_mem.h
   ${CMAKE_CURRENT_LIST_DIR}/runner/kv_manager.cpp

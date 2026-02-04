@@ -32,7 +32,7 @@ void test_q8ta_conv2d_dw(
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
   const ValueRef layout_int = args.at(idx++);
-  const ValueRef impl_selector_int = args.at(idx++);
+  const ValueRef impl_selector_str = args.at(idx++);
   const ValueRef fp_output = args.at(idx++);
 
   // Extract the layout parameter and cast to GPUMemoryLayout
@@ -40,8 +40,8 @@ void test_q8ta_conv2d_dw(
   utils::GPUMemoryLayout layout =
       static_cast<utils::GPUMemoryLayout>(layout_value);
 
-  // Extract the impl_selector flag
-  int32_t impl_selector = graph.extract_scalar<int32_t>(impl_selector_int);
+  // Extract the impl_selector string
+  std::string impl_selector = graph.extract_string(impl_selector_str);
 
   // Create temporary packed int8 tensors for input and output
   TmpTensor packed_int8_input(
@@ -76,7 +76,7 @@ void test_q8ta_conv2d_dw(
       groups,
       packed_int8_output};
 
-  if (impl_selector) {
+  if (impl_selector == "legacy_4w4c") {
     // Use the general quantized conv2d operator for legacy path
     VK_GET_OP_FN("et_vk.conv2d_q8ta_q8csw_q8to.default")(graph, conv_args);
   } else {
