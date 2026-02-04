@@ -20,7 +20,6 @@ them to optimized MLX operations. Examples include:
 
 from __future__ import annotations
 
-import logging
 from typing import Any, List, Optional, Tuple
 
 import torch
@@ -39,14 +38,16 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     IntOrVid,
     QuantizedGatherNode,
     QuantizedLinearNode,
-    RMSNormNode,
     SdpaNode,
     SliceUpdateNode,
 )
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
 
-logger = logging.getLogger(__name__)
+# When True, always serialize the biases tensor for quantized ops (existing behavior).
+# When False, use scale_only=True optimization when zero_point is all zeros,
+# which avoids serializing the biases tensor (C++ runtime computes: biases = -scales * 2^(bits-1)).
+QUANTIZED_SERIALIZE_BIASES = True
 
 
 # =============================================================================
@@ -230,7 +231,7 @@ class IndexUpdateHandler(PatternHandler):
     @classmethod
     def maybe_create(  # noqa: C901
         cls, ep: ExportedProgram, head: Node
-    ) -> Optional["RMSNormPatternHandler"]:
+    ) -> Optional["IndexUpdateHandler"]:
         _op_namespace = torch.ops.aten
 
         index_copy_node = head
@@ -604,8 +605,12 @@ class SDPAHandler(PatternHandler):
 
 
 def _to_mlx_qparams(
-    qdata: torch.Tensor, scale: torch.Tensor, zero_point: torch.Tensor, bits: int
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    qdata: torch.Tensor,
+    scale: torch.Tensor,
+    zero_point: torch.Tensor,
+    bits: int,
+    compute_biases: bool = True,
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """
     Convert TorchAO quantization params to MLX format.
 
@@ -616,6 +621,12 @@ def _to_mlx_qparams(
       = s ((q + offset) - (z + offset))
       = s Q + B,
     where Q = q + offset, B = -s * (z + offset)
+
+    Args:
+        compute_biases: If False, skip bias computation (for scale_only mode).
+                       Returns (Q, None) in this case. This is valid when
+                       zero_point is all zeros, as the C++ runtime will compute
+                       biases = -scales * 2^(bits-1).
     """
     assert qdata.dtype == torch.int8
     offset = 2 ** (bits - 1)
@@ -635,8 +646,11 @@ def _to_mlx_qparams(
     Q = Q.to(torch.uint32)
     Q = Q.reshape(qdata.shape[0], -1)
 
-    B = -scale * (zero_point.to(scale.dtype) + offset)
-    return Q, B
+    if compute_biases:
+        B = -scale * (zero_point.to(scale.dtype) + offset)
+        return Q, B
+    else:
+        return Q, None
 
 
 def _parse_dequant_node(
@@ -744,11 +758,31 @@ class QuantizedLinearHandler(PatternHandler):
         )
         _, scale = P.get_placeholder_target_and_tensor(self.scale)
 
-        Q, B = _to_mlx_qparams(qdata, scale, zero_point, self.bits)
         out_dtype = _torch_dtype_to_dtypeid(self.out_dtype)
 
+        # Check if we can use scale_only optimization:
+        # When zero_point is all zeros, biases = -scales * 2^(bits-1)
+        # which can be computed at runtime instead of serialized.
+        # Note: During partitioning, tensors are FakeTensors so we skip the check.
+        # The optimization is only applied during preprocess when we have real tensors.
+        use_scale_only = False
+        if not QUANTIZED_SERIALIZE_BIASES:
+            from torch._subclasses.fake_tensor import FakeTensor
+
+            if not isinstance(zero_point, FakeTensor):
+                if torch.sum(torch.abs(zero_point)).item() == 0:
+                    use_scale_only = True
+
+        Q, B = _to_mlx_qparams(
+            qdata, scale, zero_point, self.bits, compute_biases=not use_scale_only
+        )
         w = P.make_or_get_constant(f"{qdata_target}_to_packed", Q)
-        biases = P.make_or_get_constant(f"{zero_point_target}_to_biases", B)
+
+        if use_scale_only:
+            biases_tid = None
+        else:
+            biases = P.make_or_get_constant(f"{zero_point_target}_to_biases", B)
+            biases_tid = P.slot_to_tid(biases)
 
         x, scale_slot, b = P.slot_map([x, self.scale, b])
         out = P.make_or_get_slot(n)
@@ -758,12 +792,13 @@ class QuantizedLinearHandler(PatternHandler):
                 w=P.slot_to_tid(w),
                 scales=P.slot_to_tid(scale_slot),
                 out=P.slot_to_tid(out),
-                biases=P.slot_to_tid(biases),
+                biases=biases_tid,
                 bias=P.slot_to_tid(b) if b else None,
                 group_size=self.group_size,
                 bits=self.bits,
                 mode="affine",
                 out_dtype=out_dtype,
+                scale_only=use_scale_only,
             )
         )
         return out
@@ -871,317 +906,6 @@ class QuantizedEmbeddingHandler(PatternHandler):
                 bits=self.bits,
                 mode="affine",
                 out_dtype=out_dtype,
-            )
-        )
-        return out
-
-
-# =============================================================================
-# RMS NORM PATTERN (Decomposed)
-# =============================================================================
-# Matches the decomposed RMS norm pattern from HuggingFace Llama:
-#   pow(x, 2) -> mean(-1, keepdim=True) -> add(eps) -> rsqrt -> mul(x, rsqrt) -> mul(weight)
-#
-# This pattern appears in transformers/models/llama/modeling_llama.py:
-#   variance = hidden_states.pow(2).mean(-1, keepdim=True)
-#   hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-#   return self.weight * hidden_states
-
-
-# @REGISTRY.register_pattern(name="RMS_NORM")
-class RMSNormPatternHandler(PatternHandler):
-    """
-    Pattern handler for decomposed RMS norm.
-
-    Matches the pattern:
-        pow(x, 2) -> mean(-1) -> add(eps) -> rsqrt -> mul(x, rsqrt) -> mul(weight)
-
-    And fuses it into a single RMSNormNode.
-    """
-
-    def __init__(
-        self,
-        head: Node,
-        body: List[Node],
-        x: Node,
-        weight: Node,
-        eps: float,
-    ):
-        super().__init__(head, body)
-        self.x = x
-        self.weight = weight
-        self.eps = eps
-
-    @classmethod
-    def maybe_create(  # noqa: C901
-        cls, ep: ExportedProgram, head: Node
-    ) -> Optional["RMSNormPatternHandler"]:
-        """
-        Try to match the RMS norm decomposition pattern starting from the final mul node.
-
-        Pattern:
-            weight_mul = mul(weight, normalized)  <-- head (entry point)
-            normalized = mul(x, rsqrt_out)
-            rsqrt_out = rsqrt(add_out)
-            add_out = add(mean_out, eps)
-            mean_out = mean(pow_out, [-1], True)
-            pow_out = pow(x, 2)
-
-        Note: The weight can be either the first or second argument in the final mul.
-        """
-        _op_ns = torch.ops.aten
-
-        # head should be mul.Tensor (weight * normalized)
-        if head.op != "call_function":
-            return None
-        if get_aten_target_normalized(head.target) != _op_ns.mul.Tensor:
-            return None
-
-        logger.info(f"RMS_NORM maybe_create: Checking mul node {head.name}")
-
-        # Get the two operands of the final mul
-        mul_args = head.args
-        if len(mul_args) != 2:
-            logger.info(
-                f"RMS_NORM maybe_create: mul has {len(mul_args)} args, expected 2"
-            )
-            return None
-
-        # One should be weight (a parameter/buffer), the other is normalized result
-        # The weight can be either arg0 or arg1
-        weight_node = None
-        normalized_node = None
-
-        for i, arg in enumerate(mul_args):
-            if not isinstance(arg, Node):
-                continue
-            # Check if this is the normalized result (another mul node)
-            if (
-                arg.op == "call_function"
-                and get_aten_target_normalized(arg.target) == _op_ns.mul.Tensor
-            ):
-                normalized_node = arg
-                weight_node = mul_args[1 - i]
-                break
-
-        if normalized_node is None or weight_node is None:
-            logger.info(
-                f"RMS_NORM maybe_create: Could not find normalized_node or weight_node. "
-                f"args: {[(a.name if isinstance(a, Node) else a) for a in mul_args]}"
-            )
-            return None
-
-        if not isinstance(weight_node, Node):
-            logger.info("RMS_NORM maybe_create: weight_node is not a Node")
-            return None
-
-        logger.info(
-            f"RMS_NORM maybe_create: Found normalized={normalized_node.name}, "
-            f"weight={weight_node.name}"
-        )
-
-        # normalized_node should be mul(x, rsqrt_out)
-        norm_args = normalized_node.args
-        if len(norm_args) != 2:
-            logger.info(
-                f"RMS_NORM maybe_create: normalized_node has {len(norm_args)} args, expected 2"
-            )
-            return None
-
-        # Find which arg is rsqrt output and which is x
-        rsqrt_node = None
-        x_node = None
-
-        for i, arg in enumerate(norm_args):
-            if not isinstance(arg, Node):
-                continue
-            if (
-                arg.op == "call_function"
-                and get_aten_target_normalized(arg.target) == _op_ns.rsqrt.default
-            ):
-                rsqrt_node = arg
-                x_node = norm_args[1 - i]
-                break
-
-        if rsqrt_node is None or x_node is None:
-            logger.info(
-                f"RMS_NORM maybe_create: Could not find rsqrt_node or x_node in norm_args. "
-                f"args: {[(a.name if isinstance(a, Node) else a) for a in norm_args]}"
-            )
-            return None
-
-        if not isinstance(x_node, Node):
-            logger.info("RMS_NORM maybe_create: x_node is not a Node")
-            return None
-
-        logger.info(
-            f"RMS_NORM maybe_create: Found rsqrt={rsqrt_node.name}, x={x_node.name}"
-        )
-
-        # rsqrt_node input should be add(mean, eps)
-        if len(rsqrt_node.args) != 1:
-            logger.info(
-                f"RMS_NORM maybe_create: rsqrt has {len(rsqrt_node.args)} args, expected 1"
-            )
-            return None
-
-        add_node = rsqrt_node.args[0]
-        if not isinstance(add_node, Node):
-            logger.info("RMS_NORM maybe_create: rsqrt input is not a Node")
-            return None
-
-        if (
-            add_node.op != "call_function"
-            or get_aten_target_normalized(add_node.target) != _op_ns.add.Tensor
-        ):
-            logger.info(
-                f"RMS_NORM maybe_create: rsqrt input is not add.Tensor, got {add_node.target}"
-            )
-            return None
-
-        logger.info(f"RMS_NORM maybe_create: Found add={add_node.name}")
-
-        # add_node should have mean_out and eps as args
-        add_args = add_node.args
-        if len(add_args) != 2:
-            logger.info(
-                f"RMS_NORM maybe_create: add has {len(add_args)} args, expected 2"
-            )
-            return None
-
-        mean_node = None
-        eps = None
-
-        for arg in add_args:
-            if isinstance(arg, Node):
-                if (
-                    arg.op == "call_function"
-                    and get_aten_target_normalized(arg.target) == _op_ns.mean.dim
-                ):
-                    mean_node = arg
-                elif arg.op == "get_attr" or (
-                    arg.op == "placeholder" and "_lifted_tensor_constant" in arg.name
-                ):
-                    # This is a lifted tensor constant for eps
-                    # Try to get the value from the node's metadata
-                    val = arg.meta.get("val", None)
-                    if val is not None:
-                        try:
-                            eps = float(val.item() if hasattr(val, "item") else val)
-                        except (TypeError, ValueError):
-                            pass
-            elif isinstance(arg, (int, float)):
-                eps = float(arg)
-
-        if mean_node is None or eps is None:
-            logger.info(
-                f"RMS_NORM maybe_create: Could not find mean_node or eps in add_args. "
-                f"args: {[(a.name if isinstance(a, Node) else str(a)) for a in add_args]}"
-            )
-            return None
-
-        logger.info(f"RMS_NORM maybe_create: Found mean={mean_node.name}, eps={eps}")
-
-        # mean_node should be mean(pow_out, [-1], True)
-        mean_args = mean_node.args
-        if len(mean_args) < 2:
-            logger.info(
-                f"RMS_NORM maybe_create: mean has {len(mean_args)} args, expected >= 2"
-            )
-            return None
-
-        pow_node = mean_args[0]
-        if not isinstance(pow_node, Node):
-            logger.info("RMS_NORM maybe_create: pow_node is not a Node")
-            return None
-
-        # Check that mean is over last dimension with keepdim=True
-        dim_arg = mean_args[1] if len(mean_args) > 1 else None
-        keepdim_arg = mean_args[2] if len(mean_args) > 2 else False
-
-        if dim_arg != [-1] and dim_arg != -1:
-            logger.info(
-                f"RMS_NORM maybe_create: mean dim_arg={dim_arg}, expected [-1] or -1"
-            )
-            return None
-        if not keepdim_arg:
-            logger.info(
-                f"RMS_NORM maybe_create: mean keepdim_arg={keepdim_arg}, expected True"
-            )
-            return None
-
-        logger.info(f"RMS_NORM maybe_create: Found pow={pow_node.name}")
-
-        # pow_node should be pow(x, 2)
-        if pow_node.op != "call_function":
-            logger.info(
-                f"RMS_NORM maybe_create: pow_node.op={pow_node.op}, expected call_function"
-            )
-            return None
-
-        pow_target = get_aten_target_normalized(pow_node.target)
-        if pow_target != _op_ns.pow.Tensor_Scalar:
-            logger.info(
-                f"RMS_NORM maybe_create: pow_target={pow_target}, expected pow.Tensor_Scalar"
-            )
-            return None
-
-        pow_args = pow_node.args
-        if len(pow_args) != 2:
-            logger.info(
-                f"RMS_NORM maybe_create: pow has {len(pow_args)} args, expected 2"
-            )
-            return None
-
-        pow_input = pow_args[0]
-        pow_exp = pow_args[1]
-
-        if not isinstance(pow_input, Node):
-            logger.info("RMS_NORM maybe_create: pow_input is not a Node")
-            return None
-
-        if pow_exp != 2:
-            logger.info(f"RMS_NORM maybe_create: pow_exp={pow_exp}, expected 2")
-            return None
-
-        # Verify that x_node (from normalized mul) is the same as pow_input
-        if x_node != pow_input:
-            logger.info(
-                f"RMS_NORM maybe_create: x_node ({x_node.name}) != pow_input ({pow_input.name})"
-            )
-            return None
-
-        logger.info(
-            f"RMS_NORM maybe_create: Pattern matched! Creating handler for {head.name}"
-        )
-
-        # All checks passed - collect body nodes (intermediate nodes)
-        body = [
-            normalized_node,  # mul(x, rsqrt)
-            rsqrt_node,  # rsqrt
-            add_node,  # add(mean, eps)
-            mean_node,  # mean
-            pow_node,  # pow(x, 2)
-        ]
-
-        return RMSNormPatternHandler(
-            head=head,
-            body=body,
-            x=pow_input,
-            weight=weight_node,
-            eps=eps,
-        )
-
-    def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
-        assert n == self.head
-        x, weight = P.slot_map([self.x, self.weight])
-        out = P.make_or_get_slot(n)
-        P.emit(
-            RMSNormNode(
-                x=P.slot_to_tid(x),
-                weight=P.slot_to_tid(weight),
-                out=P.slot_to_tid(out),
-                eps=self.eps,
             )
         )
         return out
