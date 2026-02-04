@@ -33,7 +33,6 @@ If the user is building basic executorch C++ libraries, refer to root level [CMa
 If working with LLM/ASR runners, prefer to use [Makefile](Makefile) and cmake [presets](CMakePresets.json).
 
 Again refer to this [doc](docs/source/using-executorch-building-from-source.md#building-the-c-runtime)
-
 for more details.
 
 # Commit messages
