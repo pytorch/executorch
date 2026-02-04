@@ -49,6 +49,14 @@ table FloatOrVid {
     is_vid: bool = false;
 }
 
+// For fields that can be either a tensor (Tid) or a scalar value (Vid)
+// Used for ops like RoPE where offset can be a scalar position or a tensor of positions
+table TidOrVid {
+    tid: Tid;
+    vid: Vid;
+    is_vid: bool = false;  // false = use tid, true = use vid
+}
+
 // =============================================================================
 // Op nodes - mirrors ops_schema.py dataclasses
 // =============================================================================
@@ -114,7 +122,7 @@ table RopeNode {
     x: Tid (required);
     out: Tid (required);
     head_dim: int32;
-    pos: Vid (required);
+    offset: TidOrVid (required);  // Position offset: scalar (Vid) or tensor of positions (Tid)
     freqs: Tid;  // optional
     traditional: bool = false;
     base: float = 500000.0;  // Llama 3 default
@@ -387,6 +395,16 @@ table SliceUpdateNode {
     axis: IntOrVid (required);
     start: IntOrVid (required);
     stop: IntOrVid (required);
+}
+
+// Index-based update: copies update tensor into dst at positions specified by 1D indices
+// Similar to torch.index_copy but performs in-place update
+// Runtime optimizes these into slice_update calls for contiguous runs
+table IndexUpdateNode {
+    dst: Tid (required);       // destination tensor to update
+    update: Tid (required);    // source tensor to copy from
+    indices: Tid (required);   // 1D tensor of indices along axis
+    axis: int32;               // dimension to index along
 }
 
 table QuantizedGatherNode {
@@ -766,6 +784,7 @@ union OpNode {
     FullLikeNode,
     ArgmaxNode,
     SliceUpdateNode,
+    IndexUpdateNode,
     QuantizedGatherNode,
     LessNode,
     LessEqualNode,

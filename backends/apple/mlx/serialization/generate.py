@@ -299,6 +299,24 @@ def generate_python_schema(schema: FBSSchema) -> str:  # noqa: C901
             "        return cls(vid=vid, is_vid=True)",
             "",
             "",
+            "@dataclass",
+            "class TidOrVid:",
+            '    """Represents either a tensor (Tid) or a scalar value (Vid)."""',
+            "    tid: Optional[Tid] = None",
+            "    vid: Optional[Vid] = None",
+            "    is_vid: bool = False",
+            "",
+            "    @classmethod",
+            '    def from_tid(cls, tid: Tid) -> "TidOrVid":',
+            '        """Create a TidOrVid from a tensor reference."""',
+            "        return cls(tid=tid, is_vid=False)",
+            "",
+            "    @classmethod",
+            '    def from_vid(cls, vid: Vid) -> "TidOrVid":',
+            '        """Create a TidOrVid from a scalar value reference."""',
+            "        return cls(vid=vid, is_vid=True)",
+            "",
+            "",
         ]
     )
 
@@ -521,6 +539,7 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
 {op_imports},
     IntOrVid,
     FloatOrVid,
+    TidOrVid,
     Tid,
     Vid,
 )
@@ -549,6 +568,20 @@ class GeneratedOpBuilders:
             # Vid is an inline struct - must be added last for proper FlatBuffer layout
             FBIntOrVidModule.AddVid(builder, CreateVid(builder, iov.vid.idx))
         return FBIntOrVidModule.End(builder)
+
+    def _build_tid_or_vid(self, builder: flatbuffers.Builder, tov: TidOrVid) -> int:
+        """Build a TidOrVid table."""
+        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import TidOrVid as FBTidOrVidModule
+        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Tid import CreateTid
+        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Vid import CreateVid
+
+        FBTidOrVidModule.Start(builder)
+        FBTidOrVidModule.AddIsVid(builder, tov.is_vid)
+        if tov.tid is not None:
+            FBTidOrVidModule.AddTid(builder, CreateTid(builder, tov.tid.idx))
+        if tov.vid is not None:
+            FBTidOrVidModule.AddVid(builder, CreateVid(builder, tov.vid.idx))
+        return FBTidOrVidModule.End(builder)
 
     def _build_int_or_vid_vector(
         self, builder: flatbuffers.Builder, vec: List[IntOrVid]
@@ -631,6 +664,10 @@ def _generate_op_builder_method(table: FBSTable) -> str:  # noqa: C901
             prebuild_lines.append(
                 f"        {fld.name}_off = self._build_int_or_vid(builder, op.{fld.name})"
             )
+        elif kind == "tid_or_vid":
+            prebuild_lines.append(
+                f"        {fld.name}_off = self._build_tid_or_vid(builder, op.{fld.name})"
+            )
         elif kind == "optional_str":
             prebuild_lines.append(
                 f"        {fld.name}_off = builder.CreateString(op.{fld.name}) if op.{fld.name} is not None else None"
@@ -683,6 +720,10 @@ def _generate_op_builder_method(table: FBSTable) -> str:  # noqa: C901
                 f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_vec)"
             )
         elif kind == "int_or_vid":
+            lines.append(
+                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_off)"
+            )
+        elif kind == "tid_or_vid":
             lines.append(
                 f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_off)"
             )
@@ -744,6 +785,8 @@ def _get_field_kind(fld: FBSField, table: FBSTable) -> str:  # noqa: C901
         return "int_or_vid"
     if t == "FloatOrVid":
         return "float_or_vid"
+    if t == "TidOrVid":
+        return "tid_or_vid"
     if t == "DTypeId":
         # Check if this is optional (has = null default)
         if fld.default == "null":
@@ -855,6 +898,13 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
             "  std::vector<std::variant<int64_t, Vid<int32_t>>> shape;",
             "  DTypeId dtype;",
             "  std::vector<int32_t> strides;",
+            "};",
+            "",
+            "// TidOrVid: either a tensor (Tid) or a scalar value (Vid)",
+            "struct TidOrVid {",
+            "  Tid tid{};",
+            "  Vid<int32_t> vid{};",
+            "  bool is_vid{false};  // false = use tid, true = use vid",
             "};",
             "",
             "// =============================================================================",
@@ -1119,6 +1169,23 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
             "  return Vid<int32_t>{vid_ptr->idx()};",
             "}",
             "",
+            "// Convert FlatBuffer TidOrVid (tensor or scalar value)",
+            "inline TidOrVid convert_tid_or_vid(",
+            "    const mlx_delegate::TidOrVid* fb) {",
+            "  if (!fb) {",
+            "    return TidOrVid{Tid{0}, Vid<int32_t>{0}, false};",
+            "  }",
+            "  TidOrVid result;",
+            "  result.is_vid = fb->is_vid();",
+            "  if (fb->tid()) {",
+            "    result.tid = Tid{fb->tid()->idx()};",
+            "  }",
+            "  if (fb->vid()) {",
+            "    result.vid = Vid<int32_t>{fb->vid()->idx()};",
+            "  }",
+            "  return result;",
+            "}",
+            "",
             "// Convert FlatBuffer SlotVariant",
             "inline SlotVariant convert_slot_variant(const mlx_delegate::SlotVariant* fb) {",
             "  if (!fb) {",
@@ -1232,6 +1299,7 @@ def _table_name_to_opcode(name: str) -> str:
         "MultiplyInt": "MULTIPLY_INT",
         "FloorDivideInt": "FLOOR_DIVIDE_INT",
         "SliceUpdate": "SLICE_UPDATE",
+        "IndexUpdate": "INDEX_UPDATE",
         "QuantizedLinear": "QUANTIZED_LINEAR",
         "QuantizedGather": "QUANTIZED_GATHER",
         "BroadcastTo": "BROADCAST_TO",
@@ -1570,6 +1638,10 @@ def _generate_loader_case(table: FBSTable) -> List[str]:  # noqa: C901
         elif kind == "int_or_vid":
             lines.append(
                 f"      node.{fld.name} = convert_int_or_vid(fb->{fb_field_name}());"
+            )
+        elif kind == "tid_or_vid":
+            lines.append(
+                f"      node.{fld.name} = convert_tid_or_vid(fb->{fb_field_name}());"
             )
         elif kind == "int_vector" or kind == "list_int":
             lines.append(f"      node.{fld.name} = to_vector(fb->{fb_field_name}());")
