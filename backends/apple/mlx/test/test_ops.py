@@ -1637,6 +1637,62 @@ class RMSNormTest(OpTestCase):
 
 
 # =============================================================================
+# ATEN RMS NORM (torch.nn.functional.rms_norm)
+# =============================================================================
+
+
+class AtenRMSNormModel(nn.Module):
+    """Model using torch.nn.functional.rms_norm."""
+
+    def __init__(self, hidden_dim: int = 64, eps: float = 1e-5):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(hidden_dim))
+        self.hidden_dim = hidden_dim
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.rms_norm(
+            x, (self.hidden_dim,), self.weight, self.eps
+        )
+
+
+@register_test
+class AtenRMSNormTest(OpTestCase):
+    """Test case for torch.nn.functional.rms_norm (aten.rms_norm)."""
+
+    name = "aten_rms_norm"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        hidden_dim: int = 64,
+        batch_size: int = 2,
+        seq_len: int = 16,
+        eps: float = 1e-5,
+    ):
+        self.hidden_dim = hidden_dim
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+        self.eps = eps
+        self.name = "aten_rms_norm"
+
+    @classmethod
+    def get_test_configs(cls) -> List["AtenRMSNormTest"]:
+        return [
+            cls(),
+            cls(hidden_dim=128, eps=1e-6),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return AtenRMSNormModel(self.hidden_dim, self.eps)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.batch_size, self.seq_len, self.hidden_dim)
+        return (x,)
+
+
+# =============================================================================
 # ROPE OP (Custom Op)
 # =============================================================================
 
@@ -2966,8 +3022,14 @@ class ExpandTest(OpTestCase):
             cls(input_shape=(1, 1, 1), target_shape=(2, 3, 4)),
             cls(input_shape=(1, 8), target_shape=(4, 8)),
             cls(input_shape=(1, 1, 1, 64), target_shape=(2, 8, 16, 64)),
-            # Expand with -1 (infer dimension): (93,) -> (1, -1) should become (1, 93)
+            # Expand with -1 (keep dimension unchanged from input)
             cls(input_shape=(93,), target_shape=(1, -1)),
+            # Multiple -1 dimensions (keep all but first)
+            cls(input_shape=(1, 1, 5, 8), target_shape=(1, -1, -1, -1)),
+            # Multiple -1 with actual expansion on first dim
+            cls(input_shape=(1, 3, 5, 8), target_shape=(2, -1, -1, -1)),
+            # Two -1 dimensions at start
+            cls(input_shape=(2, 3, 4), target_shape=(-1, -1, 4)),
         ]
 
     def create_model(self) -> nn.Module:
@@ -3016,6 +3078,93 @@ class IndexTest(OpTestCase):
         x = torch.randn(self.table_size)
         indices = torch.randint(0, self.table_size, (self.num_indices,))
         return (x, indices)
+
+
+class IndexUpdateModel(nn.Module):
+    """Model that performs index_copy on a mutable buffer.
+
+    This triggers the INDEX_UPDATE pattern which matches aten.index_copy.default
+    on a mutable buffer and lowers it to IndexUpdateNode.
+    """
+
+    def __init__(
+        self,
+        buffer_size: int = 128,
+        feature_dim: int = 64,
+        axis: int = 0,
+    ):
+        super().__init__()
+        self.axis = axis
+        if axis == 0:
+            self.register_buffer("data", torch.zeros(buffer_size, feature_dim))
+        else:
+            # axis == 1
+            self.register_buffer("data", torch.zeros(feature_dim, buffer_size))
+
+    def forward(self, indices: torch.Tensor, update: torch.Tensor) -> torch.Tensor:
+        """Update buffer at indices along axis using index_copy."""
+        self.data.index_copy_(self.axis, indices, update)
+        return self.data.clone()
+
+
+@register_test
+class IndexUpdateTest(OpTestCase):
+    """Test case for index_update pattern (index_copy on mutable buffer).
+
+    This tests the INDEX_UPDATE pattern handler which recognizes
+    aten.index_copy.default on a mutable buffer and lowers it to IndexUpdateNode.
+    The buffer is managed internally by the MLX backend.
+    """
+
+    name = "index_update"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        buffer_size: int = 128,
+        feature_dim: int = 64,
+        num_indices: int = 8,
+        axis: int = 0,
+    ):
+        self.buffer_size = buffer_size
+        self.feature_dim = feature_dim
+        self.num_indices = num_indices
+        self.axis = axis
+        self.name = (
+            f"index_update_axis{axis}_{buffer_size}x{feature_dim}_idx{num_indices}"
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["IndexUpdateTest"]:
+        return [
+            # Basic case: update along axis 0
+            cls(buffer_size=128, feature_dim=64, num_indices=8, axis=0),
+            # Smaller buffer
+            cls(buffer_size=32, feature_dim=16, num_indices=4, axis=0),
+            # Update along axis 1
+            cls(buffer_size=64, feature_dim=32, num_indices=8, axis=1),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return IndexUpdateModel(
+            buffer_size=self.buffer_size,
+            feature_dim=self.feature_dim,
+            axis=self.axis,
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        # Create unique indices (no duplicates) for index_copy
+        # PyTorch requires int64 (long) for indices
+        indices = torch.randperm(self.buffer_size)[: self.num_indices].to(torch.int64)
+
+        # Create update tensor with shape matching the indexed dimension
+        if self.axis == 0:
+            update = torch.randn(self.num_indices, self.feature_dim)
+        else:
+            update = torch.randn(self.feature_dim, self.num_indices)
+
+        return (indices, update)
 
 
 # =============================================================================

@@ -118,6 +118,7 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     TakeAlongAxisNode,
     TanhNode,
     TanNode,
+    TidOrVid,
     TileNode,
     TransposeNode,
     TrilNode,
@@ -232,6 +233,44 @@ def require_kwargs(
     unexpected = set(kwargs.keys()) - allowed
     if unexpected:
         raise ValueError(f"{op_name}: unexpected kwargs: {unexpected}")
+
+
+def require_contiguous_format(
+    *,
+    layout=None,
+    memory_format=None,
+    dim_order=None,
+    op_name: str,
+) -> None:
+    """
+    Validate that layout/memory_format/dim_order specify contiguous format.
+
+    MLX only supports contiguous (strided) tensors. Raises ValueError if
+    sparse layouts or non-contiguous memory formats are requested.
+
+    Args:
+        layout: The torch layout (e.g., torch.strided, torch.sparse_coo)
+        memory_format: The torch memory format (e.g., torch.contiguous_format,
+            torch.channels_last)
+        dim_order: The dimension order (list of ints, identity = contiguous)
+        op_name: Name of the operation (for error message)
+    """
+    if layout is not None and layout != torch.strided:
+        raise ValueError(f"{op_name}: only strided layout supported, got {layout}")
+
+    if memory_format is not None and memory_format not in (
+        torch.contiguous_format,
+        torch.preserve_format,
+    ):
+        raise ValueError(
+            f"{op_name}: only contiguous memory format supported, got {memory_format}"
+        )
+
+    if dim_order is not None:
+        if list(dim_order) != list(range(len(dim_order))):
+            raise ValueError(
+                f"{op_name}: only contiguous dim_order supported, got {dim_order}"
+            )
 
 
 def is_static_value(value: Any) -> bool:
@@ -420,7 +459,9 @@ def _emit_update_cache(
 
 # Import custom ops to register llama.update_cache
 try:
-    from executorch.extension.llm.custom_ops import custom_ops as _llama_ops  # noqa: F401
+    from executorch.extension.llm.custom_ops import (  # noqa: F401
+        custom_ops as _llama_ops,
+    )
 except ImportError:
     pass  # Custom ops not available
 
@@ -584,11 +625,22 @@ def _view_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
-@REGISTRY.register(target=[torch.ops.aten.clone.default, torch.ops.aten.alias.default])
+@REGISTRY.register(
+    target=[
+        torch.ops.aten.clone.default,
+        torch.ops.aten.alias.default,
+        torch.ops.aten.alias_copy.default,
+    ]
+)
 def _clone_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     args = P.args(n)
+    kwargs = P.kwargs(n)
     require_args(args, 1, 1, "aten.clone")
-    require_kwargs(P.kwargs(n), set(), "aten.clone")
+    require_kwargs(kwargs, {"memory_format"}, "aten.clone")
+    require_contiguous_format(
+        memory_format=kwargs.get("memory_format"),
+        op_name="aten.clone",
+    )
     (x,) = args
     out = P.make_or_get_slot(n)
     P.emit(
@@ -612,9 +664,14 @@ try:
         # dim_order_ops._clone_dim_order(Tensor self, *, bool non_blocking=False, int[]? dim_order=None) -> Tensor
         # This is essentially a contiguous/clone operation for memory layout
         args = P.args(n)
+        kwargs = P.kwargs(n)
         require_args(args, 1, 1, "dim_order_ops._clone_dim_order")
         require_kwargs(
-            P.kwargs(n), {"non_blocking", "dim_order"}, "dim_order_ops._clone_dim_order"
+            kwargs, {"non_blocking", "dim_order"}, "dim_order_ops._clone_dim_order"
+        )
+        require_contiguous_format(
+            dim_order=kwargs.get("dim_order"),
+            op_name="dim_order_ops._clone_dim_order",
         )
         x = args[0]
         out = P.make_or_get_slot(n)
@@ -642,6 +699,11 @@ try:
             kwargs,
             {"dtype", "device", "layout", "non_blocking", "dim_order"},
             "dim_order_ops._to_dim_order_copy",
+        )
+        require_contiguous_format(
+            layout=kwargs.get("layout"),
+            dim_order=kwargs.get("dim_order"),
+            op_name="dim_order_ops._to_dim_order_copy",
         )
         x = args[0]
         out = P.make_or_get_slot(n)
@@ -681,6 +743,11 @@ def _to_copy_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(
         kwargs, {"dtype", "device", "layout", "memory_format"}, "aten._to_copy"
     )
+    require_contiguous_format(
+        layout=kwargs.get("layout"),
+        memory_format=kwargs.get("memory_format"),
+        op_name="aten._to_copy",
+    )
     x = args[0]
     out = P.make_or_get_slot(n)
 
@@ -707,10 +774,15 @@ def _to_copy_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
 @REGISTRY.register(target=[torch.ops.aten.embedding.default])
 def _embedding_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    # aten::embedding(Tensor weight, Tensor indices, SymInt padding_idx=-1,
+    #                 bool scale_grad_by_freq=False, bool sparse=False) -> Tensor
+    # padding_idx is only relevant for training (gradient computation)
+    # scale_grad_by_freq and sparse are also training-only
     args = P.args(n)
-    require_args(args, 2, 2, "aten.embedding")
+    require_args(args, 2, 3, "aten.embedding")
     require_kwargs(P.kwargs(n), set(), "aten.embedding")
     w, x = args[0], args[1]
+    # padding_idx (args[2] if present) is ignored - only affects gradients
     out = P.make_or_get_slot(n)
     P.emit(
         GatherNode(
@@ -1505,6 +1577,10 @@ def _arange_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     kwargs = P.kwargs(n)
     require_args(args, 1, 3, "aten.arange")
     require_kwargs(kwargs, {"dtype", "layout", "device", "pin_memory"}, "aten.arange")
+    require_contiguous_format(
+        layout=kwargs.get("layout"),
+        op_name="aten.arange",
+    )
     if len(args) == 1:
         start = 0
         stop = args[0]
@@ -1540,6 +1616,10 @@ def _arange_start_step_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_args(args, 2, 3, "aten.arange.start_step")
     require_kwargs(
         kwargs, {"dtype", "layout", "device", "pin_memory"}, "aten.arange.start_step"
+    )
+    require_contiguous_format(
+        layout=kwargs.get("layout"),
+        op_name="aten.arange.start_step",
     )
     start = args[0]
     stop = args[1]
@@ -1586,6 +1666,30 @@ def _rms_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.rms_norm.default])
+def _aten_rms_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    args = P.args(n)
+    require_args(args, 2, 4, "aten.rms_norm")
+    require_kwargs(P.kwargs(n), set(), "aten.rms_norm")
+    x, normalized_shape = args[0], args[1]
+    if len(normalized_shape) > 1:
+        raise ValueError(
+            "RMSNorm is only supported when normalizing over the last dimension"
+        )
+    w = args[2] if len(args) > 2 else None
+    eps = args[3] if len(args) > 3 else 1e-5
+    out = P.make_or_get_slot(n)
+    P.emit(
+        RMSNormNode(
+            x=P.slot_to_tid(x),
+            weight=P.slot_to_tid(w) if w else None,
+            out=P.slot_to_tid(out),
+            eps=eps,
+        )
+    )
+    return out
+
+
 @REGISTRY.register(target=[torch.ops.mlx.rope.default])
 def _rope_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     args = P.args(n)
@@ -1599,10 +1703,10 @@ def _rope_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     out = P.make_or_get_slot(n)
 
     # pos must be a Slot (SymInt) from input_pos.item() during tracing
-    # The schema only supports Vid for pos, not literal int
+    # The schema supports both Vid (scalar) and Tid (tensor) for offset
     if not isinstance(pos, Slot):
         raise ValueError(
-            f"RopeNode.pos must be a SymInt (traced via tensor.item()), got {type(pos)}. "
+            f"RopeNode.offset must be a SymInt (traced via tensor.item()), got {type(pos)}. "
             "Make sure input_pos is a tensor and you call input_pos.item() to get a SymInt."
         )
 
@@ -1611,7 +1715,7 @@ def _rope_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
             head_dim=head_dim,
-            pos=P.slot_to_vid(pos),
+            offset=TidOrVid.from_vid(P.slot_to_vid(pos)),
             freqs=P.slot_to_tid(freqs) if freqs else None,
             traditional=traditional,
             base=base,
@@ -2353,8 +2457,11 @@ def _full_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     # Use P.args to properly convert Nodes to Slots for dynamic shapes
     args = P.args(n)
     require_args(args, 2, 2, "aten.full")
-    require_kwargs(
-        P.kwargs(n), {"dtype", "layout", "device", "pin_memory"}, "aten.full"
+    kwargs = P.kwargs(n)
+    require_kwargs(kwargs, {"dtype", "layout", "device", "pin_memory"}, "aten.full")
+    require_contiguous_format(
+        layout=kwargs.get("layout"),
+        op_name="aten.full",
     )
     out = P.make_or_get_slot(n)
     shape = args[0]
@@ -2384,8 +2491,11 @@ def _zeros_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.zeros - create tensor filled with zeros."""
     args = P.args(n)
     require_args(args, 1, 1, "aten.zeros")
-    require_kwargs(
-        P.kwargs(n), {"dtype", "layout", "device", "pin_memory"}, "aten.zeros"
+    kwargs = P.kwargs(n)
+    require_kwargs(kwargs, {"dtype", "layout", "device", "pin_memory"}, "aten.zeros")
+    require_contiguous_format(
+        layout=kwargs.get("layout"),
+        op_name="aten.zeros",
     )
     out = P.make_or_get_slot(n)
 
@@ -2416,8 +2526,11 @@ def _ones_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.ones - create tensor filled with ones."""
     args = P.args(n)
     require_args(args, 1, 1, "aten.ones")
-    require_kwargs(
-        P.kwargs(n), {"dtype", "layout", "device", "pin_memory"}, "aten.ones"
+    kwargs = P.kwargs(n)
+    require_kwargs(kwargs, {"dtype", "layout", "device", "pin_memory"}, "aten.ones")
+    require_contiguous_format(
+        layout=kwargs.get("layout"),
+        op_name="aten.ones",
     )
     out = P.make_or_get_slot(n)
 
@@ -2447,11 +2560,17 @@ def _ones_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 def _zeros_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.zeros_like - create zero-filled tensor with same shape as input."""
     args = P.args(n)
+    kwargs = P.kwargs(n)
     require_args(args, 1, 1, "aten.zeros_like")
     require_kwargs(
-        P.kwargs(n),
+        kwargs,
         {"dtype", "layout", "device", "pin_memory", "memory_format"},
         "aten.zeros_like",
+    )
+    require_contiguous_format(
+        layout=kwargs.get("layout"),
+        memory_format=kwargs.get("memory_format"),
+        op_name="aten.zeros_like",
     )
     x = args[0]
     out = P.make_or_get_slot(n)
@@ -2475,11 +2594,17 @@ def _zeros_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 def _ones_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.ones_like - create one-filled tensor with same shape as input."""
     args = P.args(n)
+    kwargs = P.kwargs(n)
     require_args(args, 1, 1, "aten.ones_like")
     require_kwargs(
-        P.kwargs(n),
+        kwargs,
         {"dtype", "layout", "device", "pin_memory", "memory_format"},
         "aten.ones_like",
+    )
+    require_contiguous_format(
+        layout=kwargs.get("layout"),
+        memory_format=kwargs.get("memory_format"),
+        op_name="aten.ones_like",
     )
     x = args[0]
     out = P.make_or_get_slot(n)
@@ -2503,11 +2628,17 @@ def _ones_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 def _full_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.full_like - create tensor filled with value with same shape."""
     args = P.args(n)
+    kwargs = P.kwargs(n)
     require_args(args, 2, 2, "aten.full_like")
     require_kwargs(
-        P.kwargs(n),
+        kwargs,
         {"dtype", "layout", "device", "pin_memory", "memory_format"},
         "aten.full_like",
+    )
+    require_contiguous_format(
+        layout=kwargs.get("layout"),
+        memory_format=kwargs.get("memory_format"),
+        op_name="aten.full_like",
     )
     x = args[0]
     fill_value = args[1]
@@ -2724,9 +2855,14 @@ def _scalar_tensor_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     This is equivalent to torch.full([], scalar, dtype=dtype).
     """
     args = P.args(n)
+    kwargs = P.kwargs(n)
     require_args(args, 1, 1, "aten.scalar_tensor")
     require_kwargs(
-        P.kwargs(n), {"dtype", "layout", "device", "pin_memory"}, "aten.scalar_tensor"
+        kwargs, {"dtype", "layout", "device", "pin_memory"}, "aten.scalar_tensor"
+    )
+    require_contiguous_format(
+        layout=kwargs.get("layout"),
+        op_name="aten.scalar_tensor",
     )
     scalar_value = args[0]
 

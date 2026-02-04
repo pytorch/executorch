@@ -29,7 +29,24 @@ using namespace ::mlx::core;
 
 // ----- Utility: Infer -1 dimensions in shape -----
 /**
- * Infer -1 dimensions in a shape based on input tensor size.
+ * Normalize axis to be in range [0, rank) and validate.
+ * @param axis The axis value (can be negative)
+ * @param rank The tensor rank
+ * @param op_name Name of the operation for error messages
+ * @return Normalized axis in range [0, rank)
+ * @throws std::out_of_range if axis is out of range
+ */
+inline int normalize_axis(int axis, int rank, const char* op_name) {
+  if (axis < 0)
+    axis += rank;
+  if (axis < 0 || axis >= rank) {
+    throw std::out_of_range(std::string(op_name) + ": axis out of range");
+  }
+  return axis;
+}
+
+/**
+ * Infers dimensions with -1 in a reshape-like operation.
  *
  * PyTorch allows -1 in shapes to mean "infer this dimension from total size".
  * MLX requires concrete positive integers, so we must resolve -1 values.
@@ -212,17 +229,43 @@ exec_layer_norm(const LayerNormNode& n, ExecutionState& st, StreamOrDevice s) {
 // ----- RoPE -----
 inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
   const array& x = st.const_tensor_ref(n.x);
-  const int offset = st.const_value_ref<int32_t>(n.pos);
 
   std::optional<array> freqs_arr = std::nullopt;
   if (n.freqs) {
     freqs_arr = st.const_tensor_ref(*n.freqs);
   }
 
-  array out = fast::rope(
-      x, n.head_dim, n.traditional, n.base, n.scale, offset, freqs_arr, s);
-
-  st.set_tensor(n.out, std::move(out));
+  // MLX has two overloads: rope(..., int offset, ...) and rope(..., const
+  // array& offset, ...) Call the appropriate one based on is_vid
+  if (n.offset.is_vid) {
+    // Scalar offset from Vid
+    int offset = st.const_value_ref<int32_t>(n.offset.vid);
+    st.set_tensor(
+        n.out,
+        fast::rope(
+            x,
+            n.head_dim,
+            n.traditional,
+            n.base,
+            n.scale,
+            offset,
+            freqs_arr,
+            s));
+  } else {
+    // Tensor offset from Tid
+    const array& offset = st.const_tensor_ref(n.offset.tid);
+    st.set_tensor(
+        n.out,
+        fast::rope(
+            x,
+            n.head_dim,
+            n.traditional,
+            n.base,
+            n.scale,
+            offset,
+            freqs_arr,
+            s));
+  }
 }
 
 // ----- SDPA -----
@@ -524,13 +567,26 @@ inline void exec_broadcast_to(
     StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   auto shape_vec = resolve_ints(n.shape, st);
-  auto inferred_shape = infer_shape_with_minus_one(shape_vec, x.size());
+
+  // Replace -1 with actual input dimensions (PyTorch expand semantics:
+  // -1 means "keep this dimension unchanged from input").
+  // Dimensions are aligned from the RIGHT (broadcast semantics).
+  const auto& x_shape = x.shape();
+  int offset =
+      static_cast<int>(shape_vec.size()) - static_cast<int>(x_shape.size());
+  for (size_t i = 0; i < shape_vec.size(); i++) {
+    if (shape_vec[i] == -1) {
+      int input_dim = static_cast<int>(i) - offset;
+      if (input_dim >= 0 && input_dim < static_cast<int>(x_shape.size())) {
+        shape_vec[i] = static_cast<int>(x_shape[input_dim]);
+      }
+    }
+  }
+
   st.set_tensor(
       n.out,
       broadcast_to(
-          x,
-          ::mlx::core::Shape(inferred_shape.begin(), inferred_shape.end()),
-          s));
+          x, ::mlx::core::Shape(shape_vec.begin(), shape_vec.end()), s));
 }
 
 // ----- Pad -----
@@ -603,15 +659,9 @@ exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   const array& x = st.const_tensor_ref(n.x);
   const int rank = static_cast<int>(x.ndim());
 
-  int axis = resolve_int(n.axis, st);
+  int axis = normalize_axis(resolve_int(n.axis, st), rank, "Slice");
   int start = resolve_int(n.start, st);
   int stop = resolve_int(n.stop, st);
-
-  if (axis < 0)
-    axis += rank;
-  if (axis < 0 || axis >= rank) {
-    throw std::out_of_range("Slice: axis out of range");
-  }
 
   std::vector<int> vstart(rank, 0);
   std::vector<int> vstop;
@@ -718,15 +768,9 @@ inline void exec_slice_update(
 
   const int rank = static_cast<int>(dst.ndim());
 
-  int axis = resolve_int(n.axis, st);
+  int axis = normalize_axis(resolve_int(n.axis, st), rank, "SliceUpdate");
   int start = resolve_int(n.start, st);
   int stop = resolve_int(n.stop, st);
-
-  if (axis < 0)
-    axis += rank;
-  if (axis < 0 || axis >= rank) {
-    throw std::out_of_range("SliceUpdate: axis out of range");
-  }
 
   std::vector<int> vstart(rank, 0);
   std::vector<int> vstop;
@@ -749,6 +793,115 @@ inline void exec_slice_update(
   vstop[axis] = stop;
 
   dst = slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
+}
+
+// ----- Index Update -----
+// Helper: finds next contiguous run in indices starting at offset
+// Returns (dst_start, dst_stop, upd_start, upd_stop) for the run
+// Returns (0, 0, 0, 0) when no more runs
+inline std::tuple<int, int, int, int> next_contiguous_run(
+    const std::vector<int32_t>& indices,
+    size_t offset) {
+  if (offset >= indices.size())
+    return {0, 0, 0, 0};
+
+  int dst_start = indices[offset];
+  int upd_start = static_cast<int>(offset);
+  size_t len = 1;
+  while (offset + len < indices.size() &&
+         indices[offset + len] == dst_start + static_cast<int>(len)) {
+    ++len;
+  }
+  int dst_stop = dst_start + static_cast<int>(len);
+  int upd_stop = upd_start + static_cast<int>(len);
+  return {dst_start, dst_stop, upd_start, upd_stop};
+}
+
+// Copies update tensor into dst at positions specified by 1D indices along axis
+// Optimizes into slice_update calls for contiguous runs
+inline void exec_index_update(
+    const IndexUpdateNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  array& dst = st.tensor_ref(n.dst);
+  const array& upd = st.const_tensor_ref(n.update);
+  const array& indices = st.const_tensor_ref(n.indices);
+  if (indices.ndim() != 1) {
+    throw std::invalid_argument("IndexUpdate: indices must be 1D");
+  }
+  const int rank = static_cast<int>(dst.ndim());
+  int axis = normalize_axis(n.axis, rank, "IndexUpdate");
+  const int dst_dim = static_cast<int>(dst.shape()[axis]);
+
+  // Get indices as a vector of ints, handling negative indices
+  // Note: PyTorch uses int64 for indices, so we read as int64_t
+  eval(indices); // Ensure indices are materialized before accessing data
+  if (indices.dtype() != ::mlx::core::int64) {
+    throw std::invalid_argument(
+        std::string("IndexUpdate: expected int64 indices, got ") +
+        ExecutionState::dtype_str(indices.dtype()));
+  }
+  std::vector<int32_t> idx_vec(indices.size());
+  auto idx_data = indices.data<int64_t>();
+  for (size_t i = 0; i < indices.size(); ++i) {
+    int64_t idx = idx_data[i];
+    if (idx < 0) {
+      idx += dst_dim;
+    }
+    if (idx < 0 || idx >= dst_dim) {
+      throw std::out_of_range(
+          "IndexUpdate: index " + std::to_string(idx_data[i]) +
+          " out of range for axis " + std::to_string(axis) + " with size " +
+          std::to_string(dst_dim));
+    }
+    idx_vec[i] = idx;
+  }
+
+  if (idx_vec.empty()) {
+    return;
+  }
+
+  // Build base start/stop vectors for slice_update
+  std::vector<int> dst_vstart(rank, 0);
+  std::vector<int> dst_vstop;
+  dst_vstop.reserve(rank);
+  auto sh = dst.shape();
+  for (int i = 0; i < rank; ++i) {
+    dst_vstop.push_back(static_cast<int>(sh[i]));
+  }
+
+  std::vector<int> upd_vstart(rank, 0);
+  std::vector<int> upd_vstop;
+  upd_vstop.reserve(rank);
+  auto upd_sh = upd.shape();
+  for (int i = 0; i < rank; ++i) {
+    upd_vstop.push_back(static_cast<int>(upd_sh[i]));
+  }
+
+  // Process contiguous runs
+  size_t offset = 0;
+  while (offset < idx_vec.size()) {
+    auto [dst_start, dst_stop, upd_start, upd_stop] =
+        next_contiguous_run(idx_vec, offset);
+
+    // Set axis range for dst
+    dst_vstart[axis] = dst_start;
+    dst_vstop[axis] = dst_stop;
+
+    // Set axis range for upd slice
+    upd_vstart[axis] = upd_start;
+    upd_vstop[axis] = upd_stop;
+
+    // Slice update - skip slicing if using entire update tensor
+    array upd_slice =
+        (upd_start == 0 && upd_stop == static_cast<int>(upd_sh[axis]))
+        ? upd
+        : slice(upd, to_shape(upd_vstart), to_shape(upd_vstop), s);
+    dst = slice_update(
+        dst, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);
+
+    offset = static_cast<size_t>(upd_stop);
+  }
 }
 
 // ----- Quantized Gather -----
@@ -1341,6 +1494,9 @@ class Interpreter {
         break;
       case OpCode::SLICE_UPDATE:
         ops::exec_slice_update(std::get<SliceUpdateNode>(instr.node), st, s);
+        break;
+      case OpCode::INDEX_UPDATE:
+        ops::exec_index_update(std::get<IndexUpdateNode>(instr.node), st, s);
         break;
       case OpCode::QUANTIZED_GATHER:
         ops::exec_quantized_gather(
