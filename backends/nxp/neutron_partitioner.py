@@ -212,6 +212,7 @@ supported_ops = {
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
+    exir_ops.edge.aten.prelu.default: PReLUConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
     exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
@@ -441,4 +442,28 @@ class NeutronPartitioner(Partitioner):
             nodes that should be continued to be decomposed even though the op they correspond to is
             in the list returned by ops_to_not_decompose.
         """
-        return self.preserve_ops, self.check_op_support
+        parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(ep)
+        aten_op_to_converter = {}
+        for exir_op, converter in supported_ops.items():
+            aten_op_to_converter[exir_op._op] = converter
+
+        def check_op_support_extended(node: torch.fx.Node):
+            if node.target not in self.preserve_ops:
+                return False
+
+            if self.check_op_support is not None and not self.check_op_support(node):
+                return False
+
+            node_converter = aten_op_to_converter.get(node.target)
+            if node_converter is None:
+                return False
+
+            delegable = node_converter._is_supported_on_target(
+                node,
+                self.neutron_target_spec,
+                parameters_mapping,
+                self.custom_delegation_options,
+            )
+            return delegable
+
+        return self.preserve_ops, check_op_support_extended

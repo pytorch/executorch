@@ -34,6 +34,7 @@ from executorch.exir import (
     ExecutorchProgramManager,
     to_edge_transform_and_lower,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch import nn
 from torch.export import export
 from torchao.quantization.pt2e.quantizer import Quantizer
@@ -121,8 +122,7 @@ def to_quantized_edge_program(
     )
 
     # List of operators to not decompose during the lowering.
-    preserve_ops = [torch.ops.aten.gru.input]
-
+    preserve_ops = [torch.ops.aten.gru.input, torch.ops.aten.prelu.default]
     compile_spec = generate_neutron_compile_spec(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
@@ -139,7 +139,10 @@ def to_quantized_edge_program(
         export(exir_program_aten__module_quant, example_input, strict=True),
         transform_passes=NeutronEdgePassManager(),
         partitioner=partitioners,
-        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+            _core_aten_ops_exception_list=[exir_ops.edge.aten.prelu.default],
+        ),
     )
 
     if remove_quant_io_ops:
