@@ -1,10 +1,11 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import logging
 import os
+import tempfile
 from typing import Optional
 
 import executorch.backends.xnnpack.test.tester.tester as tester
@@ -68,7 +69,12 @@ class Serialize(tester.Serialize):
                 f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
             )
 
-        return run_target(
+        tempdir_context = None
+        if intermediate_path is None:
+            tempdir_context = tempfile.TemporaryDirectory()
+            intermediate_path = tempdir_context.name
+
+        result = run_target(
             self.executorch_program_manager,
             inputs_flattened,
             intermediate_path,
@@ -76,3 +82,8 @@ class Serialize(tester.Serialize):
             elf_path,
             self.timeout,
         )
+
+        if tempdir_context:
+            tempdir_context.cleanup()
+
+        return result
