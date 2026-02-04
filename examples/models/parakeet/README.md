@@ -25,7 +25,7 @@ python export_parakeet_tdt.py --audio /path/to/audio.wav
 | Argument | Description |
 |----------|-------------|
 | `--output-dir` | Output directory for exports (default: `./parakeet_tdt_exports`) |
-| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `cuda`, `cuda-windows` (default: `portable`) |
+| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `cuda`, `cuda-windows` (default: `xnnpack`) |
 | `--dtype` | Data type: `fp32`, `bf16`, `fp16` (default: `fp32`). Metal backend supports `fp32` and `bf16` only (no `fp16`). |
 | `--audio` | Path to audio file for transcription test |
 
@@ -57,7 +57,19 @@ The export script supports quantizing encoder and decoder linear layers using [t
 | `8da4w` | 8-bit dynamic activation, 4-bit weight |
 | `8da8w` | 8-bit dynamic activation, 8-bit weight |
 
-#### Example: 4-bit Weight Quantization with Tile Packing
+#### Example: Dynamic Quantization for XNNPACK
+
+```bash
+python export_parakeet_tdt.py \
+    --backend xnnpack \
+    --qlinear_encoder 8da4w \
+    --qlinear_encoder_group_size 32 \
+    --qlinear 8da4w \
+    --qlinear_group_size 32 \
+    --output-dir ./parakeet_quantized_xnnpack
+```
+
+#### Example: 4-bit Weight Quantization with Tile Packing for CUDA
 
 ```bash
 python export_parakeet_tdt.py \
