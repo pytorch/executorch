@@ -46,6 +46,10 @@ test_data_suite_u55_reject = {
     "rank2_bool": lambda: (torch.randint(0, 2, (5, 5), dtype=torch.bool), [1, 0]),
 }
 test_data_suite = test_data_suite_u55.copy() | test_data_suite_u55_reject.copy()
+test_data_suite_bf16 = {
+    "rank_2_bf16": lambda: (torch.rand(6, 4, dtype=torch.bfloat16), [1, 0]),
+    "rank_3_bf16": lambda: (torch.rand(2, 3, 5, dtype=torch.bfloat16), [2, 0, 1]),
+}
 
 
 class SimplePermute(torch.nn.Module):
@@ -59,7 +63,7 @@ class SimplePermute(torch.nn.Module):
         return torch.permute(x, self.dims)
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_permute_tosa_FP(test_data: torch.Tensor):
     test_data, dims = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -67,6 +71,7 @@ def test_permute_tosa_FP(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 

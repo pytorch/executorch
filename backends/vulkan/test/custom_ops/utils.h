@@ -14,6 +14,7 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,29 @@ namespace vulkan {
 namespace prototyping {
 
 using namespace vkcompute;
+
+//
+// ReferenceKey for caching reference computations
+//
+
+// Captures the identity of input conditions for test case grouping.
+// Test cases with the same ReferenceKey should produce identical reference
+// outputs, so reference computation can be cached and reused.
+struct ReferenceKey {
+  std::string key_string;
+
+  static ReferenceKey from_test_case(const class TestCase& tc);
+
+  bool operator==(const ReferenceKey& other) const {
+    return key_string == other.key_string;
+  }
+};
+
+struct ReferenceKeyHash {
+  size_t operator()(const ReferenceKey& k) const {
+    return std::hash<std::string>{}(k.key_string);
+  }
+};
 
 //
 // Global configuration options
@@ -120,7 +144,7 @@ inline std::string shape_string(const std::vector<int64_t>& shape) {
 // ValueSpec class
 //
 
-enum class SpecType { Tensor, IntList, Int, Float, Bool };
+enum class SpecType { Tensor, IntList, Int, Float, Bool, String };
 
 // Data generation types
 enum class DataGenType {
@@ -146,12 +170,14 @@ struct ValueSpec {
   bool is_constant_tensor;
   bool is_none_flag;
   bool is_int4_tensor;
+  bool data_generated_ = false;
 
   std::vector<float> float_data;
   std::vector<int32_t> int32_data;
   std::vector<uint16_t> half_data; // Using uint16_t as substitute for half
   std::vector<int8_t> int8_data; // For kChar (signed 8-bit)
   std::vector<uint8_t> uint8_data; // For kByte (unsigned 8-bit)
+  std::string string_data;
 
   std::vector<float> ref_float_data;
   std::vector<int32_t> ref_int32_data;
@@ -172,8 +198,9 @@ struct ValueSpec {
         data_gen_type(DataGenType::ZEROS),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {
-    generate_tensor_data();
+        is_int4_tensor(false),
+        data_generated_(false) {
+    // Data generation is deferred until ensure_data_generated() is called
   }
 
   // Constructor for tensor with custom data generation type
@@ -191,8 +218,9 @@ struct ValueSpec {
         data_gen_type(data_gen_type),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {
-    generate_tensor_data();
+        is_int4_tensor(false),
+        data_generated_(false) {
+    // Data generation is deferred until ensure_data_generated() is called
   }
 
   // Constructor for single int
@@ -205,7 +233,8 @@ struct ValueSpec {
         data_gen_type(DataGenType::FIXED),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {
+        is_int4_tensor(false),
+        data_generated_(true) {
     int32_data.push_back(value);
   }
 
@@ -219,7 +248,8 @@ struct ValueSpec {
         data_gen_type(DataGenType::FIXED),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {
+        is_int4_tensor(false),
+        data_generated_(true) {
     float_data.push_back(value);
   }
 
@@ -233,7 +263,8 @@ struct ValueSpec {
         data_gen_type(DataGenType::FIXED),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {
+        is_int4_tensor(false),
+        data_generated_(true) {
     int32_data.push_back(value ? 1 : 0);
   }
 
@@ -248,7 +279,25 @@ struct ValueSpec {
         is_constant_tensor(false),
         is_none_flag(false),
         is_int4_tensor(false),
+        data_generated_(true),
         int32_data(values) {}
+
+  // Factory method for string (avoids ambiguity with vector constructor)
+  static ValueSpec make_string(const std::string& value) {
+    ValueSpec spec;
+    spec.sizes = {1};
+    spec.dtype = vkapi::kInt;
+    spec.memory_layout = utils::kWidthPacked;
+    spec.storage_type = utils::kTexture3D;
+    spec.spec_type = SpecType::String;
+    spec.data_gen_type = DataGenType::FIXED;
+    spec.is_constant_tensor = false;
+    spec.is_none_flag = false;
+    spec.is_int4_tensor = false;
+    spec.data_generated_ = true;
+    spec.string_data = value;
+    return spec;
+  }
 
   // Default constructor
   ValueSpec()
@@ -259,7 +308,8 @@ struct ValueSpec {
         data_gen_type(DataGenType::ZEROS),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {}
+        is_int4_tensor(false),
+        data_generated_(false) {}
 
   int64_t numel() const;
   size_t nbytes() const;
@@ -280,6 +330,9 @@ struct ValueSpec {
   bool is_bool() const {
     return spec_type == SpecType::Bool;
   }
+  bool is_string() const {
+    return spec_type == SpecType::String;
+  }
 
   int32_t get_int_value() const {
     return int32_data.empty() ? 0 : int32_data[0];
@@ -289,6 +342,9 @@ struct ValueSpec {
   }
   bool get_bool_value() const {
     return int32_data.empty() ? false : (int32_data[0] != 0);
+  }
+  const std::string& get_string_value() const {
+    return string_data;
   }
   const std::vector<int32_t>& get_int_list() const {
     return int32_data;
@@ -365,12 +421,23 @@ struct ValueSpec {
   void* get_mutable_data_ptr();
   float get_element(size_t index) const;
 
+  // Data generation methods for deferred generation and caching
+  bool is_data_generated() const {
+    return data_generated_;
+  }
+  void ensure_data_generated(int seed = -1);
+  void copy_data_from(const ValueSpec& other);
+
   // Set/get constant flag
   bool is_constant() const {
     return is_constant_tensor;
   }
   void set_constant(bool is_constant) {
     is_constant_tensor = is_constant;
+    // Constant tensors need data immediately for test case setup
+    if (is_constant && is_tensor()) {
+      ensure_data_generated();
+    }
   }
 
   // Set/get none flag
@@ -400,7 +467,7 @@ struct ValueSpec {
       float rel_tolerance = 1e-3f) const;
 
  private:
-  void generate_tensor_data();
+  void generate_tensor_data(int seed = -1);
 };
 
 //
