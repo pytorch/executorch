@@ -21,10 +21,11 @@ namespace native {
 namespace {
 
 ScalarType get_common_type(ScalarType a_type, ScalarType b_type) {
-  ET_CHECK(
-      !isComplexType(a_type) && !isQIntType(a_type) && !isBitsType(a_type));
-  ET_CHECK(
-      !isComplexType(b_type) && !isQIntType(b_type) && !isBitsType(b_type));
+  if (isComplexType(a_type) || isComplexType(b_type)) {
+    return promoteTypes(a_type, b_type);
+  }
+  ET_CHECK(!isQIntType(a_type) && !isBitsType(a_type));
+  ET_CHECK(!isQIntType(b_type) && !isBitsType(b_type));
 
   if (isFloatingType(a_type) && isFloatingType(b_type)) {
     return promoteTypes(a_type, b_type);
@@ -60,6 +61,20 @@ Tensor& opt_div_out(
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
+
+  // Handle complex types
+  if (isComplexType(a_type) || isComplexType(b_type)) {
+    ScalarType common_type = get_common_type(a_type, b_type);
+    ET_SWITCH_COMPLEX_TYPES(common_type, ctx, op_name, CTYPE, [&]() {
+      const CTYPE* a_data = a.const_data_ptr<CTYPE>();
+      const CTYPE* b_data = b.const_data_ptr<CTYPE>();
+      CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+      for (size_t i = 0; i < out.numel(); ++i) {
+        out_data[i] = a_data[i] / b_data[i];
+      }
+    });
+    return out;
+  }
 
   if (a.numel() == 1 || b.numel() == 1) {
     if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
