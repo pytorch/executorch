@@ -34,18 +34,24 @@ from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
+    get_ethosu_partitioner,
     get_mps_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,
+    get_tosa_partitioner,
+    get_vgf_partitioner,
     get_vulkan_partitioner,
     get_xnnpack_partitioner,
 )
 from executorch.extension.llm.export.quantizer_lib import (
     get_coreml_quantizer,
+    get_ethosu_quantizer,
     get_ov_quantizer,
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
+    get_tosa_quantizer,
+    get_vgf_quantizer,
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
@@ -210,6 +216,8 @@ def build_args_parser() -> argparse.ArgumentParser:
             "coreml_baseline_8a_c8w",
             "coreml_baseline_8a_c4w",
             "vulkan_8w",
+            "tosa_8a8w",
+            "ethosu_8a8w",
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
@@ -788,6 +796,26 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.quantization.pt2e_quantize.value
         )
         quantizers.append(coreml_quantizer)
+    if llm_config.backend.tosa.enabled and llm_config.quantization.pt2e_quantize:
+        tosa_quantizer = get_tosa_quantizer(
+            llm_config.backend.tosa.version, llm_config.quantization.pt2e_quantize.value
+        )
+        quantizers.append(tosa_quantizer)
+    if llm_config.backend.ethosu.enabled and llm_config.quantization.pt2e_quantize:
+        ethosu_quantizer = get_ethosu_quantizer(
+            llm_config.backend.ethosu.target,
+            llm_config.backend.ethosu.system_config,
+            llm_config.backend.ethosu.memory_mode,
+            llm_config.quantization.pt2e_quantize.value,
+        )
+        quantizers.append(ethosu_quantizer)
+    if llm_config.backend.vgf.enabled and llm_config.quantization.pt2e_quantize:
+        vgf_quantizer = get_vgf_quantizer(
+            llm_config.backend.vgf.compile_spec,
+            llm_config.backend.vgf.compiler_flags,
+            llm_config.quantization.pt2e_quantize.value,
+        )
+        quantizers.append(vgf_quantizer)
     if llm_config.backend.vulkan.enabled and llm_config.quantization.pt2e_quantize:
         assert (
             len(quantizers) == 0
@@ -919,6 +947,47 @@ def _to_edge_and_lower_llama_openvino(
     logging.info("Lowering model using following partitioner(s): ")
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
+
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners
+    )
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
+def _to_edge_and_lower_llama_arm(
+    builder_exported,
+    modelname,
+    quantizers,
+    additional_passes,
+    llm_config: LlmConfig,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+
+    logging.info("Lowering model using TOSA partitioner")
+
+    partitioners = []
+    if llm_config.backend.ethosu.enabled:
+        partitioners.append(
+            get_ethosu_partitioner(
+                llm_config.backend.ethosu.target,
+            )
+        )
+        modelname = f"ethosu_{modelname}"
+    elif llm_config.backend.vgf.enabled:
+        partitioners.append(
+            get_vgf_partitioner(
+                llm_config.backend.vgf.compile_spec,
+                llm_config.backend.vgf.compiler_flags,
+            )
+        )
+        modelname = f"vgf_{modelname}"
+    elif llm_config.backend.tosa.enabled:
+        partitioners.append(get_tosa_partitioner(llm_config.backend.tosa.version))
+        modelname = f"tosa_{modelname}"
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
@@ -1119,7 +1188,14 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
     # export_to_edge
-    builder_exported = _prepare_for_llama_export(llm_config).export()
+    builder_manager = _prepare_for_llama_export(llm_config)
+    if (
+        llm_config.backend.tosa.enabled
+        or llm_config.backend.vgf.enabled
+        or llm_config.backend.ethosu.enabled
+    ):
+        builder_manager.skip_dim_order = False
+    builder_exported = builder_manager.export()
     builder_exported.run_canonical_optimizations()
     modelname = builder_exported.modelname
 
@@ -1160,6 +1236,19 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             quantizers,
             additional_passes,
             openvino_device=llm_config.backend.openvino.device,
+            verbose=llm_config.debug.verbose,
+        )
+    elif (
+        llm_config.backend.tosa.enabled
+        or llm_config.backend.ethosu.enabled
+        or llm_config.backend.vgf.enabled
+    ):
+        builder = _to_edge_and_lower_llama_arm(
+            builder_exported,
+            modelname,
+            quantizers,
+            additional_passes,
+            llm_config,
             verbose=llm_config.debug.verbose,
         )
     else:
