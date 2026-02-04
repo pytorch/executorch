@@ -87,14 +87,14 @@ target_include_directories(
                           ${_common_include_directories}
 )
 
-# Generic kernels that the generic operators depend on.
-# These provide impl::generic::kernels functions like quantize/dequantize.
+# Generic kernels that the generic operators depend on. These provide
+# impl::generic::kernels functions like quantize/dequantize.
 set(_generic_kernels__srcs
     "${EXECUTORCH_ROOT}/backends/cadence/generic/kernels/kernels.cpp"
 )
 
-# Generic custom ops that HiFi operators depend on as fallbacks.
-# These provide impl::generic::native implementations called by HiFi operators.
+# Generic custom ops that HiFi operators depend on as fallbacks. These provide
+# impl::generic::native implementations called by HiFi operators.
 set(_generic_custom_ops__srcs
     "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_linear.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_conv2d.cpp"
