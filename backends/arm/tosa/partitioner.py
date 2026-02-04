@@ -385,9 +385,9 @@ class TOSAPartitioner(Partitioner):
         }
 
         def filter_fn(node: torch.fx.Node) -> bool:
-            """Filter function applied to ops in 'ops_to_not_decompose'.
-            Returns True if the op should not be decomposed.
-            If this function returns True, the partitioner *must* accept the node, or the lowering fails.
+            """Filter function applied to ops in 'ops_to_not_decompose'. Returns
+            True if the op should not be decomposed. If this function returns
+            True, the partitioner *must* accept the node, or the lowering fails.
 
             Args:
                 node (torch.fx.Node): FX node to evaluate.
