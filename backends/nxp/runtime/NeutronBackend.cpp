@@ -70,6 +70,9 @@ typedef struct {
   int numOutputs = 0;
   int numInputArgs = 0;
   uint32_t scratchSize = 0;
+#ifdef EXTERNAL_MEM
+  uint32_t sramScratchSize = 0;
+#endif
   uint32_t profileSize = 0;
   uint32_t debugSize = 0;
   NeutronModelConfig mcfg;
@@ -79,7 +82,18 @@ typedef struct {
   const uint8_t* outputTranspositionFlags;
   const uint8_t* inputMap;
   const uint8_t* outputMap;
-} NeutronConfig;
+} NeutronExecutorchConfig;
+
+#ifdef EXTERNAL_MEM
+// Neutron compute has no access to FLASH.
+// Prefetch weights from FLASH to SRAM using memcpy.
+// For a model converted with --fetch_constants_to_sram.
+void copy(void* dst, void* src, uint32_t size, uint32_t channel) {
+  memcpy(dst, src, size);
+}
+void wait(uint32_t channel) {}
+static NeutronConfig neutronMemCopyConfig = {copy, wait};
+#endif
 
 // Applied on outputs.
 template <typename T>
@@ -258,7 +272,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
       ArrayRef<CompileSpec> compile_specs) const override {
     MemoryAllocator* allocator = context.get_runtime_allocator();
 
-    auto* cfg = allocator->allocateInstance<NeutronConfig>();
+    auto* cfg = allocator->allocateInstance<NeutronExecutorchConfig>();
 
     // The following data is read from the "processed" data blob.
     //    cfg->numInputs
@@ -293,6 +307,9 @@ class NeutronBackend final : public PyTorchBackendInterface {
     switch (payloadVersion) {
       case 0:
         cfg->scratchSize = buffer[9];
+#ifdef EXTERNAL_MEM
+        cfg->sramScratchSize = buffer[10];
+#endif
         cfg->profileSize = 0;
         cfg->debugSize = 0;
         cfg->numInputs = buffer[11];
@@ -300,8 +317,12 @@ class NeutronBackend final : public PyTorchBackendInterface {
         break;
       case 1:
         cfg->scratchSize = buffer[9];
-        cfg->profileSize = buffer[10];
+        // The highest bit has special meaning in NS >= 2.2.3
+        cfg->profileSize = buffer[10] & 0x7FFFFFFF;
         cfg->debugSize = buffer[11];
+#ifdef EXTERNAL_MEM
+        cfg->sramScratchSize = buffer[12];
+#endif
         cfg->numInputs = buffer[13];
         cfg->numOutputs = buffer[14];
         break;
@@ -351,6 +372,14 @@ class NeutronBackend final : public PyTorchBackendInterface {
       return Error::InvalidProgram;
     }
 
+#ifdef EXTERNAL_MEM
+    neutronRC = neutronSetConfig(&neutronMemCopyConfig);
+    if (neutronRC != ENONE) {
+      ET_LOG(Error, "Neutron set config failed with error code %ld", neutronRC);
+      return Error::InvalidProgram;
+    }
+#endif
+
     return cfg;
   }
 
@@ -365,7 +394,8 @@ class NeutronBackend final : public PyTorchBackendInterface {
       BackendExecutionContext& context,
       DelegateHandle* input_handle,
       Span<EValue*> args) const override {
-    NeutronConfig* cfg = static_cast<NeutronConfig*>(input_handle);
+    NeutronExecutorchConfig* cfg =
+        static_cast<NeutronExecutorchConfig*>(input_handle);
 
     // Allocate place for input and output pointers.
     cfg->dcfg.inputs = static_cast<const void**>(
@@ -380,6 +410,12 @@ class NeutronBackend final : public PyTorchBackendInterface {
         static_cast<void*>(context.allocate(cfg->profileSize, 16));
     cfg->dcfg.outputs[cfg->numOutputs + 2] =
         static_cast<void*>(context.allocate(cfg->debugSize, 16));
+
+#ifdef EXTERNAL_MEM
+    // Allocate the space in SRAM to prefetch weights from FLASH.
+    cfg->dcfg.scratchWeights =
+        static_cast<void*>(context.allocate(cfg->sramScratchSize, 16));
+#endif
 
     // Set inputs from args.
     // Transpose inputs if needed.
@@ -527,7 +563,8 @@ class NeutronBackend final : public PyTorchBackendInterface {
   }
 
   void destroy(DelegateHandle* handle) const override {
-    NeutronConfig* cfg = reinterpret_cast<NeutronConfig*>(handle);
+    NeutronExecutorchConfig* cfg =
+        reinterpret_cast<NeutronExecutorchConfig*>(handle);
 
     // Unprepare to free resources in neutron driver.
     NeutronError neutronRC = neutronModelUnprepare(cfg->nmh);

@@ -99,6 +99,7 @@ def to_quantized_edge_program(
     get_quantizer_fn=None,
     use_neutron_for_format_conversion=True,
     use_quant_state_dict=True,
+    fetch_constants_to_sram=False,
 ) -> EdgeProgramManager:
     _neutron_target_spec = NeutronTargetSpec(target, neutron_converter_flavor)
     if get_quantizer_fn is None:
@@ -128,6 +129,7 @@ def to_quantized_edge_program(
         operators_not_to_delegate=operators_not_to_delegate,
         neutron_converter_flavor=neutron_converter_flavor,
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
+        fetch_constants_to_sram=fetch_constants_to_sram,
     )
     post_quant_state_dict = (
         exir_program_aten__module_quant.state_dict() if use_quant_state_dict else None
