@@ -365,93 +365,6 @@ utils::uvec3 pick_static_quantized_conv2d_local_wg_size(
 }
 
 //
-// Prepack nodes
-//
-
-ValueRef prepack_quantized_conv2d_weight(
-    ComputeGraph& graph,
-    const QuantizationConfig& weight_quant_config,
-    const ValueRef weight_data,
-    const ValueRef input,
-    const ValueRef output,
-    const ValueRef groups,
-    const ValueRef kernel_size) {
-  VK_CHECK_COND(weight_quant_config.nbits == 8);
-  VK_CHECK_COND(weight_quant_config.is_symmetric);
-
-  const int32_t groups_val = graph.get_int(groups);
-
-  const int64_t OC = graph.size_at<int64_t>(-3, output);
-  const int64_t IC = graph.size_at<int64_t>(-3, input) / groups_val;
-
-  int64_t K_h;
-  int64_t K_w;
-
-  {
-    const auto kernel_size_list = graph.get_int_list(kernel_size);
-    K_h = kernel_size_list->at(0);
-    K_w = kernel_size_list->at(1);
-  }
-
-  const int64_t num_blocks_OC = utils::div_up_4(OC);
-  const int64_t num_blocks_IC = utils::div_up_4(IC);
-
-  const int64_t num_blocks_y = num_blocks_IC * K_h;
-  const int64_t num_blocks_x = K_w * num_blocks_OC;
-
-  // The packed tensor arranges blocks as [OC_blocks * K_total, IC_blocks]
-  const int64_t output_height = num_blocks_y;
-  const int64_t output_width = num_blocks_x * 4;
-
-  // Store the original sizes of the weight data to pass to the shader
-  utils::ivec4 orig_sizes = {
-      utils::safe_downcast<int32_t>(OC),
-      utils::safe_downcast<int32_t>(K_h),
-      utils::safe_downcast<int32_t>(K_w),
-      utils::safe_downcast<int32_t>(IC)};
-
-  std::vector<int64_t> packed_weight_sizes{output_height, output_width};
-
-  utils::StorageType storage_type = utils::kTexture2D;
-  uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
-  if (output_width > max_extent * 4 || output_height > max_extent) {
-    storage_type = utils::kBuffer;
-  }
-
-  ValueRef packed_weight = graph.add_tensor(
-      packed_weight_sizes,
-      vkcompute::vkapi::kInt,
-      storage_type,
-      utils::kWidthPacked);
-
-  utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(num_blocks_x),
-      utils::safe_downcast<uint32_t>(num_blocks_y),
-      1u};
-
-  std::string kernel_name = "pack_q8_conv2d_weights";
-  add_storage_type_suffix(kernel_name, storage_type);
-
-  graph.prepack_nodes().emplace_back(new PrepackNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
-      // Inputs and Outputs
-      weight_data,
-      packed_weight,
-      // UBOs
-      {},
-      // Specialization Constants
-      {},
-      // Push Constants
-      {graph.sizes_pc_of(packed_weight),
-       PushConstantDataInfo(&orig_sizes, sizeof(utils::ivec4))}));
-
-  return packed_weight;
-}
-
-//
 // Dispatch nodes
 //
 vkapi::SpecVarList GenerateSpecConstants(
@@ -824,7 +737,7 @@ void add_conv2d_q8ta_q8csw_linear_node(
       nullptr));
 }
 
-void add_conv2d_q8ta_q8csw_q8to_node(
+void add_conv2d_q8ta_q8csw_q8to_4w4c_node(
     ComputeGraph& graph,
     const ValueRef packed_int8_input,
     const ValueRef packed_int8_input_im2col,
@@ -853,25 +766,16 @@ void add_conv2d_q8ta_q8csw_q8to_node(
       dilation,
       groups);
 
-  const bool use_im2col = should_use_im2col(&graph, kernel_size, groups);
-
   float input_scale_val = graph.extract_scalar<float>(input_scale);
   int32_t input_zp_val = graph.extract_scalar<int32_t>(input_zp);
 
   float output_inv_scale_val = 1.0f / graph.extract_scalar<float>(output_scale);
   int32_t output_zp_val = graph.extract_scalar<int32_t>(output_zp);
 
-  std::string kernel_name = use_im2col ? "conv2d_q8ta_q8csw_q8to_linear_tiled"
-                                       : "conv2d_q8ta_q8csw_q8to";
-  add_storage_type_suffix(
-      kernel_name, graph.storage_type_of(packed_int8_output));
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(packed_weight));
-  add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
-  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
-
-  vkapi::ParamsBindList param_buffers = {
-      graph.sizes_ubo(packed_int8_output),
-      graph.sizes_ubo(packed_int8_input_im2col)};
+  uint32_t apply_bias = 1;
+  if (graph.val_is_none(bias_data)) {
+    apply_bias = 0;
+  }
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&input_scale_val, sizeof(input_scale_val)),
@@ -880,10 +784,19 @@ void add_conv2d_q8ta_q8csw_q8to_node(
       PushConstantDataInfo(&output_zp_val, sizeof(output_zp_val)),
   };
 
-  uint32_t apply_bias = 1;
-  if (graph.val_is_none(bias_data)) {
-    apply_bias = 0;
-  }
+  // Use the optimized im2col or direct shader for 4W4C layout
+  const bool use_im2col = should_use_im2col(&graph, kernel_size, groups);
+
+  std::string kernel_name = use_im2col ? "conv2d_q8ta_q8csw_q8to_linear_tiled"
+                                       : "conv2d_q8ta_q8csw_q8to";
+  add_storage_type_suffix(
+      kernel_name, graph.storage_type_of(packed_int8_output));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(packed_weight));
+  add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
+
+  vkapi::ParamsBindList param_buffers = {
+      graph.sizes_ubo(packed_int8_output),
+      graph.sizes_ubo(packed_int8_input_im2col)};
 
   vkapi::SpecVarList spec_constants =
       GenerateSpecConstants(graph, conv_params, groups, apply_bias);
@@ -911,6 +824,78 @@ void add_conv2d_q8ta_q8csw_q8to_node(
       {},
       // Resizing Logic
       nullptr));
+}
+
+void add_conv2d_q8ta_q8csw_q8to_node(
+    ComputeGraph& graph,
+    const ValueRef packed_int8_input,
+    const ValueRef packed_int8_input_im2col,
+    const ValueRef input_scale,
+    const ValueRef input_zp,
+    const ValueRef packed_weight,
+    const ValueRef packed_weight_sums,
+    const ValueRef packed_weight_scales,
+    const ValueRef output_scale,
+    const ValueRef output_zp,
+    const ValueRef bias_data,
+    const ValueRef packed_bias,
+    const ValueRef kernel_size,
+    const ValueRef stride,
+    const ValueRef padding,
+    const ValueRef dilation,
+    const ValueRef groups,
+    const ValueRef packed_int8_output) {
+  // Check if the input/output layout is 4W4C (optimized path)
+  const utils::GPUMemoryLayout inp_layout =
+      graph.estimate_memory_layout_of(packed_int8_input);
+  const utils::GPUMemoryLayout outp_layout =
+      graph.estimate_memory_layout_of(packed_int8_output);
+
+  const bool use_optimized_shader =
+      (inp_layout == utils::kPackedInt8_4W4C &&
+       outp_layout == utils::kPackedInt8_4W4C);
+
+  if (use_optimized_shader) {
+    add_conv2d_q8ta_q8csw_q8to_4w4c_node(
+        graph,
+        packed_int8_input,
+        packed_int8_input_im2col,
+        input_scale,
+        input_zp,
+        packed_weight,
+        packed_weight_sums,
+        packed_weight_scales,
+        output_scale,
+        output_zp,
+        bias_data,
+        packed_bias,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        groups,
+        packed_int8_output);
+  } else {
+    add_q8ta_conv2d_node(
+        graph,
+        packed_int8_input,
+        packed_int8_input_im2col,
+        input_scale,
+        input_zp,
+        packed_weight,
+        packed_weight_sums,
+        packed_weight_scales,
+        output_scale,
+        output_zp,
+        bias_data,
+        packed_bias,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        groups,
+        packed_int8_output);
+  }
 }
 
 //
@@ -1171,7 +1156,18 @@ void static_quantized_conv2d_impl(
   // same 4Wx4C block have the same group index.
   const bool is_depthwise = (groups_val == in_channels);
 
-  const bool use_im2col = should_use_im2col(&graph, kernel_size, groups);
+  // Check if input/output layouts are 4W4C (optimized im2col path)
+  const utils::GPUMemoryLayout inp_layout =
+      graph.estimate_memory_layout_of(packed_int8_input);
+  const utils::GPUMemoryLayout outp_layout =
+      graph.estimate_memory_layout_of(packed_int8_output);
+  const bool is_optimized_layout =
+      (inp_layout == utils::kPackedInt8_4W4C &&
+       outp_layout == utils::kPackedInt8_4W4C);
+
+  // Only use im2col path for 4W4C layouts
+  const bool use_im2col =
+      is_optimized_layout && should_use_im2col(&graph, kernel_size, groups);
   // For pointwise convolution with stride = 1, padding = 0, dilation = 1, the
   // input tensor is already equivalent to its im2col representation. In this
   // case we can skip the im2col procedure and pass in the input image to the
