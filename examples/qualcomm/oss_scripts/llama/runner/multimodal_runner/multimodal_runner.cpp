@@ -577,8 +577,8 @@ Error MultimodalRunner<T>::generate_from_prompt_or_file(
   merge_multimodal_embeddings(
       prompt_tokens, text_embeddings, placeholder_token_id);
 
-  auto prefill_res =
-      prompt_processor_->prefill(merged_embeddings_, cur_pos_, dump_logits);
+  auto prefill_res = prompt_processor_->prefill(
+      merged_embeddings_, cur_pos_, dump_logits, nullptr);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
   cur_pos_ += num_prompt_tokens;
@@ -640,7 +640,7 @@ Error MultimodalRunner<T>::generate_from_prompt_or_file(
   }
 
   int64_t num_generated_tokens = ET_UNWRAP(token_generator_->generate(
-      prompt_tokens, cur_pos_, seq_len, token_callback, dump_logits));
+      prompt_tokens, cur_pos_, seq_len, token_callback, dump_logits, nullptr));
   stats_.inference_end_ms = time_in_ms();
   ET_LOG(
       Info,

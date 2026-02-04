@@ -183,13 +183,22 @@ ComputeGraph::ComputeGraph(GraphConfig config)
 }
 
 ComputeGraph::~ComputeGraph() {
-  values_.clear();
+  // Wait for all currently executing commands to complete before cleaning up.
+  // If wait_for_queue() throws an exception, still proceed with cleanup.
+  try {
+    context_->wait_for_queue();
+  } catch (...) {
+  }
 
-  prepack_nodes_.clear();
-  execute_nodes_.clear();
-  clear_deferred_cmds();
+  // Wrap in try/catch to ensure that destructor does not throw
+  try {
+    values_.clear();
 
-  context_->flush();
+    prepack_nodes_.clear();
+    execute_nodes_.clear();
+    clear_deferred_cmds();
+  } catch (...) {
+  }
 }
 
 std::vector<int64_t> ComputeGraph::extract_int_or_symint_list(
