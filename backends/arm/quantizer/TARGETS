@@ -17,6 +17,11 @@ runtime.python_library(
     deps = [
         ":arm_quantizer_utils",
         ":quantization_annotator",
+        "//executorch/backends/arm:constants",
+        "//executorch/backends/arm:ethosu",
+        "//executorch/backends/arm:vgf",
+        "//executorch/backends/arm/tosa:specification",
+        "//executorch/backends/arm:arm_compile_spec",
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//pytorch/ao:torchao",
