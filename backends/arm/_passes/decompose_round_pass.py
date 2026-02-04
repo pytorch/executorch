@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -72,11 +72,12 @@ class DecomposeRoundPass(ArmPass):
         ):
             return super().call_operator(op, args, kwargs, meta, updated)
         x = args[0]
+        input_dtype = x.node.meta["val"].dtype
         full, ge, add, sub, floor, ceil, where = _get_round_decomposition_ops(op)
         zero = super().call_operator(
             full,
             args=((1,), 0.0),
-            kwargs={"dtype": torch.float32},
+            kwargs={"dtype": input_dtype},
             meta=meta,
             updated=True,
         )
