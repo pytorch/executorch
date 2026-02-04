@@ -301,6 +301,56 @@ MODULE_REGISTRY["linear_int4_qmv_impl"] = {
 
 
 # -------------------------------------------------------------------------
+class LinearInt4_QMV_IMPL_small_odd(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(8, 3, bias=True)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+
+MODULE_REGISTRY["linear_int4_qmv_impl_small_odd"] = {
+    "model_class": LinearInt4_QMV_IMPL_small_odd,
+    "input_shapes": [(1, 8)],
+    "description": "Linear int4 quantization dispatching to qmv_impl",
+    "qlinear": "fpa4w",
+    "qlinear_group_size": 32,
+    "compare_to_unquantized": False,
+    "atol_float32": 5e-2,
+    "rtol_float32": 5e-2,
+    "atol_bfloat16": 1e-1,
+    "rtol_bfloat16": 1e-1,
+    "skip": not TORCHAO_AVAILABLE,
+}
+
+
+# -------------------------------------------------------------------------
+class LinearInt4_QMV_IMPL_small_even(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(8, 10, bias=True)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+
+MODULE_REGISTRY["linear_int4_qmv_impl_small_even"] = {
+    "model_class": LinearInt4_QMV_IMPL_small_even,
+    "input_shapes": [(1, 8)],
+    "description": "Linear int4 quantization dispatching to qmv_impl",
+    "qlinear": "fpa4w",
+    "qlinear_group_size": 32,
+    "compare_to_unquantized": False,
+    "atol_float32": 5e-2,
+    "rtol_float32": 5e-2,
+    "atol_bfloat16": 1e-1,
+    "rtol_bfloat16": 1e-1,
+    "skip": not TORCHAO_AVAILABLE,
+}
+
+
+# -------------------------------------------------------------------------
 # Convolution Modules
 # -------------------------------------------------------------------------
 
