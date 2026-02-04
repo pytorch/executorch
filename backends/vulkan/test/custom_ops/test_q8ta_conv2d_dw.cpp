@@ -30,7 +30,7 @@ TestCase create_test_case_from_config(
     vkapi::ScalarType input_dtype,
     utils::StorageType fp_storage_type,
     utils::GPUMemoryLayout int8_memory_layout,
-    bool impl_selector = false) {
+    const std::string& impl_selector = "") {
   TestCase test_case;
 
   // Calculate output dimensions
@@ -56,8 +56,8 @@ TestCase create_test_case_from_config(
       "k=" + std::to_string(config.kernel.h) + "  " +
       repr_str(fp_storage_type, fp_memory_layout) + "->" +
       repr_str(utils::kBuffer, int8_memory_layout);
-  if (impl_selector) {
-    test_name += " L";
+  if (!impl_selector.empty()) {
+    test_name += " [" + impl_selector + "]";
   }
   test_case.set_name(test_name);
 
@@ -192,9 +192,9 @@ TestCase create_test_case_from_config(
   ValueSpec layout_int(static_cast<int32_t>(int8_memory_layout));
   test_case.add_input_spec(layout_int);
 
-  // Add impl_selector flag
-  ValueSpec impl_selector_int(static_cast<int32_t>(impl_selector ? 1 : 0));
-  test_case.add_input_spec(impl_selector_int);
+  // Add impl_selector string
+  ValueSpec impl_selector_spec = ValueSpec::make_string(impl_selector);
+  test_case.add_input_spec(impl_selector_spec);
 
   test_case.add_output_spec(output);
 
@@ -243,12 +243,16 @@ std::vector<TestCase> generate_quantized_conv2d_dw_easy_cases() {
       config.test_case_name =
           make_test_case_name(config, false, fp_storage_type, utils::kBuffer);
       test_cases.push_back(create_test_case_from_config(
-          config, vkapi::kFloat, fp_storage_type, int8_memory_layout, false));
+          config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
 
       // For 4W4C layout, also test the legacy implementation
       if (int8_memory_layout == utils::kPackedInt8_4W4C) {
         test_cases.push_back(create_test_case_from_config(
-            config, vkapi::kFloat, fp_storage_type, int8_memory_layout, true));
+            config,
+            vkapi::kFloat,
+            fp_storage_type,
+            int8_memory_layout,
+            /*impl_selector=*/"legacy_4w4c"));
       }
     }
   }
@@ -370,7 +374,7 @@ std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
         config.test_case_name = make_test_case_name(
             config, is_performance, fp_storage_type, utils::kBuffer);
         test_cases.push_back(create_test_case_from_config(
-            config, vkapi::kFloat, fp_storage_type, int8_memory_layout, false));
+            config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
 
         // For 4W4C layout, also test the legacy implementation
         if (int8_memory_layout == utils::kPackedInt8_4W4C) {
@@ -379,7 +383,7 @@ std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
               vkapi::kFloat,
               fp_storage_type,
               int8_memory_layout,
-              true));
+              /*impl_selector=*/"legacy_4w4c"));
         }
       }
     }

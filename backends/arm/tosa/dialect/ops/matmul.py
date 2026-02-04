@@ -21,7 +21,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 def MATMUL(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
     tosa_spec = get_context_spec()
     """Performs matrix multiplication on two input tensors.
+
     Additionally validates TOSA constraints of a MATMUL op.
+
     """
     if x1.dtype != x2.dtype:
         raise TosaValueError(

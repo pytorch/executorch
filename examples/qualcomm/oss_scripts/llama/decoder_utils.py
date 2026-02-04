@@ -282,6 +282,7 @@ class LookaheadDecoder:
 def retrieve_info_from_pte(pte_path: str) -> dict:
     # Retrieve vocab_size from get_metadata under static_llama that is passed to edge manager
     output_vocab_size = None
+    pte_max_context_len = None
     pte_max_seq_len = None
     logits_scale = None
     logits_zero_point = None
@@ -299,12 +300,17 @@ def retrieve_info_from_pte(pte_path: str) -> dict:
         if method.name == "get_max_seq_len":
             # pyre-ignore
             pte_max_seq_len = method.values[0].val.int_val
+        if method.name == "get_max_context_len":
+            # pyre-ignore
+            pte_max_context_len = method.values[0].val.int_val
         if method.name == "get_logits_scale":
             logits_scale = method.values[0].val.double_val
         if method.name == "get_logits_zero_point":
             logits_zero_point = method.values[0].val.int_val
         if method.name == "get_kv_io_bit_width":
             kv_io_bit_width = method.values[0].val.int_val
+    if pte_max_context_len is None:
+        pte_max_context_len = pte_max_seq_len
 
     # FP has no scale/zero_point, use following values, which is equivalent to not performing dequantize.
     if kv_io_bit_width == 32:
@@ -318,6 +324,7 @@ def retrieve_info_from_pte(pte_path: str) -> dict:
     assert pte_max_seq_len is not None, "Couldn't find the max_seq_len from pte"
     meta_info = {
         "output_vocab_size": output_vocab_size,
+        "pte_max_context_len": pte_max_context_len,
         "pte_max_seq_len": pte_max_seq_len,
         "logits_scale": logits_scale,
         "logits_zero_point": logits_zero_point,
@@ -337,29 +344,30 @@ def smart_mask_updater(
     # lookahead decoding related
     lade_token_offset=None,
     lade_pos_offset=None,
+    position_shift=0,
 ):
-    # ar_len is unused in smart mask
     max_cache_len = k_caches[0].size(-1)
 
-    if pos + n_updates <= max_cache_len:
+    shifted_pos = pos + position_shift
+    if shifted_pos + n_updates <= max_cache_len:
         if lade_token_offset is not None:
             # lookahead decode update
             for i, offset in enumerate(lade_token_offset):
-                current_pos = pos + i
+                current_pos = shifted_pos + i
                 for j, (k_cache, v_cache) in enumerate(zip(k_caches, v_caches)):
                     k_cache[:, :, :, current_pos] = new_k_caches[j][:, :, :, offset]
                     v_cache[:, :, current_pos, :] = new_v_caches[j][:, :, offset, :]
         else:
             for i, k_cache in enumerate(k_caches):
-                k_cache[:, :, :, pos : pos + n_updates] = new_k_caches[i][
-                    :, :, :, :n_updates
-                ]
+                k_cache[:, :, :, shifted_pos : shifted_pos + n_updates] = new_k_caches[
+                    i
+                ][:, :, :, :n_updates]
             for i, v_cache in enumerate(v_caches):
-                v_cache[:, :, pos : pos + n_updates, :] = new_v_caches[i][
-                    :, :, :n_updates, :
-                ]
+                v_cache[:, :, shifted_pos : shifted_pos + n_updates, :] = new_v_caches[
+                    i
+                ][:, :, :n_updates, :]
 
-        atten_mask.smart_mask_update(pos, n_updates, lade_pos_offset)
+        atten_mask.smart_mask_update(shifted_pos, n_updates, lade_pos_offset)
 
     pos += n_updates
     return pos, k_caches, v_caches
