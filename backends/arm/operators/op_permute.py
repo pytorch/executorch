@@ -99,8 +99,6 @@ def transform_permutation_vector(permutation_vector: list[int], dim_order: list[
 class PermuteVisitor(NodeVisitor):
     target = "aten.permute_copy.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -122,6 +120,7 @@ class PermuteVisitor(NodeVisitor):
                 ts.DType.INT16,
                 ts.DType.INT32,
                 ts.DType.FP32,
+                ts.DType.BF16,
             ],
             self.tosa_spec,
         )

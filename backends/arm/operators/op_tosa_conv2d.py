@@ -20,7 +20,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
 )
 from executorch.backends.arm.operators.ops_quant_utils import add_input_weight_zp_consts
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.specification import TosaSpecification
 
 
 @register_node_visitor
@@ -28,11 +27,6 @@ class Conv2dVisitor(NodeVisitor):
     """Provide a visitor that serializes TOSA ``CONV2D``."""
 
     target = "tosa.CONV2D.default"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -57,7 +51,7 @@ class Conv2dVisitor(NodeVisitor):
 
         valid_input_dtypes = []
         if self.tosa_spec.support_float():
-            valid_input_dtypes.append(ts.DType.FP32)
+            valid_input_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
         if self.tosa_spec.support_integer():
             valid_input_dtypes.append(ts.DType.INT8)
 
@@ -88,8 +82,8 @@ class Conv2dVisitor(NodeVisitor):
 
         conv2d_output_name = output.name
         acc_type = output.dtype
-        if output.dtype == ts.DType.BF16:
-            # Accumulate BF16 inputs in FP32 for better precision per TOSA BF16 extension.
+        if output.dtype in [ts.DType.BF16, ts.DType.FP16]:
+            # Accumulate BF16, FP16 inputs in FP32 for better precision.
             acc_type = ts.DType.FP32
 
         input_zp_name, weight_zp_name = add_input_weight_zp_consts(

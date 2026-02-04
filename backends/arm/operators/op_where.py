@@ -17,7 +17,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
@@ -25,11 +24,6 @@ from torch.fx import Node
 @register_node_visitor
 class WhereVisitor(NodeVisitor):
     target = "aten.where.self"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -50,7 +44,7 @@ class WhereVisitor(NodeVisitor):
                 ts.DType.INT32,
             ]
         if self.tosa_spec.support_float():
-            supported_dtypes += [ts.DType.FP16, ts.DType.FP32]
+            supported_dtypes += [ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]
 
         validate_num_inputs(self.target, inputs, 3)
         # Not first input, which is condition tensor.

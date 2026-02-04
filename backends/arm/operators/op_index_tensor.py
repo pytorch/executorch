@@ -20,7 +20,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
 )
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta, TosaArg
-from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
 
 
@@ -94,11 +93,6 @@ class CommonIndexTensorVisitor(NodeVisitor):
 
 @register_node_visitor
 class IndexTensorVisitor(CommonIndexTensorVisitor):
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
     def __init__(self, *args):
         super().__init__(*args)
 

@@ -32,7 +32,6 @@ class GatherVisitor(NodeVisitor):
     """
 
     target = "tosa.GATHER.default"
-    tosa_specs = NodeVisitor.tosa_specs
 
     def define_node(
         self,
@@ -63,6 +62,7 @@ class GatherVisitor(NodeVisitor):
                 ts.DType.INT32,
                 ts.DType.FP16,
                 ts.DType.FP32,
+                ts.DType.BF16,
             ],
             self.tosa_spec,
         )

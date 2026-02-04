@@ -32,8 +32,6 @@ class TransposeVisitor(NodeVisitor):
 
     target = "tosa.TRANSPOSE.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def define_node(
         self,
         node: torch.fx.Node,

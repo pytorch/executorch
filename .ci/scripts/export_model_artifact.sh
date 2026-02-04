@@ -106,10 +106,6 @@ case "$HF_MODEL" in
     PREPROCESSOR_OUTPUT=""
     ;;
   nvidia/parakeet-tdt)
-    if [ "$DEVICE" = "metal" ]; then
-      echo "Error: Export for device 'metal' is not yet tested for model '$HF_MODEL'"
-      exit 1
-    fi
     MODEL_NAME="parakeet"
     TASK=""
     MAX_SEQ_LEN=""
@@ -161,10 +157,11 @@ pip list
 if [ "$MODEL_NAME" = "parakeet" ]; then
   pip install -r examples/models/parakeet/install_requirements.txt
 
-  python examples/models/parakeet/export_parakeet_tdt.py \
+  python -m executorch.examples.models.parakeet.export_parakeet_tdt \
       --backend "$DEVICE" \
       --output-dir "${OUTPUT_DIR}" \
-      --dtype bf16
+      --dtype bf16 \
+      ${EXTRA_ARGS}
 
   test -f "${OUTPUT_DIR}/model.pte"
   # CUDA saves named data to separate .ptd file, Metal embeds in .pte
@@ -185,6 +182,8 @@ fi
 DEVICE_ARG=""
 if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
   DEVICE_ARG="--device cuda"
+elif [ "$DEVICE" = "metal" ]; then
+  DEVICE_ARG="--device mps"
 fi
 
 optimum-cli export executorch \

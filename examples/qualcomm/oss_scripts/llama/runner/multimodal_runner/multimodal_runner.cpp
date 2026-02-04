@@ -151,8 +151,8 @@ Error MultimodalRunner<T>::load() {
     case EvalMode::kKVCached:
       prompt_embedding_method_name = "tok_embedding_kv_forward";
       token_embedding_method_name = "tok_embedding_kv_forward";
-      prompt_processor_method_name = "forward";
-      token_generator_method_name = "forward";
+      prompt_processor_method_name = "kv_forward";
+      token_generator_method_name = "kv_forward";
       method_names.emplace_back(prompt_processor_method_name);
       method_names.emplace_back(token_generator_method_name);
       break;
@@ -577,8 +577,8 @@ Error MultimodalRunner<T>::generate_from_prompt_or_file(
   merge_multimodal_embeddings(
       prompt_tokens, text_embeddings, placeholder_token_id);
 
-  auto prefill_res =
-      prompt_processor_->prefill(merged_embeddings_, cur_pos_, dump_logits);
+  auto prefill_res = prompt_processor_->prefill(
+      merged_embeddings_, cur_pos_, dump_logits, nullptr);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
   cur_pos_ += num_prompt_tokens;
@@ -640,7 +640,7 @@ Error MultimodalRunner<T>::generate_from_prompt_or_file(
   }
 
   int64_t num_generated_tokens = ET_UNWRAP(token_generator_->generate(
-      prompt_tokens, cur_pos_, seq_len, token_callback, dump_logits));
+      prompt_tokens, cur_pos_, seq_len, token_callback, dump_logits, nullptr));
   stats_.inference_end_ms = time_in_ms();
   ET_LOG(
       Info,

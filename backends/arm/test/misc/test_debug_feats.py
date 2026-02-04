@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -74,6 +74,28 @@ def _is_tosa_marker_in_file(tmp_file):
         if "'name': 'main'" in line:
             return True
     return False
+
+
+@common.parametrize("test_data", Linear.inputs)
+def test_compare_initial_to_quantized_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](Linear(), test_data, [], [])
+    pipeline.pop_stage("run_method_and_compare_outputs")
+
+    pipeline.run_and_compare_to_initial_model(
+        frobenius_threshold=0.05, cosine_threshold=0.95
+    )
+
+    stage_ids = [stage.id for stage in pipeline._stages]
+    assert "run_method_and_compare_outputs" in stage_ids
+
+    export_index = pipeline.find_pos("export")
+    compare_index = pipeline.find_pos("run_method_and_compare_outputs")
+    assert compare_index == export_index + 1
+
+    compare_stage = pipeline._stages[compare_index]
+    assert compare_stage.kwargs["reference_stage_type"] == StageType.INITIAL_MODEL
+    assert compare_stage.kwargs["run_eager_mode"] is True
+    pipeline.run()
 
 
 @common.parametrize("test_data", Linear.inputs)
