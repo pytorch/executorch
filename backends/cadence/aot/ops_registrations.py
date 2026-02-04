@@ -2854,7 +2854,15 @@ def quantized_w8a32_gru_meta(
     bias_hidden: torch.Tensor,
     b_h_scale: float,
 ) -> torch.Tensor:
-    return hidden.new_empty((2, hidden.shape[-1]), dtype=torch.float32)
+    seq_len = inputs.shape[1]
+    assert seq_len == 1
+    # inputs comes in shape [batch, seq_len, input_size]
+    # hidden comes in shape [batch, seq_len, hidden_size]
+    # weights_inputs comes in shape [3 * hidden_size, input_size]
+    # weights_hidden comes in shape [3 * hidden_size, hidden_size]
+    # output comes in empty with shape [2, batch, seq_len, hidden_size]
+    # The first dimension stacks the output and the new hidden state
+    return hidden.new_empty((2, inputs.shape[0], inputs.shape[1], hidden.shape[-1]), dtype=torch.float32)
 
 
 # Validate that all meta kernels have reference implementations

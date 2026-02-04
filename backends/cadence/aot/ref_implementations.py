@@ -1060,8 +1060,13 @@ def quantized_w8a32_gru(
 
     assert new_hidden.shape == original_hidden_shape
 
-    new_hidden = new_hidden.view(-1)
-    return torch.stack([new_hidden, new_hidden], dim=0)
+    batch_size = inputs.shape[0]
+    input_dim = inputs.shape[1]
+    hidden_dim = hidden.shape[-1]
+
+    new_hidden_expanded = new_hidden.unsqueeze(1).expand(batch_size, input_dim, hidden_dim)
+
+    return torch.stack([new_hidden_expanded, new_hidden_expanded], dim=0)
 
 
 @impl_tracked(m, "quantized_conv2d_nhwc.per_tensor")

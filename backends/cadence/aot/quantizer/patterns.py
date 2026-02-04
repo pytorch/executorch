@@ -696,14 +696,16 @@ class MixedW8A32GruPattern(QuantizationPattern):
             )
 
         # Bail if input or states are not multiple of 4 (SIMD)
-        if gru_layer.args[0].meta["tensor_meta"].shape[-1] % 4 != 0:
+        tensor_meta_0 = gru_layer.args[0].meta.get("tensor_meta", None)
+        if tensor_meta_0 is None or tensor_meta_0.shape[-1] % 4 != 0:
             return (
                 PartitionAnchors(
                     empty=True,
                 ),
                 gru_layer,
             )
-        if gru_layer.args[1].meta["tensor_meta"].shape[-1] % 4 != 0:
+        tensor_meta_1 = gru_layer.args[1].meta.get("tensor_meta", None)
+        if tensor_meta_1 is None or tensor_meta_1.shape[-1] % 4 != 0:
             return (
                 PartitionAnchors(
                     empty=True,
@@ -718,13 +720,22 @@ class MixedW8A32GruPattern(QuantizationPattern):
 
         wrapper = Wrapper(tuple(gru_layer.args[2]), gru_layer.meta)
 
+        # Using SharedQuantizationSpec so that bias_hh has the same observer as bias_ih
+        # Both biases get the same quantization scale to match the cpp operator
+        bias_ih_node = wrapper.args[2]
+        bias_ih_edge = (bias_ih_node, gru_layer)
+        shared_bias_qspec = SharedQuantizationSpec(edge_or_node=bias_ih_edge)
+
         return (
             PartitionAnchors(
                 inputs=[],
                 # pyre-fixme[6]: Expected `List[Tuple[Node, int]]` but got `List[Tuple[Wrapper, int]]`.
                 weights=[(wrapper, 0), (wrapper, 1)],
                 # pyre-fixme[6]: Expected `List[Union[Tuple[Node, int], Tuple[Node, int, DerivedQuantizationSpec]]]` but got `List[Tuple[Wrapper, int]]`.
-                biases=[(wrapper, 2), (wrapper, 3)],
+                biases=[
+                    (wrapper, 2),  # bias_ih gets normal qspec
+                    (wrapper, 3, shared_bias_qspec),  # bias_hh shares observer with bias_ih
+                ],
                 output=[],
                 others=[(gru_layer, 0), (gru_layer, 1)],
             ),

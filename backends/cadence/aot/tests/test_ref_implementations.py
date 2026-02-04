@@ -2975,10 +2975,11 @@ class TestRefImplementations(unittest.TestCase):
             torch.float32,
             f"Output dtype should be float32 in {name}",
         )
+        expected_shape = (2, inputs.shape[0], inputs.shape[1], hidden.shape[-1])
         self.assertEqual(
             output.shape,
-            (2, hidden.shape[-1]),
-            f"Output shape should match {(2, hidden.shape[-1])} in {name}",
+            expected_shape,
+            f"Output shape should match {expected_shape} in {name}",
         )
         assert isinstance(output, torch.Tensor)
 
