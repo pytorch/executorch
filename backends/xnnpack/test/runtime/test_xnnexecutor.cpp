@@ -109,7 +109,7 @@ TEST(XNNExecutorTest, ResizeOutputsWithLongTensorConvertsInt32ToInt64) {
   std::unique_ptr<xnn_subgraph, decltype(&xnn_delete_subgraph)> auto_subgraph(
       subgraph, xnn_delete_subgraph);
 
-  std::vector<size_t> in_dims = {1, 4, 4, 1}, out_dims = {1, 2, 2, 1};
+  std::vector<size_t> in_dims = {1, 4, 4, 4}, out_dims = {1, 2, 2, 4};
   uint32_t input_id = XNN_INVALID_VALUE_ID;
   uint32_t value_id = XNN_INVALID_VALUE_ID;
   uint32_t index_id = XNN_INVALID_VALUE_ID;
@@ -158,10 +158,14 @@ TEST(XNNExecutorTest, ResizeOutputsWithLongTensorConvertsInt32ToInt64) {
   TensorFactory<executorch::aten::ScalarType::Float> tf_float;
   TensorFactory<executorch::aten::ScalarType::Long> tf_long;
 
-  auto input = tf_float.make(
-      {1, 4, 4, 1}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16});
-  auto out_value = tf_float.make({1, 2, 2, 1}, {0, 0, 0, 0});
-  auto out_index = tf_long.make({1, 2, 2, 1}, {0, 0, 0, 0});
+  // 4 channels to provide XNN_EXTRA_BYTES padding for SIMD reads
+  std::vector<float> input_data(4 * 4 * 4, 0);
+  for (int i = 0; i < 16; ++i) {
+    input_data[i * 4] = static_cast<float>(i + 1); // channel 0 has values 1-16
+  }
+  auto input = tf_float.make({1, 4, 4, 4}, input_data);
+  auto out_value = tf_float.make({1, 2, 2, 4}, std::vector<float>(16, 0));
+  auto out_index = tf_long.make({1, 2, 2, 4}, std::vector<int64_t>(16, 0));
 
   EValue ev_in(input), ev_val(out_value), ev_idx(out_index);
   std::array<EValue*, 3> args = {&ev_in, &ev_val, &ev_idx};
@@ -176,6 +180,10 @@ TEST(XNNExecutorTest, ResizeOutputsWithLongTensorConvertsInt32ToInt64) {
   ASSERT_EQ(result.scalar_type(), executorch::aten::ScalarType::Long);
 
   /*
+  Verify all 4 spatial positions for channel 0 (channels 1-3 have all zeros)
+  Output is NHWC {1,2,2,4}, so channel 0 is at indices 0, 4, 8, 12
+
+  Diagram for channel 0:
   Input 4x4:          Output values:   Output indices:
   1  2  | 3  4        6  | 8           3 | 3
   5  6  | 7  8        14 | 16          3 | 3
@@ -185,7 +193,7 @@ TEST(XNNExecutorTest, ResizeOutputsWithLongTensorConvertsInt32ToInt64) {
 
   Each 2x2 quadrant → max value + index of max (3 = bottom-right).
   */
-  for (ssize_t i = 0; i < result.numel(); ++i) {
-    EXPECT_EQ(result.const_data_ptr<int64_t>()[i], 3);
+  for (ssize_t i = 0; i < 4; ++i) {
+    EXPECT_EQ(result.const_data_ptr<int64_t>()[i * 4], 3);
   }
 }
