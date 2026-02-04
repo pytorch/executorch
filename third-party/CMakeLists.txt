@@ -42,7 +42,7 @@ ExternalProject_Add(
              # Unset the toolchain to build for the host instead of the toolchain set for the project.
              -DCMAKE_TOOLCHAIN_FILE=
              # If building for iOS, "unset" these variables to rely on the host (macOS) defaults.
-             $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
+             $<$<STREQUAL:$<LOWER_CASE:${CMAKE_SYSTEM_NAME}>,ios>:-DCMAKE_OSX_SYSROOT=macosx>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
   ${_executorch_external_project_additional_args}
@@ -93,7 +93,7 @@ ExternalProject_Add(
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_POSITION_INDEPENDENT_CODE=ON
              -DCMAKE_TOOLCHAIN_FILE=
-             $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
+             $<$<STREQUAL:$<LOWER_CASE:${CMAKE_SYSTEM_NAME}>,ios>:-DCMAKE_OSX_SYSROOT=macosx>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
              ${_flatcc_extra_cmake_args}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
