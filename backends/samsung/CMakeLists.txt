@@ -152,9 +152,14 @@ if(${ANDROID})
   add_executable(enn_executor_runner ${__enn_executor_runner_srcs})
   add_dependencies(enn_executor_runner enn_backend)
   target_link_libraries(
-    enn_executor_runner PRIVATE enn_logging enn_backend gflags executorch
-                                extension_data_loader portable_ops_lib
-                                android
+    enn_executor_runner
+    PRIVATE enn_logging
+            enn_backend
+            gflags
+            executorch
+            extension_data_loader
+            portable_ops_lib
+            android
   )
   set_target_properties(
     enn_executor_runner PROPERTIES CXX_VISIBILITY_PRESET hidden
