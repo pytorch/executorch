@@ -20,6 +20,7 @@
 #include <executorch/devtools/bundled_program/schema/bundled_program_schema_generated.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
@@ -56,7 +57,9 @@ at::Tensor tensor_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
       at::dtype(static_cast<ScalarType>(bundled_tensor->scalar_type())));
 
   // Validate data buffer exists and has sufficient size
-  ET_CHECK(bundled_tensor->data() != nullptr);
+  ET_CHECK(
+      bundled_tensor->data() != nullptr,
+      "Tensor flatbuffer is missing its data field");
   ET_CHECK_MSG(
       bundled_tensor->data()->size() >= ret_tensor.nbytes(),
       "Tensor data buffer too small: got %zu bytes, need %zu bytes",
@@ -77,10 +80,36 @@ TensorImpl impl_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
   ScalarType scalar_type =
       static_cast<ScalarType>(bundled_tensor->scalar_type());
   ssize_t dim = bundled_tensor->sizes()->size();
+
+  // Validate dimension count
+  ET_CHECK(
+      dim <= static_cast<ssize_t>(kMaxDim),
+      "Tensor rank too large, Max Dim %zu",
+      kMaxDim);
+
   executorch::aten::SizesType* sizes = bundled_tensor->mutable_sizes()->data();
-  void* data = bundled_tensor->mutable_data()->data();
   executorch::aten::DimOrderType* dim_order =
       bundled_tensor->mutable_dim_order()->data();
+
+  // Calculate expected tensor size in bytes
+  size_t numel = 1;
+  for (ssize_t i = 0; i < dim; i++) {
+    ET_CHECK(sizes[i] >= 0);
+    numel *= static_cast<size_t>(sizes[i]);
+  }
+  size_t expected_bytes = numel * executorch::runtime::elementSize(scalar_type);
+
+  // Validate data buffer exists and has sufficient size
+  ET_CHECK(
+      bundled_tensor->data() != nullptr,
+      "Tensor flatbuffer is missing its data field");
+  ET_CHECK_MSG(
+      bundled_tensor->data()->size() >= expected_bytes,
+      "Tensor data buffer too small: got %zu bytes, need %zu bytes",
+      static_cast<size_t>(bundled_tensor->data()->size()),
+      static_cast<size_t>(expected_bytes));
+
+  void* data = bundled_tensor->mutable_data()->data();
 
   // The strides of created tensorimpl will only be actually used when
   // comparsion (`tensor_are_close` below). To eliminate the usage of memory
