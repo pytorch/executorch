@@ -164,6 +164,7 @@ class TosaArg:
         special (list | None): Captured list when the argument is a sequence.
         number (float | int | None): Captured numeric value when provided.
         multiple_output_name (list[str]): Output node names when node has multiple outputs; empty otherwise.
+
     """
 
     def __process_node(self, argument: torch.fx.Node):
