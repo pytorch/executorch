@@ -184,6 +184,7 @@ int32_t main(int32_t argc, char** argv) {
   }
 
   auto error = runner->generate(prompt, config);
+  auto error2 = runner->generate(prompt, config);
   if (error != executorch::runtime::Error::Ok) {
     ET_LOG(Error, "Failed to run llama runner");
     return 1;

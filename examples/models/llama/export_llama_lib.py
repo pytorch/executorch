@@ -1322,6 +1322,7 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
             #  Module]`.
             model.vocab_size,
             llm_config.base.metadata,
+            use_ring_buffer=llm_config.model.local_global_attention is not None,
         ),
     )
 
