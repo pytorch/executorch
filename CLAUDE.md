@@ -4,6 +4,38 @@ Refer to the repo/framework/runtime "executorch" (in lower cases) or "ExecuTorch
 camel cases), not "ExecutorTorch". With limited code or comment length, maybe refer
 to the framework "ET" but consider it as very unofficial and not recommended.
 
+# Install
+
+## Python
+
+If the user is mostly importing `executorch` module and experimenting with Ahead-Of-Time
+export flow, installation means installing `executorch` python package.
+
+Python virtual environment or conda environment is highly recommended for installing 
+executorch from source. Double check if the user wants to enable virtual enablement before
+building from source.
+
+First time install: run `install_executorch.sh` (or `install_executorch.bat` for Windows).
+
+This script handles dependencies properly (since `executorch` depends on nightly versions
+of `torch`, those packages won't be available in pip so need special index url).
+
+Subsequent install: run `pip install . -v --no-build-isolation` inside `executorch`
+directory.
+
+Editable mode is avilable (either through `install_executorch.sh` script or `pip install . -e`.
+
+Refer to more details in this [doc](docs/source/using-executorch-building-from-source.md).
+
+## C++
+If the user is building basic executorch C++ libraries, refer to root level [CMakeLists.txt](CMakeLists.txt).
+
+If working with LLM/ASR runners, prefer to use [Makefile](Makefile) and cmake [presets](CMakePresets.json).
+
+Again refer to this [doc](https://docs.pytorch.org/executorch/stable/using-executorch-building-from-source.html#building-the-c-runtime)
+
+for more details.
+
 # Commit messages
 
 Don't commit unless the user explicitly asks you to.
