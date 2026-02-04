@@ -115,7 +115,7 @@ def apply_nncf_data_aware_compression(
             missing_params.append("tokenizer_path")
         if missing_params:
             msg = (
-                " Missing required calibration parameter(s): "
+                "Missing required calibration parameter(s): "
                 + ", ".join(missing_params)
                 + ". Please provide calibration_data, calibration_seq_length, and tokenizer_path."
             )
