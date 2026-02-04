@@ -70,6 +70,7 @@ class TestPasses(unittest.TestCase):
         # Initailize model config
         args = ModelArgs()
         args.max_seq_len = 128
+        args.max_context_len = 128
         args.ar_len = 32
         args.use_kv_cache = True
         args.dim = 32

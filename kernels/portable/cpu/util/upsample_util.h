@@ -1,12 +1,15 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
 #pragma once
+
+#include <cmath>
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -98,8 +101,8 @@ inline void guard_index_and_lambda(
     const int64_t& input_size,
     int64_t& input_index,
     scalar_t& lambda) {
-  input_index =
-      std::min(static_cast<int64_t>(floorf(real_input_index)), input_size - 1);
+  input_index = std::min(
+      static_cast<int64_t>(std::floor(real_input_index)), input_size - 1);
   lambda = std::min(
       std::max(real_input_index - input_index, static_cast<opmath_t>(0)),
       static_cast<opmath_t>(1));
@@ -140,8 +143,8 @@ inline int64_t nearest_neighbor_compute_source_index(
     int64_t input_size) {
   // Index computation matching OpenCV INTER_NEAREST
   // which is buggy and kept for BC
-  const int64_t src_index =
-      std::min(static_cast<int64_t>(floorf(dst_index * scale)), input_size - 1);
+  const int64_t src_index = std::min(
+      static_cast<int64_t>(std::floor(dst_index * scale)), input_size - 1);
   return src_index;
 }
 

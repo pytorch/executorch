@@ -17,6 +17,7 @@ import numpy as np
 import torch
 from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
+    ATTENTION_SINK_EVICTOR,
     DECODER_MODEL_VERSION,
     EVAL_MODE,
     TEXT_DECODER,
@@ -144,6 +145,11 @@ class EvalBase(ABC):
                     [
                         base_cmd,
                         f"--model_path {self.pte_paths[TEXT_DECODER]}",
+                        (
+                            f"--attention_sink_rope_path {self.pte_paths[ATTENTION_SINK_EVICTOR]}"
+                            if args.use_attention_sink
+                            else ""
+                        ),
                     ]
                 )
         else:
@@ -174,6 +180,11 @@ class EvalBase(ABC):
                     [
                         base_cmd,
                         f"--model_path {os.path.basename(self.pte_paths[TEXT_DECODER])}",
+                        (
+                            f"--attention_sink_rope_path {os.path.basename(self.pte_paths[ATTENTION_SINK_EVICTOR])}"
+                            if args.use_attention_sink
+                            else ""
+                        ),
                     ]
                 )
 
@@ -323,10 +334,11 @@ class SqnrEval(EvalBase):
         self.tokenizer = tokenizer
         self.enable_x86_64 = args.enable_x86_64
         self.max_seq_length = args.max_seq_len
+        self.enable_attention_sink = args.use_attention_sink is not None
 
         pte_meta_info = retrieve_info_from_pte(pte_path=pte_paths[TEXT_DECODER])
         self.output_vocab_size = pte_meta_info["output_vocab_size"]
-        pte_max_seq_len = pte_meta_info["pte_max_seq_len"]
+        pte_max_context_len = pte_meta_info["pte_max_context_len"]
         self.logits_scale = pte_meta_info["logits_scale"]
         self.logits_zero_point = pte_meta_info["logits_zero_point"]
         self.kv_io_bit_width = pte_meta_info["kv_io_bit_width"]
@@ -336,15 +348,19 @@ class SqnrEval(EvalBase):
                 f"Current Sqnr Eval does not support {args.model_mode}, switching to kv mode."
             )
 
-        if pte_max_seq_len != self.max_seq_length:
+        if pte_max_context_len != self.max_seq_length:
             logging.warning(
-                f"The pte provided has a max_seq_len {pte_max_seq_len}, which is different from --max_seq_len {self.max_seq_length} provided to the script, please ensure this is desired."
+                f"The pte provided has a max_context_len {pte_max_context_len}, which is different from --max_seq_len {self.max_seq_length} provided to the script, please ensure this is desired."
             )
-            if pte_max_seq_len < self.max_seq_length:
+            # If attention sink is enabled, we can use a longer sequence length than max_context_len in the PTE
+            if (
+                not self.enable_attention_sink
+                and pte_max_context_len < self.max_seq_length
+            ):
                 logging.warning(
-                    f"The pte max_seq_len {pte_max_seq_len} is used since it is shorter than --max_seq_len {self.max_seq_length}"
+                    f"The pte max_context_len {pte_max_context_len} is used since it is shorter than --max_seq_len {self.max_seq_length}"
                 )
-                self.max_seq_length = pte_max_seq_len
+                self.max_seq_length = pte_max_context_len
 
     def run(self, prompt):
         golden_logits = INFERENCE_REGISTRY[True](
@@ -484,9 +500,10 @@ class TaskEval(EvalBase):
 
             self.enable_x86_64 = args.enable_x86_64
             self.max_seq_length = args.max_seq_len
+            self.enable_attention_sink = args.use_attention_sink is not None
             pte_meta_info = retrieve_info_from_pte(pte_path=self.pte_path)
             self.output_vocab_size = pte_meta_info["output_vocab_size"]
-            pte_max_seq_len = pte_meta_info["pte_max_seq_len"]
+            pte_max_context_len = pte_meta_info["pte_max_context_len"]
             self.logits_scale = pte_meta_info["logits_scale"]
             self.logits_zero_point = pte_meta_info["logits_zero_point"]
             self.kv_io_bit_width = pte_meta_info["kv_io_bit_width"]
@@ -496,15 +513,19 @@ class TaskEval(EvalBase):
                     f"Current QnnRunnerEvalWrapper does not support {args.model_mode}, switching to kv mode."
                 )
 
-            if pte_max_seq_len != self.max_seq_length:
+            if pte_max_context_len != self.max_seq_length:
                 logging.warning(
-                    f"The pte provided has a max_seq_len {pte_max_seq_len}, which is different from --max_seq_len {self.max_seq_length} provided to the script, please ensure this is desired."
+                    f"The pte provided has a max_context_len {pte_max_context_len}, which is different from --max_seq_len {self.max_seq_length} provided to the script, please ensure this is desired."
                 )
-                if pte_max_seq_len < self.max_seq_length:
+                # If attention sink is enabled, we can use a longer sequence length than max_context_len in the PTE
+                if (
+                    not self.enable_attention_sink
+                    and pte_max_context_len < self.max_seq_length
+                ):
                     logging.warning(
-                        f"The pte max_seq_len {pte_max_seq_len} is used since it is shorter than --max_seq_len {self.max_seq_length}"
+                        f"The pte max_context_len {pte_max_context_len} is used since it is shorter than --max_seq_len {self.max_seq_length}"
                     )
-                    self.max_seq_length = pte_max_seq_len
+                    self.max_seq_length = pte_max_context_len
 
             if not self.enable_x86_64:
                 self.adb.push(inputs=[], files=[self.runtime_tokenizer_path])
@@ -513,6 +534,7 @@ class TaskEval(EvalBase):
             super().__init__(None, tokenizer, self.max_seq_length - 1)
 
         def _model_call(self, inps):
+            _, seq_len = inps.shape
             input_file_name = f"{self.args.artifact}/input_tokens.raw"
             # This is the dtype required by runtime tokenizer.
             inps = inps.to(torch.uint64).numpy()
@@ -589,7 +611,7 @@ class TaskEval(EvalBase):
                     ),
                 )
             self.inference_speed = output_performance_holder[0]
-            return output_logits_holder[0]
+            return output_logits_holder[0][:, :seq_len, :]
 
     def __init__(self, args, pte_paths, tokenizer, runtime_tokenizer_path, is_modality):
         super().__init__(
