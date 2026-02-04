@@ -183,16 +183,25 @@ Error MultimodalRunner::generate(
       get_rss_bytes() / 1024.0 / 1024.0);
 
   // Resolve max_new_tokens based on config
+  // Check if ring buffer is enabled - if so, we can exceed context length
+  bool use_ring_buffer = metadata_.at(kUseRingBuffer);
   int64_t max_context_len =
       metadata_.at(kMaxContextLen) - 0; // No start_pos offset
-  int32_t max_new_tokens = config.resolve_max_new_tokens(max_context_len, pos_);
+  // When ring buffer is enabled, use a large context length to allow unlimited
+  // generation.
+  int64_t effective_context_len =
+      use_ring_buffer ? INT64_MAX : max_context_len;
+  int32_t max_new_tokens =
+      config.resolve_max_new_tokens(effective_context_len, pos_);
 
   ET_LOG(
       Info,
-      "Max new tokens resolved: %d, pos_ %" PRId64 ", max_context_len %" PRId64,
+      "Max new tokens resolved: %d, pos_ %" PRId64
+      ", max_context_len %" PRId64 ", use_ring_buffer %d",
       max_new_tokens,
       pos_,
-      max_context_len);
+      max_context_len,
+      use_ring_buffer);
 
   ET_CHECK_OR_RETURN_ERROR(
       max_new_tokens > 0,

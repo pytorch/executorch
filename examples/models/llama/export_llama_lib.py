@@ -1231,6 +1231,7 @@ def _load_llama_model_metadata(
     n_layers: int,
     vocab_size: int,
     metadata_str: Optional[str] = None,
+    use_ring_buffer: bool = True,
 ):
     metadata = {
         "get_max_seq_len": max_seq_len,
@@ -1240,6 +1241,7 @@ def _load_llama_model_metadata(
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
+        "use_ring_buffer": use_ring_buffer,
     }
     if metadata_str:
         try:
