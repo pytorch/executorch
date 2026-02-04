@@ -90,6 +90,11 @@ _COPY_TO_NON_COPY = {
     torch.ops.aten.transpose_copy.int: torch.ops.aten.transpose.int,
     torch.ops.aten.view_copy.default: torch.ops.aten.view.default,
     torch.ops.aten.permute_copy.default: torch.ops.aten.permute.default,
+    torch.ops.aten.unsqueeze_copy.default: torch.ops.aten.unsqueeze.default,
+    torch.ops.aten.squeeze_copy.dim: torch.ops.aten.squeeze.dim,
+    torch.ops.aten.squeeze_copy.dims: torch.ops.aten.squeeze.dims,
+    torch.ops.aten.expand_copy.default: torch.ops.aten.expand.default,
+    torch.ops.aten.alias_copy.default: torch.ops.aten.alias.default,
 }
 
 
@@ -801,7 +806,7 @@ class MLXProgramBuilder:
 
     def to_float_or_vid(self, v: Union[float, int, Slot]) -> FloatOrVid:
         if isinstance(v, Slot):
-            return FloatOrVid.from_vid(self._slot_to_vid(v))
+            return FloatOrVid.from_vid(self.slot_to_vid(v))
         return FloatOrVid.from_literal(float(v))
 
     # -------------------------------------------------------------------------
@@ -1114,30 +1119,40 @@ class MLXProgramBuilder:
         """
         Collect all used slots and count tensors/values per IdSpace.
 
+        For constants and temps, only includes those actually referenced by
+        instructions. This ensures unused slots are not serialized or counted.
+
         Returns:
             (used_slots, num_tensors, num_values)
         """
+        # Get slots actually referenced by instructions
+        instruction_referenced: Set[Slot] = {slot for _, slot in self._tid_slot_map}
+        instruction_referenced.update({slot for _, slot in self._vid_slot_map})
+
         used_slots: Set[Slot] = set()
         for _n, slot in self.slot_manager.name_to_slot.items():
             if not isinstance(slot, tuple):
                 slot = (slot,)
             for s in slot:
-                used_slots.add(s)
+                # For constants and temps, only include if referenced by instructions
+                if s.id_space in (IdSpace.Constant, IdSpace.Temp):
+                    if s in instruction_referenced:
+                        used_slots.add(s)
+                else:
+                    # Inputs, outputs, mutable buffers - always include
+                    used_slots.add(s)
 
         num_tensors: Dict[IdSpace, int] = defaultdict(int)
         num_values: Dict[IdSpace, int] = defaultdict(int)
         seen: Set[Slot] = set()
-        for _n, slot in self.slot_manager.name_to_slot.items():
-            if not isinstance(slot, tuple):
-                slot = (slot,)
-            for s in slot:
-                if s in seen:
-                    continue
-                seen.add(s)
-                if s.id_type == IdType.Tensor:
-                    num_tensors[s.id_space] += 1
-                else:
-                    num_values[s.id_space] += 1
+        for s in used_slots:
+            if s in seen:
+                continue
+            seen.add(s)
+            if s.id_type == IdType.Tensor:
+                num_tensors[s.id_space] += 1
+            else:
+                num_values[s.id_space] += 1
 
         return used_slots, num_tensors, num_values
 
@@ -1370,6 +1385,9 @@ class MLXProgramBuilder:
         used_slots, num_tensors, num_values = self._collect_used_slots()
         slot_to_tid, slot_to_vid = self._create_slot_mappings(used_slots)
 
+        # Store for use in get_constant_data() - needed to serialize in Tid order
+        self._slot_to_final_tid = slot_to_tid
+
         # Build I/O maps and metadata
         input_map, output_map, mutable_buffer_map, named_slots = self._build_io_maps(
             used_slots, slot_to_tid, slot_to_vid
@@ -1400,45 +1418,42 @@ class MLXProgramBuilder:
             constant_segment=DataSegment(offset=0, size=0),
         )
 
-    def get_constant_data(self) -> Tuple[bytes, Dict[str, int]]:  # noqa: C901
+    def get_constant_data(self) -> Tuple[bytes, Dict[str, int]]:
         """
         Extract constant tensor data.
+
+        Constants are serialized in global Tid order to match C++ runtime expectations.
+        Only constants referenced by instructions are included.
 
         Returns:
             (constant_bytes, name_to_offset) mapping constant names to byte offsets.
         """
         assert self._mlx_graph is not None, "Must call build() first"
+        assert hasattr(self, "_slot_to_final_tid"), "Must call build() first"
 
         from io import BytesIO
 
         buffer = BytesIO()
-        name_to_offset = {}
+        name_to_offset: Dict[str, int] = {}
 
+        # Build list of (name, slot, global_tid) for used constants
+        constant_entries: List[Tuple[str, Slot, int]] = []
         for name, slot in self.slot_manager.name_to_slot.items():
             if isinstance(slot, tuple):
                 continue
             if slot.id_space != IdSpace.Constant:
                 continue
+            if slot not in self._slot_to_final_tid:
+                continue
+            global_tid = self._slot_to_final_tid[slot]
+            constant_entries.append((name, slot, global_tid))
 
-            # Find tensor
-            tensor = None
-            if name in self.ep.state_dict:
-                tensor = self.ep.state_dict[name]
-            elif name in self.ep.constants:
-                tensor = self.ep.constants[name]
-            elif name in self.extra_constants:
-                tensor = self.extra_constants[name]
-            else:
-                # Look up by target
-                for ispec in self.ep.graph_signature.input_specs:
-                    if ispec.arg.name == name and ispec.target is not None:
-                        if ispec.target in self.ep.state_dict:
-                            tensor = self.ep.state_dict[ispec.target]
-                            break
-                        elif ispec.target in self.ep.constants:
-                            tensor = self.ep.constants[ispec.target]
-                            break
+        # Sort by global Tid to match C++ runtime expectations
+        constant_entries.sort(key=lambda x: x[2])
 
+        # Serialize in Tid order
+        for name, _slot, _global_tid in constant_entries:
+            tensor = self._find_constant_tensor(name)
             if tensor is None:
                 continue
 
@@ -1452,13 +1467,29 @@ class MLXProgramBuilder:
             t = tensor.detach().cpu().contiguous()
             # BFloat16 is not supported by numpy, so we extract raw bytes via view
             if t.dtype == torch.bfloat16:
-                # View as uint16 to access raw bf16 bytes
                 tensor_bytes = t.view(torch.uint16).numpy().tobytes()
             else:
                 tensor_bytes = t.numpy().tobytes()
             buffer.write(tensor_bytes)
 
         return buffer.getvalue(), name_to_offset
+
+    def _find_constant_tensor(self, name: str) -> Optional[torch.Tensor]:
+        """Find a constant tensor by name from various sources."""
+        if name in self.ep.state_dict:
+            return self.ep.state_dict[name]
+        if name in self.ep.constants:
+            return self.ep.constants[name]
+        if name in self.extra_constants:
+            return self.extra_constants[name]
+        # Look up by target
+        for ispec in self.ep.graph_signature.input_specs:
+            if ispec.arg.name == name and ispec.target is not None:
+                if ispec.target in self.ep.state_dict:
+                    return self.ep.state_dict[ispec.target]
+                if ispec.target in self.ep.constants:
+                    return self.ep.constants[ispec.target]
+        return None
 
 
 # =============================================================================

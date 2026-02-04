@@ -354,12 +354,13 @@ table QuantizedLinearNode {
     w: Tid (required);
     scales: Tid (required);
     out: Tid (required);
-    biases: Tid;  // optional - quantization biases
+    biases: Tid;  // optional - quantization biases (required if scale_only=false)
     bias: Tid;    // optional - neural network bias
     group_size: int32;
     bits: int32;
     mode: string (required);
     out_dtype: DTypeId;
+    scale_only: bool = false;  // if true, compute biases = -scales * 2^(bits-1); if false, biases tensor required
 }
 
 table ConcatenateNode {

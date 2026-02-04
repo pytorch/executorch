@@ -5995,7 +5995,20 @@ class SDPAModel(nn.Module):
 
 
 class SDPAWithMaskModel(nn.Module):
-    """SDPA with explicit attention mask."""
+    """SDPA with explicit attention mask (additive float format)."""
+
+    def forward(
+        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, mask: torch.Tensor
+    ) -> torch.Tensor:
+        return torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+
+
+class SDPAWithBoolMaskModel(nn.Module):
+    """SDPA with boolean attention mask.
+
+    This tests the case where a boolean mask is passed to SDPA.
+    PyTorch expects: True = attend, False = masked out.
+    """
 
     def forward(
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, mask: torch.Tensor
@@ -6038,6 +6051,7 @@ class SDPATest(OpTestCase):
         num_kv_heads: Optional[int] = None,
         is_causal: bool = False,
         use_mask: bool = False,
+        use_bool_mask: bool = False,
     ):
         self.batch_size = batch_size
         self.num_heads = num_heads
@@ -6046,6 +6060,7 @@ class SDPATest(OpTestCase):
         self.num_kv_heads = num_kv_heads
         self.is_causal = is_causal
         self.use_mask = use_mask
+        self.use_bool_mask = use_bool_mask
 
         parts = ["sdpa"]
         if num_kv_heads is not None:
@@ -6054,6 +6069,8 @@ class SDPATest(OpTestCase):
             parts.append("causal")
         if use_mask:
             parts.append("mask")
+        if use_bool_mask:
+            parts.append("bool_mask")
         self.name = "_".join(parts)
 
     @classmethod
@@ -6063,11 +6080,14 @@ class SDPATest(OpTestCase):
             cls(is_causal=True),
             cls(num_kv_heads=4),
             cls(use_mask=True),
+            cls(use_bool_mask=True),  # Test boolean mask conversion
         ]
 
     def create_model(self) -> nn.Module:
         if self.use_mask:
             return SDPAWithMaskModel()
+        elif self.use_bool_mask:
+            return SDPAWithBoolMaskModel()
         elif self.num_kv_heads is not None:
             return GQAModel(self.num_heads, self.num_kv_heads, self.is_causal)
         else:
@@ -6080,8 +6100,17 @@ class SDPATest(OpTestCase):
         v = torch.randn(self.batch_size, kv_heads, self.seq_len, self.head_dim)
 
         if self.use_mask:
+            # Additive float mask: 0 = attend, -inf = masked
             mask = torch.zeros(self.batch_size, 1, self.seq_len, self.seq_len)
             mask[:, :, :, : self.seq_len // 4] = float("-inf")
+            return (q, k, v, mask)
+        elif self.use_bool_mask:
+            # Boolean mask: True = attend, False = masked
+            # This tests that the backend correctly converts bool -> additive format
+            mask = torch.ones(
+                self.batch_size, 1, self.seq_len, self.seq_len, dtype=torch.bool
+            )
+            mask[:, :, :, : self.seq_len // 4] = False  # Mask out first quarter
             return (q, k, v, mask)
         return (q, k, v)
 
