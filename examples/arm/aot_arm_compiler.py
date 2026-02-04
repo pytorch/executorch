@@ -434,6 +434,7 @@ def get_compile_spec(
     quantize: bool = False,
     config: Optional[str] = None,
     debug_mode: Optional[str] = None,
+    direct_drive: bool = False,
 ) -> TosaCompileSpec | EthosUCompileSpec | VgfCompileSpec:
     compile_spec = None
     if target.startswith("TOSA"):
@@ -446,6 +447,9 @@ def get_compile_spec(
         extra_flags = ["--verbose-operators", "--verbose-cycle-estimate"]
         if debug_mode is not None:
             extra_flags.append("--enable-debug-db")
+        if direct_drive:
+            extra_flags.append("--separate-io-regions")
+            extra_flags.append("--cop-format=COP2")
         compile_spec = EthosUCompileSpec(
             target,
             system_config=system_config,
@@ -616,6 +620,13 @@ def get_args():
         choices=["json", "tosa"],
         help="Flag to enable ATen-to-TOSA debug mode and dumping of Vela's debug database.",
     )
+    parser.add_argument(
+        "--direct_drive",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Flag for enabling direct drive.",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -762,6 +773,7 @@ def to_edge_TOSA_delegate(
         args.quantize,
         args.config,
         args.enable_debug_mode,
+        args.direct_drive,
     )
 
     model_quant = None
@@ -801,6 +813,7 @@ def to_edge_no_delegate(
             args.quantize,
             args.config,
             args.enable_debug_mode,
+            args.direct_drive,
         )
         model, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
@@ -877,7 +890,8 @@ if __name__ == "__main__":  # noqa: C901
             exported_program, args, model, example_inputs
         )
 
-    if args.target != "vgf":
+    # Cortex-m ops are never included in vgf or direct-drive
+    if args.target != "vgf" and not args.direct_drive:
         # Transform so we can use ops from the Cortex M backend
         edge = transform_for_cortex_m_backend(edge, args)
 

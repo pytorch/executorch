@@ -27,9 +27,9 @@ from executorch.exir import EdgeCompileConfig
 
 
 class CortexMQuantize(Quantize):
-    def __init__(self):
+    def __init__(self, calibration_samples=None):
         quantizer = CortexMQuantizer()
-        super().__init__(quantizer)
+        super().__init__(quantizer, calibration_samples=calibration_samples)
 
 
 class CortexMToEdge(ToEdge):
@@ -76,11 +76,24 @@ class CortexMTester(TesterBase):
     def __init__(self, module, example_inputs):
         super().__init__(module, example_inputs, cortex_m_stage_classes)
 
-    def test_dialect(self, ops_before_transforms, ops_after_transforms, qtol=0):
+    def test_dialect(
+        self,
+        ops_before_transforms,
+        ops_after_transforms,
+        qtol=0,
+        calibration_samples=None,
+    ):
         """
         Test the python dialect op implementation.
         """
-        self.quantize()
+        if calibration_samples is not None:
+            quantization_stage = CortexMQuantize(
+                calibration_samples=calibration_samples
+            )
+        else:
+            quantization_stage = None
+
+        self.quantize(quantization_stage)
         self.export()
         self.to_edge()
         self.check_count(ops_before_transforms)
@@ -88,11 +101,19 @@ class CortexMTester(TesterBase):
         self.check_count(ops_after_transforms)
         self.run_method_and_compare_outputs(inputs=self.example_inputs, qtol=qtol)
 
-    def test_implementation(self, qtol=0):
+    def test_implementation(self, qtol=0, calibration_samples=None):
         """
         Test the optimized op implementation in simulation
         """
-        self.quantize()
+
+        if calibration_samples is not None:
+            quantization_stage = CortexMQuantize(
+                calibration_samples=calibration_samples
+            )
+        else:
+            quantization_stage = None
+
+        self.quantize(quantization_stage)
         self.export()
         self.to_edge()
         self.run_passes()
