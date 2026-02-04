@@ -344,6 +344,117 @@ print(chat.send_message("What's the weather like?"))
 chat.reset_conversation()
 ```
 
+#### Gemma 3 Multimodal Example
+
+Gemma 3 is a multimodal vision-language model that requires specific chat template formatting. Here's a complete example:
+
+```python
+#!/usr/bin/env python3
+"""Gemma 3 Multimodal inference example using ExecuTorch Python bindings."""
+
+import numpy as np
+import torch
+from PIL import Image
+
+# IMPORTANT: Load operator libraries BEFORE creating the runner
+# These register the required operators for quantized models
+try:
+    import executorch.kernels.quantized  # For quantized_decomposed ops
+except Exception as e:
+    print(f"Warning: Failed to load quantized kernels: {e}")
+
+try:
+    from executorch.extension.llm.custom_ops import custom_ops  # For custom_sdpa
+except Exception as e:
+    print(f"Warning: Failed to load custom ops: {e}")
+
+from executorch.extension.llm.runner import (
+    GenerationConfig,
+    make_image_input,
+    make_text_input,
+    MultimodalRunner,
+)
+
+
+def load_image(image_path: str, target_size: int = 896) -> torch.Tensor:
+    """Load and preprocess image for Gemma 3 vision encoder."""
+    pil_image = Image.open(image_path).convert("RGB")
+    pil_image = pil_image.resize((target_size, target_size))
+
+    # Convert: HWC -> CHW, uint8 -> float32, normalize to [0, 1]
+    image_tensor = (
+        torch.from_numpy(np.array(pil_image))
+        .permute(2, 0, 1)
+        .contiguous()
+        .float()
+        / 255.0
+    )
+    return image_tensor
+
+
+def run_gemma3_inference(
+    model_path: str,
+    tokenizer_path: str,
+    image_path: str,
+    prompt: str = "What is in this image?",
+    max_new_tokens: int = 100,
+    temperature: float = 0.0,
+):
+    """Run Gemma 3 multimodal inference."""
+
+    # Create runner
+    runner = MultimodalRunner(model_path, tokenizer_path)
+
+    # Load and preprocess image
+    image_tensor = load_image(image_path)
+
+    # Build inputs with Gemma 3 chat template
+    # Format: <start_of_turn>user\n<start_of_image>[IMAGE]{prompt}<end_of_turn>\n<start_of_turn>model\n
+    inputs = [
+        make_text_input("<start_of_turn>user\n<start_of_image>"),
+        make_image_input(image_tensor),
+        make_text_input(f"{prompt}<end_of_turn>\n<start_of_turn>model\n"),
+    ]
+
+    # Configure generation
+    config = GenerationConfig(
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        echo=False,
+    )
+
+    # Callbacks
+    generated_tokens = []
+
+    def token_callback(token: str):
+        # Note: C++ runner already prints tokens via safe_printf()
+        # Just collect them here for post-processing
+        generated_tokens.append(token)
+
+    def stats_callback(stats):
+        print(f"\nPrompt tokens: {stats.num_prompt_tokens}")
+        print(f"Generated tokens: {stats.num_generated_tokens}")
+        time_to_first = (stats.first_token_ms - stats.inference_start_ms) / 1000.0
+        print(f"Time to first token: {time_to_first:.3f}s")
+
+    # Run generation
+    runner.generate(inputs, config, token_callback, stats_callback)
+
+    return "".join(generated_tokens)
+
+
+# Usage
+if __name__ == "__main__":
+    response = run_gemma3_inference(
+        model_path="gemma3_model.pte",
+        tokenizer_path="tokenizer.json",
+        image_path="photo.png",
+        prompt="Describe this image in detail.",
+    )
+```
+
+See the complete example at [`examples/models/gemma3/pybinding_run.py`](../../../examples/models/gemma3/pybinding_run.py).
+
 ### Python API Classes
 
 #### GenerationConfig
