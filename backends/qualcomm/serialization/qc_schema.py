@@ -166,6 +166,7 @@ class QnnExecuTorchHtpBackendOptions:
     use_fold_relu: bool = True
     use_multi_contexts: bool = False
     use_weight_sharing: bool = False
+    use_slc_allocator: bool = False
 
 
 @unique
