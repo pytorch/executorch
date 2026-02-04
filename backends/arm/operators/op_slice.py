@@ -89,7 +89,7 @@ class SliceVisitor(NodeVisitor):
 
         # aten.slice_copy supports slicing in 1d at a time.
         # The arguments are the actual input, dimension of slicing, start index, end index and optinal step or stride.
-        input_node, dim, start, end = inputs
+        input_node, dim, start, end = inputs[:4]
 
         # Translate and check parameters in Pytorch dim order.
         shape = input_node.shape
