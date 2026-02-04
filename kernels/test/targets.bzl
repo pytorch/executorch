@@ -166,6 +166,7 @@ def define_common_targets():
     _common_op_test("op__to_dim_order_copy_test", ["aten", "portable"])
     _common_op_test("op__empty_dim_order_test", ["aten", "portable"])
     _common_op_test("op__clone_dim_order_test", ["aten", "portable"])
+    _common_op_test("op__conj_physical_test", ["aten", "portable"])
     _common_op_test("op_abs_test", ["aten", "portable"])
     _common_op_test("op_acos_test", ["aten", "portable"])
     _common_op_test("op_acosh_test", ["aten", "portable"])

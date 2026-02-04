@@ -4,6 +4,8 @@
 
 - op: _cdist_forward.out
 
+- op: _conj_physical.out
+
 - op: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams.out
 
 - op: _fft_c2r.out

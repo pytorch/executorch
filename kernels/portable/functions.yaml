@@ -22,6 +22,11 @@
     - arg_meta: null
       kernel_name: torch::executor::_cdist_forward_out
 
+- op: _conj_physical.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_conj_physical_out
+
 - op: _log_softmax.out
   kernels:
     - arg_meta: null
