@@ -598,9 +598,9 @@ def main():
     parser.add_argument(
         "--backend",
         type=str,
-        default="portable",
+        default="xnnpack",
         choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
-        help="Backend for acceleration (default: portable)",
+        help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
         "--dtype",

@@ -21,7 +21,7 @@ void q_dq_8bit_per_tensor(
   const ValueRef scale = args.at(idx++);
   const ValueRef zero_point = args.at(idx++);
   const ValueRef layout_int = args.at(idx++);
-  const ValueRef impl_selector_int = args.at(idx++);
+  const ValueRef impl_selector_str = args.at(idx++);
   const ValueRef fp_output = args.at(idx++);
 
   // Extract the layout parameter and cast to GPUMemoryLayout
@@ -29,11 +29,11 @@ void q_dq_8bit_per_tensor(
   utils::GPUMemoryLayout layout =
       static_cast<utils::GPUMemoryLayout>(layout_value);
 
-  // Extract the impl_selector flag
-  int32_t impl_selector = graph.extract_scalar<int32_t>(impl_selector_int);
+  // Extract the impl_selector string
+  std::string impl_selector = graph.extract_string(impl_selector_str);
 
   // Use legacy 4W4C implementation if requested and layout matches
-  if (impl_selector && layout == utils::kPackedInt8_4W4C) {
+  if (impl_selector == "legacy_4w4c" && layout == utils::kPackedInt8_4W4C) {
     TmpTensor packed_int8_input(
         &graph,
         graph.sizes_of(fp_input),

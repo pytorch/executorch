@@ -22,37 +22,55 @@ int get_seed() {
   return seed++;
 }
 
+int get_seed_or_explicit(int explicit_seed) {
+  if (explicit_seed >= 0) {
+    return explicit_seed;
+  }
+  return get_seed();
+}
+
 // Forward declarations for data generation utilities
 void generate_random_float_data(
     std::vector<float>& data,
     float min_val = -1.0f,
-    float max_val = 1.0f);
+    float max_val = 1.0f,
+    int explicit_seed = -1);
 void generate_random_int_data(
     std::vector<int32_t>& data,
     int min_val = -10,
-    int max_val = 10);
+    int max_val = 10,
+    int explicit_seed = -1);
 void generate_randint_float_data(
     std::vector<float>& data,
     int min_val = -10,
-    int max_val = 10);
+    int max_val = 10,
+    int explicit_seed = -1);
 void generate_randint_half_data(
     std::vector<uint16_t>& data,
     int min_val = -10,
-    int max_val = 10);
+    int max_val = 10,
+    int explicit_seed = -1);
 void generate_random_int8_data(
     std::vector<int8_t>& data,
     int8_t min_val = -10,
-    int8_t max_val = 10);
+    int8_t max_val = 10,
+    int explicit_seed = -1);
 void generate_random_uint8_data(
     std::vector<uint8_t>& data,
     uint8_t min_val = 0,
-    uint8_t max_val = 255);
-void generate_random_2xint4_data(std::vector<uint8_t>& data);
-void generate_random_2xint4_data(std::vector<int8_t>& data);
+    uint8_t max_val = 255,
+    int explicit_seed = -1);
+void generate_random_2xint4_data(
+    std::vector<uint8_t>& data,
+    int explicit_seed = -1);
+void generate_random_2xint4_data(
+    std::vector<int8_t>& data,
+    int explicit_seed = -1);
 void generate_random_int4_data(
     std::vector<int8_t>& data,
     int8_t min_val = -8,
-    int8_t max_val = 7);
+    int8_t max_val = 7,
+    int explicit_seed = -1);
 void generate_ones_data(std::vector<float>& data);
 void generate_zeros_data(std::vector<float>& data);
 
@@ -97,7 +115,7 @@ void set_debugging(bool enable_debugging) {
 }
 
 // ValueSpec implementation
-void ValueSpec::generate_tensor_data() {
+void ValueSpec::generate_tensor_data(int seed) {
   if (spec_type != SpecType::Tensor) {
     return;
   }
@@ -108,15 +126,15 @@ void ValueSpec::generate_tensor_data() {
     case vkapi::kFloat: {
       float_data.resize(num_elements);
       if (data_gen_type == DataGenType::RANDOM) {
-        generate_random_float_data(float_data);
+        generate_random_float_data(float_data, -1.0f, 1.0f, seed);
       } else if (data_gen_type == DataGenType::RANDOM_SCALES) {
-        generate_random_float_data(float_data, 0.005, 0.015);
+        generate_random_float_data(float_data, 0.005, 0.015, seed);
       } else if (data_gen_type == DataGenType::RANDINT) {
-        generate_randint_float_data(float_data);
+        generate_randint_float_data(float_data, -10, 10, seed);
       } else if (data_gen_type == DataGenType::RANDINT8) {
-        generate_randint_float_data(float_data, -128, 127);
+        generate_randint_float_data(float_data, -128, 127, seed);
       } else if (data_gen_type == DataGenType::RANDINT4) {
-        generate_randint_float_data(float_data, -8, 7);
+        generate_randint_float_data(float_data, -8, 7, seed);
       } else if (data_gen_type == DataGenType::ONES) {
         generate_ones_data(float_data);
       } else if (data_gen_type == DataGenType::ZEROS) {
@@ -131,17 +149,17 @@ void ValueSpec::generate_tensor_data() {
       if (data_gen_type == DataGenType::RANDOM) {
         // Generate random float data first, then convert to half
         std::vector<float> temp_data(num_elements);
-        generate_random_float_data(temp_data);
+        generate_random_float_data(temp_data, -1.0f, 1.0f, seed);
         for (size_t i = 0; i < temp_data.size(); ++i) {
           // Simple conversion to uint16_t representation of half
           half_data[i] = static_cast<uint16_t>(temp_data[i] * 32767.0f);
         }
       } else if (data_gen_type == DataGenType::RANDINT) {
-        generate_randint_half_data(half_data);
+        generate_randint_half_data(half_data, -10, 10, seed);
       } else if (data_gen_type == DataGenType::RANDINT8) {
-        generate_randint_half_data(half_data, -128, 127);
+        generate_randint_half_data(half_data, -128, 127, seed);
       } else if (data_gen_type == DataGenType::RANDINT4) {
-        generate_randint_half_data(half_data, -8, 7);
+        generate_randint_half_data(half_data, -8, 7, seed);
       } else if (data_gen_type == DataGenType::ONES) {
         std::fill(
             half_data.begin(),
@@ -163,14 +181,17 @@ void ValueSpec::generate_tensor_data() {
     case vkapi::kInt: {
       int32_data.resize(num_elements);
       if (data_gen_type == DataGenType::RANDOM) {
-        generate_random_int_data(int32_data);
+        generate_random_int_data(int32_data, -10, 10, seed);
       } else if (data_gen_type == DataGenType::RANDINT) {
         generate_random_int_data(
-            int32_data); // For int type, RANDINT is same as RANDOM
+            int32_data,
+            -10,
+            10,
+            seed); // For int type, RANDINT is same as RANDOM
       } else if (data_gen_type == DataGenType::RANDINT8) {
-        generate_random_int_data(int32_data, -128, 127);
+        generate_random_int_data(int32_data, -128, 127, seed);
       } else if (data_gen_type == DataGenType::RANDINT4) {
-        generate_random_int_data(int32_data, -8, 7);
+        generate_random_int_data(int32_data, -8, 7, seed);
       } else if (data_gen_type == DataGenType::ONES) {
         std::fill(int32_data.begin(), int32_data.end(), 1);
       } else if (data_gen_type == DataGenType::ZEROS) {
@@ -183,13 +204,13 @@ void ValueSpec::generate_tensor_data() {
     case vkapi::kChar: {
       int8_data.resize(num_elements);
       if (data_gen_type == DataGenType::RANDOM) {
-        generate_random_int8_data(int8_data);
+        generate_random_int8_data(int8_data, -10, 10, seed);
       } else if (data_gen_type == DataGenType::RANDINT) {
-        generate_random_int8_data(int8_data);
+        generate_random_int8_data(int8_data, -10, 10, seed);
       } else if (data_gen_type == DataGenType::RANDINT8) {
-        generate_random_int8_data(int8_data, -128, 127);
+        generate_random_int8_data(int8_data, -128, 127, seed);
       } else if (data_gen_type == DataGenType::RANDINT4) {
-        generate_random_2xint4_data(int8_data);
+        generate_random_2xint4_data(int8_data, seed);
       } else if (data_gen_type == DataGenType::ONES) {
         std::fill(int8_data.begin(), int8_data.end(), 1);
       } else if (data_gen_type == DataGenType::ONES_INT4) {
@@ -205,13 +226,13 @@ void ValueSpec::generate_tensor_data() {
     case vkapi::kByte: {
       uint8_data.resize(num_elements);
       if (data_gen_type == DataGenType::RANDOM) {
-        generate_random_uint8_data(uint8_data);
+        generate_random_uint8_data(uint8_data, 0, 255, seed);
       } else if (data_gen_type == DataGenType::RANDINT) {
-        generate_random_uint8_data(uint8_data);
+        generate_random_uint8_data(uint8_data, 0, 255, seed);
       } else if (data_gen_type == DataGenType::RANDINT8) {
-        generate_random_uint8_data(uint8_data, 0, 255);
+        generate_random_uint8_data(uint8_data, 0, 255, seed);
       } else if (data_gen_type == DataGenType::RANDINT4) {
-        generate_random_2xint4_data(uint8_data);
+        generate_random_2xint4_data(uint8_data, seed);
       } else if (data_gen_type == DataGenType::ONES) {
         std::fill(uint8_data.begin(), uint8_data.end(), 1);
       } else if (data_gen_type == DataGenType::ONES_INT4) {
@@ -228,9 +249,9 @@ void ValueSpec::generate_tensor_data() {
       // Default to float
       float_data.resize(num_elements);
       if (data_gen_type == DataGenType::RANDOM) {
-        generate_random_float_data(float_data);
+        generate_random_float_data(float_data, -1.0f, 1.0f, seed);
       } else if (data_gen_type == DataGenType::RANDINT) {
-        generate_randint_float_data(float_data);
+        generate_randint_float_data(float_data, -10, 10, seed);
       } else if (data_gen_type == DataGenType::ONES) {
         generate_ones_data(float_data);
       } else if (data_gen_type == DataGenType::ZEROS) {
@@ -316,6 +337,11 @@ std::string ValueSpec::to_string() const {
       result += ", data_gen=";
       result += (data_gen_type == DataGenType::FIXED) ? "FIXED" : "RANDOM";
       result += ")";
+      return result;
+    case SpecType::String:
+      result += "type=String, value=\"";
+      result += get_string_value();
+      result += "\")";
       return result;
   }
 
@@ -495,8 +521,9 @@ const void* ValueSpec::get_data_ptr() const {
 void generate_random_float_data(
     std::vector<float>& data,
     float min_val,
-    float max_val) {
-  std::mt19937 gen(get_seed());
+    float max_val,
+    int explicit_seed) {
+  std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_real_distribution<float> dis(min_val, max_val);
   for (auto& val : data) {
     val = dis(gen);
@@ -506,8 +533,9 @@ void generate_random_float_data(
 void generate_random_int_data(
     std::vector<int32_t>& data,
     int min_val,
-    int max_val) {
-  std::mt19937 gen(get_seed());
+    int max_val,
+    int explicit_seed) {
+  std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<int32_t> dis(min_val, max_val);
   for (auto& val : data) {
     val = dis(gen);
@@ -517,8 +545,9 @@ void generate_random_int_data(
 void generate_randint_float_data(
     std::vector<float>& data,
     int min_val,
-    int max_val) {
-  std::mt19937 gen(get_seed());
+    int max_val,
+    int explicit_seed) {
+  std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<int32_t> dis(min_val, max_val);
   for (auto& val : data) {
     val = static_cast<float>(dis(gen));
@@ -528,8 +557,9 @@ void generate_randint_float_data(
 void generate_randint_half_data(
     std::vector<uint16_t>& data,
     int min_val,
-    int max_val) {
-  std::mt19937 gen(get_seed());
+    int max_val,
+    int explicit_seed) {
+  std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<int32_t> dis(min_val, max_val);
   for (auto& val : data) {
     val = static_cast<uint16_t>(std::abs(dis(gen)) % 65536);
@@ -543,8 +573,9 @@ void generate_ones_data(std::vector<float>& data) {
 void generate_random_int8_data(
     std::vector<int8_t>& data,
     int8_t min_val,
-    int8_t max_val) {
-  std::mt19937 gen(get_seed());
+    int8_t max_val,
+    int explicit_seed) {
+  std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<int16_t> dis(min_val, max_val);
   for (auto& val : data) {
     val = static_cast<int8_t>(dis(gen));
@@ -554,8 +585,9 @@ void generate_random_int8_data(
 void generate_random_uint8_data(
     std::vector<uint8_t>& data,
     uint8_t min_val,
-    uint8_t max_val) {
-  std::mt19937 gen(get_seed());
+    uint8_t max_val,
+    int explicit_seed) {
+  std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<uint16_t> dis(min_val, max_val);
   for (auto& val : data) {
     val = static_cast<uint8_t>(dis(gen));
@@ -565,16 +597,17 @@ void generate_random_uint8_data(
 void generate_random_int4_data(
     std::vector<int8_t>& data,
     int8_t min_val,
-    int8_t max_val) {
-  std::mt19937 gen(get_seed());
+    int8_t max_val,
+    int explicit_seed) {
+  std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<int16_t> dis(min_val, max_val);
   for (auto& val : data) {
     val = static_cast<int8_t>(dis(gen));
   }
 }
 
-void generate_random_2xint4_data(std::vector<int8_t>& data) {
-  std::mt19937 gen(get_seed());
+void generate_random_2xint4_data(std::vector<int8_t>& data, int explicit_seed) {
+  std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<int16_t> dis(-8, 7); // Signed 4-bit range
   for (auto& val : data) {
     // Generate two separate 4-bit values
@@ -585,8 +618,10 @@ void generate_random_2xint4_data(std::vector<int8_t>& data) {
   }
 }
 
-void generate_random_2xint4_data(std::vector<uint8_t>& data) {
-  std::mt19937 gen(get_seed());
+void generate_random_2xint4_data(
+    std::vector<uint8_t>& data,
+    int explicit_seed) {
+  std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<uint16_t> dis(0, 15); // Unsigned 4-bit range
   for (auto& val : data) {
     // Generate two separate 4-bit values
@@ -651,6 +686,87 @@ bool ValueSpec::validate_against_reference(
     std::cout << "Correctness validation PASSED" << std::endl;
   }
   return true;
+}
+
+// Ensure data is generated for this ValueSpec
+void ValueSpec::ensure_data_generated(int seed) {
+  if (data_generated_) {
+    return;
+  }
+  generate_tensor_data(seed);
+  data_generated_ = true;
+}
+
+// Copy input data from another ValueSpec
+void ValueSpec::copy_data_from(const ValueSpec& other) {
+  if (!is_tensor() || !other.is_tensor()) {
+    return;
+  }
+  // Copy raw data based on dtype
+  float_data = other.float_data;
+  int32_data = other.int32_data;
+  half_data = other.half_data;
+  int8_data = other.int8_data;
+  uint8_data = other.uint8_data;
+  data_generated_ = other.data_generated_;
+}
+
+// ReferenceKey implementation
+ReferenceKey ReferenceKey::from_test_case(const TestCase& tc) {
+  std::ostringstream oss;
+
+  // Serialize inputs that affect reference computation
+  // Skip: storage_type, memory_layout, string values (like impl_selector)
+  for (size_t i = 0; i < tc.inputs().size(); ++i) {
+    const ValueSpec& input = tc.inputs()[i];
+    oss << "i" << i << ":";
+
+    if (input.is_tensor()) {
+      // For tensors: sizes, dtype, data_gen_type, is_constant
+      oss << "T[";
+      for (size_t j = 0; j < input.sizes.size(); ++j) {
+        if (j > 0)
+          oss << ",";
+        oss << input.sizes[j];
+      }
+      oss << "]d" << static_cast<int>(input.dtype);
+      oss << "g" << static_cast<int>(input.data_gen_type);
+      oss << "c" << (input.is_constant() ? 1 : 0);
+    } else if (input.is_int()) {
+      oss << "I" << input.get_int_value();
+    } else if (input.is_float()) {
+      oss << "F" << input.get_float_value();
+    } else if (input.is_bool()) {
+      oss << "B" << (input.get_bool_value() ? 1 : 0);
+    } else if (input.is_int_list()) {
+      oss << "L[";
+      const auto& list = input.get_int_list();
+      for (size_t j = 0; j < list.size(); ++j) {
+        if (j > 0)
+          oss << ",";
+        oss << list[j];
+      }
+      oss << "]";
+    }
+    // Skip string inputs (like impl_selector) as they don't affect reference
+    oss << ";";
+  }
+
+  // Also include output shapes for completeness
+  for (size_t i = 0; i < tc.outputs().size(); ++i) {
+    const ValueSpec& output = tc.outputs()[i];
+    oss << "o" << i << ":[";
+    for (size_t j = 0; j < output.sizes.size(); ++j) {
+      if (j > 0)
+        oss << ",";
+      oss << output.sizes[j];
+    }
+    oss << "]d" << static_cast<int>(output.dtype) << ";";
+  }
+
+  ReferenceKey key;
+  key.key_string = oss.str();
+  return key;
 }
 
 // Helper function to collect GPU timing from querypool
@@ -799,7 +915,7 @@ void BenchmarkResult::print_summary(
   static constexpr int OPERATOR_NAME_WIDTH = 50;
   static constexpr int GLOBAL_WG_WIDTH = 16;
   static constexpr int LOCAL_WG_WIDTH = 12;
-  static constexpr int KERNEL_NAME_WIDTH = 60;
+  static constexpr int KERNEL_NAME_WIDTH = 80;
   static constexpr int SIZE_INFO_WIDTH = 20;
   static constexpr int TIMING_WIDTH = 16;
   static constexpr int GFLOPS_WIDTH = 14;
@@ -912,7 +1028,7 @@ void TestResult::add_result(BenchmarkResult&& result) {
 }
 
 void TestResult::print_summary() const {
-  static constexpr int CASE_WIDTH = 80;
+  static constexpr int CASE_WIDTH = 100;
   static constexpr int KERNEL_NAME_WIDTH = 20;
   static constexpr int TIMING_WIDTH = 12;
   static constexpr int PASS_WIDTH = 8;
@@ -1203,6 +1319,10 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
       }
       ValueRef input_value = graph.add_scalar_list(std::move(int64_list));
       input_values.push_back(input_value);
+    } else if (input_spec.is_string()) {
+      std::string str_copy = input_spec.get_string_value();
+      ValueRef input_value = graph.add_string(std::move(str_copy));
+      input_values.push_back(input_value);
     } else if (input_spec.is_constant()) {
       ValueRef input_value = graph.add_tensorref(
           input_spec.get_tensor_sizes(),
@@ -1437,24 +1557,106 @@ TestResult execute_test_cases(
             << operation_name << std::endl;
   print_separator();
 
+  // Group test cases by ReferenceKey for caching reference computations
+  std::unordered_map<ReferenceKey, std::vector<size_t>, ReferenceKeyHash>
+      groups;
+  for (size_t i = 0; i < test_cases.size(); ++i) {
+    ReferenceKey key = ReferenceKey::from_test_case(test_cases[i]);
+    groups[key].push_back(i);
+  }
+
+  // Track which test cases had reference computed vs skipped
+  std::vector<bool> skipped_reference(test_cases.size(), true);
+
+  // Cache for reference outputs: key -> vector of output ref_float_data per
+  // output
+  std::unordered_map<
+      ReferenceKey,
+      std::vector<std::vector<float>>,
+      ReferenceKeyHash>
+      ref_cache;
+
+  // Process each group: generate data once, compute reference once
+  for (const auto& [key, indices] : groups) {
+    if (indices.empty())
+      continue;
+
+    // Get first test case as the "prototype"
+    size_t prototype_idx = indices[0];
+    TestCase& prototype = test_cases[prototype_idx];
+
+    // Generate data for prototype with deterministic seed based on key
+    int group_seed =
+        static_cast<int>(std::hash<std::string>{}(key.key_string) % 10000);
+    for (auto& input : prototype.inputs()) {
+      input.ensure_data_generated(group_seed++);
+    }
+
+    // Compute reference once for prototype
+    bool ref_computed = false;
+    if (reference_compute_func) {
+      try {
+        reference_compute_func(prototype);
+        ref_computed = true;
+        skipped_reference[prototype_idx] = false;
+
+        // Cache the reference output
+        std::vector<std::vector<float>> ref_data;
+        for (const auto& output : prototype.outputs()) {
+          ref_data.push_back(output.get_ref_float_data());
+        }
+        ref_cache[key] = std::move(ref_data);
+
+        // Print progress indicator for reference computation
+        std::cout << "." << std::flush;
+      } catch (const std::invalid_argument& _) {
+        std::cout << "s" << std::flush;
+      }
+    }
+
+    // Copy data and reference to other test cases in group
+    for (size_t i = 1; i < indices.size(); ++i) {
+      size_t tc_idx = indices[i];
+      TestCase& tc = test_cases[tc_idx];
+
+      // Copy input data from prototype
+      for (size_t j = 0;
+           j < tc.inputs().size() && j < prototype.inputs().size();
+           ++j) {
+        auto& dest = tc.inputs()[j];
+        const auto& src = prototype.inputs()[j];
+        if (dest.is_tensor() && src.is_tensor() && dest.sizes == src.sizes &&
+            dest.dtype == src.dtype) {
+          dest.copy_data_from(src);
+        }
+      }
+
+      // Copy reference output data if available
+      if (ref_computed) {
+        skipped_reference[tc_idx] = false;
+        auto it = ref_cache.find(key);
+        if (it != ref_cache.end()) {
+          const auto& ref_data = it->second;
+          for (size_t j = 0; j < tc.outputs().size() && j < ref_data.size();
+               ++j) {
+            tc.outputs()[j].get_ref_float_data() = ref_data[j];
+          }
+        }
+      }
+    }
+  }
+  std::cout << std::endl;
+
+  if (debugging()) {
+    std::cout << "Grouped " << test_cases.size() << " test cases into "
+              << groups.size() << " reference computation groups" << std::endl;
+  }
+
   bool any_correctness_failed = false;
   float total_gflops = 0.0f;
 
   for (size_t i = 0; i < test_cases.size(); ++i) {
     TestCase& test_case = test_cases[i];
-
-    // Compute reference data if reference function is provided
-    bool skipped_reference_fn = true;
-    if (reference_compute_func) {
-      try {
-        reference_compute_func(test_case);
-        skipped_reference_fn = false;
-      } catch (const std::invalid_argument& e) {
-        if (debugging()) {
-          std::cout << "Compute reference skipped: " << e.what() << std::endl;
-        }
-      }
-    }
 
     // Execute single test case
     BenchmarkResult result;
@@ -1477,7 +1679,7 @@ TestResult execute_test_cases(
       result.set_correctness_status(CorrectnessStatus::SKIPPED);
     } else if (!vulkan_execute_succeeded) {
       result.set_correctness_status(CorrectnessStatus::FAILED);
-    } else if (skipped_reference_fn) {
+    } else if (skipped_reference[i]) {
       result.set_correctness_status(CorrectnessStatus::SKIPPED);
     } else {
       // Reference function provided and succeeded - validate outputs

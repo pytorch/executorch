@@ -35,7 +35,7 @@ TestCase create_test_case_from_config(
     vkapi::ScalarType input_dtype,
     utils::GPUMemoryLayout fp_memory_layout,
     utils::GPUMemoryLayout quantized_memory_layout,
-    int32_t impl_selector = 0) {
+    const std::string& impl_selector = "") {
   TestCase test_case;
 
   // Create a descriptive name for the test case
@@ -44,8 +44,8 @@ TestCase create_test_case_from_config(
   std::string test_name = config.test_case_name + "  I=" + shape_str + "  " +
       repr_str(storage_type, fp_memory_layout) + "->" +
       repr_str(utils::kBuffer, quantized_memory_layout);
-  if (impl_selector) {
-    test_name += " (Legacy)";
+  if (!impl_selector.empty()) {
+    test_name += " [" + impl_selector + "]";
   }
   test_case.set_name(test_name);
 
@@ -72,8 +72,8 @@ TestCase create_test_case_from_config(
   int32_t layout_int = static_cast<int32_t>(quantized_memory_layout);
   ValueSpec layout_spec(layout_int);
 
-  // impl_selector flag
-  ValueSpec impl_selector_spec(impl_selector);
+  // impl_selector string
+  ValueSpec impl_selector_spec = ValueSpec::make_string(impl_selector);
 
   // Output tensor (float) - same shape as input
   ValueSpec output_tensor(
@@ -143,7 +143,7 @@ std::vector<TestCase> generate_q_dq_8bit_easy_cases() {
                 input_dtype,
                 fp_layout,
                 quant_layout,
-                /*impl_selector=*/1));
+                /*impl_selector=*/"legacy_4w4c"));
           }
         }
       }
@@ -235,7 +235,7 @@ std::vector<TestCase> generate_q_dq_8bit_test_cases() {
                 vkapi::kFloat,
                 fp_layout,
                 quant_layout,
-                /*impl_selector=*/1));
+                /*impl_selector=*/"legacy_4w4c"));
           }
         }
       }
