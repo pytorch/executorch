@@ -94,7 +94,11 @@ TensorImpl impl_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
   // Calculate expected tensor size in bytes
   size_t numel = 1;
   for (ssize_t i = 0; i < dim; i++) {
-    ET_CHECK(sizes[i] >= 0);
+    ET_CHECK_MSG(
+        sizes[i] >= 0,
+        "Tensor has negative size at dimension %zd: %d",
+        static_cast<ssize_t>(i),
+        static_cast<int>(sizes[i]));
     numel *= static_cast<size_t>(sizes[i]);
   }
   size_t expected_bytes = numel * executorch::runtime::elementSize(scalar_type);
