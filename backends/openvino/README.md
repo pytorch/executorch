@@ -109,9 +109,9 @@ Follow the steps below to setup your build environment:
      ```bash
    ./openvino_build.sh --cpp_runtime
    ```
-   **Build C++ Llama Runner**: First, ensure the C++ runtime libraries are built by following the earlier instructions. Then, run the `openvino_build.sh` script with the `--llama_runner flag` to compile the LlaMA runner as shown the below command, which enables executing inference with models exported using export_llama. The resulting binary is located at: `<executorch_root>/cmake-out/examples/models/llama/llama_main`
+   **Build C++ Runtime Libraries with LLM Extension**: Run the `openvino_build.sh` script with the `--cpp_runtime_llm` flag to build the C++ runtime libraries with LLM extension as shown in the below command. Use this option instead of `--cpp_runtime` for LLM extension support which is required by LLM examples.
      ```bash
-   ./openvino_build.sh --llama_runner
+   ./openvino_build.sh --cpp_runtime_llm
    ```
 
 For more information about ExecuTorch environment setup, refer to the [Environment Setup](https://pytorch.org/executorch/main/getting-started-setup#environment-setup) guide.

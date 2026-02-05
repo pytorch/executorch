@@ -41,7 +41,10 @@ class LogVisitor(NodeVisitor):
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
-            self.target, [*inputs, output], ts.DType.FP32, self.tosa_spec
+            self.target,
+            [*inputs, output],
+            [ts.DType.FP32, ts.DType.BF16],
+            self.tosa_spec,
         )
         attr = ts.TosaSerializerAttribute()
         attr.LogAttribute()

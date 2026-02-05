@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,6 +6,8 @@
 
 import operator
 from typing import Set, Type
+
+import torch
 
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
@@ -17,6 +19,30 @@ EDGE_MAXPOOL2D = (
     exir_ops.edge.aten.max_pool2d.default,
     exir_ops.edge.aten.max_pool2d_with_indices.default,
 )
+
+
+def _pack_dimension(
+    dilation: int, padding: int, original_size: int, kernel_size: int, stride: int
+) -> tuple[int, int, int]:
+    """Compute packed dimension size, new padding, and final output size for a single spatial dimension."""
+
+    # Calculate extra padding needed to evenly pack the padded size into two dimensions for space-to-batch
+    # The dimension will be reshaped into (packed_dim_size, dilation), so padded size needs to be divisible by dilation
+    # padded_size % dilation = number of elements that would be left over after packing, so we need to add (dilation - that) % dilation
+    padded_size = original_size + padding * 2
+    extra_padding = (dilation - (padded_size % dilation)) % dilation
+    packed_dim_size = (padded_size + extra_padding) // dilation
+
+    # The formula for output size of a pooling layer is:
+    # output_size = ⌊(padded_size - effective_kernel_size) / stride  + 1⌋
+    effective_kernel_size = dilation * (kernel_size - 1) + 1
+    output_size = (
+        0
+        if padded_size < effective_kernel_size
+        else 1 + (padded_size - effective_kernel_size) // stride
+    )
+
+    return packed_dim_size, padding + extra_padding, output_size
 
 
 class DecomposeMaxPool2dPass(ArmPass):
@@ -59,16 +85,8 @@ class DecomposeMaxPool2dPass(ArmPass):
 
         # Compute padded and packed dimensions for dilation > 1
         N, C, H, W = x.data.size()
-        ph, pw = pad_h, pad_w
-        ph2, pw2 = pad_h, pad_w
-        H_pad = H + ph + ph2
-        W_pad = W + pw + pw2
-        H_pack = (H_pad + d_h - 1) // d_h
-        W_pack = (W_pad + d_w - 1) // d_w
-        extra_h = 0 if H_pack < k_h else (s_h - ((H_pack - k_h) % s_h)) % s_h
-        extra_w = 0 if W_pack < k_w else (s_w - ((W_pack - k_w) % s_w)) % s_w
-        ph2 += extra_h * d_h
-        pw2 += extra_w * d_w
+        H_pack, bottom_padding, H_final = _pack_dimension(d_h, pad_h, H, k_h, s_h)
+        W_pack, right_padding, W_final = _pack_dimension(d_w, pad_w, W, k_w, s_w)
 
         meta_with_no_qparams = meta.copy()
         meta_with_no_qparams.data["output_qparams"] = {}
@@ -77,11 +95,18 @@ class DecomposeMaxPool2dPass(ArmPass):
         meta_with_no_output_qparams.data["output_qparams"] = {}
 
         # 1) Pad via EXIR edge pad (preserves dtype)
+        pad_value = (
+            float("-inf")
+            if x.data.dtype.is_floating_point
+            else torch.iinfo(x.data.dtype).min
+        )
+        left_padding = pad_w
+        top_padding = pad_h
         pad_edge = exir_ops.edge.aten.constant_pad_nd.default
-        pads = [pw, pw2, ph, ph2, 0, 0, 0, 0]
+        pads = [left_padding, right_padding, top_padding, bottom_padding, 0, 0, 0, 0]
         x_pad = super().call_operator(
             pad_edge,
-            (x, pads, 0),
+            (x, pads, pad_value),
             {},
             meta_with_no_output_qparams,
         )
@@ -112,6 +137,7 @@ class DecomposeMaxPool2dPass(ArmPass):
             if is_with_indices
             else exir_ops.edge.aten.max_pool2d.default
         )
+
         pool_args = (x2, (k_h, k_w), (s_h, s_w), (0, 0), 1, ceil_mode)
         pool_out = super().call_operator(
             pool_edge_op,
@@ -164,22 +190,17 @@ class DecomposeMaxPool2dPass(ArmPass):
         )
 
         # 5) Final crop
-        S_top = ph // d_h + (1 if ph % d_h else 0)
-        S_left = pw // d_w + (1 if pw % d_w else 0)
+        out = super().call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor, (out, 2, 0, H_final), {}, meta
+        )
+        out = super().call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor, (out, 3, 0, W_final), {}, meta
+        )
+
+        S_top = top_padding // d_h + (1 if top_padding % d_h else 0)
+        S_left = left_padding // d_w + (1 if left_padding % d_w else 0)
         S_top = max(0, min(S_top, H_out * d_h - H))
         S_left = max(0, min(S_left, W_out * d_w - W))
-        out = super().call_operator(
-            exir_ops.edge.aten.slice_copy.Tensor,
-            (out, 2, S_top, S_top + H),
-            {},
-            meta_with_no_qparams,
-        )
-        out = super().call_operator(
-            exir_ops.edge.aten.slice_copy.Tensor,
-            (out, 3, S_left, S_left + W),
-            {},
-            meta_with_no_qparams,
-        )
 
         if is_with_indices:
             # Reconstruct indices

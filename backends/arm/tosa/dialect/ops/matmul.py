@@ -21,7 +21,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 def MATMUL(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
     tosa_spec = get_context_spec()
     """Performs matrix multiplication on two input tensors.
+
     Additionally validates TOSA constraints of a MATMUL op.
+
     """
     if x1.dtype != x2.dtype:
         raise TosaValueError(
@@ -43,9 +45,16 @@ def MATMUL(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
         else:
             # float16 supports float16 accumulation as well
             dtype = torch.float32
+    elif x1.dtype == torch.bfloat16:
+        if not tosa_spec.support_extension("bf16"):
+            raise TosaValueError(
+                f"TOSA spec {tosa_spec} doesn't support bf16", op="MATMUL"
+            )
+        dtype = torch.float32
     else:
         raise TosaValueError(
-            f"Input tensors must be of type int8, float16 or float32, got {x1.dtype}",
+            "Input tensors must be of type int8, float16, float32, or bfloat16, "
+            f"got {x1.dtype}",
             op="MATMUL",
         )
 

@@ -7,7 +7,7 @@
  */
 
 #include <cuda_runtime.h>
-#include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/aoti/common_shims_slim.h>
 #include <executorch/backends/cuda/runtime/shims/cuda_guard.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/platform.h>

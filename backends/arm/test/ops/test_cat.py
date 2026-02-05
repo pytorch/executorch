@@ -82,6 +82,22 @@ class Cat(torch.nn.Module):
             0,
         ),
     }
+    test_parameters_fp16 = {
+        "cat_rand_two_tensors_fp16": lambda: (
+            (
+                torch.randn(1, 2, 4, 4, dtype=torch.float16),
+                torch.randn(1, 2, 4, 1, dtype=torch.float16),
+            ),
+            3,
+        ),
+        "cat_rand_dim0_fp16": lambda: (
+            (
+                torch.randn(1, 2, 4, 4, dtype=torch.float16),
+                torch.randn(1, 2, 4, 4, dtype=torch.float16),
+            ),
+            0,
+        ),
+    }
 
     def __init__(self):
         super().__init__()
@@ -90,7 +106,10 @@ class Cat(torch.nn.Module):
         return torch.cat(t, dim=dim)
 
 
-@common.parametrize("test_data", Cat.test_parameters | Cat.test_parameters_bf16)
+@common.parametrize(
+    "test_data",
+    Cat.test_parameters | Cat.test_parameters_bf16 | Cat.test_parameters_fp16,
+)
 def test_cat_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Cat(),
@@ -151,7 +170,7 @@ def test_cat_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Cat.test_parameters)
+@common.parametrize("test_data", Cat.test_parameters | Cat.test_parameters_fp16)
 @common.SkipIfNoModelConverter
 def test_cat_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](

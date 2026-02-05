@@ -316,6 +316,37 @@ TEST(FromBlobTest, WithArrayRef) {
 }
 
 // =============================================================================
+// Dtype and Device Type Validation Tests
+// =============================================================================
+
+TEST(FromBlobTest, InvalidDtypeUndefined) {
+  constexpr size_t kNumFloats = 6;
+  float external_data[kNumFloats];
+
+  EXPECT_DEATH(
+      from_blob(external_data, {2, 3}, c10::ScalarType::Undefined), "");
+}
+
+TEST(FromBlobTest, InvalidDtypeDouble) {
+  constexpr size_t kNumFloats = 6;
+  float external_data[kNumFloats];
+
+  EXPECT_DEATH(
+      from_blob(external_data, {2, 3}, static_cast<c10::ScalarType>(7)), "");
+}
+
+TEST(FromBlobTest, InvalidDeviceType) {
+  constexpr size_t kNumFloats = 6;
+  float external_data[kNumFloats];
+
+  c10::Device invalid_device(static_cast<c10::DeviceType>(100), 0);
+
+  EXPECT_DEATH(
+      from_blob(external_data, {2, 3}, c10::ScalarType::Float, invalid_device),
+      "");
+}
+
+// =============================================================================
 // CUDA from_blob Tests
 // Tests are skipped at runtime if CUDA hardware is not available.
 // =============================================================================

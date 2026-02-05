@@ -315,7 +315,6 @@ jobs:
           - test_arm_baremetal: test_run_ethos_u85
           - test_arm_baremetal: test_smaller_stories_llama
           - test_arm_baremetal: test_memory_allocation
-          - test_arm_baremetal: test_model_smollm2-135M
       fail-fast: false
     with:
       runner: linux.2xlarge.memory

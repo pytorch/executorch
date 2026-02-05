@@ -44,11 +44,15 @@ class WhereSupported(SupportedTOSAOperatorCheck):
 
         x_dtype, y_dtype = x.meta["val"].dtype, y.meta["val"].dtype
         if tosa_spec.support_float():
-            if x_dtype in (torch.bool, torch.float16, torch.float32) and y_dtype in (
+            supported_float = [
                 torch.bool,
                 torch.float16,
                 torch.float32,
-            ):
+            ]
+            if tosa_spec.support_extension("bf16"):
+                supported_float.append(torch.bfloat16)
+
+            if x_dtype in supported_float and y_dtype in supported_float:
                 return True
 
         if tosa_spec.support_integer():
