@@ -2,8 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""
-Declare operator support for ``edge.aten.gather`` in TOSA.
+"""Declare operator support for ``edge.aten.gather`` in TOSA.
 
 This support check matches the subset accepted by CanonicalizeGatherPass:
 
@@ -28,6 +27,7 @@ Note:
   indices as [N, W],then lowers via the TOSA gather dialect.
 - For 3D inputs CanonicalizeGatherPass permutes and reshapes values and indices
   to [N*C, K, 1] and [N*C, W] respectively, then lowers via the TOSA gather dialect.
+
 """
 
 from typing import cast
