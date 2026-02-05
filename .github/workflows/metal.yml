@@ -41,11 +41,10 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} ./install_executorch.sh
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
         echo "::endgroup::"
 
         echo "::group::Build Metal Runtime"
-        ${CONDA_RUN} backends/apple/metal/tests/run_metal_test.sh --update-ao
         ${CONDA_RUN} backends/apple/metal/tests/run_metal_test.sh --build
         echo "::endgroup::"
 
@@ -73,6 +72,12 @@ jobs:
             name: "parakeet-tdt"
         quant:
           - "non-quantized"
+        # Only test int4 quantization with parakeet-tdt
+        include:
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
+            quant: "quantized-int4-metal"
     with:
       runner: macos-m2-stable
       python-version: '3.11'
@@ -123,6 +128,12 @@ jobs:
             name: "parakeet-tdt"
         quant:
           - "non-quantized"
+        # Only test int4 quantization with parakeet-tdt
+        include:
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
+            quant: "quantized-int4-metal"
     with:
       runner: macos-m2-stable
       python-version: '3.11'
