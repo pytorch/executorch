@@ -371,8 +371,17 @@ def replace_kv_cache_with_custom_kv_cache(module):
 
 
 def _replace_kv_cache_with_custom_kv_cache(module):
+    # Import here to avoid circular imports
+    from executorch.examples.models.llama.source_transformation.attention_sink import (
+        KVCacheWithAttentionSink,
+    )
+
     for name, child in module.named_children():
-        if isinstance(child, KVCache):
+        # Skip KVCacheWithAttentionSink as it has special evict_tokens logic
+        # that is not compatible with CustomKVCache
+        if isinstance(child, KVCacheWithAttentionSink):
+            _replace_kv_cache_with_custom_kv_cache(child)
+        elif isinstance(child, KVCache):
             cache_shape = child.k_cache.shape
             cache_dtype = child.k_cache.dtype
             max_batch_size, n_heads, max_context_length, head_dim = cache_shape
