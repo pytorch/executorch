@@ -303,7 +303,7 @@ MODULE_REGISTRY["linear_int4_qmv_impl"] = {
 class LinearInt4_QMV_IMPL_small_odd(nn.Module):
     def __init__(self):
         super().__init__()
-        self.linear = nn.Linear(8, 3, bias=True)
+        self.linear = nn.Linear(32, 3, bias=True)
 
     def forward(self, x: torch.Tensor):
         return self.linear(x)
@@ -311,7 +311,7 @@ class LinearInt4_QMV_IMPL_small_odd(nn.Module):
 
 MODULE_REGISTRY["linear_int4_qmv_impl_small_odd"] = {
     "model_class": LinearInt4_QMV_IMPL_small_odd,
-    "input_shapes": [(1, 8)],
+    "input_shapes": [(1, 32)],
     "description": "Linear int4 quantization dispatching to qmv_impl",
     "qlinear": "fpa4w",
     "qlinear_group_size": 32,
@@ -328,7 +328,7 @@ MODULE_REGISTRY["linear_int4_qmv_impl_small_odd"] = {
 class LinearInt4_QMV_IMPL_small_even(nn.Module):
     def __init__(self):
         super().__init__()
-        self.linear = nn.Linear(8, 10, bias=True)
+        self.linear = nn.Linear(32, 10, bias=True)
 
     def forward(self, x: torch.Tensor):
         return self.linear(x)
@@ -336,7 +336,7 @@ class LinearInt4_QMV_IMPL_small_even(nn.Module):
 
 MODULE_REGISTRY["linear_int4_qmv_impl_small_even"] = {
     "model_class": LinearInt4_QMV_IMPL_small_even,
-    "input_shapes": [(1, 8)],
+    "input_shapes": [(1, 32)],
     "description": "Linear int4 quantization dispatching to qmv_impl",
     "qlinear": "fpa4w",
     "qlinear_group_size": 32,
@@ -716,10 +716,10 @@ def quantize_model(model: nn.Module, qlinear: str, qlinear_group_size: int = 32)
                 raise ValueError(
                     f"Invalid group_size=0 for Metal int4 quantization (layer: {fqn})"
                 )
-            if m.weight.shape[1] % 8 != 0:
+            if m.weight.shape[1] % qlinear_group_size != 0:
                 raise ValueError(
-                    f"Metal int4 quantization requires weight dimension K to be multiple of 8. "
-                    f"Layer {fqn} has weight shape {m.weight.shape} (K={m.weight.shape[1]})"
+                    f"Metal int4 quantization requires weight dimension (K) to be multiple of group_size. "
+                    f"Layer {fqn} has weight shape {m.weight.shape} (K={m.weight.shape[1]}, group_size={qlinear_group_size})" # noqa: E501
                 )
             return True
         return False
