@@ -126,7 +126,11 @@ def _create_causal_mask_for_attention_sink(
     is_sink = cache_positions < sink_size
     
     # Window tokens must be within sliding window
-    is_in_window = delta < window_size
+    # Use <= to include the boundary token. For window_size=124, we want to attend
+    # to the last 124 tokens BEFORE the current position (delta 1 to 124), plus
+    # position 4 (first non-sink token) which has delta exactly = window_size.
+    # This ensures sink_size + window_size tokens are visible when cache is full.
+    is_in_window = delta <= window_size
     
     # Final mask: valid AND (is_sink OR is_in_window)
     attn_mask = is_valid & (is_sink | is_in_window)
@@ -151,10 +155,11 @@ class CachePositionsManagerWithSink(nn.Module):
         self.sink_size = sink_size
         # Ring buffer size = cache_size - sink_size
         self.ring_size = cache_size - sink_size
-        # Use zeros like original CachePositionsManager
+        # Initialize to -1 to mark unwritten positions
+        # The mask uses (cache_positions >= 0) to check if a position is valid
         self.register_buffer(
             "cache_positions",
-            torch.zeros((self.max_context_length,), dtype=torch.long, device="cpu"),
+            torch.full((self.max_context_length,), -1, dtype=torch.long, device="cpu"),
         )
 
     def calculate_positions_and_update_indices(

@@ -39,9 +39,9 @@ class CachePositionsManagerWithSinkTest(unittest.TestCase):
         # Default: no sink (simple ring buffer)
         self.manager = CachePositionsManagerWithSink(self.cache_size, sink_size=0)
 
-    def test_initial_positions_are_zero(self):
-        """Cache positions should start as zeros."""
-        expected = torch.zeros(self.cache_size, dtype=torch.long)
+    def test_initial_positions_are_minus_one(self):
+        """Cache positions should start as -1 (unwritten)."""
+        expected = torch.full((self.cache_size,), -1, dtype=torch.long)
         torch.testing.assert_close(self.manager.cache_positions, expected)
 
     def test_simple_update(self):
