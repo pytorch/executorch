@@ -24,15 +24,12 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def identity_operator_factory(identity_target: str):
-    """
-    Creates and registers NodeVisitors for operators that map directly
-    to a TOSA IDENTITY op.
+    """Creates and registers NodeVisitors for operators that map directly to a
+    TOSA IDENTITY op.
     """
 
     class IdentityOperatorVisitor(NodeVisitor):
         target = identity_target
-
-        tosa_specs = NodeVisitor.tosa_specs
 
         def define_node(
             self,
@@ -51,6 +48,8 @@ def identity_operator_factory(identity_target: str):
             ]
             if self.tosa_spec.support_float():
                 supported_dtypes += [ts.DType.FP32]
+            if self.tosa_spec.support_extension("bf16"):
+                supported_dtypes += [ts.DType.BF16]
             if self.tosa_spec.support_extension("int16"):
                 supported_dtypes += [ts.DType.INT48]
             if self.tosa_spec.support_extension("int4"):

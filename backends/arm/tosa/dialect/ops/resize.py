@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,10 +19,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 # Add kwarg instead?
 @register_fake_tosa_op(
     "RESIZE(Tensor input, SymInt[]? output_size, bool align_corners, float[]? scale_factors, *, str resize_mode) -> Tensor",  # schema
-    (
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ),  # target TOSA specifications
+    TosaSpecification.all_versions_and_profiles(),  # target TOSA specifications
 )
 def RESIZE(
     x: torch.Tensor,
@@ -49,10 +46,14 @@ def RESIZE(
                 f"Context TOSA spec {tosa_spec} doesn't support int16", op="RESIZE"
             )
         output_dtype = x.dtype
-    elif x.dtype in (torch.float16, torch.float32):
+    elif x.dtype in (torch.float16, torch.float32, torch.bfloat16):
         if not tosa_spec.support_float():
             raise TosaValueError(
                 f"TOSA spec {tosa_spec} doesn't support float", op="RESIZE"
+            )
+        if x.dtype == torch.bfloat16 and not tosa_spec.support_extension("bf16"):
+            raise TosaValueError(
+                f"TOSA spec {tosa_spec} doesn't support bf16", op="RESIZE"
             )
         output_dtype = x.dtype
     else:

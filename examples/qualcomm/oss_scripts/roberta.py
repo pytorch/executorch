@@ -138,7 +138,7 @@ def main(args):
     golden = module(*sample_input)[0]
     adb.push(inputs=[sample_input])
     adb.execute()
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     print(f"input: {tokenizer.batch_decode(sample_input[0])}")
     print(f"golden output: {tokenizer.batch_decode(golden.argmax(axis=2))}")
@@ -150,7 +150,7 @@ def main(args):
     # accuracy analysis
     adb.push(inputs=inputs)
     adb.execute()
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
     goldens, predictions = [], []
     for i in range(len(inputs)):
         indice = [i for i, x in enumerate(targets[i]) if x != -100]

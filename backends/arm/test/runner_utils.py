@@ -638,7 +638,7 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     major = version._Major()
     minor = version._Minor()
     patch = version._Patch()
-    if not ((major == 1 and minor == 0)):
+    if not ((major == 1 and minor <= 1)):
         raise RuntimeError(
             f"Unsupported version in TOSA flatbuffer: version={major}.{minor}.{patch}"
         )

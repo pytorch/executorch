@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,7 +18,7 @@ SHIFT_INT8 = 20
 
 
 def quantize_val(val, scale, zp, qmin, qmax):
-    return min(max(round(val / scale + zp), qmin), qmax)
+    return float(min(max(torch.round(torch.Tensor([val / scale + zp])), qmin), qmax))
 
 
 def dequantize_per_tensor_cmsis(

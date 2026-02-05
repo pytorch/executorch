@@ -9,9 +9,6 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.annotate_decomposed_matmul import (
-    AnnotateDecomposedMatmulPass,
-)
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -369,9 +366,7 @@ class ToTosaMemoryFormatPass(ArmPass):
             )
         output_dim_orders = output_node.meta.get("original_dim_orders")
         if output_dim_orders is None:
-            raise RuntimeError(
-                f"{AnnotateDecomposedMatmulPass.__name__} is required to run at the beginning of the pass pipeline when using {ToTosaMemoryFormatPass.__name__}."
-            )
+            raise RuntimeError(f"{output_dim_orders=} is not supported.")
 
         for output_node_input, output_dim_order in zip(
             outputs, output_dim_orders, strict=True

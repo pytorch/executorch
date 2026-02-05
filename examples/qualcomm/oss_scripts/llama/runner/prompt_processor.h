@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/attention_sink_rope_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
@@ -69,7 +70,8 @@ class PromptProcessor {
   executorch::runtime::Result<uint64_t> prefill(
       std::vector<uint64_t> prompt_tokens,
       int64_t start_pos,
-      bool dump_logits);
+      bool dump_logits,
+      AttentionSinkRopeRunner* attention_sink_rope_runner);
   /**
    * @brief Get total I/O size in bytes (excluding the KV cache size)
    * @return Total I/O size in bytes.
@@ -123,6 +125,8 @@ class PromptProcessor {
   std::vector<executorch::runtime::EValue> inputs_;
   std::vector<executorch::aten::Tensor> input_tensors_;
   std::vector<executorch::aten::Tensor> output_tensors_;
+  // Used for attention sink to evict KV cache.
+  std::vector<executorch::runtime::EValue> cache_inputs_;
 
   // Unused by default, only used when dump_logits_path is provided.
   std::vector<uint16_t> prompt_all_logits_;

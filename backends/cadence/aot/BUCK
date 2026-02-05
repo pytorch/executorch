@@ -1,0 +1,651 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load(
+    "@fbsource//tools/build_defs:default_platform_defs.bzl",
+    "CXX",
+)
+load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
+
+oncall("odai_jarvis")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "utils",
+    srcs = [
+        "utils.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/tabulate:tabulate",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "compiler",
+    srcs = [
+        "compiler.py",
+    ],
+    deps = [
+        ":memory_planning",
+        ":ops_registrations",
+        ":passes",
+        ":replace_ops",
+        ":compiler_funcs",
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot/quantizer:fusion_pass",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/backends/transforms:decompose_sdpa",
+        "//executorch/backends/transforms:remove_clone_ops",
+        "//executorch/devtools:lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "export_example",
+    srcs = [
+        "export_example.py",
+    ],
+    deps = [
+        ":ops_registrations",
+        ":passes",
+        ":replace_ops",
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot/quantizer:fusion_pass",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/backends/cadence/runtime:runtime",
+        "//executorch/backends/transforms:decompose_sdpa",
+        "//executorch/backends/transforms:remove_clone_ops",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/devtools:lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "pass_utils",
+    srcs = [
+        "pass_utils.py",
+    ],
+    deps = [
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:spec_prop_pass",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "passes",
+    srcs = [
+        "passes.py",
+    ],
+    deps = [
+        ":fuse_ops",
+        ":remove_ops",
+        ":reorder_ops",
+        ":replace_ops",
+        ":simplify_ops",
+        ":type_dispatch",
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:spec_prop_pass",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "ops_registrations",
+    srcs = [
+        "ops_registrations.py",
+    ],
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/backends/cadence/aot:ref_implementations",
+        "fbcode//executorch/backends/cadence/aot:utils",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "ref_implementations",
+    srcs = [
+        "ref_implementations.py",
+    ],
+    typing = True,
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:scalar_type",
+        "fbcode//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
+)
+
+fbcode_target(_kind = export_file,name = "functions.yaml")
+
+fbcode_target(_kind = executorch_generated_lib,
+    name = "cadence_aot_lib",
+    custom_ops_yaml_target = "//executorch/kernels/portable:custom_ops.yaml",
+    functions_yaml_target = ":functions.yaml",
+    platforms = CXX,
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+        "//executorch/backends/cadence/generic/operators:op_requantize",
+        "//executorch/backends/cadence/generic/operators:op_im2row",
+        "//executorch/backends/cadence/generic/operators:op_dequantize_per_tensor",
+        "//executorch/backends/cadence/generic/operators:op_quantize_per_tensor",
+        "//executorch/backends/cadence/generic/operators:op_quantized_add",
+        "//executorch/backends/cadence/generic/operators:op_quantized_conv2d",
+        "//executorch/backends/cadence/generic/operators:op_quantized_conv1d",
+        "//executorch/backends/cadence/generic/operators:op_quantized_fully_connected",
+        "//executorch/backends/cadence/generic/operators:op_quantized_layer_norm",
+        "//executorch/backends/cadence/generic/operators:op_quantized_linear",
+        "//executorch/backends/cadence/generic/operators:op_quantized_matmul",
+        "//executorch/backends/cadence/generic/operators:op_quantized_relu",
+        "//executorch/kernels/portable:executorch_all_ops",
+        "//executorch/kernels/portable:operators",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_pass_filter",
+    srcs = [
+        "tests/test_pass_filter.py",
+    ],
+    typing = True,
+    deps = [
+        ":pass_utils",
+        "//executorch/exir:pass_base",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "compiler_utils",
+    srcs = [
+        "compiler_utils.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "graph_builder",
+    srcs = [
+        "graph_builder.py",
+    ],
+    typing = True,
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:pass_base",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "program_builder",
+    srcs = [
+        "program_builder.py",
+    ],
+    typing = True,
+    deps = [
+        ":graph_builder",
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:lib",
+        "fbcode//executorch/exir:pass_base",
+        "fbcode//executorch/exir/verification:verifier",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_program_builder",
+    srcs = [
+        "tests/test_program_builder.py",
+    ],
+    typing = True,
+    deps = [
+        ":program_builder",
+        "//caffe2:torch",
+        "//later:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "fuse_ops",
+    srcs = [
+        "fuse_ops.py",
+    ],
+    typing = True,
+    deps = [
+        ":compiler_utils",
+        ":ops_registrations",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/backends/cadence/aot:utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:spec_prop_pass",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "simplify_ops",
+    srcs = [
+        "simplify_ops.py",
+    ],
+    typing = True,
+    deps = [
+        ":pass_utils",
+        ":utils",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "remove_ops",
+    srcs = [
+        "remove_ops.py",
+    ],
+    typing = True,
+    deps = [
+        ":ops_registrations",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/backends/cadence/aot:simplify_ops",
+        "//executorch/backends/transforms:remove_clone_ops",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/exir/passes:spec_prop_pass",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "reorder_ops",
+    srcs = [
+        "reorder_ops.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:compiler_utils",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/backends/cadence/aot:utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir:tensor",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "replace_ops",
+    srcs = [
+        "replace_ops.py",
+    ],
+    typing = True,
+    deps = [
+        ":pass_utils",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:compiler_utils",
+        "//executorch/backends/cadence/aot:fuse_ops",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/backends/cadence/aot:remove_ops",
+        "//executorch/backends/cadence/aot:utils",
+        "//executorch/backends/transforms:replace_scalar_with_tensor",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/exir/passes:spec_prop_pass",
+    ],
+)
+fbcode_target(_kind = runtime.python_library,
+    name = "decompose_ops",
+    srcs = [
+        "decompose_ops.py",
+    ],
+    typing = True,
+    deps = [
+        ":pass_utils",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/exir/passes:spec_prop_pass",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "type_dispatch",
+    srcs = [
+        "type_dispatch.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/exir:pass_base",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_type_dispatch_passes",
+    srcs = [
+        "tests/test_type_dispatch_passes.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        ":ops_registrations",
+        ":typing_stubs",
+        ":type_dispatch",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "typing_stubs",
+    srcs = [
+        "typing_stubs.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "compiler_funcs",
+    srcs = [
+        "compiler_funcs.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+
+fbcode_target(_kind = python_unittest,
+    name = "test_graph_builder",
+    srcs = [
+        "tests/test_graph_builder.py",
+    ],
+    typing = True,
+    deps = [
+        ":ops_registrations",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//later:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_replace_ops_passes",
+    srcs = [
+        "tests/test_replace_ops_passes.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        ":compiler",
+        ":typing_stubs",
+        ":replace_ops",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:compiler",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_decompose_ops_passes",
+    srcs = [
+        "tests/test_decompose_ops_passes.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        ":compiler",
+        ":decompose_ops",
+        "//caffe2:torch",
+        ":typing_stubs",
+        "//executorch/backends/cadence/aot:compiler",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_fusion_ops_passes",
+    srcs = [
+        "tests/test_fusion_ops_passes.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        ":compiler",
+        ":typing_stubs",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:compiler",
+        "//executorch/backends/cadence/aot:fuse_ops",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_remove_ops_passes",
+    srcs = [
+        "tests/test_remove_ops_passes.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/pyre-extensions:pyre-extensions",
+        ":typing_stubs",
+        ":compiler",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:compiler",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/backends/cadence/aot:remove_ops",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_simplify_ops_passes",
+    srcs = [
+        "tests/test_simplify_ops_passes.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        ":typing_stubs",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:compiler",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/backends/cadence/aot:simplify_ops",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_reorder_ops_passes",
+    srcs = [
+        "tests/test_reorder_ops_passes.py",
+    ],
+    typing = True,
+    deps = [
+        ":compiler",
+        ":pass_utils",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:compiler",
+        "//executorch/backends/cadence/aot:fuse_ops",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/backends/cadence/aot:reorder_ops",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "memory_planning_algo",
+    srcs = [
+        "memory_planning_algo.py",
+    ],
+    deps = [
+        ":memory_constraints",
+        ":pass_utils",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory_planning",
+        "//executorch/exir:tensor",
+        "//executorch/exir/passes:lib",
+        "fbsource//third-party/pypi/tabulate:tabulate",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "memory_planning",
+    srcs = [
+        "memory_planning.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/tabulate:tabulate",
+        ":memory_constraints",
+        ":memory_planning_algo",
+        ":pass_utils",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory_planning",
+        "//executorch/exir:tensor",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "memory_constraints",
+    srcs = [
+        "memory_constraints.py",
+    ],
+    deps = [
+        ":pass_utils",
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/exir:memory",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir:tensor",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_memory_passes",
+    srcs = [
+        "tests/test_memory_passes.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        ":compiler",
+        ":memory_planning",
+        ":typing_stubs",
+        ":ops_registrations",
+        ":pass_utils",
+        ":program_builder",
+        "//caffe2:torch",
+        "//executorch/exir:memory",
+        "//executorch/exir/dialects:lib",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/exir/tests:models",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_idma_ops",
+    srcs = [
+        "tests/test_idma_ops.py",
+    ],
+    typing = True,
+    deps = [
+        ":program_builder",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/runtime:runtime",
+        "//later:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_ref_implementations",
+    srcs = [
+        "tests/test_ref_implementations.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        ":typing_stubs",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//caffe2:torch",
+    ]
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_quantizer_ops",
+    srcs = [
+        "tests/test_quantizer_ops.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/exir:pass_base",
+        "//pytorch/ao:torchao",
+    ],
+)

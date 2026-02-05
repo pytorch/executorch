@@ -9,7 +9,7 @@ from typing import Tuple
 import pytest
 
 import torch
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -35,6 +35,10 @@ test_data_suite_bf16 = {
     "rand_bf16": torch.rand(4, 4, dtype=torch.bfloat16) - 0.5,
     "ramp_bf16": torch.arange(-8, 8, 0.5, dtype=torch.bfloat16),
 }
+test_data_suite_fp16 = {
+    "rand_fp16": torch.rand(4, 4, dtype=torch.float16) - 0.5,
+    "ramp_fp16": torch.arange(-8, 8, 0.5, dtype=torch.float16),
+}
 
 
 class Cos(torch.nn.Module):
@@ -43,7 +47,9 @@ class Cos(torch.nn.Module):
         return torch.cos(x)
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @pytest.mark.tosa_ref_model
 def test_cos_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
@@ -52,10 +58,8 @@ def test_cos_tosa_FP(test_data: Tuple):
         aten_op,
         exir_op=[],
         tosa_extensions=["bf16"],
-        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
-    if conftest.get_option("tosa_version") == "1.0":
-        pipeline.run()
+    pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
@@ -66,7 +70,6 @@ def test_cos_tosa_INT(test_data: Tuple):
         (test_data,),
         aten_op,
         exir_op=[],
-        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -95,7 +98,7 @@ def test_cos_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_cos_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](

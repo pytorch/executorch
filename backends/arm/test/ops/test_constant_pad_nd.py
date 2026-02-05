@@ -45,6 +45,18 @@ test_data_suite_bf16 = {
         -0.5,
     ),
 }
+test_data_suite_fp16 = {
+    "4dim_last1dim_fp16": lambda: (
+        torch.rand(1, 1, 8, 8, dtype=torch.float16),
+        (1, 1, 0, 0, 0, 0, 0, 0),
+        1.0,
+    ),
+    "3dim_last1dim_fp16": lambda: (
+        torch.rand(1, 1, 8, dtype=torch.float16),
+        (1, 0, 1, 0, 0, 0),
+        -0.5,
+    ),
+}
 
 
 class ConstantPadND(torch.nn.Module):
@@ -65,7 +77,7 @@ class ConstantPadND(torch.nn.Module):
 
 @common.parametrize(
     "test_data",
-    test_data_suite | test_data_suite_bf16,
+    test_data_suite | test_data_suite_bf16 | test_data_suite_fp16,
 )
 def test_constant_pad_nd_tosa_FP(test_data: Tuple):
     test_data, padding, value = test_data()
@@ -105,7 +117,7 @@ def test_constant_pad_nd_tosa_INT_a16w8(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_constant_pad_nd_vgf_no_quant(test_data: Tuple):
     inp, padding, value = test_data()

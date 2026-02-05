@@ -52,9 +52,19 @@ test_data_bf16 = {
         torch.arange(-8, 8, 0.25, dtype=torch.bfloat16),
     ),
 }
+test_data_fp16 = {
+    "ceil_rand_fp16": lambda: (
+        Ceil(),
+        (torch.rand(4, 4, dtype=torch.float16) - 0.5),
+    ),
+    "ceil_ramp_fp16": lambda: (
+        Ceil(),
+        torch.arange(-8, 8, 0.25, dtype=torch.float16),
+    ),
+}
 
 
-@common.parametrize("test_data", test_data | test_data_bf16)
+@common.parametrize("test_data", test_data | test_data_bf16 | test_data_fp16)
 def test_ceil_tosa_FP(test_data: input_t1):
     module, data = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -107,7 +117,7 @@ def test_ceil_u85_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data)
+@common.parametrize("test_data", test_data | test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_ceil_vgf_no_quant(test_data: input_t1):
     module, data = test_data()

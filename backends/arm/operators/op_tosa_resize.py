@@ -26,8 +26,6 @@ from executorch.backends.arm.tosa.utils import get_resize_parameters
 class ResizeVisitor(NodeVisitor):
     target = "tosa.RESIZE.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -39,16 +37,18 @@ class ResizeVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, [3, 4])
-        supported_input_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        supported_input_dtypes = [ts.DType.INT8, ts.DType.FP32, ts.DType.BF16]
         if self.tosa_spec.support_extension("int16"):
             supported_input_dtypes.append(ts.DType.INT16)
+        if self.tosa_spec.support_extension("bf16"):
+            supported_input_dtypes.append(ts.DType.BF16)
         validate_valid_dtype(
             self.target,
             [inputs[0]],
             supported_input_dtypes,
             self.tosa_spec,
         )
-        supported_output_dtypes = [ts.DType.FP32]
+        supported_output_dtypes = [ts.DType.FP32, ts.DType.BF16]
         if node.kwargs.get("resize_mode") == "bilinear":
             resize_mode = ts.ResizeMode.BILINEAR
             align_corners = bool(node.args[2])

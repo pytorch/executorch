@@ -36,6 +36,10 @@ test_data_suite = {
     "ramp": lambda: torch.arange(-16, 16, 0.2),
 }
 
+test_data_suite_bf16 = {
+    "rand_bf16": lambda: torch.rand(4, 4, dtype=torch.bfloat16) - 0.2,
+}
+
 
 class Sigmoid(torch.nn.Module):
     def __init__(self):
@@ -73,9 +77,15 @@ class SigmoidAddSigmoid(torch.nn.Module):
         return self.sigmoid((self.sigmoid(y) + self.sigmoid(x)))
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_sigmoid_tosa_FP(test_data: torch.Tensor):
-    TosaPipelineFP[input_t1](Sigmoid(), (test_data(),), aten_op, exir_op).run()
+    TosaPipelineFP[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        tosa_extensions=["bf16"],
+    ).run()
 
 
 @common.parametrize("test_data", test_data_suite)

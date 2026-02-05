@@ -9,7 +9,7 @@
 #pragma once
 
 #include <cuda_runtime.h>
-#include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/aoti/common_shims_slim.h>
 #include <executorch/backends/aoti/export.h>
 
 namespace executorch::backends::cuda {

@@ -22,17 +22,16 @@ from torch.fx import Node
 
 @register_node_visitor
 class GatherVisitor(NodeVisitor):
-    """
-    Lowers backend TOSA dialect `tosa.GATHER.default`.
+    """Lowers backend TOSA dialect `tosa.GATHER.default`.
 
     Expected signature (per TOSA):
       values:  [N, K, C]  (rank 3)
       indices: [N, W]     (rank 2, int32)
       output:  [N, W, C]  (rank 3)
+
     """
 
     target = "tosa.GATHER.default"
-    tosa_specs = NodeVisitor.tosa_specs
 
     def define_node(
         self,
@@ -63,6 +62,7 @@ class GatherVisitor(NodeVisitor):
                 ts.DType.INT32,
                 ts.DType.FP16,
                 ts.DType.FP32,
+                ts.DType.BF16,
             ],
             self.tosa_spec,
         )

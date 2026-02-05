@@ -26,9 +26,7 @@ class BitwiseNotVisitor(NodeVisitor):
     target = "aten.bitwise_not.default"
 
     # bitwise_not is not supported on the FP profile
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-    ]
+    tosa_specs = TosaSpecification.all_versions_for_profile("INT")
 
     def __init__(self, *args):
         super().__init__(*args)

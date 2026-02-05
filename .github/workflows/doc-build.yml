@@ -99,7 +99,9 @@ jobs:
       id-token: write
       contents: write
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    secrets: inherit
     with:
+      secrets-env: DOC_BUILD_GITHUB_TOKEN
       repository: pytorch/executorch
       download-artifact: docs
       ref: gh-pages
@@ -111,6 +113,9 @@ jobs:
         # If matches a tag like refs/tags/v1.12.0-rc3 or
         # refs/tags/v1.12.0 convert to 1.12
         export GITHUB_REF=${{ github.ref }}
+
+        # Fail immediately instead of prompting for input.
+        export GIT_TERMINAL_PROMPT=0
 
         # Convert refs/tags/v1.12.0rc3 into 1.12.
         # Adopted from https://github.com/pytorch/pytorch/blob/main/.github/workflows/_docs.yml#L150C11-L155C13
@@ -129,6 +134,9 @@ jobs:
         mkdir -p "${TARGET_FOLDER}"
         mv "${RUNNER_ARTIFACT_DIR}"/html/* "${TARGET_FOLDER}"
         git add "${TARGET_FOLDER}" || true
+
+        echo "::add-mask::$SECRET_DOC_BUILD_GITHUB_TOKEN" # Mask the secret in GH logs
+        git remote set-url origin https://x-access-token:$SECRET_DOC_BUILD_GITHUB_TOKEN@github.com/pytorch/executorch.git
 
         git config user.name 'pytorchbot'
         git config user.email 'soumith+bot@pytorch.org'

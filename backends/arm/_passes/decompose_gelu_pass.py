@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -123,7 +123,10 @@ class DecomposeGeluPass(ArmPass):
         if approximate == "none":
             # Constant mirrors ExecuTorch implementation for parity.
             FULL_SQRT1_2 = super().call_operator(
-                full_op, ([1] * len(shape), 0.70710678118654752440), {}, meta
+                full_op,
+                ([1] * len(shape), 0.70710678118654752440),
+                {"dtype": dtype},
+                meta,
             )
 
             op1 = super().call_operator(mul_op, (input, FULL_SQRT1_2), {}, meta)

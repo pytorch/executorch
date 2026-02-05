@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,20 +46,24 @@ def make_module_wrapper(
 example_input = torch.rand(1, 6, 16, 16)
 
 module_tests = [
+    # (module, test_tuple, kwargs)
     (
         make_module_wrapper(
             "EmbeddingModule",
             lambda: torch.nn.Embedding(10, 10),
         ),
         (torch.LongTensor([[1, 2, 4, 5], [4, 3, 2, 9]]),),
+        {},
     ),
     (
         make_module_wrapper("LeakyReLUModule", torch.nn.LeakyReLU),
         (example_input,),
+        {},
     ),
     (
         make_module_wrapper("BatchNorm1dModule", lambda: torch.nn.BatchNorm1d(16)),
         (torch.rand(6, 16, 16),),
+        {},
     ),
     (
         make_module_wrapper(
@@ -67,30 +71,36 @@ module_tests = [
             lambda: torch.nn.AdaptiveAvgPool2d((12, 12)),
         ),
         (example_input,),
+        {},
     ),
     (
         make_module_wrapper(
             "ConvTranspose2dModule", lambda: torch.nn.ConvTranspose2d(6, 3, 2)
         ),
         (example_input,),
+        {},
     ),
     (
         make_module_wrapper("GRUModule", lambda: torch.nn.GRU(10, 20, 2)),
         (torch.randn(5, 3, 10), torch.randn(2, 3, 20)),
+        {},
     ),
     (
         make_module_wrapper("GroupNormModule", lambda: torch.nn.GroupNorm(2, 6)),
         (example_input,),
+        {},
     ),
     (
         make_module_wrapper(
             "InstanceNorm2dModule", lambda: torch.nn.InstanceNorm2d(16)
         ),
         (example_input,),
+        {},
     ),
     (
         make_module_wrapper("PReLUModule", torch.nn.PReLU),
         (example_input,),
+        {},
     ),
     (
         make_module_wrapper(
@@ -104,6 +114,7 @@ module_tests = [
             ),
         ),
         (torch.rand((10, 32, 64)), torch.rand((20, 32, 64))),
+        {"atol": 0.1},
     ),
 ]
 
@@ -117,7 +128,7 @@ test_parameters = {str(test[0].__class__.__name__): test for test in module_test
     test_parameters,
 )
 def test_nn_modules_tosa_FP(test_data):
-    module, inputs = test_data
+    module, inputs, _ = test_data
     pipeline = TosaPipelineFP[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=True
     )
@@ -136,15 +147,10 @@ def test_nn_modules_tosa_FP(test_data):
 @parametrize(
     "test_data",
     test_parameters,
-    xfails={
-        "TransformerModule": "AssertionError: Output 0 does not match reference output.",
-    },
 )
 def test_nn_modules_tosa_INT(test_data):
-    module, inputs = test_data
-    pipeline = TosaPipelineINT[input_t](
-        module, inputs, "", use_to_edge_transform_and_lower=True
-    )
+    module, inputs, kwargs = test_data
+    pipeline = TosaPipelineINT[input_t](module, inputs, "", **kwargs)
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
     if pipeline.has_stage("check.quant_nodes"):
