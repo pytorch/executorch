@@ -18,6 +18,8 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <cassert>
 #include <chrono>
 #include <iostream>
@@ -34,9 +36,8 @@
 #endif
 
 #ifdef EXECUTORCH_ANDROID_PROFILING
-#include <executorch/devtools/etdump/etdump_flatcc.h>
-#include <fcntl.h>
-#include <unistd.h>
+#include <fstream>
+#include "jni_etdump.h"
 #endif
 
 #include <fbjni/ByteBuffer.h>
@@ -268,11 +269,21 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     } else if (loadMode == 3) {
       load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors;
     }
+
+    // Module loading section
 #ifdef EXECUTORCH_ANDROID_PROFILING
-    auto etdump_gen = std::make_unique<executorch::etdump::ETDumpGen>();
+    auto* manager = executorch::extension::jni::getGlobalETDumpManager();
+
+    // Create ETDumpGen only if profiling is enabled at runtime
+    std::unique_ptr<executorch::etdump::ETDumpGen> etdump_gen = nullptr;
+
+    if (manager && manager->isProfilingEnabled()) {
+      etdump_gen = std::make_unique<executorch::etdump::ETDumpGen>();
+    }
 #else
     auto etdump_gen = nullptr;
 #endif
+
     module_ = std::make_unique<Module>(
         modelPath->toStdString(), load_mode, std::move(etdump_gen));
 
@@ -460,7 +471,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         ET_LOG(Error, "Cannot write result.etdump error: %d", errno);
         return false;
       } else {
-        ET_LOG(Info, "ETDump written %d bytes to file.", bytes_written);
+        ET_LOG(Info, "ETDump written %zd bytes to file.", bytes_written);
       }
       close(etdump_file);
       free(etdump_data.buf);
@@ -518,6 +529,54 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     return ret;
   }
 
+  // Write ETDump to custom path
+  jboolean writeETDumpToPath(facebook::jni::alias_ref<jstring> output_path) {
+#ifdef EXECUTORCH_ANDROID_PROFILING
+    executorch::etdump::ETDumpGen* etdumpgen =
+        (executorch::etdump::ETDumpGen*)module_->event_tracer();
+
+    if (etdumpgen) {
+      executorch::etdump::ETDumpResult result = etdumpgen->get_etdump_data();
+
+      if (result.buf != nullptr && result.size > 0) {
+        std::string path_str = output_path->toStdString();
+
+        std::ofstream file(path_str, std::ios::binary);
+        if (!file.is_open()) {
+          return JNI_FALSE;
+        }
+
+        file.write(reinterpret_cast<const char*>(result.buf), result.size);
+        file.close();
+
+        return JNI_TRUE;
+      }
+    }
+#endif
+    return JNI_FALSE;
+  }
+
+  // Get ETDump data as byte array
+  facebook::jni::local_ref<facebook::jni::JArrayByte> getETDumpData() {
+#ifdef EXECUTORCH_ANDROID_PROFILING
+    executorch::etdump::ETDumpGen* etdumpgen =
+        (executorch::etdump::ETDumpGen*)module_->event_tracer();
+
+    if (etdumpgen) {
+      executorch::etdump::ETDumpResult result = etdumpgen->get_etdump_data();
+
+      if (result.buf != nullptr && result.size > 0) {
+        const uint8_t* buf_ptr = static_cast<const uint8_t*>(result.buf);
+        auto data = facebook::jni::JArrayByte::newArray(result.size);
+        data->setRegion(
+            0, result.size, reinterpret_cast<const jbyte*>(buf_ptr));
+        return data;
+      }
+    }
+#endif
+    return nullptr;
+  }
+
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
@@ -529,6 +588,9 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("etdump", ExecuTorchJni::etdump),
         makeNativeMethod("getMethods", ExecuTorchJni::getMethods),
         makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),
+        makeNativeMethod(
+            "nativeWriteETDumpToPath", ExecuTorchJni::writeETDumpToPath),
+        makeNativeMethod("nativeGetETDumpData", ExecuTorchJni::getETDumpData),
     });
   }
 };
