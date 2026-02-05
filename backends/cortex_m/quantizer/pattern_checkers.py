@@ -44,6 +44,16 @@ class PatternCheck:
         return qspec.qscheme in (torch.per_channel_affine, torch.per_channel_symmetric)
 
     @classmethod
+    def is_int8_activations(cls, qconfig: QuantizationConfig) -> bool:
+        """
+        Returns true if the given quantization spec uses int8 quantization, otherwise false.
+        """
+        return (
+            qconfig.input_activation.dtype == torch.int8
+            and qconfig.output_activation.dtype == torch.int8
+        )
+
+    @classmethod
     def check_pattern(cls, pattern: list[Node]) -> bool:
         """
         Returns true if the given pattern is supported, otherwise false.
@@ -109,11 +119,7 @@ class CortexMConv2DCheck(PatternCheck):
         """
         Checks that the quantization config uses per-tensor int8 quantization.
         """
-        is_int8 = (
-            quantization_config.input_activation.dtype == torch.int8
-            and quantization_config.output_activation.dtype == torch.int8
-        )
-        return is_int8
+        return cls.is_int8_activations(quantization_config)
 
 
 class CortexMLinearCheck(PatternCheck):
@@ -161,10 +167,7 @@ class CortexMSoftmaxCheck(PatternCheck):
         """
         Checks that the quantization config uses a valid configuration for CMSIS-NN softmax.
         """
-        is_int8 = (
-            quantization_config.input_activation.dtype == torch.int8
-            and quantization_config.output_activation.dtype == torch.int8
-        )
+        is_int8 = cls.is_int8_activations(quantization_config)
         is_per_tensor = cls.is_per_tensor(
             quantization_config.input_activation
         ) and cls.is_per_tensor(quantization_config.output_activation)
@@ -241,10 +244,7 @@ class CortexMConvTranspose2DCheck(PatternCheck):
         """
         Checks that the quantization config uses per-tensor int8 quantization.
         """
-        is_int8 = (
-            quantization_config.input_activation.dtype == torch.int8
-            and quantization_config.output_activation.dtype == torch.int8
-        )
+        is_int8 = cls.is_int8_activations(quantization_config)
         is_ch_axis_1 = quantization_config.weight.ch_axis == 1
 
         return is_int8 and is_ch_axis_1
