@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,7 +8,7 @@
 import logging
 import operator
 from dataclasses import dataclass
-from typing import final, Mapping
+from typing import Callable, final, Mapping
 
 import torch
 
@@ -212,6 +212,7 @@ supported_ops = {
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
+    exir_ops.edge.aten.prelu.default: PReLUConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
     exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
@@ -314,12 +315,16 @@ class NeutronPartitioner(Partitioner):
         compile_spec: list[CompileSpec],
         neutron_target_spec: NeutronTargetSpec,
         custom_delegation_options: CustomDelegationOptions | None = None,
+        preserve_ops: list[torch._ops.OpOverload] | None = None,
+        check_op_support: Callable[[torch.fx.Node], bool] | None = None,
     ) -> None:
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
         self.custom_delegation_options = (
             custom_delegation_options or CustomDelegationOptions()
         )
         self.neutron_target_spec = neutron_target_spec
+        self.preserve_ops = preserve_ops or []
+        self.check_op_support = check_op_support
 
     def validate_partitioning_result(
         self,
@@ -419,3 +424,46 @@ class NeutronPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
+
+    def ops_to_not_decompose(
+        self,
+        ep: ExportedProgram,
+    ) -> tuple[list[torch._ops.OpOverload], Callable[[torch.fx.Node], bool] | None]:
+        """
+        Returns a list of operator names that should not be decomposed. When these ops are
+        registered and the `to_backend` is invoked through to_edge_transform_and_lower it will be
+        guaranteed that the program that the backend receives will not have any of these ops
+        decomposed.
+
+        Returns:
+            List[torch._ops.OpOverload]: a list of operator names that should not be decomposed.
+            Optional[Callable[[torch.fx.Node], bool]]]: an optional callable, acting as a filter, that users can provide
+            which will be called for each node in the graph that users can use as a filter for certain
+            nodes that should be continued to be decomposed even though the op they correspond to is
+            in the list returned by ops_to_not_decompose.
+        """
+        parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(ep)
+        aten_op_to_converter = {}
+        for exir_op, converter in supported_ops.items():
+            aten_op_to_converter[exir_op._op] = converter
+
+        def check_op_support_extended(node: torch.fx.Node):
+            if node.target not in self.preserve_ops:
+                return False
+
+            if self.check_op_support is not None and not self.check_op_support(node):
+                return False
+
+            node_converter = aten_op_to_converter.get(node.target)
+            if node_converter is None:
+                return False
+
+            delegable = node_converter._is_supported_on_target(
+                node,
+                self.neutron_target_spec,
+                parameters_mapping,
+                self.custom_delegation_options,
+            )
+            return delegable
+
+        return self.preserve_ops, check_op_support_extended
