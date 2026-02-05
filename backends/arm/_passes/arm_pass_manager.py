@@ -12,7 +12,6 @@ from collections.abc import Sequence
 import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
-    AnnotateDecomposedMatmulPass,
     AnnotateOutputDimOrderPass,
     BroadcastArgsPass,
     CanonicalizeGatherPass,
@@ -66,6 +65,7 @@ from executorch.backends.arm._passes import (
     DecomposeLog1pPass,
     DecomposeLogitPass,
     DecomposeMaskedFillPass,
+    DecomposeMatmulPass,
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
@@ -239,7 +239,6 @@ class ArmPassManager(PassManager):
                 DecomposeLayerNormPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
-                AnnotateDecomposedMatmulPass(),
                 ConvertELUParamsPass(),
                 NormalizeWhileInitialArgsPass(use_exir_clone=True),
             ]
@@ -441,6 +440,7 @@ class ArmPassManager(PassManager):
                 DecomposeSoftmaxPass(tfa_pass=True),
                 ConvertMinMaxPass(tfa_pass=True),
                 AccumulateIndexPutPass(tfa_pass=True),
+                DecomposeMatmulPass(tfa_pass=True),
             ]
         )
 

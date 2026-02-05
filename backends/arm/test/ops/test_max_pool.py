@@ -15,6 +15,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -77,8 +78,17 @@ test_data_suite_bf16 = {
 
 
 test_data_suite_dilation = [
+    ("d_min", torch.rand(1, 1, 7, 6), [3, 1, 0, 2]),
+    ("d_min2", torch.rand(1, 1, 7, 6), [3, 3, 0, 2]),
+    ("dilation1", torch.randn(1, 8, 29, 30), [3, (3, 1), 0, (1, 2)]),
+    ("dilation1_sym", torch.randn(1, 8, 29, 30), [3, (3, 1), 1, (1, 2)]),
+    ("dilation1_wide", torch.randn(1, 8, 29, 30), [3, (1, 3), 0, (2, 1)]),
+    ("dilation1_wide_sym", torch.randn(1, 8, 29, 30), [3, (1, 3), 1, (2, 1)]),
+    ("dilation2", torch.randn(1, 8, 32, 32), [3, 1, 1, 3]),
+    ("dilation3", torch.randn(1, 3, 20, 20), [3, 1, 1, 3]),
+    ("dilation4", torch.randn(1, 8, 20, 20), [4, 1, 0, (2, 1)]),
     # Simple dilation=2 on 8x8 input, kernel=3, stride=1, no padding
-    ("dilation2", torch.rand(1, 1, 8, 8), [3, 1, 0, 2]),
+    ("dilation_simple", torch.rand(1, 1, 8, 8), [3, 1, 0, 2]),
     # Input is 6x6, kernel=3, stride=1, dilation=2.
     # Padding=1 expands the effective input to 8x8.
     ("pad_then_dil2", torch.rand(1, 1, 6, 6), [3, 1, 1, 2]),
@@ -90,6 +100,12 @@ test_data_suite_dilation = [
     # stride=3x3, no padding, dilation=1.
     ("mb_ch_dil1", torch.rand(4, 3, 12, 12), [(3, 3), (3, 3), 0, 1]),
 ]
+
+test_data_suite_unsupported_dilation = {
+    "unsupported_dilation_1": lambda: (torch.randn(1, 8, 20, 20), [4, 2, 0, (2, 1)]),
+    "unsupported_dilation_2": lambda: (torch.randn(1, 8, 20, 20), [3, 4, 0, 2]),
+    "unsupported_dilation_3": lambda: (torch.randn(1, 8, 32, 32), [3, 2, 1, 3]),
+}
 
 aten_op = "torch.ops.aten.max_pool2d.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_max_pool2d_default"
@@ -244,6 +260,23 @@ dilation_test_data = {
     name: (lambda data=data, params=params: (data, params))
     for name, data, params in test_data_suite_dilation
 }
+
+
+@common.parametrize("test_data", test_data_suite_unsupported_dilation)
+def test_max_pool2d_dilation_not_supported(test_data):
+    """
+    Test that dilation cases not supported by TOSA are rejected.
+    """
+    data, params = test_data()
+    module = MaxPool2d(*params)
+    pipeline = OpNotSupportedPipeline[input_t1](
+        module,
+        (data,),
+        non_delegated_ops={
+            "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1
+        },
+    )
+    pipeline.run()
 
 
 @common.parametrize("test_data", dilation_test_data)

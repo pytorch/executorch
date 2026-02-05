@@ -8,6 +8,7 @@ load(
     "@fbsource//xplat/caffe2:pt_defs.bzl",
     "get_pt_ops_deps",
 )
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 # As fb_xplat_cxx_test (using target.bzl) fails to compile for
@@ -31,7 +32,7 @@ non_fbcode_target(_kind = fb_xplat_cxx_binary,
         deps = [
             "//xplat/caffe2:torch_mobile_ops_full_dev",
         ],
-    ),
+    ) if not runtime.is_oss else [],
 )
 
 # !!!! fbcode/executorch/backends/xnnpack/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!

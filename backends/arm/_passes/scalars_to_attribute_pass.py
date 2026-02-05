@@ -67,6 +67,7 @@ class ScalarsToAttributePass(ArmPass):
                 float_tensor = torch.tensor(
                     float(cast(Union[int, float], arg)),
                     device=output_fake_tensor.device,
+                    dtype=output_fake_tensor.dtype,
                 ).reshape((1,) * biggest_rank)
                 graph_module.register_buffer(tensor_constant_name, float_tensor)
                 fake_mode = n.meta["val"].fake_mode

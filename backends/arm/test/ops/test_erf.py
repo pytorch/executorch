@@ -37,9 +37,15 @@ class Erf(torch.nn.Module):
         "rand_bf16": lambda: ((torch.rand(8, 8, dtype=torch.bfloat16) - 0.5),),
         "ramp_bf16": lambda: (torch.arange(-8, 8, 0.5, dtype=torch.bfloat16),),
     }
+    test_data_fp16: dict[str, input_t1] = {
+        "rand_fp16": lambda: ((torch.rand(8, 8, dtype=torch.float16) - 0.5),),
+        "ramp_fp16": lambda: (torch.arange(-8, 8, 0.5, dtype=torch.float16),),
+    }
 
 
-@common.parametrize("test_data", Erf.test_data | Erf.test_data_bf16)
+@common.parametrize(
+    "test_data", Erf.test_data | Erf.test_data_bf16 | Erf.test_data_fp16
+)
 def test_erf_tosa_FP(test_data: input_t1):
     pipeline = TosaPipelineFP[input_t1](
         Erf(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
@@ -77,7 +83,7 @@ def test_erf_u85_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", Erf.test_data)
+@common.parametrize("test_data", Erf.test_data | Erf.test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_erf_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](

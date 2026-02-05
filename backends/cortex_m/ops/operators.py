@@ -265,12 +265,16 @@ lib.define("minimum.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(
 
 @register_fake("cortex_m::minimum")
 def minimum_meta(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
-    assert self.dtype == other.dtype, (
-        "Cortex-M minimum: dtype mismatch — "
-        f"got self.dtype={self.dtype}, other.dtype={other.dtype}"
-    )
-    broadcasted_shape = torch.broadcast_shapes(self.shape, other.shape)
-    return torch.empty(broadcasted_shape, dtype=self.dtype, device=self.device)
+    # other is a scalar, so use initial shape.
+    if other.numel() == 1:
+        return torch.empty_like(self)
+    else:
+        # otherwise broadcast the shape.
+        return torch.empty(
+            torch.broadcast_shapes(self.shape, other.shape),
+            dtype=self.dtype,
+            device=self.device,
+        )
 
 
 @impl(lib, "minimum", "CompositeExplicitAutograd")
@@ -288,8 +292,16 @@ def maximum_meta(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
         "Cortex-M maximum: dtype mismatch — "
         f"got self.dtype={self.dtype}, other.dtype={other.dtype}"
     )
-    broadcasted_shape = torch.broadcast_shapes(self.shape, other.shape)
-    return torch.empty(broadcasted_shape, dtype=self.dtype, device=self.device)
+    # other is a scalar, so use initial shape.
+    if other.numel() == 1:
+        return torch.empty_like(self)
+    else:
+        # otherwise broadcast the shape.
+        return torch.empty(
+            torch.broadcast_shapes(self.shape, other.shape),
+            dtype=self.dtype,
+            device=self.device,
+        )
 
 
 @impl(lib, "maximum", "CompositeExplicitAutograd")
@@ -673,7 +685,9 @@ def quantized_conv2d_impl(
     result += output_offset
     result = torch.clamp(result, activation_min, activation_max)
 
-    return result.to(torch.int8)
+    # TODO - this enforces all convolution layers to result in channels last.
+    # This issue does comes min/mul layers from decomposition of hard swish
+    return result.to(torch.int8, memory_format=torch.channels_last)
 
 
 # ===================================================================
@@ -816,7 +830,7 @@ def quantized_depthwise_conv2d_impl(
     result += output_offset
     result = torch.clamp(result, activation_min, activation_max)
 
-    return result.to(torch.int8)
+    return result.to(torch.int8, memory_format=torch.channels_last)
 
 
 # ===================================================================

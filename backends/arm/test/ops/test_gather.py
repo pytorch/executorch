@@ -63,6 +63,30 @@ test_data_fp: dict[str, input_params] = {
         ),  # Shape: [N=3, W=3, C=3]
     ),
 }
+test_data_fp_bf16: dict[str, input_params] = {
+    "test_bf16_2d": (
+        torch.tensor(
+            [[0.5, 1.25, 2.5], [3.5, 4.25, 5.75]],
+            dtype=torch.bfloat16,
+        ),  # Shape: [N=2, K=3]
+        1,
+        torch.tensor(
+            [[1, 0], [2, 1]],
+            dtype=torch.int64,
+        ),  # Shape: [N=2, W=2]
+    ),
+    "test_bf16_3d": (
+        torch.tensor(
+            [[[0.5, 1.5], [2.5, 3.5]], [[4.5, 5.5], [6.5, 7.5]]],
+            dtype=torch.bfloat16,
+        ),  # Shape: [N=2, K=2, C=2]
+        1,
+        torch.tensor(
+            [[[0, 1], [1, 0]], [[1, 0], [0, 1]]],
+            dtype=torch.int64,
+        ),  # Shape: [N=2, W=2, C=2]
+    ),
+}
 
 
 # INT profile: integer inputs + bool (bool is supported via casts in
@@ -106,7 +130,7 @@ test_data_int: dict[str, input_params] = {
 }
 
 
-@common.parametrize("test_data", test_data_fp)
+@common.parametrize("test_data", test_data_fp | test_data_fp_bf16)
 def test_gather_tosa_FP(test_data: input_params):
     pipeline = TosaPipelineFP[input_params](
         Gather(),
@@ -116,6 +140,7 @@ def test_gather_tosa_FP(test_data: input_params):
         transform_passes=[
             InsertInt32CastsAfterInt64PlaceholdersPass(),
         ],  # int64 index are not currently supported and need to be cast to int32
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 

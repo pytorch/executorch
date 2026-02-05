@@ -10,7 +10,6 @@ used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
 """
 
 
-import itertools
 import operator
 import typing
 from typing import final, Optional, Sequence, Type
@@ -57,7 +56,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
 from torch.fx.passes.operator_support import any_chain, chain, OperatorSupportBase
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class SupportedTOSAOperatorCheck(OperatorSupportBase):
@@ -431,70 +429,6 @@ class CheckProperQuantization(OperatorSupportBase):
         """Initialize the check with a reporter."""
         self.reporter = reporter
 
-    def _is_matmul_node_supported(
-        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
-    ):
-        """Check quantization for decomposed matmul partitions.
-
-        Handles an edge case where the quantized pipeline
-        `dq -> torch.matmul/operator.matmul -> q` decomposes into
-        `dq -> expand -> view -> aten.mm -> view -> q`.
-
-        Args:
-            submodules (Mapping[str, torch.nn.Module]): Map of child modules to
-                inspect for matmul partitions.
-            node (fx.Node): Node that should belong to a quantized matmul
-                partition.
-
-        Returns:
-            bool: True if the matched partition uses quantized inputs and
-                outputs.
-
-        """
-        for graph_module in submodules.values():
-            graph_module = typing.cast(fx.GraphModule, graph_module)
-            matmul_partitions_map = get_source_partitions(
-                graph_module.graph,
-                [
-                    torch.matmul,
-                    operator.matmul,
-                ],
-                None,
-            )
-            matmul_partitions = list(
-                itertools.chain.from_iterable(matmul_partitions_map.values())
-            )
-            matched_partition = None
-            for partition in matmul_partitions:
-                if node in partition.nodes:
-                    matched_partition = partition
-            if matched_partition is not None:
-                input_quantized = all(
-                    input_node.target in DQ_OPS
-                    for input_node in matched_partition.input_nodes
-                )
-                if not input_quantized:
-                    self.reporter.report_reject(
-                        node, "One or more matmul inputs were not quantized."
-                    )
-                    return False
-                output_quantized = all(
-                    output_node_user.target in Q_OPS
-                    for output_node_user in matched_partition.output_nodes[0].users
-                )
-                if not output_quantized:
-                    self.reporter.report_reject(
-                        node, "One or more matmul outputs were not quantized."
-                    )
-                    return False
-            else:
-                self.reporter.report_reject(
-                    node, "Node did not match any matmul source partition."
-                )
-                return False
-
-        return True
-
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
@@ -508,14 +442,6 @@ class CheckProperQuantization(OperatorSupportBase):
         input_quantized = False
         if node.target not in self.targeted_ops:
             return True
-        elif node.target in (
-            exir_ops.edge.aten.bmm.default,
-            exir_ops.edge.aten.mm.default,
-        ):
-            source_fn_stack: tuple[typing.Any] = node.meta.get("source_fn_stack", [])
-            if len(source_fn_stack) > 0:
-                if source_fn_stack[-1][1] in (torch.matmul, operator.matmul):
-                    return self._is_matmul_node_supported(submodules, node)
 
         elif node.target in (exir_ops.edge.aten.max_pool2d_with_indices.default,):
             users = node.users

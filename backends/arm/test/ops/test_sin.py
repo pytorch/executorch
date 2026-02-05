@@ -30,6 +30,10 @@ test_data_suite = {
     "ramp": torch.arange(-16, 16, 0.2),
 }
 
+test_data_suite_bf16 = {
+    "rand_bf16": torch.rand(3, 3, dtype=torch.bfloat16),
+}
+
 
 class Sin(torch.nn.Module):
 
@@ -37,13 +41,14 @@ class Sin(torch.nn.Module):
         return torch.sin(x)
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_sin_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Sin(),
         (test_data,),
         aten_op,
         exir_op=[],
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
