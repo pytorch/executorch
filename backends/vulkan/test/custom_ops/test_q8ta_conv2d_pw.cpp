@@ -60,8 +60,9 @@ static TestCase create_test_case_from_config(
   }
   test_case.set_name(test_name);
 
-  // Set the operator name for the test case - use the unified test operator
-  std::string operator_name = "test_etvk.test_q8ta_conv2d.default";
+  // Set the operator name for the test case - use the dedicated pointwise test
+  // operator
+  std::string operator_name = "test_etvk.test_q8ta_conv2d_pw.default";
   test_case.set_operator_name(operator_name);
 
   ValueSpec input_tensor(
@@ -163,7 +164,7 @@ static TestCase create_test_case_from_config(
       fp_memory_layout,
       DataGenType::ZEROS);
 
-  // Add all specs to test case for q8ta_q8csw_q8to operation
+  // Add all specs to test case for q8ta_conv2d_pw operation
   test_case.add_input_spec(input_tensor);
   test_case.add_input_spec(input_scale);
   test_case.add_input_spec(input_zero_point);
@@ -269,6 +270,13 @@ static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases() {
        Dilation(1, 1),
        1},
       {OutInChannels(128, 128),
+       InputSize2D(128, 128),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(64, 576),
        InputSize2D(128, 128),
        KernelSize(1, 1),
        Stride(1, 1),
@@ -521,7 +529,7 @@ static void reference_impl(TestCase& test_case) {
   conv2d_q8ta_q8csw_q8to_reference_impl(test_case);
 }
 
-// Custom FLOP calculator for quantized conv2d operation
+// Custom FLOP calculator for quantized pointwise conv2d operation
 static int64_t quantized_conv2d_flop_calculator(const TestCase& test_case) {
   int kernel_idx = 9; // kernel_size is at index 9 for q8ta_q8csw_q8to
 
@@ -582,8 +590,8 @@ int main(int argc, char* argv[]) {
       0,
       1,
 #else
-      3,
-      10,
+      5,
+      25,
 #endif
       ref_fn);
 
