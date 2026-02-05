@@ -35,6 +35,7 @@ class MetalBackend(AotiBackend, BackendDetails):
             "aoti_torch_mps_convolution": None,
             "aoti_torch_mps_mm_out": None,
             "at::_ops::_scaled_dot_product_attention_math_for_mps::call": None,
+            "torchao::_linear_fp_act_4bit_weight": None,
         }
 
     @classmethod
@@ -47,6 +48,7 @@ class MetalBackend(AotiBackend, BackendDetails):
         from executorch.backends.apple.metal.passes.decompose_linear_pass import (
             DecomposeLinearPass,
         )
+
         return [DecomposeLinearPass()]
 
     @classmethod
@@ -55,7 +57,8 @@ class MetalBackend(AotiBackend, BackendDetails):
     ) -> Dict[str, typing.Any]:
         """Get AOTI compile options for Metal backend."""
         _ = compile_specs  # Unused, but required by interface
-        return {
+
+        inductor_configs = {
             # Do not link against the full PyTorch/libtorch library
             "aot_inductor.link_libtorch": False,
             # Separate weight constants from the .so file
@@ -68,3 +71,9 @@ class MetalBackend(AotiBackend, BackendDetails):
             # "aot_inductor.debug_compile": True,
             # "aot_inductor.force_mmap_weights": False,
         }
+
+        from torchao.experimental.ops.mps.cshim import torchao_op_c_shim
+
+        inductor_configs["aot_inductor.custom_ops_to_c_shims"] = torchao_op_c_shim
+
+        return inductor_configs
