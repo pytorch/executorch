@@ -47,6 +47,7 @@ class MetalBackend(AotiBackend, BackendDetails):
         from executorch.backends.apple.metal.passes.decompose_linear_pass import (
             DecomposeLinearPass,
         )
+
         return [DecomposeLinearPass()]
 
     @classmethod
