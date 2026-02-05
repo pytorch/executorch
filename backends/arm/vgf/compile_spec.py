@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,22 +18,21 @@ logger = logging.getLogger(__name__)
 
 
 class VgfCompileSpec(ArmCompileSpec):
-    """Compile specification for VGF-compatible targets."""
+    """Normalise inputs and populate the underlying Arm compile spec.
+
+    Args:
+        tosa_spec (TosaSpecification | str | None): TOSA specification to
+            target. Strings are parsed via ``TosaSpecification.create_from_string``.
+            Defaults to ``"TOSA-1.0+FP+INT"``.
+        compiler_flags (list[str] | None): Optional converter-backend flags.
+
+    """
 
     def __init__(
         self,
         tosa_spec: TosaSpecification | str | None = None,
         compiler_flags: list[str] | None = None,
     ):
-        """Normalise inputs and populate the underlying Arm compile spec.
-
-        Args:
-            tosa_spec (TosaSpecification | str | None): TOSA specification to
-                target. Strings are parsed via
-                :meth:`TosaSpecification.create_from_string`. Defaults to
-                ``"TOSA-1.0+FP+INT"``.
-            compiler_flags (list[str] | None): Optional converter-backend flags.
-        """
         if tosa_spec is None:
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP+INT")
         elif isinstance(tosa_spec, str):

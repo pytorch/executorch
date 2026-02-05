@@ -221,7 +221,7 @@ class LinearWithBias(nn.Module):
 MODULE_REGISTRY["linear_bias"] = {
     "model_class": LinearWithBias,
     "input_shapes": [(127, 7)],
-    "description": "Simple linear layer model with no bias",
+    "description": "Simple linear layer model bias",
 }
 
 

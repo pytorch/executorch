@@ -8,9 +8,12 @@
 
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/token_generator.h>
 #include <numeric>
+
 using executorch::aten::TensorImpl;
+using executorch::runtime::EValue;
 using executorch::runtime::MethodMeta;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorch::runtime::TensorInfo;
 
 namespace example {
@@ -132,6 +135,8 @@ void TokenGenerator<T>::init_io(
       input_pos_.data, input_pos_.size, input_pos.get());
 
   // [I] kv_cache
+  // Prepare the vector of EValue for kv cache to evict token
+  cache_inputs_.reserve(2 * metadata_.num_layers);
   size_t index = idx; // bypass input_tokens, atten_mask, input_pos
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
     std::vector<std::unique_ptr<TensorImpl>>& cache =
@@ -151,6 +156,7 @@ void TokenGenerator<T>::init_io(
           cache_ptr,
           const_cast<TensorImpl::DimOrderType*>(kv_cache->dim_order().data()));
       input_tensors_.emplace_back(cache[layer].get());
+      cache_inputs_.emplace_back(input_tensors_.back());
       buffer_manager->add_memory_info(
           cache_ptr, cache[layer]->nbytes(), kv_cache.get());
     }
@@ -219,10 +225,13 @@ Result<int64_t> TokenGenerator<T>::generate(
     int64_t start_pos,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
-    bool dump_logits) {
+    bool dump_logits,
+    AttentionSinkRopeRunner* attention_sink_rope_runner) {
   ET_CHECK_MSG(
       !tokens.empty(), "Token generation loop shouldn't take empty tokens");
   int64_t pos = start_pos; // position in the sequence
+  int shifted_pos = start_pos;
+  bool enable_attention_sink = attention_sink_rope_runner != nullptr;
 
   // Token after prefill
   uint64_t cur_token = tokens.back();
@@ -232,16 +241,27 @@ Result<int64_t> TokenGenerator<T>::generate(
   std::vector<int32_t> attention_map(metadata_.ar_len);
   std::iota(attention_map.begin(), attention_map.end(), -1);
 
+  // Initialize attention sink rope runner if given and update position
+  // accordingly
+  if (enable_attention_sink) {
+    ET_CHECK_MSG(
+        attention_sink_rope_runner->set_outputs(method_name_, cache_inputs_) ==
+            executorch::runtime::Error::Ok,
+        "Failed to set output tensor for module %s",
+        method_name_.c_str());
+    shifted_pos = pos - attention_sink_rope_runner->get_position_shift();
+  }
+
   // Initialize attention mask with current position
   kv_manager_->init_attention_mask(
-      attention_mask_.data, attention_map, metadata_.ar_len, pos);
+      attention_mask_.data, attention_map, metadata_.ar_len, shifted_pos);
   // Initialize window attention mask with current position
   if (metadata_.cache_mode == CacheMode::HybridCache) {
     kv_manager_->init_attention_mask(
         window_attention_mask_.data,
         attention_map,
         metadata_.ar_len,
-        pos,
+        shifted_pos,
         metadata_.sliding_window);
   }
 
@@ -251,10 +271,34 @@ Result<int64_t> TokenGenerator<T>::generate(
           executorch::runtime::Error::Ok,
       "Failed to set output tensor for module %s",
       method_name_.c_str());
+
   // Generate our tokens
   while (pos < seq_len - 1) {
+    // The current position plus the future generated cache exceeds the cache
+    // size, which means we need to remove eviction_batch_size key-value cache
+    // entries to make room for new tokens.
+    if (enable_attention_sink &&
+        shifted_pos + metadata_.ar_len >
+            metadata_.context_len - metadata_.ar_len) {
+      attention_sink_rope_runner->evict_token(method_name_, cache_inputs_);
+      shifted_pos =
+          shifted_pos - attention_sink_rope_runner->get_eviction_batch_size();
+      // Initialize attention mask with current position
+      kv_manager_->init_attention_mask(
+          attention_mask_.data, attention_map, metadata_.ar_len, shifted_pos);
+      // Initialize window attention mask with current position
+      if (metadata_.cache_mode == CacheMode::HybridCache) {
+        kv_manager_->init_attention_mask(
+            window_attention_mask_.data,
+            attention_map,
+            metadata_.ar_len,
+            shifted_pos,
+            metadata_.sliding_window);
+      }
+    }
+
     // Fill in the token and position data
-    prepare_io(cur_token, pos);
+    prepare_io(cur_token, shifted_pos);
 
     // Run inference
     auto logits_res = decoder_runner_->step(method_name_, inputs_);
@@ -275,18 +319,20 @@ Result<int64_t> TokenGenerator<T>::generate(
     stats_->on_sampling_end();
 
     // Update KV Cache with the output results
-    kv_manager_->update_cache(metadata_.ar_len, pos, metadata_.ar_len, {});
+    kv_manager_->update_cache(
+        metadata_.ar_len, shifted_pos, metadata_.ar_len, {});
     // Update attention mask with current position
     kv_manager_->update_attention_mask(
-        attention_mask_.data, metadata_.ar_len, pos, metadata_.ar_len);
+        attention_mask_.data, metadata_.ar_len, shifted_pos, metadata_.ar_len);
     if (metadata_.cache_mode == CacheMode::HybridCache) {
       kv_manager_->update_attention_mask(
           window_attention_mask_.data,
           metadata_.ar_len,
-          pos,
+          shifted_pos,
           metadata_.ar_len,
           metadata_.sliding_window);
     }
+    shifted_pos++;
     pos++;
 
     // print the token as string, decode it with the Tokenizer object
@@ -308,19 +354,21 @@ Result<int64_t> TokenGenerator<T>::generate(
         Info,
         "Warning: Generation stopped at seq_len limit (%d) without reaching EOS token. Response may be incomplete.",
         seq_len);
-    if (seq_len >= metadata_.context_len) {
-      ET_LOG(
-          Info,
-          "- seq_len (%d) already equals compiled max_seq_len (%d). Consider recompiling with larger --max_seq_len.",
-          seq_len,
-          metadata_.context_len);
-    } else {
-      ET_LOG(
-          Info,
-          "- seq_len (%d) is less than compiled max_seq_len (%d). Consider increasing --seq_len (up to %d).",
-          seq_len,
-          metadata_.context_len,
-          metadata_.context_len);
+    if (!enable_attention_sink) {
+      if (seq_len >= metadata_.context_len) {
+        ET_LOG(
+            Info,
+            "- seq_len (%d) already equals compiled max_context_len (%d). Consider recompiling with larger --max_context_len.",
+            seq_len,
+            metadata_.context_len);
+      } else {
+        ET_LOG(
+            Info,
+            "- seq_len (%d) is less than compiled max_context_len (%d). Consider increasing --seq_len (up to %d).",
+            seq_len,
+            metadata_.context_len,
+            metadata_.context_len);
+      }
     }
   }
 

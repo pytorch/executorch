@@ -976,7 +976,7 @@ AOTITorchError aoti_torch_mps_mm_out(
 
   @autoreleasepool {
     try {
-      // Convert AOTITensorHandle to ExecutorTorch tensors
+      // Convert AOTITensorHandle to ExecuTorch tensors
       auto out_tensor = reinterpret_cast<Tensor*>(out);
       auto self_tensor = reinterpret_cast<Tensor*>(self);
       auto mat2_tensor = reinterpret_cast<Tensor*>(mat2);
@@ -1249,7 +1249,7 @@ AOTITorchError aoti_torch_mps_bmm_out(
 
   @autoreleasepool {
     try {
-      // Convert AOTITensorHandle to ExecutorTorch tensors
+      // Convert AOTITensorHandle to ExecuTorch tensors
       auto out_tensor = reinterpret_cast<Tensor*>(out);
       auto self_tensor = reinterpret_cast<Tensor*>(self);
       auto mat2_tensor = reinterpret_cast<Tensor*>(mat2);
@@ -1552,7 +1552,7 @@ AOTITorchError aoti_torch_mps_convolution(
 
   @autoreleasepool {
     try {
-      // Convert AOTITensorHandle to ExecutorTorch tensors
+      // Convert AOTITensorHandle to ExecuTorch tensors
       auto input_tensor = reinterpret_cast<Tensor*>(input);
       auto weight_tensor = reinterpret_cast<Tensor*>(weight);
 
@@ -2089,7 +2089,7 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
 
   try {
     @autoreleasepool {
-      // Convert AOTITensorHandle to ExecutorTorch tensors
+      // Convert AOTITensorHandle to ExecuTorch tensors
       auto* query_tensor = reinterpret_cast<Tensor*>(query);
       auto* key_tensor = reinterpret_cast<Tensor*>(key);
       auto* value_tensor = reinterpret_cast<Tensor*>(value);

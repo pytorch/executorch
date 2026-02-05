@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -184,7 +184,6 @@ class TOSAPartitioner(Partitioner):
         )
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
-        self.tosa_spec = compile_spec.tosa_spec
 
     def _detag_boundary_nodes(
         self, module: GraphModule, tag: str, reporter: WhyNoPartitionReporter
@@ -386,9 +385,9 @@ class TOSAPartitioner(Partitioner):
         }
 
         def filter_fn(node: torch.fx.Node) -> bool:
-            """Filter function applied to ops in 'ops_to_not_decompose'.
-            Returns True if the op should not be decomposed.
-            If this function returns True, the partitioner *must* accept the node, or the lowering fails.
+            """Filter function applied to ops in 'ops_to_not_decompose'. Returns
+            True if the op should not be decomposed. If this function returns
+            True, the partitioner *must* accept the node, or the lowering fails.
 
             Args:
                 node (torch.fx.Node): FX node to evaluate.
