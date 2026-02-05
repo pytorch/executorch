@@ -58,7 +58,19 @@ The export script supports quantizing encoder and decoder linear layers using [t
 | `8da8w` | 8-bit dynamic activation, 8-bit weight | CUDA |
 | `fpa4w` | Floating point activation, 4-bit weight | Metal |
 
-#### Example: 4-bit Weight Quantization with Tile Packing (CUDA)
+#### Example: Dynamic Quantization for XNNPACK
+
+```bash
+python export_parakeet_tdt.py \
+    --backend xnnpack \
+    --qlinear_encoder 8da4w \
+    --qlinear_encoder_group_size 32 \
+    --qlinear 8da4w \
+    --qlinear_group_size 32 \
+    --output-dir ./parakeet_quantized_xnnpack
+```
+
+#### Example: 4-bit Weight Quantization with Tile Packing for CUDA
 
 ```bash
 python export_parakeet_tdt.py \

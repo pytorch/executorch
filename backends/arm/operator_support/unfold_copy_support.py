@@ -2,9 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-"""
-Declare operator support for ``edge.aten.unfold_copy`` in TOSA.
+"""Declare operator support for ``edge.aten.unfold_copy`` in TOSA.
 
 This support check matches the subset intended to be handled by the Arm
 unfold lowering (e.g. DecomposeUnfoldToGatherPass), similar to how
@@ -22,6 +20,7 @@ Supported pattern:
 Notes:
 - Dtype/profile constraints apply (see dtype checks below).
 - This check assumes static shapes and constant dim/size/step.
+
 """
 
 import torch
