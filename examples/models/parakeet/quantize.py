@@ -37,6 +37,7 @@ def quantize_model_(  # noqa: C901
         config = UIntxWeightOnlyConfig(
             group_size=qlinear_group_size,
             bitwidth=4,
+            uintx_choose_qparams_algorithm="hqq",
         )
 
         def linear_filter(m, fqn):
