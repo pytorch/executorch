@@ -14,6 +14,7 @@ from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.passes.passes_utils import (
+    coerce_int_pair,
     is_channel_broadcast,
     is_channels_last,
 )
@@ -424,7 +425,10 @@ class SharedQspecQuantizer(Quantizer):
         # Min/Max/Mean
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
+        # Max/avg pooling
         torch.ops.aten.avg_pool2d.default,
+        torch.ops.aten.max_pool2d_with_indices.default,
+        torch.ops.aten.max_pool2d.default,
         # Data shuffling
         torch.ops.aten.permute.default,
         torch.ops.aten.permute_copy.default,
@@ -556,10 +560,17 @@ class SharedQspecQuantizer(Quantizer):
             )
             return
 
+    @staticmethod
+    def _pool_arg_as_bool(node: Node, index: int, name: str, default: bool) -> bool:
+        raw = node.args[index] if len(node.args) > index else default
+        if raw is None:
+            return default
+        return bool(raw)
+
     def annotate(self, model: GraphModule) -> None:
         """
-        Annotate shared quantization spec for supported ops, but skip avg_pool2d
-        when both ceil_mode and count_include_pad are True.
+        Annotate shared quantization spec for supported ops, skipping pooling
+        configurations that the Cortex-M backend cannot lower.
         """
         for node in model.graph.nodes:
             # TODO Skip avg_pool2d when ceil_mode=True or count_include_pad=True
@@ -571,6 +582,19 @@ class SharedQspecQuantizer(Quantizer):
                 )
                 if ceil_mode or count_include_pad:
                     continue
+            if node.target in (
+                torch.ops.aten.max_pool2d.default,
+                torch.ops.aten.max_pool2d_with_indices.default,
+            ):
+                raw_dilation = node.args[4] if len(node.args) > 4 else (1, 1)
+                dilation = coerce_int_pair(raw_dilation, (1, 1))
+                ceil_mode = self._pool_arg_as_bool(node, 5, "ceil_mode", False)
+                if dilation != (1, 1) or ceil_mode:
+                    meta_custom = node.meta.get("custom", {})
+                    cortex_m_meta = meta_custom.get("cortex_m", {})
+                    cortex_m_meta["skip_quantized_max_pool2d"] = True
+                    meta_custom["cortex_m"] = cortex_m_meta
+                    node.meta["custom"] = meta_custom
             if node.target in self.targets and not self._is_annotated(node):
                 self._annotate_shared_cluster(node)
 

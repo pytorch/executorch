@@ -43,12 +43,14 @@ def quantize_model_(  # noqa: C901
         def linear_filter(m, fqn):
             if isinstance(m, torch.nn.Linear):
                 if qlinear_group_size == 0:
-                    return False
-                if m.weight.shape[1] % 8 != 0:
-                    print(
-                        f"  Skipping {fqn}: weight shape {m.weight.shape} not multiple of 8"
+                    raise ValueError(
+                        f"Invalid group_size=0 for Metal int4 quantization (layer: {fqn})"
                     )
-                    return False
+                if m.weight.shape[1] % 8 != 0:
+                    raise ValueError(
+                        f"Metal int4 quantization requires weight dimension K to be multiple of 8. "
+                        f"Layer {fqn} has weight shape {m.weight.shape} (K={m.weight.shape[1]})"
+                    )
                 return True
             return False
 
@@ -121,6 +123,7 @@ def quantize_model_(  # noqa: C901
             config = Int8DynamicActivationIntxWeightConfig(
                 weight_dtype=torch.int4,
                 weight_granularity=granularity,
+                intx_choose_qparams_algorithm="hqq_scale_only",
             )
         elif qlinear_config == "8da8w":
             config = Int8DynamicActivationIntxWeightConfig(
