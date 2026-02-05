@@ -154,6 +154,9 @@ void test_q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (impl_selector == "legacy_4w4c") {
     // Use the general quantized conv2d operator for legacy path
     VK_GET_OP_FN("et_vk.conv2d_q8ta_q8csw_q8to.default")(graph, conv_args);
+  } else if (impl_selector == "im2col") {
+    // Use the im2col-based conv2d operator
+    VK_GET_OP_FN("etvk.q8ta_conv2d_im2col.default")(graph, conv_args);
   } else {
     // Use the new general q8ta_conv2d operator
     VK_GET_OP_FN("etvk.q8ta_conv2d.default")(graph, conv_args);

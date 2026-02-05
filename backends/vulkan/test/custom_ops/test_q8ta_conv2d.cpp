@@ -235,6 +235,17 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
       test_cases.push_back(create_test_case_from_config(
           config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
 
+      // Test im2col implementation for non-grouped convolutions with input
+      // channels that are a multiple of 4 and stride_w == 1
+      if (config.groups == 1 && config.channels.in % 4 == 0 &&
+          config.stride.w == 1) {
+        test_cases.push_back(create_test_case_from_config(
+            config,
+            vkapi::kFloat,
+            fp_storage_type,
+            int8_memory_layout,
+            /*impl_selector=*/"im2col"));
+      }
       // For 4W4C layout, also test the legacy implementation
       if (int8_memory_layout == utils::kPackedInt8_4W4C) {
         test_cases.push_back(create_test_case_from_config(
@@ -402,6 +413,18 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
               fp_storage_type,
               int8_memory_layout,
               /*impl_selector=*/"legacy_4w4c"));
+        }
+
+        // Test im2col implementation for non-grouped convolutions with input
+        // channels that are a multiple of 4 and stride_w == 1
+        if (config.groups == 1 && config.channels.in % 4 == 0 &&
+            config.stride.w == 1) {
+          test_cases.push_back(create_test_case_from_config(
+              config,
+              vkapi::kFloat,
+              fp_storage_type,
+              int8_memory_layout,
+              /*impl_selector=*/"im2col"));
         }
       }
     }
