@@ -246,7 +246,7 @@ ET_NODISCARD Error XNNExecutor::resize_outputs(Span<EValue*> args) const {
     if (out_tensor->scalar_type() == ScalarType::Long) {
       int64_t* data_64 = out_tensor->mutable_data_ptr<int64_t>();
       const int32_t* data_32 = out_tensor->const_data_ptr<int32_t>();
-      for (size_t j = out_tensor->numel() - 1; j >= 0; --j) {
+      for (ssize_t j = out_tensor->numel() - 1; j >= 0; --j) {
         data_64[j] = data_32[j];
       }
     }

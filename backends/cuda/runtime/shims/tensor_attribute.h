@@ -15,7 +15,7 @@
 
 namespace executorch::backends::cuda {
 
-// Common using declarations for ExecutorTorch types
+// Common using declarations for ExecuTorch types
 using executorch::runtime::Error;
 using executorch::runtime::etensor::Tensor;
 
