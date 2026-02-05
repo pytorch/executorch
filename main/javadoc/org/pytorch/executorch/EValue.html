@@ -110,7 +110,7 @@ var pathtoroot = "../../../";
 public class <span class="typeNameLabel"><a href=EValue.html>EValue</a></span>
 
                     </pre>
-                    <div class="block"><p>Java representation of an ExecuTorch value, which is implemented as tagged union that can be one of the supported types: https://pytorch.org/docs/stable/jit.html#types . </p><p>Calling <code>{@code toX}</code> methods for inappropriate types will throw <a href=https://docs.oracle.com/javase/8/docs/api/java/lang/IllegalStateException.html>IllegalStateException</a>. </p><p><code>{@code EValue}</code> objects are constructed with <code>{@code EValue.from(value)}</code>, <code>{@code * EValue.tupleFrom(value1, value2, ...)}</code>, <code>{@code EValue.listFrom(value1, value2, ...)}</code>, or one of the <code>{@code dict}</code> methods, depending on the key type. </p><p>Data is retrieved from <code>{@code EValue}</code> objects with the <code>{@code toX()}</code> methods. Note that <code>{@code * str}</code>-type EValues must be extracted with <a href=EValue.html#toStr()>toStr</a>, rather than <a href=https://docs.oracle.com/javase/8/docs/api/java/lang/Object.html#toString-->toString</a>. </p><p><code>{@code EValue}</code> objects may retain references to objects passed into their constructors, and may return references to their internal state from <code>{@code toX()}</code>. </p><p>Warning: These APIs are experimental and subject to change without notice</p></div>
+                    <div class="block"><p>Java representation of an ExecuTorch value, which is implemented as tagged union that can be one of the supported types: https://pytorch.org/docs/stable/jit.html#types . </p><p>Calling <code>{@code toX}</code> methods for inappropriate types will throw <a href=https://developer.android.com/reference/kotlin/java/lang/IllegalStateException.html>IllegalStateException</a>. </p><p><code>{@code EValue}</code> objects are constructed with <code>{@code EValue.from(value)}</code>, <code>{@code * EValue.tupleFrom(value1, value2, ...)}</code>, <code>{@code EValue.listFrom(value1, value2, ...)}</code>, or one of the <code>{@code dict}</code> methods, depending on the key type. </p><p>Data is retrieved from <code>{@code EValue}</code> objects with the <code>{@code toX()}</code> methods. Note that <code>{@code * str}</code>-type EValues must be extracted with <a href=EValue.html#toStr()>toStr</a>, rather than <a href=https://developer.android.com/reference/kotlin/java/lang/Object.html#tostring>toString</a>. </p><p><code>{@code EValue}</code> objects may retain references to objects passed into their constructors, and may return references to their internal state from <code>{@code toX()}</code>. </p><p>Warning: These APIs are experimental and subject to change without notice</p></div>
                 </li>
             </ul>
         </div>
@@ -237,7 +237,7 @@ public class <span class="typeNameLabel"><a href=EValue.html>EValue</a></span>
                                         <tr id="i11" class="rowColor">
                                             <td class="colFirst"><code>static <a href=EValue.html>EValue</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=EValue.html#from(String)>from</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/lang/String.html>String</a> value) </code>
+                                            <th class="colSecond" scope="row"><code><a href=EValue.html#from(String)>from</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> value) </code>
                                             </th>
                                             <td class="colLast">Creates a new <code>{@code EValue}</code> of type <code>{@code str}</code>.</td>
                                         </tr>
@@ -275,7 +275,7 @@ public class <span class="typeNameLabel"><a href=EValue.html>EValue</a></span>
                                         </tr>
                                         
                                         <tr id="i16" class="altColor">
-                                            <td class="colFirst"><code><a href=https://docs.oracle.com/javase/8/docs/api/java/lang/String.html>String</a></code>
+                                            <td class="colFirst"><code><a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=EValue.html#toStr()>toStr</a>() </code>
                                             </th>
@@ -504,7 +504,7 @@ public class <span class="typeNameLabel"><a href=EValue.html>EValue</a></span>
                                           >
                                     <li class="blockList">
                                         <h4>from</h4>
-                                        <pre class="methodSignature"> static <a href=EValue.html>EValue</a> <a href=EValue.html#from(String)>from</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/lang/String.html>String</a> value)</pre>
+                                        <pre class="methodSignature"> static <a href=EValue.html>EValue</a> <a href=EValue.html#from(String)>from</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> value)</pre>
                                         <div class="block"><p>Creates a new <code>{@code EValue}</code> of type <code>{@code str}</code>.</p></div>
                                         
                                         <!-- TODO missing return annotation -->
@@ -579,7 +579,7 @@ public class <span class="typeNameLabel"><a href=EValue.html>EValue</a></span>
                                           >
                                     <li class="blockList">
                                         <h4>toStr</h4>
-                                        <pre class="methodSignature"> <a href=https://docs.oracle.com/javase/8/docs/api/java/lang/String.html>String</a> <a href=EValue.html#toStr()>toStr</a>()</pre>
+                                        <pre class="methodSignature"> <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> <a href=EValue.html#toStr()>toStr</a>()</pre>
                                         <div class="block"></div>
                                         
                                         <!-- TODO missing return annotation -->

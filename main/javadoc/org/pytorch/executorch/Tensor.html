@@ -110,7 +110,7 @@ var pathtoroot = "../../../";
 public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a></span>
 
                     </pre>
-                    <div class="block"><p>Representation of an ExecuTorch Tensor. Behavior is similar to PyTorch's tensor objects. </p><p>Most tensors will be constructed as <code>{@code Tensor.fromBlob(data, shape)}</code>, where <code>{@code data}</code> can be an array or a direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/Buffer.html>Buffer</a> (of the proper subclass). Helper methods are provided to allocate buffers properly. </p><p>To access Tensor data, see <a href=Tensor.html#dtype()>dtype</a>, <a href=Tensor.html#shape()>shape</a>, and various <code>{@code getDataAs*}</code> methods. </p><p>When constructing <code>{@code Tensor}</code> objects with <code>{@code data}</code> as an array, it is not specified whether this data is copied or retained as a reference so it is recommended not to modify it after constructing. <code>{@code data}</code> passed as a <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/Buffer.html>Buffer</a> is not copied, so it can be modified between <a href=Module.html>Module</a> calls to avoid reallocation. Data retrieved from <code>{@code Tensor}</code> objects may be copied or may be a reference to the <code>{@code Tensor}</code>'s internal data buffer. <code>{@code shape}</code> is always copied. </p><p>Warning: These APIs are experimental and subject to change without notice</p></div>
+                    <div class="block"><p>Representation of an ExecuTorch Tensor. Behavior is similar to PyTorch's tensor objects. </p><p>Most tensors will be constructed as <code>{@code Tensor.fromBlob(data, shape)}</code>, where <code>{@code data}</code> can be an array or a direct <a href=https://developer.android.com/reference/kotlin/java/nio/Buffer.html>Buffer</a> (of the proper subclass). Helper methods are provided to allocate buffers properly. </p><p>To access Tensor data, see <a href=Tensor.html#dtype()>dtype</a>, <a href=Tensor.html#shape()>shape</a>, and various <code>{@code getDataAs*}</code> methods. </p><p>When constructing <code>{@code Tensor}</code> objects with <code>{@code data}</code> as an array, it is not specified whether this data is copied or retained as a reference so it is recommended not to modify it after constructing. <code>{@code data}</code> passed as a <a href=https://developer.android.com/reference/kotlin/java/nio/Buffer.html>Buffer</a> is not copied, so it can be modified between <a href=Module.html>Module</a> calls to avoid reallocation. Data retrieved from <code>{@code Tensor}</code> objects may be copied or may be a reference to the <code>{@code Tensor}</code>'s internal data buffer. <code>{@code shape}</code> is always copied. </p><p>Warning: These APIs are experimental and subject to change without notice</p></div>
                 </li>
             </ul>
         </div>
@@ -147,51 +147,51 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         </tr>
                                         
                                         <tr id="i0" class="altColor">
-                                            <td class="colFirst"><code>static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a></code>
+                                            <td class="colFirst"><code>static <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#allocateByteBuffer(int)>allocateByteBuffer</a>(int numElements) </code>
                                             </th>
-                                            <td class="colLast">Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>, <a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)></a>.</td>
+                                            <td class="colLast">Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>, <a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)></a>.</td>
                                         </tr>
                                         
                                         <tr id="i1" class="rowColor">
-                                            <td class="colFirst"><code>static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/IntBuffer.html>IntBuffer</a></code>
+                                            <td class="colFirst"><code>static <a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#allocateIntBuffer(int)>allocateIntBuffer</a>(int numElements) </code>
                                             </th>
-                                            <td class="colLast">Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/IntBuffer.html>IntBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>.</td>
+                                            <td class="colLast">Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>.</td>
                                         </tr>
                                         
                                         <tr id="i2" class="altColor">
-                                            <td class="colFirst"><code>static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/FloatBuffer.html>FloatBuffer</a></code>
+                                            <td class="colFirst"><code>static <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#allocateFloatBuffer(int)>allocateFloatBuffer</a>(int numElements) </code>
                                             </th>
-                                            <td class="colLast">Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/FloatBuffer.html>FloatBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>.</td>
+                                            <td class="colLast">Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>.</td>
                                         </tr>
                                         
                                         <tr id="i3" class="rowColor">
-                                            <td class="colFirst"><code>static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/LongBuffer.html>LongBuffer</a></code>
+                                            <td class="colFirst"><code>static <a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#allocateLongBuffer(int)>allocateLongBuffer</a>(int numElements) </code>
                                             </th>
-                                            <td class="colLast">Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/LongBuffer.html>LongBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>.</td>
+                                            <td class="colLast">Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>.</td>
                                         </tr>
                                         
                                         <tr id="i4" class="altColor">
-                                            <td class="colFirst"><code>static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ShortBuffer.html>ShortBuffer</a></code>
+                                            <td class="colFirst"><code>static <a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#allocateHalfBuffer(int)>allocateHalfBuffer</a>(int numElements) </code>
                                             </th>
-                                            <td class="colLast">Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ShortBuffer.html>ShortBuffer</a> with native byte order and specified capacity thatcan be used in <a href=Tensor.html#fromBlob(ShortBuffer,Array)>fromBlob</a>.</td>
+                                            <td class="colLast">Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a> with native byte order and specified capacity thatcan be used in <a href=Tensor.html#fromBlob(ShortBuffer,Array)>fromBlob</a>.</td>
                                         </tr>
                                         
                                         <tr id="i5" class="rowColor">
-                                            <td class="colFirst"><code>static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/DoubleBuffer.html>DoubleBuffer</a></code>
+                                            <td class="colFirst"><code>static <a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#allocateDoubleBuffer(int)>allocateDoubleBuffer</a>(int numElements) </code>
                                             </th>
-                                            <td class="colLast">Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/DoubleBuffer.html>DoubleBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>.</td>
+                                            <td class="colLast">Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>.</td>
                                         </tr>
                                         
                                         <tr id="i6" class="altColor">
@@ -253,7 +253,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i13" class="rowColor">
                                             <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)>fromBlobUnsigned</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)>fromBlobUnsigned</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
                                             </th>
                                             <td class="colLast">Creates a new Tensor instance with dtype torch.uint8 with specified shape and data.</td>
                                         </tr>
@@ -261,7 +261,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i14" class="altColor">
                                             <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
                                             </th>
                                             <td class="colLast">Creates a new Tensor instance with dtype torch.int8 with specified shape and data.</td>
                                         </tr>
@@ -269,7 +269,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i15" class="rowColor">
                                             <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/IntBuffer.html>IntBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
                                             </th>
                                             <td class="colLast">Creates a new Tensor instance with dtype torch.int32 with specified shape and data.</td>
                                         </tr>
@@ -277,7 +277,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i16" class="altColor">
                                             <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/FloatBuffer.html>FloatBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
                                             </th>
                                             <td class="colLast">Creates a new Tensor instance with dtype torch.float32 with specified shape and data.</td>
                                         </tr>
@@ -285,7 +285,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i17" class="rowColor">
                                             <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(ShortBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ShortBuffer.html>ShortBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(ShortBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
                                             </th>
                                             <td class="colLast">Creates a new Tensor instance with dtype torch.float16 with specified shape and data.</td>
                                         </tr>
@@ -293,7 +293,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i18" class="altColor">
                                             <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/LongBuffer.html>LongBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
                                             </th>
                                             <td class="colLast">Creates a new Tensor instance with dtype torch.int64 with specified shape and data.</td>
                                         </tr>
@@ -301,7 +301,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i19" class="rowColor">
                                             <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/DoubleBuffer.html>DoubleBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
                                             </th>
                                             <td class="colLast">Creates a new Tensor instance with dtype torch.float64 with specified shape and data.</td>
                                         </tr>
@@ -467,8 +467,8 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>allocateByteBuffer</h4>
-                                        <pre class="methodSignature"> static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a> <a href=Tensor.html#allocateByteBuffer(int)>allocateByteBuffer</a>(int numElements)</pre>
-                                        <div class="block"><p>Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>, <a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)></a>.</p></div>
+                                        <pre class="methodSignature"> static <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> <a href=Tensor.html#allocateByteBuffer(int)>allocateByteBuffer</a>(int numElements)</pre>
+                                        <div class="block"><p>Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>, <a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)></a>.</p></div>
                                         
                                         <dl>
                                             <dt><span class="paramLabel">Parameters:</span></dt>
@@ -491,8 +491,8 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>allocateIntBuffer</h4>
-                                        <pre class="methodSignature"> static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/IntBuffer.html>IntBuffer</a> <a href=Tensor.html#allocateIntBuffer(int)>allocateIntBuffer</a>(int numElements)</pre>
-                                        <div class="block"><p>Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/IntBuffer.html>IntBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>.</p></div>
+                                        <pre class="methodSignature"> static <a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> <a href=Tensor.html#allocateIntBuffer(int)>allocateIntBuffer</a>(int numElements)</pre>
+                                        <div class="block"><p>Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>.</p></div>
                                         
                                         <dl>
                                             <dt><span class="paramLabel">Parameters:</span></dt>
@@ -515,8 +515,8 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>allocateFloatBuffer</h4>
-                                        <pre class="methodSignature"> static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/FloatBuffer.html>FloatBuffer</a> <a href=Tensor.html#allocateFloatBuffer(int)>allocateFloatBuffer</a>(int numElements)</pre>
-                                        <div class="block"><p>Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/FloatBuffer.html>FloatBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>.</p></div>
+                                        <pre class="methodSignature"> static <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> <a href=Tensor.html#allocateFloatBuffer(int)>allocateFloatBuffer</a>(int numElements)</pre>
+                                        <div class="block"><p>Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>.</p></div>
                                         
                                         <dl>
                                             <dt><span class="paramLabel">Parameters:</span></dt>
@@ -539,8 +539,8 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>allocateLongBuffer</h4>
-                                        <pre class="methodSignature"> static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/LongBuffer.html>LongBuffer</a> <a href=Tensor.html#allocateLongBuffer(int)>allocateLongBuffer</a>(int numElements)</pre>
-                                        <div class="block"><p>Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/LongBuffer.html>LongBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>.</p></div>
+                                        <pre class="methodSignature"> static <a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> <a href=Tensor.html#allocateLongBuffer(int)>allocateLongBuffer</a>(int numElements)</pre>
+                                        <div class="block"><p>Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>.</p></div>
                                         
                                         <dl>
                                             <dt><span class="paramLabel">Parameters:</span></dt>
@@ -563,8 +563,8 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>allocateHalfBuffer</h4>
-                                        <pre class="methodSignature"> static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ShortBuffer.html>ShortBuffer</a> <a href=Tensor.html#allocateHalfBuffer(int)>allocateHalfBuffer</a>(int numElements)</pre>
-                                        <div class="block"><p>Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ShortBuffer.html>ShortBuffer</a> with native byte order and specified capacity thatcan be used in <a href=Tensor.html#fromBlob(ShortBuffer,Array)>fromBlob</a>.</p></div>
+                                        <pre class="methodSignature"> static <a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a> <a href=Tensor.html#allocateHalfBuffer(int)>allocateHalfBuffer</a>(int numElements)</pre>
+                                        <div class="block"><p>Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a> with native byte order and specified capacity thatcan be used in <a href=Tensor.html#fromBlob(ShortBuffer,Array)>fromBlob</a>.</p></div>
                                         
                                         <dl>
                                             <dt><span class="paramLabel">Parameters:</span></dt>
@@ -587,8 +587,8 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>allocateDoubleBuffer</h4>
-                                        <pre class="methodSignature"> static <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/DoubleBuffer.html>DoubleBuffer</a> <a href=Tensor.html#allocateDoubleBuffer(int)>allocateDoubleBuffer</a>(int numElements)</pre>
-                                        <div class="block"><p>Allocates a new direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/DoubleBuffer.html>DoubleBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>.</p></div>
+                                        <pre class="methodSignature"> static <a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> <a href=Tensor.html#allocateDoubleBuffer(int)>allocateDoubleBuffer</a>(int numElements)</pre>
+                                        <div class="block"><p>Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>.</p></div>
                                         
                                         <dl>
                                             <dt><span class="paramLabel">Parameters:</span></dt>
@@ -807,7 +807,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>fromBlobUnsigned</h4>
-                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)>fromBlobUnsigned</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)>fromBlobUnsigned</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
                                         <div class="block"><p>Creates a new Tensor instance with dtype torch.uint8 with specified shape and data.</p></div>
                                         
                                         <dl>
@@ -835,7 +835,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>fromBlob</h4>
-                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
                                         <div class="block"><p>Creates a new Tensor instance with dtype torch.int8 with specified shape and data.</p></div>
                                         
                                         <dl>
@@ -863,7 +863,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>fromBlob</h4>
-                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/IntBuffer.html>IntBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
                                         <div class="block"><p>Creates a new Tensor instance with dtype torch.int32 with specified shape and data.</p></div>
                                         
                                         <dl>
@@ -891,7 +891,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>fromBlob</h4>
-                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/FloatBuffer.html>FloatBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
                                         <div class="block"><p>Creates a new Tensor instance with dtype torch.float32 with specified shape and data.</p></div>
                                         
                                         <dl>
@@ -919,7 +919,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>fromBlob</h4>
-                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(ShortBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ShortBuffer.html>ShortBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(ShortBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
                                         <div class="block"><p>Creates a new Tensor instance with dtype torch.float16 with specified shape and data.</p></div>
                                         
                                         <dl>
@@ -947,7 +947,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>fromBlob</h4>
-                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/LongBuffer.html>LongBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
                                         <div class="block"><p>Creates a new Tensor instance with dtype torch.int64 with specified shape and data.</p></div>
                                         
                                         <dl>
@@ -975,7 +975,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>fromBlob</h4>
-                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/DoubleBuffer.html>DoubleBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
                                         <div class="block"><p>Creates a new Tensor instance with dtype torch.float64 with specified shape and data.</p></div>
                                         
                                         <dl>
