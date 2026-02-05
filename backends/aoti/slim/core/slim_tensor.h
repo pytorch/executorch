@@ -52,6 +52,7 @@ class SlimTensor {
         storage_offset_(storage_offset),
         dtype_(dtype) {
     set_sizes_and_strides(sizes, strides);
+    check_supportive();
   }
 
   /**
@@ -65,6 +66,7 @@ class SlimTensor {
         is_contiguous_(true) {
     sizes_and_strides_.set_sizes({0});
     sizes_and_strides_.set_strides({1});
+    check_supportive();
   }
 
   // Default copy/move operations
@@ -554,6 +556,13 @@ class SlimTensor {
         sizes_and_strides_.sizes_arrayref(),
         sizes_and_strides_.strides_arrayref(),
         static_cast<int64_t>(numel_));
+  }
+
+  void check_supportive() const {
+    ET_CHECK_MSG(
+        c10::isValidScalarType(dtype_),
+        "invalid dtype %d",
+        static_cast<int>(dtype_));
   }
 
   Storage storage_;

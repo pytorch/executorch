@@ -439,6 +439,32 @@ test_data_FP_bf16 = {
         dtype=torch.bfloat16,
     ),
 }
+test_data_FP_fp16 = {
+    "fp16_3x3": lambda: Conv3d(
+        height=10,
+        width=10,
+        depth=6,
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3, 3),
+        stride=(1, 1, 1),
+        padding=(1, 1, 1),
+        bias=True,
+        dtype=torch.float16,
+    ),
+    "fp16_1x1": lambda: Conv3d(
+        height=6,
+        width=6,
+        depth=4,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=(1, 1, 1),
+        stride=(1, 1, 1),
+        padding=(0, 0, 0),
+        bias=False,
+        dtype=torch.float16,
+    ),
+}
 
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_INT = {
@@ -466,11 +492,12 @@ def _get_dtype_count(model: torch.nn.Module):
 input_t = Tuple[torch.Tensor]
 
 
-@common.parametrize("test_data", test_data_FP | test_data_FP_bf16)
+@common.parametrize("test_data", test_data_FP | test_data_FP_bf16 | test_data_FP_fp16)
 def test_convolution_3d_tosa_FP(test_data):
+    model = test_data()
     pipeline = TosaPipelineFP[input_t](
-        test_data(),
-        test_data().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
         tosa_extensions=["bf16"],
@@ -623,12 +650,13 @@ def test_convolution_3d_u85_INT_a8w4(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_FP)
+@common.parametrize("test_data", test_data_FP | test_data_FP_fp16)
 @common.SkipIfNoModelConverter
 def test_convolution_3d_vgf_no_quant(test_data):
+    model = test_data()
     pipeline = VgfPipeline[input_t](
-        test_data(),
-        test_data().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
         quantize=False,
