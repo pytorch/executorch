@@ -1,1 +1,310 @@
-/* * Copyright (c) Meta Platforms, Inc. and affiliates. * All rights reserved. * * This source code is licensed under the BSD-style license found in the * LICENSE file in the root directory of this source tree. * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated */// A simple llama2 runner that includes preprocessing and post processing logic.// The module takes in a string as input and emits a string as output.#include <executorch/extension/llm/runner/io_manager/io_manager.h>#include <executorch/extension/llm/runner/text_llm_runner.h>#include <executorch/extension/llm/runner/util.h>#include <executorch/runtime/platform/runtime.h>#include <pytorch/tokenizers/hf_tokenizer.h>#include <pytorch/tokenizers/llama2c_tokenizer.h>#include <pytorch/tokenizers/sentencepiece.h>#include <pytorch/tokenizers/tiktoken.h>namespace executorch::extension::llm {using ::executorch::extension::Module;using ::executorch::runtime::Error;using ::executorch::runtime::Result;TextLLMRunner::TextLLMRunner(    std::unordered_map<std::string, int64_t> metadata,    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,    std::unique_ptr<::executorch::extension::Module> module,    std::unique_ptr<TextDecoderRunner> text_decoder_runner,    std::unique_ptr<TextPrefiller> text_prefiller,    std::unique_ptr<IOManager> io_manager,    std::unique_ptr<TextTokenGenerator> text_token_generator,    std::unique_ptr<Stats> stats,    float temperature)    : tokenizer_(std::move(tokenizer)),      metadata_(std::move(metadata)),      module_(std::move(module)),      text_decoder_runner_(std::move(text_decoder_runner)),      text_prefiller_(std::move(text_prefiller)),      io_manager_(std::move(io_manager)),      text_token_generator_(std::move(text_token_generator)),      stats_(std::move(stats)),      temperature_(temperature),      pos_(0) {  // Note: This constructor assumes that text_prefiller and text_token_generator  // already have references to the Module and TextDecoderRunner they need}bool TextLLMRunner::is_loaded() const {  return text_prefiller_->is_loaded() && text_token_generator_->is_loaded();}Error TextLLMRunner::load() {  if (is_loaded()) {    return Error::Ok;  }  ET_CHECK_OK_OR_RETURN_ERROR(text_prefiller_->load());  ET_CHECK_OK_OR_RETURN_ERROR(io_manager_->load());  ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());  return Error::Ok;}// Don't print with the same priority during warmup#define RUNNER_ET_LOG(warmup, format, ...) \  if (warmup) {                            \    ET_LOG(Debug, format, __VA_ARGS__);    \  } else {                                 \    ET_LOG(Info, format, __VA_ARGS__);     \  }Error TextLLMRunner::generate(    const std::string& prompt,    const GenerationConfig& config,    std::function<void(const std::string&)> token_callback,    std::function<void(const Stats&)> stats_callback) {  // Prepare the inputs.  // Use ones-initialized inputs.  ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");  if (!is_loaded()) {    stats_->model_load_start_ms = time_in_ms();    ET_CHECK_OK_OR_RETURN_ERROR(load());    stats_->model_load_end_ms = time_in_ms();  }  if (config.warming) {    ET_LOG(Info, "Doing a warmup run...");  }  RUNNER_ET_LOG(      config.warming,      "RSS after loading model: %f MiB (0 if unsupported)",      get_rss_bytes() / 1024.0 / 1024.0);  // Wrap the token_callback with print function  std::function<void(const std::string&)> wrapped_callback =      [token_callback, config](const std::string& piece) {        if (!config.warming) {          llm::safe_printf(piece.c_str());          fflush(stdout);        }        if (token_callback) {          token_callback(piece);        }      };  // First token time only measures the time it takes to encode the prompt and  // return a response token.  stats_->inference_start_ms = time_in_ms();  shouldStop_ = false;  ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(      prompt,      /*bos=*/config.num_bos,      /*eos=*/config.num_eos);  if (!encode_res.ok()) {    ET_LOG(        Error,        "Failed to encode prompt %s. Tokenizers error code %d",        prompt.c_str(),        static_cast<uint32_t>(encode_res.error()));    return Error::InvalidArgument;  }  // encode the (string) prompt into tokens sequence  std::vector<uint64_t> prompt_tokens = encode_res.get();  int num_prompt_tokens = prompt_tokens.size();  // Get max_seq_len for single prefill chunk limit  int64_t max_seq_len = metadata_.at(kMaxSeqLen);  int64_t max_context_len = metadata_.at(kMaxContextLen);  ET_CHECK_OR_RETURN_ERROR(      num_prompt_tokens >= 1,      InvalidArgument,      "Expected at least 1 prompt token");  // For models with sliding window (Ring Buffer / Attention Sink),  // we allow pos_ to exceed max_context_len. The model handles this  // internally via ring buffer indexing or token eviction.  // We only check that a single prefill chunk doesn't exceed max_seq_len.  ET_CHECK_OR_RETURN_ERROR(      num_prompt_tokens <= max_seq_len,      InvalidArgument,      "num_prompt_tokens %d > max_seq_len %" PRId64      ", Single prefill chunk too large - please reduce prompt size or increase max_seq_len",      num_prompt_tokens,      max_seq_len);  // Determine max_new_tokens using the GenerationConfig's resolve method.  // For sliding window models, we use max_context_len directly (not reduced by pos_)  // because the model handles position wrapping internally via ring buffer.  int max_new_tokens =      config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);  // TEMPORARY: For sliding window / infinite context testing,  // override max_new_tokens to allow unlimited generation  if (max_new_tokens <= 0) {    max_new_tokens = 1000000;  // Effectively unlimited  }  // If user specified seq_len, use that instead  if (config.seq_len > 0 && config.seq_len > max_new_tokens) {    max_new_tokens = config.seq_len;  }  ET_LOG(      Info,      "Max new tokens resolved: %d, given pos_ %" PRId64      ", num_prompt_tokens %zu, max_context_len %" PRId64,      max_new_tokens,      pos_,      prompt_tokens.size(),      max_context_len);  ET_CHECK_OR_RETURN_ERROR(      max_new_tokens > 0,      InvalidArgument,      "Max new tokens %d is less than or equal to 0",      max_new_tokens);  // Prefill first  // Here feed all tokens to the model and get the next predicted token  // after the prompt. After that we will enter generate loop.  // print prompts  if (config.echo) {    wrapped_callback(prompt);  }  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos_);  ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());  uint64_t cur_token = prefill_res.get();  stats_->first_token_ms = time_in_ms();  stats_->prompt_eval_end_ms = time_in_ms();  // print the first token from prefill. No prev_token so use cur_token for it.  auto decode_result = tokenizer_->decode(cur_token, cur_token);  if (!decode_result.ok()) {    ET_LOG(        Error,        "Tokenizers error code %d",        static_cast<uint32_t>(decode_result.error()));    return ::executorch::runtime::Error::InvalidArgument;  }  wrapped_callback(std::move(*decode_result));  RUNNER_ET_LOG(      config.warming,      "RSS after prompt prefill: %f MiB (0 if unsupported)",      get_rss_bytes() / 1024.0 / 1024.0);  // start the main loop  prompt_tokens.push_back(cur_token);  // Set ignore_eos based on config  text_token_generator_->set_ignore_eos(config.ignore_eos);  // Generate max_new_tokens - 1 because prefill already generated 1 token.  auto generate_result = text_token_generator_->generate(      prompt_tokens,      pos_,      max_new_tokens - 1,      temperature_ == -1.0f ? config.temperature : temperature_,      wrapped_callback);  if (!generate_result.ok()) {    return generate_result.error();  }  int64_t num_generated_tokens = generate_result.get();  pos_ += num_generated_tokens;  stats_->inference_end_ms = time_in_ms();  if (!config.warming) {    printf("\n");  }  RUNNER_ET_LOG(      config.warming,      "RSS after finishing text generation: %f MiB (0 if unsupported)",      get_rss_bytes() / 1024.0 / 1024.0);  if (num_generated_tokens == max_new_tokens) {    RUNNER_ET_LOG(config.warming, "Max new tokens %i reached!", max_new_tokens);  }  stats_->num_prompt_tokens = num_prompt_tokens;  stats_->num_generated_tokens = num_generated_tokens;  if (config.warming) {    ET_LOG(Info, "Warmup run finished!");  } else {    // Do not print report during warmup    print_report(*stats_);  }  if (stats_callback) {    stats_callback(*stats_);  }  return Error::Ok;}Error TextLLMRunner::prefill(    const std::string& prompt,    const GenerationConfig& config) {  if (!is_loaded()) {    ET_CHECK_OK_OR_RETURN_ERROR(load());  }  ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(      prompt,      /*bos=*/config.num_bos,      /*eos=*/config.num_eos);  ET_CHECK_TK_OK_OR_RETURN_ERROR(      encode_res.error(), "Failed to encode prompt %s", prompt.c_str());  // encode the (string) prompt into tokens sequence  std::vector<uint64_t> prompt_tokens = encode_res.get();  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos_);  ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());  return Error::Ok;}Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {  // Create a GenerationConfig for warmup  GenerationConfig config;  config.echo = false;  config.max_new_tokens = max_new_tokens;  config.warming = true;  // Call generate with the warmup config  Error err = generate(prompt, config);  // Reset stats after warmup, not resetting the std::unique_ptr!  reset();  return err;}void TextLLMRunner::stop() {  if (is_loaded()) {    text_token_generator_->stop();  } else {    ET_LOG(Error, "Token generator is not loaded, cannot stop");  }}void TextLLMRunner::reset() {  stats_->reset();  pos_ = 0;}} // namespace executorch::extension::llm
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
+ */
+
+// A simple llama2 runner that includes preprocessing and post processing logic.
+// The module takes in a string as input and emits a string as output.
+
+#include <executorch/extension/llm/runner/io_manager/io_manager.h>
+#include <executorch/extension/llm/runner/text_llm_runner.h>
+#include <executorch/extension/llm/runner/util.h>
+#include <executorch/runtime/platform/runtime.h>
+#include <pytorch/tokenizers/hf_tokenizer.h>
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
+#include <pytorch/tokenizers/sentencepiece.h>
+#include <pytorch/tokenizers/tiktoken.h>
+
+namespace executorch::extension::llm {
+
+using ::executorch::extension::Module;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::Result;
+
+TextLLMRunner::TextLLMRunner(
+    std::unordered_map<std::string, int64_t> metadata,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    std::unique_ptr<::executorch::extension::Module> module,
+    std::unique_ptr<TextDecoderRunner> text_decoder_runner,
+    std::unique_ptr<TextPrefiller> text_prefiller,
+    std::unique_ptr<IOManager> io_manager,
+    std::unique_ptr<TextTokenGenerator> text_token_generator,
+    std::unique_ptr<Stats> stats,
+    float temperature)
+    : tokenizer_(std::move(tokenizer)),
+      metadata_(std::move(metadata)),
+      module_(std::move(module)),
+      text_decoder_runner_(std::move(text_decoder_runner)),
+      text_prefiller_(std::move(text_prefiller)),
+      io_manager_(std::move(io_manager)),
+      text_token_generator_(std::move(text_token_generator)),
+      stats_(std::move(stats)),
+      temperature_(temperature),
+      pos_(0) {
+  // Note: This constructor assumes that text_prefiller and text_token_generator
+  // already have references to the Module and TextDecoderRunner they need
+}
+
+bool TextLLMRunner::is_loaded() const {
+  return text_prefiller_->is_loaded() && text_token_generator_->is_loaded();
+}
+
+Error TextLLMRunner::load() {
+  if (is_loaded()) {
+    return Error::Ok;
+  }
+  ET_CHECK_OK_OR_RETURN_ERROR(text_prefiller_->load());
+  ET_CHECK_OK_OR_RETURN_ERROR(io_manager_->load());
+  ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());
+  return Error::Ok;
+}
+
+// Don't print with the same priority during warmup
+#define RUNNER_ET_LOG(warmup, format, ...) \
+  if (warmup) {                            \
+    ET_LOG(Debug, format, __VA_ARGS__);    \
+  } else {                                 \
+    ET_LOG(Info, format, __VA_ARGS__);     \
+  }
+
+Error TextLLMRunner::generate(
+    const std::string& prompt,
+    const GenerationConfig& config,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
+  // Prepare the inputs.
+  // Use ones-initialized inputs.
+  ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
+  if (!is_loaded()) {
+    stats_->model_load_start_ms = time_in_ms();
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+    stats_->model_load_end_ms = time_in_ms();
+  }
+
+  if (config.warming) {
+    ET_LOG(Info, "Doing a warmup run...");
+  }
+
+  RUNNER_ET_LOG(
+      config.warming,
+      "RSS after loading model: %f MiB (0 if unsupported)",
+      get_rss_bytes() / 1024.0 / 1024.0);
+
+  // Wrap the token_callback with print function
+  std::function<void(const std::string&)> wrapped_callback =
+      [token_callback, config](const std::string& piece) {
+        if (!config.warming) {
+          llm::safe_printf(piece.c_str());
+          fflush(stdout);
+        }
+        if (token_callback) {
+          token_callback(piece);
+        }
+      };
+  // First token time only measures the time it takes to encode the prompt and
+  // return a response token.
+
+  stats_->inference_start_ms = time_in_ms();
+  shouldStop_ = false;
+
+  ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
+      prompt,
+      /*bos=*/config.num_bos,
+      /*eos=*/config.num_eos);
+
+  if (!encode_res.ok()) {
+    ET_LOG(
+        Error,
+        "Failed to encode prompt %s. Tokenizers error code %d",
+        prompt.c_str(),
+        static_cast<uint32_t>(encode_res.error()));
+    return Error::InvalidArgument;
+  }
+
+  // encode the (string) prompt into tokens sequence
+  std::vector<uint64_t> prompt_tokens = encode_res.get();
+  int num_prompt_tokens = prompt_tokens.size();
+
+  // Get max_seq_len for single prefill chunk limit
+  int64_t max_seq_len = metadata_.at(kMaxSeqLen);
+  int64_t max_context_len = metadata_.at(kMaxContextLen);
+  
+  ET_CHECK_OR_RETURN_ERROR(
+      num_prompt_tokens >= 1,
+      InvalidArgument,
+      "Expected at least 1 prompt token");
+  
+  // For models with sliding window (Ring Buffer / Attention Sink),
+  // we allow pos_ to exceed max_context_len. The model handles this
+  // internally via ring buffer indexing or token eviction.
+  // We only check that a single prefill chunk doesn't exceed max_seq_len.
+  ET_CHECK_OR_RETURN_ERROR(
+      num_prompt_tokens <= max_seq_len,
+      InvalidArgument,
+      "num_prompt_tokens %d > max_seq_len %" PRId64
+      ", Single prefill chunk too large - please reduce prompt size or increase max_seq_len",
+      num_prompt_tokens,
+      max_seq_len);
+
+  // Determine max_new_tokens using the GenerationConfig's resolve method.
+  // For sliding window models, we use max_context_len directly (not reduced by pos_)
+  // because the model handles position wrapping internally via ring buffer.
+  int max_new_tokens =
+      config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
+  
+  // TEMPORARY: For sliding window / infinite context testing,
+  // override max_new_tokens to allow unlimited generation
+  if (max_new_tokens <= 0) {
+    max_new_tokens = 1000000;  // Effectively unlimited
+  }
+  // If user specified seq_len, use that instead
+  if (config.seq_len > 0 && config.seq_len > max_new_tokens) {
+    max_new_tokens = config.seq_len;
+  }
+
+  ET_LOG(
+      Info,
+      "Max new tokens resolved: %d, given pos_ %" PRId64
+      ", num_prompt_tokens %zu, max_context_len %" PRId64,
+      max_new_tokens,
+      pos_,
+      prompt_tokens.size(),
+      max_context_len);
+  ET_CHECK_OR_RETURN_ERROR(
+      max_new_tokens > 0,
+      InvalidArgument,
+      "Max new tokens %d is less than or equal to 0",
+      max_new_tokens);
+  // Prefill first
+  // Here feed all tokens to the model and get the next predicted token
+  // after the prompt. After that we will enter generate loop.
+
+  // print prompts
+  if (config.echo) {
+    wrapped_callback(prompt);
+  }
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos_);
+  ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
+  uint64_t cur_token = prefill_res.get();
+  stats_->first_token_ms = time_in_ms();
+  stats_->prompt_eval_end_ms = time_in_ms();
+
+  // print the first token from prefill. No prev_token so use cur_token for it.
+  auto decode_result = tokenizer_->decode(cur_token, cur_token);
+  if (!decode_result.ok()) {
+    ET_LOG(
+        Error,
+        "Tokenizers error code %d",
+        static_cast<uint32_t>(decode_result.error()));
+    return ::executorch::runtime::Error::InvalidArgument;
+  }
+  wrapped_callback(std::move(*decode_result));
+  RUNNER_ET_LOG(
+      config.warming,
+      "RSS after prompt prefill: %f MiB (0 if unsupported)",
+      get_rss_bytes() / 1024.0 / 1024.0);
+
+  // start the main loop
+  prompt_tokens.push_back(cur_token);
+
+  // Set ignore_eos based on config
+  text_token_generator_->set_ignore_eos(config.ignore_eos);
+
+  // Generate max_new_tokens - 1 because prefill already generated 1 token.
+  auto generate_result = text_token_generator_->generate(
+      prompt_tokens,
+      pos_,
+      max_new_tokens - 1,
+      temperature_ == -1.0f ? config.temperature : temperature_,
+      wrapped_callback);
+  if (!generate_result.ok()) {
+    return generate_result.error();
+  }
+  int64_t num_generated_tokens = generate_result.get();
+
+  pos_ += num_generated_tokens;
+
+  stats_->inference_end_ms = time_in_ms();
+  if (!config.warming) {
+    printf("\n");
+  }
+  RUNNER_ET_LOG(
+      config.warming,
+      "RSS after finishing text generation: %f MiB (0 if unsupported)",
+      get_rss_bytes() / 1024.0 / 1024.0);
+
+  if (num_generated_tokens == max_new_tokens) {
+    RUNNER_ET_LOG(config.warming, "Max new tokens %i reached!", max_new_tokens);
+  }
+
+  stats_->num_prompt_tokens = num_prompt_tokens;
+  stats_->num_generated_tokens = num_generated_tokens;
+
+  if (config.warming) {
+    ET_LOG(Info, "Warmup run finished!");
+  } else {
+    // Do not print report during warmup
+    print_report(*stats_);
+  }
+  if (stats_callback) {
+    stats_callback(*stats_);
+  }
+
+  return Error::Ok;
+}
+
+Error TextLLMRunner::prefill(
+    const std::string& prompt,
+    const GenerationConfig& config) {
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
+
+  ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
+      prompt,
+      /*bos=*/config.num_bos,
+      /*eos=*/config.num_eos);
+
+  ET_CHECK_TK_OK_OR_RETURN_ERROR(
+      encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
+
+  // encode the (string) prompt into tokens sequence
+  std::vector<uint64_t> prompt_tokens = encode_res.get();
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos_);
+  ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
+  return Error::Ok;
+}
+
+Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
+  // Create a GenerationConfig for warmup
+  GenerationConfig config;
+  config.echo = false;
+  config.max_new_tokens = max_new_tokens;
+  config.warming = true;
+
+  // Call generate with the warmup config
+  Error err = generate(prompt, config);
+
+  // Reset stats after warmup, not resetting the std::unique_ptr!
+  reset();
+  return err;
+}
+
+void TextLLMRunner::stop() {
+  if (is_loaded()) {
+    text_token_generator_->stop();
+  } else {
+    ET_LOG(Error, "Token generator is not loaded, cannot stop");
+  }
+}
+
+void TextLLMRunner::reset() {
+  stats_->reset();
+  pos_ = 0;
+}
+
+} // namespace executorch::extension::llm
