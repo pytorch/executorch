@@ -118,13 +118,13 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 ```
 
 #### LLAMA3.2 1B Instruct
-Default example using kv mode.
+Default example using hybrid mode.
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
 ```
 
 #### LLAMA3.2 3B Instruct
-Default example using kv mode.
+Default example using hybrid mode.
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
 ```
@@ -435,3 +435,47 @@ Example:
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods sqnr_eval
 ```
+
+#### Use attention sink for multi-turn conversations
+Attention sink is a way to evict cache when maximum context length be reached.
+There are two mainly concept for attention sink:
+
+1. **Maintain Attention Sinks**: Always include several initial tokens as attention sinks in the kv cache.
+2. **Redefine Positional Context**: Use positions relative to the cache instead of absolute positions from the original text, enhancing relevance and coherence in generated responses.
+
+<figure>
+    <img src="assets/AttentionSinkFeature.png" alt="Attention Sink Feature">
+    <figcaption>This figure shows how the attention sink operates for the kv cache in LLMs when `max_context_len = 8`, `sink_size = 4`, and `eviction_batch_size = 2`. The yellow blocks represent sink tokens, blue blocks indicate the remaining tokens, and the red blocks show the newly generated token.
+    </figcaption>
+</figure>
+
+This feature supports fluent multi-turn conversations and manages long-context scenarios. To enable it, set `--use_attention_sink <sink_size>,<batch_eviction_size>`.
+
+##### Explanation of Parameters Related to Attention Sink:
+1. **`--max_seq_len`**: Maximum sequence length the model can generate
+2. **`--max_context_len`**: Maximum length of the model's memory/cache, including both prompt tokens and generated tokens
+3. **`<sink_size>`**: Always include `sink_size` initial tokens as attention sinks in the kv cache.
+4. **`<batch_eviction_size>`**: How many tokens to evict from the cache at once when the cache is full. 
+
+Example:
+```bash
+# Compile llama pte file and attention sink evictor pte file with sink_size = 4 and batch_eviction_size = 64
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --max_context_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1 --use_attention_sink 4,64 --compile_only
+```
+
+After running this, the `attention_sink_evictor.pte` file will be generated in the artifacts directory. This file is necessary for using the attention sink feature, as it handles removing the `eviction_batch_size` tokens from the kv cache, retaining the first `sink_size` tokens, and re-rotating the remaining tokens in the kv cache.
+
+For multi-turn conversations or scenarios with long context using attention sink, you can set max_seq_len higher than the max_context_len used during compilation:
+```bash
+# Run llama with attention sink in multi-turn conversation scenario
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --prompt "I would like to learn python, could you teach me with a simple example?" "Could you give more difficult example in python?" "Could you add a GUI for this game?" "Could you tell me more about tkinter?" "Is possible to deploy on website?" ---pre_gen_pte ${PATH_TO_ARTIFACT_IN_1ST_RUN}  --use_attention_sink 4,64 
+```
+
+If you want to modify `sink_size` or `batch_eviction_size`, or if you have a pre-compiled llm pte file and wish to use the attention sink feature, you can recompile the `attention_sink_evictor.pte` with different attention sink config.
+
+```bash
+# Compile attention sink evictor pte file with sink_size = 4 and batch_eviction_size = 128
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --prompt "I would like to learn python, could you teach me with a simple example?" "Could you give more difficult example in python?" "Could you add a GUI for this game?" "Could you tell me more about tkinter?" "Is possible to deploy on website?" ---pre_gen_pte ${PATH_TO_ARTIFACT_IN_1ST_RUN}  --use_attention_sink 4,128 
+```
+
+Please make sure to use the same `--max_context_len`, `--prefill_ar_len`, and `--model_mode`, etc., as those used in the LLM to ensure the kv cache shape is correct.
