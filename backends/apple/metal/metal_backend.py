@@ -43,8 +43,11 @@ class MetalBackend(AotiBackend, BackendDetails):
 
     @classmethod
     def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
-        """Return Metal-specific passes (currently none)"""
-        return []
+        """Return Metal-specific passes"""
+        from executorch.backends.apple.metal.passes.decompose_linear_pass import (
+            DecomposeLinearPass,
+        )
+        return [DecomposeLinearPass()]
 
     @classmethod
     def get_aoti_compile_options(
