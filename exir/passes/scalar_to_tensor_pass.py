@@ -7,10 +7,14 @@
 # pyre-strict
 
 import torch
-from executorch.exir.pass_base import ExportPass, map_args
+from executorch.exir.pass_base import ExportPass, map_args, PassResult
 
 
 class ScalarToTensorPass(ExportPass):
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified: bool = False
+
     # pyre-ignore
     def call_operator(self, op, args, kwargs, meta):
         # pyre-ignore
@@ -21,12 +25,20 @@ class ScalarToTensorPass(ExportPass):
             # get a constant tensor with torch.tensor() call but instead
             # a fake tensor is created.
             with torch.utils._python_dispatch._disable_current_modes():
-                return (
-                    torch.tensor(value)
-                    if isinstance(value, (float, int, bool))
-                    and isinstance(arg.type, torch.TensorType)
-                    else value
-                )
+                if isinstance(value, (float, int, bool)) and isinstance(
+                    arg.type, torch.TensorType
+                ):
+                    self._modified = True
+                    return torch.tensor(value)
+
+                return value
 
         args, kwargs = map_args(op, try_coerce, args, kwargs)
         return super().call_operator(op, args, kwargs, meta)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        graph_module = super().call(graph_module).graph_module
+        modified = self._modified
+        self._modified = False
+        return PassResult(graph_module, modified)

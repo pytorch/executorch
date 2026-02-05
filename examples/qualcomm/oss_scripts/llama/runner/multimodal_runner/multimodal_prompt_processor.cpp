@@ -212,7 +212,8 @@ template <typename T>
 Result<uint64_t> MultimodalPromptProcessor<T>::prefill(
     const TensorStruct<float>& prompt_embedding,
     int64_t start_pos,
-    bool dump_logits) {
+    bool dump_logits,
+    AttentionSinkRopeRunner* attention_sink_rope_runner) {
   int32_t num_prompt_tokens = prompt_embedding.tensor->size(1);
   if (!is_bert()) {
     ET_CHECK_MSG(
