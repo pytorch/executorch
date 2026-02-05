@@ -51,16 +51,16 @@ Backends are the bridge between your exported model and the hardware it runs on.
 :hidden:
 :caption: Backend Overview
 
-backends-xnnpack
+backends/xnnpack/xnnpack-overview
 backends/cuda/cuda-overview
 backends/coreml/coreml-overview
-backends-mps
-backends-vulkan
+backends/mps/mps-overview
+backends/vulkan/vulkan-overview
 backends-qualcomm
 backends-mediatek
-backends-arm-ethos-u
-backends-arm-vgf
+backends/arm-ethos-u/arm-ethos-u-overview
+backends/arm-vgf/arm-vgf-overview
 build-run-openvino
-backends-nxp
+backends/nxp/nxp-overview
 backends-cadence
-backends-samsung-exynos
+backends/samsung/samsung-overview

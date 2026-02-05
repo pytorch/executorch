@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -177,6 +177,7 @@ class QuantizationConfig:
             torch.ops.aten.conv2d.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.conv2d.padding,
+            torch.ops.aten.conv_transpose2d.input,
             torch.ops.aten.conv3d.default,
             torch.ops.aten.conv3d.padding,
         ]:
@@ -202,6 +203,12 @@ class QuantizationConfig:
                 if self.weight is not None:
                     if qscheme == torch.per_channel_symmetric:
                         ch_axis = self.weight.ch_axis
+                        if (
+                            node.target == torch.ops.aten.conv_transpose2d.input
+                            and ch_axis is not None
+                        ):
+                            # Bias is 1-D so channel axis is always 0 even for transpose conv
+                            ch_axis = 0
 
                 quantization_spec = DerivedQuantizationSpec(
                     derived_from=[(input_act, node), (weight, node)],  # type: ignore[list-item]

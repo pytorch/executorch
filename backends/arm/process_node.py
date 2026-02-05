@@ -91,7 +91,7 @@ def process_inputs(
     tosa_graph: Any,
     tosa_spec: TosaSpecification,
 ):
-    """Serialize an input node"""
+    """Serialize an input node."""
     try:
         tosa_arg = TosaArg(node, tosa_spec)
     except ValueError as e:
@@ -117,7 +117,7 @@ def process_inputs_to_parameters(
     edge_program: ExportedProgram,
     tosa_spec: TosaSpecification,
 ):
-    """Serialize bias and non-quantized weights"""
+    """Serialize bias and non-quantized weights."""
     try:
         tosa_arg = TosaArg(node, tosa_spec)
     except ValueError as e:
@@ -147,7 +147,7 @@ def process_inputs_to_buffers(
     edge_program: ExportedProgram,
     tosa_spec: TosaSpecification,
 ):
-    """Serialize quantized weights"""
+    """Serialize quantized weights."""
     try:
         tosa_arg = TosaArg(node, tosa_spec)
     except ValueError as e:
@@ -196,7 +196,9 @@ def process_inputs_to_lifted_tensor_constants(
 def _is_submodule_input(
     node: torch.fx.Node, containing_graph_module: torch.fx.GraphModule
 ) -> bool:
-    """Determines whether 'node' is an input to a submodule of 'containing_graph_module'."""
+    """Determines whether 'node' is an input to a submodule of
+    'containing_graph_module'.
+    """
     if node.op != "placeholder":
         return False
     return node.meta.get("is_input", False)
@@ -209,7 +211,7 @@ def process_placeholder(
     containing_graph_module: torch.fx.GraphModule | None,
     tosa_spec: TosaSpecification,
 ):
-    """Wrapper for processing and serializing all types of placeholders"""
+    """Wrapper for processing and serializing all types of placeholders."""
     if node.name != node.target:
         raise ValueError(
             f"Placeholder name '{node.name}' does not match target '{node.target}'"

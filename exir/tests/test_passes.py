@@ -85,6 +85,9 @@ from functorch.experimental import control_flow
 
 from torch import nn
 from torch._prims_common import ELEMENTWISE_TYPE_PROMOTION_KIND
+
+# Import passes
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
@@ -539,28 +542,40 @@ class TestPasses(unittest.TestCase):
             self.assertEqual(new_node.target, old_node.target)
 
     def test_export_scalar_to_tensor_pass(self) -> None:
-        class Mul(torch.nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x * 3.14
-
-        mul = Mul()
-
-        expo_prog = to_edge(export(mul, (torch.ones(1),), strict=True))
-        new_prog = expo_prog.transform([ScalarToTensorPass()])
-        self.assertIsNotNone(new_prog.exported_program().graph_module)
-        new_graph_module = new_prog.exported_program().graph_module
-
-        inp = torch.zeros(1)
-        self.assertTrue(
-            torch.allclose(
-                expo_prog.exported_program().module()(inp),
-                new_prog.exported_program().module()(inp),
-            )
+        # Build a graph with a scalar argument where schema expects tensor
+        graph = torch.fx.Graph()
+        test_input = torch.randn(
+            1,
         )
-        for node in new_graph_module.graph.nodes:
+        with FakeTensorMode() as fake_mode:
+            fake_input = fake_mode.from_tensor(test_input)
+            x = graph.placeholder("x")
+            x.meta["val"] = fake_input
+
+        # Pass 3.14 as scalar - this should be converted to tensor by the pass
+        mul_node = graph.call_function(
+            torch.ops.aten.mul.Tensor,
+            args=(x, 3.14),
+        )
+        graph.output(mul_node)
+
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+        original_output = gm(test_input)
+
+        result = ScalarToTensorPass()(gm)
+        new_gm = result.graph_module
+        self.assertTrue(result.modified)
+        # All scalars should be tensors by this point, so running a second time should not modify
+        self.assertFalse(ScalarToTensorPass()(new_gm).modified)
+
+        # All scalars should be converted into nodes
+        for node in new_gm.graph.nodes:
             if node.op == "call_function":
-                for arg in node.args + tuple(node.kwargs.values()):
-                    self.assertFalse(isinstance(arg, float))
+                for arg in node.args:
+                    self.assertTrue(isinstance(arg, torch.fx.Node))
+
+        new_output = new_gm(test_input)
+        self.assertTrue(torch.equal(original_output, new_output))
 
     def test_remove_mixed_types_symfloats(self) -> None:
         class Foo(torch.nn.Module):

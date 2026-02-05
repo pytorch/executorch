@@ -33,19 +33,14 @@ class ConvertToCortexMPass(XNNPACKPass):
     by call_operator.
     """
 
-    def _compute_kernel_sum(
-        self, weights_transposed, bias, input_offset, weight_offset
-    ):
+    def _compute_kernel_sum(self, weights, bias, input_offset, weight_offset):
         """
         Computes the precomputed kernel sum term (bias optional)
             a * sum_j(wij + b) + ci
 
         for i = (1, ..., n), where j indexes the input activations.
-
-        Args:
-            weights_transposed: Weights already in [in_features, out_features] format
         """
-        # No transpose needed - weights already transposed by caller
+        weights_transposed = weights.T
         weights_int32 = weights_transposed.to(torch.int32)
         offset_weights = weights_int32 + weight_offset
         kernel_sum = torch.sum(offset_weights, dim=0, keepdim=True, dtype=torch.int32)
@@ -115,12 +110,8 @@ class ConvertToCortexMPass(XNNPACKPass):
             if len(node.args) > 2
             else None
         )
-        # Transpose weights once from PyTorch format [out_features, in_features]
-        # to CMSIS-NN format [in_features, out_features]
-        weights_transposed = weights_tensor.T.contiguous()
-        # Pass already-transposed weights to kernel_sum computation
         kernel_sum_tensor = self._compute_kernel_sum(
-            weights_transposed, bias_tensor, -input_zp, -weight_zp
+            weights_tensor, bias_tensor, -input_zp, -weight_zp
         )
         with node.graph.inserting_after(weights):
             kernel_sum = create_constant_placeholder(
@@ -131,17 +122,9 @@ class ConvertToCortexMPass(XNNPACKPass):
                 kernel_sum_tensor,
             )
 
-            weights_transposed_node = create_constant_placeholder(
-                self.exported_program,
-                node.graph,
-                node.name + "_weights_transposed",
-                InputKind.PARAMETER,
-                weights_transposed,
-            )
-
         args = (
             node.args[0],
-            weights_transposed_node,
+            weights,
             None,
             kernel_sum,
             -input_zp,

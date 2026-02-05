@@ -12,6 +12,7 @@ Constraints:
 - args: exactly (input, dim, index)
 - input rank must be >= 1 and dtype compatible with the active TOSA spec
 - index must be rank-1 and dtype int32
+
 """
 
 import torch
@@ -30,11 +31,6 @@ class IndexSelectSupported(SupportedTOSAOperatorCheck):
     """Provide TOSA support check for ``aten.index_select``."""
 
     targets = [exir_ops.edge.aten.index_select.default]
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification

@@ -130,8 +130,7 @@ def main(args):
     # accuracy analysis
     adb.push(inputs=inputs)
     adb.execute()
-    adb.pull(output_path=args.artifact)
-
+    adb.pull(host_output_path=args.artifact)
     # since the original nn.Module could not perform well on this task either
     # we only measure the relative accuracy here
     goldens, predictions, nominal_predictions = [], [], []

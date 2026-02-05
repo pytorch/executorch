@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -24,10 +24,12 @@ def validate_conv2d_args_dtypes(
 ) -> torch.dtype:
     output_dtype = None
     supported_int_types = (torch.int8, torch.int16)
-    supported_float_types = (
+    supported_float_types = [
         torch.float16,
         torch.float32,
-    )
+    ]
+    if tosa_spec.support_extension("bf16"):
+        supported_float_types.append(torch.bfloat16)
     if x.dtype in supported_int_types:
         if not tosa_spec.support_integer():
             raise TosaValueError(
@@ -64,8 +66,12 @@ def validate_conv2d_args_dtypes(
             )
         output_dtype = x.dtype
     else:
+        supported_types = (
+            *(supported_int_types if tosa_spec.support_integer() else ()),
+            *(supported_float_types if tosa_spec.support_float() else ()),
+        )
         raise TosaValueError(
-            f"Unsupported input dtype {x.dtype}, supported types are {supported_int_types + supported_float_types} ",
+            f"Unsupported input dtype {x.dtype}, supported types are {supported_types} ",
             op=op,
         )
     return output_dtype
@@ -78,10 +84,7 @@ def validate_conv2d_args_dtypes(
     "int[2] stride, "
     "int[4] pad, "
     "int[2] dilation) -> Tensor",  # schema
-    (
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-    ),  # target TOSA specifications
+    TosaSpecification.all_versions_and_profiles(),  # target TOSA specifications
 )
 def CONV2D(
     x: torch.Tensor,

@@ -28,6 +28,9 @@ struct GenerationConfig {
   // Whether to echo the input prompt in the output
   bool echo = true;
 
+  // Whether to ignore EOS token and continue generating until max_new_tokens
+  bool ignore_eos = false;
+
   // Maximum number of new tokens to generate
   // If the max_context_len metadata that's serialized in the .pte file exists,
   // then the number of prompt tokens + max_new_tokens won't exceed

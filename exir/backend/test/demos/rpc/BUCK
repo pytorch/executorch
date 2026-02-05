@@ -1,8 +1,79 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain xplat-only targets.
 
 load(":targets.bzl", "define_common_targets")
 
-oncall("executorch")
 
-define_common_targets()
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/exir/backend/test/demos/rpc/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "executor_backend_preprocess",
+    srcs = [
+        "executor_backend_preprocess.py",
+    ],
+    visibility = [
+        "//executorch/exir/backend/test/...",
+        "//executorch/test/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_details",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//nodeapi/py:base",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "executor_backend_partitioner",
+    srcs = [
+        "executor_backend_partitioner.py",
+    ],
+    visibility = [
+        "//executorch/exir/backend/test/...",
+        "//executorch/exir/emit/test/...",
+    ],
+    deps = [
+        ":executor_backend_preprocess",
+        "//caffe2:torch",
+        "//executorch/exir:graph_module",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir/backend/test:backend_with_compiler_demo",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_rpc",
+    srcs = [
+        "test_rpc.py",
+    ],
+    preload_deps = [
+        "//executorch/configurations:optimized_native_cpu_ops",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        # the executor backend is prebuilt and linked when building the unit test binary. When it's linked, it'll register the backend.
+        # It can also be loaded in PyThon runtime via torch.ops.load_library("//executorch/exir/backend/test/demos/rpc:executor_backend")
+        # However, it's a better practice to build/link everything at earlier stage, instead of during runtime
+        "//executorch/exir/backend/test/demos/rpc:executor_backend_register",
+    ],
+    deps = [
+        ":executor_backend_partitioner",
+        ":executor_backend_preprocess",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend/test:op_partitioner_demo",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+    ],
+)

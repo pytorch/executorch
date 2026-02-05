@@ -14,4 +14,5 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     scatter,
     table,
     transpose,
+    transpose_conv2d,
 )

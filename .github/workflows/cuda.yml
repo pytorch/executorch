@@ -71,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: [linear, add, add_mul, resnet18, conv1d, sdpa]
+        model: [linear, add, add_mul, resnet18, conv1d, sdpa, mv2, mv3]
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -150,15 +150,6 @@ jobs:
               repo: "google"
               name: "gemma-3-4b-it"
             quant: "quantized-int4-weight-only"
-          # Parakeet only supports non-quantized
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
-            quant: "quantized-int4-tile-packed"
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
-            quant: "quantized-int4-weight-only"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -218,15 +209,6 @@ jobs:
           - model:
               repo: "google"
               name: "gemma-3-4b-it"
-            quant: "quantized-int4-weight-only"
-          # Parakeet only supports non-quantized
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
-            quant: "quantized-int4-tile-packed"
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
             quant: "quantized-int4-weight-only"
     with:
       timeout: 90

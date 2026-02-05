@@ -33,7 +33,7 @@ set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 
 find_package(CUDAToolkit REQUIRED)
 
-# Use ExecutorTorch's standard way to find PyTorch libraries for AOTI
+# Use ExecuTorch's standard way to find PyTorch libraries for AOTI
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
@@ -99,12 +99,14 @@ install(
 
 # CUDA-specific AOTI shim symbols (dynamically linked)
 set(_aoti_cuda_shim_sources
-    runtime/shims/memory.cpp runtime/shims/tensor_attribute.cpp
-    runtime/guard.cpp runtime/shims/cuda_guard.cpp runtime/shims/int4mm.cu
-    ${EXECUTORCH_ROOT}/backends/aoti/common_shims.cpp
+    runtime/shims/memory.cpp runtime/shims/cuda_guard.cpp
+    runtime/shims/int4mm.cu
 )
 
 add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
+
+# Define CUDA_AVAILABLE to use SlimTensor on GPU in common_shims_slim.h
+target_compile_definitions(aoti_cuda_shims PRIVATE CUDA_AVAILABLE=1)
 
 # Define export macros for shared library
 if(MSVC)
@@ -134,11 +136,17 @@ target_link_options(
 )
 
 # Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and
-# platform utilities
+# platform utilities. Use --whole-archive for aoti_common_shims_slim to ensure
+# all symbols are exported from this shared library.
 target_link_libraries(
   aoti_cuda_shims
   PRIVATE cuda_platform
-  PUBLIC extension_tensor cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
+  PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--whole-archive>
+         aoti_common_shims_slim
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--no-whole-archive>
+         cuda_tensor_maker
+         CUDA::cudart
+         ${CMAKE_DL_LIBS}
 )
 
 if(NOT MSVC)

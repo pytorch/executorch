@@ -44,7 +44,7 @@ Note that the pre-compiled context binaries could not be further fine-tuned for 
 
 #### Step2: Prepare Model
 1. Create account for https://aihub.qualcomm.com/
-2. Follow instructions in https://huggingface.co/qualcomm/Llama-v3-8B-Chat to export context binaries (will take some time to finish)
+2. Follow instructions in https://huggingface.co/qualcomm/Llama-v3-8B-Chat to export context binaries (will take some time to finish) <!-- @lint-ignore -->
 3. For Llama 3 tokenizer, please refer to https://github.com/meta-llama/llama-models/blob/main/README.md for further instructions on how to download tokenizer.model.
 
 #### Step3: Verify context binary's version

@@ -1,6 +1,10 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-diffusers[torch] == 0.33.1
+diffusers[torch] @ git+https://github.com/huggingface/diffusers.git@a7cb14efbe4b255f4c8721c91a04f0ef40f4a05a
+# ng_model_gym deps needed by NSS model tests
+pydantic
+slangtorch
+rich

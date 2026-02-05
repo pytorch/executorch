@@ -1,8 +1,301 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain xplat-only targets.
 
 load(":targets.bzl", "define_common_targets")
 
-oncall("executorch")
 
-define_common_targets()
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/examples/models/llama/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "llama_transformer",
+    srcs = [
+        "llama_transformer.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    visibility = ["PUBLIC"],
+    deps = [
+        ":transformer_modules",
+        "//caffe2:torch",
+        "//executorch/examples/models/lfm2:lfm2",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "transformer_modules",
+    srcs = [
+        "feed_forward.py",
+        "lora.py",
+        "rope.py",
+        "attention.py",
+        "model_args.py",
+        "norm.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "static_attention",
+    srcs = [
+        "static_attention.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    visibility = ["PUBLIC"],
+    deps = [
+        ":llama_transformer",
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "llama2_model",
+    srcs = [
+        "__init__.py",
+        "fairseq2.py",
+        "model.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    resources = {
+        "//executorch/examples/models/llama/params:params": "params",
+    },
+    visibility = [
+        "//bento/...",
+        "//bento_kernels/...",
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models:model_base",
+        "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/extension/llm/export/config:llm_config",
+        "//executorch/examples/models:checkpoint",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "export_llama",
+    main_function = "executorch.examples.models.llama.export_llama.main",
+    # visibility = ["//executorch/examples/..."],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/kernels/quantized:aot_lib",
+    ],
+    deps = [
+        ":export_library",
+        ":eval_library",
+        "//caffe2:torch",
+        "//executorch/extension/pybindings:aten_lib",
+        "//executorch/extension/llm/export:export_llm_lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.command_alias,
+    name = "export_llama_qnn",
+    env = {
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
+    },
+    exe = ":export_llama",
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "source_transformation",
+    visibility = ["PUBLIC"],
+    srcs = [
+        "source_transformation/apply_spin_quant_r1_r2.py",
+        "source_transformation/attention.py",
+        "source_transformation/lora.py",
+        "source_transformation/pre_quantization.py",
+        "source_transformation/prune_vocab.py",
+        "source_transformation/quantize.py",
+        "source_transformation/custom_kv_cache.py",
+        "source_transformation/rms_norm.py",
+        "source_transformation/rope.py",
+        "source_transformation/sdpa.py",
+        "source_transformation/spin_quant.py",
+        "source_transformation/attention_sink.py",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "hf_download",
+    srcs = [
+        "hf_download.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/huggingface-hub:huggingface-hub",
+    ]
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "export_library",
+    srcs = [
+        "export_llama.py",
+        "export_llama_lib.py",
+        "model.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    visibility = ["PUBLIC"],
+    deps = [
+        ":hf_download",
+        ":source_transformation",
+        "//ai_codesign/gen_ai/fast_hadamard_transform:fast_hadamard_transform",
+        "//caffe2:torch",
+        "//executorch/extension/llm/export/config:llm_config",
+        "//executorch/backends/vulkan/_passes:vulkan_passes",
+        "//executorch/exir/passes:external_constants_pass",
+        "//executorch/exir/passes:init_mutable_pass",
+        "//executorch/examples/models:model_base",
+        "//executorch/examples/models:models",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+        "//executorch/extension/llm/export:export_lib",
+        # one definition has to be included in the user of the libarary
+        # depending on what library the client wants to use
+        # "//executorch/extension/pybindings:aten_lib",
+        # "//executorch/extension/pybindings:portable_lib",
+        # "//executorch/extension/pybindings:portable_lib_plus_custom",
+        "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/devtools/etrecord:etrecord",
+        "//executorch/util:memory_profiler",
+        "//executorch/util:python_profiler",
+        "fbsource//third-party/pypi/coremltools:coremltools",
+        "fbsource//third-party/pypi/sentencepiece:sentencepiece",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "eval_llama",
+    main_function = "executorch.examples.models.llama.eval_llama.main",
+    deps = [
+        ":eval_library",
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "eval_library",
+    srcs = [
+        "eval_llama.py",
+        "eval_llama_lib.py",
+        "evaluate/eager_eval.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    visibility = ["PUBLIC"],
+    deps = [
+        "fbsource//third-party/pypi/tqdm:tqdm",
+        "fbsource//third-party/pypi/datasets:datasets",
+        "fbsource//third-party/pypi/lm-eval:lm-eval",
+        "fbsource//third-party/pypi/tiktoken:tiktoken",
+        ":export_library",
+        "//executorch/examples/models/llama/tokenizer:tiktoken_py",
+        "//executorch/extension/llm/export:export_lib",
+        "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "custom_kv_cache",
+    srcs = [
+        "source_transformation/custom_kv_cache.py",
+    ],
+    _is_external_target = True,
+    visibility = ["//executorch/..."],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "sdpa",
+    srcs = [
+        "source_transformation/sdpa.py",
+    ],
+    _is_external_target = True,
+    visibility = ["//executorch/..."],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "quantized_kv_cache_test",
+    srcs = [
+        "source_transformation/test_quantized_kv_cache.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+    ],
+    deps = [
+        ":custom_kv_cache",
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "quantized_sdpa_with_kv_cache_test",
+    srcs = [
+        "source_transformation/test_sdpa_with_quantized_kv_cache.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+    ],
+    deps = [
+        ":custom_kv_cache",
+        ":sdpa",
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "attention_sink_test",
+    srcs = [
+        "source_transformation/test_attention_sink.py",
+    ],
+    supports_static_listing = False,
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        "//caffe2:torch",
+        ":export_library",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "quantized_sdpa_source_transform_test",
+    srcs = [
+        "source_transformation/test_quantized_sdpa.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+    ],
+    deps = [
+        ":custom_kv_cache",
+        ":sdpa",
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)

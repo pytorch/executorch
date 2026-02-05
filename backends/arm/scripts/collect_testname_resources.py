@@ -35,6 +35,7 @@ _CUSTOM_EDGE_OPS = [
     "linear.default",
     "maximum.default",
     "mean.default",
+    "log1p.default",
     "multihead_attention.default",
     "adaptive_avg_pool2d.default",
     "bitwise_right_shift.Tensor",
@@ -58,6 +59,7 @@ _CUSTOM_EDGE_OPS = [
     "upsample_bilinear2d.vec",
     "upsample_nearest2d.vec",
     "index_put.default",
+    "conv_transpose2d.default",
 ]
 _ALL_EDGE_OPS = _SAMPLE_INPUT.keys() | _CUSTOM_EDGE_OPS
 

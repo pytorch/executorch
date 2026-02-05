@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -34,15 +34,22 @@ test_data_suite = {
     "ramp": lambda: (torch.arange(0.01, 20, 0.2)),
 }
 
+test_data_suite_bf16 = {
+    "rand_bf16": lambda: (torch.rand(6, 6, dtype=torch.bfloat16) + 1),
+    "ramp_bf16": lambda: (torch.arange(0.5, 8, 0.5, dtype=torch.bfloat16)),
+}
+
 
 class Log(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.log(x)
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_log_tosa_FP(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](Log(), (test_data(),), aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t1](
+        Log(), (test_data(),), aten_op, exir_op, tosa_extensions=["bf16"]
+    )
     pipeline.run()
 
 

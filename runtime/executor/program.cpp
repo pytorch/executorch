@@ -402,12 +402,16 @@ Result<const void*> Program::get_constant_buffer_data(
     const auto& constant_buffer = *constant_buffer_ptr;
     const auto* storage = constant_buffer[buffer_index]->storage();
     auto storage_size = storage == nullptr ? 0 : storage->size();
+    // nbytes (requested from the program) should be less than storage_size
+    // (size of the constant buffer from PTE), to prevent reading out of bounds.
+    // in some cases storage size may be larger than nbytes because of padding;
+    // executorch-tensor-alignment, or 16 by default.
     ET_CHECK_OR_RETURN_ERROR(
-        storage_size <= nbytes,
+        nbytes <= storage_size,
         InvalidArgument,
-        "Constant buffer size %zu larger than allocated nbytes %zu",
-        static_cast<size_t>(constant_buffer[buffer_index]->storage()->size()),
-        nbytes);
+        "Requested nbytes %zu exceeds constant buffer storage size %zu",
+        nbytes,
+        static_cast<size_t>(storage_size));
 
     return storage->data();
   }

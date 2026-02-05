@@ -2,8 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""
-Declare operator support for ``edge.aten.gather`` in TOSA.
+"""Declare operator support for ``edge.aten.gather`` in TOSA.
 
 This support check matches the subset accepted by CanonicalizeGatherPass:
 
@@ -28,6 +27,7 @@ Note:
   indices as [N, W],then lowers via the TOSA gather dialect.
 - For 3D inputs CanonicalizeGatherPass permutes and reshapes values and indices
   to [N*C, K, 1] and [N*C, W] respectively, then lowers via the TOSA gather dialect.
+
 """
 
 from typing import cast
@@ -48,11 +48,6 @@ class GatherSupported(SupportedTOSAOperatorCheck):
     """Provide TOSA support check for ``edge.aten.gather``."""
 
     targets = [exir_ops.edge.aten.gather.default]
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
@@ -120,8 +115,16 @@ class GatherSupported(SupportedTOSAOperatorCheck):
                     f"{node.target}: dtype {values_dtype} requires INT profile.",
                 )
                 return False
-        # fp16/fp32: either FP profile, or INT profile (via quantization)
-        elif values_dtype in (torch.float16, torch.float32):
+        # fp16/fp32/bf16: either FP profile, or INT profile (via quantization)
+        elif values_dtype in (torch.float16, torch.float32, torch.bfloat16):
+            if values_dtype == torch.bfloat16 and not tosa_spec.support_extension(
+                "bf16"
+            ):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires bf16 extension.",
+                )
+                return False
             if not (tosa_spec.support_float() or tosa_spec.support_integer()):
                 self.reporter.report_reject(
                     node,
@@ -133,7 +136,7 @@ class GatherSupported(SupportedTOSAOperatorCheck):
             self.reporter.report_reject(
                 node,
                 f"{node.target}: unsupported values dtype {values_dtype}; "
-                "expected bool/int8/int16/int32/float16/float32.",
+                "expected bool/int8/int16/int32/float16/bfloat16/float32.",
             )
             return False
 

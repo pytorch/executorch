@@ -26,11 +26,12 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 def binary_operator_factory(
     bw_target: str, tosa_op, attr_builder: Callable[[Any], None]
 ):
-    """Creates and registers NodeVisitors for operators that have two inputs and map directly to a TOSA op."""
+    """Creates and registers NodeVisitors for operators that have two inputs and
+    map directly to a TOSA op.
+    """
 
     class BinaryOperator(NodeVisitor):
         target = bw_target
-        tosa_specs = NodeVisitor.tosa_specs
 
         def define_node(
             self,

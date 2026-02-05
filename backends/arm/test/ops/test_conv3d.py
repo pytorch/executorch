@@ -9,11 +9,9 @@ from typing import List, Tuple, Union
 import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
-    get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
-    TOSAQuantizer,
 )
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -22,8 +20,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 
 aten_op = "torch.ops.aten.conv3d.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
@@ -417,6 +413,59 @@ test_data_FP = {
     "3x3_1x3x28x28_st2_pd1": lambda: conv3d_3x3_1x3x28x28_st2_pd1,
 }
 
+test_data_FP_bf16 = {
+    "bf16_3x3": lambda: Conv3d(
+        height=10,
+        width=10,
+        depth=6,
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3, 3),
+        stride=(1, 1, 1),
+        padding=(1, 1, 1),
+        bias=True,
+        dtype=torch.bfloat16,
+    ),
+    "bf16_1x1": lambda: Conv3d(
+        height=6,
+        width=6,
+        depth=4,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=(1, 1, 1),
+        stride=(1, 1, 1),
+        padding=(0, 0, 0),
+        bias=False,
+        dtype=torch.bfloat16,
+    ),
+}
+test_data_FP_fp16 = {
+    "fp16_3x3": lambda: Conv3d(
+        height=10,
+        width=10,
+        depth=6,
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3, 3),
+        stride=(1, 1, 1),
+        padding=(1, 1, 1),
+        bias=True,
+        dtype=torch.float16,
+    ),
+    "fp16_1x1": lambda: Conv3d(
+        height=6,
+        width=6,
+        depth=4,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=(1, 1, 1),
+        stride=(1, 1, 1),
+        padding=(0, 0, 0),
+        bias=False,
+        dtype=torch.float16,
+    ),
+}
+
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -440,32 +489,18 @@ def _get_dtype_count(model: torch.nn.Module):
     }
 
 
-def get_symmetric_a16w8_conv3d_quantizer(per_channel_quantization: bool = False):
-    tosa_version = conftest.get_option("tosa_version")
-    tosa_profiles = {
-        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
-    }
-
-    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-    quant_config = get_symmetric_a16w8_quantization_config(
-        is_per_channel=per_channel_quantization
-    )
-    quantizer.set_global(quant_config)
-    quantizer.set_module_type(torch.nn.Conv3d, quant_config)
-
-    return Quantize(
-        quantizer,
-        quant_config,
-    )
-
-
 input_t = Tuple[torch.Tensor]
 
 
-@common.parametrize("test_data", test_data_FP)
+@common.parametrize("test_data", test_data_FP | test_data_FP_bf16 | test_data_FP_fp16)
 def test_convolution_3d_tosa_FP(test_data):
+    model = test_data()
     pipeline = TosaPipelineFP[input_t](
-        test_data(), test_data().get_inputs(), aten_op, exir_op
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -518,12 +553,6 @@ def test_convolution_3d_tosa_INT_a16w8(test_data):
         use_to_edge_transform_and_lower=True,
         tosa_extensions=["int16"],
         qtol=1,
-    )
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_conv3d_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
     )
     pipeline.run()
 
@@ -621,12 +650,13 @@ def test_convolution_3d_u85_INT_a8w4(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_FP)
+@common.parametrize("test_data", test_data_FP | test_data_FP_fp16)
 @common.SkipIfNoModelConverter
 def test_convolution_3d_vgf_no_quant(test_data):
+    model = test_data()
     pipeline = VgfPipeline[input_t](
-        test_data(),
-        test_data().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
         quantize=False,

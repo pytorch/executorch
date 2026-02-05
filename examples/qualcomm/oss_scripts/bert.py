@@ -130,7 +130,7 @@ def main(args):
     # accuracy analysis
     adb.push(inputs=inputs)
     adb.execute()
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
     goldens, predictions = [], []
     for i in range(len(inputs)):
         indices = [i for i, x in enumerate(targets[i]) if x != -100]

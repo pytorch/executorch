@@ -26,8 +26,6 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 class RshiftVisitor(NodeVisitor):
     target = "aten.bitwise_right_shift.Tensor"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def define_node(
         self,
         node: torch.fx.Node,
