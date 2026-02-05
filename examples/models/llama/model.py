@@ -218,7 +218,13 @@ class Llama2Model(EagerModelBase):
             window_size = int(attention_sink_params[1])
             eviction_batch_size = int(attention_sink_params[2])
 
-            assert self.llm_config.export.max_context_length == sink_size + window_size
+            # max_context_length must be >= sink_size + window_size to have enough RoPE frequencies
+            # A larger max_context_length is allowed (and recommended) to support generation beyond
+            # the sliding window size.
+            assert self.llm_config.export.max_context_length >= sink_size + window_size, (
+                f"max_context_length ({self.llm_config.export.max_context_length}) must be >= "
+                f"sink_size + window_size ({sink_size + window_size})"
+            )
 
             self.model_ = enable_attention_sink(
                 module=self.model_,

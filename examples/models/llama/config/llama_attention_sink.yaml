@@ -7,18 +7,18 @@ model:
   dtype_override: fp32
   enable_dynamic_shape: True
   # Attention Sink: "sink_size,window_size,eviction_batch_size"
-  # sink_size=4: 保留前 4 个 token (BOS + system prompt)
-  # window_size=126: 滑动窗口大小
+  # sink_size=4: Keep first 4 tokens (e.g., BOS + system prompt)
+  # window_size=124: 滑动窗口大小
   # eviction_batch_size=1: 每次驱逐 1 个 token
-  # 实际 cache 大小 = sink_size + window_size = 4 + 126 = 130
-  # 但 ring buffer 需要 2x window, 所以实际是 4 + 126*2 = 256
-  use_attention_sink: "4,126,1"
+  # KV cache size = sink_size + window_size * 2 = 4 + 124*2 = 252
+  use_attention_sink: "4,124,1"
 
 export:
-  # max_context_length = sink_size + window_size = 4 + 126 = 130
-  # 但 ring buffer 内部会创建 sink_size + window_size * 2 = 256 的缓存
-  max_context_length: 130
-  max_seq_length: 130
+  # max_context_length controls the RoPE frequency table size.
+  # It must be >= sink_size + window_size (128), but larger values are
+  # recommended to support generation beyond the sliding window.
+  # The model default (e.g., 8192 or 131072) is typically used if not specified.
+  # For testing, we use the model's default by not setting this explicitly.
 
 quantization:
   qmode: 8da4w
