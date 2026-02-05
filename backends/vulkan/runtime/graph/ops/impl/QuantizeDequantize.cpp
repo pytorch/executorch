@@ -386,6 +386,8 @@ void quantize_per_tensor_impl(
 
   const ValueRef int8_output = args[last_arg_idx];
 
+  VK_CHECK_COND(graph.dtype_of(int8_output) == vkapi::kInt8x4);
+
   // Use unified block-based dispatch for all layouts
   add_q8ta_quantize_node(graph, fp_input, scale, zero_point, int8_output);
 }
@@ -408,6 +410,8 @@ void dequantize_per_tensor_impl(
   (void)output_dtype;
 
   const ValueRef fp_output = args[last_arg_idx];
+
+  VK_CHECK_COND(graph.dtype_of(int8_input) == vkapi::kInt8x4);
 
   // Use unified block-based dispatch for all layouts
   add_q8ta_dequantize_node(graph, int8_input, scale, zero_point, fp_output);
