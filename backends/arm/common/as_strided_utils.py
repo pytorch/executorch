@@ -25,12 +25,12 @@ def to_int(value: object) -> Optional[int]:
 
 
 def maybe_static_sequence(value: object) -> Optional[Sequence]:
-    """
-    Return a Python sequence for literal or FX-constant values.
+    """Return a Python sequence for literal or FX-constant values.
 
     FX exporters often wrap constant lists in nodes where the materialised
     value is stored in ``node.meta["val"]``. This helper unwraps that so the
     rest of the logic can treat them uniformly.
+
     """
     if isinstance(value, (str, bytes)):
         return None
@@ -45,7 +45,9 @@ def maybe_static_sequence(value: object) -> Optional[Sequence]:
 
 
 def to_int_tuple(value: object) -> Optional[Tuple[int, ...]]:
-    """Best-effort conversion of a sequence of integers/SymInts to a tuple[int, ...]."""
+    """Best-effort conversion of a sequence of integers/SymInts to a tuple[int,
+    ...].
+    """
     seq = maybe_static_sequence(value)
     if seq is None:
         return None

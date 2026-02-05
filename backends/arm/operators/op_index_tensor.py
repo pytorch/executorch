@@ -30,8 +30,7 @@ class CommonIndexTensorVisitor(NodeVisitor):
         super().__init__(*args)
 
     def _get_tensor_info(self, tensor: Node):
-        """
-        Consolidates obtaining name, dtype and shape into a common function
+        """Consolidates obtaining name, dtype and shape into a common function
         reconciling access based on the type of the input.
 
         Args:
@@ -103,22 +102,25 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        """
+        """Flatten index tensors into a single index for value lookup.
+
         This approach uses the fact that all indexing tensors are incremented
-        simultaneously and they essentially act as a map along the corresponding
-        dimensions of the values tensor.
-        Note: that this does not hold true when slicing or ellipsis ops
-        are involved as such they are not currently not supported.
+        simultaneously and act as a map along the corresponding dimensions of
+        the values tensor.
 
-        As such this approach flattens out the values tensor and
-        constructs a flattened out index obtained by flattening out the
-        index tensors, multiplying them by the relevant stride and accumulating them.
+        Note: this does not hold when slicing or ellipsis ops are involved, so
+        those cases are not currently supported.
 
-        This approach suffers from the fact that we are taking a number of index tensors of
-        type int32 and applying multiplications and additions.
+        As such, this approach flattens out the values tensor and constructs a
+        flattened index obtained by flattening the index tensors, multiplying
+        them by the relevant stride, and accumulating them.
 
-        If the number of total elements in the values tensor exceeds int32 limits
-        then this approach falls apart.
+        This approach suffers from the fact that we are taking a number of index
+        tensors of type int32 and applying multiplications and additions.
+
+        If the number of total elements in the values tensor exceeds int32
+        limits, then this approach falls apart.
+
         """
 
         validate_same_dtype(self.target, [inputs[0], output])

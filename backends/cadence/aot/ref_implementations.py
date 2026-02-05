@@ -6,7 +6,8 @@
 
 # pyre-strict
 
-from typing import Callable, Protocol, TypeVar
+from pathlib import Path
+from typing import Callable, Optional, Protocol, TypeVar
 
 import torch
 import torch.nn as nn
@@ -19,8 +20,6 @@ m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
 try:
     torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
 except (OSError, RuntimeError):
-    # Fall back to path-based loading for CMake/OSS builds
-    from pathlib import Path
 
     custom_libs: list[Path] = list(
         Path(__file__)
@@ -2290,3 +2289,16 @@ def sdpa_bitwise_mask_gen(mask: torch.Tensor, threshold: float) -> torch.Tensor:
         packed_last = last_dim // 8
         # Reshape packed to match mask shape, with last dim packed to bytes
         return packed.view(*original_shape[:-1], packed_last)
+
+
+@impl_tracked(m, "slice_scatter_")
+def slice_scatter_impl(
+    self: torch.Tensor,
+    src: torch.Tensor,
+    dim: int = 0,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+    step: int = 1,
+) -> torch.Tensor:
+    self[:] = torch.ops.aten.slice_scatter.default(self, src, dim, start, end, step)
+    return self

@@ -209,23 +209,6 @@ MODULE_REGISTRY["linear_nobias"] = {
 
 
 # -------------------------------------------------------------------------
-class LinearWithBias(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(7, 101, bias=True)
-
-    def forward(self, x: torch.Tensor):
-        return self.linear(x)
-
-
-MODULE_REGISTRY["linear_bias"] = {
-    "model_class": LinearWithBias,
-    "input_shapes": [(127, 7)],
-    "description": "Simple linear layer model bias",
-}
-
-
-# -------------------------------------------------------------------------
 class LinearNoBiasInt4(nn.Module):
     def __init__(self):
         super().__init__()
