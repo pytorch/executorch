@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,14 +6,19 @@
 import numpy as np
 import pytest
 import torch
-
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import (
+    SoftmaxConverter,
+)
 from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
 from executorch.backends.nxp.tests.executorch_pipeline import to_edge_program
-from executorch.backends.nxp.tests.executors import convert_run_compare
+from executorch.backends.nxp.tests.executors import (
+    convert_run_compare,
+    OverrideTargetSupportCheck,
+)
 from executorch.backends.nxp.tests.models import SoftmaxConvModule, SoftmaxModule
 
 
@@ -39,7 +44,14 @@ def test_softmax_conversion__formatless_input(input_shape, dim: int):
 
     input_data = np.random.random(input_shape).astype(np.float32)
 
-    convert_run_compare(edge_program, input_data=input_data)
+    # Ignore the target requirement, as this test is target agnostic.
+    def supported_target(*_):
+        return True
+
+    with OverrideTargetSupportCheck(
+        SoftmaxConverter, new_target_support_check=supported_target
+    ):
+        convert_run_compare(edge_program, input_data=input_data)
 
 
 @pytest.mark.parametrize(
@@ -60,9 +72,7 @@ def test_softmax_conversion__unknown_input_format(input_shape, dim: int):
     NodeFormatInference(edge_program).identify_node_formats()
 
     # Currently this test not pass because the convertibility checker doesn't use tensor formats.
-    with pytest.raises(
-        AssertionError, match="`aten__softmax_default` is not convertible"
-    ):
+    with pytest.raises(AssertionError, match="aten__softmax_default.*not convertible"):
         EdgeProgramToIRConverter().convert_program(edge_program, ConversionConfig())
 
     # input_data = np.random.random(input_shape).astype(np.float32)
@@ -83,9 +93,7 @@ def test_softmax_conversion_channel_last(input_shape, dim: int):
     NodeFormatInference(edge_program).identify_node_formats()
 
     # TODO (Robert Kalmar) Currently this test not pass because the convertibility checker doesn't use tensor formats.
-    with pytest.raises(
-        AssertionError, match="`aten__softmax_default` is not convertible"
-    ):
+    with pytest.raises(AssertionError, match="aten__softmax_default.*not convertible"):
         EdgeProgramToIRConverter().convert_program(edge_program, ConversionConfig())
 
     # input_data = np.random.random(input_shape).astype(np.float32)
@@ -109,7 +117,5 @@ def test_softmax_conversion_unsupported_dims(input_shape, dim: int):
     edge_program = to_edge_program(model, input_shape).exported_program()
     NodeFormatInference(edge_program).identify_node_formats()
 
-    with pytest.raises(
-        AssertionError, match="`aten__softmax_default` is not convertible"
-    ):
+    with pytest.raises(AssertionError, match="aten__softmax_default.*not convertible"):
         EdgeProgramToIRConverter().convert_program(edge_program, ConversionConfig())
