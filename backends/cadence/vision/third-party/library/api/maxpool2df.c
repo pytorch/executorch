@@ -42,7 +42,7 @@ void maxpool2d_with_indices_j2x2_f32(float32_t *restrict ptr_out
   ,uint8_t kernel_height
   ,uint8_t kernel_width)
 {
-  const int32_t out_increment = (((2 * IVP_SIMD_WIDTH) - kernel_width) / 2) + 1;
+  const int32_t out_increment = ((IVP_SIMD_WIDTH - kernel_width) / 2) + 1;
 
   int32_t x, y, kx, ky;
   int32_t remX, remXLoad;
@@ -69,8 +69,8 @@ void maxpool2d_with_indices_j2x2_f32(float32_t *restrict ptr_out
 
   for (x = 0; x < out_width; x += out_increment) {
     remX = XT_MIN(out_width - x, out_increment);
-    remXLoad = ((2 * (remX - 1) + kernel_width) > IVP_SIMD_WIDTH) ? 1 : 0;
-    int32_t remXOffset = remXLoad * IVP_SIMD_WIDTH;
+    remXLoad = ((2 * (remX - 1) + kernel_width) > (IVP_SIMD_WIDTH / 2)) ? 1 : 0;
+    int32_t remXOffset = remXLoad * (IVP_SIMD_WIDTH / 2);
 
     for (y = 0; y < out_height; y++) {
       float* pOut = &ptr_out[y * out_pitch_width + x];
@@ -79,7 +79,7 @@ void maxpool2d_with_indices_j2x2_f32(float32_t *restrict ptr_out
       pdvecIn = (xb_vecN_2xf32*) pSrc;
 
       // Initialize max values
-      dvecMax1 = (MIN_FLT32);
+      dvecMax1 = MIN_FLT32;
       dvecMax11 = dvecMax12 = dvecMax1;
 
       // Initialize index tracking
@@ -120,7 +120,7 @@ void maxpool2d_with_indices_j2x2_f32(float32_t *restrict ptr_out
         dboolkyIdxLT = IVP_LTN_2X32(dvecKyIdx1, dvecGTKyIdx);
         dvecKxIdx1 = IVP_MOVN_2X32T(IVP_MOVN_2X32T(dvecEQKxIdx, dvecGTKxIdx, dboolkyIdxLT), dvecGTKxIdx, dboolEq);
 
-        dvecMax11 = IVP_SELN_2XF32I((MIN_FLT32), dvecMax11, IVP_SELI_32B_ROTATE_RIGHT_1);
+        dvecMax11 = IVP_SELN_2XF32I(MIN_FLT32, dvecMax11, IVP_SELI_32B_ROTATE_RIGHT_1);
         dvecKyIdx11 = IVP_SELN_2X32I(0, dvecKyIdx11, IVP_SELI_32B_ROTATE_RIGHT_1);
 
         // Second comparison
@@ -137,7 +137,7 @@ void maxpool2d_with_indices_j2x2_f32(float32_t *restrict ptr_out
         dboolkyIdxLT = IVP_LTN_2X32(dvecKyIdx1, dvecGTKyIdx);
         dvecKxIdx1 = IVP_MOVN_2X32T(IVP_MOVN_2X32T(dvecEQKxIdx, dvecGTKxIdx, dboolkyIdxLT), dvecGTKxIdx, dboolEq);
 
-        dvecMax12 = IVP_SELN_2XF32I((MIN_FLT32), dvecMax12, IVP_SELI_32B_ROTATE_RIGHT_1);
+        dvecMax12 = IVP_SELN_2XF32I(MIN_FLT32, dvecMax12, IVP_SELI_32B_ROTATE_RIGHT_1);
         dvecKyIdx12 = IVP_SELN_2X32I(0, dvecKyIdx12, IVP_SELI_32B_ROTATE_RIGHT_1);
       }
 
@@ -182,8 +182,7 @@ void maxpool2d_j2x2_f32(float32_t *restrict ptr_out
   ,uint8_t kernel_height
   ,uint8_t kernel_width)
 {
-  const int32_t out_increment = (((2 * IVP_SIMD_WIDTH) - kernel_width) / 2) + 1;
-
+  const int32_t out_increment = ((IVP_SIMD_WIDTH - kernel_width) / 2) + 1;
   int32_t x, y, kx, ky;
   int32_t remX, remXLoad;
 
@@ -200,8 +199,8 @@ void maxpool2d_j2x2_f32(float32_t *restrict ptr_out
 
   for (x = 0; x < out_width; x += out_increment) {
     remX = XT_MIN(out_width - x, out_increment);
-    remXLoad = ((2 * (remX - 1) + kernel_width) > IVP_SIMD_WIDTH) ? 1 : 0;
-    int32_t remXOffset = remXLoad * IVP_SIMD_WIDTH;
+    remXLoad = ((2 * (remX - 1) + kernel_width) > (IVP_SIMD_WIDTH / 2)) ? 1 : 0;
+    int32_t remXOffset = remXLoad * (IVP_SIMD_WIDTH / 2);
 
     for (y = 0; y < out_height; y++) {
       float* pOut = &ptr_out[y * out_pitch_width + x];
@@ -209,7 +208,7 @@ void maxpool2d_j2x2_f32(float32_t *restrict ptr_out
       pdvecIn = (xb_vecN_2xf32*) pSrc;
 
       // Initialize max values
-      dvecMax1 = (MIN_FLT32);
+      dvecMax1 = MIN_FLT32;
       dvecMax11 = dvecMax12 = dvecMax1;
 
       // ========== KERNEL HEIGHT COMPARISONS ==========
@@ -227,11 +226,11 @@ void maxpool2d_j2x2_f32(float32_t *restrict ptr_out
       for (kx = 0; kx < kernel_width - 1; kx += 2) {
         // First comparison
         dvecMax1 = IVP_MAXN_2XF32(dvecMax1, dvecMax11);
-        dvecMax11 = IVP_SELN_2XF32I((MIN_FLT32), dvecMax11, IVP_SELI_32B_ROTATE_RIGHT_1);
+        dvecMax11 = IVP_SELN_2XF32I(MIN_FLT32, dvecMax11, IVP_SELI_32B_ROTATE_RIGHT_1);
 
         // Second comparison
         dvecMax1 = IVP_MAXN_2XF32(dvecMax1, dvecMax12);
-        dvecMax12 = IVP_SELN_2XF32I((MIN_FLT32), dvecMax12, IVP_SELI_32B_ROTATE_RIGHT_1);
+        dvecMax12 = IVP_SELN_2XF32I(MIN_FLT32, dvecMax12, IVP_SELI_32B_ROTATE_RIGHT_1);
       }
 
       // final comparison if kernel_width is odd
