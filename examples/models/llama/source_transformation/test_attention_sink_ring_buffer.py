@@ -36,7 +36,8 @@ class CachePositionsManagerWithSinkTest(unittest.TestCase):
 
     def setUp(self):
         self.cache_size = 32  # Total cache size (e.g., sink_size + window_size * 2)
-        self.manager = CachePositionsManagerWithSink(self.cache_size)
+        # Default: no sink (simple ring buffer)
+        self.manager = CachePositionsManagerWithSink(self.cache_size, sink_size=0)
 
     def test_initial_positions_are_zero(self):
         """Cache positions should start as zeros."""
@@ -57,10 +58,22 @@ class CachePositionsManagerWithSinkTest(unittest.TestCase):
         for i in range(5):
             self.assertEqual(self.manager.cache_positions[i].item(), i)
 
-    def test_wraparound(self):
-        """Test ring buffer wraparound."""
-        # sink_size=0 (default) in setUp, so it wraps to 0
-        # Let's test non-zero sink size
+    def test_wraparound_no_sink(self):
+        """Test ring buffer wraparound with sink_size=0."""
+        # Fill cache to position 30
+        input_pos = torch.tensor([0], dtype=torch.long)
+        self.manager.calculate_positions_and_update_indices(input_pos, 30)
+
+        # Add 5 more tokens at position 30 - should wrap around
+        input_pos = torch.tensor([30], dtype=torch.long)
+        indices = self.manager.calculate_positions_and_update_indices(input_pos, 5)
+
+        # Indices should wrap: 30 % 32 = 30, 31, 0, 1, 2
+        expected_indices = torch.tensor([30, 31, 0, 1, 2], dtype=torch.long)
+        torch.testing.assert_close(indices, expected_indices)
+
+    def test_wraparound_with_sink(self):
+        """Test ring buffer wraparound with sink_size > 0."""
         sink_size = 4
         cache_size = 32
         manager = CachePositionsManagerWithSink(cache_size, sink_size)
@@ -73,18 +86,30 @@ class CachePositionsManagerWithSinkTest(unittest.TestCase):
         input_pos = torch.tensor([30], dtype=torch.long)
         indices = manager.calculate_positions_and_update_indices(input_pos, 5)
 
-        # Indices logic:
         # Ring size = 32 - 4 = 28
         # pos 30 -> idx = 4 + (30-4)%28 = 4 + 26 = 30
         # pos 31 -> idx = 4 + (31-4)%28 = 4 + 27 = 31
-        # pos 32 -> idx = 4 + (32-4)%28 = 4 + 0 = 4 (WRAPS TO SINK_SIZE=4)
+        # pos 32 -> idx = 4 + (32-4)%28 = 4 + 0 = 4 (WRAPS TO SINK_SIZE=4, not 0!)
         # pos 33 -> idx = 4 + (33-4)%28 = 4 + 1 = 5
         # pos 34 -> idx = 4 + (34-4)%28 = 4 + 2 = 6
         expected_indices = torch.tensor([30, 31, 4, 5, 6], dtype=torch.long)
         torch.testing.assert_close(indices, expected_indices)
 
-    def test_cache_positions_track_original_positions(self):
-        """Cache positions should track which original position is at each index."""
+    def test_cache_positions_track_original_positions_no_sink(self):
+        """Cache positions should track which original position is at each index (no sink)."""
+        # Fill with positions 0-31
+        input_pos = torch.tensor([0], dtype=torch.long)
+        self.manager.calculate_positions_and_update_indices(input_pos, 32)
+
+        # Now add position 32 which wraps to index 0
+        input_pos = torch.tensor([32], dtype=torch.long)
+        self.manager.calculate_positions_and_update_indices(input_pos, 1)
+
+        # Index 0 should now contain original position 32
+        self.assertEqual(self.manager.cache_positions[0].item(), 32)
+
+    def test_cache_positions_track_original_positions_with_sink(self):
+        """Cache positions should track positions, and sink tokens are never overwritten."""
         sink_size = 4
         cache_size = 32
         manager = CachePositionsManagerWithSink(cache_size, sink_size)
@@ -93,20 +118,21 @@ class CachePositionsManagerWithSinkTest(unittest.TestCase):
         input_pos = torch.tensor([0], dtype=torch.long)
         manager.calculate_positions_and_update_indices(input_pos, 32)
         
-        # Indices 0-3 should have pos 0-3 (Sink)
+        # Indices 0-3 should have pos 0-3 (Sink tokens)
         for i in range(4):
             self.assertEqual(manager.cache_positions[i].item(), i)
-
-        # Now add position 32. 
+        
+        # Now add position 32.
         # (32-4)%28 = 0. So index = 4 + 0 = 4.
         input_pos = torch.tensor([32], dtype=torch.long)
         manager.calculate_positions_and_update_indices(input_pos, 1)
-
+        
         # Index 4 should now contain original position 32
         self.assertEqual(manager.cache_positions[4].item(), 32)
         
-        # Index 0 (sink) should STILL contain position 0
-        self.assertEqual(manager.cache_positions[0].item(), 0)
+        # Index 0-3 (sink) should STILL contain positions 0-3 (unchanged)
+        for i in range(4):
+            self.assertEqual(manager.cache_positions[i].item(), i)
 
 
 class CausalMaskTest(unittest.TestCase):

@@ -138,71 +138,57 @@ class CachePositionsManagerWithSink(nn.Module):
     """
     Manages cache positions for attention sink + sliding window.
     
-    For sink_size=0: behaves exactly like original CachePositionsManager.
-    For sink_size>0: sink tokens go to fixed positions, rest uses ring buffer.
+    For sink_size=0: behaves exactly like original CachePositionsManager (simple ring buffer).
+    For sink_size>0: sink tokens (indices 0 to sink_size-1) are NEVER overwritten.
+                     Ring buffer only cycles through indices sink_size to cache_size-1.
     
-    IMPORTANT: cache_size should be the actual cache dimension size (2x window for ring buffer).
+    IMPORTANT: cache_size should be the actual cache dimension size (sink_size + 2*window_size).
     """
 
     def __init__(self, cache_size: int, sink_size: int = 0):
         super().__init__()
-        # cache_size is the actual size of the kv cache dimension
         self.max_context_length = cache_size
         self.sink_size = sink_size
+        # Ring buffer size = cache_size - sink_size
+        self.ring_size = cache_size - sink_size
         # Use zeros like original CachePositionsManager
         self.register_buffer(
             "cache_positions",
             torch.zeros((self.max_context_length,), dtype=torch.long, device="cpu"),
         )
-        
+
     def calculate_positions_and_update_indices(
         self, input_pos: torch.Tensor, seq_len: int
     ) -> torch.Tensor:
         """
         Calculate indices into k_cache, v_cache for placing k_val, v_val.
         
-        Indices logic:
-        - If pos < sink_size: index = pos
-        - If pos >= sink_size: index = sink_size + (pos - sink_size) % (cache_size - sink_size)
+        Index calculation:
+        - Position < sink_size: index = position (sink tokens at fixed indices)
+        - Position >= sink_size: index = sink_size + (position - sink_size) % ring_size
+        
+        This ensures sink tokens (indices 0 to sink_size-1) are NEVER overwritten.
         """
         start_pos = input_pos[0].item()
         torch._check_is_size(start_pos)
 
-        orig_indices = torch.arange(seq_len, dtype=torch.long) + start_pos
+        # Original positions for the sequence
+        orig_positions = torch.arange(seq_len, dtype=torch.long) + start_pos
         
         if self.sink_size == 0:
             # Simple ring buffer: just mod by cache size
-            indices = orig_indices % self.max_context_length
+            indices = orig_positions % self.max_context_length
         else:
-            # Shifted ring buffer logic
-            ring_size = self.max_context_length - self.sink_size
-            
-            # Calculate indices based on sink vs ring buffer logic
-            # Logic:
-            # 1. Calculate potential ring buffer index: sink_size + (pos - sink_size) % ring_size
-            # 2. If pos < sink_size, use pos. Else use ring buffer index.
-            
-            # Note: (pos - sink_size) % ring_size works correctly even if pos < sink_size 
-            # in Python, but we want to be explicit.
-            # However, for pure torch.export compatibility without conditionals on tensors,
-            # we can use where or math.
-            
-            # Vectorized calculation:
-            shifted_pos = orig_indices - self.sink_size
-            ring_indices = self.sink_size + (shifted_pos % ring_size)
-            
-            # If position is within sink (0..sink_size-1), use original position
-            # Else use ring index
-            indices = torch.where(orig_indices < self.sink_size, orig_indices, ring_indices)
+            # Shifted ring buffer: sink tokens at fixed indices, rest in ring buffer
+            # For position >= sink_size: index = sink_size + (position - sink_size) % ring_size
+            shifted = orig_positions - self.sink_size
+            ring_indices = self.sink_size + (shifted % self.ring_size)
+            # For position < sink_size: use position directly
+            indices = torch.where(orig_positions < self.sink_size, orig_positions, ring_indices)
 
-        # Update cache_positions exactly like original CachePositionsManager
-        full_t = torch.full((self.max_context_length,), -1, dtype=torch.long)
-        arange_tensor = torch.arange(self.max_context_length, dtype=torch.long)
-        cache_positions = torch.where(
-            arange_tensor < start_pos, self.cache_positions, full_t
-        )
-        self.cache_positions.copy_(cache_positions)
-        self.cache_positions.index_copy_(0, indices, orig_indices)
+        # Update cache_positions to track what position is at each index
+        # Only update the indices we're writing to
+        self.cache_positions.index_copy_(0, indices, orig_positions)
 
         return indices
 
