@@ -4,28 +4,6 @@ load("//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
 oncall("executorch")
 
 runtime.cxx_library(
-    name = "guard",
-    srcs = [
-        "guard.cpp",
-    ],
-    headers = [
-        "guard.h",
-        "utils.h",
-    ],
-    visibility = ["PUBLIC"],
-    deps = [
-        "//executorch/runtime/platform:platform",
-    ],
-    exported_deps = [
-        "//executorch/runtime/core:core",
-        "//executorch/runtime/core/exec_aten:lib",
-    ],
-    external_deps = [
-        ("cuda", None, "cuda-lazy"),
-    ],
-)
-
-runtime.cxx_library(
     name = "cuda_platform",
     srcs = [
         "platform/platform.cpp",
@@ -71,14 +49,12 @@ runtime.cxx_library(
 runtime.cxx_library(
     name = "runtime_shims",
     srcs = [
-        "guard.cpp",
         "shims/cuda_guard.cpp",
         "shims/int4mm.cu",
         "shims/memory.cpp",
         "shims/tensor_attribute.cpp",
     ],
     headers = [
-        "guard.h",
         "shims/cuda_guard.h",
         "shims/int4mm.cuh",
         "shims/int4mm.h",
@@ -91,43 +67,18 @@ runtime.cxx_library(
     supports_python_dlopen = True,
     # Constructor needed for backend registration.
     compiler_flags = ["-Wno-global-constructors"],
+    preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
     visibility = ["PUBLIC"],
     deps = [
         ":tensor_maker",
-        "//executorch/backends/aoti:common_shims",
-        "//executorch/runtime/core:core",
-        "//executorch/runtime/core/exec_aten:lib",
-        "//executorch/runtime/platform:platform",
-        "//executorch/backends/cuda/runtime:cuda_platform",
-    ],
-    nvcc_flags = get_nvcc_arch_args() + [
-        "-_NVCC_HOST_COMPILER_FLAG_",
-        "gcc",
-    ],
-    external_deps = [
-        ("cuda", None, "cuda-lazy"),
-    ],
-)
-
-runtime.cxx_library(
-    name = "runtime_shims_slim",
-    srcs = [
-        "shims/memory_slim.cpp",
-    ],
-    headers = [
-        "shims/memory_slim.h",
-    ],
-    # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
-    link_whole = True,
-    supports_python_dlopen = True,
-    visibility = ["@EXECUTORCH_CLIENTS"],
-    preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
-    deps = [
+        "//executorch/backends/aoti:aoti_common_slim",
         "//executorch/backends/aoti/slim/core:slimtensor",
         "//executorch/backends/aoti/slim/factory:empty",
         "//executorch/backends/aoti/slim/factory:from_blob",
-        "//executorch/backends/aoti:common_shims",
+        "//executorch/backends/aoti/slim/cuda:guard",
         "//executorch/runtime/core:core",
+        "//executorch/runtime/core/exec_aten:lib",
+        "//executorch/runtime/core/exec_aten/util:tensor_util",
         "//executorch/runtime/platform:platform",
     ],
     nvcc_flags = get_nvcc_arch_args() + [
@@ -149,10 +100,16 @@ runtime.cxx_library(
     supports_python_dlopen = True,
     # Constructor needed for backend registration.
     compiler_flags = ["-Wno-global-constructors"],
+    preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
     visibility = ["PUBLIC"],
     deps = [
         ":runtime_shims",
-        "//executorch/backends/aoti:aoti_common",
+        "//executorch/backends/aoti:aoti_common_slim",
+        "//executorch/backends/aoti/slim/core:slimtensor",
+        "//executorch/backends/aoti/slim/factory:empty",
+        "//executorch/backends/aoti/slim/factory:from_blob",
+        "//executorch/backends/aoti/slim/factory:from_etensor",
+        "//executorch/extension/tensor:tensor",
         "//executorch/runtime/backend:interface",
         "//executorch/runtime/core/exec_aten/util:tensor_util",
     ],

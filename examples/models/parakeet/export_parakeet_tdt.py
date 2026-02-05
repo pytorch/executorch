@@ -5,9 +5,12 @@ import os
 import shutil
 import tarfile
 import tempfile
+from typing import Optional
 
 import torch
 import torchaudio
+
+from executorch.examples.models.parakeet.quantize import quantize_model_
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -295,7 +298,22 @@ class PreprocessorWrapper(torch.nn.Module):
         return mel, mel_len
 
 
-def export_all(model, dtype=torch.float):
+def export_all(
+    model,
+    dtype=torch.float,
+    backend: Optional[str] = None,
+    # Encoder quantization args
+    qlinear_encoder: Optional[str] = None,
+    qlinear_encoder_group_size: int = 32,
+    qlinear_encoder_packing_format: Optional[str] = None,
+    # Decoder quantization args
+    qlinear: Optional[str] = None,
+    qlinear_group_size: int = 32,
+    qlinear_packing_format: Optional[str] = None,
+    # Embedding quantization args (decoder has the embedding layer)
+    qembedding: Optional[str] = None,
+    qembedding_group_size: int = 0,
+):
     """Export all model components.
 
     The maximum audio duration is determined by the model's internal
@@ -304,8 +322,20 @@ def export_all(model, dtype=torch.float):
     Args:
         model: The NeMo ASR model to export.
         dtype: Data type for floating-point tensors (default: torch.float).
+        backend: Target backend ("cuda", "xnnpack", etc.).
+        qlinear_encoder: Quantization config for encoder linear layers.
+        qlinear_encoder_group_size: Group size for encoder linear quantization.
+        qlinear_encoder_packing_format: Packing format for encoder linear layers.
+        qlinear: Quantization config for decoder linear layers.
+        qlinear_group_size: Group size for decoder linear quantization.
+        qlinear_packing_format: Packing format for decoder linear layers.
+        qembedding: Quantization config for embedding layers ("4w", "8w").
+        qembedding_group_size: Group size for embedding quantization (default: 0 = per-axis).
     """
     programs = {}
+
+    # Determine device based on backend (preprocessor always stays on CPU)
+    device = torch.device("cuda" if backend == "cuda" else "cpu")
 
     # Get audio parameters from model config
     sample_rate = model.preprocessor._cfg.sample_rate
@@ -339,13 +369,26 @@ def export_all(model, dtype=torch.float):
     )
     torch.cuda.is_available = old_cuda_is_available
 
+    # Move model to CUDA after preprocessor export (preprocessor must stay on CPU)
+    if backend == "cuda":
+        model.cuda()
+
     feat_in = getattr(model.encoder, "_feat_in", 128)
     # Use max_mel_frames as example to ensure Dim.AUTO infers the full range.
     # Smaller examples cause Dim.AUTO to infer narrow bounds.
-    audio_signal = torch.randn(1, feat_in, max_mel_frames, dtype=dtype)
-    length = torch.tensor([max_mel_frames], dtype=torch.int64)
+    audio_signal = torch.randn(1, feat_in, max_mel_frames, dtype=dtype, device=device)
+    length = torch.tensor([max_mel_frames], dtype=torch.int64, device=device)
     encoder_with_proj = EncoderWithProjection(model.encoder, model.joint)
     encoder_with_proj.eval()
+
+    if qlinear_encoder:
+        print("Quantizing encoder...")
+        quantize_model_(
+            encoder_with_proj,
+            qlinear_config=qlinear_encoder,
+            qlinear_group_size=qlinear_encoder_group_size,
+            qlinear_packing_format=qlinear_encoder_packing_format,
+        )
 
     programs["encoder"] = export(
         encoder_with_proj,
@@ -363,9 +406,21 @@ def export_all(model, dtype=torch.float):
     pred_hidden = model.decoder.pred_hidden
     decoder_step = DecoderStep(model.decoder, model.joint)
     decoder_step.eval()
-    token = torch.tensor([[0]], dtype=torch.long)
-    h = torch.zeros(num_layers, 1, pred_hidden, dtype=dtype)
-    c = torch.zeros(num_layers, 1, pred_hidden, dtype=dtype)
+
+    if qlinear or qembedding:
+        print("Quantizing decoder...")
+        quantize_model_(
+            decoder_step,
+            qlinear_config=qlinear,
+            qlinear_group_size=qlinear_group_size,
+            qlinear_packing_format=qlinear_packing_format,
+            qembedding_config=qembedding,
+            qembedding_group_size=qembedding_group_size,
+        )
+
+    token = torch.tensor([[0]], dtype=torch.long, device=device)
+    h = torch.zeros(num_layers, 1, pred_hidden, dtype=dtype, device=device)
+    c = torch.zeros(num_layers, 1, pred_hidden, dtype=dtype, device=device)
     programs["decoder_step"] = export(
         decoder_step,
         (token, h, c),
@@ -376,8 +431,8 @@ def export_all(model, dtype=torch.float):
     joint_hidden = model.joint.joint_hidden
     num_token_classes = model.tokenizer.vocab_size + 1  # +1 for blank
 
-    f_proj = torch.randn(1, 1, joint_hidden, dtype=dtype)
-    g_proj = torch.randn(1, 1, joint_hidden, dtype=dtype)
+    f_proj = torch.randn(1, 1, joint_hidden, dtype=dtype, device=device)
+    g_proj = torch.randn(1, 1, joint_hidden, dtype=dtype, device=device)
     programs["joint"] = export(
         JointWithArgmax(model.joint, num_token_classes),
         (f_proj, g_proj),
@@ -543,9 +598,9 @@ def main():
     parser.add_argument(
         "--backend",
         type=str,
-        default="portable",
+        default="xnnpack",
         choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
-        help="Backend for acceleration (default: portable)",
+        help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
         "--dtype",
@@ -554,6 +609,61 @@ def main():
         choices=["fp32", "fp16", "bf16"],
         help="Model dtype for Metal/CUDA backends (default: fp32)",
     )
+
+    # Decoder quantization arguments
+    parser.add_argument(
+        "--qlinear",
+        type=str,
+        choices=["4w", "8w", "8da4w", "8da8w"],
+        help="Quantization config for decoder linear layers",
+    )
+    parser.add_argument(
+        "--qlinear_group_size",
+        type=int,
+        default=32,
+        help="Group size for decoder linear quantization (default: 32)",
+    )
+    parser.add_argument(
+        "--qlinear_packing_format",
+        type=str,
+        choices=["tile_packed_to_4d"],
+        help="Packing format for decoder linear layers",
+    )
+
+    # Encoder quantization arguments
+    parser.add_argument(
+        "--qlinear_encoder",
+        type=str,
+        choices=["4w", "8w", "8da4w", "8da8w"],
+        help="Quantization config for encoder linear layers",
+    )
+    parser.add_argument(
+        "--qlinear_encoder_group_size",
+        type=int,
+        default=32,
+        help="Group size for encoder linear quantization (default: 32)",
+    )
+    parser.add_argument(
+        "--qlinear_encoder_packing_format",
+        type=str,
+        choices=["tile_packed_to_4d"],
+        help="Packing format for encoder linear layers",
+    )
+
+    # Embedding quantization arguments (decoder has the embedding layer)
+    parser.add_argument(
+        "--qembedding",
+        type=str,
+        choices=["4w", "8w"],
+        help="Quantization config for decoder embedding layer",
+    )
+    parser.add_argument(
+        "--qembedding_group_size",
+        type=int,
+        default=0,
+        help="Group size for embedding quantization (default: 0 = per-axis)",
+    )
+
     args = parser.parse_args()
 
     # Validate dtype
@@ -578,7 +688,22 @@ def main():
 
     print("\nExporting components...")
     export_dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float
-    programs, metadata = export_all(model, dtype=export_dtype)
+    programs, metadata = export_all(
+        model,
+        dtype=export_dtype,
+        backend=args.backend,
+        # Encoder quantization
+        qlinear_encoder=args.qlinear_encoder,
+        qlinear_encoder_group_size=args.qlinear_encoder_group_size,
+        qlinear_encoder_packing_format=args.qlinear_encoder_packing_format,
+        # Decoder quantization
+        qlinear=args.qlinear,
+        qlinear_group_size=args.qlinear_group_size,
+        qlinear_packing_format=args.qlinear_packing_format,
+        # Embedding quantization
+        qembedding=args.qembedding,
+        qembedding_group_size=args.qembedding_group_size,
+    )
 
     et = lower_to_executorch(programs, metadata=metadata, backend=args.backend)
 

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -37,18 +37,36 @@ class Sum(torch.nn.Module):
         "dim_None": lambda: (torch.rand(10), None, True),
         "dim_None_4d_tensor": lambda: (torch.rand(10, 3, 2, 1), None, True),
     }
+    test_parameters_bf16 = {
+        "1d_dim_0_keep_bf16": lambda: (torch.rand(12, dtype=torch.bfloat16), 0, True),
+        "3d_dims_keep_bf16": lambda: (
+            torch.rand(4, 6, 3, dtype=torch.bfloat16),
+            [0, -1],
+            True,
+        ),
+        "dim_None_bf16": lambda: (torch.rand(6, 2, dtype=torch.bfloat16), None, False),
+    }
 
     def forward(self, x: torch.Tensor, dim: int, keepdim: bool):
         return x.sum(dim=dim, keepdim=keepdim)
 
 
-@common.parametrize("test_data", Sum.test_parameters)
+@common.parametrize("test_data", Sum.test_parameters | Sum.test_parameters_bf16)
 def test_sum_dim_intlist_tosa_FP(test_data: input_t1):
+    test_data = test_data()
+    match test_data[0].dtype:
+        case torch.bfloat16:
+            rtol = 1e-2
+        case _:
+            rtol = 1e-3
+
     pipeline = TosaPipelineFP[input_t1](
         Sum(),
-        test_data(),
+        test_data,
         aten_op,
         exir_op=[],
+        tosa_extensions=["bf16"],
+        rtol=rtol,
     )
     pipeline.run()
 
@@ -143,15 +161,37 @@ class SumDefault(torch.nn.Module):
         "rank2": lambda: (torch.rand(10, 1, 10),),
         "rank4": lambda: (torch.rand(1, 1, 5, 8),),
     }
+    test_parameters_bf16 = {
+        "rank1_bf16": lambda: (torch.rand(8, dtype=torch.bfloat16),),
+        "rank3_bf16": lambda: (torch.rand(4, 3, 2, dtype=torch.bfloat16),),
+    }
     aten_op = "torch.ops.aten.sum.default"
 
     def forward(self, x: torch.Tensor):
         return x.sum()
 
 
-@common.parametrize("test_data", SumDefault.test_parameters)
+@common.parametrize(
+    "test_data", SumDefault.test_parameters | SumDefault.test_parameters_bf16
+)
 def test_sum_tosa_FP(test_data: Callable[[], input_t2]):
-    pipeline = TosaPipelineFP[input_t2](SumDefault(), test_data(), SumDefault.aten_op)
+    test_vector = test_data()
+    match test_vector[0].dtype:
+        case torch.bfloat16:
+            atol = 5e-2
+            rtol = 5e-2
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
+
+    pipeline = TosaPipelineFP[input_t2](
+        SumDefault(),
+        test_vector,
+        SumDefault.aten_op,
+        tosa_extensions=["bf16"],
+        atol=atol,
+        rtol=rtol,
+    )
     pipeline.run()
 
 

@@ -79,6 +79,17 @@ test_data_suite_2 = {
     ),
 }
 
+test_data_suite_bf16 = {
+    "op_mul_rank2_rand_bf16": lambda: (
+        torch.rand(4, 5, dtype=torch.bfloat16),
+        torch.rand(1, 5, dtype=torch.bfloat16),
+    ),
+    "op_mul_rank3_randn_bf16": lambda: (
+        torch.randn(3, 2, 4, dtype=torch.bfloat16),
+        torch.randn(1, 2, 4, dtype=torch.bfloat16),
+    ),
+}
+
 
 test_data_suite_int32 = {
     # (test_name, input, other,) See torch.mul() for info
@@ -107,13 +118,14 @@ class Mul(torch.nn.Module):
         return input_ * other_
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_mul_tensor_tosa_FP(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](
         Mul(),
         test_data(),
         aten_op,
         exir_op=[],
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
