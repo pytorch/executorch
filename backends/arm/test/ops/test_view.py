@@ -55,6 +55,7 @@ class View(torch.nn.Module):
 
     rank_product_too_large = {
         "rand_4d_large": lambda: (torch.rand(1, 49, 16, 128), (1, 16, 49, 128)),
+        "rand_5d_large": lambda: (torch.rand(2, 25, 16, 8, 64), (2, 16, 25, 8, 64)),
     }
 
     def __init__(self, new_shape):
