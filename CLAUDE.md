@@ -1,8 +1,15 @@
 # Repo and framework name
 
-Refer to the repo/framework/runtime "executorch" (in lower cases) or "ExecuTorch" (in 
+Refer to the repo/framework/runtime "executorch" (in lower cases) or "ExecuTorch" (in
 camel cases), not "ExecutorTorch". With limited code or comment length, maybe refer
 to the framework "ET" but consider it as very unofficial and not recommended.
+
+# fbcode vs xplat (internal builds only)
+
+When building internally under fbsource, only edit files in `fbcode/executorch/`.
+The `xplat/executorch/` directory is automatically mirrored from fbcode.
+
+This does not apply to OSS builds (i.e., the standalone executorch repository).
 
 # Commit messages
 
