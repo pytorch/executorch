@@ -148,6 +148,20 @@ test_data_suite = {
         0,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
     ),
 }
+test_data_suite_bf16 = {
+    "rank3_rand_bf16": (
+        lambda: (
+            torch.rand((4, 5, 3), dtype=torch.bfloat16),
+            (
+                torch.tensor([0, 2], dtype=torch.int64),
+                torch.tensor([1, 3], dtype=torch.int64),
+            ),
+            torch.rand((2, 3), dtype=torch.bfloat16),
+            False,
+        ),
+        0,
+    ),
+}
 
 
 class IndexPut(torch.nn.Module):
@@ -171,7 +185,9 @@ xfails = {
 }
 
 
-@common.parametrize("test_module", test_data_suite, xfails=xfails)
+@common.parametrize(
+    "test_module", test_data_suite | test_data_suite_bf16, xfails=xfails
+)
 def test_index_put_tosa_FP(test_module: input_t):
     pipeline = TosaPipelineFP[input_t](
         IndexPut(),
@@ -181,6 +197,7 @@ def test_index_put_tosa_FP(test_module: input_t):
         transform_passes=[
             InsertInt32CastsAfterInt64PlaceholdersPass(),
         ],  # int64 inputs are not currently supported and need to be cast to int32
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 

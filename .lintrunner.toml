@@ -506,8 +506,12 @@ command = [
 
 [[linter]]
 code = 'DOCFORMATTER'
-include_patterns = []
-exclude_patterns = ['**']
+include_patterns = [
+    'backends/arm/vgf/**/*.py',
+    'backends/arm/tosa/**/*.py',
+    'backends/arm/ethosu/**/*.py',
+]
+exclude_patterns = ['third-party/**', '**/third-party/**']
 command = [
   'python','-m','lintrunner_adapters','run','docformatter_linter','--config=pyproject.toml','--','@{{PATHSFILE}}'
 ]
