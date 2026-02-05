@@ -99,7 +99,7 @@ test_data_INT16 = {
 
 
 @common.parametrize("test_data", test_data_FP)
-def test_transpose_conv2d_tosa_FP(test_data):
+def test_conv_transpose2d_tosa_FP(test_data):
     model = test_data()
     pipeline = TosaPipelineFP[input_t](
         model,
@@ -112,7 +112,7 @@ def test_transpose_conv2d_tosa_FP(test_data):
 
 
 @common.parametrize("test_data", test_data_INT)
-def test_transpose_conv2d_tosa_INT(test_data):
+def test_conv_transpose2d_tosa_INT(test_data):
     model, per_channel_quantization = test_data()
     pipeline = TosaPipelineINT[input_t](
         model,
@@ -134,7 +134,7 @@ _a8w4_transpose_conv_xfails = {
 
 
 @common.parametrize("test_data", test_data_INT, xfails=_a8w4_transpose_conv_xfails)
-def test_transpose_conv2d_tosa_INT_a8w4(test_data):
+def test_conv_transpose2d_tosa_INT_a8w4(test_data):
     model, per_channel_quantization = test_data()
     pipeline = TosaPipelineINT[input_t](
         model,
@@ -150,7 +150,7 @@ def test_transpose_conv2d_tosa_INT_a8w4(test_data):
 
 
 @common.parametrize("test_data", test_data_INT16)
-def test_transpose_conv2d_tosa_INT_a16w8(test_data):
+def test_conv_transpose2d_tosa_INT_a16w8(test_data):
     model = test_data()
     per_channel_quantization = False
     pipeline = TosaPipelineINT[input_t](
@@ -171,7 +171,7 @@ def test_transpose_conv2d_tosa_INT_a16w8(test_data):
 
 @common.parametrize("test_data", test_data_FP)
 @common.SkipIfNoModelConverter
-def test_transpose_conv2d_vgf_no_quant(test_data):
+def test_conv_transpose2d_vgf_no_quant(test_data):
     model = test_data()
     pipeline = VgfPipeline[input_t](
         model,
@@ -185,7 +185,7 @@ def test_transpose_conv2d_vgf_no_quant(test_data):
 
 @common.parametrize("test_data", test_data_INT)
 @common.SkipIfNoModelConverter
-def test_transpose_conv2d_vgf_quant(test_data):
+def test_conv_transpose2d_vgf_quant(test_data):
     model, per_channel_quantization = test_data()
     pipeline = VgfPipeline[input_t](
         model,
@@ -200,7 +200,7 @@ def test_transpose_conv2d_vgf_quant(test_data):
 
 @common.parametrize("test_data", test_data_INT16)
 @common.SkipIfNoModelConverter
-def test_transpose_conv2d_vgf_int16(test_data):
+def test_conv_transpose2d_vgf_INT_int16(test_data):
     model = test_data()
     per_channel_quantization = False
     pipeline = VgfPipeline[input_t](
@@ -222,7 +222,7 @@ def test_transpose_conv2d_vgf_int16(test_data):
 
 @common.parametrize("test_data", test_data_INT)
 @common.XfailIfNoCorstone320
-def test_transpose_conv2d_u85_INT(test_data):
+def test_conv_transpose2d_u85_INT(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineINT[input_t](
         model,
@@ -236,7 +236,7 @@ def test_transpose_conv2d_u85_INT(test_data):
 
 @common.parametrize("test_data", u55_supported_test_data_INT)
 @common.XfailIfNoCorstone300
-def test_transpose_conv2d_u55_INT(test_data):
+def test_conv_transpose2d_u55_INT(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -249,7 +249,7 @@ def test_transpose_conv2d_u55_INT(test_data):
 
 
 @common.parametrize("test_data", reject_suite)
-def test_transpose_conv2d_u55_INT_not_delegated(test_data):
+def test_conv_transpose2d_u55_INT_not_delegated(test_data):
     model, per_channel_quantization = test_data()
     OpNotSupportedPipeline(
         model,
