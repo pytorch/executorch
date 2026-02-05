@@ -181,7 +181,7 @@ Tensor& _softmax_out(
 
       pp_swap = pp_swap ^ 1;
 
-      idma_desc_done(0, idx_in);
+      idma_desc_done(0, idx_out);
       /* PROCESS CALL */
       vsoftmaxf(out_buff[pp_swap], inp_buff[pp_swap], stride);
 
