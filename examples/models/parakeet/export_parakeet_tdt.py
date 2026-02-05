@@ -461,6 +461,7 @@ def export_all(
 def _create_xnnpack_partitioners(programs):
     """Create XNNPACK partitioners for all programs except preprocessor."""
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+        XnnpackDynamicallyQuantizedPartitioner,
         XnnpackPartitioner,
     )
 
@@ -470,8 +471,33 @@ def _create_xnnpack_partitioners(programs):
         if key == "preprocessor":
             partitioner[key] = []
         else:
-            partitioner[key] = [XnnpackPartitioner()]
+            # Use both partitioners:
+            # 1. XnnpackDynamicallyQuantizedPartitioner for dynamic quantization (8da4w)
+            # 2. XnnpackPartitioner for remaining ops
+            partitioner[key] = [
+                XnnpackDynamicallyQuantizedPartitioner(),
+                XnnpackPartitioner(),
+            ]
     return partitioner, programs
+
+
+# This custom decomposition is the key to making Parakeet run on the Metal backend.
+# Without this, linear gets decomposed in a way that doesn't work for us.
+# When input/weight tensors are 2D and bias is present, this gets decomposed into addmm and
+# reinterpret_tensor_wrapper gets called on the bias, to make it look like a 2D tensor.
+# On one hand, this requires us to implement addmm in the Metal backend. But more importantly,
+# the reinterpret_tensor_wrapper call makes its way to ExecuTorch, causing a call to executorch::extension::from_blob
+# with a 0 stride. ExecuTorch doesn't support that, and raises an error.
+# This decomposition avoids that problem, and also avoids having to implement addmm.
+def _linear_bias_decomposition(input, weight, bias=None):
+    """Decompose linear with bias into matmul + add."""
+    # linear(input, weight) = input @ weight.T
+    # Use matmul instead of mm to handle batched inputs (3D+)
+    weight_t = torch.ops.aten.t.default(weight)
+    out = torch.ops.aten.matmul.default(input, weight_t)
+    if bias is not None:
+        return torch.ops.aten.add.Tensor(out, bias)
+    return out
 
 
 def _create_metal_partitioners(programs):
@@ -481,14 +507,26 @@ def _create_metal_partitioners(programs):
 
     print("\nLowering to ExecuTorch with Metal...")
 
+    # Run decompositions for non-preprocessor programs
+    updated_programs = {}
+    for key, ep in programs.items():
+        # print(f"Running decompositions for {key}")
+        # print(ep.graph_module)
+        if key != "preprocessor":
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.linear.default: _linear_bias_decomposition}
+            )
+        else:
+            updated_programs[key] = ep
+
     partitioner = {}
-    for key in programs.keys():
+    for key in updated_programs.keys():
         if key == "preprocessor":
             partitioner[key] = []
         else:
             compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
             partitioner[key] = [MetalPartitioner(compile_specs)]
-    return partitioner, programs
+    return partitioner, updated_programs
 
 
 def _create_cuda_partitioners(programs, is_windows=False):
@@ -553,6 +591,7 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            do_quant_fusion_and_const_prop=True,
         ),
     )
 
