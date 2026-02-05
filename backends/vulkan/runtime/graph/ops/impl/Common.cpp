@@ -9,8 +9,6 @@
 #include <executorch/backends/vulkan/runtime/graph/Logging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 
-#include <executorch/backends/vulkan/runtime/graph/Logging.h>
-
 namespace vkcompute {
 
 //
