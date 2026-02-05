@@ -755,9 +755,8 @@ def get_node_tensor_specs(
         ]
 
 
-# Little bit hacky to check if the graph contains
-# XNNPACK delegate
-# Why?
+# Little bit hacky, because we are checking for xnnpack string in
+# backend name, to check if the graph contains XNNPACK delegate
 
 
 def _contains_xnnpack_delegate(graph_module: torch.fx.GraphModule) -> bool:
