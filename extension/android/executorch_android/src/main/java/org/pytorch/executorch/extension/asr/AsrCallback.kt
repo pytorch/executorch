@@ -12,7 +12,7 @@ import org.pytorch.executorch.annotations.Experimental
 
 /**
  * Callback interface for ASR (Automatic Speech Recognition) module. Users can implement this
- * interface to receive the transcribed tokens and completion notification.
+ * interface to receive the transcribed tokens as they are generated.
  *
  * Warning: These APIs are experimental and subject to change without notice
  */
@@ -20,16 +20,9 @@ import org.pytorch.executorch.annotations.Experimental
 interface AsrCallback {
   /**
    * Called when a new token is available from JNI. Users will keep getting onToken() invocations
-   * until transcription finishes.
+   * until transcription finishes (when the transcribe method returns).
    *
    * @param token The decoded text token
    */
   fun onToken(token: String)
-
-  /**
-   * Called when transcription is complete.
-   *
-   * @param transcription The complete transcription (may be empty if tokens were streamed)
-   */
-  fun onComplete(transcription: String) {}
 }
