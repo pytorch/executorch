@@ -74,6 +74,14 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
     AOTITensorHandle* ret0,
     AOTITensorHandle* ret1);
 
+AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
+    AOTITensorHandle A,
+    AOTITensorHandle B,
+    int64_t group_size,
+    AOTITensorHandle S,
+    AOTITensorHandle Z,
+    AOTITensorHandle* ret);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
