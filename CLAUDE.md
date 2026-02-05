@@ -1,8 +1,15 @@
 # Repo and framework name
 
-Refer to the repo/framework/runtime "executorch" (in lower cases) or "ExecuTorch" (in 
+Refer to the repo/framework/runtime "executorch" (in lower cases) or "ExecuTorch" (in
 camel cases), not "ExecutorTorch". With limited code or comment length, maybe refer
 to the framework "ET" but consider it as very unofficial and not recommended.
+
+# fbcode vs xplat (internal builds only)
+
+When building internally under fbsource, only edit files in `fbcode/executorch/`.
+The `xplat/executorch/` directory is automatically mirrored from fbcode.
+
+This does not apply to OSS builds (i.e., the standalone executorch repository).
 
 # Install
 
@@ -11,7 +18,7 @@ to the framework "ET" but consider it as very unofficial and not recommended.
 If the user is mostly importing `executorch` module and experimenting with Ahead-Of-Time
 export flow, installation means installing `executorch` python package.
 
-Python virtual environment or conda environment is highly recommended for installing 
+Python virtual environment or conda environment is highly recommended for installing
 executorch from source. Double check if the user wants to enable virtual enablement before
 building from source.
 
