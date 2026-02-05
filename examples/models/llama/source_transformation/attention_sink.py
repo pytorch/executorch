@@ -144,31 +144,56 @@ class CachePositionsManagerWithSink(nn.Module):
     IMPORTANT: cache_size should be the actual cache dimension size (2x window for ring buffer).
     """
 
-    def __init__(self, cache_size: int):
+    def __init__(self, cache_size: int, sink_size: int = 0):
         super().__init__()
         # cache_size is the actual size of the kv cache dimension
         self.max_context_length = cache_size
+        self.sink_size = sink_size
         # Use zeros like original CachePositionsManager
         self.register_buffer(
             "cache_positions",
             torch.zeros((self.max_context_length,), dtype=torch.long, device="cpu"),
         )
-
+        
     def calculate_positions_and_update_indices(
         self, input_pos: torch.Tensor, seq_len: int
     ) -> torch.Tensor:
         """
         Calculate indices into k_cache, v_cache for placing k_val, v_val.
         
-        This is identical to the original CachePositionsManager logic.
+        Indices logic:
+        - If pos < sink_size: index = pos
+        - If pos >= sink_size: index = sink_size + (pos - sink_size) % (cache_size - sink_size)
         """
         start_pos = input_pos[0].item()
         torch._check_is_size(start_pos)
 
         orig_indices = torch.arange(seq_len, dtype=torch.long) + start_pos
         
-        # Simple ring buffer: just mod by cache size
-        indices = orig_indices % self.max_context_length
+        if self.sink_size == 0:
+            # Simple ring buffer: just mod by cache size
+            indices = orig_indices % self.max_context_length
+        else:
+            # Shifted ring buffer logic
+            ring_size = self.max_context_length - self.sink_size
+            
+            # Calculate indices based on sink vs ring buffer logic
+            # Logic:
+            # 1. Calculate potential ring buffer index: sink_size + (pos - sink_size) % ring_size
+            # 2. If pos < sink_size, use pos. Else use ring buffer index.
+            
+            # Note: (pos - sink_size) % ring_size works correctly even if pos < sink_size 
+            # in Python, but we want to be explicit.
+            # However, for pure torch.export compatibility without conditionals on tensors,
+            # we can use where or math.
+            
+            # Vectorized calculation:
+            shifted_pos = orig_indices - self.sink_size
+            ring_indices = self.sink_size + (shifted_pos % ring_size)
+            
+            # If position is within sink (0..sink_size-1), use original position
+            # Else use ring index
+            indices = torch.where(orig_indices < self.sink_size, orig_indices, ring_indices)
 
         # Update cache_positions exactly like original CachePositionsManager
         full_t = torch.full((self.max_context_length,), -1, dtype=torch.long)
@@ -222,7 +247,7 @@ class KVCacheWithAttentionSink(KVCache):
 
         # Cache positions manager for determining write locations
         # Pass the total cache size (same as self.max_context_length after super().__init__)
-        self.cache_positions_manager = CachePositionsManagerWithSink(total_cache_size)
+        self.cache_positions_manager = CachePositionsManagerWithSink(total_cache_size, sink_size)
 
     def create_causal_mask_for_ring_buffer(
         self, start_pos: torch.Tensor, seq_len: int
