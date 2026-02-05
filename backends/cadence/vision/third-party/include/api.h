@@ -107,6 +107,16 @@ void maxpool2d_j2x2_f32(float32_t *restrict ptr_out
   ,uint8_t kernel_height
   ,uint8_t kernel_width);
 
+void vrelU_quantized(
+		    int8_t* restrict ptr_out,
+		        const int8_t* restrict ptr_inp,
+			    int32_t in_zero_point,
+			        int32_t out_zero_point,
+				    float32_t out_scale,
+				        int N);
+void rvaddf(float32_t *restrict z, const float32_t *restrict x,
+		            const float32_t *restrict y, int N);
+
 #ifdef __cplusplus
 };
 #endif

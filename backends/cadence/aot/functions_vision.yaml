@@ -25,7 +25,7 @@
 - op: add.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::add_out
+      kernel_name: impl::vision::add_out
 
 - op: bmm.out
   kernels:
@@ -297,7 +297,7 @@
 - func: cadence::quantized_relu.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::generic::quantized_relu_per_tensor_out
+      kernel_name: impl::vision::quantized_relu_per_tensor_out
 
 - func: cadence::quantized_relu_asym8s_asym8s.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
