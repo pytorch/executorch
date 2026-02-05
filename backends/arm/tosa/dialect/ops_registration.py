@@ -28,8 +28,7 @@ _registered_tosa_ops_by_func: dict[Callable, Callable] = {}
 def register_fake_tosa_op(
     op_schema: str, tosa_specs: Iterable[TosaSpecification]
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """
-    Decorator for registering a TOSA operation.
+    """Decorator for registering a TOSA operation.
 
     Parameters:
       op_schema : A string that defines the operation schema.
@@ -39,6 +38,7 @@ def register_fake_tosa_op(
     The decorated function is registered with the given op_schema by calling
     register_tosa_dialect_op(op_schema, func) only once per function. The resulting
     callable is then inserted into _tosa_registered_ops for each spec.
+
     """
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:

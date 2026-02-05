@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,13 +21,7 @@ build_root_test_dir="${et_root_dir}/arm_test/arm_semihosting_executor_runner_cor
 
 select_ops_list="\
 aten::add.out,\
-aten::clamp.out,\
-aten::convolution.out,\
-aten::div.out,\
-aten::mean.out,\
 aten::mul.out,\
-aten::relu.out,\
-aten::view_copy.out,\
-dim_order_ops::_to_dim_order_copy.out"
+aten::convolution.out"
 
 ${build_executor_runner} --pte=semihosting --target=ethos-u55-128 --output="${build_root_test_dir}" --select_ops_list="${select_ops_list}"
