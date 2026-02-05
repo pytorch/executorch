@@ -17,6 +17,9 @@ void add_q8ta_clone_node(
     ComputeGraph& graph,
     const ValueRef packed_int8_input,
     const ValueRef packed_int8_output) {
+  VK_CHECK_COND(graph.dtype_of(packed_int8_input) == vkapi::kInt8x4);
+  VK_CHECK_COND(graph.dtype_of(packed_int8_output) == vkapi::kInt8x4);
+
   // Build shader name - always buffer-to-buffer int8x4 clone
   std::string kernel_name = "q8ta_clone";
 

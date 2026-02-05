@@ -5,16 +5,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Export model to CUDA/Metal format with optional quantization
+# Export model to CUDA/Metal/XNNPACK format with optional quantization
 
 show_help() {
   cat << EOF
 Usage: export_model_artifact.sh <device> <hf_model> [quant_name] [output_dir]
 
-Export a HuggingFace model to CUDA/Metal format with optional quantization.
+Export a HuggingFace model to CUDA/Metal/XNNPACK format with optional quantization.
 
 Arguments:
-  device       cuda or metal (required)
+  device       cuda, metal, or xnnpack (required)
 
   hf_model     HuggingFace model ID (required)
                Supported models:
@@ -28,6 +28,7 @@ Arguments:
                  - non-quantized
                  - quantized-int4-tile-packed
                  - quantized-int4-weight-only
+                 - quantized-8da4w (XNNPACK only)
 
   output_dir   Output directory for artifacts (optional, default: current directory)
 
@@ -36,6 +37,7 @@ Examples:
   export_model_artifact.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed"
   export_model_artifact.sh cuda "google/gemma-3-4b-it" "non-quantized" "./output"
   export_model_artifact.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./output"
+  export_model_artifact.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./output"
 EOF
 }
 
@@ -64,9 +66,11 @@ case "$DEVICE" in
     ;;
   metal)
     ;;
+  xnnpack)
+    ;;
   *)
     echo "Error: Unsupported device '$DEVICE'"
-    echo "Supported devices: cuda, cuda-windows, metal"
+    echo "Supported devices: cuda, cuda-windows, metal, xnnpack"
     exit 1
     ;;
 esac
@@ -139,9 +143,16 @@ case "$QUANT_NAME" in
     fi
     EXTRA_ARGS="--qlinear_encoder 4w"
     ;;
+  quantized-8da4w)
+    if [ "$DEVICE" != "xnnpack" ]; then
+      echo "Error: quantized-8da4w is only supported with xnnpack device"
+      exit 1
+    fi
+    EXTRA_ARGS="--qlinear 8da4w --qlinear_group_size 32 --qlinear_encoder 8da4w --qlinear_encoder_group_size 32"
+    ;;
   *)
     echo "Error: Unsupported quantization '$QUANT_NAME'"
-    echo "Supported quantizations: non-quantized, quantized-int4-tile-packed, quantized-int4-weight-only"
+    echo "Supported quantizations: non-quantized, quantized-int4-tile-packed, quantized-int4-weight-only, quantized-8da4w"
     exit 1
     ;;
 esac
@@ -157,10 +168,17 @@ pip list
 if [ "$MODEL_NAME" = "parakeet" ]; then
   pip install -r examples/models/parakeet/install_requirements.txt
 
+  # Set dtype based on backend (XNNPACK uses fp32, CUDA/Metal use bf16)
+  if [ "$DEVICE" = "xnnpack" ]; then
+    DTYPE_ARG=""
+  else
+    DTYPE_ARG="--dtype bf16"
+  fi
+
   python -m executorch.examples.models.parakeet.export_parakeet_tdt \
       --backend "$DEVICE" \
       --output-dir "${OUTPUT_DIR}" \
-      --dtype bf16 \
+      ${DTYPE_ARG} \
       ${EXTRA_ARGS}
 
   test -f "${OUTPUT_DIR}/model.pte"
