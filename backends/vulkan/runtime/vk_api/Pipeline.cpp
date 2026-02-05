@@ -459,7 +459,22 @@ void ComputePipelineCache::create_pipelines(
     const std::unordered_set<Key, Hasher>& descriptors) {
   std::lock_guard<std::mutex> lock(cache_mutex_);
 
-  const auto num_pipelines = descriptors.size();
+  // Filter out descriptors already in cache to avoid creating duplicate
+  // pipelines and to ensure correct indexing between created pipelines and
+  // cache insertion.
+  std::vector<Key> keys_to_create;
+  keys_to_create.reserve(descriptors.size());
+  for (const auto& key : descriptors) {
+    if (cache_.find(key) == cache_.cend()) {
+      keys_to_create.push_back(key);
+    }
+  }
+
+  if (keys_to_create.empty()) {
+    return;
+  }
+
+  const auto num_pipelines = keys_to_create.size();
   std::vector<VkPipeline> pipelines(num_pipelines);
 
   std::vector<std::vector<VkSpecializationMapEntry>> map_entries;
@@ -474,7 +489,7 @@ void ComputePipelineCache::create_pipelines(
   std::vector<VkComputePipelineCreateInfo> create_infos;
   create_infos.reserve(num_pipelines);
 
-  for (auto& key : descriptors) {
+  for (const auto& key : keys_to_create) {
     map_entries.push_back(key.specialization_constants.generate_map_entries());
 
     specialization_infos.push_back(VkSpecializationInfo{
@@ -513,14 +528,10 @@ void ComputePipelineCache::create_pipelines(
       nullptr,
       pipelines.data()));
 
-  uint32_t i = 0;
-  for (auto& key : descriptors) {
-    auto it = cache_.find(key);
-    if (it != cache_.cend()) {
-      continue;
-    }
-    cache_.insert({key, ComputePipelineCache::Value(device_, pipelines[i])});
-    ++i;
+  for (size_t i = 0; i < keys_to_create.size(); ++i) {
+    cache_.insert(
+        {keys_to_create[i],
+         ComputePipelineCache::Value(device_, pipelines[i])});
   }
 }
 

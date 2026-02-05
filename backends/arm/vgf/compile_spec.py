@@ -25,6 +25,7 @@ class VgfCompileSpec(ArmCompileSpec):
             target. Strings are parsed via ``TosaSpecification.create_from_string``.
             Defaults to ``"TOSA-1.0+FP+INT"``.
         compiler_flags (list[str] | None): Optional converter-backend flags.
+
     """
 
     def __init__(
