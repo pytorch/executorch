@@ -1421,7 +1421,7 @@ AOTITorchError aoti_torch_mps_mm_out(
 
   @autoreleasepool {
     try {
-      // Convert AOTITensorHandle to ExecutorTorch tensors
+      // Convert AOTITensorHandle to ExecuTorch tensors
       auto out_tensor = reinterpret_cast<Tensor*>(out);
       auto self_tensor = reinterpret_cast<Tensor*>(self);
       auto mat2_tensor = reinterpret_cast<Tensor*>(mat2);
@@ -1694,7 +1694,7 @@ AOTITorchError aoti_torch_mps_bmm_out(
 
   @autoreleasepool {
     try {
-      // Convert AOTITensorHandle to ExecutorTorch tensors
+      // Convert AOTITensorHandle to ExecuTorch tensors
       auto out_tensor = reinterpret_cast<Tensor*>(out);
       auto self_tensor = reinterpret_cast<Tensor*>(self);
       auto mat2_tensor = reinterpret_cast<Tensor*>(mat2);
@@ -1997,7 +1997,7 @@ AOTITorchError aoti_torch_mps_convolution(
 
   @autoreleasepool {
     try {
-      // Convert AOTITensorHandle to ExecutorTorch tensors
+      // Convert AOTITensorHandle to ExecuTorch tensors
       auto input_tensor = reinterpret_cast<Tensor*>(input);
       auto weight_tensor = reinterpret_cast<Tensor*>(weight);
 
@@ -2534,7 +2534,7 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
 
   try {
     @autoreleasepool {
-      // Convert AOTITensorHandle to ExecutorTorch tensors
+      // Convert AOTITensorHandle to ExecuTorch tensors
       auto* query_tensor = reinterpret_cast<Tensor*>(query);
       auto* key_tensor = reinterpret_cast<Tensor*>(key);
       auto* value_tensor = reinterpret_cast<Tensor*>(value);
@@ -3000,10 +3000,15 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
         return Error::InvalidArgument;
       }
 
-      // Validate S tensor: 2D with S.size(0) == N, contiguous
+      // Validate S tensor: 2D with S.size(0) == N, contiguous, dtype matches A
       if (s_tensor->dim() != 2 || s_tensor->sizes()[0] != N) {
         ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: expect S to be 2D tensor with shape [%d, :], got dim=%d, size[0]=%lld",
                N, (int)s_tensor->dim(), (long long)s_tensor->sizes()[0]);
+        return Error::InvalidArgument;
+      }
+      if (s_tensor->scalar_type() != a_dtype) {
+        ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: expect S dtype to match A dtype %d, got %d",
+               (int)a_dtype, (int)s_tensor->scalar_type());
         return Error::InvalidArgument;
       }
       if (s_tensor->strides()[1] != 1 || s_tensor->strides()[0] != s_tensor->sizes()[1]) {
@@ -3012,10 +3017,15 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
         return Error::InvalidArgument;
       }
 
-      // Validate Z tensor: 2D with Z.size(0) == N, contiguous
+      // Validate Z tensor: 2D with Z.size(0) == N, contiguous, dtype matches A
       if (z_tensor->dim() != 2 || z_tensor->sizes()[0] != N) {
         ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: expect Z to be 2D tensor with shape [%d, :], got dim=%d, size[0]=%lld",
                N, (int)z_tensor->dim(), (long long)z_tensor->sizes()[0]);
+        return Error::InvalidArgument;
+      }
+      if (z_tensor->scalar_type() != a_dtype) {
+        ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: expect Z dtype to match A dtype %d, got %d",
+               (int)a_dtype, (int)z_tensor->scalar_type());
         return Error::InvalidArgument;
       }
       if (z_tensor->strides()[1] != 1 || z_tensor->strides()[0] != z_tensor->sizes()[1]) {

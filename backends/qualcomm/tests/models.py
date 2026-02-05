@@ -1632,6 +1632,14 @@ class MultiheadAttention(torch.nn.Module):
         return attn_output
 
 
+class Narrow(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return (x.narrow(1, 4, 32),)
+
+
 class Neg(torch.nn.Module):
     def __init__(self):
         super().__init__()
