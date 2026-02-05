@@ -712,14 +712,10 @@ def quantize_model(model: nn.Module, qlinear: str, qlinear_group_size: int = 32)
 
     def linear_filter(m, fqn):
         if isinstance(m, torch.nn.Linear):
-            if qlinear_group_size == 0:
-                raise ValueError(
-                    f"Invalid group_size=0 for Metal int4 quantization (layer: {fqn})"
-                )
             if m.weight.shape[1] % qlinear_group_size != 0:
                 raise ValueError(
                     f"Metal int4 quantization requires weight dimension (K) to be multiple of group_size. "
-                    f"Layer {fqn} has weight shape {m.weight.shape} (K={m.weight.shape[1]}, group_size={qlinear_group_size})" # noqa: E501
+                    f"Layer {fqn} has weight shape {m.weight.shape} (K={m.weight.shape[1]}, group_size={qlinear_group_size})"  # noqa: E501
                 )
             return True
         return False
