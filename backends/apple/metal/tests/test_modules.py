@@ -274,6 +274,32 @@ MODULE_REGISTRY["linear_bias_int4"] = {
     "skip": not TORCHAO_AVAILABLE,
 }
 
+
+# -------------------------------------------------------------------------
+class LinearInt4_QMV_IMPL(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(640, 8198, bias=True)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+
+MODULE_REGISTRY["linear_int4_qmv_impl"] = {
+    "model_class": LinearInt4_QMV_IMPL,
+    "input_shapes": [(1, 640)],
+    "description": "Linear int4 quantization dispatching to qmv_impl",
+    "qlinear": "fpa4w",
+    "qlinear_group_size": 32,
+    "compare_to_unquantized": False,
+    "atol_float32": 5e-2,
+    "rtol_float32": 5e-2,
+    "atol_bfloat16": 1e-1,
+    "rtol_bfloat16": 1e-1,
+    "skip": not TORCHAO_AVAILABLE,
+}
+
+
 # -------------------------------------------------------------------------
 # Convolution Modules
 # -------------------------------------------------------------------------
