@@ -31,12 +31,8 @@ class Llama2Model(EagerModelBase):
         checkpoint_path = self.llm_config.base.checkpoint
         params_path = self.llm_config.base.params
 
-        # Adapter checkpoint and config.
-        adapter_checkpoint_path = self.llm_config.base.adapter_checkpoint
-        adapter_config_path = self.llm_config.base.adapter_config
-        assert (adapter_checkpoint_path is None and adapter_config_path is None) or (
-            adapter_checkpoint_path is not None and adapter_config_path is not None
-        ), "Both adapter_checkpoint_path and adapter_config_path must be specified or neither must be specified."
+        # LoRA adapter configuration.
+        lora_config = self.llm_config.base.lora
 
         self.use_kv_cache = self.llm_config.model.use_kv_cache
         self.use_sdpa_with_kv_cache_op = self.llm_config.model.use_sdpa_with_kv_cache
@@ -69,10 +65,10 @@ class Llama2Model(EagerModelBase):
             with open(params_path, "r") as f:
                 params = json.loads(f.read())
 
-        # Get adapter checkpoint and config.
+        # Get adapter checkpoint.
         adapter_checkpoint = {}
-        adapter_config = {}
-        if adapter_checkpoint_path:
+        if lora_config:
+            adapter_checkpoint_path = lora_config.adapter_checkpoint
             if adapter_checkpoint_path.endswith(".pt"):
                 adapter_checkpoint = torch.load(
                     adapter_checkpoint_path, map_location=device, mmap=True
@@ -92,22 +88,6 @@ class Llama2Model(EagerModelBase):
                 raise ValueError(
                     f"Unsupported adapter checkpoint format: {adapter_checkpoint_path}"
                 )
-
-            with open(adapter_config_path, "r") as f:
-                adapter_config_full = json.loads(f.read())
-                if (
-                    "r" not in adapter_config_full
-                    or "lora_alpha" not in adapter_config_full
-                    or "target_modules" not in adapter_config_full
-                ):
-                    raise ValueError(
-                        "Adapter config must contain r, lora_alpha, and target_modules."
-                    )
-                adapter_config = {
-                    "r": adapter_config_full["r"],
-                    "lora_alpha": adapter_config_full["lora_alpha"],
-                    "target_modules": adapter_config_full["target_modules"],
-                }
             checkpoint.update(adapter_checkpoint)
 
         output_prune_map = None
@@ -133,8 +113,10 @@ class Llama2Model(EagerModelBase):
             input_prune_map=input_prune_map,
             output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
+            r=lora_config.r if lora_config else None,
+            lora_alpha=lora_config.lora_alpha if lora_config else None,
+            target_modules=lora_config.target_modules if lora_config else None,
             **params,
-            **adapter_config,
         )
 
         if model_args.use_scaled_rope:
