@@ -70,9 +70,16 @@ test_data_suite_u55_reject = {
     ),
 }
 test_data_suite = test_data_suite_u55 | test_data_suite_u55_reject
+test_data_suite_bf16 = {
+    "2_x_2_bf16": lambda: (Repeat((2, 1)), (torch.randn(3, 4, dtype=torch.bfloat16),)),
+    "4_x_4_bf16": lambda: (
+        Repeat((1, 2, 3, 2)),
+        (torch.randn(1, 1, 2, 2, dtype=torch.bfloat16),),
+    ),
+}
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_repeat_tosa_FP(test_data: Tuple):
     module, test_data = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -80,6 +87,7 @@ def test_repeat_tosa_FP(test_data: Tuple):
         test_data,
         module.aten_op,
         exir_op=[],
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 

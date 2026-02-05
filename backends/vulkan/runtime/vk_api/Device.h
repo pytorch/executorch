@@ -27,7 +27,8 @@ enum class DeviceType : uint32_t {
 };
 
 struct PhysicalDevice final {
-  // Handle
+  // Handles
+  VkInstance instance;
   VkPhysicalDevice handle;
 
   // Properties obtained from Vulkan
@@ -56,6 +57,8 @@ struct PhysicalDevice final {
 
   // Metadata
   uint32_t num_compute_queues;
+  uint32_t api_version_major;
+  uint32_t api_version_minor;
   bool supports_int16_shader_types;
   bool supports_int64_shader_types;
   bool supports_float64_shader_types;
@@ -68,7 +71,11 @@ struct PhysicalDevice final {
   std::string device_name;
   DeviceType device_type;
 
-  explicit PhysicalDevice(VkPhysicalDevice);
+  explicit PhysicalDevice(VkInstance instance, VkPhysicalDevice);
+
+ private:
+  void query_extensions_vk_1_0();
+  void query_extensions_vk_1_1();
 };
 
 struct DeviceHandle final {
