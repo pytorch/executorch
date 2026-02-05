@@ -30,10 +30,9 @@ def quantize_model_(  # noqa: C901
 
     # Metal (MPS) quantization uses different API
     if qlinear_config == "fpa4w":
-        from torchao.experimental.quant_api import UIntxWeightOnlyConfig
-
         # Load MPS ops
         import torchao.experimental.ops.mps  # noqa: F401
+        from torchao.experimental.quant_api import UIntxWeightOnlyConfig
 
         config = UIntxWeightOnlyConfig(
             group_size=qlinear_group_size,
