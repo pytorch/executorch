@@ -9,7 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taQuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedConvolution.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
@@ -1579,7 +1579,7 @@ void conv2d_q8ta_q8csw_q8to_test(
       io_storage_type,
       utils::kPackedInt8_4W4C);
 
-  add_quantize_and_pack_4w4c_node(
+  add_q8ta_quantize_node(
       graph, fp_input, input_scale, input_zp, packed_int8_input);
 
   std::vector<ValueRef> conv2d_args = {
@@ -1601,7 +1601,7 @@ void conv2d_q8ta_q8csw_q8to_test(
 
   conv2d_q8ta_q8csw_q8to(graph, conv2d_args);
 
-  add_unpack_4w4c_and_dequantize_node(
+  add_q8ta_dequantize_node(
       graph, packed_int8_output, output_scale, output_zp, fp_output);
 }
 
