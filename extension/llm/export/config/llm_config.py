@@ -18,6 +18,8 @@ for more information.
 """
 
 import argparse
+import json
+import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -62,6 +64,68 @@ class PreqMode(str, Enum):
 
 
 @dataclass
+class LoraConfig:
+    """LoRA adapter configuration.
+
+    Can be created in two ways:
+
+    1. Direct specification (all fields required):
+        LoraConfig(
+            adapter_checkpoint="/path/to/adapter.safetensors",
+            r=16,
+            lora_alpha=32,
+            target_modules=["q_proj", "v_proj"],
+        )
+
+    2. Parse from adapter_config.json (r, lora_alpha, target_modules auto-loaded):
+        LoraConfig(
+            adapter_checkpoint="/path/to/adapter.safetensors",
+            adapter_config="/path/to/adapter_config.json",
+        )
+    """
+
+    adapter_checkpoint: str  # Path to adapter weights (.safetensors or .pt)
+    r: Optional[int] = None  # LoRA rank
+    lora_alpha: Optional[int] = None  # LoRA alpha scaling
+    # Modules to apply LoRA to:
+    # attention: ["q_proj", "v_proj", "k_proj", "output_proj"/"o_proj"]
+    # feed-forward: ["gate_proj", "up_proj", "down_proj"]
+    target_modules: Optional[List[str]] = None
+    adapter_config: Optional[str] = None  # Path to adapter_config.json
+
+    def __post_init__(self):
+        """Parse adapter_config.json if provided and validate required fields."""
+        if self.adapter_config is not None:
+            self._parse_and_fill_from_config(self.adapter_config)
+
+        # Validate required fields
+        required = ["r", "lora_alpha", "target_modules"]
+        missing = [f for f in required if getattr(self, f) is None]
+        if missing:
+            raise ValueError(
+                f"LoraConfig missing required fields: {missing}. "
+                "Provide them directly or via adapter_config."
+            )
+
+    def _parse_and_fill_from_config(self, config_path: str) -> None:
+        """Parse adapter_config.json and fill missing fields."""
+        import json
+        import os
+
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"LoRA config not found: {config_path}")
+
+        with open(config_path, "r") as f:
+            config = json.load(f)
+
+        for field in ["r", "lora_alpha", "target_modules"]:
+            if getattr(self, field) is None:
+                if field not in config:
+                    raise ValueError(f"adapter_config.json must contain '{field}'")
+                setattr(self, field, config[field])
+
+
+@dataclass
 class BaseConfig:
     """
     Configurations specific to the model, e.g. whether it's Qwen3 or Phi-4-mini,
@@ -76,11 +140,7 @@ class BaseConfig:
             If left empty, the model will either be initialized with random weights
             if it is a Llama model or the weights will be downloaded from HuggingFace
             if it is a non-Llama model.
-        adapter_checkpoint: Path to the adapter.pt file from torchtune. Used if
-            the model has trained LoRA adapters. Must provide
-            adapter_config.json.
-        adapter_config: Path to the adapter_config.json file from torchtune.
-            Used if the model has trained LoRA adapters. Must provide adapter.pt.
+        lora: LoRA adapter configuration.
         tokenizer_path: Path to the tokenizer file.
         metadata: Json string containing metadata information.
             e.g. '"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
@@ -97,8 +157,7 @@ class BaseConfig:
     model_class: ModelType = ModelType.llama3
     params: Optional[str] = None
     checkpoint: Optional[str] = None
-    adapter_checkpoint: Optional[str] = None
-    adapter_config: Optional[str] = None
+    lora: Optional[LoraConfig] = None
     tokenizer_path: Optional[str] = None
     metadata: Optional[str] = None
     use_lora: int = 0
@@ -523,10 +582,13 @@ class LlmConfig:
             llm_config.base.params = args.params
         if hasattr(args, "checkpoint"):
             llm_config.base.checkpoint = args.checkpoint
-        if hasattr(args, "adapter_checkpoint"):
-            llm_config.base.adapter_checkpoint = args.adapter_checkpoint
-        if hasattr(args, "adapter_config"):
-            llm_config.base.adapter_config = args.adapter_config
+        if hasattr(args, "adapter_checkpoint") and args.adapter_checkpoint:
+            if not hasattr(args, "adapter_config") or not args.adapter_config:
+                raise ValueError("--adapter_checkpoint requires --adapter_config")
+            llm_config.base.lora = LoraConfig(
+                adapter_checkpoint=args.adapter_checkpoint,
+                adapter_config=args.adapter_config,
+            )
         if hasattr(args, "tokenizer_path"):
             llm_config.base.tokenizer_path = args.tokenizer_path
         if hasattr(args, "metadata"):
