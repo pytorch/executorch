@@ -145,6 +145,17 @@ static TestCase create_test_case_from_config(
   int32_t output_zero_point_val = -1;
   ValueSpec output_zero_point(output_zero_point_val);
 
+  // Stride and padding parameters
+  ValueSpec stride({config.stride.h, config.stride.w});
+  ValueSpec padding({config.padding.h, config.padding.w});
+
+  // Dilation and groups parameters
+  ValueSpec dilation({config.dilation.h, config.dilation.w});
+  ValueSpec groups(config.groups);
+
+  // Kernel size parameters
+  ValueSpec kernel_size({config.kernel.h, config.kernel.w});
+
   // Output tensor (float/half) - [1, C_out, H_out, W_out] (batch size always 1)
   ValueSpec output(
       {1, config.channels.out, H_out, W_out},
@@ -163,6 +174,11 @@ static TestCase create_test_case_from_config(
   test_case.add_input_spec(output_scale);
   test_case.add_input_spec(output_zero_point);
   test_case.add_input_spec(bias);
+  test_case.add_input_spec(kernel_size);
+  test_case.add_input_spec(stride);
+  test_case.add_input_spec(padding);
+  test_case.add_input_spec(dilation);
+  test_case.add_input_spec(groups);
 
   // Add memory layout parameter for the quantized tensors
   ValueSpec layout_int(static_cast<int32_t>(int8_memory_layout));
@@ -325,6 +341,11 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   const ValueSpec& output_scale_spec = test_case.inputs()[idx++];
   const ValueSpec& output_zeros_spec = test_case.inputs()[idx++];
   const ValueSpec& bias_spec = test_case.inputs()[idx++];
+  const ValueSpec& kernel_size_spec = test_case.inputs()[idx++];
+  const ValueSpec& stride_spec = test_case.inputs()[idx++];
+  const ValueSpec& padding_spec = test_case.inputs()[idx++];
+  const ValueSpec& dilation_spec = test_case.inputs()[idx++];
+  const ValueSpec& groups_spec = test_case.inputs()[idx++];
   const ValueSpec& layout_spec = test_case.inputs()[idx++];
   (void)layout_spec; // Not used in reference implementation
   const ValueSpec& impl_selector_spec = test_case.inputs()[idx++];
@@ -348,17 +369,22 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   int64_t H_out = output_sizes[2];
   int64_t W_out = output_sizes[3];
 
-  // Pointwise convolution: fixed kernel size 1x1, stride 1, padding 0, dilation
-  // 1, groups 1
-  int64_t K_h = 1;
-  int64_t K_w = 1;
-  int64_t stride_h = 1;
-  int64_t stride_w = 1;
-  int64_t pad_h = 0;
-  int64_t pad_w = 0;
-  int64_t dilation_h = 1;
-  int64_t dilation_w = 1;
-  int64_t groups = 1;
+  // Get kernel dimensions from kernel_size ValueSpec
+  auto kernel_size_data = kernel_size_spec.get_int32_data();
+  int64_t K_h = kernel_size_data[0];
+  int64_t K_w = kernel_size_data[1];
+
+  // Get stride, padding, dilation, and groups
+  auto stride_data = stride_spec.get_int32_data();
+  auto padding_data = padding_spec.get_int32_data();
+  auto dilation_data = dilation_spec.get_int32_data();
+  int64_t stride_h = stride_data[0];
+  int64_t stride_w = stride_data[1];
+  int64_t pad_h = padding_data[0];
+  int64_t pad_w = padding_data[1];
+  int64_t dilation_h = dilation_data[0];
+  int64_t dilation_w = dilation_data[1];
+  int64_t groups = groups_spec.get_int_value();
 
   // Skip for large tensors since computation time will be extremely slow
   if (N > kRefDimSizeLimit || C_in > kRefDimSizeLimit ||
@@ -505,16 +531,19 @@ static void reference_impl(TestCase& test_case) {
 
 // Custom FLOP calculator for quantized pointwise conv2d operation
 static int64_t quantized_conv2d_flop_calculator(const TestCase& test_case) {
+  int kernel_idx = 9; // kernel_size is at index 9 for q8ta_q8csw_q8to
+
   // Get input and weight dimensions
   const auto& input_sizes = test_case.inputs()[0].get_tensor_sizes();
   const auto& output_sizes = test_case.outputs()[0].get_tensor_sizes();
 
+  const auto& kernel_sizes = test_case.inputs()[kernel_idx].get_int32_data();
+
   int64_t N = input_sizes[0];
   int64_t C_in = input_sizes[1];
   int64_t C_out = output_sizes[1];
-  // Pointwise convolution: kernel is always 1x1
-  int64_t K_h = 1;
-  int64_t K_w = 1;
+  int64_t K_h = kernel_sizes[0];
+  int64_t K_w = kernel_sizes[1];
   int64_t H_out = output_sizes[2];
   int64_t W_out = output_sizes[3];
 

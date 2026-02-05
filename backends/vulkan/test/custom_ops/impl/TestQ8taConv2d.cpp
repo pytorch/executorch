@@ -177,6 +177,11 @@ void test_q8ta_conv2d_pw(
   const ValueRef output_scale = args.at(idx++);
   const ValueRef output_zp = args.at(idx++);
   const ValueRef bias_data = args.at(idx++);
+  const ValueRef kernel_size = args.at(idx++);
+  const ValueRef stride = args.at(idx++);
+  const ValueRef padding = args.at(idx++);
+  const ValueRef dilation = args.at(idx++);
+  const ValueRef groups = args.at(idx++);
   const ValueRef layout_int = args.at(idx++);
   const ValueRef impl_selector_str = args.at(idx++);
   const ValueRef fp_output = args.at(idx++);
@@ -208,76 +213,28 @@ void test_q8ta_conv2d_pw(
   add_q8ta_quantize_node(
       graph, fp_input, input_scale, input_zp, packed_int8_input);
 
+  // Build args for conv operator
+  std::vector<ValueRef> conv_args = {
+      packed_int8_input,
+      input_scale,
+      input_zp,
+      weight_data,
+      weight_sums_data,
+      weight_scales_data,
+      output_scale,
+      output_zp,
+      bias_data,
+      kernel_size,
+      stride,
+      padding,
+      dilation,
+      groups,
+      packed_int8_output};
+
   if (impl_selector == "legacy_4w4c") {
-    // Use the general quantized conv2d operator for legacy path
-    // Need to provide kernel_size, stride, padding, dilation, groups for the
-    // general operator
-    const ValueRef kernel_size =
-        graph.add_scalar_list<int64_t>({1, 1}); // Pointwise: 1x1 kernel
-    const ValueRef stride = graph.add_scalar_list<int64_t>({1, 1});
-    const ValueRef padding = graph.add_scalar_list<int64_t>({0, 0});
-    const ValueRef dilation = graph.add_scalar_list<int64_t>({1, 1});
-    const ValueRef groups = graph.add_scalar<int64_t>(1);
-
-    std::vector<ValueRef> conv_args = {
-        packed_int8_input,
-        input_scale,
-        input_zp,
-        weight_data,
-        weight_sums_data,
-        weight_scales_data,
-        output_scale,
-        output_zp,
-        bias_data,
-        kernel_size,
-        stride,
-        padding,
-        dilation,
-        groups,
-        packed_int8_output};
-
     VK_GET_OP_FN("et_vk.conv2d_q8ta_q8csw_q8to.default")(graph, conv_args);
-  } else if (true) {
-    // Build args for conv operator (pointwise doesn't need kernel_size, stride,
-    // padding, dilation, groups since they are fixed)
-    std::vector<ValueRef> conv_args = {
-        packed_int8_input,
-        input_scale,
-        input_zp,
-        weight_data,
-        weight_sums_data,
-        weight_scales_data,
-        output_scale,
-        output_zp,
-        bias_data,
-        packed_int8_output};
-
-    // Use the dedicated pointwise conv2d operator
-    VK_GET_OP_FN("etvk.q8ta_conv2d_pw.default")(graph, conv_args);
   } else {
-    TmpTensor packed_int8_output_4w4c(
-        &graph,
-        graph.sizes_of(fp_output),
-        vkapi::kInt8x4,
-        utils::kBuffer,
-        utils::kPackedInt8_4W4C);
-
-    std::vector<ValueRef> conv_args = {
-        packed_int8_input,
-        input_scale,
-        input_zp,
-        weight_data,
-        weight_sums_data,
-        weight_scales_data,
-        output_scale,
-        output_zp,
-        bias_data,
-        packed_int8_output_4w4c};
-
-    // Use the dedicated pointwise conv2d operator
     VK_GET_OP_FN("etvk.q8ta_conv2d_pw.default")(graph, conv_args);
-
-    add_q8ta_clone_node(graph, packed_int8_output_4w4c, packed_int8_output);
   }
 
   // Dequantize packed int8 output to floating point

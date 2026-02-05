@@ -292,6 +292,16 @@ void add_q8ta_conv2d_dw_node(
       dilation,
       groups);
 
+  // Validate packed dim info for input and output tensors
+  VK_CHECK_COND(q8ta_conv2d_check_packed_dim_info(
+      graph.packed_dim_info_of(packed_int8_input)));
+  VK_CHECK_COND(q8ta_conv2d_check_packed_dim_info(
+      graph.packed_dim_info_of(packed_int8_output)));
+
+  // Validate dtype is kInt8x4
+  VK_CHECK_COND(graph.dtype_of(packed_int8_input) == vkapi::kInt8x4);
+  VK_CHECK_COND(graph.dtype_of(packed_int8_output) == vkapi::kInt8x4);
+
   // Verify this is actually a depthwise convolution
   const int64_t groups_val = graph.extract_scalar<int64_t>(groups);
   const int64_t in_channels = graph.size_at<int64_t>(-3, packed_int8_input);

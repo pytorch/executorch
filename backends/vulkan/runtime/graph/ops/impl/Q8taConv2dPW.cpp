@@ -200,6 +200,18 @@ void add_q8ta_conv2d_pw_node(
     const ValueRef bias_data,
     const ValueRef packed_bias,
     const ValueRef packed_int8_output) {
+  // Validate packed dim info for input and output tensors
+  // To maximize performance, the input tensor must be in 4W4C layout
+  VK_CHECK_COND(q8ta_conv2d_check_4w4c_packed_dim_info(
+      graph.packed_dim_info_of(packed_int8_input)));
+  // However, the requirements for output tensor layout is flexible
+  VK_CHECK_COND(q8ta_conv2d_check_packed_dim_info(
+      graph.packed_dim_info_of(packed_int8_output)));
+
+  // Validate dtype is kInt8x4
+  VK_CHECK_COND(graph.dtype_of(packed_int8_input) == vkapi::kInt8x4);
+  VK_CHECK_COND(graph.dtype_of(packed_int8_output) == vkapi::kInt8x4);
+
   float input_scale_val = graph.extract_scalar<float>(input_scale);
   int32_t input_zp_val = graph.extract_scalar<int32_t>(input_zp);
 
@@ -262,76 +274,6 @@ void add_q8ta_conv2d_pw_node(
       {}));
 }
 
-void add_q8ta_conv2d_pw_4w4c_node(
-    ComputeGraph& graph,
-    const ValueRef packed_int8_input,
-    const ValueRef input_scale,
-    const ValueRef input_zp,
-    const ValueRef packed_weight,
-    const ValueRef packed_weight_sums,
-    const ValueRef packed_weight_scales,
-    const ValueRef output_scale,
-    const ValueRef output_zp,
-    const ValueRef bias_data,
-    const ValueRef packed_bias,
-    const ValueRef packed_int8_output) {
-  float input_scale_val = graph.extract_scalar<float>(input_scale);
-  int32_t input_zp_val = graph.extract_scalar<int32_t>(input_zp);
-
-  float output_inv_scale_val = 1.0f / graph.extract_scalar<float>(output_scale);
-  int32_t output_zp_val = graph.extract_scalar<int32_t>(output_zp);
-
-  uint32_t apply_bias = 1;
-  if (graph.val_is_none(bias_data)) {
-    apply_bias = 0;
-  }
-
-  // Get input channel count for K4_per_group
-  const uint32_t IC = graph.size_at<uint32_t>(-3, packed_int8_input);
-  const uint32_t K4_per_group = utils::div_up_4(IC);
-
-  std::vector<PushConstantDataInfo> push_constants = {
-      PushConstantDataInfo(&input_scale_val, sizeof(input_scale_val)),
-      PushConstantDataInfo(&input_zp_val, sizeof(input_zp_val)),
-      PushConstantDataInfo(&output_inv_scale_val, sizeof(output_inv_scale_val)),
-      PushConstantDataInfo(&output_zp_val, sizeof(output_zp_val)),
-  };
-
-  std::string kernel_name = "q8ta_conv2d_pw_4w4c_ref";
-  add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
-
-  // Build spec constants: apply_bias + K4_per_group + layout constants
-  vkapi::SpecVarList spec_constants = {
-      apply_bias,
-      K4_per_group,
-      // Layout specialization constants
-      graph.hashed_layout_of(packed_int8_output),
-      graph.hashed_layout_of(packed_int8_input),
-  };
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_conv2d_pw_4w4c_global_wg_size,
-      pick_q8ta_conv2d_pw_4w4c_local_wg_size,
-      // Inputs and Outputs
-      {{packed_int8_output, vkapi::kWrite},
-       {{packed_int8_input,
-         packed_weight,
-         packed_weight_sums,
-         packed_weight_scales,
-         packed_bias},
-        vkapi::kRead}},
-      // Shader params buffers
-      {graph.meta_ubo(packed_int8_output), graph.meta_ubo(packed_int8_input)},
-      // Push Constants
-      push_constants,
-      // Specialization Constants
-      spec_constants,
-      // Resize args
-      {}));
-}
-
 //
 // High level operator impl
 //
@@ -347,6 +289,13 @@ void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef output_scale = args.at(idx++);
   const ValueRef output_zp = args.at(idx++);
   const ValueRef bias_data = args.at(idx++);
+  // Accept but ignore conv params - pointwise has fixed kernel=1x1, stride=1,
+  // padding=0, dilation=1, groups=1
+  (void)args.at(idx++); // kernel_size
+  (void)args.at(idx++); // stride
+  (void)args.at(idx++); // padding
+  (void)args.at(idx++); // dilation
+  (void)args.at(idx++); // groups
   const ValueRef packed_int8_output = args.at(idx++);
 
   QuantizationConfig weight_quant_config(8, kPerChannel, {});
@@ -381,46 +330,19 @@ void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         prepack_standard(graph, bias_data, utils::kBuffer, utils::kWidthPacked);
   }
 
-  // Check if input and output have 4W4C layout for optimized path
-  const utils::GPUMemoryLayout inp_layout =
-      graph.estimate_memory_layout_of(packed_int8_input);
-  const utils::GPUMemoryLayout outp_layout =
-      graph.estimate_memory_layout_of(packed_int8_output);
-
-  const bool use_4w4c_path =
-      (inp_layout == utils::kPackedInt8_4W4C &&
-       outp_layout == utils::kPackedInt8_4W4C);
-  (void)use_4w4c_path;
-
-  if (false) {
-    add_q8ta_conv2d_pw_4w4c_node(
-        graph,
-        packed_int8_input,
-        input_scale,
-        input_zp,
-        packed_weight,
-        packed_weight_sums,
-        packed_weight_scales,
-        output_scale,
-        output_zp,
-        bias_data,
-        packed_bias,
-        packed_int8_output);
-  } else {
-    add_q8ta_conv2d_pw_node(
-        graph,
-        packed_int8_input,
-        input_scale,
-        input_zp,
-        packed_weight,
-        packed_weight_sums,
-        packed_weight_scales,
-        output_scale,
-        output_zp,
-        bias_data,
-        packed_bias,
-        packed_int8_output);
-  }
+  add_q8ta_conv2d_pw_node(
+      graph,
+      packed_int8_input,
+      input_scale,
+      input_zp,
+      packed_weight,
+      packed_weight_sums,
+      packed_weight_scales,
+      output_scale,
+      output_zp,
+      bias_data,
+      packed_bias,
+      packed_int8_output);
 }
 
 REGISTER_OPERATORS {

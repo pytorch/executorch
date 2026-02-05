@@ -732,6 +732,7 @@ ReferenceKey ReferenceKey::from_test_case(const TestCase& tc) {
       oss << "]d" << static_cast<int>(input.dtype);
       oss << "g" << static_cast<int>(input.data_gen_type);
       oss << "c" << (input.is_constant() ? 1 : 0);
+      oss << "n" << (input.is_none() ? 1 : 0);
     } else if (input.is_int()) {
       oss << "I" << input.get_int_value();
     } else if (input.is_float()) {
@@ -1558,26 +1559,26 @@ TestResult execute_test_cases(
   print_separator();
 
   // Group test cases by ReferenceKey for caching reference computations
+  // Use a vector to preserve the order in which groups first appear
+  std::vector<ReferenceKey> group_order;
   std::unordered_map<ReferenceKey, std::vector<size_t>, ReferenceKeyHash>
       groups;
   for (size_t i = 0; i < test_cases.size(); ++i) {
     ReferenceKey key = ReferenceKey::from_test_case(test_cases[i]);
+    if (groups.find(key) == groups.end()) {
+      group_order.push_back(key);
+    }
     groups[key].push_back(i);
   }
 
-  // Track which test cases had reference computed vs skipped
-  std::vector<bool> skipped_reference(test_cases.size(), true);
+  bool any_correctness_failed = false;
+  float total_gflops = 0.0f;
+  size_t test_case_counter = 0;
 
-  // Cache for reference outputs: key -> vector of output ref_float_data per
-  // output
-  std::unordered_map<
-      ReferenceKey,
-      std::vector<std::vector<float>>,
-      ReferenceKeyHash>
-      ref_cache;
-
-  // Process each group: generate data once, compute reference once
-  for (const auto& [key, indices] : groups) {
+  // Process each group: generate data, compute reference, execute, and print
+  // Iterate in the order groups first appeared in test_cases
+  for (const auto& key : group_order) {
+    const auto& indices = groups[key];
     if (indices.empty())
       continue;
 
@@ -1594,23 +1595,18 @@ TestResult execute_test_cases(
 
     // Compute reference once for prototype
     bool ref_computed = false;
+    std::vector<std::vector<float>> ref_data;
     if (reference_compute_func) {
       try {
         reference_compute_func(prototype);
         ref_computed = true;
-        skipped_reference[prototype_idx] = false;
 
-        // Cache the reference output
-        std::vector<std::vector<float>> ref_data;
+        // Cache the reference output for this group
         for (const auto& output : prototype.outputs()) {
           ref_data.push_back(output.get_ref_float_data());
         }
-        ref_cache[key] = std::move(ref_data);
-
-        // Print progress indicator for reference computation
-        std::cout << "." << std::flush;
       } catch (const std::invalid_argument& _) {
-        std::cout << "s" << std::flush;
+        // Reference computation skipped for this group
       }
     }
 
@@ -1633,116 +1629,106 @@ TestResult execute_test_cases(
 
       // Copy reference output data if available
       if (ref_computed) {
-        skipped_reference[tc_idx] = false;
-        auto it = ref_cache.find(key);
-        if (it != ref_cache.end()) {
-          const auto& ref_data = it->second;
-          for (size_t j = 0; j < tc.outputs().size() && j < ref_data.size();
-               ++j) {
-            tc.outputs()[j].get_ref_float_data() = ref_data[j];
+        for (size_t j = 0; j < tc.outputs().size() && j < ref_data.size();
+             ++j) {
+          tc.outputs()[j].get_ref_float_data() = ref_data[j];
+        }
+      }
+    }
+
+    // Execute and print results for all test cases in this group
+    for (size_t tc_idx : indices) {
+      TestCase& test_case = test_cases[tc_idx];
+      ++test_case_counter;
+
+      // Execute single test case
+      BenchmarkResult result;
+      bool shader_not_supported = false;
+      try {
+        result = execute_test_case(test_case, warmup_runs, benchmark_runs);
+        result.set_operator_name(test_case.operator_name());
+      } catch (const vkcompute::vkapi::ShaderNotSupportedError&) {
+        result = BenchmarkResult(
+            test_case.name().empty() ? "unnamed_test_case" : test_case.name(),
+            test_case.operator_name());
+        shader_not_supported = true;
+      }
+
+      // Determine if this test case passed (has valid timing data)
+      bool vulkan_execute_succeeded =
+          result.get_num_iterations() > 0 && result.get_avg_time_us() > 0.0f;
+
+      if (shader_not_supported) {
+        result.set_correctness_status(CorrectnessStatus::SKIPPED);
+      } else if (!vulkan_execute_succeeded) {
+        result.set_correctness_status(CorrectnessStatus::FAILED);
+      } else if (!ref_computed) {
+        result.set_correctness_status(CorrectnessStatus::SKIPPED);
+      } else {
+        // Reference function provided and succeeded - validate outputs
+        bool correctness_passed = true;
+
+        for (size_t output_idx = 0; output_idx < test_case.num_outputs();
+             ++output_idx) {
+          const ValueSpec& output_spec = test_case.outputs()[output_idx];
+
+          if (!output_spec.validate_against_reference(
+                  test_case.get_abs_tolerance(),
+                  test_case.get_rel_tolerance())) {
+            correctness_passed = false;
+            std::cout << "  Correctness validation FAILED for test "
+                      << result.get_kernel_name() << std::endl;
+            print_valuespec_data(output_spec, "vulkan output");
+            print_valuespec_data(output_spec, "ref output", true);
+
+            throw std::runtime_error("Correctness validation failed");
           }
         }
-      }
-    }
-  }
-  std::cout << std::endl;
 
-  if (debugging()) {
-    std::cout << "Grouped " << test_cases.size() << " test cases into "
-              << groups.size() << " reference computation groups" << std::endl;
-  }
-
-  bool any_correctness_failed = false;
-  float total_gflops = 0.0f;
-
-  for (size_t i = 0; i < test_cases.size(); ++i) {
-    TestCase& test_case = test_cases[i];
-
-    // Execute single test case
-    BenchmarkResult result;
-    bool shader_not_supported = false;
-    try {
-      result = execute_test_case(test_case, warmup_runs, benchmark_runs);
-      result.set_operator_name(test_case.operator_name());
-    } catch (const vkcompute::vkapi::ShaderNotSupportedError&) {
-      result = BenchmarkResult(
-          test_case.name().empty() ? "unnamed_test_case" : test_case.name(),
-          test_case.operator_name());
-      shader_not_supported = true;
-    }
-
-    // Determine if this test case passed (has valid timing data)
-    bool vulkan_execute_succeeded =
-        result.get_num_iterations() > 0 && result.get_avg_time_us() > 0.0f;
-
-    if (shader_not_supported) {
-      result.set_correctness_status(CorrectnessStatus::SKIPPED);
-    } else if (!vulkan_execute_succeeded) {
-      result.set_correctness_status(CorrectnessStatus::FAILED);
-    } else if (skipped_reference[i]) {
-      result.set_correctness_status(CorrectnessStatus::SKIPPED);
-    } else {
-      // Reference function provided and succeeded - validate outputs
-      bool correctness_passed = true;
-
-      for (size_t output_idx = 0; output_idx < test_case.num_outputs();
-           ++output_idx) {
-        const ValueSpec& output_spec = test_case.outputs()[output_idx];
-
-        if (!output_spec.validate_against_reference(
-                test_case.get_abs_tolerance(), test_case.get_rel_tolerance())) {
-          correctness_passed = false;
-          std::cout << "  Correctness validation FAILED for test "
-                    << result.get_kernel_name() << std::endl;
-          print_valuespec_data(output_spec, "vulkan output");
-          print_valuespec_data(output_spec, "ref output", true);
-
-          throw std::runtime_error("Correctness validation failed");
+        if (correctness_passed) {
+          result.set_correctness_status(CorrectnessStatus::PASSED);
+        } else {
+          any_correctness_failed = true;
+          result.set_correctness_status(CorrectnessStatus::FAILED);
         }
       }
 
-      if (correctness_passed) {
-        result.set_correctness_status(CorrectnessStatus::PASSED);
+      // Calculate GFLOPS for this test case using the provided FLOP calculator
+      float case_gflops = 0.0f;
+      if (vulkan_execute_succeeded) {
+        // Use the provided FLOP calculator to get total FLOPs for this test
+        // case
+        int64_t total_flops = flop_calculator(test_case);
+        float flops = static_cast<float>(total_flops);
+        float avg_time_us = result.get_avg_time_us();
+        if (avg_time_us > 0.0f && total_flops > 0) {
+          case_gflops = (flops / 1e9f) / (avg_time_us / 1e6f);
+        }
+
+        total_gflops += case_gflops;
       } else {
-        any_correctness_failed = true;
-        result.set_correctness_status(CorrectnessStatus::FAILED);
-      }
-    }
-
-    // Calculate GFLOPS for this test case using the provided FLOP calculator
-    float case_gflops = 0.0f;
-    if (vulkan_execute_succeeded) {
-      // Use the provided FLOP calculator to get total FLOPs for this test case
-      int64_t total_flops = flop_calculator(test_case);
-      float flops = static_cast<float>(total_flops);
-      float avg_time_us = result.get_avg_time_us();
-      if (avg_time_us > 0.0f && total_flops > 0) {
-        case_gflops = (flops / 1e9f) / (avg_time_us / 1e6f);
+        case_gflops = -1.0f; // Indicate failure
       }
 
-      total_gflops += case_gflops;
-    } else {
-      case_gflops = -1.0f; // Indicate failure
-    }
-
-    // Calculate tensor info for display
-    std::string size_info = "[";
-    if (!test_case.empty() && test_case.num_inputs() > 0 &&
-        test_case.inputs()[0].is_tensor()) {
-      const auto& sizes = test_case.inputs()[0].get_tensor_sizes();
-      for (size_t j = 0; j < sizes.size(); ++j) {
-        size_info += std::to_string(sizes[j]);
-        if (j < sizes.size() - 1)
-          size_info += "x";
+      // Calculate tensor info for display
+      std::string size_info = "[";
+      if (!test_case.empty() && test_case.num_inputs() > 0 &&
+          test_case.inputs()[0].is_tensor()) {
+        const auto& sizes = test_case.inputs()[0].get_tensor_sizes();
+        for (size_t j = 0; j < sizes.size(); ++j) {
+          size_info += std::to_string(sizes[j]);
+          if (j < sizes.size() - 1)
+            size_info += "x";
+        }
       }
+      size_info += "]";
+
+      // Print progress using the BenchmarkResult member function
+      result.print_summary(test_case_counter, size_info, case_gflops);
+
+      // Add result to collection
+      results.add_result(std::move(result));
     }
-    size_info += "]";
-
-    // Print progress using the BenchmarkResult member function
-    result.print_summary(i + 1, size_info, case_gflops);
-
-    // Add result to collection
-    results.add_result(std::move(result));
   }
 
   // Set the overall results on the TestResult
