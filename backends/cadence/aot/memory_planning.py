@@ -290,6 +290,7 @@ def print_memory_planning_info(
     opt_level: int,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
+    log_level=logging.INFO,
 ) -> None:
     # Get the peak memory usages per memory space
     mem_constraints = MemConstraints(
@@ -319,7 +320,8 @@ def print_memory_planning_info(
     ]
 
     # Print the memory usage per memory space as a table
-    logging.info(
+    logging.log(
+        log_level,
         "\n"
         + tabulate(
             memory_usage_table,
@@ -330,7 +332,7 @@ def print_memory_planning_info(
                 "Peak Memory Usage (Bytes)",
             ],
             tablefmt="outline",
-        )
+        ),
     )
 
     # Get the total peak memory usage across all memory spaces
@@ -352,12 +354,13 @@ def print_memory_planning_info(
     ]
 
     # Print the total memory usage as a table
-    logging.info(
+    logging.log(
+        log_level,
         "\n"
         + tabulate(
             total_memory_usage_table,
             tablefmt="outline",
-        )
+        ),
     )
 
 

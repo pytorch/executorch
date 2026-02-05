@@ -17,6 +17,14 @@
 
 namespace vkcompute {
 
+bool q8ta_conv2d_check_packed_dim_info(const api::PackedDimInfo& info) {
+  return info.packed_dim == WHCN::kChannelsDim &&
+      info.packed_dim_block_size == 4 &&
+      info.outer_packed_dim == WHCN::kWidthDim &&
+      (info.outer_packed_dim_block_size == 1 ||
+       info.outer_packed_dim_block_size == 4);
+}
+
 //
 // Workgroup size selection functions
 //
@@ -228,6 +236,22 @@ void add_q8ta_conv2d_node(
       padding,
       dilation,
       groups);
+
+  // The implementation requires that for grouped convolutions, the input
+  // channels per group is a multiple of 4.
+  if (conv_params.groups > 1) {
+    VK_CHECK_COND(conv_params.in_channels_per_group % 4 == 0);
+  }
+
+  // Validate packed dim info for input and output tensors
+  VK_CHECK_COND(q8ta_conv2d_check_packed_dim_info(
+      graph.packed_dim_info_of(packed_int8_input)));
+  VK_CHECK_COND(q8ta_conv2d_check_packed_dim_info(
+      graph.packed_dim_info_of(packed_int8_output)));
+
+  // Validate dtype is kInt8x4
+  VK_CHECK_COND(graph.dtype_of(packed_int8_input) == vkapi::kInt8x4);
+  VK_CHECK_COND(graph.dtype_of(packed_int8_output) == vkapi::kInt8x4);
 
   float input_scale_val = graph.extract_scalar<float>(input_scale);
   int32_t input_zp_val = graph.extract_scalar<int32_t>(input_zp);

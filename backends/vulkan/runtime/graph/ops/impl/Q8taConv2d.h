@@ -13,6 +13,17 @@
 
 namespace vkcompute {
 
+bool q8ta_conv2d_check_packed_dim_info(const api::PackedDimInfo& info);
+
+ValueRef prepack_quantized_conv2d_weight(
+    ComputeGraph& graph,
+    const QuantizationConfig& weight_quant_config,
+    const ValueRef weight_data,
+    const ValueRef input,
+    const ValueRef output,
+    const ValueRef groups,
+    const ValueRef kernel_size);
+
 ValueRef prepack_quantized_conv2d_weight(
     ComputeGraph& graph,
     const QuantizationConfig& weight_quant_config,
