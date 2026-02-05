@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -43,7 +43,7 @@ MEMORY
   DTCM  (rw)  : ORIGIN = 0x30000000, LENGTH = 0x00008000
   SRAM  (rw)  : ORIGIN = 0x31000000, LENGTH = 0x00400000
   QSPI  (rw)  : ORIGIN = 0x38000000, LENGTH = 0x00800000
-  DDR   (rw)  : ORIGIN = 0x70000000, LENGTH = 0x10000000
+  DDR   (rw)  : ORIGIN = 0x70000000, LENGTH = 0x60000000
 }
 
 PHDRS
