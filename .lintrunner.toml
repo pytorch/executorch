@@ -517,6 +517,7 @@ include_patterns = [
     'backends/arm/quantizer/**/*.py',
     'backends/arm/debug/**/*.py',
     'backends/arm/scripts/**/*.py',
+    'backends/arm/operator_support/**/*.py',
     'backends/arm/*.py',
 ]
 exclude_patterns = ['third-party/**', '**/third-party/**']
