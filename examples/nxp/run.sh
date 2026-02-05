@@ -18,7 +18,7 @@ fi
 rm -rf ${SCRIPT_DIR}/executor_runner/build/*
 
 pushd ${SCRIPT_DIR}/executor_runner/build
-cmake ..
+cmake -DCMAKE_BUILD_TYPE=Debug ..
 make -j8 nxp_executor_runner
 popd
 
