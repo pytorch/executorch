@@ -181,6 +181,14 @@ table QnnExecuTorchHtpBackendOptions {
   /// When multiple graphs appear inside the same context,
   /// weights could be reused across all graphs.
   use_weight_sharing:bool;
+
+  /// When multiple devices appear in the same platform
+  /// specify device id for preparing graphs
+  device_id:int;
+
+  /// When multiple cores appear in the same device
+  /// specify core ids for preparing graphs
+  core_ids:[int];
 }
 
 /// Logging level of the delegate and QNN backend.
