@@ -226,6 +226,15 @@ class Llama2Model(EagerModelBase):
                 f"sink_size + window_size ({sink_size + window_size})"
             )
 
+            # IMPORTANT: For attention sink, we need RoPE frequencies for all possible generation
+            # positions, not just the cache size. Override the model's max_context_len to use
+            # a larger value that supports extended generation.
+            # We use model_args.max_context_len which was set from export.max_context_length
+            # but for RoPE we need the full generation length capability.
+            # Use 131072 (128k) as default for Llama 3.2 models or the original model max if larger.
+            default_rope_length = max(131072, model_args.max_context_len)
+            model_args.max_context_len = default_rope_length
+
             self.model_ = enable_attention_sink(
                 module=self.model_,
                 params=model_args,

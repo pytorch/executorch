@@ -355,30 +355,26 @@ def _replace_attention(
 
         if isinstance(child_module, AttentionMHA):
             kv_cache = child_module.kv_cache
-            if sink_size == 0:
-                # For sink_size=0, use the exact same RingKVCache that works
-                # This is a test to ensure parity with the working implementation
-                child_module.kv_cache = RingKVCache(
-                    kv_cache.max_batch_size,
-                    window_size,  # RingKVCache expects user-provided window size
-                    kv_cache.n_heads,
-                    kv_cache.head_dim,
-                    kv_cache.enable_dynamic_shape,
-                    kv_cache.k_cache.dtype,
-                )
-            else:
-                kv_cache_with_attention_sink = KVCacheWithAttentionSink(
-                    n_heads=kv_cache.n_heads,
-                    head_dim=kv_cache.head_dim,
-                    enable_dynamic_shape=kv_cache.enable_dynamic_shape,
-                    rope=rope_with_attention_sink,
-                    max_batch_size=kv_cache.max_batch_size,
-                    window_size=window_size,
-                    sink_size=sink_size,
-                    eviction_batch_size=eviction_batch_size,
-                    dtype=kv_cache.k_cache.dtype,
-                )
-                child_module.kv_cache = kv_cache_with_attention_sink
+            # Always use KVCacheWithAttentionSink, even for sink_size=0
+            # This ensures we don't get replaced by CustomKVCache when use_sdpa_with_kv_cache=True
+            kv_cache_with_attention_sink = KVCacheWithAttentionSink(
+                n_heads=kv_cache.n_heads,
+                head_dim=kv_cache.head_dim,
+                enable_dynamic_shape=kv_cache.enable_dynamic_shape,
+                rope=rope_with_attention_sink,
+                max_batch_size=kv_cache.max_batch_size,
+                window_size=window_size,
+                sink_size=sink_size,
+                eviction_batch_size=eviction_batch_size,
+                dtype=kv_cache.k_cache.dtype,
+            )
+            child_module.kv_cache = kv_cache_with_attention_sink
+
+            # If using SDPACustom (fused SDPA op), enable attention mask support
+            # so it uses our ring buffer / attention sink mask instead of simple causal mask
+            if "SDPACustom" in child_module.SDPA.__class__.__name__:
+                child_module.SDPA.use_attention_mask = True
+
             # Don't replace forward - let the original AttentionMHA.forward handle it
             # since our KVCache has is_ring_buffer=True, it will use the ring buffer mask
 

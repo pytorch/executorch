@@ -2,7 +2,7 @@ base:
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 
 model:
-  use_sdpa_with_kv_cache: False  # attention_sink 需要用标准 SDPA
+  use_sdpa_with_kv_cache: True  # Now supported! We set use_attention_mask=True on SDPACustom
   use_kv_cache: True
   dtype_override: fp32
   enable_dynamic_shape: True
