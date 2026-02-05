@@ -99,6 +99,18 @@ python export_parakeet_tdt.py \
     --output-dir ./parakeet_metal_quantized
 ```
 
+**Note:** Metal 4-bit quantization requires torchao built with experimental MPS (Metal) ops.
+
+You can install torchao with Metal support from the `ao` repo:
+```bash
+USE_CPP=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 pip install . --no-build-isolation
+```
+
+Alternatively, you can build torchao with Metal support while installing ExecuTorch:
+```bash
+EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
+```
+
 ### Metal Export (macOS)
 
 ```bash
