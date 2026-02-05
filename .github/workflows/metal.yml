@@ -73,12 +73,6 @@ jobs:
             name: "parakeet-tdt"
         quant:
           - "non-quantized"
-        # Only test int4 quantization with parakeet-tdt
-        include:
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
-            quant: "quantized-int4-metal"
     with:
       runner: macos-m2-stable
       python-version: '3.11'
@@ -129,12 +123,6 @@ jobs:
             name: "parakeet-tdt"
         quant:
           - "non-quantized"
-        # Only test int4 quantization with parakeet-tdt
-        include:
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
-            quant: "quantized-int4-metal"
     with:
       runner: macos-m2-stable
       python-version: '3.11'

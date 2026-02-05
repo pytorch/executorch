@@ -583,7 +583,7 @@ def main():
     parser.add_argument(
         "--qlinear",
         type=str,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w"],
         help="Quantization config for decoder linear layers",
     )
     parser.add_argument(
@@ -603,7 +603,7 @@ def main():
     parser.add_argument(
         "--qlinear_encoder",
         type=str,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w"],
         help="Quantization config for encoder linear layers",
     )
     parser.add_argument(
@@ -638,12 +638,6 @@ def main():
     # Validate dtype
     if args.dtype == "fp16":
         parser.error("fp16 is not yet supported")
-
-    # Validate fpa4w quantization requires Metal backend
-    if args.qlinear == "fpa4w" and args.backend != "metal":
-        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
-    if args.qlinear_encoder == "fpa4w" and args.backend != "metal":
-        parser.error("--qlinear_encoder=fpa4w can only be used with --backend=metal")
 
     os.makedirs(args.output_dir, exist_ok=True)
 

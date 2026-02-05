@@ -26,15 +26,13 @@ Arguments:
   quant_name   Quantization type (optional, default: non-quantized)
                Options:
                  - non-quantized
-                 - quantized-int4-tile-packed (CUDA only)
-                 - quantized-int4-weight-only (CUDA only)
-                 - quantized-int4-metal (Metal only)
+                 - quantized-int4-tile-packed
+                 - quantized-int4-weight-only
 
   output_dir   Output directory for artifacts (optional, default: current directory)
 
 Examples:
   export_model_artifact.sh metal "openai/whisper-small"
-  export_model_artifact.sh metal "nvidia/parakeet-tdt" "quantized-int4-metal"
   export_model_artifact.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed"
   export_model_artifact.sh cuda "google/gemma-3-4b-it" "non-quantized" "./output"
   export_model_artifact.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./output"
@@ -129,28 +127,21 @@ case "$QUANT_NAME" in
     ;;
   quantized-int4-tile-packed)
     if [ "$DEVICE" = "metal" ]; then
-      echo "Error: Metal backend does not support quantization '$QUANT_NAME'"
+      echo "Error: Metal backend does not yet support quantization '$QUANT_NAME'"
       exit 1
     fi
     EXTRA_ARGS="--qlinear 4w --qlinear_encoder 4w --qlinear_packing_format tile_packed_to_4d --qlinear_encoder_packing_format tile_packed_to_4d"
     ;;
   quantized-int4-weight-only)
     if [ "$DEVICE" = "metal" ]; then
-      echo "Error: Metal backend does not support quantization '$QUANT_NAME'"
+      echo "Error: Metal backend does not yet support quantization '$QUANT_NAME'"
       exit 1
     fi
     EXTRA_ARGS="--qlinear_encoder 4w"
     ;;
-  quantized-int4-metal)
-    if [ "$DEVICE" != "metal" ]; then
-      echo "Error: Quantization '$QUANT_NAME' only supported on Metal backend"
-      exit 1
-    fi
-    EXTRA_ARGS="--qlinear fpa4w --qlinear_encoder fpa4w"
-    ;;
   *)
     echo "Error: Unsupported quantization '$QUANT_NAME'"
-    echo "Supported quantizations: non-quantized, quantized-int4-tile-packed, quantized-int4-weight-only, quantized-int4-metal"
+    echo "Supported quantizations: non-quantized, quantized-int4-tile-packed, quantized-int4-weight-only"
     exit 1
     ;;
 esac
