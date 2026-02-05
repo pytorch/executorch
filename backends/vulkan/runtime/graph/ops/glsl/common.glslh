@@ -25,6 +25,8 @@
 #define div_up_4(x) (((x) + 3) >> 2)
 #define div_up_8(x) (((x) + 7) >> 3)
 
+#define div_up(x, y) (((x) + (y) - 1) / (y))
+
 #define align_up_2(x) ((x + 1) & -2)
 #define align_up_4(x) ((x + 3) & -4)
 #define align_up_8(x) ((x + 7) & -8)
@@ -32,6 +34,7 @@
 #define mod_2(x) ((x) & 1)
 #define mod_4(x) ((x) & 3)
 #define mod_8(x) ((x) & 7)
+
 
 int sign_extend_8bit(const int val) {
   if ((val & 0x80) != 0) {
