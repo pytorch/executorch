@@ -56,6 +56,10 @@ define_overridable_option(
   "Build executorch runtime optimizing for binary size" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_USE_SANITIZER
+  "Build with AddressSanitizer and UndefinedBehaviorSanitizer enabled" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_ARM_BAREMETAL
   "Build the Arm Baremetal flow for Cortex-M and Ethos-U" BOOL OFF
 )
