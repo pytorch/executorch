@@ -368,7 +368,9 @@ class TestCoreMLPartitioner(unittest.TestCase):
         partitioner_logger.addHandler(ch)
         partitioner_logger.setLevel(logging.WARNING)
 
-        edge = executorch.exir.to_edge(exported_model, compile_config=self.edge_compile_config)
+        edge = executorch.exir.to_edge(
+            exported_model, compile_config=self.edge_compile_config
+        )
         partitioner = CoreMLPartitioner()
 
         edge.to_backend(partitioner)
@@ -413,7 +415,9 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         partitioner = CoreMLPartitioner()
 
-        executorch.exir.to_edge_transform_and_lower(exported_model, partitioner=[partitioner])
+        executorch.exir.to_edge_transform_and_lower(
+            exported_model, partitioner=[partitioner]
+        )
 
         log_contents = log_capture_string.getvalue()
         self.assertNotIn("DEPRECATION WARNING", log_contents)
