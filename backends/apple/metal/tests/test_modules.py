@@ -694,12 +694,18 @@ def quantize_model(model: nn.Module, qlinear: str, qlinear_group_size: int = 32)
     else:
         raise ValueError(f"Unsupported linear quantization config '{qlinear}'.")
 
-    def linear_filter(module, fqn):
-        if isinstance(module, torch.nn.Linear):
-            # Check if hidden dimension is divisible by group size
-            return qlinear_group_size == 0 or (
-                module.weight.shape[1] % qlinear_group_size == 0
-            )
+    def linear_filter(m, fqn):
+        if isinstance(m, torch.nn.Linear):
+            if qlinear_group_size == 0:
+                raise ValueError(
+                    f"Invalid group_size=0 for Metal int4 quantization (layer: {fqn})"
+                )
+            if m.weight.shape[1] % 8 != 0:
+                raise ValueError(
+                    f"Metal int4 quantization requires weight dimension K to be multiple of 8. "
+                    f"Layer {fqn} has weight shape {m.weight.shape} (K={m.weight.shape[1]})"
+                )
+            return True
         return False
 
     quantize_(model, linear_config, filter_fn=linear_filter)
