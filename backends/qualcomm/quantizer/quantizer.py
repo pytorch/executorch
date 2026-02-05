@@ -160,6 +160,7 @@ class ModuleQConfig:
     is_conv_per_channel: bool = False
     is_linear_per_channel: bool = False
     act_observer: Optional[UniformQuantizationObserverBase] = None
+    act_symmetric: bool = False
     eps: Optional[float] = None
 
     def __post_init__(self):
@@ -173,9 +174,13 @@ class ModuleQConfig:
             per_block_quant_config_func,
         ) = QUANT_CONFIG_DICT[(self.quant_dtype, self.is_qat)]
         self.quant_config = (
-            quant_config_func(act_observer=self.act_observer, eps=self.eps)
+            quant_config_func(
+                act_symmetric=self.act_symmetric,
+                act_observer=self.act_observer,
+                eps=self.eps,
+            )
             if self.act_observer
-            else quant_config_func(eps=self.eps)
+            else quant_config_func(act_symmetric=self.act_symmetric, eps=self.eps)
         )
 
         # Assume per_channel_quant/per_block_quant only happen on axis_0 or axis_1, increase the range if there's a need
@@ -186,12 +191,15 @@ class ModuleQConfig:
             self.per_channel_quant_config_list.append(
                 (
                     per_channel_quant_config_func(
+                        act_symmetric=self.act_symmetric,
                         act_observer=self.act_observer,
                         ch_axis=i,
                         eps=self.eps,
                     )
                     if self.act_observer
-                    else per_channel_quant_config_func(ch_axis=i, eps=self.eps)
+                    else per_channel_quant_config_func(
+                        act_symmetric=self.act_symmetric, ch_axis=i, eps=self.eps
+                    )
                 )
             )
 
@@ -229,10 +237,14 @@ class ModuleQConfig:
                 self.per_block_quant_config_list.append(
                     (
                         per_block_quant_config_func(
-                            act_observer=self.act_observer, ch_axis=i
+                            act_symmetric=self.act_symmetric,
+                            act_observer=self.act_observer,
+                            ch_axis=i,
                         )
                         if self.act_observer
-                        else per_block_quant_config_func(ch_axis=i)
+                        else per_block_quant_config_func(
+                            act_symmetric=self.act_symmetric, ch_axis=i
+                        )
                     )
                 )
 
@@ -412,6 +424,7 @@ class QnnQuantizer(Quantizer):
         is_conv_per_channel=False,
         is_linear_per_channel=False,
         act_observer=None,
+        act_symmetric=False,
         eps=None,
     ) -> None:
         """
@@ -432,6 +445,7 @@ class QnnQuantizer(Quantizer):
             is_conv_per_channel=is_conv_per_channel,
             is_linear_per_channel=is_linear_per_channel,
             act_observer=act_observer,
+            act_symmetric=act_symmetric,
             eps=eps,
         )
 

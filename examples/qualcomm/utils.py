@@ -306,6 +306,7 @@ def make_quantizer(
     per_channel_conv=True,
     per_channel_linear=False,
     act_observer=MovingAverageMinMaxObserver,
+    act_symmetric=False,
     is_qat=False,
     submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     eps=None,
@@ -318,6 +319,7 @@ def make_quantizer(
         is_conv_per_channel=per_channel_conv,
         is_linear_per_channel=per_channel_linear,
         act_observer=act_observer,
+        act_symmetric=act_symmetric,
         eps=eps,
     )
     submodule_qconfig_list = submodule_qconfig_list or []
