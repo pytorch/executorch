@@ -2,7 +2,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 """Provide TOSA specification parsing and context utilities.
 
 Use these helpers to parse and validate TOSA profile/extension strings and to
@@ -24,12 +23,13 @@ class TosaSpecMapping(Generic[T]):
         self._mapping: Dict[TosaSpecification, List[T]] = {}
 
     def add(self, spec: "TosaSpecification", value: T) -> None:
-        """
-        Adds a value to the mapping for the given TOSA specification.
+        """Adds a value to the mapping for the given TOSA specification.
+
         The specification is normalized to its canonical form, which means that
-        only the version and profiles are considered, without extensions.
-        This allows for grouping of values under the same TOSA specification
+        only the version and profiles are considered, without extensions. This
+        allows for grouping of values under the same TOSA specification
         regardless of the extensions they may have.
+
         """
 
         if spec.is_U55_subset or spec.extensions:
@@ -61,10 +61,12 @@ class TosaSpecMapping(Generic[T]):
         return [spec]
 
     def get(self, spec: "TosaSpecification") -> List[T]:
-        """
-        Returns a list of values associated with the given TOSA specification.
+        """Returns a list of values associated with the given TOSA
+        specification.
+
         The specification is normalized to its canonical form, which means that
         only the version and profiles are considered, without extensions.
+
         """
 
         base_specs = self._get_base_specs(spec)
@@ -215,8 +217,8 @@ class TosaSpecification:
         raise ValueError(f"Failed to parse TOSA specification representation: {repr}")
 
     def _canonical_key(self) -> "TosaSpecification":
-        """
-        Returns a new TosaSpecification instance with only version and profiles (no extensions).
+        """Returns a new TosaSpecification instance with only version and
+        profiles (no extensions).
         """
         raise NotImplementedError
 
@@ -366,9 +368,11 @@ class Tosa_1_00(TosaSpecification):
         return False
 
     def _canonical_key(self) -> "Tosa_1_00":
-        """
-        Returns a new Tosa_1_00 instance with only major.minor version and profiles (no extensions).
+        """Returns a new Tosa_1_00 instance with only major.minor version and
+        profiles (no extensions).
+
         Patch version is set to zero for normalization.
+
         """
         from packaging.version import Version
 

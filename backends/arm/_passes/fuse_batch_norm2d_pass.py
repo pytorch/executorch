@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -96,14 +96,15 @@ class FuseBatchNorm2dPass(ArmPass):
             ):
                 # Insert a transparent conv2d before bn to fuse with if none is present.
                 shape = get_first_fake_tensor(node)
+                input_dtype = get_first_fake_tensor(input_node).dtype
                 if len(shape.size()) == 3:
-                    input_weight_tensor = torch.ones((1, 1, 1))
+                    input_weight_tensor = torch.ones((1, 1, 1), dtype=input_dtype)
                     stride = [1]
                     padding = [0]
                     dilation = [1]
                     output_padding = [0]
                 else:
-                    input_weight_tensor = torch.ones((1, 1, 1, 1))
+                    input_weight_tensor = torch.ones((1, 1, 1, 1), dtype=input_dtype)
                     stride = [1, 1]
                     padding = [0, 0]
                     dilation = [1, 1]

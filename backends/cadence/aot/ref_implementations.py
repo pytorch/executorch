@@ -2208,3 +2208,85 @@ def quantized_softmax(
         out_scale,
         out_zero_point,
     )
+
+
+@impl_tracked(m, "sdpa_bitwise_mask_gen")
+def sdpa_bitwise_mask_gen(mask: torch.Tensor, threshold: float) -> torch.Tensor:
+    """
+    Generate a bit-packed mask tensor for SDPA.
+
+    Notes:
+    - The semantic of "mask" here is inverted relative to PyTorch's typical boolean masks.
+      In PyTorch, a boolean mask generally uses True to indicate positions to keep/attend,
+      and False to indicate positions to mask out. In this function, the convention is
+      reversed: a value of 1 in the packed byte indicates a masked (disallowed) position,
+      while 0 indicates an unmasked (allowed) position.
+      Concretely:
+        * For a bool mask input:
+            True  -> unmasked/allowed  -> stored as bit 0 (we invert with ~)
+            False -> masked/disallowed -> stored as bit 1
+        * For a float mask input with threshold:
+            value < threshold -> masked/disallowed (bit 1)
+            value >= threshold -> unmasked/allowed (bit 0)
+
+    Behavior:
+    - Input mask can be torch.bool or torch.float.
+    - The last dimension must be a multiple of 8 so that each group of 8 elements
+      packs into one byte (little-endian within the byte: the first element maps
+      to the least significant bit).
+    - For bool masks, bits are computed as the inverse of the boolean value to align
+      with the "1 means masked" convention.
+    - For float masks, a comparison against `threshold` is used to determine masked
+      positions (value < threshold -> masked -> bit = 1).
+    """
+
+    assert len(mask.shape) >= 1, "Mask must be at least 1D"
+    assert mask.dtype in [torch.bool, torch.float], "Mask must be bool or float"
+    assert mask.shape[-1] % 8 == 0, "Mask last dim must be a multiple of 8"
+    if mask.dtype == torch.bool:
+        # Pack every 8 boolean elements into a single byte in the output tensor.
+        # Flatten to 1D for straightforward packing
+        original_shape = mask.shape
+        flat = mask.contiguous().view(-1)
+        # Convert boolean to uint8 and group into chunks of 8
+        bits = flat.to(torch.uint8).view(-1, 8)
+
+        # Pack 8 bits into one byte (little-endian within a byte: first element -> LSB)
+        packed = (
+            (~bits[:, 0] & 1) << 0
+            | (~bits[:, 1] & 1) << 1
+            | (~bits[:, 2] & 1) << 2
+            | (~bits[:, 3] & 1) << 3
+            | (~bits[:, 4] & 1) << 4
+            | (~bits[:, 5] & 1) << 5
+            | (~bits[:, 6] & 1) << 6
+            | (~bits[:, 7] & 1) << 7
+        ).to(torch.uint8)
+
+        # Compute packed last dim size
+        last_dim = original_shape[-1]
+        packed_last = last_dim // 8
+        # Reshape packed to match mask shape, with last dim packed to bytes
+        return packed.view(*original_shape[:-1], packed_last)
+    else:
+        assert mask.dtype == torch.float, "Mask must be bool or float"
+        # Pack every 8 boolean elements into a single byte in the output tensor.
+        # Flatten to 1D for straightforward packing
+        original_shape = mask.shape
+        flat = mask.contiguous().view(-1, 8)
+        packed = (
+            (flat[:, 0] < threshold) << 0
+            | (flat[:, 1] < threshold) << 1
+            | (flat[:, 2] < threshold) << 2
+            | (flat[:, 3] < threshold) << 3
+            | (flat[:, 4] < threshold) << 4
+            | (flat[:, 5] < threshold) << 5
+            | (flat[:, 6] < threshold) << 6
+            | (flat[:, 7] < threshold) << 7
+        ).to(torch.uint8)
+
+        # Compute packed last dim size
+        last_dim = original_shape[-1]
+        packed_last = last_dim // 8
+        # Reshape packed to match mask shape, with last dim packed to bytes
+        return packed.view(*original_shape[:-1], packed_last)
