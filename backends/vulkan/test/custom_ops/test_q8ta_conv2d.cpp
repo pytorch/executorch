@@ -24,24 +24,13 @@ using namespace vkcompute;
 static constexpr int64_t kRefDimSizeLimit = 100;
 
 // Utility function to create a test case from a Conv2dConfig
-TestCase create_test_case_from_config(
+static TestCase create_test_case_from_config(
     const Conv2dConfig& config,
     vkapi::ScalarType input_dtype,
     utils::StorageType fp_storage_type,
-    utils::StorageType int8_storage_type) {
+    utils::GPUMemoryLayout int8_memory_layout,
+    const std::string& impl_selector = "general") {
   TestCase test_case;
-  test_case.set_name(config.test_case_name);
-
-  std::string operator_suffix = ".test";
-  if (int8_storage_type == utils::kTexture3D) {
-    operator_suffix += "_texture";
-  } else {
-    operator_suffix += "_buffer";
-  }
-
-  // Set the operator name for the test case
-  std::string operator_name = "etvk." + config.op_name + operator_suffix;
-  test_case.set_operator_name(operator_name);
 
   // Calculate output dimensions
   int64_t H_out = config.get_output_height();
@@ -54,6 +43,26 @@ TestCase create_test_case_from_config(
   utils::GPUMemoryLayout fp_memory_layout = fp_storage_type == utils::kBuffer
       ? utils::kWidthPacked
       : utils::kChannelsPacked;
+
+  // Create test case name
+  // Format: ACCU/PERF  OC->IC  I=H,W  g=groups  k=kernel  Tex(CP)->Buf(4C1W)
+  std::string prefix = config.test_case_name.substr(0, 4); // "ACCU" or "PERF"
+  std::string test_name = prefix + "  " + std::to_string(config.channels.out) +
+      "->" + std::to_string(config.channels.in) + "  " +
+      "I=" + std::to_string(config.input_size.h) + "," +
+      std::to_string(config.input_size.w) + "  " +
+      "g=" + std::to_string(config.groups) + "  " +
+      "k=" + std::to_string(config.kernel.h) + "  " +
+      repr_str(fp_storage_type, fp_memory_layout) + "->" +
+      repr_str(utils::kBuffer, int8_memory_layout);
+  if (!impl_selector.empty()) {
+    test_name += " [" + impl_selector + "]";
+  }
+  test_case.set_name(test_name);
+
+  // Set the operator name for the test case - use the unified test operator
+  std::string operator_name = "test_etvk.test_q8ta_conv2d.default";
+  test_case.set_operator_name(operator_name);
 
   ValueSpec input_tensor(
       input_size,
@@ -170,9 +179,25 @@ TestCase create_test_case_from_config(
   test_case.add_input_spec(dilation);
   test_case.add_input_spec(groups);
 
+  // Add memory layout parameter for the quantized tensors
+  ValueSpec layout_int(static_cast<int32_t>(int8_memory_layout));
+  test_case.add_input_spec(layout_int);
+
+  // Add impl_selector string
+  ValueSpec impl_selector_spec = ValueSpec::make_string(impl_selector);
+  test_case.add_input_spec(impl_selector_spec);
+
   test_case.add_output_spec(output);
 
   test_case.set_abs_tolerance(output_scale_val + 1e-4f);
+
+  // Filter out quantize/dequantize shaders from timing measurements
+  test_case.set_shader_filter({
+      "nchw_to",
+      "to_nchw",
+      "q8ta_quantize",
+      "q8ta_dequantize",
+  });
 
   return test_case;
 }
@@ -184,25 +209,41 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
   // Single simple configuration for debugging
   Conv2dConfig config = {
       OutInChannels(16, 8), // channels (out, in)
-      InputSize2D(21, 17), // input_size (h, w)
+      InputSize2D(5, 5), // input_size (h, w)
       KernelSize(3, 3), // kernel
       Stride(1, 1), // stride
       Padding(1, 1), // padding
       Dilation(1, 1), // dilation
-      2, // groups
+      1, // groups
   };
   config.op_name = "conv2d_q8ta_q8csw_q8to";
 
-  std::vector<utils::StorageType> storage_types = {
+  std::vector<utils::StorageType> fp_storage_types = {
       utils::kTexture3D, utils::kBuffer};
 
+  // Memory layouts for int8 tensors - test both optimized (4W4C) and general
+  // paths
+  std::vector<utils::GPUMemoryLayout> int8_memory_layouts = {
+      utils::kPackedInt8_4C1W, utils::kPackedInt8_4W4C, utils::kPackedInt8_4C};
+
   // Generate test cases for each combination
-  for (const utils::StorageType fp_storage_type : storage_types) {
-    for (const utils::StorageType int8_storage_type : storage_types) {
-      config.test_case_name = make_test_case_name(
-          config, false, fp_storage_type, int8_storage_type);
+  for (const utils::StorageType fp_storage_type : fp_storage_types) {
+    for (const utils::GPUMemoryLayout int8_memory_layout :
+         int8_memory_layouts) {
+      config.test_case_name =
+          make_test_case_name(config, false, fp_storage_type, utils::kBuffer);
       test_cases.push_back(create_test_case_from_config(
-          config, vkapi::kFloat, fp_storage_type, int8_storage_type));
+          config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
+
+      // For 4W4C layout, also test the legacy implementation
+      if (int8_memory_layout == utils::kPackedInt8_4W4C) {
+        test_cases.push_back(create_test_case_from_config(
+            config,
+            vkapi::kFloat,
+            fp_storage_type,
+            int8_memory_layout,
+            /*impl_selector=*/"legacy_4w4c"));
+      }
     }
   }
 
@@ -210,7 +251,7 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
 }
 
 // Generate test cases for quantized conv2d operation
-std::vector<TestCase> generate_quantized_conv2d_test_cases() {
+static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
   std::vector<TestCase> test_cases;
   if (!vkcompute::api::context()->adapter_ptr()->supports_int8_dot_product()) {
     return test_cases;
@@ -371,9 +412,14 @@ std::vector<TestCase> generate_quantized_conv2d_test_cases() {
        Dilation(1, 1),
        4}};
 
-  // Test with different storage types and data types
-  std::vector<utils::StorageType> storage_types = {
+  // Test with different storage types and memory layouts
+  std::vector<utils::StorageType> fp_storage_types = {
       utils::kTexture3D, utils::kBuffer};
+
+  // Memory layouts for int8 tensors - test both optimized (4W4C) and general
+  // paths
+  std::vector<utils::GPUMemoryLayout> int8_memory_layouts = {
+      utils::kPackedInt8_4C1W, utils::kPackedInt8_4W4C, utils::kPackedInt8_4C};
 
   // Generate test cases for each combination
   for (auto& config : configs) {
@@ -384,12 +430,23 @@ std::vector<TestCase> generate_quantized_conv2d_test_cases() {
 
     config.op_name = "conv2d_q8ta_q8csw_q8to";
 
-    for (const utils::StorageType fp_storage_type : storage_types) {
-      for (const utils::StorageType int8_storage_type : storage_types) {
+    for (const utils::StorageType fp_storage_type : fp_storage_types) {
+      for (const utils::GPUMemoryLayout int8_memory_layout :
+           int8_memory_layouts) {
         config.test_case_name = make_test_case_name(
-            config, is_performance, fp_storage_type, int8_storage_type);
+            config, is_performance, fp_storage_type, utils::kBuffer);
         test_cases.push_back(create_test_case_from_config(
-            config, vkapi::kFloat, fp_storage_type, int8_storage_type));
+            config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
+
+        // For 4W4C layout, also test the legacy implementation
+        if (int8_memory_layout == utils::kPackedInt8_4W4C) {
+          test_cases.push_back(create_test_case_from_config(
+              config,
+              vkapi::kFloat,
+              fp_storage_type,
+              int8_memory_layout,
+              /*impl_selector=*/"legacy_4w4c"));
+        }
       }
     }
   }
@@ -398,7 +455,7 @@ std::vector<TestCase> generate_quantized_conv2d_test_cases() {
 }
 
 // Reference implementation for activation, weight, and output quantized conv2d
-void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
+static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   // Extract input specifications
   int32_t idx = 0;
   const ValueSpec& input_spec = test_case.inputs()[idx++];
@@ -416,6 +473,10 @@ void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   const ValueSpec& padding_spec = test_case.inputs()[idx++];
   const ValueSpec& dilation_spec = test_case.inputs()[idx++];
   const ValueSpec& groups_spec = test_case.inputs()[idx++];
+  const ValueSpec& layout_spec = test_case.inputs()[idx++];
+  (void)layout_spec; // Not used in reference implementation
+  const ValueSpec& impl_selector_spec = test_case.inputs()[idx++];
+  (void)impl_selector_spec; // Not used in reference implementation
 
   // Extract output specification (mutable reference)
   ValueSpec& output_spec = test_case.outputs()[0];
@@ -591,12 +652,12 @@ void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   }
 }
 
-void reference_impl(TestCase& test_case) {
+static void reference_impl(TestCase& test_case) {
   conv2d_q8ta_q8csw_q8to_reference_impl(test_case);
 }
 
 // Custom FLOP calculator for quantized conv2d operation
-int64_t quantized_conv2d_flop_calculator(const TestCase& test_case) {
+static int64_t quantized_conv2d_flop_calculator(const TestCase& test_case) {
   int kernel_idx = 9; // kernel_size is at index 9 for q8ta_q8csw_q8to
 
   // Get input and weight dimensions
