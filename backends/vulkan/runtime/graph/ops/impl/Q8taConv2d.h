@@ -99,4 +99,18 @@ void add_q8ta_conv2d_node(
     const ValueRef groups,
     const ValueRef packed_int8_output);
 
+void add_q8ta_conv2d_pw_node(
+    ComputeGraph& graph,
+    const ValueRef packed_int8_input,
+    const ValueRef input_scale,
+    const ValueRef input_zp,
+    const ValueRef packed_weight,
+    const ValueRef packed_weight_sums,
+    const ValueRef packed_weight_scales,
+    const ValueRef output_scale,
+    const ValueRef output_zp,
+    const ValueRef bias_data,
+    const ValueRef packed_bias,
+    const ValueRef packed_int8_output);
+
 } // namespace vkcompute
