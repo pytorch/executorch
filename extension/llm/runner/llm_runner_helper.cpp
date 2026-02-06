@@ -9,6 +9,7 @@
 // Implementation of helper utilities for creating and configuring LLM runners
 
 #include <executorch/extension/llm/runner/image_prefiller.h>
+#include <executorch/extension/llm/runner/io_manager/attention_sink_io_manager.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/multimodal_decoder_runner.h>
 #include <executorch/extension/llm/runner/multimodal_prefiller.h>
@@ -233,8 +234,56 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
       llm::get_eos_ids(tokenizer.get(), module.get()));
 
-  // Create IOManager
-  std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>(*module);
+  // Create IOManager - use AttentionSinkIOManager if attention sink is enabled
+  std::unique_ptr<IOManager> io_manager;
+  
+  // Get method names to check for attention sink metadata
+  auto method_names_result = module->method_names();
+  if (method_names_result.error() != Error::Ok) {
+    ET_LOG(Error, "Failed reading method names for IOManager selection");
+    return nullptr;
+  }
+  const auto& method_names = method_names_result.get();
+  
+  // Check if attention sink is enabled via metadata
+  bool use_attention_sink = false;
+  int64_t sink_size = 4;  // Default values
+  int64_t window_size = 124;
+  
+  if (method_names.count(kUseAttentionSink)) {
+    auto get_result = module->get(kUseAttentionSink);
+    use_attention_sink = get_result.get().toScalar().to<bool>();
+  }
+  
+  if (use_attention_sink) {
+    // Get attention sink configuration from metadata
+    if (method_names.count(kAttentionSinkSize)) {
+      auto get_result = module->get(kAttentionSinkSize);
+      sink_size = get_result.get().toScalar().to<int64_t>();
+    }
+    if (method_names.count(kAttentionSinkWindowSize)) {
+      auto get_result = module->get(kAttentionSinkWindowSize);
+      window_size = get_result.get().toScalar().to<int64_t>();
+    }
+    
+    AttentionSinkConfig config;
+    config.sink_size = sink_size;
+    config.window_size = window_size;
+    
+    int64_t max_cache_size = metadata.at(kMaxContextLen);
+    ET_LOG(
+        Info,
+        "Creating AttentionSinkIOManager with sink_size=%" PRId64
+        ", window_size=%" PRId64 ", max_cache_size=%" PRId64,
+        sink_size,
+        window_size,
+        max_cache_size);
+    
+    io_manager = std::make_unique<AttentionSinkIOManager>(
+        *module, max_cache_size, config);
+  } else {
+    io_manager = std::make_unique<IOManager>(*module);
+  }
 
   // Create text_decoder_runner. Use a shared_ptr so that it can be shared with
   // TextPrefiller and TextTokenGenerator
