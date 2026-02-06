@@ -93,6 +93,7 @@ def dilation_check(
         dilation (tuple[int,int]): Vertical and horizontal dilation.
     Returns:
         bool: True if dilation constraints are met.
+
     """
 
     pad_h, pad_w = padding
@@ -197,12 +198,14 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
 
 @register_tosa_support_check
 class MaxPool2dSupported(SupportedTOSAOperatorCheck):
-    """Provide TOSA support checks for ``aten.max_pool2d_with_indices`` and ``aten.max_pool2d``.
+    """Provide TOSA support checks for ``aten.max_pool2d_with_indices`` and
+    ``aten.max_pool2d``.
 
     Checks that dilation constraints are met for both ops.
 
-    Applies additional constraints to the aten.max_pool2d_with_indices op when targeting the U55 subset, including
-    limits on kernel size, stride, and tensor ranks.
+    Applies additional constraints to the aten.max_pool2d_with_indices op when
+    targeting the U55 subset, including limits on kernel size, stride, and
+    tensor ranks.
 
     """
 
@@ -212,9 +215,10 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
-        """
-        Return True if ``max_pool2d`` satisfies dilation constraints.
+        """Return True if ``max_pool2d`` satisfies dilation constraints.
+
         Return True if ``max_pool2d_with_indices`` satisfies both dilation constraints and U55 constraints.
+
         """
 
         shape = cast(torch.Tensor, node.all_input_nodes[0].meta["val"]).shape

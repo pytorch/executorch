@@ -369,6 +369,8 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.hardswish.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.silu.default,
+            torch.ops.aten.silu_.default,
         }
         ops_to_not_decompose_if_fp = {
             torch.ops.aten.eye.default,
@@ -382,12 +384,14 @@ class TOSAPartitioner(Partitioner):
         ops_to_not_decompose_if_integer = {
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.silu.default,
+            torch.ops.aten.silu_.default,
         }
 
         def filter_fn(node: torch.fx.Node) -> bool:
-            """Filter function applied to ops in 'ops_to_not_decompose'.
-            Returns True if the op should not be decomposed.
-            If this function returns True, the partitioner *must* accept the node, or the lowering fails.
+            """Filter function applied to ops in 'ops_to_not_decompose'. Returns
+            True if the op should not be decomposed. If this function returns
+            True, the partitioner *must* accept the node, or the lowering fails.
 
             Args:
                 node (torch.fx.Node): FX node to evaluate.

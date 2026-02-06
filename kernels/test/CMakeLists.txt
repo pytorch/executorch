@@ -17,7 +17,18 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_kernels portable optimized_portable optimized quantized)
+# Build kernel list conditionally based on what's enabled
+set(_kernels portable)
+if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+  list(APPEND _kernels optimized_portable)
+endif()
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+  list(APPEND _kernels optimized)
+endif()
+if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
+  list(APPEND _kernels quantized)
+endif()
+
 foreach(kernel ${_kernels})
   set(_wrapper_dir
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/test"
@@ -106,22 +117,41 @@ foreach(kernel ${_kernels})
   )
 endforeach()
 
-add_custom_target(
-  generate_wrapper
-  DEPENDS
+# Build the list of wrapper dependencies based on which kernels are enabled
+set(_generate_wrapper_deps
     "${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/FunctionHeaderWrapper.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp"
-    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/FunctionHeaderWrapper.h"
-    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.h"
-    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp"
+)
+if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+  list(
+    APPEND
+    _generate_wrapper_deps
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable/executorch/kernels/test/FunctionHeaderWrapper.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable/executorch/kernels/test/supported_features.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable/executorch/kernels/test/supported_features.cpp"
+  )
+endif()
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+  list(
+    APPEND
+    _generate_wrapper_deps
+    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/FunctionHeaderWrapper.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp"
+  )
+endif()
+if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
+  list(
+    APPEND
+    _generate_wrapper_deps
     "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/FunctionHeaderWrapper.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/supported_features.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/supported_features.cpp"
-)
+  )
+endif()
+
+add_custom_target(generate_wrapper DEPENDS ${_generate_wrapper_deps})
 
 set(all_test_sources
     "BinaryLogicalOpTest.cpp"
@@ -309,32 +339,55 @@ target_include_directories(
   portable_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
 )
 
-set(_optimized_kernels_test_sources
-    "op_add_test.cpp"
-    "op_bmm_test.cpp"
-    "op_div_test.cpp"
-    "op_elu_test.cpp"
-    "op_exp_test.cpp"
-    "op_fft_c2r_test.cpp"
-    "op_fft_r2c_test.cpp"
-    "op_gelu_test.cpp"
-    "op_le_test.cpp"
-    "op_linear_test.cpp"
-    "op_log_softmax_test.cpp"
-    "op_mm_test.cpp"
-    "op_mul_test.cpp"
-    "op_native_layer_norm_test.cpp"
-    "op_neg_test.cpp"
-    "op_sub_test.cpp"
-    "op_where_test.cpp"
-    "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
-    ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp
-)
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+  set(_optimized_kernels_test_sources
+      "op_add_test.cpp"
+      "op_bmm_test.cpp"
+      "op_div_test.cpp"
+      "op_elu_test.cpp"
+      "op_exp_test.cpp"
+      "op_fft_c2r_test.cpp"
+      "op_fft_r2c_test.cpp"
+      "op_gelu_test.cpp"
+      "op_le_test.cpp"
+      "op_linear_test.cpp"
+      "op_log_softmax_test.cpp"
+      "op_mm_test.cpp"
+      "op_mul_test.cpp"
+      "op_native_layer_norm_test.cpp"
+      "op_neg_test.cpp"
+      "op_sub_test.cpp"
+      "op_where_test.cpp"
+      "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
+      ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp
+  )
+
+  if(TARGET optimized_portable_kernels)
+    list(APPEND _optimized_kernels_test_sources ${all_test_sources})
+    list(REMOVE_DUPLICATES _optimized_kernels_test_sources)
+  endif()
+
+  et_cxx_test(
+    optimized_kernels_test
+    SOURCES
+    ${_optimized_kernels_test_sources}
+    EXTRA_LIBS
+    cpuinfo
+    extension_threadpool
+    optimized_native_cpu_ops_lib
+    pthreadpool
+    eigen_blas
+  )
+  add_dependencies(optimized_kernels_test generate_wrapper)
+  target_include_directories(
+    optimized_kernels_test
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized"
+            "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
+            "${CMAKE_INSTALL_PREFIX}/include"
+  )
+endif()
 
 if(TARGET optimized_portable_kernels)
-  list(APPEND _optimized_kernels_test_sources ${all_test_sources})
-  list(REMOVE_DUPLICATES _optimized_kernels_test_sources)
-
   # Make sure that we still test optimized versions of portable kernels even if
   # they would currently be shadowed by specific optimized implementations.
   et_cxx_test(
@@ -351,25 +404,6 @@ if(TARGET optimized_portable_kernels)
     PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable"
   )
 endif()
-
-et_cxx_test(
-  optimized_kernels_test
-  SOURCES
-  ${_optimized_kernels_test_sources}
-  EXTRA_LIBS
-  cpuinfo
-  extension_threadpool
-  optimized_native_cpu_ops_lib
-  pthreadpool
-  eigen_blas
-)
-add_dependencies(optimized_kernels_test generate_wrapper)
-target_include_directories(
-  optimized_kernels_test
-  PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized"
-          "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
-          "${CMAKE_INSTALL_PREFIX}/include"
-)
 
 if(TARGET quantized_kernels)
   set(_quantized_kernels_test_sources

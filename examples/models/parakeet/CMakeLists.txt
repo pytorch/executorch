@@ -24,13 +24,21 @@ find_package(gflags REQUIRED)
 # Find executorch libraries
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-executorch_target_link_options_shared_lib(executorch)
+get_target_property(_executorch_imported executorch IMPORTED)
+if(NOT _executorch_imported)
+  executorch_target_link_options_shared_lib(executorch)
+endif()
 
 set(link_libraries executorch gflags)
 
 # Common ops for all builds
-list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
-executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+if(TARGET optimized_native_cpu_ops_lib)
+  list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
+  get_target_property(_is_imported optimized_native_cpu_ops_lib IMPORTED)
+  if(NOT _is_imported)
+    executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  endif()
+endif()
 
 # CPU-only builds need quantized and custom ops
 if(NOT EXECUTORCH_BUILD_CUDA AND MSVC)
@@ -46,7 +54,10 @@ if(TARGET xnnpack_backend)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
   list(APPEND link_libraries ${xnnpack_backend_libs})
-  executorch_target_link_options_shared_lib(xnnpack_backend)
+  get_target_property(_xnnpack_imported xnnpack_backend IMPORTED)
+  if(NOT _xnnpack_imported)
+    executorch_target_link_options_shared_lib(xnnpack_backend)
+  endif()
 endif()
 
 # Needed for cpuinfo where it uses android specific log lib
