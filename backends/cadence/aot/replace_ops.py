@@ -551,9 +551,9 @@ class ReplaceRepeatWithCatPass(RemoveOrReplacePassInterface):
         # the output of repeat will be a higher-dimensional tensor. We reshape
         # the input so that it has the same dimensionality as the output tensor.
         diff = len(repeats) - len(in_shape)
-        assert (
-            diff >= 0
-        ), "Repeat arg malformed: expected a repeat along each dimension of input tensor"
+        assert diff >= 0, (
+            "Repeat arg malformed: expected a repeat along each dimension of input tensor"
+        )
 
         graph = node.graph
         result_node = in_tensor
