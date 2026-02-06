@@ -160,12 +160,19 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   } else {
     // Minimal verification: check that the root table offset is within bounds.
     // The first 4 bytes of the flatbuffer contain an offset to the root table.
+    ET_CHECK_OR_RETURN_ERROR(
+        program_data->size() >= sizeof(flatbuffers::uoffset_t),
+        InvalidProgram,
+        "Program data size %zu is too small for flatbuffer header",
+        program_data->size());
     uint32_t root_offset = flatbuffers::ReadScalar<flatbuffers::uoffset_t>(
         program_data->data());
+    // The root table is at buf + root_offset, and must have at least a
+    // vtable offset (soffset_t) at that position.
     ET_CHECK_OR_RETURN_ERROR(
-        root_offset < program_data->size(),
+        root_offset <= program_data->size() - sizeof(flatbuffers::uoffset_t),
         InvalidProgram,
-        "Root table offset %u >= program size %zu",
+        "Root table offset %u exceeds program size %zu",
         root_offset,
         program_data->size());
   }
