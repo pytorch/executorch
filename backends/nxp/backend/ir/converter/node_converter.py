@@ -75,7 +75,10 @@ class NodeConverter(ABC):
             Classes which implement conversion for individual operators must overwrite this method.
 
         :param node: torch.Node to check.
-        :param parameters_mapping: Dictionary mapping tensor names to their static data (if they have it).
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :param custom_delegation_options: Custom options which affect delegation.
         """
         pass
@@ -93,7 +96,10 @@ class NodeConverter(ABC):
 
         :param node: The node (edge operator) to check.
         :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
-        :param parameters_mapping: Dictionary mapping tensor names to their static data (if they have it).
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :param custom_delegation_options: Custom options which affect delegation.
         """
         return True
@@ -110,7 +116,10 @@ class NodeConverter(ABC):
 
         :param node: torch.Node to check.
         :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
-        :param parameters_mapping: Dict mapping tensor names to their data.
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :param custom_delegation_options: Custom user options which affect node delegation.
         """
         return cls._is_supported_in_IR(
@@ -136,7 +145,10 @@ class NodeConverter(ABC):
         :param partition_list: List of proposed partitions.
         :param custom_delegation_options: Custom user options which affect node delegation.
         :param neutron_target_spec: NeutronTargetSpec instance.
-        :param parameters_mapping: Dictionary mapping tensor names to their static data.
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :return: Boolean indicating whether the node supports the current partitioning.
         """
         return True
