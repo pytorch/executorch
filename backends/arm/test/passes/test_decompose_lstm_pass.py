@@ -75,9 +75,7 @@ class LSTM(torch.nn.Module):
 def test_decompose_lstm_tosa_FP():
     """Test basic LSTM (single layer, unidirectional, with bias)"""
     module = LSTM()
-    pipeline = PassPipeline[
-        input_t
-    ](
+    pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
         quantize=False,
