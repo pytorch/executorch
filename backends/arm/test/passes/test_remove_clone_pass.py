@@ -28,7 +28,7 @@ class Clone(torch.nn.Module):
         return (torch.rand(3, 1),)
 
 
-def test_remove_clone_tosa_INT():
+def test_remove_noop_tosa_INT_clone():
     module = Clone()
     pipeline = PassPipeline[input_t](
         module,

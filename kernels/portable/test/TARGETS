@@ -13,10 +13,7 @@ runtime.cxx_library(
     srcs = [
         "register_ops_aot_for_test.cpp",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/extension/aten_util:aten_bridge",
         "//executorch/kernels/portable/cpu:op_grid_sampler_2d",

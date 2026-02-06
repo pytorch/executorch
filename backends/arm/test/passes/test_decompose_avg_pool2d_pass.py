@@ -63,7 +63,7 @@ modules: Dict[str, ModuleWithInputs] = {
 
 
 @common.parametrize("module", modules)
-def test_decompose_avg_pool2d_tosa_MI(module: ModuleWithInputs) -> None:
+def test_decompose_avg_pool2d_tosa_FP(module: ModuleWithInputs) -> None:
     """Test that DecomposeAvgPool2d pass works correctly with and without stride parameters."""
     nn_module = cast(torch.nn.Module, module)
     pipeline = PassPipeline[input_t](

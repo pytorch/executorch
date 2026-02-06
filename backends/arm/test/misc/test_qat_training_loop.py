@@ -44,7 +44,7 @@ def evaluate_model(model, inputs, expected_outputs):
         logger.info(f"Mean squared error: {loss.item()}")
 
 
-def test_qat_training_loop():
+def test_qat_training_loop_tosa_INT():
     """Test the QAT training loop with a simple MLP model.
     This function creates a simple MLP model, prepares it for QAT, runs a training loop,
     and evaluates the quantized model to make sure everything works as expected."""

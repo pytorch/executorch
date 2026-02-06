@@ -163,6 +163,39 @@ jobs:
         # Build and test ExecuTorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
+  test-parakeet-xnnpack-linux:
+    name: test-parakeet-xnnpack-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.4xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        echo "::group::Setup ExecuTorch"
+        ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Export Parakeet with XNNPACK"
+        bash .ci/scripts/export_model_artifact.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./parakeet_output"
+        echo "::endgroup::"
+
+        echo "::group::Test Parakeet with XNNPACK"
+        bash .ci/scripts/test_model_e2e.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./parakeet_output"
+        echo "::endgroup::"
+
   test-llama-runner-linux:
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
@@ -301,7 +334,7 @@ jobs:
         model: ["gemma3-4b"]  # llava gives segfault so not covering.
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.24xlarge
+      runner: linux.24xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -490,8 +523,8 @@ jobs:
       build-tool: buck2
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
-  unittest-arm-backend-with-no-fvp:
-    name: unittest-arm-backend-with-no-fvp
+  unittest-arm-backend-with-no-deps:
+    name: unittest-arm-backend-with-no-deps
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -499,8 +532,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops
-          - test_arm_baremetal: test_pytest_models
+          - test_arm_baremetal: test_pytest_ops_no_target
+          - test_arm_baremetal: test_pytest_ops_tosa
+          - test_arm_baremetal: test_pytest_models_tosa
+          - test_arm_baremetal: test_run_tosa
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -516,7 +551,7 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        .ci/scripts/setup-arm-baremetal-tools.sh
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
         ARM_TEST=${{ matrix.test_arm_baremetal }}
 
@@ -595,6 +630,40 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }}
+
+  test-sqnr-static-llm-qnn-linux:
+    name: test-sqnr-static-llm-qnn-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        task: [smollm2_135m]
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 180
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL="cmake"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+
+        # Setup executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+
+        # Setup install_requirements for llama
+        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }} sqnr
 
   test-qnn-models-linux:
     name: test-qnn-models-linux
@@ -915,11 +984,9 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
 
-
-  test-samsung-models-linux:
-    name: test-samsung-models-linux
-    # Skip this job if the pull request is from a fork (secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+  test-samsung-quantmodels-linux:
+    name: test-samsung-quantmodels-linux
+    # if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -931,7 +998,7 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
+      timeout: 180
       script: |
         set -ex
 
@@ -946,11 +1013,11 @@ jobs:
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
         source .ci/scripts/setup-samsung-linux-deps.sh
 
-        # Test models serially
-        models="mv2 ic3 resnet18 resnet50 mv3 ic4 dl3 edsr vit w2l"
-        for model in $models; do
-          python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
-        done
+        # Check if device was reserved
+        if [[ "${DEVICE_RESERVED:-0}" != "1" ]]; then
+          echo "::warning::Skipping tests - no Samsung device available"
+          exit 0
+        fi
 
         # Test quant models
         model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
@@ -958,9 +1025,43 @@ jobs:
           python -m executorch.examples.samsung.scripts.${m_script} -c e9955 -p A8W8
         done
 
-        # Test ops
-        python -m unittest discover -s backends/samsung/test/ops -p "test_*.py"
+  test-samsung-models-linux:
+    name: test-samsung-models-linux
+    # if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    with:
+      secrets-env: SAMSUNG_AI_LITECORE_KEY
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 360
+      script: |
+        set -ex
 
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Setup python
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        # Setup Samsung SDK (AI Lite Core) and install enn backend
+        export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
+        source .ci/scripts/setup-samsung-linux-deps.sh
+
+        # Check if device was reserved
+        if [[ "${DEVICE_RESERVED:-0}" != "1" ]]; then
+          echo "::warning::Skipping tests - no Samsung device available"
+          exit 0
+        fi
+
+        # Test models
+        python -m unittest discover -s backends/samsung/test/models -p "test_*.py"
 
   test-vulkan-models-linux:
     name: test-vulkan-models-linux
@@ -1036,7 +1137,8 @@ jobs:
         ./cmake-out/backends/vulkan/test/custom_ops/q8csw_conv2d
         ./cmake-out/backends/vulkan/test/custom_ops/q4gsw_linear
         ./cmake-out/backends/vulkan/test/custom_ops/choose_qparams_per_row
-        ./cmake-out/backends/vulkan/test/custom_ops/qdq8ta_conv2d_activations
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_qdq
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_clone
         ./cmake-out/backends/vulkan/test/custom_ops/q8ta_q8ta_q8to_add
 
         # "Classic" Operator tests
@@ -1050,6 +1152,37 @@ jobs:
         # route in the future.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+
+  test-coreml-bc-macos:
+    name: test-coreml-bc-macos (${{ matrix.runner }})
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        runner: [macos-m1-stable, macos-m2-stable]
+      fail-fast: false
+    with:
+      runner: ${{ matrix.runner }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 180
+      script: |
+        set -eux
+
+        # Set up Python environment
+        eval "$(conda shell.bash hook)"
+        conda activate
+
+        echo "::group::Run CoreML Backward Compatibility Test"
+        # Copy script to temp location since it will checkout old commits
+        # which would overwrite the script itself
+        TEMP_SCRIPT=$(mktemp)
+        cp .ci/scripts/test_coreml_bc.sh "${TEMP_SCRIPT}"
+        bash "${TEMP_SCRIPT}" "$(pwd)"
+        rm -f "${TEMP_SCRIPT}"
+        echo "::endgroup::"
 
   nxp-build-test:
     name: nxp-build-test

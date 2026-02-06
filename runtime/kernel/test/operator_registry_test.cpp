@@ -304,7 +304,7 @@ TEST_F(OperatorRegistryTest, RegisterKernels) {
   EValue* kernels[1];
   kernels[0] = &values[0];
   KernelRuntimeContext context{};
-  (*func)(context, kernels);
+  (*func)(context, Span<EValue*>(kernels));
 
   auto val = values[0].toScalar().to<int64_t>();
   ASSERT_EQ(val, 100);
@@ -370,7 +370,7 @@ TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
   Result<OpFunction> func_1 =
       get_op_function_from_registry("test::bar", user_kernel_key_1);
   EXPECT_EQ(func_1.error(), Error::Ok);
-  (*func_1)(context, evalues);
+  (*func_1)(context, Span<EValue*>(evalues));
 
   auto val_1 = values[0].toScalar().to<int64_t>();
   ASSERT_EQ(val_1, 100);
@@ -381,7 +381,7 @@ TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
       get_op_function_from_registry("test::bar", user_kernel_key_2);
   EXPECT_EQ(func_2.error(), Error::Ok);
   values[0] = Scalar(0);
-  (*func_2)(context, evalues);
+  (*func_2)(context, Span<EValue*>(evalues));
 
   auto val_2 = values[0].toScalar().to<int64_t>();
   ASSERT_EQ(val_2, 50);
@@ -482,7 +482,7 @@ TEST_F(OperatorRegistryTest, ExecutorUsesKernel) {
   EValue* kernels[1];
   kernels[0] = &values[0];
   KernelRuntimeContext context{};
-  (*func)(context, kernels);
+  (*func)(context, Span<EValue*>(kernels));
 
   auto val = values[0].toScalar().to<int64_t>();
   ASSERT_EQ(val, 100);
@@ -510,7 +510,7 @@ TEST_F(OperatorRegistryTest, ExecutorUsesFallbackKernel) {
   EValue* kernels[1];
   kernels[0] = &values[0];
   KernelRuntimeContext context{};
-  (*func)(context, kernels);
+  (*func)(context, Span<EValue*>(kernels));
 
   auto val = values[0].toScalar().to<int64_t>();
   ASSERT_EQ(val, 100);

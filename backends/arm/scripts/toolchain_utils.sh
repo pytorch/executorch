@@ -2,7 +2,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -49,13 +49,13 @@ function zephyr_select_toolchain() {
     fi
 
     if [[ "${ARCH}" == "x86_64" ]] ; then
-        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
+        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
         toolchain_dir="arm-zephyr-eabi"
-        toolchain_md5_checksum="93128be0235cf5cf5f1ee561aa6eac5f"
+        toolchain_md5_checksum="68ae71edc0106c3093055b97aaa47017"
     elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]] ; then
-        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
+        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
         toolchain_dir="arm-zephyr-eabi"
-        toolchain_md5_checksum="ef4ca56786204439a75270ba800cc64b"
+        toolchain_md5_checksum="d8a6dfd4314d55da713957d0b161d01f"
     else
         # This should never happen, it should be covered by setup.sh but catch it anyway
         log_step "toolchain" "Error: Unsupported architecture ${ARCH}"

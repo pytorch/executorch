@@ -26,7 +26,7 @@ class SimpleModule(torch.nn.Module):
         return self.linear(x)
 
 
-def test_save_load_exported_int_model():
+def test_save_load_exported_int_model_tosa_INT():
     module = SimpleModule().eval()
     example_inputs = module.example_inputs
     exported_module = torch.export.export(module, example_inputs)

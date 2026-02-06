@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -153,10 +153,7 @@ test_cases = {
 
 
 xfails_implementation = {
-    "alpha": (
-        "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
-        AssertionError,
-    ),
+    "alpha": "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
 }
 xfails_dialect = xfails_implementation | {
     # Cortex-M quantizer will not quantize additions that require broadcasting

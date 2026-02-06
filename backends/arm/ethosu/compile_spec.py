@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,7 +14,21 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 class EthosUCompileSpec(ArmCompileSpec):
-    """Compile specification for Ethos-U NPU targets."""
+    """Normalise Ethos-U compile configuration and compiler flags.
+
+    Args:
+        target (str): Ethos-U accelerator configuration (for example,
+            ``"ethos-u55-128"``).
+        system_config (str | None): System configuration name from the Vela
+            config file. Defaults based on ``target`` when omitted.
+        memory_mode (str | None): Memory mode selection from the Vela config
+            file. Defaults based on ``target`` when omitted.
+        extra_flags (list[str] | None): Additional command-line flags for
+            Vela.
+        config_ini (str | None): Path to a Vela .ini configuration file.
+            Defaults to ``"Arm/vela.ini"``.
+
+    """
 
     _TARGET_KEY = "target"
 
@@ -26,21 +40,6 @@ class EthosUCompileSpec(ArmCompileSpec):
         extra_flags: list[str] | None = None,
         config_ini: str | None = "Arm/vela.ini",
     ):
-        """Normalise Ethos-U compile configuration and compiler flags.
-
-        Args:
-            target (str): Ethos-U accelerator configuration (for example,
-                ``"ethos-u55-128"``).
-            system_config (str | None): System configuration name from the Vela
-                config file. Defaults based on ``target`` when omitted.
-            memory_mode (str | None): Memory mode selection from the Vela config
-                file. Defaults based on ``target`` when omitted.
-            extra_flags (list[str] | None): Additional command-line flags for
-                Vela.
-            config_ini (str | None): Path to a Vela .ini configuration file.
-                Defaults to ``"Arm/vela.ini"``.
-
-        """
         self.target = target
         # Set vela compiler flags
         if config_ini is None:
@@ -73,10 +72,12 @@ class EthosUCompileSpec(ArmCompileSpec):
         compiler_flags.append(f"--memory-mode={memory_mode}")
 
         # Set TOSA version.
-        base_tosa_version = "TOSA-1.0+INT+int16"
+        base_tosa_version = "TOSA-1.0+INT+int16+int4"
         if "u55" in target_lower:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
+        if "u85" in self.target:
+            base_tosa_version += "+cf"
         tosa_spec = TosaSpecification.create_from_string(base_tosa_version)
 
         self._set_compile_specs(tosa_spec, compiler_flags)

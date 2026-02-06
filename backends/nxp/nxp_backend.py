@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,6 +16,7 @@ import numpy as np
 import torch
 
 from executorch.backends.nxp._passes.remove_getitem_pass import RemoveGetItemPass
+from executorch.backends.nxp.backend.data_format import DataFormat
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
@@ -24,7 +25,6 @@ from executorch.backends.nxp.backend.neutron_converter_manager import (
     NeutronConverterManager,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.backend.node_format import NodeFormat
 from executorch.backends.nxp.neutron_node_extraction import (
     extract_artifacts_from_neutron_node,
     NeutronNodeArtifacts,
@@ -67,7 +67,7 @@ class NeutronCompileSpecBuilder:
         Args:
             config: Neutron accelerator configuration, e.g. "imxrt700"
             neutron_converter_flavor: Flavor of the neutron-converter module to use. Neutron-converter module named "
-             "'neutron_converter_SDK_25_09' has flavor 'SDK_25_09'.
+             "'neutron_converter_SDK_25_12' has flavor 'SDK_25_12'.
             extra_flags: Extra flags for the Neutron compiler
             operators_not_to_delegate: List of operators that should not be delegated
             use_neutron_for_format_conversion: If True, the EdgeProgramToIRConverter will insert `Transpose` ops to
@@ -265,7 +265,7 @@ class PayloadComposer:
         return f"{array.size}s{self._padding_format_string_for_array(array)}"
 
     def _create_payload_header(
-        self, io_formats: dict[str, list[NodeFormat]], neutron_artifacts
+        self, io_formats: dict[str, list[DataFormat]], neutron_artifacts
     ) -> np.ndarray:
         """
         Create bytes header for returned payload. It contains information about
@@ -306,7 +306,7 @@ class PayloadComposer:
         for input_name in neutron_artifacts.input_names:
             try:
                 header_data.append(
-                    1 if inputs[input_name.decode()] == NodeFormat.CHANNELS_LAST else 0
+                    1 if inputs[input_name.decode()] == DataFormat.CHANNELS_LAST else 0
                 )
             except KeyError:
                 raise AssertionError(
@@ -317,7 +317,7 @@ class PayloadComposer:
             try:
                 header_data.append(
                     1
-                    if outputs[output_name.decode()] == NodeFormat.CHANNELS_LAST
+                    if outputs[output_name.decode()] == DataFormat.CHANNELS_LAST
                     else 0
                 )
             except KeyError:
@@ -358,7 +358,7 @@ class PayloadComposer:
         )
 
     def get_binary_payload(
-        self, io_formats: dict[str, list[NodeFormat]], neutron_model
+        self, io_formats: dict[str, list[DataFormat]], neutron_model
     ) -> bytes:
         """
         Get binary payload for provided input/output tensor formats and neutron_model. Returned data have
@@ -379,7 +379,7 @@ class PayloadComposer:
         Tensor format definition: '0x1' == CHANNELS_LAST, '0x0' == FORMATLESS (no format).
 
         :param io_formats: Dictionary with keys 'inputs' and 'outputs' that contains dictionaries
-            mapping tensor name to NodeFormat.
+            mapping tensor name to DataFormat.
         :param neutron_model: Neutron model with single NeutronGraph node.
         :return: 16 bytes aligned binary payload.
         """

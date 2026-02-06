@@ -45,7 +45,7 @@ def qwen_2_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.
         new_key = get_mapped_key(key, inverted_mapping_dict)
         converted_state_dict[new_key] = value
 
-    # 0.5b and 1.5b models share the same weights for tok_embeddings and output embeddings, see https://github.com/QwenLM/Qwen2.5/issues/733.
+    # 0.5b and 1.5b models share the same weights for tok_embeddings and output embeddings, see https://github.com/QwenLM/Qwen2.5/issues/733.  # @lint-ignore
     converted_state_dict["output.weight"] = converted_state_dict[
         "tok_embeddings.weight"
     ]

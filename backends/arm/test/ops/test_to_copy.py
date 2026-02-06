@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -90,6 +90,29 @@ def test_to_tosa_FP(test_data: Tuple):
             },
         )
         pipeline.pop_stage("run_method_and_compare_outputs")
+    pipeline.run()
+
+
+def test_to_tosa_FP_bf16_requires_extension():
+    test_tensor = torch.rand((1, 2, 3, 4), dtype=torch.float32)
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Cast(torch.bfloat16),
+        (test_tensor,),
+        {
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1
+        },
+    )
+    pipeline.run()
+
+
+def test_to_tosa_FP_bf16_with_extension():
+    test_tensor = torch.rand((1, 2, 3, 4), dtype=torch.float32)
+    pipeline = TosaPipelineFP[input_t1](
+        Cast(torch.bfloat16),
+        (test_tensor,),
+        aten_op=[],
+        tosa_extensions=["bf16"],
+    )
     pipeline.run()
 
 
@@ -256,5 +279,41 @@ def test_to_u55_INT(test_data: Tuple):
         u55_subset=True,
         quantize=True,
         non_delegated_ops={},  # These are removed outside of the Arm backend so the graph is empty
+    )
+    pipeline.run()
+
+
+_TO_COPY_TEST_DATA_INT_FP = {
+    "bool_fp32": lambda: (
+        torch.tensor([True, False], dtype=torch.bool),
+        torch.float32,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_INT_FP)
+@common.SkipIfNoModelConverter
+def test_to_vgf_no_quant_bool_fp32(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_INT_FP)
+@common.SkipIfNoModelConverter
+def test_to_vgf_quant_bool_fp32(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
+        quantize=True,
     )
     pipeline.run()

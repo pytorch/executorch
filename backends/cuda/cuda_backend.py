@@ -12,6 +12,9 @@ from typing import Any, Dict, final, List, Optional
 
 import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
+from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
+    MoveCondPredicateToCpuPass,
+)
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -123,6 +126,14 @@ class CudaBackend(AotiBackend, BackendDetails):
             return False
 
     @classmethod
+    def save_data_externally(cls) -> bool:
+        """
+        CUDA backend saves SO blob and weights blob to an external .ptd file.
+        This file must be provided at runtime via --data_path argument.
+        """
+        return True
+
+    @classmethod
     def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
         return {
             "at::_ops::_weight_int4pack_mm::call": None,
@@ -155,7 +166,10 @@ class CudaBackend(AotiBackend, BackendDetails):
                     )
                 triton_kernel_mode = mode
 
-        return [ReplaceEdgeOpWithTritonOpPass()] if triton_kernel_mode == "ON" else []
+        passes = [MoveCondPredicateToCpuPass()]
+        if triton_kernel_mode == "ON":
+            passes.append(ReplaceEdgeOpWithTritonOpPass())
+        return passes
 
     @classmethod
     def get_aoti_compile_options(

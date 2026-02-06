@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,14 +10,7 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     ScalarsToAttributePass,
 )
-from executorch.backends.cortex_m.passes import (
-    ActivationFusionPass,
-    ClampHardswishPass,
-    ConvertToCortexMPass,
-    DecomposeHardswishPass,
-    QuantizedOpFusionPass,
-    ReplaceQuantNodesPass,
-)
+from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
@@ -26,10 +19,20 @@ from executorch.exir.pass_manager import PassManager
 from executorch.exir.program._program import _transform
 from torch.export import ExportedProgram
 
+from .activation_fusion_pass import ActivationFusionPass
+from .clamp_hardswish_pass import ClampHardswishPass
+from .convert_to_cortex_m_pass import ConvertToCortexMPass
+from .decompose_hardswish_pass import DecomposeHardswishPass
+from .decompose_mean_pass import DecomposeMeanPass
+from .quantized_op_fusion_pass import QuantizedOpFusionPass
+from .replace_quant_nodes_pass import ReplaceQuantNodesPass
+
 
 class CortexMPassManager(PassManager):
 
     pass_list: list[ExportPass] = [
+        # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
+        RemoveGetItemPass,
         FoldAndAnnotateQParamsPass,
         ReplaceScalarWithTensorArgPass,
         ReplaceQuantNodesPass,
@@ -43,6 +46,7 @@ class CortexMPassManager(PassManager):
         ScalarsToAttributePass,
         ReplaceScalarWithTensorArgPass,
         ClampHardswishPass,
+        DecomposeMeanPass,
     ]
 
     def __init__(self, exported_program, passes=None):

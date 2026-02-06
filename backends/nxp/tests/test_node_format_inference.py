@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,7 +7,7 @@ import torch
 
 from executorch import exir
 from executorch.backends.nxp.backend.node_format_inference import (
-    NodeFormat,
+    DataFormat,
     NodeFormatInference,
     NXP_NODE_FORMAT,
 )
@@ -31,11 +31,11 @@ def test_convolution():
     NodeFormatInference(edge_program).identify_node_formats()
 
     expected_mapping = {
-        "p_conv_weight": NodeFormat.CHANNELS_FIRST,
-        "p_conv_bias": NodeFormat.FORMATLESS,
-        "x": NodeFormat.CHANNELS_FIRST,
-        "aten_convolution_default": NodeFormat.CHANNELS_FIRST,
-        "output": NodeFormat.CHANNELS_FIRST,
+        "p_conv_weight": DataFormat.CHANNELS_FIRST,
+        "p_conv_bias": DataFormat.FORMATLESS,
+        "x": DataFormat.CHANNELS_FIRST,
+        "aten_convolution_default": DataFormat.CHANNELS_FIRST,
+        "output": DataFormat.CHANNELS_FIRST,
     }
 
     for node in edge_program.graph.nodes:
@@ -52,9 +52,9 @@ def test_softmax():
     NodeFormatInference(edge_program).identify_node_formats()
 
     expected_mapping = {
-        "x": NodeFormat.FORMATLESS,
-        "aten__softmax_default": NodeFormat.FORMATLESS,
-        "output": NodeFormat.FORMATLESS,
+        "x": DataFormat.FORMATLESS,
+        "aten__softmax_default": DataFormat.FORMATLESS,
+        "output": DataFormat.FORMATLESS,
     }
 
     for node in edge_program.graph.nodes:
@@ -82,9 +82,9 @@ def test_maxpool2d():
     NodeFormatInference(edge_program).identify_node_formats()
 
     expected_mapping = {
-        "x": NodeFormat.CHANNELS_FIRST,
-        "aten_max_pool2d_default": NodeFormat.CHANNELS_FIRST,
-        "output": NodeFormat.CHANNELS_FIRST,
+        "x": DataFormat.CHANNELS_FIRST,
+        "aten_max_pool2d_default": DataFormat.CHANNELS_FIRST,
+        "output": DataFormat.CHANNELS_FIRST,
     }
 
     for node in edge_program.graph.nodes:

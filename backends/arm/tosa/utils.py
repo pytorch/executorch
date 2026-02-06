@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,7 +15,6 @@ import torch
 import tosa_serializer as ts
 
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta
-from executorch.backends.arm.tosa.specification import TosaSpecification
 
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.fx import Node
@@ -64,9 +63,7 @@ def are_fake_tensors_broadcastable(
     return (True, list(reversed(broadcast_shape)))
 
 
-def broadcast_tensors(
-    tosa_fb, nodes: list[Node], tosa_spec: TosaSpecification
-) -> list[Any]:
+def broadcast_tensors(tosa_fb, nodes: list[Node]) -> list[Any]:
     """Broadcast the FX nodes to a shared shape inside the TOSA graph.
 
     This mirrors ``reshape_for_broadcast`` but also emits the tile operators
@@ -96,7 +93,7 @@ def broadcast_tensors(
 
     broadcast_tensors = []
     for node in nodes:
-        tens_dtype, tens_shape, _ = extract_tensor_meta(node.meta, tosa_spec)
+        tens_dtype, tens_shape, _ = extract_tensor_meta(node.meta)
         list_tens_shape = list(tens_shape)
         # Already in the right shape we can just add it to the list.
         if list_tens_shape == common_shape:

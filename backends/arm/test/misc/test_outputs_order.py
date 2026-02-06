@@ -81,7 +81,7 @@ def _read_tosa_outputs(tosa_path: Path):
 # TODO: MLETORCH-1266 Investigate output order issue
 @pytest.mark.parametrize("batch_size", [1, 4])
 @pytest.mark.parametrize("output_order_workaround", [True, False])
-def test_network_output_order_and_restore(batch_size, output_order_workaround):
+def test_network_output_order_and_restore_tosa_INT(batch_size, output_order_workaround):
     model = Network(batch_norm=True).eval()
     # Prepare spec
     spec = TosaSpecification.create_from_string("TOSA-1.0+INT")

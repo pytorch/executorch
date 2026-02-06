@@ -22,7 +22,7 @@ def define_common_targets():
         ],
         define_static_target = True,
         platforms = [ANDROID],
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         deps = [
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
@@ -66,7 +66,7 @@ def define_common_targets():
             define_static_target = True,
             link_whole = True,  # needed for executorch/examples/models/llama:main to register QnnBackend
             platforms = [ANDROID],
-            visibility = ["@EXECUTORCH_CLIENTS"],
+            visibility = ["PUBLIC"],
             resources = ({
                 "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs".format(get_qnn_library_version()),
                 } if include_aot_qnn_lib else {

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,9 +11,10 @@ from collections.abc import Sequence
 
 import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
-    AnnotateDecomposedMatmulPass,
+    AccumulateIndexPutPass,
     AnnotateOutputDimOrderPass,
     BroadcastArgsPass,
+    CanonicalizeGatherPass,
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
@@ -36,6 +37,7 @@ from executorch.backends.arm._passes import (
     DecomposeAnyPass,
     DecomposeAsinAndAcosPass,
     DecomposeAsinhPass,
+    DecomposeAsStridedCopyPass,
     DecomposeAtanhPass,
     DecomposeAtanPass,
     DecomposeAvgPool2dPass,
@@ -54,13 +56,16 @@ from executorch.backends.arm._passes import (
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
+    DecomposeIndexSelectToGatherPass,
     DecomposeIntPowPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
     DecomposeLinalgVectorNormPass,
     DecomposeLinearPass,
+    DecomposeLog1pPass,
     DecomposeLogitPass,
     DecomposeMaskedFillPass,
+    DecomposeMatmulPass,
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
@@ -71,13 +76,14 @@ from executorch.backends.arm._passes import (
     DecomposeSelectPass,
     DecomposeSelectScatterPass,
     DecomposeSignPass,
-    DecomposeSiluPass,
     DecomposeSinhPass,
     DecomposeSoftmaxPass,
     DecomposeSoftmaxUnstablePass,
     DecomposeSqrtPass,
     DecomposeSumPass,
+    DecomposeTanPass,
     DecomposeTOSAUnsupportedClampPass,
+    DecomposeUnfoldToGatherPass,
     DecomposeVarPass,
     DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
@@ -102,7 +108,10 @@ from executorch.backends.arm._passes import (
     RemoveNoopPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
+    RewriteBoolBitwiseNotToLogicalNotPass,
+    RewriteBoolToFp32CastViaInt8Pass,
     RewriteConvPass,
+    RewriteIndexPutPass,
     RewriteMatmulPass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
@@ -220,13 +229,15 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 FuseQuantizedActivationPass(),
+                RewriteBoolBitwiseNotToLogicalNotPass(),
+                RewriteBoolToFp32CastViaInt8Pass(),
+                CanonicalizeGatherPass(),
                 ConvertToClampPass(),
                 DecomposeTOSAUnsupportedClampPass(),
                 DecomposeGroupNormPass(),
                 DecomposeLayerNormPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
-                AnnotateDecomposedMatmulPass(),
                 ConvertELUParamsPass(),
                 NormalizeWhileInitialArgsPass(use_exir_clone=True),
             ]
@@ -264,10 +275,12 @@ class ArmPassManager(PassManager):
                 DecomposeSqrtPass(),
                 DecomposeAtanPass(),
                 DecomposeAtanhPass(),
+                DecomposeTanPass(),
                 DecomposeAddmmPass(),
                 DecomposeEluPass(),
                 DecomposeExpm1Pass(),
                 DecomposeIntPowPass(),
+                DecomposeLog1pPass(),
                 PromoteBoolOperandsPass(),
                 DecomposeSinhPass(),
                 DecomposeSignPass(),
@@ -275,6 +288,9 @@ class ArmPassManager(PassManager):
                 DecomposeGeluPass(),
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupedConvPass(),
+                DecomposeUnfoldToGatherPass(),
+                DecomposeEmbeddingPass(),
+                DecomposeIndexSelectToGatherPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
@@ -296,9 +312,10 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post scalar-removal)
         self.add_passes(
             [
+                AccumulateIndexPutPass(),
+                RewriteIndexPutPass(),
                 DecomposeRemainderPass(),
                 DecomposeDivTensorModePass(),
-                DecomposeEmbeddingPass(),
                 FuseBatchNorm2dPass(exported_program),
                 ConvertMmToBmmPass(),
                 DecomposeGluPass(),
@@ -315,6 +332,7 @@ class ArmPassManager(PassManager):
                 ConvertExpandCopyToRepeatPass(),
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
+                DecomposeAsStridedCopyPass(),
                 DecomposeMaxPool2dPass(),
                 SizeAdjustInputPass(),
                 DecomposeSelectPass(),
@@ -359,10 +377,7 @@ class ArmPassManager(PassManager):
 
         if not tosa_spec_in_set(
             self.tosa_spec,
-            {
-                TosaSpecification.create_from_string("TOSA-1.0+FP"),
-                TosaSpecification.create_from_string("TOSA-1.0+INT"),
-            },
+            set(TosaSpecification.all_versions_and_profiles()),
         ):
             raise RuntimeError(
                 f"No pass pipeline found for TOSA specification: {self.tosa_spec}"
@@ -372,65 +387,66 @@ class ArmPassManager(PassManager):
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
         # Preprocessing passes
-        self.add_pass(RemoveGraphAssertsPass())
+        self.add_pass(RemoveGraphAssertsPass(tfa_pass=True))
 
         # Transformation passes (pre scalar -> tensor)
         self.add_passes(
             [
-                DecomposeSelectScatterPass(),
-                ConvertInt64ConstOpsToInt32Pass(),
-                ConvertInt64OutputOpsToInt32Pass(),
-                InsertInt32CastsAfterInt64PlaceholdersPass(),
-                DecomposeEmbeddingPass(),
-                DecomposeScaledDotProductAttentionPass(),
-                DecomposeRoundPass(),
-                DecomposeLogitPass(),
-                PromoteBoolOperandsPass(),
-                DecomposeSignPass(),
-                DecomposeAddmmPass(),
-                DecomposeRemainderPass(),
-                DecomposeFloorDividePass(),
-                DecomposeDivTensorModePass(),
+                DecomposeSelectScatterPass(tfa_pass=True),
+                ConvertInt64ConstOpsToInt32Pass(tfa_pass=True),
+                ConvertInt64OutputOpsToInt32Pass(tfa_pass=True),
+                InsertInt32CastsAfterInt64PlaceholdersPass(tfa_pass=True),
+                DecomposeEmbeddingPass(tfa_pass=True),
+                DecomposeScaledDotProductAttentionPass(tfa_pass=True),
+                DecomposeRoundPass(tfa_pass=True),
+                DecomposeLogitPass(tfa_pass=True),
+                PromoteBoolOperandsPass(tfa_pass=True),
+                DecomposeSignPass(tfa_pass=True),
+                DecomposeAddmmPass(tfa_pass=True),
+                DecomposeRemainderPass(tfa_pass=True),
+                DecomposeFloorDividePass(tfa_pass=True),
+                DecomposeDivTensorModePass(tfa_pass=True),
             ]
         )
 
         # Scalars -> tensors
         self.add_passes(
             [
-                ReplaceScalarWithTensorByProfilePass(),
-                ScalarsToAttributePass(),
+                ReplaceScalarWithTensorByProfilePass(tfa_pass=True),
+                ScalarsToAttributePass(tfa_pass=True),
             ]
         )
 
         # Transformation passes (post scalar removal)
         self.add_passes(
             [
-                NormalizeWhileInitialArgsPass(use_exir_clone=False),
-                DecomposeAddSubAlphaPass(),
-                DecomposeGroupNormPass(),
-                DecomposeLayerNormPass(),
-                DecomposeVarPass(),
-                DecomposeMeanDimPass(graph_module, self.tosa_spec),
-                DecomposeNotEqualPass(),
-                DecomposeCosineSimilarityPass(),
-                DecomposeGluPass(),
-                DecomposeDivPass(),
-                DecomposeLeakyReLUPass(),
-                DecomposeLinalgVectorNormPass(),
-                DecomposeSqrtPass(),
-                DecomposeSiluPass(),
-                DecomposeAvgPool2dPass(),
-                DecomposeSoftmaxUnstablePass(),
-                DecomposeSoftmaxPass(),
-                ConvertMinMaxPass(),
+                NormalizeWhileInitialArgsPass(use_exir_clone=False, tfa_pass=True),
+                DecomposeAddSubAlphaPass(tfa_pass=True),
+                DecomposeGroupNormPass(tfa_pass=True),
+                DecomposeLayerNormPass(tfa_pass=True),
+                DecomposeVarPass(tfa_pass=True),
+                DecomposeMeanDimPass(graph_module, self.tosa_spec, tfa_pass=True),
+                DecomposeNotEqualPass(tfa_pass=True),
+                DecomposeCosineSimilarityPass(tfa_pass=True),
+                DecomposeGluPass(tfa_pass=True),
+                DecomposeDivPass(tfa_pass=True),
+                DecomposeLeakyReLUPass(tfa_pass=True),
+                DecomposeLinalgVectorNormPass(tfa_pass=True),
+                DecomposeSqrtPass(tfa_pass=True),
+                DecomposeAvgPool2dPass(tfa_pass=True),
+                DecomposeSoftmaxUnstablePass(tfa_pass=True),
+                DecomposeSoftmaxPass(tfa_pass=True),
+                ConvertMinMaxPass(tfa_pass=True),
+                AccumulateIndexPutPass(tfa_pass=True),
+                DecomposeMatmulPass(tfa_pass=True),
             ]
         )
 
         # Postprocessing passes
         self.add_passes(
             [
-                ReplaceInfAndLimitValuesPass(),
-                DecomposeMaskedFillPass(),
+                ReplaceInfAndLimitValuesPass(tfa_pass=True),
+                DecomposeMaskedFillPass(tfa_pass=True),
             ]
         )
 

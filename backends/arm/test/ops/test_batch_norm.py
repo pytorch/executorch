@@ -240,7 +240,7 @@ def test_native_batch_norm_legit_no_training_u85_INT_conv(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_native_batch_norm_legit_no_training_conv_vgf_no_quant(test_data: Tuple):
+def test_native_batch_norm_legit_no_training_vgf_no_quant_conv(test_data: Tuple):
     test_data, model_params = test_data()
     pipeline = VgfPipeline[input_t1](
         BatchNorm2dConv(*model_params),
@@ -253,7 +253,7 @@ def test_native_batch_norm_legit_no_training_conv_vgf_no_quant(test_data: Tuple)
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_native_batch_norm_legit_no_training_conv_vgf_quant(test_data: Tuple):
+def test_native_batch_norm_legit_no_training_vgf_quant_conv(test_data: Tuple):
     test_data, model_params = test_data()
     pipeline = VgfPipeline[input_t1](
         BatchNorm2dConv(*model_params),

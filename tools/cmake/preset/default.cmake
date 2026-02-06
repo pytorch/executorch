@@ -56,6 +56,10 @@ define_overridable_option(
   "Build executorch runtime optimizing for binary size" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_USE_SANITIZER
+  "Build with AddressSanitizer and UndefinedBehaviorSanitizer enabled" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_ARM_BAREMETAL
   "Build the Arm Baremetal flow for Cortex-M and Ethos-U" BOOL OFF
 )
@@ -162,6 +166,10 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_METAL "Build the Metal backend" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_METAL_COLLECT_STATS
+  "Enable Metal backend performance statistics collection" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_VGF "Build the Arm VGF backend" BOOL OFF

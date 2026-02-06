@@ -56,7 +56,7 @@ xcuserdata/
 *.dylib
 /cmake_wrapper.sh
 /data/
-/devtools/bundled_program/serialize/
+/devtools/bundled_program/serialize/*.fbs
 /exir/_serialize/program.fbs
 /exir/_serialize/scalar_type.fbs
 /include/

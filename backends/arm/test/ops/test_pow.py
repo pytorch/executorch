@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -50,6 +50,13 @@ class Pow_TensorTensor(torch.nn.Module):
         ),
     }
 
+    test_data_bf16 = {
+        "bf16_tensors": lambda: (
+            torch.ones((2, 3), dtype=torch.bfloat16),
+            torch.full((2, 3), 2, dtype=torch.bfloat16),
+        ),
+    }
+
     def forward(self, x: torch.Tensor | float, y: torch.Tensor | float):
         return torch.pow(x, y)
 
@@ -78,6 +85,12 @@ class Pow_TensorScalar(torch.nn.Module):
         ),
     }
 
+    test_data_bf16 = {
+        "exp_minus_three_bf16": lambda: (
+            (torch.randn((10, 5), dtype=torch.bfloat16).relu() + 0.1, -3.0)
+        )
+    }
+
     def __init__(self, exp):
         super().__init__()
         self.exp = exp
@@ -92,13 +105,19 @@ x_fail = {
 }
 
 
-@common.parametrize("test_data", Pow_TensorTensor.test_data, x_fail, strict=False)
+@common.parametrize(
+    "test_data",
+    Pow_TensorTensor.test_data | Pow_TensorTensor.test_data_bf16,
+    x_fail,
+    strict=False,
+)
 def test_pow_tensor_tensor_tosa_FP(test_data: Pow_TensorTensor.input_t):
     pipeline = TosaPipelineFP[Pow_TensorTensor.input_t](
         Pow_TensorTensor(),
         test_data(),
         Pow_TensorTensor.aten_op,
         Pow_TensorTensor.exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -122,7 +141,10 @@ x_fail = {
 
 
 @common.parametrize(
-    "test_data", Pow_TensorScalar.test_data, xfails=x_fail, strict=False
+    "test_data",
+    Pow_TensorScalar.test_data | Pow_TensorScalar.test_data_bf16,
+    xfails=x_fail,
+    strict=False,
 )
 def test_pow_tensor_scalar_tosa_FP(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
@@ -131,6 +153,7 @@ def test_pow_tensor_scalar_tosa_FP(test_data: Pow_TensorScalar.input_t):
         (base,),
         Pow_TensorScalar.aten_op,
         Pow_TensorScalar.exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 

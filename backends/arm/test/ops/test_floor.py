@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -42,8 +42,29 @@ test_data = {
     "floor_ramp": lambda: (Floor(), ramp),
 }
 
+test_data_bf16 = {
+    "floor_rand_bf16": lambda: (
+        Floor(),
+        torch.rand(4, 4, dtype=torch.bfloat16) - 0.5,
+    ),
+    "floor_ramp_bf16": lambda: (
+        Floor(),
+        torch.arange(-8, 8, 0.5, dtype=torch.bfloat16),
+    ),
+}
+test_data_fp16 = {
+    "floor_rand_fp16": lambda: (
+        Floor(),
+        torch.rand(4, 4, dtype=torch.float16) - 0.5,
+    ),
+    "floor_ramp_fp16": lambda: (
+        Floor(),
+        torch.arange(-8, 8, 0.5, dtype=torch.float16),
+    ),
+}
 
-@common.parametrize("test_data", test_data)
+
+@common.parametrize("test_data", test_data | test_data_bf16 | test_data_fp16)
 def test_floor_tosa_FP(test_data: input_t1):
     module, data = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -51,6 +72,7 @@ def test_floor_tosa_FP(test_data: input_t1):
         (data,),
         module.aten_op,
         module.exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -95,7 +117,7 @@ def test_floor_u85_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data)
+@common.parametrize("test_data", test_data | test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_floor_vgf_no_quant(test_data: input_t1):
     module, data = test_data()

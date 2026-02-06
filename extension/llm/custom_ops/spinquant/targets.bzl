@@ -18,5 +18,5 @@ def define_common_targets():
         exported_deps = [
             "//executorch/extension/llm/custom_ops/spinquant/third-party/FFHT:fht",
         ],
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )

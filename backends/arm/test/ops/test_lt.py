@@ -207,7 +207,7 @@ def test_lt_scalar_u85_INT(test_module):
 
 @common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone320
-def test_lt_tensor_16a8w_u85_INT16(test_module):
+def test_lt_tensor_16a8w_u85_INT(test_module):
     """Test lt operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -225,7 +225,7 @@ def test_lt_tensor_16a8w_u85_INT16(test_module):
 
 @common.parametrize("test_module", test_data_scalar)
 @common.XfailIfNoCorstone320
-def test_lt_scalar_16a8w_u85_INT16(test_module):
+def test_lt_scalar_16a8w_u85_INT(test_module):
     """Test lt operation (scalar) with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 

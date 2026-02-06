@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -26,8 +26,6 @@ from executorch.backends.arm.tosa.utils import tosa_shape
 class RepeatVisitor(NodeVisitor):
     target = "aten.repeat.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -49,8 +47,9 @@ class RepeatVisitor(NodeVisitor):
                 ts.DType.INT16,
                 ts.DType.INT32,
                 ts.DType.FP32,
+                ts.DType.BF16,
             ],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         multiples = inputs[1].special

@@ -115,8 +115,8 @@ class NamedDataStore:
         ):
             raise ValueError(
                 f"Duplicate key {key} with different data. "
-                f"Existing data: {self.buffers[buffer_idx]}. "
-                f"New data: {data}."
+                f"Existing data size: {len(self.buffers[buffer_idx])} bytes. "
+                f"New data size: {len(data)} bytes."
             )
         else:
             # Key doesn't exist; check if the data exists.

@@ -63,7 +63,7 @@ modules = {
 
 
 @common.parametrize("module", modules)
-def test_decompose_vector_norm_tosa_INT(module: ModuleWithInputs) -> None:
+def test_decompose_linalg_vector_norm_tosa_INT(module: ModuleWithInputs) -> None:
     """
     This test creates a PassPipeline that applies the DecomposeLinalgVectorNormPass.
     The expected primitive ops vary depending on the norm order:

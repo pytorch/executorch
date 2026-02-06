@@ -13,6 +13,25 @@ The quantization schemes supported by the VGF Backend are:
 
 Weight-only quantization is not currently supported on the VGF backend.
 
+### Partial Quantization
+
+The VGF backend supports partial quantization, where only parts of the model
+are quantized while others remain in floating-point. This can be useful for
+models where certain layers are not well-suited for quantization or when a
+balance between performance and accuracy is desired.
+
+For every node (op) in the graph, the quantizer looks at the *quantization
+configuration* set for that specific node. If the configuration is set to
+`None`, the node is left in floating-point; if it is provided (not `None`), the
+node is quantized according to that configuration.
+
+With the [Quantization API](#quantization-api), users can specify the
+quantization configurations for specific layers or submodules of the model. The
+`set_global` method is first used to set a default quantization configuration
+(could be `None` as explained above) for all nodes in the model. Then,
+configurations for specific layers or submodules can override the global
+setting using the `set_module_name` or `set_module_type` methods.
+
 ### Quantization API
 
 ```python
@@ -41,7 +60,7 @@ Returns:
 - **GraphModule**: The quantized model.
 
 ```python
-def VgfQuantizer.set_global(self, quantization_config: 'QuantizationConfig') -> 'TOSAQuantizer':
+def VgfQuantizer.set_global(self, quantization_config: 'QuantizationConfig | None') -> 'TOSAQuantizer':
 ```
 Set quantization_config for submodules not matched by other filters.
 
@@ -68,11 +87,11 @@ patterns for that submodule with the provided quantization_config.
 
 Args:
 - **module_name (str)**: Fully qualified module name to configure.
-- **quantization_config (QuantizationConfig)**: Configuration to apply to
+- **quantization_config (QuantizationConfig)**: Configuration applied to
         the named submodule.
 
 ```python
-def VgfQuantizer.set_module_type(self, module_type: 'Callable', quantization_config: 'QuantizationConfig') -> 'TOSAQuantizer':
+def VgfQuantizer.set_module_type(self, module_type: 'Callable', quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
 ```
 Set quantization_config for submodules with a given module type.
 

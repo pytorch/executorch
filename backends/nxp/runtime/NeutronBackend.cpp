@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 NXP
+ * Copyright 2024-2026 NXP
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -354,6 +354,13 @@ class NeutronBackend final : public PyTorchBackendInterface {
     return cfg;
   }
 
+  static void print_dim_order(const uint8_t* dim_order, const unsigned size) {
+    ET_LOG(Error, "dim_order values:");
+    for (size_t d = 0; d < size; d++) {
+      ET_LOG(Error, "  [%zu] = %d", d, dim_order[d]);
+    }
+  }
+
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* input_handle,
@@ -405,6 +412,8 @@ class NeutronBackend final : public PyTorchBackendInterface {
         } else {
           // Unexpected dim-order.
           ET_LOG(Error, "Input %d uses unsupported dim-order.", i);
+          print_dim_order(dim_order, arg.dim());
+
           return Error::InvalidProgram;
         }
       } else {
@@ -413,7 +422,12 @@ class NeutronBackend final : public PyTorchBackendInterface {
 
         if (!is_contiguous_dim_order(dim_order, arg.dim())) {
           // Unexpected dim-order.
-          ET_LOG(Error, "Input %d uses unsupported dim-order.", i);
+          ET_LOG(
+              Error,
+              "Expected input %d to use contiguous dim-order, but found a different one.",
+              i);
+          print_dim_order(dim_order, arg.dim());
+
           return Error::InvalidProgram;
         }
 

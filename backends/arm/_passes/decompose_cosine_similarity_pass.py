@@ -40,7 +40,7 @@ class DecomposeCosineSimilarityPass(ArmPass):
     }
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in torch_cosine_similarity:
+        if op not in torch_cosine_similarity or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         x1, x2 = args[0], args[1]

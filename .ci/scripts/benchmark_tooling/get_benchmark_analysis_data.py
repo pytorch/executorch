@@ -104,7 +104,7 @@ class BenchmarkFilters:
 
 BASE_URLS = {
     "local": "http://localhost:3000",
-    "prod": "https://hud.pytorch.org",
+    "prod": "https://hud.pytorch.org",  # @lint-ignore
 }
 
 

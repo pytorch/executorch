@@ -43,6 +43,11 @@ class MockTokenizer : public ::tokenizers::Tokenizer {
       decode,
       (uint64_t, uint64_t),
       (const));
+  MOCK_METHOD(
+      ::tokenizers::Result<std::string>,
+      id_to_piece,
+      (uint64_t),
+      (const));
   MOCK_METHOD(uint64_t, bos_tok, (), (const));
   MOCK_METHOD(uint64_t, eos_tok, (), (const));
   MOCK_METHOD(uint64_t, vocab_size, (), (const));
@@ -125,6 +130,10 @@ class RunnerTest : public Test {
 
     ON_CALL(*tokenizer, decode).WillByDefault([](uint64_t, uint64_t) {
       return ::tokenizers::Result<std::string>("token");
+    });
+
+    ON_CALL(*tokenizer, id_to_piece).WillByDefault([](uint64_t) {
+      return ::tokenizers::Result<std::string>("piece");
     });
 
     ON_CALL(*tokenizer, bos_tok()).WillByDefault(Return(1));

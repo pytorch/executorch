@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-
+import copy
 import unittest
 from typing import cast, Optional, Tuple
 
@@ -20,7 +20,59 @@ from executorch.backends.cadence.aot.simplify_ops import (
 )
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.fx.passes.infra.pass_base import PassResult
+from torch.fx.passes.infra.pass_base import PassBase, PassResult
+from torch.utils import _pytree as pytree
+
+
+def transform_and_check_numerics(
+    original_graph: torch.fx.GraphModule,
+    inputs: tuple[torch.Tensor, ...] | list[torch.Tensor],
+    pass_to_run: PassBase,
+    pass_name: str,
+    rtol: float = 1e-5,
+    atol: float = 1e-6,
+) -> PassResult:
+    """Run a graph transformation and validate numerical equivalence.
+
+    Args:
+        original_graph: The original graph module before transformation
+        inputs: Input tensors to run through both graphs
+        pass_to_run: The pass to apply to the graph
+        pass_name: Name of the pass being validated (for error messages)
+        rtol: Relative tolerance for allclose comparison
+        atol: Absolute tolerance for allclose comparison
+
+    Returns:
+        The PassResult from the transformation
+    """
+    # Deepcopy to preserve original for comparison
+    gm_before = copy.deepcopy(original_graph)
+
+    # Run the transformation
+    result = cast(PassResult, pass_to_run.call(original_graph))
+
+    # Validate numerical equivalence
+    gm_before.eval()
+    result.graph_module.eval()
+    with torch.no_grad():
+        orig_out = gm_before(*inputs)
+        mod_out = result.graph_module(*inputs)
+
+    flat_orig_out, _ = pytree.tree_flatten(orig_out)
+    flat_mod_out, _ = pytree.tree_flatten(mod_out)
+
+    # Check that outputs match within tolerance
+    for i, (orig_tensor, mod_tensor) in enumerate(zip(flat_orig_out, flat_mod_out)):
+        if not torch.allclose(orig_tensor, mod_tensor, rtol=rtol, atol=atol):
+            max_diff = torch.max(torch.abs(orig_tensor - mod_tensor)).item()
+            raise AssertionError(
+                f"Pass validation failed for pass {pass_name}. "
+                f"Output tensor {i} differs by max {max_diff:.6e}. "
+                f"Expected rtol={rtol}, atol={atol}. "
+                f"Original output: {orig_tensor}, Modified output: {mod_tensor}"
+            )
+
+    return result
 
 
 class TestSimplifyOpsPasses(unittest.TestCase):
@@ -46,8 +98,11 @@ class TestSimplifyOpsPasses(unittest.TestCase):
             op=exir_ops.edge.aten.slice_scatter.default,
             args=(x, y, dim, start, end, step),
         )
-        p = SimplifySliceOpPass()
-        gm = cast(PassResult, p(gm)).graph_module
+        result = transform_and_check_numerics(
+            gm, (x, y), SimplifySliceOpPass(), "SimplifySliceOpPass"
+        )
+        self.assertTrue(result.modified)
+        gm = result.graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_scatter.default), 0)
 
     @expand(
@@ -76,8 +131,11 @@ class TestSimplifyOpsPasses(unittest.TestCase):
                 step,
             ),
         )
-        p = SimplifySliceOpPass()
-        gm = cast(PassResult, p(gm)).graph_module
+        result = transform_and_check_numerics(
+            gm, (x,), SimplifySliceOpPass(), "SimplifySliceOpPass"
+        )
+        self.assertTrue(result.modified)
+        gm = result.graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_copy.Tensor), 0)
         self.assertEqual(count_node(gm, exir_ops.edge.aten.full.default), 1)
 
@@ -92,7 +150,11 @@ class TestSimplifyOpsPasses(unittest.TestCase):
         original_slice_copy = list(gm.graph.nodes)[1]
         self.assertEqual(original_slice_copy.args[1:], (1,))
         self.assertEqual(original_slice_copy.kwargs, {"end": 3})
-        gm = BindOptionalArgsPass().call(gm).graph_module
+        result = transform_and_check_numerics(
+            gm, (x,), BindOptionalArgsPass(), "BindOptionalArgsPass"
+        )
+        self.assertTrue(result.modified)
+        gm = result.graph_module
         modified_slice_copy = list(gm.graph.nodes)[1]
         self.assertEqual(modified_slice_copy.args[1:], (1, None, 3, 1))
         self.assertEqual(modified_slice_copy.kwargs, {})

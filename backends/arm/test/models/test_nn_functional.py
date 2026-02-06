@@ -82,7 +82,7 @@ input_t = tuple[torch.Tensor]
     "test_data",
     module_tests,
 )
-def test_nn_functional_FP(test_data):
+def test_nn_functional_tosa_FP(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineFP[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=False
@@ -103,7 +103,7 @@ def test_nn_functional_FP(test_data):
     "test_data",
     module_tests,
 )
-def test_nn_functional_INT(test_data):
+def test_nn_functional_tosa_INT(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineINT[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=True

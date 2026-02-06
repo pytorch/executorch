@@ -27,10 +27,7 @@ runtime.python_library(
         "flat_tensor.fbs",
         "scalar_type.fbs",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":schema",
         "//executorch/exir/_serialize:lib",

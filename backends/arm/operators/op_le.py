@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,7 +17,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import TosaArg
 
 from torch.fx import Node
@@ -26,11 +25,6 @@ from torch.fx import Node
 @register_node_visitor
 class LessEqualVisitor(NodeVisitor):
     target = "aten.le.Tensor"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -48,9 +42,9 @@ class LessEqualVisitor(NodeVisitor):
             self.target,
             inputs,
             [ts.DType.INT32, ts.DType.FP32],
-            output.tosa_spec,
+            self.tosa_spec,
         )
-        validate_valid_dtype(self.target, output, ts.DType.BOOL, output.tosa_spec)
+        validate_valid_dtype(self.target, output, ts.DType.BOOL, self.tosa_spec)
 
         attr = ts.TosaSerializerAttribute()
         attr.GreaterEqualAttribute()

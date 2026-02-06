@@ -75,7 +75,7 @@ class TestT5EncoderModel:
         return t5_encoder_model, t5_encoder_model_inputs
 
 
-def test_T5EncoderModel_tosa_FP():
+def test_t5_encoder_tosa_FP():
     t5_encoder_model, t5_encoder_model_inputs = (
         TestT5EncoderModel().prepare_model_and_inputs()
     )
@@ -98,7 +98,7 @@ def test_T5EncoderModel_tosa_FP():
         pipeline.run()
 
 
-def test_T5EncoderModel_tosa_INT():
+def test_t5_encoder_tosa_INT():
     t5_encoder_model, t5_encoder_model_inputs = (
         TestT5EncoderModel().prepare_model_and_inputs()
     )
@@ -117,7 +117,7 @@ def test_T5EncoderModel_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_T5EncoderModel_vgf_no_quant():
+def test_t5_encoder_vgf_no_quant():
     t5_encoder_model, t5_encoder_model_inputs = (
         TestT5EncoderModel().prepare_model_and_inputs()
     )
@@ -142,7 +142,7 @@ def test_T5EncoderModel_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_T5EncoderModel_vgf_quant():
+def test_t5_encoder_vgf_quant():
     t5_encoder_model, t5_encoder_model_inputs = (
         TestT5EncoderModel().prepare_model_and_inputs()
     )

@@ -140,7 +140,7 @@ def test_lstm_vgf_no_quant():
     pipeline.run()
 
 
-def test_lstm_16a8w_tosa_INT():
+def test_lstm_tosa_INT_16a8w():
     """Test LSTM model with 16A8W quantization (16-bit activations, 8-bit weights)"""
 
     pipeline = TosaPipelineINT[input_t](
@@ -162,7 +162,7 @@ def test_lstm_16a8w_tosa_INT():
     reason="MLETORCH-1452: AssertionError: Output 0 does not match reference output."
 )
 @common.XfailIfNoCorstone300
-def test_lstm_16a8w_u55_INT():
+def test_lstm_u55_INT_16a8w():
     pipeline = EthosU55PipelineINT[input_t](
         TestLSTM.lstm,
         TestLSTM.model_example_inputs,
@@ -179,7 +179,7 @@ def test_lstm_16a8w_u55_INT():
 
 
 @common.XfailIfNoCorstone320
-def test_lstm_16a8w_u85_INT():
+def test_lstm_u85_INT_16a8w():
     pipeline = EthosU85PipelineINT[input_t](
         TestLSTM.lstm,
         TestLSTM.model_example_inputs,

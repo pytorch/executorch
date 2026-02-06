@@ -1,5 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
-# All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,7 +24,7 @@ def mocked_model_2(input: torch.Tensor) -> torch.Tensor:
 class TestGenericModelEvaluator(unittest.TestCase):
     """Tests the GenericModelEvaluator class."""
 
-    def test_get_model_error(self):
+    def test_get_model_error_no_target(self):
         example_input = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
         evaluator = GenericModelEvaluator(
             "dummy_model",
@@ -42,7 +41,7 @@ class TestGenericModelEvaluator(unittest.TestCase):
         self.assertEqual(model_error_dict["max_percentage_error"], [25.0])
         self.assertEqual(model_error_dict["mean_absolute_error"], [0.25])
 
-    def test_get_compression_ratio(self):
+    def test_get_compression_ratio_no_target(self):
         with tempfile.NamedTemporaryFile(delete=True) as temp_bin:
             torch.save(COMPRESSION_RATIO_TEST, temp_bin)
 

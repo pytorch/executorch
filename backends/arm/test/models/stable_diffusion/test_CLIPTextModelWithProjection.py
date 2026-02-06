@@ -76,7 +76,7 @@ class TestCLIPTextModelWithProjection:
         return text_encoder_model, text_encoder_model_inputs
 
 
-def test_CLIPTextModelWithProjection_tosa_FP():
+def test_clip_text_with_projection_tosa_FP():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -99,7 +99,7 @@ def test_CLIPTextModelWithProjection_tosa_FP():
         pipeline.run()
 
 
-def test_CLIPTextModelWithProjection_tosa_INT():
+def test_clip_text_with_projection_tosa_INT():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -120,7 +120,7 @@ def test_CLIPTextModelWithProjection_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_CLIPTextModelWithProjection_vgf_no_quant():
+def test_clip_text_with_projection_vgf_no_quant():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -147,7 +147,7 @@ def test_CLIPTextModelWithProjection_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_CLIPTextModelWithProjection_vgf_quant():
+def test_clip_text_with_projection_vgf_quant():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )

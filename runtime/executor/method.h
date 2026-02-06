@@ -217,8 +217,12 @@ class Method final {
   /**
    * Execute the method.
    *
-   * NOTE: Will fail if the method has been partially executed using the
-   * `step()` api.
+   * NOTE: Will fail with Error::InvalidState if the method has been partially
+   * executed using the `step()` api. Call reset_execution() after step()
+   * reaches EndOfMethod before calling execute().
+   *
+   * If execute() encounters an error mid-execution, the state is automatically
+   * reset to allow retry attempts.
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
@@ -237,13 +241,28 @@ class Method final {
   ET_DEPRECATED ET_NODISCARD Error experimental_step();
 
   /**
+   * EXPERIMENTAL: Returns true if method execution is in progress.
+   *
+   * Execution is considered "in progress" when step() has been called and
+   * execution is mid-way through the instruction sequence.
+   *
+   * @retval true if execution is in progress (not at initial state, not at end)
+   * @retval false if at initial state, after completion, or after any error
+   *
+   * @note execute() automatically resets state on error, so in_progress()
+   *       returns false immediately after execute() fails.
+   */
+  ET_EXPERIMENTAL ET_NODISCARD bool in_progress() const;
+
+  /**
    * EXPERIMENTAL: Resets execution state to the start of the Method. For use
    * with the `step()` API.
    *
-   * @retval Error:Ok on success
+   * @retval Error::Ok on success
    * @retval Error::InvalidState if called before step-based execution reached
-   *     the end of the Method. This means it is not possible to recover a
-   *     Method that failed mid-execution.
+   *     the end of the Method. When using step(), you must step through to
+   *     EndOfMethod before resetting. Note: execute() handles its own error
+   *     recovery and does not require manual reset.
    */
   ET_EXPERIMENTAL ET_NODISCARD Error reset_execution();
 

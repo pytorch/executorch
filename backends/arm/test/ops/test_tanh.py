@@ -1,12 +1,11 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 from typing import Tuple
 
-import pytest
 import torch
 
 from executorch.backends.arm.test import common
@@ -31,6 +30,10 @@ test_data_suite = {
     "ramp": lambda: torch.arange(-16, 16, 0.2),
 }
 
+test_data_suite_bf16 = {
+    "rand_bf16": lambda: torch.rand(4, 4, 2, 2, 2, dtype=torch.bfloat16) - 0.5,
+}
+
 
 class Tanh(torch.nn.Module):
     def __init__(self):
@@ -41,13 +44,14 @@ class Tanh(torch.nn.Module):
         return self.tanh(x)
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_tanh_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Tanh(),
         (test_data(),),
         aten_op,
         exir_op=[],
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -132,9 +136,6 @@ def test_tanh_16a8w_tosa_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="MLETORCH-707: AssertionError: Output 0 does not match reference output."
-)
 def test_tanh_16a8w_u55_INT16(test_data: torch.Tensor):
     """Test tanh operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -155,7 +156,7 @@ def test_tanh_16a8w_u55_INT16(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_tanh_16a8w_u85_INT16(test_data: torch.Tensor):
+def test_tanh_16a8w_u85_INT(test_data: torch.Tensor):
     """Test tanh operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 

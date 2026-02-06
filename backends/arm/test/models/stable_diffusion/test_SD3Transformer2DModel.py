@@ -105,7 +105,7 @@ class TestSD3Transformer2DModel:
         return sd35_transformer2D_model, sd35_transformer2D_model_inputs
 
 
-def test_SD3Transformer2DModel_tosa_FP():
+def test_sd3_transformer_tosa_FP():
     sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
         TestSD3Transformer2DModel().prepare_model_and_inputs()
     )
@@ -125,7 +125,7 @@ def test_SD3Transformer2DModel_tosa_FP():
         pipeline.run()
 
 
-def test_SD3Transformer2DModel_tosa_INT():
+def test_sd3_transformer_tosa_INT():
     sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
         TestSD3Transformer2DModel().prepare_model_and_inputs()
     )
@@ -147,7 +147,7 @@ def test_SD3Transformer2DModel_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_SD3Transformer2DModel_vgf_no_quant():
+def test_sd3_transformer_vgf_no_quant():
     sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
         TestSD3Transformer2DModel().prepare_model_and_inputs()
     )
@@ -170,7 +170,7 @@ def test_SD3Transformer2DModel_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_SD3Transformer2DModel_vgf_quant():
+def test_sd3_transformer_vgf_quant():
     sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
         TestSD3Transformer2DModel().prepare_model_and_inputs()
     )

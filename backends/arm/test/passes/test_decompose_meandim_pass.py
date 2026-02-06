@@ -96,7 +96,7 @@ modules: Dict[str, ModuleWithMeanAttrs] = {
 
 
 @common.parametrize("module", modules)
-def test_decompose_meandim_tosa_INT(module: ModuleWithMeanAttrs) -> None:
+def test_decompose_mean_dim_tosa_INT(module: ModuleWithMeanAttrs) -> None:
     # Decompose meandim_pass requires initiating the pas with args, which is not supported
     # by RunPasses in the arm_tester -> PassPipeline cannot be used.
     nn_module = cast(torch.nn.Module, module)
@@ -115,7 +115,7 @@ def test_decompose_meandim_tosa_INT(module: ModuleWithMeanAttrs) -> None:
 
 
 @common.parametrize("module", modules)
-def test_decompose_meandim_u55_INT(module: ModuleWithMeanAttrs) -> None:
+def test_decompose_mean_dim_u55_INT(module: ModuleWithMeanAttrs) -> None:
     # Decompose meandim_pass requires initiating the pas with args, which is not supported
     # by RunPasses in the arm_tester -> PassPipeline cannot be used.
     nn_module = cast(torch.nn.Module, module)

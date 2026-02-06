@@ -6,12 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#version 450 core
-
-#define PRECISION ${PRECISION}
-
 // Binary comparison ops require that the output is boolean and not the same as input.
 $IS_COMPARISON_OP = (any([name in VARIANT_NAME for name in ["binary_eq",  "binary_lt", "binary_le", "binary_gt", "binary_ge"]]))
+
+#version 450 core
+
+${define_required_extensions(STORAGE, DTYPE)}
+$if IS_COMPARISON_OP:
+  ${define_required_extensions(STORAGE, "uint8")}
+
+#define PRECISION ${PRECISION}
 
 #define NAME ${VARIANT_NAME}
 
@@ -26,11 +30,6 @@ $else:
 #define op(X, Y, A) ${OPERATOR}
 
 ${define_active_storage_type(STORAGE)}
-${define_required_extensions(DTYPE)}
-
-
-$if IS_COMPARISON_OP:
-  ${define_required_extensions("uint8")}
 
 layout(std430) buffer;
 
@@ -64,6 +63,9 @@ $else:
 #include "broadcasting_utils.h"
 #include "indexing_utils.h"
 
+$if MASK_PADDING:
+  #define MASK_PADDING
+
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
@@ -94,8 +96,7 @@ void main() {
     return;
   }
 
-  TensorIndex outp_tidx;
-  linear_idx_to_tensor_idx(outp, out_bufi, outp_tidx);
+  TensorIndex outp_tidx = linear_idx_to_tensor_idx(outp, out_bufi);
 
   TensorIndex inp_tidx = outp_tidx;
   clamp_tensor_idx(inp, inp_tidx);
@@ -141,11 +142,29 @@ void main() {
     other_texel = other_texel.xxxx;
   }
 
-  write_texel_lpos(
-    t_out,
-    lpos,
-    VEC4_OUT_T(op(in_texel, other_texel, alpha)),
-    out_axis_map);
+  VEC4_OUT_T out_texel = VEC4_OUT_T(op(in_texel, other_texel, alpha));
+
+#ifdef MASK_PADDING
+  // Handle padding elements in the last texel to prevent NaN propagation.
+  // When the packed dimension size is not a multiple of 4, the last texel
+  // will have padding elements. For division operations, padding elements
+  // (which are 0/0) can produce NaN values that propagate through reductions.
+  const int nspill = mod4(out_sizes[packed_dim]);
+
+  if (nspill > 0) {
+    const int texels_per_batch = divup4(out_sizes[packed_dim]);
+    const bool is_last_texel = (lpos[packed_dim] % texels_per_batch) == (texels_per_batch - 1);
+
+    if (is_last_texel) {
+      // Explicitly set padding elements to 0 to avoid NaN
+      [[unroll]] for (int i = nspill; i < 4; i++) {
+        out_texel[i] = 0;
+      }
+    }
+  }
+#endif
+
+  write_texel_lpos(t_out, lpos, out_texel, out_axis_map);
 }
 
 #endif

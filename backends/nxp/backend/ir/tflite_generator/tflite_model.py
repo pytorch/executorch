@@ -1,5 +1,5 @@
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2025 NXP
+# Copyright 2023-2026 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -24,7 +24,7 @@ import executorch.backends.nxp.backend.ir.tflite_generator.meta.meta as meta
 
 import flatbuffers as fb
 import numpy as np
-from executorch.backends.nxp.backend.ir import tensor_formatting
+from executorch.backends.nxp.backend import data_format
 from executorch.backends.nxp.backend.ir.tflite_generator.meta import types
 from executorch.backends.nxp.backend.ir.tflite_generator.meta.types import name_for_type
 
@@ -380,7 +380,7 @@ class Tensor(meta.TFLiteObject):
     # TODO shapeSignature
     # TODO variantTensors
 
-    tensor_format: tensor_formatting.TensorFormat
+    tensor_format: data_format.DataFormat
 
     # TODO If 'hasRank' is false, "shape" must be [].
 
@@ -426,7 +426,7 @@ class Tensor(meta.TFLiteObject):
 
         self.tmp_null_tensor = False
 
-        self.tensor_format = tensor_formatting.TensorFormat.NONE
+        self.tensor_format = data_format.DataFormat.NONE
 
     def gen_tflite(self, builder: fb.Builder):
 

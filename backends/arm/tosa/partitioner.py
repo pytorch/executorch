@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -200,7 +200,56 @@ class TOSAPartitioner(Partitioner):
         )
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
-        self.tosa_spec = compile_spec.tosa_spec
+
+    def _detag_boundary_nodes(
+        self, module: GraphModule, tag: str, reporter: WhyNoPartitionReporter
+    ) -> None:
+        """De-tag nodes at the partition boundary.
+
+        Remove delegation tags from quantize nodes with inputs outside the
+        partition and from dequantize nodes with outputs outside the partition.
+
+        For non Q/DQ nodes, remove the tag from the first node in the partition
+        if any input has floating-point dtype.
+
+        Args:
+            tag: The delegation tag assigned to the partition.
+            reporter: A reporter to log rejected nodes.
+            module: The GraphModule containing the partition.
+
+        """
+
+        # De-tag outermost q-nodes upwards and dq-nodes downwards.
+        # De-tag if at least one input/output is not part of the partition.
+        for node in module.graph.nodes:
+            if not is_partitioned(node, tag):
+                continue
+
+            is_q_node = node.target in Q_OPS
+            is_dq_node = node.target in DQ_OPS
+            is_boundary_q_node = is_q_node and not is_partitioned(
+                node.all_input_nodes[0], tag
+            )
+            is_boundary_dq_node = is_dq_node and any(
+                not is_partitioned(user, tag) for user in node.users
+            )
+
+            if is_boundary_q_node or is_boundary_dq_node:
+                # Remove tag from quantize node with input outside partition,
+                # or dequantize node with any output outside partition
+                del node.meta["delegation_tag"]
+            elif not is_q_node and not is_dq_node:
+                # For non Q/DQ nodes, remove tag from first node in partition if any input has fp dtype
+                for input in node.all_input_nodes:
+                    if is_partitioned(input, tag):
+                        continue
+                    if get_first_fake_tensor(input).dtype.is_floating_point:
+                        reporter.report_reject(
+                            node,
+                            f"Was first node in partition and input {input.name} had fp dtype.",
+                        )
+                        del node.meta["delegation_tag"]
+                        break
 
     def _tag_module(  # noqa
         self,
@@ -249,39 +298,13 @@ class TOSAPartitioner(Partitioner):
             for node in partition.nodes:
                 node.meta["delegation_tag"] = tag
 
-            # De-tag outermost q-nodes upwards and dq-nodes downwards.
-            # De-tag if at least one input/output is not part of the partition.
-            for node in module.graph.nodes:
-                if not is_partitioned(node, tag):
-                    continue
-                if node.target in Q_OPS:
-                    for input in node.all_input_nodes:
-                        if not is_partitioned(input, tag):
-                            del node.meta["delegation_tag"]
-                            break
-                    continue
-
-                if node.target in DQ_OPS:
-                    for user in node.users:
-                        if not is_partitioned(user, tag):
-                            del node.meta["delegation_tag"]
-                            break
-                    continue
-
-                if self.tosa_spec.support_float():
-                    continue
-
-                if is_partitioned(node, tag):
-                    for input in node.all_input_nodes:
-                        if is_partitioned(input, tag):
-                            continue
-                        if get_first_fake_tensor(input).dtype.is_floating_point:
-                            reporter.report_reject(
-                                node,
-                                f"Was first node in partition and input {input.name} had fp dtype.",
-                            )
-                            del node.meta["delegation_tag"]
-                            break
+            if self.tosa_spec.support_integer() and not self.tosa_spec.support_float():
+                # Detag boundary Q/DQ since we cannot handle them without float support
+                self._detag_boundary_nodes(
+                    module,
+                    tag,
+                    reporter,
+                )
 
             # Check whether the partition contains only no-op or non-computational ops. Such partitions don't make sense to delegate, and in the worst case may be optimized away during lowering, which can break compilation."
             is_nocompute_partition = all(
@@ -364,6 +387,8 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.hardswish.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.silu.default,
+            torch.ops.aten.silu_.default,
         }
         ops_to_not_decompose_if_fp = {
             torch.ops.aten.eye.default,
@@ -377,12 +402,14 @@ class TOSAPartitioner(Partitioner):
         ops_to_not_decompose_if_integer = {
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.silu.default,
+            torch.ops.aten.silu_.default,
         }
 
         def filter_fn(node: torch.fx.Node) -> bool:
-            """Filter function applied to ops in 'ops_to_not_decompose'.
-            Returns True if the op should not be decomposed.
-            If this function returns True, the partitioner *must* accept the node, or the lowering fails.
+            """Filter function applied to ops in 'ops_to_not_decompose'. Returns
+            True if the op should not be decomposed. If this function returns
+            True, the partitioner *must* accept the node, or the lowering fails.
 
             Args:
                 node (torch.fx.Node): FX node to evaluate.

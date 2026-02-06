@@ -44,8 +44,8 @@ class DecomposeCumsumPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = {RewriteConvPass}
 
-    def __init__(self, exported_program: ExportedProgram) -> None:
-        super().__init__()
+    def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     def call(self, graph_module):

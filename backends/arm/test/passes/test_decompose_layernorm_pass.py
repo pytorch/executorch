@@ -32,7 +32,7 @@ class LayerNorm(torch.nn.Module):
         return (torch.rand(10),)
 
 
-def test_decompose_layernorm_tosa_FP():
+def test_decompose_layer_norm_tosa_FP():
     module = LayerNorm()
     pipeline = PassPipeline[input_t](
         module,

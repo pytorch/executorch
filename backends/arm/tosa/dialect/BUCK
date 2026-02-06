@@ -1,0 +1,37 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "core",
+    srcs = [
+        "lib.py",
+        "ops_registration.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/arm/tosa:tosa",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "ops",
+    srcs = glob(["ops/*.py"]),
+    deps = [
+        ":core",
+        "//caffe2:torch",
+        "//executorch/backends/arm/tosa:tosa",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "lib",
+    srcs = ["__init__.py"],
+    deps = [
+        ":core",
+        ":ops",
+        "//caffe2:torch",
+        "//executorch/backends/arm/tosa:tosa",
+        "//executorch/exir/dialects:lib",
+    ],
+)

@@ -45,7 +45,7 @@ def test_ic3_tosa_FP():
 
 
 @pytest.mark.slow
-def test_ic3_tosa_BI():
+def test_ic3_tosa_INT():
     pipeline = TosaPipelineINT[input_t](
         ic3,
         model_inputs,
@@ -61,7 +61,7 @@ def test_ic3_tosa_BI():
 @pytest.mark.slow
 @pytest.mark.skip(reason="Takes too long to run on CI")
 @common.XfailIfNoCorstone300
-def test_ic3_u55_BI():
+def test_ic3_u55_INT():
     pipeline = EthosU55PipelineINT[input_t](
         ic3,
         model_inputs,
@@ -77,7 +77,7 @@ def test_ic3_u55_BI():
 @pytest.mark.slow
 @pytest.mark.skip(reason="Takes too long to run on CI")
 @common.XfailIfNoCorstone320
-def test_ic3_u85_BI():
+def test_ic3_u85_INT():
     pipeline = EthosU85PipelineINT[input_t](
         ic3,
         model_inputs,

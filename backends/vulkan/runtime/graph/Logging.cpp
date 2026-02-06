@@ -52,8 +52,11 @@ std::string make_arg_json(ComputeGraph* const compute_graph, ValueRef arg) {
   } else if (compute_graph->val_is_value_list(arg)) {
     ValueListPtr val_list = compute_graph->get_value_list(arg);
     ss << ", \"values\": [";
-    for (const ValueRef& value : *val_list) {
-      ss << value << ", ";
+    for (size_t i = 0; i < val_list->size(); ++i) {
+      ss << val_list->at(i);
+      if (i + 1 < val_list->size()) {
+        ss << ", ";
+      }
     }
     ss << "]";
   } else if (compute_graph->val_is_int_list(arg)) {

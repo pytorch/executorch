@@ -447,7 +447,6 @@ void QnnManager::DestroyContext() {
 bool QnnManager::IsNodeSupportedByBackend(
     std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-
   for (std::shared_ptr<OpWrapper>& op_wrapper : op_wrappers) {
     for (const auto& param : op_wrapper->GetParams()) {
       // unused?
@@ -516,14 +515,33 @@ Error QnnManager::CompileDlc() {
     std::vector<std::shared_ptr<TensorWrapper>> graph_inputs, graph_outputs,
         tensors;
 
+    // Mapping memory address for the input and output of mutable buffer
+    std::unordered_map<int, const void*> mutable_buffer_id_to_memory_map;
     for (int i = 0; i < graphInfo.numInputTensors; ++i) {
       auto tw = CreateTensorWrapper(graphInfo.inputTensors[i]);
       tw->UpdateQnnTensorMeta(graphInfo.inputTensors[i]);
+
+      int mutable_buffer_id = ExtractMutableBufferNumber(tw->GetName());
+      if (mutable_buffer_id != -1) {
+        // Delegate maintains the memory for mutable buffer
+        tw->AllocateDataBuffer();
+        mutable_buffer_id_to_memory_map[mutable_buffer_id] =
+            tw->GetStaticTensorData();
+      }
       graph_inputs.push_back(tw);
     }
     for (int i = 0; i < graphInfo.numOutputTensors; ++i) {
       auto tw = CreateTensorWrapper(graphInfo.outputTensors[i]);
       tw->UpdateQnnTensorMeta(graphInfo.outputTensors[i]);
+      int mutable_buffer_id = ExtractMutableBufferNumber(tw->GetName());
+      if (mutable_buffer_id != -1 &&
+          mutable_buffer_id_to_memory_map.find(mutable_buffer_id) !=
+              mutable_buffer_id_to_memory_map.end()) {
+        // Fill the same memory for I/O of mutable buffer
+        tw->FillDataBuffer(
+            mutable_buffer_id_to_memory_map[mutable_buffer_id],
+            false /* copy_data */);
+      }
       graph_outputs.push_back(tw);
     }
 

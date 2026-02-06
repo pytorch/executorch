@@ -10,6 +10,7 @@ The Arm Ethos-U delegate supports the following quantization schemes:
 
 - 8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).
 - Limited support for 16-bit quantization with 16-bit activations and 8-bit weights (a.k.a 16x8 quantization). This is under development.
+- Partial quantization is *not* supported on the Ethos-U backend. The entire model must be quantized.
 
 ### Quantization API
 
@@ -39,7 +40,7 @@ Returns:
 - **GraphModule**: The quantized model.
 
 ```python
-def EthosUQuantizer.set_global(self, quantization_config: 'QuantizationConfig') -> 'TOSAQuantizer':
+def EthosUQuantizer.set_global(self, quantization_config: 'QuantizationConfig | None') -> 'TOSAQuantizer':
 ```
 Set quantization_config for submodules not matched by other filters.
 
@@ -66,11 +67,11 @@ patterns for that submodule with the provided quantization_config.
 
 Args:
 - **module_name (str)**: Fully qualified module name to configure.
-- **quantization_config (QuantizationConfig)**: Configuration to apply to
+- **quantization_config (QuantizationConfig)**: Configuration applied to
         the named submodule.
 
 ```python
-def EthosUQuantizer.set_module_type(self, module_type: 'Callable', quantization_config: 'QuantizationConfig') -> 'TOSAQuantizer':
+def EthosUQuantizer.set_module_type(self, module_type: 'Callable', quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
 ```
 Set quantization_config for submodules with a given module type.
 
