@@ -29,7 +29,7 @@ static TestCase create_test_case_from_config(
     vkapi::ScalarType input_dtype,
     utils::StorageType fp_storage_type,
     utils::GPUMemoryLayout int8_memory_layout,
-    const std::string& impl_selector = "general") {
+    const std::string& impl_selector = "") {
   TestCase test_case;
 
   // Calculate output dimensions
@@ -202,171 +202,80 @@ static TestCase create_test_case_from_config(
   return test_case;
 }
 
-// Generate easy test cases for quantized conv2d operation (for debugging)
-std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
-  std::vector<TestCase> test_cases;
-
-  // Single simple configuration for debugging
-  Conv2dConfig config = {
-      OutInChannels(16, 8), // channels (out, in)
-      InputSize2D(5, 5), // input_size (h, w)
-      KernelSize(3, 3), // kernel
-      Stride(1, 1), // stride
-      Padding(1, 1), // padding
-      Dilation(1, 1), // dilation
-      1, // groups
-  };
-  config.op_name = "conv2d_q8ta_q8csw_q8to";
-
-  std::vector<utils::StorageType> fp_storage_types = {
-      utils::kTexture3D, utils::kBuffer};
-
-  // Memory layouts for int8 tensors - test both optimized (4W4C) and general
-  // paths
-  std::vector<utils::GPUMemoryLayout> int8_memory_layouts = {
-      utils::kPackedInt8_4C1W, utils::kPackedInt8_4W4C, utils::kPackedInt8_4C};
-
-  // Generate test cases for each combination
-  for (const utils::StorageType fp_storage_type : fp_storage_types) {
-    for (const utils::GPUMemoryLayout int8_memory_layout :
-         int8_memory_layouts) {
-      config.test_case_name =
-          make_test_case_name(config, false, fp_storage_type, utils::kBuffer);
-      test_cases.push_back(create_test_case_from_config(
-          config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
-
-      // For 4W4C layout, also test the legacy implementation
-      if (int8_memory_layout == utils::kPackedInt8_4W4C) {
-        test_cases.push_back(create_test_case_from_config(
-            config,
-            vkapi::kFloat,
-            fp_storage_type,
-            int8_memory_layout,
-            /*impl_selector=*/"legacy_4w4c"));
-      }
-    }
-  }
-
-  return test_cases;
-}
-
-// Generate test cases for quantized conv2d operation
-static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
+// Generate test cases for quantized pointwise conv2d operation
+static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases() {
   std::vector<TestCase> test_cases;
   if (!vkcompute::api::context()->adapter_ptr()->supports_int8_dot_product()) {
     return test_cases;
   }
 
   std::vector<Conv2dConfig> configs = {
-      // General 2D convolutions
+      // Pointwise convolutions: kernel size 1x1
       {OutInChannels(32, 3),
        InputSize2D(64, 64),
-       KernelSize(3, 3),
-       Stride(1, 1),
-       Padding(1, 1),
-       Dilation(1, 1),
-       1},
-      {OutInChannels(32, 3),
-       InputSize2D(64, 64),
-       KernelSize(3, 3),
-       Stride(2, 2),
-       Padding(1, 1),
-       Dilation(1, 1),
-       1},
-      {OutInChannels(64, 32),
-       InputSize2D(8, 8),
-       KernelSize(3, 3),
-       Stride(1, 1),
-       Padding(1, 1),
-       Dilation(1, 1),
-       1},
-      {OutInChannels(64, 32),
-       InputSize2D(64, 64),
-       KernelSize(3, 3),
-       Stride(1, 1),
-       Padding(1, 1),
-       Dilation(1, 1),
-       1},
-      {OutInChannels(64, 32),
-       InputSize2D(64, 64),
-       KernelSize(3, 3),
-       Stride(2, 2),
-       Padding(1, 1),
-       Dilation(1, 1),
-       1},
-      {OutInChannels(16, 32),
-       InputSize2D(77, 77),
-       KernelSize(3, 3),
-       Stride(1, 1),
-       Padding(1, 1),
-       Dilation(1, 1),
-       1},
-      // Grouped convolutions
-      {OutInChannels(64, 32),
-       InputSize2D(64, 64),
-       KernelSize(3, 3),
-       Stride(1, 1),
-       Padding(1, 1),
-       Dilation(1, 1),
-       2},
-      {OutInChannels(96, 96),
-       InputSize2D(81, 81),
-       KernelSize(3, 3),
-       Stride(2, 2),
-       Padding(1, 1),
-       Dilation(1, 1),
-       3},
-      {OutInChannels(96, 96),
-       InputSize2D(64, 64),
-       KernelSize(5, 5),
-       Stride(2, 2),
-       Padding(2, 2),
-       Dilation(1, 1),
-       4},
-      // Performance cases (3x3 convs - will use im2col)
-      {OutInChannels(32, 3),
-       InputSize2D(256, 256),
-       KernelSize(3, 3),
+       KernelSize(1, 1),
        Stride(1, 1),
        Padding(0, 0),
        Dilation(1, 1),
        1},
       {OutInChannels(64, 32),
-       InputSize2D(128, 128),
-       KernelSize(3, 3),
+       InputSize2D(32, 32),
+       KernelSize(1, 1),
        Stride(1, 1),
-       Padding(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
        1},
-      {OutInChannels(64, 64),
-       InputSize2D(128, 128),
-       KernelSize(3, 3),
+      {OutInChannels(96, 64),
+       InputSize2D(16, 16),
+       KernelSize(1, 1),
        Stride(1, 1),
-       Padding(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
        1},
-      // Performance cases (grouped convs)
-      {OutInChannels(64, 64),
-       InputSize2D(128, 128),
-       KernelSize(3, 3),
+      {OutInChannels(13, 7),
+       InputSize2D(57, 33),
+       KernelSize(1, 1),
        Stride(1, 1),
-       Padding(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
-       2},
-      {OutInChannels(96, 96),
+       1},
+      {OutInChannels(80, 40),
+       InputSize2D(64, 64),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
+      // Performance cases (pointwise - will use im2col)
+      {OutInChannels(160, 480),
+       InputSize2D(8, 8),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(22, 48),
+       InputSize2D(256, 256),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(48, 48),
        InputSize2D(128, 128),
-       KernelSize(3, 3),
-       Stride(2, 2),
-       Padding(1, 1),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
-       3},
+       1},
       {OutInChannels(128, 128),
        InputSize2D(128, 128),
-       KernelSize(5, 5),
-       Stride(2, 2),
-       Padding(2, 2),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
-       4}};
+       1},
+  };
 
   // Test with different storage types and memory layouts
   std::vector<utils::StorageType> fp_storage_types = {
@@ -654,7 +563,7 @@ int main(int argc, char* argv[]) {
 
   print_performance_header();
   std::cout
-      << "Quantized Conv2d Operation with Output Quantization Prototyping Framework"
+      << "Quantized Pointwise Conv2d (1x1) Operation Prototyping Framework"
       << std::endl;
   print_separator();
 
@@ -663,12 +572,12 @@ int main(int argc, char* argv[]) {
   // Execute test cases using the new framework with custom FLOP calculator
   auto results = execute_test_cases(
 #ifdef DEBUG_MODE
-      generate_quantized_conv2d_easy_cases,
+      generate_quantized_conv2d_pw_test_cases,
 #else
-      generate_quantized_conv2d_test_cases,
+      generate_quantized_conv2d_pw_test_cases,
 #endif
       quantized_conv2d_flop_calculator,
-      "QuantizedConv2dQ8ToQ8To",
+      "QuantizedConv2dPW",
 #ifdef DEBUG_MODE
       0,
       1,
