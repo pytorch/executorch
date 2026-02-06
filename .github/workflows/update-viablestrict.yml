@@ -34,7 +34,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -x  # Show commands in logs
           echo "## ❌ No green commit found" >> $GITHUB_STEP_SUMMARY
           echo "No green commit found"
           echo "" >> $GITHUB_STEP_SUMMARY

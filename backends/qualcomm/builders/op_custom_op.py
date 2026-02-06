@@ -78,15 +78,29 @@ class CustomOp(NodeVisitor):
                     {QCOM_DATA: arg},
                 )
 
-        output_tensor = self.get_tensor(node, node)
-        output_tensor_wrapper = self.define_tensor(
-            node,
-            node,
-            output_tensor,
-            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-            nodes_to_wrappers,
-        )
-        custom_output_tensors = [output_tensor_wrapper]
+        if isinstance(node.meta["val"], tuple):
+            custom_output_tensors = []
+            for i in range(len(node.meta["val"])):
+                output_tensor = self.get_tensor(node, node, i)
+                output_tensor_wrapper = self.define_tensor(
+                    node,
+                    node,
+                    output_tensor,
+                    PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                    nodes_to_wrappers,
+                    wrapper_idx=i,
+                )
+                custom_output_tensors.append(output_tensor_wrapper)
+        else:
+            output_tensor = self.get_tensor(node, node)
+            output_tensor_wrapper = self.define_tensor(
+                node,
+                node,
+                output_tensor,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                nodes_to_wrappers,
+            )
+            custom_output_tensors = [output_tensor_wrapper]
 
         custom_op.AddInputTensors(custom_input_tensors)
         custom_op.AddOutputTensors(custom_output_tensors)
