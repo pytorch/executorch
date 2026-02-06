@@ -9,45 +9,17 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
-
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
 
-bool q8ta_conv2d_check_packed_dim_info(const api::PackedDimInfo& info) {
-  return info.packed_dim == WHCN::kChannelsDim &&
-      info.packed_dim_block_size == 4 &&
-      info.outer_packed_dim == WHCN::kWidthDim &&
-      (info.outer_packed_dim_block_size == 1 ||
-       info.outer_packed_dim_block_size == 4);
-}
-
-bool q8ta_conv2d_check_4w4c_packed_dim_info(const api::PackedDimInfo& info) {
-  return info.packed_dim == WHCN::kChannelsDim &&
-      info.packed_dim_block_size == 4 &&
-      info.outer_packed_dim == WHCN::kWidthDim &&
-      info.outer_packed_dim_block_size == 4;
-}
-
 //
-// Workgroup size selection functions
+// Shader dispatch utilities
 //
 
-/**
- * Computes a global workgroup size for q8ta_conv2d where:
- *   - For channels-fastest output (e.g., 4C): x = C4, y = H, z = W4
- *   - For width-fastest output (e.g., 4C1W): x = W4, y = H, z = C4
- *
- * The x/z assignment matches the shader's dynamic thread assignment based on
- * fastest_dim (dim_order[0]), ensuring consecutive threads access consecutive
- * elements along the fastest moving dimension for optimal memory coalescing.
- *
- * Each thread processes a 4Wx4C tile of output elements.
- */
-utils::uvec3 pick_q8ta_conv2d_global_wg_size(
+utils::uvec3 pick_q8ta_conv2d_pw_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -61,25 +33,40 @@ utils::uvec3 pick_q8ta_conv2d_global_wg_size(
   const uint32_t H = graph->size_at<uint32_t>(-2, output);
   const uint32_t C = graph->size_at<uint32_t>(-3, output);
 
-  // Each thread processes 4 adjacent width positions and 4 channels (4Wx4C
-  // tile)
-  const uint32_t W4 = utils::div_up_4(W);
-  const uint32_t C4 = utils::div_up_4(C);
+  // The 4W4C shader processes tiles of:
+  // - TILE_N4=2 groups of 4 output channels (8 channels per thread)
+  // - TILE_M4=1 groups of 4 widths (4 widths per thread)
+  // - 1 height per thread
+  constexpr uint32_t TILE_N4 = 2;
+  constexpr uint32_t TILE_M4 = 1;
 
-  return {W4, H, C4};
+  const uint32_t C4 = utils::div_up_4(C);
+  const uint32_t W4 = utils::div_up_4(W);
+
+  // Global workgroup size:
+  // x = output channels / (TILE_N4 * 4) = C4 / TILE_N4
+  // y = width / (TILE_M4 * 4) = W4 / TILE_M4
+  // z = height
+  return {utils::div_up(C4, TILE_N4), utils::div_up(W4, TILE_M4), H};
 }
 
-/**
- * Picks a local workgroup size for q8ta_conv2d with adaptive sizing based on
- * tensor dimensions. Uses experimentation results:
- *   - {4, 2, 8} for medium tensors: +57% improvement on 81x81
- *   - {8, 1, 8} for very large tensors: best baseline performance
- *   - {64, 1, 1} for narrow channel dimensions: minimize inactive invocations
- */
-utils::uvec3 pick_q8ta_conv2d_local_wg_size(
+utils::uvec3 pick_q8ta_conv2d_pw_local_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  return pick_hw_square_wg_size(
+      graph, shader, global_workgroup_size, args, resize_args);
+}
+
+//
+// 4W4C shader dispatch utilities
+//
+
+utils::uvec3 pick_q8ta_conv2d_pw_4w4c_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
@@ -87,69 +74,56 @@ utils::uvec3 pick_q8ta_conv2d_local_wg_size(
 
   const ValueRef output = args.at(0).refs.at(0);
 
-  // Get actual tensor dimensions for adaptive sizing
+  const uint32_t W = graph->size_at<uint32_t>(-1, output);
   const uint32_t H = graph->size_at<uint32_t>(-2, output);
+  const uint32_t C = graph->size_at<uint32_t>(-3, output);
 
-  // For very large tensors (H >= 100 and large x/z), use {8, 1, 8}
-  // This configuration performed best for 128x128 tensors in experiments
-  if (H >= 100 && global_workgroup_size[0u] >= 24 &&
-      global_workgroup_size[2u] >= 24) {
-    return {8u, 1u, 8u};
-  }
+  // The 4W4C shader processes tiles of:
+  // - TILE_N4=2 groups of 4 output channels (8 channels per thread)
+  // - TILE_M4=1 groups of 4 widths (4 widths per thread)
+  // - 1 height per thread
+  constexpr uint32_t TILE_N4 = 2;
+  constexpr uint32_t TILE_M4 = 1;
 
-  // For medium-sized tensors, use {4, 2, 8} for better height parallelism
-  // This configuration showed +57% improvement on 81x81 tensors
-  if (global_workgroup_size[0u] >= 4 && global_workgroup_size[1u] >= 2 &&
-      global_workgroup_size[2u] >= 8) {
-    return {4u, 2u, 8u};
-  }
+  const uint32_t C4 = utils::div_up_4(C);
+  const uint32_t W4 = utils::div_up_4(W);
 
-  // For tensors with sufficient x and z dimensions, use square configuration
-  if (global_workgroup_size[0u] >= 6 && global_workgroup_size[2u] >= 6) {
-    return {8u, 1u, 8u};
-  }
+  // Global workgroup size:
+  // x = output channels / (TILE_N4 * 4) = C4 / TILE_N4
+  // y = width / (TILE_M4 * 4) = W4 / TILE_M4
+  // z = height
+  return {utils::div_up(C4, TILE_N4), utils::div_up(W4, TILE_M4), H};
+}
 
-  // If x dimension is very small, bias towards z dimension
-  if (global_workgroup_size[0u] < 2u) {
-    return {1u, 1u, 64u};
-  }
-
-  // If z dimension is very small, bias towards x dimension
-  if (global_workgroup_size[2u] < 2u) {
-    return {64u, 1u, 1u};
-  }
-
-  return {16u, 1u, 4u};
+utils::uvec3 pick_q8ta_conv2d_pw_4w4c_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  return pick_hw_square_wg_size(
+      graph, shader, global_workgroup_size, args, resize_args);
 }
 
 //
 // Prepack nodes
 //
 
-ValueRef prepack_quantized_conv2d_weight(
+ValueRef prepack_quantized_conv2d_pw_weight(
     ComputeGraph& graph,
     const QuantizationConfig& weight_quant_config,
     const ValueRef weight_data,
     const ValueRef input,
-    const ValueRef output,
-    const ValueRef groups,
-    const ValueRef kernel_size) {
+    const ValueRef output) {
   VK_CHECK_COND(weight_quant_config.nbits == 8);
   VK_CHECK_COND(weight_quant_config.is_symmetric);
 
-  const int32_t groups_val = graph.get_int(groups);
-
   const int64_t OC = graph.size_at<int64_t>(-3, output);
-  const int64_t IC = graph.size_at<int64_t>(-3, input) / groups_val;
+  const int64_t IC = graph.size_at<int64_t>(-3, input);
 
-  int64_t K_h;
-  int64_t K_w;
-
-  {
-    const auto kernel_size_list = graph.get_int_list(kernel_size);
-    K_h = kernel_size_list->at(0);
-    K_w = kernel_size_list->at(1);
-  }
+  // For pointwise convolution, kernel_size = 1x1
+  const int64_t K_h = 1;
+  const int64_t K_w = 1;
 
   const int64_t num_blocks_OC = utils::div_up_4(OC);
   const int64_t num_blocks_IC = utils::div_up_4(IC);
@@ -213,10 +187,9 @@ ValueRef prepack_quantized_conv2d_weight(
 // Dispatch nodes
 //
 
-void add_q8ta_conv2d_node(
+void add_q8ta_conv2d_pw_node(
     ComputeGraph& graph,
     const ValueRef packed_int8_input,
-    const ValueRef packed_int8_input_im2col,
     const ValueRef input_scale,
     const ValueRef input_zp,
     const ValueRef packed_weight,
@@ -226,33 +199,12 @@ void add_q8ta_conv2d_node(
     const ValueRef output_zp,
     const ValueRef bias_data,
     const ValueRef packed_bias,
-    const ValueRef kernel_size,
-    const ValueRef stride,
-    const ValueRef padding,
-    const ValueRef dilation,
-    const ValueRef groups,
     const ValueRef packed_int8_output) {
-  (void)packed_int8_input_im2col; // Not used in general shader
-
-  Conv2DParams conv_params = create_conv2d_params(
-      graph,
-      packed_int8_input,
-      packed_int8_output,
-      kernel_size,
-      stride,
-      padding,
-      dilation,
-      groups);
-
-  // The implementation requires that for grouped convolutions, the input
-  // channels per group is a multiple of 4.
-  if (conv_params.groups > 1) {
-    VK_CHECK_COND(conv_params.in_channels_per_group % 4 == 0);
-  }
-
   // Validate packed dim info for input and output tensors
-  VK_CHECK_COND(q8ta_conv2d_check_packed_dim_info(
+  // To maximize performance, the input tensor must be in 4W4C layout
+  VK_CHECK_COND(q8ta_conv2d_check_4w4c_packed_dim_info(
       graph.packed_dim_info_of(packed_int8_input)));
+  // However, the requirements for output tensor layout is flexible
   VK_CHECK_COND(q8ta_conv2d_check_packed_dim_info(
       graph.packed_dim_info_of(packed_int8_output)));
 
@@ -271,6 +223,10 @@ void add_q8ta_conv2d_node(
     apply_bias = 0;
   }
 
+  // Get input channel count for K4_per_group
+  const uint32_t IC = graph.size_at<uint32_t>(-3, packed_int8_input);
+  const uint32_t K4_per_group = utils::div_up_4(IC);
+
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&input_scale_val, sizeof(input_scale_val)),
       PushConstantDataInfo(&input_zp_val, sizeof(input_zp_val)),
@@ -278,29 +234,28 @@ void add_q8ta_conv2d_node(
       PushConstantDataInfo(&output_zp_val, sizeof(output_zp_val)),
   };
 
-  // Select shader based on layout
-  std::string kernel_name = "q8ta_conv2d";
+  std::string kernel_name = "q8ta_conv2d_pw";
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
   // Pass metadata for both output and input tensors
   vkapi::ParamsBindList param_buffers = {
       graph.buffer_meta_ubo(packed_int8_output),
-      graph.buffer_meta_ubo(packed_int8_input),
-      graph.create_params_buffer(conv_params)};
+      graph.buffer_meta_ubo(packed_int8_input)};
 
   // Build spec constants: apply_bias + layout constants
   vkapi::SpecVarList spec_constants = {
       apply_bias,
+      K4_per_group,
       // Layout specialization constants
-      graph.hashed_layout_of(packed_int8_input),
       graph.hashed_layout_of(packed_int8_output),
+      graph.hashed_layout_of(packed_int8_input),
   };
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_conv2d_global_wg_size,
-      pick_q8ta_conv2d_local_wg_size,
+      pick_q8ta_conv2d_pw_global_wg_size,
+      pick_q8ta_conv2d_pw_local_wg_size,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,
@@ -323,7 +278,7 @@ void add_q8ta_conv2d_node(
 // High level operator impl
 //
 
-void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   int32_t idx = 0;
   const ValueRef packed_int8_input = args.at(idx++);
   const ValueRef input_scale = args.at(idx++);
@@ -334,24 +289,24 @@ void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef output_scale = args.at(idx++);
   const ValueRef output_zp = args.at(idx++);
   const ValueRef bias_data = args.at(idx++);
-  const ValueRef kernel_size = args.at(idx++);
-  const ValueRef stride = args.at(idx++);
-  const ValueRef padding = args.at(idx++);
-  const ValueRef dilation = args.at(idx++);
-  const ValueRef groups = args.at(idx++);
+  // Accept but ignore conv params - pointwise has fixed kernel=1x1, stride=1,
+  // padding=0, dilation=1, groups=1
+  (void)args.at(idx++); // kernel_size
+  (void)args.at(idx++); // stride
+  (void)args.at(idx++); // padding
+  (void)args.at(idx++); // dilation
+  (void)args.at(idx++); // groups
   const ValueRef packed_int8_output = args.at(idx++);
 
   QuantizationConfig weight_quant_config(8, kPerChannel, {});
 
-  // Prepack weight using the conv2d weight packing for the general shader
-  ValueRef packed_weight = prepack_quantized_conv2d_weight(
+  // Prepack weight using pointwise-specific packing
+  ValueRef packed_weight = prepack_quantized_conv2d_pw_weight(
       graph,
       weight_quant_config,
       weight_data,
       packed_int8_input,
-      packed_int8_output,
-      groups,
-      kernel_size);
+      packed_int8_output);
 
   ValueRef packed_weight_sums = prepack_standard(
       graph, weight_sums_data, utils::kBuffer, utils::kWidthPacked);
@@ -375,12 +330,9 @@ void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         prepack_standard(graph, bias_data, utils::kBuffer, utils::kWidthPacked);
   }
 
-  // The general q8ta_conv2d shader does not use im2col, so pass input as im2col
-  add_q8ta_conv2d_node(
+  add_q8ta_conv2d_pw_node(
       graph,
       packed_int8_input,
-      packed_int8_input, // packed_int8_input_im2col - not used in general
-                         // shader
       input_scale,
       input_zp,
       packed_weight,
@@ -390,16 +342,11 @@ void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output_zp,
       bias_data,
       packed_bias,
-      kernel_size,
-      stride,
-      padding,
-      dilation,
-      groups,
       packed_int8_output);
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(etvk.q8ta_conv2d.default, q8ta_conv2d);
+  VK_REGISTER_OP(etvk.q8ta_conv2d_pw.default, q8ta_conv2d_pw);
 }
 
 } // namespace vkcompute
