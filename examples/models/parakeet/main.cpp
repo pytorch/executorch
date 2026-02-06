@@ -419,6 +419,9 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Encoder forward failed.");
     return 1;
   }
+  stats.prompt_eval_end_ms = ::executorch::extension::llm::time_in_ms();
+  stats.first_token_ms = stats.prompt_eval_end_ms; // For ASR, first token is at end of encoding
+
   auto& enc_outputs = enc_result.get();
   auto f_proj = enc_outputs[0].toTensor(); // [B, T, joint_hidden]
   int64_t encoded_len = enc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
@@ -472,14 +475,11 @@ int main(int argc, char** argv) {
       window_stride,
       encoder_subsampling_factor);
 
-  stats.prompt_eval_end_ms = ::executorch::extension::llm::time_in_ms();
-
   ET_LOG(Info, "Running TDT greedy decode...");
   auto decoded_tokens = greedy_decode_executorch(
       *model, f_proj, encoded_len, blank_id, num_rnn_layers, pred_hidden);
 
   ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
-  stats.first_token_ms = stats.prompt_eval_end_ms; // For ASR, first token is at end of encoding
 
   // Load tokenizer
   ET_LOG(Info, "Loading tokenizer from: %s", FLAGS_tokenizer_path.c_str());

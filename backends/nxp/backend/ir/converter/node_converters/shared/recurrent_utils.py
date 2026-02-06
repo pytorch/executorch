@@ -1,17 +1,17 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from executorch.backends.nxp.backend.data_format import DataFormat
 from executorch.backends.nxp.backend.ir.converter.builder import model_builder
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.tensor_utils import tensor_has_data
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 
 
-def ensure_correct_tensor_formatting(
+def ensure_correct_data_format(
     t_op: tflite_model.Operator, builder: model_builder.ModelBuilder, ops: OpsList
 ):
     """Make sure that all input and output tensors of 't_op' have the correct format. 't_op' is assumed to be an LSTM
@@ -28,7 +28,7 @@ def ensure_correct_tensor_formatting(
     :param ops: OpsList object, with operators to add to the model. May already contain some operators.
     """
 
-    if t_op.tmp_inputs[0].tensor_format == TensorFormat.FORMATLESS:
+    if t_op.tmp_inputs[0].tensor_format == DataFormat.FORMATLESS:
         # Nothing to be done. All tensors should be formatless.
         return
 
@@ -48,7 +48,7 @@ def ensure_correct_tensor_formatting(
                 )
                 ops.pre_ops.append(transpose)
 
-            t_op.tmp_inputs[idx].tensor_format = TensorFormat.FORMATLESS
+            t_op.tmp_inputs[idx].tensor_format = DataFormat.FORMATLESS
 
     # LSTM/RNN produces 'FORMATLESS' outputs. However, if the output tensors have the 'channels_last' format, Transpose
     #  operators must be added, to actually make the inputs 'channels_last'.
@@ -61,4 +61,4 @@ def ensure_correct_tensor_formatting(
             transpose = builder.create_transpose_operator_after(t_op, idx, revert_perm)
             ops.post_ops.append(transpose)
 
-            t_op.tmp_outputs[idx].tensor_format = TensorFormat.FORMATLESS
+            t_op.tmp_outputs[idx].tensor_format = DataFormat.FORMATLESS

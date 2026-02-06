@@ -75,9 +75,9 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         torch.int64: [torch.bool, torch.int8, torch.int16, torch.int32],
     }
     SUPPORTED_FP_PROFILE_DTYPES: SupportedTypeDict = {
-        torch.int8: [torch.int8, torch.float16, torch.bfloat16, torch.float32],
-        torch.int16: [torch.int16, torch.float16, torch.bfloat16, torch.float32],
-        torch.int32: [torch.int32, torch.float16, torch.bfloat16, torch.float32],
+        torch.int8: [torch.int8, torch.float16, torch.float32],
+        torch.int16: [torch.int16, torch.float16, torch.float32],
+        torch.int32: [torch.int32, torch.float16, torch.float32],
         # INT64 inputs to casts *should* be ok, since they should be rejected by
         # CheckInt64InputsAndOutputs if the cast can't be done AOT.
         torch.int64: [
@@ -85,14 +85,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             torch.int16,
             torch.int32,
             torch.float16,
-            torch.bfloat16,
-            torch.float32,
-        ],
-        torch.bfloat16: [
-            torch.int8,
-            torch.int16,
-            torch.int32,
-            torch.bfloat16,
             torch.float32,
         ],
         torch.float16: [
@@ -107,13 +99,26 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             torch.int8,
             torch.int16,
             torch.int32,
-            torch.bfloat16,
             torch.float16,
             torch.float32,
         ],
     }
     SUPPORTED_INT_FP_PROFILE_DTYPES: SupportedTypeDict = {
         torch.bool: [torch.float32],
+    }
+    SUPPORTED_BF16_EXTENSION_DTYPES: SupportedTypeDict = {
+        torch.int8: [torch.bfloat16],
+        torch.int16: [torch.bfloat16],
+        torch.int32: [torch.bfloat16],
+        torch.int64: [torch.bfloat16],
+        torch.float32: [torch.bfloat16],
+        torch.bfloat16: [
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.bfloat16,
+            torch.float32,
+        ],
     }
 
     def is_node_tosa_supported(
@@ -138,6 +143,10 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if tosa_spec.support_integer() and tosa_spec.support_float():
             supported_dtypes = self._merge_supported_types(
                 self.SUPPORTED_INT_FP_PROFILE_DTYPES, supported_dtypes
+            )
+        if tosa_spec.support_extension("bf16"):
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_BF16_EXTENSION_DTYPES, supported_dtypes
             )
 
         if len(node.all_input_nodes) != 1:
