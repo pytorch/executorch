@@ -455,6 +455,24 @@ def _get_dtype_count(model: torch.nn.Module):
     }
 
 
+@common.parametrize(
+    "test_data",
+    test_data_INT,
+)
+def test_convolution_2d_vgf_quant_a8w4(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_FP | test_data_FP_bf16 | test_data_FP_fp16)
 def test_convolution_2d_tosa_FP(test_data):
     model = test_data()
