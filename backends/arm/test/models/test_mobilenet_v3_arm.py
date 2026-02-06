@@ -24,6 +24,11 @@ from torchvision import models, transforms  # type: ignore[import-untyped]
 mv3 = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights)
 mv3 = mv3.eval()
 
+mv3_fp16 = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights).to(
+    torch.float16
+)
+mv3_fp16 = mv3_fp16.eval()
+
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 input_tensor = torch.rand(1, 3, 232, 232)
@@ -36,6 +41,20 @@ input_t = Tuple[torch.Tensor]
 def test_mv3_tosa_FP():
     pipeline = TosaPipelineFP[input_t](
         mv3, model_inputs, aten_op=[], exir_op=[], use_to_edge_transform_and_lower=True
+    )
+    pipeline.run()
+
+
+@pytest.mark.slow
+def test_mv3_tosa_FP_fp16():
+    inputs_fp16 = tuple(t.to(torch.float16) for t in model_inputs)
+    pipeline = TosaPipelineFP[input_t](
+        mv3_fp16,
+        inputs_fp16,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        atol=2e-2,
     )
     pipeline.run()
 
