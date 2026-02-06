@@ -18,8 +18,8 @@ from torch.export.graph_signature import InputKind
 from torch.fx import Node
 from torch.nn.parameter import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
+from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.backend.node_format import NodeFormat, NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
@@ -65,7 +65,7 @@ class EdgeProgramToIRConverter:
         conversion_config: ConversionConfig = _default_conversion_config,
         neutron_target_spec: NeutronTargetSpec = _default_target_spec,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
-    ) -> (bytes, dict[str, NodeFormat]):
+    ) -> tuple[bytes, dict[str, DataFormat]]:
         """
         Convert ExportedProgram in Edge dialect to IR (TFLite flatbuffers) as bytes.
 

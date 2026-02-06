@@ -67,6 +67,12 @@ struct PackedDimInfo {
   // In physical memory, the size of the packed dim is aligned to this size to
   // ensure that data for the packed dim aligns with texel/block boundaries.
   int32_t packed_dim_block_size;
+  // In physical memory, the size of the packed dimension will be aligned to be
+  // a multiple of this value. This value must be a multiple of the packed_dim's
+  // block size, and is selected for performance reasons i.e. to ensure loads
+  // along the packed dim are aligned to cache lines, or to enable performance
+  // optimizations in shaders, i.e. remove the need for bounds checking.
+  int32_t packed_dim_align;
   // For block-packed layouts, represents the second tensor dimension that forms
   // the "width" dimension of the MxN square that is kept contiguous in memory.
   // For non block-packed layouts, represent the dimension with the next lowest
@@ -77,6 +83,8 @@ struct PackedDimInfo {
   // 4H4W, represents the "height" of the square block that is kept contiguous
   // in memory.
   int32_t outer_packed_dim_block_size;
+  // See packed_dim_align
+  int32_t outer_packed_dim_align;
   // Typically the blocks of the tensor will be arranged such that the inner
   // dim of the block (i.e. the packed dim) has the lowest stride, and the
   // outer dim of the block (i.e. the outer packed dim) has the next lowest
@@ -94,8 +102,10 @@ struct PackedDimInfo {
   PackedDimInfo(
       const int32_t dim,
       const int32_t dim_block_size,
+      const int32_t dim_align,
       const int32_t outer_dim,
       const int32_t outer_dim_block_size,
+      const int32_t outer_dim_align,
       const bool is_block_transposed);
 };
 
@@ -511,6 +521,16 @@ class vTensor final {
 
   inline int32_t packed_dim() const {
     return packed_dim_info_.packed_dim;
+  }
+
+  /*
+   * Returns the WHCN index of the fastest moving dimension (dim_order[0]).
+   * This is the dimension with stride 1 in the buffer layout.
+   * Note: dim_order_ is in NCHW order, so we convert to WHCN (3 - nchw_dim).
+   */
+  inline int32_t fastest_whcn_dim() const {
+    return packed_dim_info_.block_transposed ? packed_dim_info_.outer_packed_dim
+                                             : packed_dim_info_.packed_dim;
   }
 
   inline const PackedDimInfo& packed_dim_info() const {
