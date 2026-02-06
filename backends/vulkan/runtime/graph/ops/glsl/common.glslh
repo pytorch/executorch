@@ -98,6 +98,18 @@ void printVec4(vec4 texel) {
       "texel: %f, %f, %f, %f\\n", texel.x, texel.y, texel.z, texel.w);
 }
 
+void printIVec4(ivec4 texel) {
+  debugPrintfEXT(
+      "texel: %d, %d, %d, %d\\n", texel.x, texel.y, texel.z, texel.w);
+}
+
+void printPackedInt(const int packed) {
+  ivec4 unpacked = unpack_int8x4(packed);
+  debugPrintfEXT(
+      "packed: 0x%08x -> [%d, %d, %d, %d]\\n",
+      packed, unpacked.x, unpacked.y, unpacked.z, unpacked.w);
+}
+
 #endif // DEBUG_MODE
 
 #endif // COMMON_GLSLH
