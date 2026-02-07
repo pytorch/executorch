@@ -354,3 +354,11 @@ def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) ->
     except Exception:
         # If execution fails, assume it's not a no-op.
         return False
+
+
+def node_has_well_defined_shape(node: Node) -> bool:
+    if (val := node.meta.get("val")) is None:
+        # The node doesn't have a shape stored at all.
+        return False
+
+    return all(isinstance(dim, int) and dim > 0 for dim in val.shape)
