@@ -111,21 +111,52 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 announce_configured_options(CMAKE_BUILD_TYPE)
 
-# Sanitizer support (ASAN + UBSAN)
-if(EXECUTORCH_USE_SANITIZER)
+# Sanitizer support: OFF, asan, tsan - asan: AddressSanitizer +
+# UndefinedBehaviorSanitizer - tsan: ThreadSanitizer (for detecting data races)
+# Can be set via environment variable or -D flag
+if(DEFINED ENV{EXECUTORCH_USE_SANITIZER} AND NOT DEFINED
+                                             EXECUTORCH_USE_SANITIZER
+)
+  set(EXECUTORCH_USE_SANITIZER
+      "$ENV{EXECUTORCH_USE_SANITIZER}"
+      CACHE STRING "Sanitizer to use: OFF, asan, tsan"
+  )
+else()
+  set(EXECUTORCH_USE_SANITIZER
+      "OFF"
+      CACHE STRING "Sanitizer to use: OFF, asan, tsan"
+  )
+endif()
+set_property(CACHE EXECUTORCH_USE_SANITIZER PROPERTY STRINGS OFF asan tsan)
+
+if(NOT EXECUTORCH_USE_SANITIZER STREQUAL "OFF")
   if(MSVC)
     message(WARNING "Sanitizers are not fully supported on MSVC, skipping")
   else()
-    set(EXECUTORCH_SANITIZER_FLAGS
-        "-fsanitize=address,undefined -fno-omit-frame-pointer"
-    )
-    # Suppress deprecation warnings on macOS (third-party code like flatcc uses
-    # deprecated sprintf)
-    if(APPLE)
+    if(EXECUTORCH_USE_SANITIZER STREQUAL "asan")
       set(EXECUTORCH_SANITIZER_FLAGS
-          "${EXECUTORCH_SANITIZER_FLAGS} -Wno-deprecated-declarations"
+          "-fsanitize=address,undefined -fno-omit-frame-pointer"
+      )
+      # Suppress deprecation warnings on macOS (third-party code like flatcc
+      # uses deprecated sprintf)
+      if(APPLE)
+        set(EXECUTORCH_SANITIZER_FLAGS
+            "${EXECUTORCH_SANITIZER_FLAGS} -Wno-deprecated-declarations"
+        )
+      endif()
+      message(STATUS "Sanitizers enabled: address, undefined")
+    elseif(EXECUTORCH_USE_SANITIZER STREQUAL "tsan")
+      set(EXECUTORCH_SANITIZER_FLAGS
+          "-fsanitize=thread -fno-omit-frame-pointer"
+      )
+      message(STATUS "Sanitizers enabled: thread")
+    else()
+      message(
+        FATAL_ERROR
+          "Unknown sanitizer: ${EXECUTORCH_USE_SANITIZER}. Use: OFF, asan, tsan"
       )
     endif()
+
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS
@@ -134,7 +165,11 @@ if(EXECUTORCH_USE_SANITIZER)
     set(CMAKE_SHARED_LINKER_FLAGS
         "${CMAKE_SHARED_LINKER_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}"
     )
-    message(STATUS "Sanitizers enabled: address, undefined")
+    # MODULE libraries (e.g., Python extensions built with pybind11) use
+    # CMAKE_MODULE_LINKER_FLAGS, not CMAKE_SHARED_LINKER_FLAGS
+    set(CMAKE_MODULE_LINKER_FLAGS
+        "${CMAKE_MODULE_LINKER_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}"
+    )
   endif()
 endif()
 announce_configured_options(EXECUTORCH_USE_SANITIZER)
