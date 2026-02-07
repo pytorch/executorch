@@ -27,7 +27,7 @@ model:
 
 export:
   # max_seq_length for single prefill chunk
-  max_context_len: 128
+  max_context_length: 128
   max_seq_length: 128
 
 quantization:
