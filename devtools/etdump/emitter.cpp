@@ -13,6 +13,9 @@
 
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/platform.h>
 
 #include <flatcc/flatcc_builder.h>
 
@@ -82,12 +85,22 @@ int allocator_fn(
       if (((uintptr_t)b->iov_base + b->iov_len) ==
           (uintptr_t)&state->data[state->allocated]) {
         if ((state->allocated + n - b->iov_len) > state->data_size) {
-          return -1;
+          ET_LOG(
+              Fatal,
+              "ETDump allocator out of memory: requested %" ET_PRIsize_t ", have %" ET_PRIsize_t,
+              n - b->iov_len,
+              state->data_size - state->allocated);
+          et_pal_abort();
         }
         state->allocated += n - b->iov_len;
       } else {
         if ((state->allocated + n) > state->data_size) {
-          return -1;
+          ET_LOG(
+              Fatal,
+              "ETDump allocator out of memory: requested %" ET_PRIsize_t ", have %" ET_PRIsize_t,
+              n,
+              state->data_size - state->allocated);
+          et_pal_abort();
         }
         memcpy((void*)&state->data[state->allocated], b->iov_base, b->iov_len);
         b->iov_base = &state->data[state->allocated];
@@ -104,7 +117,12 @@ int allocator_fn(
   }
 
   if ((state->allocated + n) > state->data_size) {
-    return -1;
+    ET_LOG(
+        Fatal,
+        "ETDump allocator out of memory: requested %" ET_PRIsize_t ", have %" ET_PRIsize_t,
+        n,
+        state->data_size - state->allocated);
+    et_pal_abort();
   }
 
   p = &state->data[state->allocated];
@@ -134,7 +152,12 @@ int emitter_fn(
 
   if (offset < 0) {
     if (len > E->front_left) {
-      return -1;
+      ET_LOG(
+          Fatal,
+          "ETDump emitter out of memory: requested %" ET_PRIsize_t ", have %" ET_PRIsize_t,
+          len,
+          E->front_left);
+      et_pal_abort();
     }
     E->front_cursor -= len;
     E->front_left -= len;
