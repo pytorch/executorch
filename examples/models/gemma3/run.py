@@ -31,6 +31,7 @@ import sys
 import numpy as np
 import torch
 from PIL import Image
+from transformers import AutoProcessor
 
 # Load required operator libraries for quantized and custom ops
 # These must be imported BEFORE creating the runner to register the operators
@@ -87,26 +88,48 @@ def load_image(image_path: str, target_size: int = 896) -> torch.Tensor:
     return image_tensor
 
 
-def build_multimodal_inputs(prompt: str, image_tensor: torch.Tensor) -> list:
+def build_multimodal_inputs(
+    prompt: str, image_tensor: torch.Tensor, processor: AutoProcessor
+) -> list:
     """
-    Build the multimodal input sequence for Gemma 3.
-
-    The input format follows the Gemma 3 chat template:
-    <start_of_turn>user
-    <start_of_image>[IMAGE]{prompt}<end_of_turn>
-    <start_of_turn>model
+    Build the multimodal input sequence for Gemma 3 using the processor's chat template.
 
     Args:
         prompt: The text prompt/question about the image
         image_tensor: Preprocessed image tensor from load_image()
+        processor: The AutoProcessor instance for applying the chat template
 
     Returns:
         list: List of MultimodalInput objects for the runner
     """
-    inputs = []
-    inputs.append(make_text_input("<start_of_turn>user\n<start_of_image>"))
-    inputs.append(make_image_input(image_tensor))
-    inputs.append(make_text_input(f"{prompt}<end_of_turn>\n<start_of_turn>model\n"))
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image"},
+                {"type": "text", "text": prompt},
+            ],
+        }
+    ]
+    formatted_prompt = processor.apply_chat_template(
+        messages, add_generation_prompt=True, tokenize=False
+    )
+
+    # Split the formatted prompt around the image placeholder
+    # The processor inserts <image_soft_token> or similar for the image position
+    # We need to find where the image should be inserted
+    image_token = "<start_of_image>"
+    if image_token in formatted_prompt:
+        before_image, after_image = formatted_prompt.split(image_token, 1)
+        inputs = []
+        inputs.append(make_text_input(before_image + image_token))
+        inputs.append(make_image_input(image_tensor))
+        inputs.append(make_text_input(after_image))
+    else:
+        # Fallback: put image at the beginning of user content
+        inputs = []
+        inputs.append(make_text_input(formatted_prompt))
+
     return inputs
 
 
@@ -117,13 +140,13 @@ def main():
         epilog="""
 Examples:
     # Basic usage
-    python pybinding_run.py --model_path model.pte --tokenizer_path tokenizer.json \\
+    python run.py --model_path model.pte --tokenizer_path tokenizer.json \\
         --image_path image.png --prompt "What is in this image?"
 
-    # With custom generation settings
-    python pybinding_run.py --model_path model.pte --tokenizer_path tokenizer.json \\
+    # With custom generation settings and model ID
+    python run.py --model_path model.pte --tokenizer_path tokenizer.json \\
         --image_path image.png --prompt "Describe this image in detail" \\
-        --max_new_tokens 200 --temperature 0.7
+        --max_new_tokens 200 --temperature 0.7 --model_id google/gemma-3-4b-it
         """,
     )
     parser.add_argument(
@@ -162,11 +185,21 @@ Examples:
         default=0.0,
         help="Sampling temperature. 0.0 for greedy decoding (default: 0.0)",
     )
+    parser.add_argument(
+        "--model_id",
+        type=str,
+        default="google/gemma-3-4b-it",
+        help="HuggingFace model ID for loading the processor (default: google/gemma-3-4b-it)",
+    )
 
     args = parser.parse_args()
 
     print(f"Loading model from: {args.model_path}")
     print(f"Loading tokenizer from: {args.tokenizer_path}")
+    print(f"Loading processor from: {args.model_id}")
+
+    # Load the processor for chat template formatting
+    processor = AutoProcessor.from_pretrained(args.model_id)
 
     # Create the multimodal runner
     runner = MultimodalRunner(args.model_path, args.tokenizer_path)
@@ -176,8 +209,8 @@ Examples:
     image_tensor = load_image(args.image_path)
     print(f"Image tensor shape: {image_tensor.shape}")
 
-    # Build multimodal inputs with Gemma 3 chat template
-    inputs = build_multimodal_inputs(args.prompt, image_tensor)
+    # Build multimodal inputs using the processor's chat template
+    inputs = build_multimodal_inputs(args.prompt, image_tensor, processor)
 
     # Configure generation settings
     config = GenerationConfig(
