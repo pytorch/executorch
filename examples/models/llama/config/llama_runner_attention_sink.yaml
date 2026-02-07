@@ -21,14 +21,13 @@ model:
   dtype_override: fp32
   enable_dynamic_shape: True
   # Attention Sink: "sink_size,window_size,eviction_batch_size"
-  # sink_size=4: Keep first 4 tokens (e.g., BOS + system prompt)
-  # window_size=124: Sliding window size
-  # eviction_batch_size=1: Evict 1 token at a time
-  # KV cache size = sink_size + window_size * 2 = 4 + 124*2 = 252
+  # sink_size=4, window_size=124, eviction_batch_size=1
+  # Max Context (Buffer) = 4 + 1 * 124 = 128
   use_attention_sink: "4,124,1"
 
 export:
   # max_seq_length for single prefill chunk
+  max_context_len: 128
   max_seq_length: 128
 
 quantization:

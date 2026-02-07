@@ -218,10 +218,15 @@ class KVCacheWithAttentionSink(KVCache):
         sink_size: int,
         eviction_batch_size: int,
         max_batch_size: int = 1,
+        max_context_len: Optional[int] = None,
         dtype=torch.float32,
     ):
-        # Total cache size is sink_size + window_size * 2 (ring buffer needs 2x)
-        total_cache_size = sink_size + window_size * 2
+        # Total cache size is max_context_len if provided, else sink_size + window_size * 2
+        if max_context_len is None:
+            total_cache_size = sink_size + window_size * 2
+        else:
+            total_cache_size = max_context_len
+        
         super().__init__(
             max_batch_size=max_batch_size,
             max_context_length=total_cache_size,
@@ -264,6 +269,7 @@ class KVCacheWithAttentionSink(KVCache):
         input_pos: torch.Tensor,
         k_val: torch.Tensor,
         v_val: torch.Tensor,
+        indices: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Update KV cache with new key-value pairs.
@@ -274,10 +280,11 @@ class KVCacheWithAttentionSink(KVCache):
             2
         ), f"Update sequence length({seq_len}) for kv cache must be smaller than the cache size({self.k_cache.size(2)})"
 
-        # Calculate write indices
-        indices = self.cache_positions_manager.calculate_positions_and_update_indices(
-            input_pos, seq_len
-        )
+        if indices is None:
+            # Calculate write indices
+            indices = self.cache_positions_manager.calculate_positions_and_update_indices(
+                input_pos, seq_len
+            )
 
         start_pos = input_pos[0].item()
         torch._check_is_size(start_pos)
@@ -300,14 +307,19 @@ def attention_sink_forward(
     x: torch.Tensor,
     freqs_cos: torch.Tensor,
     freqs_sin: torch.Tensor,
-    input_pos: Optional[torch.Tensor] = None,
+    **kwargs,
 ):
     """
     Forward function for attention with attention sink KV cache.
     Uses ring buffer masking for proper attention patterns.
     """
     assert self.use_kv_cache
+    
+    input_pos = kwargs.get("input_pos")
     assert input_pos is not None
+    
+    # Extract cache_indices if provided (injected by Transformer forward)
+    cache_indices = kwargs.get("cache_indices")
 
     bsz, seqlen, _ = x.shape
 
@@ -326,7 +338,7 @@ def attention_sink_forward(
     v = v.transpose(1, 2)
 
     # Update KV cache
-    k, v = self.kv_cache.update(input_pos, k, v)
+    k, v = self.kv_cache.update(input_pos, k, v, cache_indices)
 
     # Use ring buffer mask since we have is_ring_buffer=True
     start_pos = input_pos[0].item()
@@ -358,6 +370,7 @@ def _replace_attention(
     sink_size: int,
     window_size: int,
     eviction_batch_size: int,
+    max_context_len: int,
 ):
     for _, child_module in module._modules.items():
         if len(list(child_module.children())) > 0:  # pyre-ignore [16]
@@ -367,6 +380,7 @@ def _replace_attention(
                 sink_size=sink_size,
                 window_size=window_size,
                 eviction_batch_size=eviction_batch_size,
+                max_context_len=max_context_len,
             )
 
         if isinstance(child_module, AttentionMHA):
@@ -382,6 +396,7 @@ def _replace_attention(
                 window_size=window_size,
                 sink_size=sink_size,
                 eviction_batch_size=eviction_batch_size,
+                max_context_len=max_context_len,
                 dtype=kv_cache.k_cache.dtype,
             )
             child_module.kv_cache = kv_cache_with_attention_sink
@@ -391,8 +406,10 @@ def _replace_attention(
             if "SDPACustom" in child_module.SDPA.__class__.__name__:
                 child_module.SDPA.use_attention_mask = True
 
-            # Don't replace forward - let the original AttentionMHA.forward handle it
-            # since our KVCache has is_ring_buffer=True, it will use the ring buffer mask
+            # Replace forward with our custom forward that handles cache_indices
+            child_module.forward = types.MethodType(
+                attention_sink_forward, child_module
+            )
 
 
 def enable_attention_sink(
@@ -401,6 +418,7 @@ def enable_attention_sink(
     sink_size: int,
     window_size: int,
     eviction_batch_size: int,
+    max_context_len: Optional[int] = None,
 ) -> torch.nn.Module:
     """
     Transform the model to be able to run inference with Attention Sink.
@@ -409,6 +427,13 @@ def enable_attention_sink(
     - Replace Attention's KVCache with KVCacheWithAttentionSink
     - Replace Attention's forward with attention_sink_forward
     """
+    if max_context_len is None:
+        max_context_len = sink_size + window_size * 2
+    
+    # We update params.max_context_len to reflect the actual buffer size
+    # This ensures export captures the correct cache size in metadata
+    params.max_context_len = max_context_len
+
     rope_with_attention_sink = RopeWithAttentionSink(
         params=params,
         window_size=window_size,
@@ -422,5 +447,72 @@ def enable_attention_sink(
         sink_size=sink_size,
         window_size=window_size,
         eviction_batch_size=eviction_batch_size,
+        max_context_len=max_context_len,
     )
+    
+    # Add metadata methods for IOManager
+    def get_sink_size(self):
+        return sink_size
+    
+    def get_window_size(self):
+        return window_size
+        
+    # Bind methods to module
+    # Note: For torch.export, we might need these to be part of the class or properly bound.
+    # Monkey patching instance methods works for some cases but let's verify.
+    # Ideally we subclass or mixin. But here we modify in place.
+    module.get_sink_size = types.MethodType(get_sink_size, module)
+    module.get_window_size = types.MethodType(get_window_size, module)
+
+    # Monkey patch Transformer methods to handle cache_indices input
+    
+    # 1. New get_example_inputs that includes cache_indices
+    def get_example_inputs_with_sink(self):
+        # Create inputs manually to avoid relying on Llama2Model helper methods
+        # that might not be available on the Transformer module.
+        
+        # Use a small sequence length for example
+        seq_len = 3
+        # Use simple tokens
+        tokens = torch.tensor([[2, 3, 4]], dtype=torch.long)
+        # Use corresponding input_pos matching seq_len
+        input_pos = torch.arange(seq_len, dtype=torch.long)
+        
+        # cache_indices matches input_pos/tokens length logic
+        # For export example, we can use simple indices
+        cache_indices = torch.arange(seq_len, dtype=torch.long)
+        
+        # Note: The original generic get_example_inputs usually returns ({tokens}, {input_pos})
+        # input_pos shape depends on dynamic shape setting.
+        # But for export purposes, providing valid tensors is key.
+        # If dynamic shapes are enabled, input_pos might be expected to be 1D.
+        
+        return (tokens, {"input_pos": input_pos}, cache_indices)
+
+    module.get_example_inputs = types.MethodType(get_example_inputs_with_sink, module)
+
+    # 2. New forward that accepts cache_indices and passes it in attn_options
+    original_forward = module.forward
+    
+    def forward_with_sink(
+        self,
+        tokens: Optional[torch.LongTensor] = None,
+        attn_options: Optional[dict] = None,
+        cache_indices: Optional[torch.LongTensor] = None,
+    ):
+        # Allow cache_indices to be passed as positional or kwarg
+        # Note: top level export might pass inputs positionally if we aren't careful?
+        # LlamaTransformer.forward has (tokens, attn_options, h)
+        # We replace it.
+        
+        if attn_options is None:
+            attn_options = {}
+            
+        if cache_indices is not None:
+            attn_options["cache_indices"] = cache_indices
+            
+        return original_forward(tokens=tokens, attn_options=attn_options)
+
+    module.forward = types.MethodType(forward_with_sink, module)
+
     return module
