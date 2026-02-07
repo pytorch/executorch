@@ -123,7 +123,13 @@ AttentionSinkIOManager::prepare_decode(
 void AttentionSinkIOManager::update_indices_tensor(
     int64_t logical_start,
     int64_t seq_len) {
-  int64_t ring_size = config_.window_size * 2;
+  int64_t ring_size = max_context_len_ - config_.sink_size;
+  ET_CHECK_MSG(ring_size > 0, "ring_size must be positive, got %" PRId64, ring_size);
+  ET_CHECK_MSG(
+      ring_size >= config_.window_size,
+      "ring_size (%" PRId64 ") must be >= window_size (%" PRId64 ")",
+      ring_size,
+      config_.window_size);
   indices_buffer_.resize(seq_len);
   for (int64_t i = 0; i < seq_len; ++i) {
     int64_t pos = logical_start + i;
