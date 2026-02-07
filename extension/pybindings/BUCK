@@ -1,4 +1,6 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:cpp_library.bzl", "cpp_library")
+load("@fbcode_macros//build_defs:cpp_python_extension.bzl", "cpp_python_extension")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
@@ -71,4 +73,34 @@ fbcode_target(_kind = runtime.python_library,
         ":_portable_lib",
         "//executorch/exir:_warnings",
     ],
+)
+
+# Header-only library that provides PyDataLoader for external pybinding extensions.
+# This allows external libraries (like PTEZ) to create custom data loaders that can
+# be passed to _load_for_executorch_from_data_loader().
+fbcode_target(
+    _kind = cpp_library,
+    name = "data_loader_types",
+    headers = ["pybindings_data_loader.h"],
+    exported_deps = [
+        "//executorch/runtime/core:core",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+# Python extension that registers the PyDataLoader type.
+# This allows external libraries to create PyDataLoader instances without
+# importing the full core pybindings.
+fbcode_target(
+    _kind = cpp_python_extension,
+    name = "data_loader",
+    srcs = ["pybindings_data_loader.cpp"],
+    base_module = "executorch.extension.pybindings",
+    deps = [
+        ":data_loader_types",
+    ],
+    external_deps = [
+        "pybind11",
+    ],
+    visibility = ["PUBLIC"],
 )
