@@ -266,9 +266,9 @@ TEST_F(ProgramTest, MinimalVerificationCatchesInvalidRootOffset) {
   }
 
   // Corrupt the root offset (first 4 bytes) to point beyond the buffer.
-  // Set it to a value larger than the buffer size.
-  uint32_t invalid_offset = static_cast<uint32_t>(data_len + 1000);
-  memcpy(data.get(), &invalid_offset, sizeof(invalid_offset));
+  // Use WriteScalar for correct little-endian encoding.
+  flatbuffers::WriteScalar<flatbuffers::uoffset_t>(
+      data.get(), static_cast<flatbuffers::uoffset_t>(data_len + 1000));
 
   // Wrap the corrupted data in a loader.
   BufferDataLoader data_loader(data.get(), data_len);
