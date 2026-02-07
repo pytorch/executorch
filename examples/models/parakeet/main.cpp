@@ -420,7 +420,8 @@ int main(int argc, char** argv) {
     return 1;
   }
   stats.prompt_eval_end_ms = ::executorch::extension::llm::time_in_ms();
-  stats.first_token_ms = stats.prompt_eval_end_ms; // For ASR, first token is at end of encoding
+  stats.first_token_ms =
+      stats.prompt_eval_end_ms; // For ASR, first token is at end of encoding
 
   auto& enc_outputs = enc_result.get();
   auto f_proj = enc_outputs[0].toTensor(); // [B, T, joint_hidden]
@@ -500,7 +501,8 @@ int main(int argc, char** argv) {
 
   // Record inference end time and token counts
   stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
-  stats.num_prompt_tokens = encoded_len; // Use encoder output length as "prompt" tokens
+  stats.num_prompt_tokens =
+      encoded_len; // Use encoder output length as "prompt" tokens
   stats.num_generated_tokens = static_cast<int64_t>(decoded_tokens.size());
 
   // Print PyTorchObserver stats for benchmarking
