@@ -7,12 +7,21 @@
 # Components for supporting Attention Sink. See
 # https://arxiv.org/abs/2309.17453 for more details about Attention Sink.
 
+# This implementation is torch.export compatible using a ring buffer approach
+# for the sliding window portion while preserving the sink tokens.
+
 import types
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
-
-from executorch.examples.models.llama.attention import AttentionMHA, KVCache
+import torch.nn as nn
+from executorch.examples.models.llama.attention import (
+    _create_causal_mask_for_ring_buffer,
+    AttentionMHA,
+    CachePositionsManager,
+    KVCache,
+    RingKVCache,
+)
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import (
     apply_rotary_emb_to_k,
@@ -27,6 +36,13 @@ class RopeWithAttentionSink(Rope):
     Rope that helps adjust position encoding when tokens are shifted in KVCache.
     For AttentionSink, when tokens are shifted in KVCache, we need to use positions
     in KVCache instead of positions in the actual text.
+
+    For torch.export compatibility, this just passes through the position - the
+    actual position adjustment is handled by the cache update logic.
+    
+    Note: This class uses the model's max_context_len (params.max_context_len) for
+    RoPE frequency table size, which should be large enough to support generation
+    beyond the sliding window. The actual KV cache size is sink_size + window_size * 2.
     """
 
     def __init__(
@@ -41,28 +57,22 @@ class RopeWithAttentionSink(Rope):
             self.apply_rotary_emb_to_k = hf_apply_rotary_emb_to_k
         else:
             self.apply_rotary_emb_to_k = apply_rotary_emb_to_k
-        self.max_context_length = window_size + sink_size
-        assert self.max_context_length == self.params.max_context_len
+        # The KV cache size is sink_size + window_size * 2 (ring buffer needs 2x)
+        self.kv_cache_size = sink_size + window_size * 2
+        self.window_size = window_size
+        self.sink_size = sink_size
+        # max_context_len from params is used for RoPE frequencies (should be large)
+        self.max_context_length = self.params.max_context_len
         self.eviction_batch_size = eviction_batch_size
-        self.position_shift = 0
 
     def get_freqs(self, input_pos: Optional[torch.Tensor], seq_len: int):
+        """
+        Get rotary embedding frequencies.
+        For attention sink, we use the original position - the sliding window
+        is handled by the cache index management, not by position shifting.
+        """
         assert input_pos is not None
-
-        input_pos_item = input_pos.item()
-        torch._check_is_size(input_pos_item)
-        if input_pos_item + self.position_shift + seq_len > self.max_context_length:
-            # There are not enough spaces in the cache to store the new tokens.
-            # We need to evict some old tokens and shift some recent tokens.
-            num_to_evict = max(
-                input_pos_item
-                + self.position_shift
-                - self.max_context_length
-                + seq_len,
-                self.eviction_batch_size,
-            )
-            self.position_shift -= num_to_evict  # pyre-ignore [8]
-        return super().get_freqs(input_pos + self.position_shift, seq_len)
+        return super().get_freqs(input_pos, seq_len)
 
     def rerotate_k(
         self,
@@ -71,15 +81,8 @@ class RopeWithAttentionSink(Rope):
         new_position: int,
     ):
         """
-        Rerotate k from original_position to new_position. This is done by rerotating
-        k with (new_position * theta - original_position * theta) with the following matrix:
-        (cos(delta), -sin(delta)
-         sin(delta), cos(delta))
-         where delta = new_position * theta - original_position * theta
-
-         The shape of k is (batch_size, seq_len, n_local_heads, head_dim)
-
-         Based on https://github.com/huggingface/transformers/blame/main/src/transformers/cache_utils.py#L961
+        Rerotate k from original_position to new_position.
+        The shape of k is (batch_size, seq_len, n_local_heads, head_dim)
         """
         seq_len = k.shape[1]
         original_freqs_cos = self.freqs_cos.narrow(0, original_position, seq_len)
@@ -96,15 +99,113 @@ class RopeWithAttentionSink(Rope):
         return self.apply_rotary_emb_to_k(k, rerotation_cos, rerotation_sin)
 
 
+def _create_causal_mask_for_attention_sink(
+    cache_positions, window_size, sink_size, start_pos, seq_len
+):
+    """
+    Create causal mask for attention sink.
+    
+    Unlike regular ring buffer mask, this mask:
+    1. ALWAYS allows attending to sink tokens (positions 0 to sink_size-1)
+    2. Uses sliding window for other tokens
+    
+    Args:
+        cache_positions: Tensor of actual positions stored at each cache index
+        window_size: Size of the sliding window
+        sink_size: Number of sink tokens to always attend to
+        start_pos: Starting position of the current query
+        seq_len: Length of the current query sequence
+    """
+    pos_q = start_pos + torch.arange(seq_len, dtype=torch.long).view(-1, 1)
+    delta = pos_q - cache_positions
+    
+    # Valid if position is filled (>= 0) and causal (delta >= 0)
+    is_valid = (cache_positions >= 0) & (delta >= 0)
+    
+    # Sink tokens (original positions 0 to sink_size-1) are always visible
+    is_sink = cache_positions < sink_size
+    
+    # Window tokens must be within sliding window
+    # Use <= to include the boundary token. For window_size=124, we want to attend
+    # to the last 124 tokens BEFORE the current position (delta 1 to 124), plus
+    # position 4 (first non-sink token) which has delta exactly = window_size.
+    # This ensures sink_size + window_size tokens are visible when cache is full.
+    is_in_window = delta <= window_size
+    
+    # Final mask: valid AND (is_sink OR is_in_window)
+    attn_mask = is_valid & (is_sink | is_in_window)
+    attn_mask = torch.where(attn_mask == True, 0, float("-inf"))  # noqa E712
+    return attn_mask
+
+
+class CachePositionsManagerWithSink(nn.Module):
+    """
+    Manages cache positions for attention sink + sliding window.
+    
+    For sink_size=0: behaves exactly like original CachePositionsManager (simple ring buffer).
+    For sink_size>0: sink tokens (indices 0 to sink_size-1) are NEVER overwritten.
+                     Ring buffer only cycles through indices sink_size to cache_size-1.
+    
+    IMPORTANT: cache_size should be the actual cache dimension size (sink_size + 2*window_size).
+    """
+
+    def __init__(self, cache_size: int, sink_size: int = 0):
+        super().__init__()
+        self.max_context_length = cache_size
+        self.sink_size = sink_size
+        # Ring buffer size = cache_size - sink_size
+        self.ring_size = cache_size - sink_size
+        # Initialize to -1 to mark unwritten positions
+        # The mask uses (cache_positions >= 0) to check if a position is valid
+        self.register_buffer(
+            "cache_positions",
+            torch.full((self.max_context_length,), -1, dtype=torch.long, device="cpu"),
+        )
+
+    def calculate_positions_and_update_indices(
+        self, input_pos: torch.Tensor, seq_len: int
+    ) -> torch.Tensor:
+        """
+        Calculate indices into k_cache, v_cache for placing k_val, v_val.
+        
+        Index calculation:
+        - Position < sink_size: index = position (sink tokens at fixed indices)
+        - Position >= sink_size: index = sink_size + (position - sink_size) % ring_size
+        
+        This ensures sink tokens (indices 0 to sink_size-1) are NEVER overwritten.
+        """
+        start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+
+        # Original positions for the sequence
+        orig_positions = torch.arange(seq_len, dtype=torch.long) + start_pos
+        
+        if self.sink_size == 0:
+            # Simple ring buffer: just mod by cache size
+            indices = orig_positions % self.max_context_length
+        else:
+            # Shifted ring buffer: sink tokens at fixed indices, rest in ring buffer
+            # For position >= sink_size: index = sink_size + (position - sink_size) % ring_size
+            shifted = orig_positions - self.sink_size
+            ring_indices = self.sink_size + (shifted % self.ring_size)
+            # For position < sink_size: use position directly
+            indices = torch.where(orig_positions < self.sink_size, orig_positions, ring_indices)
+
+        # Update cache_positions to track what position is at each index
+        # Only update the indices we're writing to
+        self.cache_positions.index_copy_(0, indices, orig_positions)
+
+        return indices
+
+
 class KVCacheWithAttentionSink(KVCache):
     """
-    KV cache that supports attention sink. It keeps the initial few tokens as attention sink.
-    For other tokens, it uses a sliding window to keep the most recent tokens.
+    KV cache that supports attention sink with torch.export compatibility.
 
-    Parameters:
-        window_size: the size of the sliding window
-        sink_size: the number of initial tokens to keep as attention sink
-        eviction_batch_size: the number of tokens to evict in batch when there is not enough space in the KV cache
+    Uses a ring buffer approach for the sliding window portion while keeping
+    the first sink_size tokens fixed. This avoids dynamic shape operations.
+
+    Cache layout: [sink: 0 to sink_size-1] [ring_buffer: sink_size to sink_size + window_size*2 - 1]
     """
 
     def __init__(
@@ -119,9 +220,11 @@ class KVCacheWithAttentionSink(KVCache):
         max_batch_size: int = 1,
         dtype=torch.float32,
     ):
+        # Total cache size is sink_size + window_size * 2 (ring buffer needs 2x)
+        total_cache_size = sink_size + window_size * 2
         super().__init__(
             max_batch_size=max_batch_size,
-            max_context_length=window_size + sink_size,
+            max_context_length=total_cache_size,
             n_heads=n_heads,
             head_dim=head_dim,
             enable_dynamic_shape=enable_dynamic_shape,
@@ -131,78 +234,65 @@ class KVCacheWithAttentionSink(KVCache):
         self.window_size = window_size
         self.sink_size = sink_size
         self.eviction_batch_size = eviction_batch_size
-        self.position_shift = 0
+        self.is_ring_buffer = True
+
+        # Cache positions manager for determining write locations
+        # Pass the total cache size (same as self.max_context_length after super().__init__)
+        self.cache_positions_manager = CachePositionsManagerWithSink(total_cache_size, sink_size)
+
+    def create_causal_mask_for_ring_buffer(
+        self, start_pos: torch.Tensor, seq_len: int
+    ):
+        """
+        Create causal mask for the attention with attention sink.
+        Sink tokens are ALWAYS visible, plus recent tokens in the window.
+        """
+        cache_positions = self.cache_positions_manager.cache_positions
+        if self.sink_size > 0:
+            # Use attention sink mask that always allows attending to sink tokens
+            return _create_causal_mask_for_attention_sink(
+                cache_positions, self.window_size, self.sink_size, start_pos, seq_len
+            )
+        else:
+            # Pure ring buffer mode - use original mask with window_size = actual window
+            return _create_causal_mask_for_ring_buffer(
+                cache_positions, self.window_size, start_pos, seq_len
+            )
+
+    def update(
+        self,
+        input_pos: torch.Tensor,
+        k_val: torch.Tensor,
+        v_val: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Update KV cache with new key-value pairs.
+        Uses ring buffer indexing for positions >= sink_size.
+        """
+        seq_len = k_val.size(2)
+        assert seq_len <= self.k_cache.size(
+            2
+        ), f"Update sequence length({seq_len}) for kv cache must be smaller than the cache size({self.k_cache.size(2)})"
+
+        # Calculate write indices
+        indices = self.cache_positions_manager.calculate_positions_and_update_indices(
+            input_pos, seq_len
+        )
+
+        start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+        self.k_cache.index_copy_(2, indices, k_val)
+        self.v_cache.index_copy_(2, indices, v_val)
+
+        return self.k_cache, self.v_cache
 
     def evict_tokens(self, input_pos: torch.Tensor, seq_len: int) -> int:
         """
-        Evict old tokens from the cache to make rooms for new tokens.
-
-        Parameters:
-            input_pos: the start position of the incoming token in the actual sequence
-            seq_len: the length of the incoming sequence
-            rope: the rope object to use for rerotating k
-
-        Returns:
-            the number of tokens to evict from the cache which is also the number of
-            positions to shift for incoming tokens
+        For ring buffer implementation, no explicit eviction is needed.
+        The ring buffer automatically overwrites old values.
+        Returns 0 to indicate no position shift is needed.
         """
-        input_pos_item = input_pos.item()
-        torch._check_is_size(input_pos_item)
-        if input_pos_item + self.position_shift + seq_len > self.max_context_length:
-            # There are not enough spaces in the cache to store the new tokens.
-            # We need to evict some old tokens and shift some recent tokens.
-            num_to_evict = max(
-                input_pos_item
-                + self.position_shift
-                - self.max_context_length
-                + seq_len,
-                self.eviction_batch_size,
-            )
-            num_to_keep = (
-                input_pos_item + self.position_shift - self.sink_size - num_to_evict
-            )
-            num_empty_space = self.window_size - num_to_keep
-            dim_to_slice = 2
-            k_to_keep = self.k_cache.narrow(
-                dim_to_slice,
-                self.sink_size + num_to_evict,  # pyre-ignore [6]
-                num_to_keep,  # pyre-ignore [6]
-            )
-            k_to_keep = self.rope.rerotate_k(
-                k=k_to_keep.transpose(1, 2),
-                original_position=(self.sink_size + num_to_evict),  # pyre-ignore [6]
-                new_position=self.sink_size,
-            ).transpose(1, 2)
-            self.k_cache = torch.cat(
-                [
-                    self.k_cache.narrow(dim_to_slice, 0, self.sink_size),
-                    k_to_keep,
-                    torch.zeros_like(
-                        self.k_cache.narrow(
-                            dim_to_slice, 0, num_empty_space  # pyre-ignore [6]
-                        )
-                    ),
-                ],
-                dim=dim_to_slice,
-            )
-            self.v_cache = torch.cat(
-                [
-                    self.v_cache.narrow(dim_to_slice, 0, self.sink_size),
-                    self.v_cache.narrow(
-                        dim_to_slice,
-                        self.sink_size + num_to_evict,  # pyre-ignore [6]
-                        num_to_keep,  # pyre-ignore [6]
-                    ),
-                    torch.zeros_like(
-                        self.v_cache.narrow(
-                            dim_to_slice, 0, num_empty_space  # pyre-ignore [6]
-                        )
-                    ),
-                ],
-                dim=dim_to_slice,
-            )
-            self.position_shift -= num_to_evict  # pyre-ignore [8]
-        return self.position_shift
+        return 0
 
 
 def attention_sink_forward(
@@ -212,6 +302,10 @@ def attention_sink_forward(
     freqs_sin: torch.Tensor,
     input_pos: Optional[torch.Tensor] = None,
 ):
+    """
+    Forward function for attention with attention sink KV cache.
+    Uses ring buffer masking for proper attention patterns.
+    """
     assert self.use_kv_cache
     assert input_pos is not None
 
@@ -219,19 +313,31 @@ def attention_sink_forward(
 
     # QKV
     q, k, v = self.wq(x), self.wk(x), self.wv(x)
-    # We need view_copy elimination
     q = q.view(bsz, seqlen, self.n_local_heads, self.head_dim)
     k = k.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
     v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
-    # Prepare for space in KV cache and get position shift
-    position_shift = self.kv_cache.evict_tokens(input_pos, seqlen)
-
-    # RoPE relative positional embeddings with shifted position in KV cache
+    # RoPE relative positional embeddings
     q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
-    output = self.SDPA(input_pos + position_shift, q, k, v, bsz, seqlen, self.mask)
-    return self.wo(output)
+    # Transpose for attention: [B, H, S, D]
+    q = q.transpose(1, 2)
+    k = k.transpose(1, 2)
+    v = v.transpose(1, 2)
+
+    # Update KV cache
+    k, v = self.kv_cache.update(input_pos, k, v)
+
+    # Use ring buffer mask since we have is_ring_buffer=True
+    start_pos = input_pos[0].item()
+    torch._check_is_size(start_pos)
+    attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(start_pos, seqlen)
+
+    # SDPA
+    output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
+
+    # Return tuple like original AttentionMHA.forward
+    return self.wo(output), None
 
 
 def _replace_rope(
@@ -265,6 +371,8 @@ def _replace_attention(
 
         if isinstance(child_module, AttentionMHA):
             kv_cache = child_module.kv_cache
+            # Always use KVCacheWithAttentionSink, even for sink_size=0
+            # This ensures we don't get replaced by CustomKVCache when use_sdpa_with_kv_cache=True
             kv_cache_with_attention_sink = KVCacheWithAttentionSink(
                 n_heads=kv_cache.n_heads,
                 head_dim=kv_cache.head_dim,
@@ -277,9 +385,14 @@ def _replace_attention(
                 dtype=kv_cache.k_cache.dtype,
             )
             child_module.kv_cache = kv_cache_with_attention_sink
-            child_module.forward = types.MethodType(  # pyre-ignore
-                attention_sink_forward, child_module
-            )
+
+            # If using SDPACustom (fused SDPA op), enable attention mask support
+            # so it uses our ring buffer / attention sink mask instead of simple causal mask
+            if "SDPACustom" in child_module.SDPA.__class__.__name__:
+                child_module.SDPA.use_attention_mask = True
+
+            # Don't replace forward - let the original AttentionMHA.forward handle it
+            # since our KVCache has is_ring_buffer=True, it will use the ring buffer mask
 
 
 def enable_attention_sink(
@@ -293,7 +406,8 @@ def enable_attention_sink(
     Transform the model to be able to run inference with Attention Sink.
     There mainly three steps:
     - Replace Rope with RopeWithAttentionSink
-    - Replace Attention's KVCache with KVCacheWithAttentionSink, forward with attention_sink_forward
+    - Replace Attention's KVCache with KVCacheWithAttentionSink
+    - Replace Attention's forward with attention_sink_forward
     """
     rope_with_attention_sink = RopeWithAttentionSink(
         params=params,
