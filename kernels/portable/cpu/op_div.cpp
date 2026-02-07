@@ -20,7 +20,10 @@ namespace native {
 namespace {
 
 ScalarType get_common_type(ScalarType a_type, ScalarType b_type) {
-  if (isFloatingType(a_type) && isFloatingType(b_type)) {
+  if (executorch::runtime::isComplexType(a_type) ||
+      executorch::runtime::isComplexType(b_type)) {
+    return promoteTypes(a_type, b_type);
+  } else if (isFloatingType(a_type) && isFloatingType(b_type)) {
     return promoteTypes(a_type, b_type);
   } else if (isFloatingType(a_type)) {
     return a_type;
@@ -51,25 +54,35 @@ Tensor& div_out(
       InvalidArgument,
       out);
 
-  // Compute Dtype
-  ScalarType compute_type = utils::get_compute_type(common_type);
-
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "div.out";
 
-  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::FLOATHBF16>(
-        [](const auto& val_a, const auto& val_b) { return val_a / val_b; },
-        ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        b,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out);
-  });
+  if (executorch::runtime::isComplexType(common_type)) {
+    ET_SWITCH_COMPLEX_TYPES(common_type, ctx, op_name, CTYPE, [&]() {
+      const CTYPE* a_data = a.const_data_ptr<CTYPE>();
+      const CTYPE* b_data = b.const_data_ptr<CTYPE>();
+      CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+      for (size_t i = 0; i < out.numel(); ++i) {
+        out_data[i] = a_data[i] / b_data[i];
+      }
+    });
+  } else {
+    // Compute Dtype for real types
+    ScalarType compute_type = utils::get_compute_type(common_type);
+    ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+      utils::apply_bitensor_elementwise_fn<
+          CTYPE_COMPUTE,
+          op_name,
+          utils::SupportedTensorDtypes::FLOATHBF16>(
+          [](const auto& val_a, const auto& val_b) { return val_a / val_b; },
+          ctx,
+          a,
+          utils::SupportedTensorDtypes::REALHBBF16,
+          b,
+          utils::SupportedTensorDtypes::REALHBBF16,
+          out);
+    });
+  }
 
   return out;
 }
