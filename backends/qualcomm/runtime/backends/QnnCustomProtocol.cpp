@@ -20,8 +20,7 @@ void QnnContextCustomProtocol::BuildContextCustomBuffer() {
     uint8_t magic_number_proto_size = sizeof(magic_number_);
     uint8_t binary_proto_size = sizeof(binary_size_);
     uint8_t signature_proto_size = sizeof(signature_);
-    uint64_t buffer_size = magic_number_proto_size + signature_proto_size +
-        binary_proto_size + binary_size_;
+    uint64_t buffer_size = alignment_ + binary_size_;
     qnn_custom_buffer_.resize(buffer_size, 0);
 
     size_t pos = 0;
@@ -62,6 +61,8 @@ QnnContextCustomProtocol::DeserializeContextCustomBuffer(void* processed_data) {
   uint8_t magic_number_proto_size = sizeof(magic_number_);
   uint8_t binary_proto_size = sizeof(binary_size_);
   uint8_t signature_proto_size = sizeof(signature_);
+  uint32_t padding_size = alignment_ - magic_number_proto_size -
+      binary_proto_size - signature_proto_size;
 
   uint32_t magic_number;
   std::memcpy(&magic_number, ptr, magic_number_proto_size);
@@ -80,13 +81,13 @@ QnnContextCustomProtocol::DeserializeContextCustomBuffer(void* processed_data) {
 
   uint64_t binary_size;
   std::memcpy(&binary_size, ptr, binary_proto_size);
-  ptr += binary_proto_size;
+  ptr += binary_proto_size + padding_size;
 
   return {status, signature_, binary_size, static_cast<void*>(ptr)};
 }
 
 uint64_t QnnContextCustomProtocol::GetContextBinaryOffset() {
-  return sizeof(magic_number_) + sizeof(signature_) + sizeof(binary_size_);
+  return alignment_;
 }
 
 } // namespace qnn

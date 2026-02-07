@@ -1,0 +1,27 @@
+/*
+ * Copyright (c) Qualcomm Innovation Center, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include "AEEStdDef.idl"
+#include "remote.idl"
+
+/// Enabling stub-skel mismatch check feature in the auto-gen files.
+/// Please refer to the IDL documentation for more details on the feature.
+/// It is fully supported only on Kailua and later targets.
+const string IDL_VERSION = "0.0.0";
+
+typedef sequence<uint8> tensor;
+
+interface qnn_executorch : remote_handle64 {
+   long load(in string pte_path);
+   long get_input_size(in string pte_path, in long index, rout long nbytes);
+   long set_input(in string pte_path, in sequence<tensor> tensors);
+   long execute(in string pte_path);
+   long get_output_size(in string pte_path, in long index, rout long nbytes);
+   long get_output(in string pte_path, rout sequence<tensor> tensors);
+   long unload(in string pte_path);
+};

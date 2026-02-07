@@ -22,11 +22,10 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
   std::uint32_t num_graphs;
   QnnSystemContext_GraphInfo_t* graphs = nullptr;
   const QnnSystemContext_BinaryInfo_t* binaryinfo{nullptr};
-  Qnn_ContextBinarySize_t binaryinfo_size = 0;
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   error = qnn_sys_interface.qnn_system_context_get_binary_info(
-      sys_context_handle_, buffer, nbytes, &binaryinfo, &binaryinfo_size);
+      sys_context_handle_, buffer, nbytes, &binaryinfo);
 
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG_WARN(
