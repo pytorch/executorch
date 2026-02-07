@@ -800,6 +800,15 @@ class MulTensorPattern(QuantizationPattern):
         )
 
 
+class NegPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.neg.default` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.neg.default]
+
+
 class PadPattern(SharedSpecPattern):
     """
     Quantizer for Pad operator.
