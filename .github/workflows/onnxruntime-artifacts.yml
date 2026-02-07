@@ -1,0 +1,431 @@
+name: ONNX Runtime Artifact Bundles
+
+on:
+  workflow_dispatch:
+    inputs:
+      onnxruntime_ref:
+        description: "ONNX Runtime git ref"
+        required: true
+        default: "v1.24.1"
+      onnxruntime_version:
+        description: "Version string for SwiftPM info.json"
+        required: true
+        default: "1.24.1"
+      build_cuda:
+        description: "Build Linux CUDA variant"
+        type: boolean
+        default: false
+      build_migraphx:
+        description: "Build Linux MIGraphX variant"
+        type: boolean
+        default: false
+      build_arm64:
+        description: "Build Linux and Windows ARM64 variants (requires self-hosted runners)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-linux-x86_64:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout onnxruntime
+        run: |
+          set -eux
+          git clone --depth 1 --branch "${{ inputs.onnxruntime_ref }}" https://github.com/microsoft/onnxruntime.git
+      - name: Build Release
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          ./build.sh --config Release --parallel --skip_tests --update --build
+      - name: Build Debug
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          ./build.sh --config Debug --parallel --skip_tests --update --build
+      - name: Stage artifacts
+        run: |
+          set -eux
+          TRIPLE="x86_64-unknown-linux-gnu"
+          ARTIFACT_ROOT="${RUNNER_TEMP}/onnxruntime-${TRIPLE}"
+          mkdir -p "${ARTIFACT_ROOT}/include" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}"
+          rsync -a onnxruntime/include/ "${ARTIFACT_ROOT}/include/"
+          REL_LIB=$(find onnxruntime/build -path '*Release*' -name 'libonnxruntime.a' -type f | head -n1)
+          DBG_LIB=$(find onnxruntime/build -path '*Debug*' -name 'libonnxruntime.a' -type f | head -n1)
+          test -f "${REL_LIB}" && test -f "${DBG_LIB}"
+          cp "${REL_LIB}" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}/"
+          cp "${DBG_LIB}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}/"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onnxruntime-linux-x86_64
+          path: ${{ runner.temp }}/onnxruntime-x86_64-unknown-linux-gnu
+
+  build-linux-arm64:
+    if: ${{ inputs.build_arm64 }}
+    runs-on: [self-hosted, linux, arm64]
+    steps:
+      - name: Checkout onnxruntime
+        run: |
+          set -eux
+          git clone --depth 1 --branch "${{ inputs.onnxruntime_ref }}" https://github.com/microsoft/onnxruntime.git
+      - name: Build Release
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          ./build.sh --config Release --parallel --skip_tests --update --build
+      - name: Build Debug
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          ./build.sh --config Debug --parallel --skip_tests --update --build
+      - name: Stage artifacts
+        run: |
+          set -eux
+          TRIPLE="aarch64-unknown-linux-gnu"
+          ARTIFACT_ROOT="${RUNNER_TEMP}/onnxruntime-${TRIPLE}"
+          mkdir -p "${ARTIFACT_ROOT}/include" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}"
+          rsync -a onnxruntime/include/ "${ARTIFACT_ROOT}/include/"
+          REL_LIB=$(find onnxruntime/build -path '*Release*' -name 'libonnxruntime.a' -type f | head -n1)
+          DBG_LIB=$(find onnxruntime/build -path '*Debug*' -name 'libonnxruntime.a' -type f | head -n1)
+          test -f "${REL_LIB}" && test -f "${DBG_LIB}"
+          cp "${REL_LIB}" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}/"
+          cp "${DBG_LIB}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}/"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onnxruntime-linux-arm64
+          path: ${{ runner.temp }}/onnxruntime-aarch64-unknown-linux-gnu
+
+  build-linux-cuda:
+    if: ${{ inputs.build_cuda }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout onnxruntime
+        run: |
+          set -eux
+          git clone --depth 1 --branch "${{ inputs.onnxruntime_ref }}" https://github.com/microsoft/onnxruntime.git
+      - name: Build Release (CUDA)
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+          CUDNN_HOME="${CUDNN_HOME:-/usr/lib/x86_64-linux-gnu/}"
+          ./build.sh --config Release --parallel --skip_tests --update --build \
+            --use_cuda --cuda_home "${CUDA_HOME}" --cudnn_home "${CUDNN_HOME}"
+      - name: Build Debug (CUDA)
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+          CUDNN_HOME="${CUDNN_HOME:-/usr/lib/x86_64-linux-gnu/}"
+          ./build.sh --config Debug --parallel --skip_tests --update --build \
+            --use_cuda --cuda_home "${CUDA_HOME}" --cudnn_home "${CUDNN_HOME}"
+      - name: Stage artifacts
+        run: |
+          set -eux
+          TRIPLE="x86_64-unknown-linux-gnu"
+          ARTIFACT_ROOT="${RUNNER_TEMP}/onnxruntime-cuda-${TRIPLE}"
+          mkdir -p "${ARTIFACT_ROOT}/include" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}"
+          rsync -a onnxruntime/include/ "${ARTIFACT_ROOT}/include/"
+          REL_LIB=$(find onnxruntime/build -path '*Release*' -name 'libonnxruntime.a' -type f | head -n1)
+          DBG_LIB=$(find onnxruntime/build -path '*Debug*' -name 'libonnxruntime.a' -type f | head -n1)
+          test -f "${REL_LIB}" && test -f "${DBG_LIB}"
+          cp "${REL_LIB}" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}/"
+          cp "${DBG_LIB}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}/"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onnxruntime-linux-cuda-x86_64
+          path: ${{ runner.temp }}/onnxruntime-cuda-x86_64-unknown-linux-gnu
+
+  build-linux-migraphx:
+    if: ${{ inputs.build_migraphx }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout onnxruntime
+        run: |
+          set -eux
+          git clone --depth 1 --branch "${{ inputs.onnxruntime_ref }}" https://github.com/microsoft/onnxruntime.git
+      - name: Build Release (MIGraphX)
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          MIGRAPHX_HOME="${MIGRAPHX_HOME:-/opt/rocm}"
+          ./build.sh --config Release --parallel --skip_tests --update --build \
+            --use_migraphx --migraphx_home "${MIGRAPHX_HOME}"
+      - name: Build Debug (MIGraphX)
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          MIGRAPHX_HOME="${MIGRAPHX_HOME:-/opt/rocm}"
+          ./build.sh --config Debug --parallel --skip_tests --update --build \
+            --use_migraphx --migraphx_home "${MIGRAPHX_HOME}"
+      - name: Stage artifacts
+        run: |
+          set -eux
+          TRIPLE="x86_64-unknown-linux-gnu"
+          ARTIFACT_ROOT="${RUNNER_TEMP}/onnxruntime-migraphx-${TRIPLE}"
+          mkdir -p "${ARTIFACT_ROOT}/include" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}"
+          rsync -a onnxruntime/include/ "${ARTIFACT_ROOT}/include/"
+          REL_LIB=$(find onnxruntime/build -path '*Release*' -name 'libonnxruntime.a' -type f | head -n1)
+          DBG_LIB=$(find onnxruntime/build -path '*Debug*' -name 'libonnxruntime.a' -type f | head -n1)
+          test -f "${REL_LIB}" && test -f "${DBG_LIB}"
+          cp "${REL_LIB}" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}/"
+          cp "${DBG_LIB}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}/"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onnxruntime-linux-migraphx-x86_64
+          path: ${{ runner.temp }}/onnxruntime-migraphx-x86_64-unknown-linux-gnu
+
+  build-windows-x86_64:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout onnxruntime
+        run: |
+          git clone --depth 1 --branch "${{ inputs.onnxruntime_ref }}" https://github.com/microsoft/onnxruntime.git
+      - name: Build Release
+        working-directory: onnxruntime
+        run: |
+          .\build.bat --config Release --skip_tests
+      - name: Build Debug
+        working-directory: onnxruntime
+        run: |
+          .\build.bat --config Debug --skip_tests
+      - name: Stage artifacts
+        shell: bash
+        run: |
+          set -eux
+          TRIPLE="x86_64-unknown-windows-msvc"
+          ARTIFACT_ROOT="${RUNNER_TEMP}/onnxruntime-${TRIPLE}"
+          mkdir -p "${ARTIFACT_ROOT}/include" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}"
+          cp -R onnxruntime/include/. "${ARTIFACT_ROOT}/include/"
+          REL_LIB=$(find onnxruntime/build -path '*Release*' -name 'onnxruntime.lib' -type f | head -n1)
+          DBG_LIB=$(find onnxruntime/build -path '*Debug*' -name 'onnxruntime.lib' -type f | head -n1)
+          test -f "${REL_LIB}" && test -f "${DBG_LIB}"
+          cp "${REL_LIB}" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}/"
+          cp "${DBG_LIB}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}/"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onnxruntime-windows-x86_64
+          path: ${{ runner.temp }}/onnxruntime-x86_64-unknown-windows-msvc
+
+  build-windows-arm64:
+    if: ${{ inputs.build_arm64 }}
+    runs-on: [self-hosted, windows, arm64]
+    steps:
+      - name: Checkout onnxruntime
+        run: |
+          git clone --depth 1 --branch "${{ inputs.onnxruntime_ref }}" https://github.com/microsoft/onnxruntime.git
+      - name: Build Release
+        working-directory: onnxruntime
+        run: |
+          .\build.bat --config Release --skip_tests
+      - name: Build Debug
+        working-directory: onnxruntime
+        run: |
+          .\build.bat --config Debug --skip_tests
+      - name: Stage artifacts
+        shell: bash
+        run: |
+          set -eux
+          TRIPLE="aarch64-unknown-windows-msvc"
+          ARTIFACT_ROOT="${RUNNER_TEMP}/onnxruntime-${TRIPLE}"
+          mkdir -p "${ARTIFACT_ROOT}/include" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}"
+          cp -R onnxruntime/include/. "${ARTIFACT_ROOT}/include/"
+          REL_LIB=$(find onnxruntime/build -path '*Release*' -name 'onnxruntime.lib' -type f | head -n1)
+          DBG_LIB=$(find onnxruntime/build -path '*Debug*' -name 'onnxruntime.lib' -type f | head -n1)
+          test -f "${REL_LIB}" && test -f "${DBG_LIB}"
+          cp "${REL_LIB}" "${ARTIFACT_ROOT}/release/lib/${TRIPLE}/"
+          cp "${DBG_LIB}" "${ARTIFACT_ROOT}/debug/lib/${TRIPLE}/"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onnxruntime-windows-arm64
+          path: ${{ runner.temp }}/onnxruntime-aarch64-unknown-windows-msvc
+
+  build-apple:
+    runs-on: macos-14-xlarge
+    steps:
+      - name: Checkout onnxruntime
+        run: |
+          set -eux
+          git clone --depth 1 --branch "${{ inputs.onnxruntime_ref }}" https://github.com/microsoft/onnxruntime.git
+      - name: Build macOS Release (arm64)
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          ./build.sh --config Release --parallel --skip_tests --update --build --osx_arch arm64
+      - name: Build macOS Debug (arm64)
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          ./build.sh --config Debug --parallel --skip_tests --update --build --osx_arch arm64
+      - name: Build iOS Release (arm64 device)
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          ./build.sh --config Release --use_xcode --ios --ios_sysroot iphoneos --osx_arch arm64 --skip_tests
+      - name: Build iOS Debug (arm64 device)
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          ./build.sh --config Debug --use_xcode --ios --ios_sysroot iphoneos --osx_arch arm64 --skip_tests
+      - name: Build iOS Release (arm64 simulator)
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          ./build.sh --config Release --use_xcode --ios --ios_sysroot iphonesimulator --osx_arch arm64 --skip_tests
+      - name: Build iOS Debug (arm64 simulator)
+        working-directory: onnxruntime
+        run: |
+          set -eux
+          ./build.sh --config Debug --use_xcode --ios --ios_sysroot iphonesimulator --osx_arch arm64 --skip_tests
+      - name: Stage artifacts
+        run: |
+          set -eux
+          ARTIFACT_ROOT="${RUNNER_TEMP}/onnxruntime-apple"
+          mkdir -p "${ARTIFACT_ROOT}/include"
+          rsync -a onnxruntime/include/ "${ARTIFACT_ROOT}/include/"
+
+          stage_lib() {
+            local triple="$1"
+            local config="$2"
+            local pattern="$3"
+            local dst="${ARTIFACT_ROOT}/${config}/lib/${triple}"
+            mkdir -p "${dst}"
+            local lib
+            lib=$(find onnxruntime/build -path "*${config}*" -name "${pattern}" -type f | head -n1)
+            test -f "${lib}"
+            cp "${lib}" "${dst}/"
+          }
+
+          stage_lib "arm64-apple-macosx" "release" "libonnxruntime.a"
+          stage_lib "arm64-apple-macosx" "debug" "libonnxruntime.a"
+          stage_lib "arm64-apple-ios" "release" "libonnxruntime.a"
+          stage_lib "arm64-apple-ios" "debug" "libonnxruntime.a"
+          stage_lib "arm64-apple-ios-simulator" "release" "libonnxruntime.a"
+          stage_lib "arm64-apple-ios-simulator" "debug" "libonnxruntime.a"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onnxruntime-apple
+          path: ${{ runner.temp }}/onnxruntime-apple
+
+  package-artifacts:
+    runs-on: ubuntu-22.04
+    needs:
+      - build-linux-x86_64
+      - build-windows-x86_64
+      - build-apple
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/onnxruntime-inputs
+      - name: Assemble staging trees
+        shell: bash
+        run: |
+          set -eux
+          INPUTS="${RUNNER_TEMP}/onnxruntime-inputs"
+          STAGING_RELEASE="${RUNNER_TEMP}/staging-release"
+          STAGING_DEBUG="${RUNNER_TEMP}/staging-debug"
+          STAGING_CUDA_RELEASE="${RUNNER_TEMP}/staging-cuda-release"
+          STAGING_CUDA_DEBUG="${RUNNER_TEMP}/staging-cuda-debug"
+          STAGING_MIGRAPHX_RELEASE="${RUNNER_TEMP}/staging-migraphx-release"
+          STAGING_MIGRAPHX_DEBUG="${RUNNER_TEMP}/staging-migraphx-debug"
+
+          for dir in "${STAGING_RELEASE}" "${STAGING_DEBUG}" "${STAGING_CUDA_RELEASE}" "${STAGING_CUDA_DEBUG}" "${STAGING_MIGRAPHX_RELEASE}" "${STAGING_MIGRAPHX_DEBUG}"; do
+            mkdir -p "${dir}/include" "${dir}/lib"
+          done
+
+          for artifact in "${INPUTS}"/*; do
+            [ -d "${artifact}" ] || continue
+            if [ -d "${artifact}/include" ] && [ ! -f "${STAGING_RELEASE}/include/.copied" ]; then
+              rsync -a "${artifact}/include/" "${STAGING_RELEASE}/include/"
+              rsync -a "${artifact}/include/" "${STAGING_DEBUG}/include/"
+              rsync -a "${artifact}/include/" "${STAGING_CUDA_RELEASE}/include/"
+              rsync -a "${artifact}/include/" "${STAGING_CUDA_DEBUG}/include/"
+              rsync -a "${artifact}/include/" "${STAGING_MIGRAPHX_RELEASE}/include/"
+              rsync -a "${artifact}/include/" "${STAGING_MIGRAPHX_DEBUG}/include/"
+              touch "${STAGING_RELEASE}/include/.copied"
+            fi
+            if [ -d "${artifact}/release/lib" ] && [[ "${artifact}" != *"cuda"* ]] && [[ "${artifact}" != *"migraphx"* ]]; then
+              rsync -a "${artifact}/release/lib/" "${STAGING_RELEASE}/lib/"
+            fi
+            if [ -d "${artifact}/debug/lib" ] && [[ "${artifact}" != *"cuda"* ]] && [[ "${artifact}" != *"migraphx"* ]]; then
+              rsync -a "${artifact}/debug/lib/" "${STAGING_DEBUG}/lib/"
+            fi
+            if [ -d "${artifact}/release/lib" ] && [[ "${artifact}" == *"cuda"* ]]; then
+              rsync -a "${artifact}/release/lib/" "${STAGING_CUDA_RELEASE}/lib/"
+            fi
+            if [ -d "${artifact}/debug/lib" ] && [[ "${artifact}" == *"cuda"* ]]; then
+              rsync -a "${artifact}/debug/lib/" "${STAGING_CUDA_DEBUG}/lib/"
+            fi
+            if [ -d "${artifact}/release/lib" ] && [[ "${artifact}" == *"migraphx"* ]]; then
+              rsync -a "${artifact}/release/lib/" "${STAGING_MIGRAPHX_RELEASE}/lib/"
+            fi
+            if [ -d "${artifact}/debug/lib" ] && [[ "${artifact}" == *"migraphx"* ]]; then
+              rsync -a "${artifact}/debug/lib/" "${STAGING_MIGRAPHX_DEBUG}/lib/"
+            fi
+          done
+      - name: Build artifact bundles
+        shell: bash
+        run: |
+          set -eux
+          VERSION="${{ inputs.onnxruntime_version }}"
+          DIST="${RUNNER_TEMP}/dist"
+          mkdir -p "${DIST}"
+
+          python3 scripts/package_onnxruntime_artifact_bundle.py \
+            --name onnxruntime \
+            --version "${VERSION}" \
+            --staging-dir "${RUNNER_TEMP}/staging-release" \
+            --output-dir "${DIST}"
+
+          python3 scripts/package_onnxruntime_artifact_bundle.py \
+            --name onnxruntime_debug \
+            --version "${VERSION}" \
+            --staging-dir "${RUNNER_TEMP}/staging-debug" \
+            --output-dir "${DIST}"
+
+          if [ -d "${RUNNER_TEMP}/staging-cuda-release/lib" ] && [ -n "$(ls -A "${RUNNER_TEMP}/staging-cuda-release/lib" 2>/dev/null)" ]; then
+            mkdir -p "${DIST}/cuda"
+            python3 scripts/package_onnxruntime_artifact_bundle.py \
+              --name onnxruntime_cuda \
+              --version "${VERSION}" \
+              --staging-dir "${RUNNER_TEMP}/staging-cuda-release" \
+              --output-dir "${DIST}/cuda"
+            python3 scripts/package_onnxruntime_artifact_bundle.py \
+              --name onnxruntime_cuda_debug \
+              --version "${VERSION}" \
+              --staging-dir "${RUNNER_TEMP}/staging-cuda-debug" \
+              --output-dir "${DIST}/cuda"
+          fi
+
+          if [ -d "${RUNNER_TEMP}/staging-migraphx-release/lib" ] && [ -n "$(ls -A "${RUNNER_TEMP}/staging-migraphx-release/lib" 2>/dev/null)" ]; then
+            mkdir -p "${DIST}/migraphx"
+            python3 scripts/package_onnxruntime_artifact_bundle.py \
+              --name onnxruntime_migraphx \
+              --version "${VERSION}" \
+              --staging-dir "${RUNNER_TEMP}/staging-migraphx-release" \
+              --output-dir "${DIST}/migraphx"
+            python3 scripts/package_onnxruntime_artifact_bundle.py \
+              --name onnxruntime_migraphx_debug \
+              --version "${VERSION}" \
+              --staging-dir "${RUNNER_TEMP}/staging-migraphx-debug" \
+              --output-dir "${DIST}/migraphx"
+          fi
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: onnxruntime-artifact-bundles
+          path: ${{ runner.temp }}/dist
