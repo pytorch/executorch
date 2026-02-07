@@ -227,6 +227,11 @@ class MeanDim(torch.nn.Module):
             (-4, -3, -2, -1),
             False,
         ),
+        "randn_large_axis": lambda: (
+            torch.randn(1, 256, 400),
+            (1, 2),
+            True,
+        ),
         "rank5_01234": lambda: (
             torch.rand(1, 1, 7, 3, 2),
             (-5, -4, -3, -2, -1),

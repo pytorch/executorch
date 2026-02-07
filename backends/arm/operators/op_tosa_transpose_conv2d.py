@@ -64,6 +64,16 @@ class TransposeConv2dVisitor(NodeVisitor):
                     self.target, [inputs[2]], [ts.DType.INT48], self.tosa_spec
                 )
 
+        if self.tosa_spec.support_extension("bf16"):
+            valid_input_dtypes.append(ts.DType.BF16)
+            if inputs[0].dtype == ts.DType.BF16:
+                validate_valid_dtype(
+                    self.target, [inputs[1]], [ts.DType.BF16], self.tosa_spec
+                )
+                validate_valid_dtype(
+                    self.target, [inputs[2]], [ts.DType.BF16], self.tosa_spec
+                )
+
         validate_valid_dtype(
             self.target,
             [inputs[0]],
