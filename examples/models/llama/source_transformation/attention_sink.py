@@ -44,24 +44,40 @@ class RopeWithAttentionSink(Rope):
         self.max_context_length = window_size + sink_size
         assert self.max_context_length == self.params.max_context_len
         self.eviction_batch_size = eviction_batch_size
-        self.position_shift = 0
+        self.register_buffer("position_shift", torch.tensor(0, dtype=torch.int64))
 
     def get_freqs(self, input_pos: Optional[torch.Tensor], seq_len: int):
         assert input_pos is not None
 
-        input_pos_item = input_pos.item()
-        torch._check_is_size(input_pos_item)
-        if input_pos_item + self.position_shift + seq_len > self.max_context_length:
+        def true_fn(position_shift, input_pos, seq_len, max_context_length):
             # There are not enough spaces in the cache to store the new tokens.
             # We need to evict some old tokens and shift some recent tokens.
-            num_to_evict = max(
-                input_pos_item
-                + self.position_shift
-                - self.max_context_length
-                + seq_len,
-                self.eviction_batch_size,
+            num_to_evict = torch.clamp(
+                input_pos + position_shift - max_context_length + seq_len,
+                min=self.eviction_batch_size,
             )
-            self.position_shift -= num_to_evict  # pyre-ignore [8]
+            position_shift = position_shift - num_to_evict
+            return position_shift
+
+        def false_fn(position_shift, input_pos, seq_len, max_context_length):
+            return position_shift
+
+        if self.params.enable_dynamic_shape:
+            input_pos_scalar = input_pos[0]
+        else:
+            input_pos_scalar = input_pos
+
+        self.position_shift = torch.cond(
+            input_pos_scalar + self.position_shift + seq_len > self.max_context_length,
+            true_fn,
+            false_fn,
+            [
+                self.position_shift,
+                input_pos_scalar,
+                seq_len,
+                self.max_context_length,
+            ],
+        )
         return super().get_freqs(input_pos + self.position_shift, seq_len)
 
     def rerotate_k(
@@ -131,9 +147,9 @@ class KVCacheWithAttentionSink(KVCache):
         self.window_size = window_size
         self.sink_size = sink_size
         self.eviction_batch_size = eviction_batch_size
-        self.position_shift = 0
+        self.register_buffer("position_shift", torch.tensor(0, dtype=torch.int64))
 
-    def evict_tokens(self, input_pos: torch.Tensor, seq_len: int) -> int:
+    def evict_tokens(self, input_pos: torch.Tensor, seq_len: int) -> torch.Tensor:
         """
         Evict old tokens from the cache to make rooms for new tokens.
 
@@ -146,24 +162,22 @@ class KVCacheWithAttentionSink(KVCache):
             the number of tokens to evict from the cache which is also the number of
             positions to shift for incoming tokens
         """
-        input_pos_item = input_pos.item()
-        torch._check_is_size(input_pos_item)
-        if input_pos_item + self.position_shift + seq_len > self.max_context_length:
+
+        def true_fn(
+            k_cache, v_cache, position_shift, input_pos, seq_len, max_context_length
+        ):
             # There are not enough spaces in the cache to store the new tokens.
             # We need to evict some old tokens and shift some recent tokens.
-            num_to_evict = max(
-                input_pos_item
-                + self.position_shift
-                - self.max_context_length
-                + seq_len,
-                self.eviction_batch_size,
+            num_to_evict = torch.clamp(
+                input_pos + position_shift - max_context_length + seq_len,
+                min=self.eviction_batch_size,
             )
             num_to_keep = (
-                input_pos_item + self.position_shift - self.sink_size - num_to_evict
+                input_pos + position_shift - self.sink_size - num_to_evict
             )
             num_empty_space = self.window_size - num_to_keep
             dim_to_slice = 2
-            k_to_keep = self.k_cache.narrow(
+            k_to_keep = k_cache.narrow(
                 dim_to_slice,
                 self.sink_size + num_to_evict,  # pyre-ignore [6]
                 num_to_keep,  # pyre-ignore [6]
@@ -173,35 +187,61 @@ class KVCacheWithAttentionSink(KVCache):
                 original_position=(self.sink_size + num_to_evict),  # pyre-ignore [6]
                 new_position=self.sink_size,
             ).transpose(1, 2)
-            self.k_cache = torch.cat(
+            k_cache = torch.cat(
                 [
-                    self.k_cache.narrow(dim_to_slice, 0, self.sink_size),
+                    k_cache.narrow(dim_to_slice, 0, self.sink_size),
                     k_to_keep,
                     torch.zeros_like(
-                        self.k_cache.narrow(
+                        k_cache.narrow(
                             dim_to_slice, 0, num_empty_space  # pyre-ignore [6]
                         )
                     ),
                 ],
                 dim=dim_to_slice,
             )
-            self.v_cache = torch.cat(
+            v_cache = torch.cat(
                 [
-                    self.v_cache.narrow(dim_to_slice, 0, self.sink_size),
-                    self.v_cache.narrow(
+                    v_cache.narrow(dim_to_slice, 0, self.sink_size),
+                    v_cache.narrow(
                         dim_to_slice,
                         self.sink_size + num_to_evict,  # pyre-ignore [6]
                         num_to_keep,  # pyre-ignore [6]
                     ),
                     torch.zeros_like(
-                        self.v_cache.narrow(
+                        v_cache.narrow(
                             dim_to_slice, 0, num_empty_space  # pyre-ignore [6]
                         )
                     ),
                 ],
                 dim=dim_to_slice,
             )
-            self.position_shift -= num_to_evict  # pyre-ignore [8]
+            position_shift = position_shift - num_to_evict
+            return k_cache, v_cache, position_shift
+
+        def false_fn(
+            k_cache, v_cache, position_shift, input_pos, seq_len, max_context_length
+        ):
+            return k_cache, v_cache, position_shift
+
+        if self.enable_dynamic_shape:
+            input_pos_scalar = input_pos[0]
+        else:
+            input_pos_scalar = input_pos
+
+        self.k_cache, self.v_cache, self.position_shift = torch.cond(
+            input_pos_scalar + self.position_shift + seq_len > self.max_context_length,
+            true_fn,
+            false_fn,
+            [
+                self.k_cache,
+                self.v_cache,
+                self.position_shift,
+                input_pos_scalar,
+                seq_len,
+                self.max_context_length,
+            ],
+        )
+
         return self.position_shift
 
 

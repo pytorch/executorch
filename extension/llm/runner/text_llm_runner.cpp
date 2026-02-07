@@ -129,33 +129,45 @@ Error TextLLMRunner::generate(
   std::vector<uint64_t> prompt_tokens = encode_res.get();
   int num_prompt_tokens = prompt_tokens.size();
 
+  // Check if ring buffer is enabled - if so, we can exceed context length
+  bool use_ring_buffer = metadata_.at(kUseRingBuffer);
+
   // Reduce max_context_len by pos_
   int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;
   ET_CHECK_OR_RETURN_ERROR(
       num_prompt_tokens >= 1,
       InvalidArgument,
       "Expected at least 1 prompt token");
-  ET_CHECK_OR_RETURN_ERROR(
-      num_prompt_tokens < max_context_len,
-      InvalidArgument,
-      "num_prompt_tokens %d >= max_context_len %" PRId64
-      ", Max seq length exceeded - please increase max seq len value in your export script",
-      num_prompt_tokens,
-      max_context_len);
 
-  // Determine max_new_tokens using the GenerationConfig's resolve method,
-  // then subtract pos_ for max_new_tokens.
+  // Only enforce context length limit when ring buffer is disabled
+  if (!use_ring_buffer) {
+    ET_CHECK_OR_RETURN_ERROR(
+        num_prompt_tokens < max_context_len,
+        InvalidArgument,
+        "num_prompt_tokens %d >= max_context_len %" PRId64
+        ", Max seq length exceeded - please increase max seq len value in your export script",
+        num_prompt_tokens,
+        max_context_len);
+  }
+
+  // Determine max_new_tokens using the GenerationConfig's resolve method.
+  // When ring buffer is enabled, use a large context length to allow unlimited
+  // generation.
+  int64_t effective_context_len =
+      use_ring_buffer ? INT64_MAX : max_context_len;
   int max_new_tokens =
-      config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
+      config.resolve_max_new_tokens(effective_context_len, num_prompt_tokens);
 
   ET_LOG(
       Info,
       "Max new tokens resolved: %d, given pos_ %" PRId64
-      ", num_prompt_tokens %zu, max_context_len %" PRId64,
+      ", num_prompt_tokens %zu, max_context_len %" PRId64
+      ", use_ring_buffer %d",
       max_new_tokens,
       pos_,
       prompt_tokens.size(),
-      max_context_len);
+      max_context_len,
+      use_ring_buffer);
   ET_CHECK_OR_RETURN_ERROR(
       max_new_tokens > 0,
       InvalidArgument,
