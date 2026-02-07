@@ -763,6 +763,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             use_torchao_kernels_tied_embedding=llm_config.backend.torchao.use_torchao_kernels_tied_embedding,
             use_attention_sink=llm_config.model.use_attention_sink,
             params_path=llm_config.base.params,
+            max_context_len=llm_config.export.max_context_length,
         )
     )
 
@@ -1419,6 +1420,7 @@ def _get_source_transforms(  # noqa
     quantize_with_hqq: bool = True,
     use_attention_sink: Optional[str] = None,
     params_path: Optional[str] = None,
+    max_context_len: Optional[int] = None,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     """
     Return a list of functions that transform a graph.
@@ -1628,6 +1630,7 @@ def _get_source_transforms(  # noqa
                 sink_size=sink_params[0],
                 window_size=sink_params[1],
                 eviction_batch_size=sink_params[2],
+                max_context_len=max_context_len,
             )
         )
 
