@@ -27,6 +27,8 @@ class NodeFormatInference:
         exir_ops.edge.aten.convolution.default: {"inputs": [0, 1]},
         exir_ops.edge.aten.max_pool2d_with_indices.default: {"inputs": [0]},
         exir_ops.edge.aten.max_pool2d.default: {"inputs": [0]},
+        exir_ops.edge.aten.upsample_bilinear2d.vec: {"inputs": [0]},
+        exir_ops.edge.aten.upsample_nearest2d.vec: {"inputs": [0]},
     }
 
     # A set of Edge Aten ops, which have the ability to change the format (for example - input nodes
