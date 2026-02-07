@@ -6,6 +6,8 @@
 import copy
 
 import logging
+import shutil
+import tempfile
 
 from collections import Counter, defaultdict
 from pprint import pformat
@@ -410,6 +412,10 @@ class ArmTester(Tester):
                 use_portable_ops=self.use_portable_ops,
                 timeout=self.timeout,
             )
+        assert (
+            self.compile_spec.get_intermediate_path() is not None
+        ), "Can't dump serialized file when compile specs do not contain an artifact path."
+
         return super().serialize(serialize_stage)
 
     def is_quantized(self) -> bool:
@@ -986,6 +992,14 @@ class ArmTester(Tester):
                     qtol=0,
                 )
             raise e
+
+    def __del__(self):
+        intermediate_path = self.compile_spec.get_intermediate_path()
+        if not intermediate_path:
+            return
+        if len(tempdir := tempfile.gettempdir()) > 0:
+            if intermediate_path.startswith(tempdir):
+                shutil.rmtree(intermediate_path, ignore_errors=True)
 
     def check_dtype_count(self, dtype_dict: Dict[str, Dict[str, int]]):
         if self.cur in (
