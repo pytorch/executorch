@@ -248,7 +248,7 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   // Check if attention sink is enabled via metadata
   bool use_attention_sink = false;
   int64_t sink_size = 4;  // Default values
-  int64_t window_size = 124;
+  int64_t window_size = -1;
   
   if (method_names.count(kUseAttentionSink)) {
     auto get_result = module->get(kUseAttentionSink);
@@ -265,12 +265,17 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       auto get_result = module->get(kAttentionSinkWindowSize);
       window_size = get_result.get().toScalar().to<int64_t>();
     }
+
+    int64_t max_cache_size = metadata.at(kMaxContextLen);
+    
+    // If window_size is not found in metadata, calculate from max_context_len
+    if (window_size == -1) {
+       window_size = max_cache_size - sink_size; 
+    }
     
     AttentionSinkConfig config;
     config.sink_size = sink_size;
     config.window_size = window_size;
-    
-    int64_t max_cache_size = metadata.at(kMaxContextLen);
     ET_LOG(
         Info,
         "Creating AttentionSinkIOManager with sink_size=%" PRId64

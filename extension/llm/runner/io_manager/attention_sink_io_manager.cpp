@@ -14,10 +14,10 @@ namespace llm {
 
 AttentionSinkIOManager::AttentionSinkIOManager(
     ET_MODULE_NAMESPACE::Module& module,
-    int64_t max_cache_size,
+    int64_t max_context_len,
     AttentionSinkConfig config)
     : IOManager(module),
-      max_cache_size_(max_cache_size),
+      max_context_len_(max_context_len),
       config_(config),
       logical_pos_(0) {
   ET_CHECK_MSG(
@@ -39,10 +39,10 @@ runtime::Error AttentionSinkIOManager::load(
   ET_LOG(
       Info,
       "AttentionSinkIOManager loaded: sink_size=%" PRId64
-      ", window_size=%" PRId64 ", max_cache_size=%" PRId64,
+      ", window_size=%" PRId64 ", max_context_len=%" PRId64,
       config_.sink_size,
       config_.window_size,
-      max_cache_size_);
+      max_context_len_);
 
   return runtime::Error::Ok;
 }
@@ -79,8 +79,14 @@ AttentionSinkIOManager::prepare_prefill(
       logical_pos_,
       is_cache_full() ? "true" : "false");
 
-  // Pass through to model as-is. The model's KVCacheWithAttentionSink
-  // (or RingKVCache) handles position-to-index mapping and mask creation.
+  // Check if we need to provide cache_indices (3rd input)
+  auto method_meta = module_.method_meta(prefill_method);
+  if (method_meta.ok() && method_meta->num_inputs() == 3) {
+    update_indices_tensor(logical_start, seq_len);
+    return std::vector<runtime::EValue>{input, start_pos, *indices_tensor_};
+  }
+
+  // Pass through to model as-is. 
   return std::vector<runtime::EValue>{input, start_pos};
 }
 
@@ -103,9 +109,66 @@ AttentionSinkIOManager::prepare_decode(
       logical_pos_,
       is_cache_full() ? "true" : "false");
 
-  // Pass through to model as-is. The model's KVCacheWithAttentionSink
-  // (or RingKVCache) handles position-to-index mapping and mask creation.
+  // Check if we need to provide cache_indices (3rd input)
+  auto method_meta = module_.method_meta(decode_method);
+  if (method_meta.ok() && method_meta->num_inputs() == 3) {
+    update_indices_tensor(logical_start, seq_len);
+    return std::vector<runtime::EValue>{input, start_pos, *indices_tensor_};
+  }
+
+  // Pass through to model as-is.
   return std::vector<runtime::EValue>{input, start_pos};
+}
+
+void AttentionSinkIOManager::update_indices_tensor(
+    int64_t logical_start,
+    int64_t seq_len) {
+  int64_t ring_size = config_.window_size * 2;
+  indices_buffer_.resize(seq_len);
+  for (int64_t i = 0; i < seq_len; ++i) {
+    int64_t pos = logical_start + i;
+    if (pos < config_.sink_size) {
+      indices_buffer_[i] = pos;
+    } else {
+      indices_buffer_[i] =
+          config_.sink_size + (pos - config_.sink_size) % ring_size;
+    }
+  }
+
+  // Wrap in tensor
+  if (!indices_tensor_impl_ || indices_tensor_impl_->size(0) != seq_len) {
+    sizes_vec_ = {static_cast<exec_aten::TensorImpl::SizesType>(seq_len)};
+    dim_order_vec_ = {0};
+    strides_vec_ = {1};
+
+    indices_tensor_impl_ = std::make_unique<exec_aten::TensorImpl>(
+        exec_aten::ScalarType::Long,
+        1,
+        sizes_vec_.data(),
+        static_cast<void*>(indices_buffer_.data()),
+        dim_order_vec_.data(),
+        strides_vec_.data(),
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
+    indices_tensor_ =
+        std::make_unique<exec_aten::Tensor>(indices_tensor_impl_.get());
+  } else {
+    // Update logic if buffer moved (vector resize might reallocate)
+    // Just re-create to be safe as data ptr is used
+    sizes_vec_ = {static_cast<exec_aten::TensorImpl::SizesType>(seq_len)};
+    dim_order_vec_ = {0};
+    strides_vec_ = {1};
+
+    indices_tensor_impl_ = std::make_unique<exec_aten::TensorImpl>(
+        exec_aten::ScalarType::Long,
+        1,
+        sizes_vec_.data(),
+        static_cast<void*>(indices_buffer_.data()),
+        dim_order_vec_.data(),
+        strides_vec_.data(),
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
+    indices_tensor_ =
+        std::make_unique<exec_aten::Tensor>(indices_tensor_impl_.get());
+  }
 }
 
 } // namespace llm

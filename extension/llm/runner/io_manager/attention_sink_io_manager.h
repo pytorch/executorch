@@ -14,6 +14,7 @@
 namespace executorch {
 namespace extension {
 namespace llm {
+namespace exec_aten = ::executorch::aten;
 
 /**
  * @brief Configuration for attention sink behavior.
@@ -67,7 +68,7 @@ class ET_EXPERIMENTAL AttentionSinkIOManager : public IOManager {
    */
   AttentionSinkIOManager(
       ET_MODULE_NAMESPACE::Module& module,
-      int64_t max_cache_size,
+      int64_t max_context_len,
       AttentionSinkConfig config = AttentionSinkConfig());
 
   /**
@@ -133,18 +134,35 @@ class ET_EXPERIMENTAL AttentionSinkIOManager : public IOManager {
    * overwritten.
    */
   bool is_cache_full() const {
-    return logical_pos_ >= max_cache_size_;
+    return logical_pos_ >= max_context_len_;
   }
 
  private:
   /// Maximum size of the KV cache in the model
-  int64_t max_cache_size_;
+  int64_t max_context_len_;
 
   /// Attention sink configuration
   AttentionSinkConfig config_;
 
   /// Current logical position (may exceed max_cache_size)
   int64_t logical_pos_ = 0;
+
+  /**
+   * @brief Update the internal indices buffer and tensor for a given position and length.
+   */
+  void update_indices_tensor(int64_t logical_start, int64_t seq_len);
+
+  // Buffer for cache indices
+  std::vector<int64_t> indices_buffer_;
+
+  // Tensor wrapper for indices
+  std::unique_ptr<exec_aten::TensorImpl> indices_tensor_impl_;
+  std::unique_ptr<exec_aten::Tensor> indices_tensor_;
+
+  // Metadata storage for TensorImpl
+  std::vector<exec_aten::TensorImpl::SizesType> sizes_vec_;
+  std::vector<exec_aten::TensorImpl::DimOrderType> dim_order_vec_;
+  std::vector<exec_aten::TensorImpl::StridesType> strides_vec_;
 };
 
 } // namespace llm
