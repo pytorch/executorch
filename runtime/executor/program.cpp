@@ -128,6 +128,16 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   }
   EXECUTORCH_END_PROF(prof_tok);
 
+  // Minimum size: 4-byte root offset + 4-byte file identifier.
+  constexpr size_t kMinBufferSize =
+      sizeof(flatbuffers::uoffset_t) + flatbuffers::kFileIdentifierLength;
+  ET_CHECK_OR_RETURN_ERROR(
+      program_data->size() >= kMinBufferSize,
+      InvalidProgram,
+      "Program data size %zu is too small (minimum %zu)",
+      program_data->size(),
+      kMinBufferSize);
+
   // Make sure the magic header matches the expected version.
   if (!executorch_flatbuffer::ProgramBufferHasIdentifier(
           program_data->data())) {
@@ -167,20 +177,18 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 #endif
   } else {
     // Minimal verification: check that the root table offset is within bounds.
-    // The first 4 bytes of the flatbuffer contain an offset to the root table.
-    ET_CHECK_OR_RETURN_ERROR(
-        program_data->size() >= sizeof(flatbuffers::uoffset_t),
-        InvalidProgram,
-        "Program data size %zu is too small for flatbuffer header",
-        program_data->size());
+    // The minimum size check above guarantees we can safely read the offset.
     uint32_t root_offset = flatbuffers::ReadScalar<flatbuffers::uoffset_t>(
         program_data->data());
-    // The root table is at buf + root_offset, and must have at least a
-    // vtable offset (soffset_t) at that position.
+    // The root table is at buf + root_offset. It must not point into the
+    // header (offset + file identifier = 8 bytes) and must leave room for
+    // at least a vtable offset (uoffset_t) at its position.
     ET_CHECK_OR_RETURN_ERROR(
-        root_offset <= program_data->size() - sizeof(flatbuffers::uoffset_t),
+        root_offset >= kMinBufferSize &&
+            root_offset <=
+                program_data->size() - sizeof(flatbuffers::uoffset_t),
         InvalidProgram,
-        "Root table offset %u exceeds program size %zu",
+        "Root table offset %u is invalid for program size %zu",
         root_offset,
         program_data->size());
   }
