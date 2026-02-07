@@ -474,7 +474,6 @@ class TestQNN(unittest.TestCase):
                     dump_intermediate_outputs=(
                         True if expected_intermediate_events != -1 else False
                     ),
-                    backend=get_backend_type(self.backend),
                     expected_input_shape=(
                         (tensor.shape for tensor in processed_inputs)
                         if check_io_shape
@@ -490,6 +489,7 @@ class TestQNN(unittest.TestCase):
                 adb.push(
                     inputs=[processed_inputs],
                     files=op_package_paths,
+                    backends={get_backend_type(self.backend)},
                 )
                 adb.extra_cmds += extra_cmds
                 if save_inference_speed:
