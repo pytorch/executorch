@@ -50,6 +50,7 @@ from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
+from .decompose_gru_pass import DecomposeGruPass  # noqa
 from .decompose_index_select_to_gather_pass import (  # noqa
     DecomposeIndexSelectToGatherPass,
 )
