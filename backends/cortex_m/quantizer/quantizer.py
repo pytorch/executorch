@@ -151,6 +151,22 @@ class PatternQuantizer(Quantizer):
         """Returns True if node is the second parameter of the given parameters"""
         return len(params) == 2 and node == params[1]
 
+    def _mark_param_node_as_annotated(self, node: Node) -> None:
+        """
+        Mark a weight/bias parameter node as annotated.
+
+        This is necessary for FoldAndAnnotateQParamsPass to recognize the node
+        as part of a quantized computation path. The ARM quantizer does this
+        via mark_annotated=True in _QuantProperty.
+        """
+        if Q_ANNOTATION_KEY not in node.meta:
+            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation()
+        node.meta[Q_ANNOTATION_KEY]._annotated = True
+        annotation_info = ArmAnnotationInfo(quantized=True)
+        meta_custom = node.meta.get("custom", {})
+        meta_custom[ArmAnnotationInfo.CUSTOM_META_KEY] = dict(annotation_info)
+        node.meta["custom"] = meta_custom
+
     def annotate_match(
         self, match: List[Node], config: QuantizationConfig, model: GraphModule
     ) -> None:
@@ -168,6 +184,7 @@ class PatternQuantizer(Quantizer):
         for node in match:
             input_qspec_map = {}
             output_qspec = None
+            param_nodes_to_mark = []  # Track weight/bias nodes to mark as annotated
 
             params = [n for n in node.all_input_nodes if self.is_parameter(n, model)]
             # Check that the assumptions on number of parameters hold to avoid silent errors
@@ -181,9 +198,11 @@ class PatternQuantizer(Quantizer):
                     continue
                 if self.is_weight(input_node, params, model):
                     input_qspec_map[input_node] = config.weight if config else None
+                    param_nodes_to_mark.append(input_node)
                 elif self.is_bias(input_node, params, model):
                     # Bias qspec is derived from input + weight qspecs
                     input_qspec_map[input_node] = config.bias(node) if config else None
+                    param_nodes_to_mark.append(input_node)
                 elif input_node not in match:
                     input_qspec_map[input_node] = (
                         config.input_activation if config else None
@@ -193,6 +212,11 @@ class PatternQuantizer(Quantizer):
                 output_qspec = config.output_activation if config else None
 
             mark_node_as_annotated(node, input_qspec_map, output_qspec)
+
+            # Mark weight/bias parameter nodes as annotated so FoldAndAnnotateQParamsPass
+            # recognizes them and properly folds Q/DQ nodes around them
+            for param_node in param_nodes_to_mark:
+                self._mark_param_node_as_annotated(param_node)
 
     def annotate(self, model: GraphModule) -> None:
         nodes = self.node_finder.find_nodes(model)
@@ -256,6 +280,11 @@ class SharedQspecQuantizer(Quantizer):
         torch.ops.aten._unsafe_view.default,
         torch.ops.aten.unflatten.int,
         torch.ops.aten.flatten.using_ints,
+        # Additional passthrough ops for MobileNetV2 and similar architectures
+        torch.ops.aten.hardtanh.default,
+        torch.ops.aten.hardtanh_.default,
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.dropout.default,
     ]
 
     def __init__(self, targets: Optional[List[OpOverload]] = None) -> None:
