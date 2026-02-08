@@ -10,6 +10,21 @@ from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.nn.parameter import Parameter
 from torch.nn.utils import fuse_linear_bn_weights
+from torchao.quantization.pt2e.prepare import _is_activation_post_process_node
+
+
+def _unwrap_if_fq(node: Node, named_modules: dict):
+    target_node = node
+
+    if _is_activation_post_process_node(node, named_modules):
+        if len(node.args) >= 1:
+            target_node = node.args[0]
+        else:
+            raise ValueError(
+                f"FakeQuantize node '{node}' should have at least one argument, but has {len(node.args)}."
+            )
+
+    return target_node
 
 
 class FuseBatchNormWithLinearPass(PassBase):
@@ -76,6 +91,8 @@ class FuseBatchNormWithLinearPass(PassBase):
                 graph_module, made_changes
             )  # No batch norm nodes in the model.
 
+        named_modules = dict(graph_module.named_modules(remove_duplicate=False))
+
         for node in graph_module.graph.nodes:
             if not _is_batch_norm(node):
                 continue  # Not BatchNorm.
@@ -86,9 +103,16 @@ class FuseBatchNormWithLinearPass(PassBase):
                 continue  # Something other than a Linear node comes before the BatchNorm.
 
             linear_node = bn_node.args[0]
-            linear_weight_node = linear_node.args[1]
-            linear_bias_node = (
+            linear_weight_node_or_fq = linear_node.args[1]
+            linear_bias_node_or_fq = (
                 linear_node.args[2] if len(linear_node.args) > 2 else None
+            )
+
+            linear_weight_node = _unwrap_if_fq(
+                linear_weight_node_or_fq, named_modules=named_modules
+            )
+            linear_bias_node = _unwrap_if_fq(
+                linear_bias_node_or_fq, named_modules=named_modules
             )
 
             linear_w = self._get_tensor_constant_from_node(
