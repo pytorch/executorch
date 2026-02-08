@@ -278,7 +278,7 @@ class RingKVCache(KVCache):
         [0, 1, 2, 3, 4, NA, NA, NA] After cache update we would have
         [8, 1, 2, 3, 4, 5, 6, 7]. We kicked out token at pos = 0. However, the
         current step still has access to [pos - sliding_window_size, pos] tokens.
-        
+
         To make sure we dont over attend, i.e. we dont have pos = 5
         to attend to pos = 1, mask calculaton has to account for the sliding window
         size.
@@ -486,21 +486,30 @@ class AttentionMHA(Attention):
 
         if self.use_kv_cache:
             assert input_pos is not None
-            if self.enable_dynamic_shape:
+            is_ring = getattr(self.kv_cache, "is_ring_buffer", False)
+            if is_ring:
+                # Ring buffer models: positions can exceed max_context_len.
+                # The ring buffer handles wrapping via modular arithmetic.
+                # The causal mask is computed dynamically from cache_positions,
+                # so we don't use the pre-computed self.mask here.
+                k, v = self.kv_cache.update(input_pos, k, v)
+                start_pos = input_pos[0].item()
+                torch._check_is_size(start_pos)
+                attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(
+                    start_pos, seqlen
+                )
+            elif self.enable_dynamic_shape:
                 start_pos = input_pos[-1].item()
                 torch._check_is_size(start_pos)
                 torch._check(start_pos < self.max_context_len)
                 seq_length = q.size(2)
                 # pyre-ignore: Incompatible parameter type [6]
                 attn_mask = self.mask.narrow(0, start_pos, seq_length)
+                k, v = self.kv_cache.update(input_pos, k, v)
             else:
                 # mask is always 2D
                 attn_mask = self.mask[input_pos]
-            k, v = self.kv_cache.update(input_pos, k, v)
-            if getattr(self.kv_cache, "is_ring_buffer", False):
-                attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(
-                    input_pos[0].item(), seqlen
-                )
+                k, v = self.kv_cache.update(input_pos, k, v)
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
             return self.wo(output), None
 
