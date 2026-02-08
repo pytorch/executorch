@@ -920,6 +920,56 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test_against_golden) {
   }
 }
 
+// Test that texture-backed tensors can serve all metadata UBO requests
+// (sizes, strides, dim_order, numel, logical_limits) without exceeding the
+// pre-allocated UBO budget. This is a regression test for an issue where
+// calculate_max_ubo_nbytes() only allocated 2 fields for texture tensors
+// (sizes + logical_limits), but operators like Linear/MatMul unconditionally
+// request strides_ubo() and numel_ubo() on all tensors regardless of storage
+// type, causing an assertion failure:
+//   "Uniform data allocation has exceeded Tensor uniform buffer size"
+TEST_F(VulkanComputeAPITest, texture_tensor_ubo_metadata_budget_test) {
+  // Create a texture-backed tensor (the default for most Vulkan ops)
+  std::vector<int64_t> sizes = {4, 8, 8};
+  vTensor texture_tensor = vTensor(
+      context(),
+      sizes,
+      vkapi::kFloat,
+      utils::StorageType::TEXTURE_3D,
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+
+  // These two UBOs are within the original 2-field texture budget:
+  // Field 1: sizes (ivec4)
+  EXPECT_NO_THROW(texture_tensor.sizes_ubo());
+  // Field 2: logical_limits (uvec3)
+  EXPECT_NO_THROW(texture_tensor.logical_limits_ubo());
+
+  // These UBOs exceed the original 2-field texture budget but are
+  // unconditionally requested by ops like Linear, MatMul, etc.
+  // Without the fix, these will trigger:
+  //   VK_CHECK_COND((uniforms_size_ + ubo_nbytes) <= max_ubo_nbytes_)
+  // Field 3: strides (ivec4) - FAILS without fix
+  EXPECT_NO_THROW(texture_tensor.strides_ubo());
+  // Field 4: numel (int32) - FAILS without fix
+  EXPECT_NO_THROW(texture_tensor.numel_ubo());
+  // Field 5: dim_order (ivec4) - FAILS without fix
+  EXPECT_NO_THROW(texture_tensor.dim_order_ubo());
+
+  // Also verify a buffer-backed tensor still works (should always have had
+  // enough budget for all 4+ fields)
+  vTensor buffer_tensor = vTensor(
+      context(),
+      sizes,
+      vkapi::kFloat,
+      utils::StorageType::BUFFER,
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+
+  EXPECT_NO_THROW(buffer_tensor.sizes_ubo());
+  EXPECT_NO_THROW(buffer_tensor.strides_ubo());
+  EXPECT_NO_THROW(buffer_tensor.dim_order_ubo());
+  EXPECT_NO_THROW(buffer_tensor.numel_ubo());
+}
+
 TEST_F(VulkanComputeAPITest, virtual_transpose_test) {
   std::vector<int64_t> sizes = {7, 9, 11, 13};
   // (dim0, dim1), new_sizes, new_dim_order, new_axis_map, new_packed_dim_idx
