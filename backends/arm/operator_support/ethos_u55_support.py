@@ -301,10 +301,10 @@ class EthosU55ViewCheck(OperatorSupportBase):
         output_shape: shape_t,
         dtype: torch.dtype | None,
     ) -> bool:
-        """Validate high-rank reshape scenarios against U55 restrictions.
-        If either input or output rank of node is >4, figuring out whether
-        a transpose is needed or not is complex. Instead, conservatively
-        check that the corresponding transpose is supported on hardware.
+        """Validate high-rank reshape scenarios against U55 restrictions. If
+        either input or output rank of node is >4, figuring out whether a
+        transpose is needed or not is complex. Instead, conservatively check
+        that the corresponding transpose is supported on hardware.
 
         Args:
             node (fx.Node): Reshape node under inspection.
@@ -364,10 +364,9 @@ class EthosU55ViewCheck(OperatorSupportBase):
     def _transpose_requirements(
         self, input_shape: shape_t, output_shape: shape_t
     ) -> tuple[bool, bool]:
-        """Determine if reshaping requires input or output transposes.
-        For ranks >4, assume transpose is needed as we cannot determine
-        the spatial rank reliably which is needed to determine if a transpose
-        is needed.
+        """Determine if reshaping requires input or output transposes. For ranks
+        >4, assume transpose is needed as we cannot determine the spatial rank
+        reliably which is needed to determine if a transpose is needed.
 
         Args:
             input_shape (shape_t): Original tensor shape.
@@ -423,7 +422,8 @@ class EthosU55ViewCheck(OperatorSupportBase):
         needs_input_transpose: bool,
         needs_output_transpose: bool,
     ) -> bool:
-        """Apply dtype- and size-based constraints for transpose insertions
+        """Apply dtype- and size-based constraints for transpose insertions.
+
         based on:
             - NCHW -> NHWC or NHWC -> NCHW transposes are not supported in int32.
             - Transposes with product of axes >65536 are not supported.

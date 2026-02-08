@@ -128,7 +128,10 @@ def to_quantized_edge_program(
     )
     partitioners = [
         NeutronPartitioner(
-            compile_spec, _neutron_target_spec, custom_delegation_options
+            compile_spec,
+            _neutron_target_spec,
+            custom_delegation_options,
+            exir_program_aten__module_quant.state_dict(),
         )
     ]
 

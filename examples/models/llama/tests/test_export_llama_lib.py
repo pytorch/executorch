@@ -7,9 +7,15 @@
 
 import unittest
 
-from executorch.backends.arm.quantizer.arm_quantizer import TOSAQuantizer
-
 from executorch.devtools.backend_debug import get_delegation_info
+
+try:
+    from executorch.backends.arm.quantizer.arm_quantizer import TOSAQuantizer
+
+    HAS_ARM_BACKEND = True
+except ImportError:
+    HAS_ARM_BACKEND = False
+    TOSAQuantizer = None
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
     build_args_parser,
@@ -53,6 +59,7 @@ class ExportLlamaLibTest(unittest.TestCase):
         for op, _op_info in delegation_info.delegation_by_operator.items():
             self.assertTrue(op not in UNWANTED_OPS)
 
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
     def test_get_quantizer_and_quant_params_returns_tosa_quantizer(self):
         llm_config = LlmConfig()
         llm_config.backend.tosa.enabled = True
