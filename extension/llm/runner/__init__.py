@@ -14,8 +14,12 @@ enabling processing of mixed inputs (text, images, audio) and text generation.
 try:
     # Import shared components from the compiled C++ extension
     from executorch.extension.llm.runner._llm_runner import (  # noqa: F401
+        ChatConversation,
+        ChatMessage,
+        ChatTemplateType,
         GenerationConfig,
         Image,
+        JinjaChatFormatter,
         make_audio_input,
         make_image_input,
         make_raw_audio_input,
@@ -222,8 +226,12 @@ setattr(MultimodalRunner, "generate_text_hf", generate_text_hf)  # noqa B010
 
 
 __all__ = [
+    "ChatConversation",
+    "ChatMessage",
+    "ChatTemplateType",
     "GenerationConfig",
     "Image",
+    "JinjaChatFormatter",
     "make_audio_input",
     "make_image_input",
     "make_raw_audio_input",

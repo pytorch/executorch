@@ -111,11 +111,15 @@ def define_common_targets():
         runtime.cxx_library(
             name = "runner_lib" + aten_suffix,
             exported_headers = [
+                "../chat_template/chat_templates.h",
+                "chat_types.h",
+                "jinja_chat_formatter.h",
                 "text_llm_runner.h",
                 "llm_runner_helper.h",
                 "constants.h",
             ],
             srcs = [
+                "jinja_chat_formatter.cpp",
                 "text_llm_runner.cpp",
                 "llm_runner_helper.cpp",
                 "multimodal_runner.cpp",
@@ -137,5 +141,6 @@ def define_common_targets():
                 "//pytorch/tokenizers:sentencepiece",
                 "//pytorch/tokenizers:tekken",
                 "//pytorch/tokenizers:tiktoken",
+                "//third-party/jinja2cpp:jinja2cpp",
             ],
         )

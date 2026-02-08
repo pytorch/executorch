@@ -13,6 +13,9 @@
 #include <torch/python.h>
 
 #include <executorch/extension/llm/runner/audio.h>
+#include <executorch/extension/llm/chat_template/chat_templates.h>
+#include <executorch/extension/llm/runner/chat_types.h>
+#include <executorch/extension/llm/runner/jinja_chat_formatter.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
@@ -211,6 +214,48 @@ PYBIND11_MODULE(_llm_runner, m) {
             " echo=" + (config.echo ? "True" : "False") +
             " warming=" + (config.warming ? "True" : "False") + ">";
       });
+
+  // Bind chat template helpers
+  py::class_<ChatMessage>(m, "ChatMessage")
+      .def(py::init<std::string, std::string>(), py::arg("role"),
+           py::arg("content"))
+      .def_readwrite("role", &ChatMessage::role)
+      .def_readwrite("content", &ChatMessage::content)
+      .def("__repr__", [](const ChatMessage& msg) {
+        std::string content_preview = msg.content.substr(0, 50);
+        if (msg.content.length() > 50) {
+          content_preview += "...";
+        }
+        return "<ChatMessage role='" + msg.role + "' content='" +
+            content_preview + "'>";
+      });
+
+  py::class_<ChatConversation>(m, "ChatConversation")
+      .def(py::init<>())
+      .def_readwrite("messages", &ChatConversation::messages)
+      .def_readwrite("bos_token", &ChatConversation::bos_token)
+      .def_readwrite("eos_token", &ChatConversation::eos_token)
+      .def_readwrite("add_generation_prompt",
+                     &ChatConversation::add_generation_prompt);
+
+  py::enum_<ChatTemplateType>(m, "ChatTemplateType")
+      .value("None_", ChatTemplateType::None)
+      .value("Llama3", ChatTemplateType::Llama3)
+      .value("Llama32", ChatTemplateType::Llama32)
+      .value("Gemma3", ChatTemplateType::Gemma3)
+      .value("Custom", ChatTemplateType::Custom);
+
+  py::class_<JinjaChatFormatter>(m, "JinjaChatFormatter")
+      .def_static("from_template", &JinjaChatFormatter::fromTemplate,
+                  py::arg("template_type"))
+      .def_static("from_string", &JinjaChatFormatter::fromString,
+                  py::arg("template_str"))
+      .def_static("from_file", &JinjaChatFormatter::fromFile, py::arg("path"))
+      .def("format", &JinjaChatFormatter::format, py::arg("prompt"),
+           py::arg("system_prompt") = "")
+      .def("format_conversation", &JinjaChatFormatter::formatConversation,
+           py::arg("conversation"))
+      .def("includes_bos", &JinjaChatFormatter::includesBos);
 
   // Bind Stats
   py::class_<Stats>(m, "Stats")

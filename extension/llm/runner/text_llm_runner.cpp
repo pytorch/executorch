@@ -14,16 +14,26 @@
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <pytorch/tokenizers/hf_tokenizer.h>
-#include <pytorch/tokenizers/llama2c_tokenizer.h>
-#include <pytorch/tokenizers/sentencepiece.h>
-#include <pytorch/tokenizers/tiktoken.h>
 
 namespace executorch::extension::llm {
 
 using ::executorch::extension::Module;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
+
+namespace {
+// Check if a string looks like a special token (e.g., <|...|>, <bos>, </s>)
+bool is_special_token(const std::string& text) {
+  if (text.empty()) {
+    return false;
+  }
+  // Match patterns like <|...|>, <bos>, </s>, <start_of_turn>, etc.
+  if (text.front() == '<' && text.back() == '>') {
+    return true;
+  }
+  return false;
+}
+} // namespace
 
 TextLLMRunner::TextLLMRunner(
     std::unordered_map<std::string, int64_t> metadata,
@@ -98,8 +108,11 @@ Error TextLLMRunner::generate(
   std::function<void(const std::string&)> wrapped_callback =
       [token_callback, config](const std::string& piece) {
         if (!config.warming) {
-          llm::safe_printf(piece.c_str());
-          fflush(stdout);
+          // Filter out special tokens when not echoing or for cleaner output
+          if (!is_special_token(piece)) {
+            llm::safe_printf(piece.c_str());
+            fflush(stdout);
+          }
         }
         if (token_callback) {
           token_callback(piece);

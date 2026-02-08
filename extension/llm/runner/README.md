@@ -89,6 +89,24 @@ MultimodalRunner Supported Model Architecture:
 
 ## Quick Start
 
+## Chat Templates (Jinja2)
+
+The runner supports Jinja2 chat templates. For local testing with `llama_main`,
+sample templates are stored in `extension/llm/runner/templates/`. Use
+`--chat_template_file` to point to a template file, for example:
+
+```bash
+cmake-out/examples/models/llama/llama_main \
+  --model_path=<model.pte> \
+  --tokenizer_path=<tokenizer.model> \
+  --chat_template_file=extension/llm/runner/templates/tool_chat_template_llama3.2_pythonic.jinja \
+  --prompt="Hello"
+```
+
+Notes:
+- Match the template to the model family (e.g., Llama templates for Llama models).
+- For clean text output, pass `--echo=false` so prompt formatting tokens are not printed.
+
 ### TextLLMRunner Example
 
 ```cpp

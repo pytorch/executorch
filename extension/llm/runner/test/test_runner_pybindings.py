@@ -18,8 +18,12 @@ import unittest
 
 import torch
 from executorch.extension.llm.runner import (
+    ChatConversation,
+    ChatMessage,
+    ChatTemplateType,
     GenerationConfig,
     Image,
+    JinjaChatFormatter,
     make_image_input,
     make_text_input,
     MultimodalInput,
@@ -256,3 +260,30 @@ class TestHelperFunctions(unittest.TestCase):
         img_tensor_rgba = torch.ones((4, 50, 50), dtype=torch.uint8) * 128
         image_input_rgba = make_image_input(img_tensor_rgba)
         self.assertTrue(image_input_rgba.is_image())
+
+
+class TestChatTemplateBindings(unittest.TestCase):
+    """Test Jinja chat template bindings."""
+
+    def test_format_llama3(self):
+        formatter = JinjaChatFormatter.from_template(ChatTemplateType.Llama3)
+        result = formatter.format("Hello!", "System prompt")
+        self.assertIn("<|begin_of_text|>", result)
+        self.assertIn("System prompt", result)
+        self.assertIn("Hello!", result)
+        self.assertIn("<|start_header_id|>assistant", result)
+
+    def test_format_conversation(self):
+        formatter = JinjaChatFormatter.from_template(ChatTemplateType.Gemma3)
+        conversation = ChatConversation()
+        conversation.bos_token = "<bos>"
+        conversation.eos_token = "<end_of_turn>"
+        conversation.add_generation_prompt = True
+        conversation.messages = [
+            ChatMessage("user", "Hi"),
+            ChatMessage("assistant", "Hello"),
+        ]
+        result = formatter.format_conversation(conversation)
+        self.assertIn("<start_of_turn>user", result)
+        self.assertIn("Hi", result)
+        self.assertIn("<start_of_turn>model", result)

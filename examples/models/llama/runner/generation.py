@@ -56,6 +56,9 @@ class LlamaRunner(ABC):
         max_batch_size: int,
         use_kv_cache: bool,
         vocab_size: int,
+        chat_format: str = "llama3",
+        system_prompt: str = "",
+        chat_template_file: Optional[str] = None,
         device: str = "cpu",
     ):
         """
@@ -74,6 +77,10 @@ class LlamaRunner(ABC):
         self.use_kv_cache = use_kv_cache
         self.tokenizer = get_tokenizer(tokenizer_path, tokenizer_config_path)
         self.device = device
+        self.chat_format = chat_format
+        self.system_prompt = system_prompt
+        self.chat_template_file = chat_template_file
+        self._chat_formatter = None
         # For some models like qwen, mismatch is acceptable: https://github.com/QwenLM/Qwen2.5/issues/466#issuecomment-2146759706
         if vocab_size != self.tokenizer.n_words:
             print(
@@ -207,8 +214,15 @@ class LlamaRunner(ABC):
         prompt = input("Me: ")
         while prompt and prompt != exit_prompt:
             print("LLM: ", end="", flush=True)
+            formatter = self._get_chat_formatter()
+            formatted_prompt = (
+                formatter.format(prompt, self.system_prompt)
+                if formatter is not None
+                else prompt
+            )
+            bos = not (formatter is not None and formatter.includes_bos())
             prompt_tokens = self.tokenizer.encode(
-                self._format_prompt(prompt), bos=True, eos=False
+                formatted_prompt, bos=bos, eos=False
             )
             generated_tokens = self.generate(
                 prompt_tokens=pre_stop_token + prompt_tokens,
@@ -227,8 +241,44 @@ class LlamaRunner(ABC):
         return tokens
 
     def _format_prompt(self, prompt: str) -> str:
-        return f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+        formatter = self._get_chat_formatter()
+        if formatter is None:
+            return prompt
+        return formatter.format(prompt, self.system_prompt)
 
-You are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>
+    def _resolve_template_type(self, chat_template_type) -> Optional["object"]:
+        normalized = (self.chat_format or "").lower()
+        if normalized in ("", "none"):
+            return None
+        if normalized in ("llama3", "llama3.2", "llama32", "llama3_2"):
+            return chat_template_type.Llama3
+        if normalized == "gemma3":
+            return chat_template_type.Gemma3
+        return None
 
-{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
+    def _get_chat_formatter(self):
+        if self._chat_formatter is not None:
+            return self._chat_formatter
+        try:
+            from executorch.extension.llm.runner import (
+                ChatTemplateType,
+                JinjaChatFormatter,
+            )
+        except ImportError as exc:
+            raise RuntimeError(
+                "Jinja chat templates require ExecuTorch pybindings. "
+                "Build with EXECUTORCH_BUILD_PYBIND=ON."
+            ) from exc
+
+        if self.chat_template_file:
+            self._chat_formatter = JinjaChatFormatter.from_file(
+                self.chat_template_file
+            )
+            return self._chat_formatter
+
+        template_type = self._resolve_template_type(ChatTemplateType)
+        if template_type is None:
+            return None
+
+        self._chat_formatter = JinjaChatFormatter.from_template(template_type)
+        return self._chat_formatter
