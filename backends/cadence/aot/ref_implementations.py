@@ -1019,11 +1019,13 @@ def quantized_w8a32_gru(
     assert inputs.dtype == torch.float32
     assert hidden.dtype == torch.float32
 
-    if len(hidden.shape) > 2:
-        raise ValueError("Hidden state must be 2D or 1D")
-
-    if len(hidden.shape) == 2 and hidden.shape[0] != 1:
-        raise ValueError("Leading dimension of hidden state must be 1")
+    # Hidden state can be 1D, 2D (1, hidden_dim), or 3D (1, 1, hidden_dim).
+    # All leading dimensions must be 1.
+    for d in range(len(hidden.shape) - 1):
+        if hidden.shape[d] != 1:
+            raise ValueError(
+                f"Leading dimension {d} of hidden state must be 1, got {hidden.shape[d]}"
+            )
 
     original_hidden_shape = hidden.shape
     hidden = hidden.view(-1)
@@ -1059,7 +1061,7 @@ def quantized_w8a32_gru(
 
     assert new_hidden.shape == original_hidden_shape
 
-    new_hidden = new_hidden.view(-1)
+    new_hidden = new_hidden.view(original_hidden_shape)
     return torch.stack([new_hidden, new_hidden], dim=0)
 
 

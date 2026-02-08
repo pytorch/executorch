@@ -2952,7 +2952,7 @@ class TestRefImplementations(unittest.TestCase):
                     b_h_scale,
                 )
             self.assertIn(
-                "Leading dimension of hidden state must be 1", str(context.exception)
+                "Leading dimension 0 of hidden state must be 1", str(context.exception)
             )
             return
 
@@ -2977,8 +2977,8 @@ class TestRefImplementations(unittest.TestCase):
         )
         self.assertEqual(
             output.shape,
-            (2, hidden.shape[-1]),
-            f"Output shape should match {(2, hidden.shape[-1])} in {name}",
+            (2, *hidden.shape),
+            f"Output shape should match {(2, *hidden.shape)} in {name}",
         )
         assert isinstance(output, torch.Tensor)
 
