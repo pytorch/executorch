@@ -183,3 +183,34 @@ DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner 
 | `--tokenizer_path` | Path to tokenizer file (default: `tokenizer.json`) |
 | `--data_path` | Path to data file (.ptd) for delegate data (required for CUDA) |
 | `--timestamps`     | Timestamp output mode: `none\|token\|word\|segment\|all` (default: `segment`) |
+| `--warmup` | Run warmup iterations before timed inference (default: `false`) |
+| `--warmup_iterations` | Number of warmup iterations (default: `1`, only used if `--warmup` is set) |
+
+### Benchmarking
+
+To measure inference time with proper warmup:
+
+```bash
+# Run with warmup (1 iteration by default)
+DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner \
+  --model_path examples/models/parakeet/parakeet_metal/model.pte \
+  --audio_path /path/to/audio.wav \
+  --tokenizer_path examples/models/parakeet/parakeet_metal/tokenizer.model \
+  --warmup
+
+# Run with multiple warmup iterations
+DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner \
+  --model_path examples/models/parakeet/parakeet_metal/model.pte \
+  --audio_path /path/to/audio.wav \
+  --tokenizer_path examples/models/parakeet/parakeet_metal/tokenizer.model \
+  --warmup --warmup_iterations=3
+```
+
+The runner will output inference performance statistics including:
+- **Audio duration**: Length of the input audio in seconds
+- **Preprocessor time**: Time to convert audio to mel spectrogram
+- **Encoder time**: Time to run the acoustic encoder
+- **Decoder time**: Time to run TDT greedy decoding
+- **Total inference time**: End-to-end inference time
+- **Real-time factor (RTF)**: Ratio of inference time to audio duration (lower is better)
+- **Speed**: How many times faster than real-time (higher is better)

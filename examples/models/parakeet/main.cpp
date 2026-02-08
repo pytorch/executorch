@@ -52,6 +52,11 @@ DEFINE_string(
     timestamps,
     "segment",
     "Timestamp output mode: none|token|word|segment|all");
+DEFINE_bool(warmup, false, "Run warmup iterations before timed inference.");
+DEFINE_int32(
+    warmup_iterations,
+    1,
+    "Number of warmup iterations (only used if --warmup is set).");
 
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
@@ -329,6 +334,124 @@ std::vector<Token> greedy_decode_executorch(
   return hypothesis;
 }
 
+struct InferenceStats {
+  long preprocessor_ms = 0;
+  long encoder_ms = 0;
+  long decoder_ms = 0;
+  long total_inference_ms = 0;
+  double audio_duration_s = 0.0;
+  size_t num_tokens = 0;
+};
+
+struct InferenceResult {
+  std::vector<Token> tokens;
+  ::executorch::extension::TensorPtr f_proj;
+  int64_t encoded_len = 0;
+  InferenceStats stats;
+  bool ok = false;
+};
+
+InferenceResult run_inference(
+    Module& model,
+    const std::vector<float>& audio_data,
+    int64_t blank_id,
+    int64_t num_rnn_layers,
+    int64_t pred_hidden,
+    int64_t sample_rate,
+    bool collect_stats = true) {
+  InferenceResult result;
+  result.stats.audio_duration_s =
+      static_cast<double>(audio_data.size()) / static_cast<double>(sample_rate);
+
+  long inference_start = executorch::extension::llm::time_in_ms();
+
+  // Create audio tensor
+  auto audio_tensor = from_blob(
+      const_cast<float*>(audio_data.data()),
+      {static_cast<::executorch::aten::SizesType>(audio_data.size())},
+      ::executorch::aten::ScalarType::Float);
+  std::vector<int64_t> audio_len_data = {
+      static_cast<int64_t>(audio_data.size())};
+  auto audio_len_tensor = from_blob(
+      audio_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
+
+  // Run preprocessor
+  long preprocessor_start = executorch::extension::llm::time_in_ms();
+  auto proc_result = model.execute(
+      "preprocessor",
+      std::vector<::executorch::runtime::EValue>{
+          audio_tensor, audio_len_tensor});
+  if (!proc_result.ok()) {
+    ET_LOG(Error, "Preprocessor forward failed.");
+    return result;
+  }
+  long preprocessor_end = executorch::extension::llm::time_in_ms();
+
+  auto& proc_outputs = proc_result.get();
+  auto mel = proc_outputs[0].toTensor();
+  auto mel_len_tensor_out = proc_outputs[1].toTensor();
+  int64_t mel_len_value = mel_len_tensor_out.const_data_ptr<int64_t>()[0];
+
+  std::vector<int64_t> mel_len_data = {mel_len_value};
+  auto mel_len =
+      from_blob(mel_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
+
+  // Run encoder
+  long encoder_start = executorch::extension::llm::time_in_ms();
+  auto enc_result = model.execute(
+      "encoder", std::vector<::executorch::runtime::EValue>{mel, mel_len});
+  if (!enc_result.ok()) {
+    ET_LOG(Error, "Encoder forward failed.");
+    return result;
+  }
+  long encoder_end = executorch::extension::llm::time_in_ms();
+
+  auto& enc_outputs = enc_result.get();
+  auto f_proj = enc_outputs[0].toTensor();
+  result.encoded_len = enc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
+
+  // Run decoder
+  long decoder_start = executorch::extension::llm::time_in_ms();
+  result.tokens = greedy_decode_executorch(
+      model, f_proj, result.encoded_len, blank_id, num_rnn_layers, pred_hidden);
+  long decoder_end = executorch::extension::llm::time_in_ms();
+
+  long inference_end = executorch::extension::llm::time_in_ms();
+
+  if (collect_stats) {
+    result.stats.preprocessor_ms = preprocessor_end - preprocessor_start;
+    result.stats.encoder_ms = encoder_end - encoder_start;
+    result.stats.decoder_ms = decoder_end - decoder_start;
+    result.stats.total_inference_ms = inference_end - inference_start;
+    result.stats.num_tokens = result.tokens.size();
+  }
+
+  result.ok = true;
+  return result;
+}
+
+void print_inference_stats(const InferenceStats& stats) {
+  double rtf = (stats.audio_duration_s > 0)
+      ? (static_cast<double>(stats.total_inference_ms) / 1000.0) /
+          stats.audio_duration_s
+      : 0.0;
+  double speed_ratio = (rtf > 0) ? 1.0 / rtf : 0.0;
+
+  std::cout << "\n--- Inference Performance Statistics ---" << std::endl;
+  std::cout << "Audio duration: " << stats.audio_duration_s << " s"
+            << std::endl;
+  std::cout << "Preprocessor time: " << stats.preprocessor_ms << " ms"
+            << std::endl;
+  std::cout << "Encoder time: " << stats.encoder_ms << " ms" << std::endl;
+  std::cout << "Decoder time: " << stats.decoder_ms << " ms ("
+            << stats.num_tokens << " tokens)" << std::endl;
+  std::cout << "Total inference time: " << stats.total_inference_ms << " ms"
+            << std::endl;
+  std::cout << "Real-time factor (RTF): " << rtf << std::endl;
+  std::cout << "Speed: " << speed_ratio << "x real-time" << std::endl;
+  std::cout << "-----------------------------------------" << std::endl;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -368,61 +491,6 @@ int main(int argc, char** argv) {
   std::vector<float> audio_data =
       ::executorch::extension::llm::load_wav_audio_data(FLAGS_audio_path);
   ET_LOG(Info, "Loaded %zu audio samples", audio_data.size());
-
-  auto audio_tensor = from_blob(
-      audio_data.data(),
-      {static_cast<::executorch::aten::SizesType>(audio_data.size())},
-      ::executorch::aten::ScalarType::Float);
-  std::vector<int64_t> audio_len_data = {
-      static_cast<int64_t>(audio_data.size())};
-  auto audio_len_tensor = from_blob(
-      audio_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
-
-  ET_LOG(Info, "Running preprocessor...");
-  auto proc_result = model->execute(
-      "preprocessor",
-      std::vector<::executorch::runtime::EValue>{
-          audio_tensor, audio_len_tensor});
-  if (!proc_result.ok()) {
-    ET_LOG(Error, "Preprocessor forward failed.");
-    return 1;
-  }
-  auto& proc_outputs = proc_result.get();
-  auto mel = proc_outputs[0].toTensor();
-  auto mel_len_tensor_out = proc_outputs[1].toTensor();
-  int64_t mel_len_value = mel_len_tensor_out.const_data_ptr<int64_t>()[0];
-
-  // Create mel_len tensor for encoder
-  std::vector<int64_t> mel_len_data = {mel_len_value};
-  auto mel_len =
-      from_blob(mel_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
-
-  ET_LOG(
-      Info,
-      "Mel spectrogram shape: [%ld, %ld, %ld], mel_len: %lld",
-      static_cast<long>(mel.sizes()[0]),
-      static_cast<long>(mel.sizes()[1]),
-      static_cast<long>(mel.sizes()[2]),
-      static_cast<long long>(mel_len_value));
-
-  ET_LOG(Info, "Running encoder...");
-  auto enc_result = model->execute(
-      "encoder", std::vector<::executorch::runtime::EValue>{mel, mel_len});
-  if (!enc_result.ok()) {
-    ET_LOG(Error, "Encoder forward failed.");
-    return 1;
-  }
-  auto& enc_outputs = enc_result.get();
-  auto f_proj = enc_outputs[0].toTensor(); // [B, T, joint_hidden]
-  int64_t encoded_len = enc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
-
-  ET_LOG(
-      Info,
-      "Encoder output (f_proj) shape: [%ld, %ld, %ld], len=%ld",
-      static_cast<long>(f_proj.sizes()[0]),
-      static_cast<long>(f_proj.sizes()[1]),
-      static_cast<long>(f_proj.sizes()[2]),
-      static_cast<long>(encoded_len));
 
   // Query model metadata from constant_methods
   std::vector<::executorch::runtime::EValue> empty_inputs;
@@ -465,10 +533,46 @@ int main(int argc, char** argv) {
       window_stride,
       encoder_subsampling_factor);
 
-  ET_LOG(Info, "Running TDT greedy decode...");
-  auto decoded_tokens = greedy_decode_executorch(
-      *model, f_proj, encoded_len, blank_id, num_rnn_layers, pred_hidden);
+  // Run warmup iterations if requested
+  if (FLAGS_warmup && FLAGS_warmup_iterations > 0) {
+    ET_LOG(
+        Info,
+        "Running %d warmup iteration(s)...",
+        FLAGS_warmup_iterations);
+    for (int i = 0; i < FLAGS_warmup_iterations; ++i) {
+      ET_LOG(Info, "Warmup iteration %d/%d", i + 1, FLAGS_warmup_iterations);
+      auto warmup_result = run_inference(
+          *model,
+          audio_data,
+          blank_id,
+          num_rnn_layers,
+          pred_hidden,
+          sample_rate,
+          false);
+      if (!warmup_result.ok) {
+        ET_LOG(Error, "Warmup iteration %d failed.", i + 1);
+        return 1;
+      }
+    }
+    ET_LOG(Info, "Warmup complete.");
+  }
 
+  // Run timed inference
+  ET_LOG(Info, "Running timed inference...");
+  auto inference_result = run_inference(
+      *model,
+      audio_data,
+      blank_id,
+      num_rnn_layers,
+      pred_hidden,
+      sample_rate,
+      true);
+  if (!inference_result.ok) {
+    ET_LOG(Error, "Inference failed.");
+    return 1;
+  }
+
+  auto& decoded_tokens = inference_result.tokens;
   ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
 
   // Load tokenizer
@@ -491,6 +595,9 @@ int main(int argc, char** argv) {
 #ifdef ET_BUILD_METAL
   executorch::backends::metal::print_metal_backend_stats();
 #endif // ET_BUILD_METAL
+
+  // Print inference timing stats
+  print_inference_stats(inference_result.stats);
 
   if (!timestamp_mode.enabled()) {
     return 0;
