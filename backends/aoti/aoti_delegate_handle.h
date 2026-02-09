@@ -84,8 +84,8 @@ struct AOTIDelegateHandle {
   void* so_handle;
   std::string so_path;
   AOTInductorModelContainerHandle container_handle;
-  void* cuda_stream; // cudaStream_t stored as void* to avoid CUDA header
-                     // dependency
+  void* cuda_stream; // Per-handle CUDA stream. If nullptr, use backend's shared
+                     // stream instead (for skip-copy optimization).
   std::string method_name;
 
   // Function pointers specific to this handle's shared library
