@@ -487,6 +487,8 @@ VULKAN_SCHEMA_SRCS = [
 ]
 
 EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS = [
+    "executorch_alias.cpp",
+    "executorch_update_cross_attn_cache.cpp",
     "op_fallback.cpp",
     "op_fast_hadamard_transform.cpp",
     "op_sdpa.cpp",

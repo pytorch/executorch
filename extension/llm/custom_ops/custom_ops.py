@@ -18,7 +18,7 @@ import torch
 
 from torch._inductor.lowering import lowerings as L, register_lowering
 
-from torch.library import impl
+from torch.library import impl, Library
 
 aten = torch.ops.aten
 
@@ -50,6 +50,12 @@ except:
     assert op2 is not None
 
 custom_ops_lib = torch.library.Library("llama", "IMPL")
+
+# Library for executorch namespace ops - used for WhisperAttention and other features
+# DEF library for defining operator schemas
+executorch_def_lib = torch.library.Library("executorch", "DEF")
+# IMPL library for implementing operators with CompositeExplicitAutograd
+executorch_lib = torch.library.Library("executorch", "IMPL", "CompositeExplicitAutograd")
 
 
 def _validate_params(
@@ -395,28 +401,38 @@ def custom_quantized_sdpa_meta(
     return torch.empty(query.size(), dtype=torch.float32, device="meta")
 
 
-# 1) Define the custom op in the "executorch" namespace with name "alias"
-@torch.library.custom_op("executorch::alias", mutates_args=())
-def custom_alias(x: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    # no copies, just pass-through
-    return x, y
+# Define executorch ops using Library API for proper ExecuTorch export
+# executorch::alias - pass-through op for use in torch.cond branches
+executorch_def_lib.define(
+    "alias(Tensor x, Tensor y) -> (Tensor x, Tensor y)"
+)
+# Out variant for alias
+executorch_def_lib.define(
+    "alias.out(Tensor x, Tensor y, *, Tensor(a!) out_x, Tensor(b!) out_y) -> (Tensor(a!) out_x, Tensor(b!) out_y)"
+)
 
+from torch.library import register_fake
 
-# 2) FakeTensor kernel: describes output metadata for compile-time
-@custom_alias.register_fake
-def _(x, y):
+@register_fake("executorch::alias")
+def alias_meta(x: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     # For this op, outputs have exactly the same shape/dtype/device as inputs.
-    # We just need *dummy* tensors with that metadata.
     out_x = torch.empty_like(x)
     out_y = torch.empty_like(y)
     return out_x, out_y
 
 
+@impl(executorch_lib, "alias", "CompositeExplicitAutograd")
+def alias_impl(x: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    # Emit explicit view ops to preserve aliasing semantics in the graph.
+    # Later passes can rewrite view_copy to et_view for zero-copy runtime behavior.
+    return x.view(x.shape), y.view(y.shape)
+
+
 @register_lowering(torch.ops.executorch.alias.default)
 def lowering_custom_alias(x, y):
-    # x, y here are IR values (Inductor's internal representation).
-    # Alias is logically a no-op – just pass them through.
-    return x, y
+    x_view = L[aten.view.default](x, x.get_size())
+    y_view = L[aten.view.default](y, y.get_size())
+    return x_view, y_view
 
 
 # Expecting cache shape: (B, H, S_max, D), value shape (B, H, S, D) where S <= S_max
@@ -435,47 +451,43 @@ def _validate_cross_attn_cache_params(value: torch.Tensor, cache: torch.Tensor):
     torch._assert(value.dtype == cache.dtype, "dtype mismatch")
 
 
-# Intentionally declaring no mutations to enable use inside torch.cond branches,
-# which require pure functions. torch.cond requires branch functions to be mutation-free.
-# We omit `cache` from `mutates_args` to satisfy this constraint, accepting the
-# mutation for inference use.
-@torch.library.custom_op("executorch::update_cross_attn_cache", mutates_args=[])
-def _update_cross_attn_cache(value: torch.Tensor, cache: torch.Tensor) -> torch.Tensor:
+# executorch::update_cross_attn_cache - updates cross-attention KV cache
+executorch_def_lib.define(
+    "update_cross_attn_cache(Tensor value, Tensor cache) -> Tensor"
+)
+# Out variant for update_cross_attn_cache
+executorch_def_lib.define(
+    "update_cross_attn_cache.out(Tensor value, Tensor(a!) cache, *, Tensor(b!) out) -> Tensor(b!)"
+)
+
+@register_fake("executorch::update_cross_attn_cache")
+def update_cross_attn_cache_meta(
+    value: torch.Tensor, cache: torch.Tensor
+) -> torch.Tensor:
+    """
+    Meta function for update_cross_attn_cache op.
+    """
+    _validate_cross_attn_cache_params(value, cache)
+    return torch.empty_like(cache)
+
+
+@impl(executorch_lib, "update_cross_attn_cache", "CompositeExplicitAutograd")
+def update_cross_attn_cache_impl(
+    value: torch.Tensor, cache: torch.Tensor
+) -> torch.Tensor:
     """
     Update cross-attention KV cache with new values.
 
     Copies the value tensor into the beginning of the cache tensor along the
     sequence dimension. This is used for cross-attention caching where the
     encoder outputs are computed once and reused across decoding steps.
-
-    Args:
-        value: New values to store in cache. Shape: [B, H, S, D] where
-            B = batch size, H = num heads, S = sequence length, D = head dim.
-        cache: Pre-allocated cache tensor to update. Shape: [B, H, S_max, D]
-            where S_max >= S.
-
-    Returns:
-        A clone of the updated cache tensor. Note that this is different from
-        inductor lowering which returns the cache tensor itself. The reason is
-        that if we return input buffer directly, we will fail torch check in
-        higher order ops.
-
-    Note:
-        The cache is mutated in-place, but we return a clone to avoid aliasing
-        issues with the exported program.
     """
-    _validate_cross_attn_cache_params(value, cache)
-    cache[:, :, : value.size(2), :].copy_(value)
-    return cache.clone()
-
-
-# Register the fake (meta) kernel
-@_update_cross_attn_cache.register_fake
-def _update_cross_attn_cache_fake(
-    value: torch.Tensor, cache: torch.Tensor
-) -> torch.Tensor:
-    _validate_cross_attn_cache_params(value, cache)
-    return torch.empty_like(cache)
+    # Copy value into beginning of cache along sequence dimension in place.
+    # cache shape: [B, H, S_max, D]
+    # value shape: [B, H, S, D]
+    seq_len = value.size(2)
+    cache[:, :, :seq_len, :].copy_(value)
+    return cache
 
 
 # Register Inductor lowering
@@ -493,3 +505,53 @@ def _update_cross_attn_cache_lowering(value, cache):
     L[aten.copy_.default](cache_slice, value)
 
     return cache
+
+
+# Meta functions for out variants
+@register_fake("executorch::alias.out")
+def alias_out_meta(x: torch.Tensor, y: torch.Tensor, *, out_x: torch.Tensor, out_y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    return out_x, out_y
+
+
+@impl(executorch_lib, "alias.out", "CompositeExplicitAutograd")
+def alias_out_impl(x: torch.Tensor, y: torch.Tensor, *, out_x: torch.Tensor, out_y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    # Copy inputs to outputs (alias is pass-through)
+    out_x.copy_(x)
+    out_y.copy_(y)
+    return out_x, out_y
+
+
+@register_lowering(torch.ops.executorch.alias.out)
+def lowering_alias_out(x, y, *, out_x, out_y):
+    # x, y here are IR values (Inductor's internal representation)
+    L[aten.copy_.default](out_x, x)
+    L[aten.copy_.default](out_y, y)
+    return out_x, out_y
+
+
+@register_fake("executorch::update_cross_attn_cache.out")
+def update_cross_attn_cache_out_meta(value: torch.Tensor, cache: torch.Tensor, *, out: torch.Tensor) -> torch.Tensor:
+    _validate_cross_attn_cache_params(value, cache)
+    return out
+
+
+@impl(executorch_lib, "update_cross_attn_cache.out", "CompositeExplicitAutograd")
+def update_cross_attn_cache_out_impl(value: torch.Tensor, cache: torch.Tensor, *, out: torch.Tensor) -> torch.Tensor:
+    # Persist cache update, then materialize out.
+    seq_len = value.size(2)
+    cache[:, :, :seq_len, :].copy_(value)
+    if out.data_ptr() != cache.data_ptr():
+        out.copy_(cache)
+    return out
+
+
+@register_lowering(torch.ops.executorch.update_cross_attn_cache.out)
+def _update_cross_attn_cache_out_lowering(value, cache, *, out):
+    # First persist cache update.
+    seq_len = value.get_size()[2]
+    cache_slice = L[aten.slice.Tensor](cache, 2, 0, seq_len, 1)
+    L[aten.copy_.default](cache_slice, value)
+
+    # Then materialize out from cache.
+    L[aten.copy_.default](out, cache)
+    return out

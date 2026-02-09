@@ -1799,11 +1799,8 @@ class EdgeProgramManager:
         )
 
         if self._etrecord is not None:
-            # Create a clean copy of the ETRecord for the executorch manager
-            # This preserves edge-stage data while allowing executorch data to be added
-            et_etrecord = self._etrecord.copy()
-            et_etrecord.add_executorch_program(et_pm)
-            et_pm._etrecord = et_etrecord
+            self._etrecord.add_executorch_program(et_pm)
+            et_pm._etrecord = self._etrecord
 
         return et_pm
 

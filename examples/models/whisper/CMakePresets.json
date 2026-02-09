@@ -17,6 +17,14 @@
             "inherits": ["whisper-base"]
         },
         {
+            "name": "whisper-cpu-debug",
+            "displayName": "Whisper runner (CPU Debug)",
+            "inherits": ["whisper-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
             "name": "whisper-cuda",
             "displayName": "Whisper runner (CUDA)",
             "inherits": ["whisper-base"],
@@ -65,6 +73,12 @@
             "targets": ["whisper_runner"]
         },
         {
+            "name": "whisper-cpu-debug",
+            "displayName": "Build Whisper runner (CPU Debug)",
+            "configurePreset": "whisper-cpu-debug",
+            "targets": ["whisper_runner"]
+        },
+        {
             "name": "whisper-cuda",
             "displayName": "Build Whisper runner (CUDA)",
             "configurePreset": "whisper-cuda",
@@ -95,6 +109,20 @@
                 {
                     "type": "build",
                     "name": "whisper-cpu"
+                }
+            ]
+        },
+        {
+            "name": "whisper-cpu-debug",
+            "displayName": "Configure and build Whisper runner (CPU Debug)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "whisper-cpu-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "whisper-cpu-debug"
                 }
             ]
         },

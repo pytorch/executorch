@@ -88,7 +88,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-cpu-debug whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -98,6 +98,7 @@ help:
 	@echo "  whisper-cuda        - Build Whisper runner with CUDA backend"
 	@echo "  whisper-cuda-debug  - Build Whisper runner with CUDA backend (debug mode)"
 	@echo "  whisper-cpu         - Build Whisper runner with CPU backend"
+	@echo "  whisper-cpu-debug   - Build Whisper runner with CPU backend (debug mode)"
 	@echo "  whisper-metal       - Build Whisper runner with Metal backend (macOS only)"
 	@echo "  parakeet-cuda       - Build Parakeet runner with CUDA backend"
 	@echo "  parakeet-cuda-debug - Build Parakeet runner with CUDA backend (debug mode)"
@@ -159,6 +160,15 @@ whisper-cpu:
 	cmake --workflow --preset llm-release
 	@echo "==> Building Whisper runner (CPU)..."
 	cd examples/models/whisper && cmake --workflow --preset whisper-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/whisper/whisper_runner"
+
+whisper-cpu-debug:
+	@echo "==> Building and installing ExecuTorch (debug mode)..."
+	cmake --workflow --preset llm-debug
+	@echo "==> Building Whisper runner (CPU debug)..."
+	cd examples/models/whisper && cmake --workflow --preset whisper-cpu-debug
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/whisper/whisper_runner"

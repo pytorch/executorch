@@ -25,6 +25,11 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
 
+#if defined(ET_USE_THREADPOOL)
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
+#include <executorch/extension/threadpool/threadpool.h>
+#endif
+
 DEFINE_string(model_path, "model.pte", "Path to Whisper model (.pte).");
 DEFINE_string(data_path, "", "Optional path to Whisper weights (.ptd).");
 DEFINE_string(
@@ -44,6 +49,10 @@ DEFINE_double(
     0.0,
     "Sampling temperature. 0.0 performs greedy decoding.");
 DEFINE_int32(max_new_tokens, 128, "Maximum number of tokens to generate.");
+DEFINE_int32(
+    cpu_threads,
+    -1,
+    "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
@@ -54,13 +63,30 @@ int main(int argc, char** argv) {
   std::vector<float> audio_data;
   std::unique_ptr<Module> processor;
 
+#if defined(ET_USE_THREADPOOL)
+  uint32_t num_performant_cores = FLAGS_cpu_threads == -1
+      ? ::executorch::extension::cpuinfo::get_num_performant_cores()
+      : static_cast<uint32_t>(FLAGS_cpu_threads);
+  std::cerr << "Using CPU threads: " << num_performant_cores << std::endl;
+  ET_LOG(
+      Info, "Resetting threadpool with num threads = %d", num_performant_cores);
+  if (num_performant_cores > 0) {
+    ::executorch::extension::threadpool::get_threadpool()
+        ->_unsafe_reset_threadpool(num_performant_cores);
+  }
+#endif
+
   if (FLAGS_audio_path.empty()) {
+    std::cerr << "ERROR: audio_path flag must be provided." << std::endl;
     ET_LOG(Error, "audio_path flag must be provided.");
     return 1;
   }
+  std::cerr << "Loading audio from: " << FLAGS_audio_path << std::endl;
 
+  std::cerr << "Calling load_wav_audio_data..." << std::endl;
   audio_data =
       executorch::extension::llm::load_wav_audio_data(FLAGS_audio_path);
+  std::cerr << "Audio data loaded, size: " << audio_data.size() << std::endl;
   ET_LOG(
       Info,
       "First 2 values of audio data: %f, %f",
@@ -123,6 +149,8 @@ int main(int argc, char** argv) {
 
   if (!result.ok()) {
     ET_LOG(Error, "Transcription failed.");
+    std::cerr << "Transcription failed with error code: "
+              << static_cast<int>(result.error()) << std::endl;
     return 1;
   }
 
