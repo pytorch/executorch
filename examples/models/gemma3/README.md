@@ -124,18 +124,22 @@ Ensure you have ExecuTorch installed with Python bindings:
 ```bash
 # In the executorch root directory
 ./install_executorch.sh
+
+# Install transformers for chat template support
+pip install transformers
 ```
 
 ## Python Example
 
-A complete Python binding example is provided in `pybinding_run.py`:
+A complete Python binding example is provided in `run.py`:
 
 ```bash
-python examples/models/gemma3/pybinding_run.py \
+python examples/models/gemma3/run.py \
   --model_path /path/to/model.pte \
   --tokenizer_path /path/to/tokenizer.json \
   --image_path /path/to/image.png \
-  --prompt "What is in this image?"
+  --prompt "What is in this image?" \
+  --model_id google/gemma-3-4b-it
 ```
 
 ### Key Implementation Details
@@ -168,14 +172,32 @@ The Python script demonstrates several important concepts:
        return image_tensor
    ```
 
-3. **Chat Template Format**: Gemma 3 uses a specific chat template for multimodal inputs:
+3. **Chat Template Format**: The script uses the HuggingFace `AutoProcessor` to apply the correct chat template:
    ```python
+   from transformers import AutoProcessor
    from executorch.extension.llm.runner import make_text_input, make_image_input
 
+   processor = AutoProcessor.from_pretrained("google/gemma-3-4b-it")
+
+   messages = [
+       {
+           "role": "user",
+           "content": [
+               {"type": "image"},
+               {"type": "text", "text": prompt},
+           ],
+       }
+   ]
+   formatted_prompt = processor.apply_chat_template(
+       messages, add_generation_prompt=True, tokenize=False
+   )
+
+   # Split around <start_of_image> to insert the image tensor
+   before_image, after_image = formatted_prompt.split("<start_of_image>", 1)
    inputs = [
-       make_text_input("<start_of_turn>user\n<start_of_image>"),
+       make_text_input(before_image + "<start_of_image>"),
        make_image_input(image_tensor),
-       make_text_input(f"{prompt}<end_of_turn>\n<start_of_turn>model\n"),
+       make_text_input(after_image),
    ]
    ```
 
