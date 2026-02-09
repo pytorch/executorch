@@ -222,7 +222,7 @@ def run_inference(  # noqa: C901
     cache_position = cache_position + decoder_input_ids.shape[1]
 
     # Generation loop
-    for step in range(max_new_tokens):
+    for _step in range(max_new_tokens):
         current_pos = cache_position.item()
 
         # Check for forced token at this position
