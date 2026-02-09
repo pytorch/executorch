@@ -45,9 +45,19 @@ for i in .github/workflows/*.yml; do
   fi
 done
 
+# Update documentation to use release branch instead of viable/strict
+echo "Updating documentation branch references"
+for doc in $(grep -rl "viable/strict" docs/); do
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' -e "s#-b viable/strict#-b ${RELEASE_BRANCH}#g" "$doc"
+  else
+    sed -i -e "s#-b viable/strict#-b ${RELEASE_BRANCH}#g" "$doc"
+  fi
+done
+
 echo "You'll need to manually commit the changes and create a PR. Here are the steps:"
-echo "1. Stage the changes to the workflow files:"
-echo "   git add ./github/workflows/*.yml"
+echo "1. Stage the changes:"
+echo "   git add .github/workflows/*.yml docs/"
 echo "2. Commit the changes:"
 echo "   git commit -m \"[RELEASE-ONLY CHANGES] Branch Cut for Release ${RELEASE_VERSION}\""
 echo "3. After committing, create a pull request to merge the changes."

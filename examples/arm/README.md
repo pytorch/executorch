@@ -148,6 +148,6 @@ $ ./examples/arm/run.sh --model_name=mv2 --target=ethos-u55-128 --no_delegate
 
 ### Online Tutorial
 
-We also have a [tutorial](https://pytorch.org/executorch/main/backends-arm-ethos-u) explaining the steps performed in these
+We also have a [tutorial](https://pytorch.org/executorch/stable/backends-arm-ethos-u) explaining the steps performed in these
 scripts, expected results, possible problems and more. It is a step-by-step guide
 you can follow to better understand this delegate.

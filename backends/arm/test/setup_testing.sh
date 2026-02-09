@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -26,7 +26,7 @@ ${build_executor_runner} --pte=semihosting --target=ethos-u85-128 --system_confi
 # To use this you can set use_portable_ops=True when creating ArmTester()
 
 portable_ops_list_u55="aten::permute_copy.out,aten::convolution.out,aten::relu.out,aten::_native_batch_norm_legit_no_training.out,aten::as_strided_copy.out,aten::mean.out,aten::squeeze_copy.dims,dim_order_ops::_clone_dim_order.out"
-portable_ops_list_u85="aten::permute_copy.out,aten::convolution.out,aten::relu.out,aten::_native_batch_norm_legit_no_training.out,aten::as_strided_copy.out,aten::mean.out,aten::full_like.out,aten::bmm.out,aten::scalar_tensor.out,aten::index.Tensor_out,aten::where.self_out" 
+portable_ops_list_u85="aten::permute_copy.out,aten::convolution.out,aten::relu.out,aten::_native_batch_norm_legit_no_training.out,aten::as_strided_copy.out,aten::mean.out,aten::full_like.out,aten::bmm.out,aten::scalar_tensor.out,aten::index.Tensor_out,aten::where.self_out,dim_order_ops::_to_dim_order_copy.out"
 
 ${build_executor_runner} --pte=semihosting --target=ethos-u55-128 --system_config=Ethos_U55_High_End_Embedded --memory_mode=Shared_Sram --select_ops_list="${portable_ops_list_u55}" --output="${build_root_test_dir}_portable-ops_corstone-300" --extra_build_flags=${extraflags}
 ${build_executor_runner} --pte=semihosting --target=ethos-u85-128 --system_config=Ethos_U85_SYS_DRAM_Mid --memory_mode=Dedicated_Sram_384KB --select_ops_list="${portable_ops_list_u85}" --output="${build_root_test_dir}_portable-ops_corstone-320" --extra_build_flags=${extraflags}

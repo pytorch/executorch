@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -38,7 +38,7 @@ from torch import nn
 from torch.export import export
 from torchao.quantization.pt2e.quantizer import Quantizer
 
-neutron_converter_flavor = "SDK_25_09"
+neutron_converter_flavor = "SDK_25_12"
 neutron_target_spec = NeutronTargetSpec(
     target="imxrt700", neutron_converter_flavor=neutron_converter_flavor
 )
@@ -128,7 +128,10 @@ def to_quantized_edge_program(
     )
     partitioners = [
         NeutronPartitioner(
-            compile_spec, _neutron_target_spec, custom_delegation_options
+            compile_spec,
+            _neutron_target_spec,
+            custom_delegation_options,
+            exir_program_aten__module_quant.state_dict(),
         )
     ]
 

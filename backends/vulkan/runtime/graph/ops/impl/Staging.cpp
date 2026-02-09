@@ -148,7 +148,10 @@ void add_prepack_standard_node(
     const ValueRef tensor,
     const bool transpose_hw = false) {
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
-      graph, tensor, graph.dtype_of(tensor_data), graph.int8_buffers_enabled());
+      graph,
+      tensor,
+      graph.get_staging_dtype_for(tensor_data),
+      graph.int8_buffers_enabled());
 
   vkapi::ParamsBindList param_buffers = {};
   if (graph.is_buffer_storage(tensor)) {

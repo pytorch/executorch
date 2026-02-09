@@ -62,6 +62,10 @@ std::vector<float> compute_reference_matmul(
 }
 
 std::vector<std::vector<int64_t>> standard_sizes_to_test = {
+    // 1D
+    {7},
+    {13},
+    {24},
     // 2D
     {7, 11},
     {13, 6},
@@ -114,25 +118,59 @@ TEST_F(VulkanComputeAPITest, print_shader_executable_properties) {
 
 std::vector<int64_t> get_reference_dim_order(
     const size_t ndim,
-    const int32_t packed_dim) {
+    const int32_t packed_dim,
+    const int32_t outer_packed_dim,
+    const bool block_transposed) {
   // Special case for zero dim tensors
   if (ndim == 0) {
     return {0};
   }
-  std::vector<int64_t> dim_order(ndim);
-  // Explicitly convert ndim to signed to prevent underflow
-  int64_t last_dim = int64_t(ndim) - 1 - packed_dim;
 
-  int64_t cur_dim = 0;
-  for (int d = 0; d < ndim; ++d) {
-    if (d == last_dim) {
-      cur_dim++;
-    }
-    dim_order[d] = cur_dim;
-    cur_dim++;
+  // Initialize dim_order as {0, 1, 2, ..., ndim-1}
+  std::vector<int64_t> dim_order(ndim);
+  for (size_t i = 0; i < ndim; ++i) {
+    dim_order[i] = static_cast<int64_t>(i);
   }
-  if (last_dim >= 0) {
-    dim_order[ndim - 1] = last_dim;
+
+  int64_t ndim_signed = static_cast<int64_t>(ndim);
+
+  // Convert WHCN indices to NCHW indices
+  // packed_dim and outer_packed_dim are in WHCN order (0=W, 1=H, 2=C, 3=N)
+  // NCHW index = ndim - 1 - WHCN index
+  int64_t last_dim_nchw = ndim_signed - 1 - packed_dim;
+  int64_t second_last_dim_nchw = ndim_signed - 1 - outer_packed_dim;
+  if (block_transposed) {
+    std::swap(last_dim_nchw, second_last_dim_nchw);
+  }
+
+  // Move last_dim_nchw to the back (if valid)
+  bool last_dim_valid = last_dim_nchw >= 0 && last_dim_nchw < ndim_signed;
+  if (last_dim_valid) {
+    auto it = std::find(dim_order.begin(), dim_order.end(), last_dim_nchw);
+    if (it != dim_order.end()) {
+      dim_order.erase(it);
+      dim_order.push_back(last_dim_nchw);
+    }
+  }
+
+  // Move second_last_dim_nchw to:
+  // a) second last position if last_dim_nchw is valid
+  // b) last position if last_dim_nchw was not valid
+  bool second_last_dim_valid =
+      second_last_dim_nchw >= 0 && second_last_dim_nchw < ndim_signed;
+  if (second_last_dim_valid) {
+    auto it =
+        std::find(dim_order.begin(), dim_order.end(), second_last_dim_nchw);
+    if (it != dim_order.end()) {
+      dim_order.erase(it);
+      if (last_dim_valid && ndim >= 2) {
+        // Insert at second last position
+        dim_order.insert(dim_order.end() - 1, second_last_dim_nchw);
+      } else {
+        // Insert at last position
+        dim_order.push_back(second_last_dim_nchw);
+      }
+    }
   }
 
   return dim_order;
@@ -141,9 +179,9 @@ std::vector<int64_t> get_reference_dim_order(
 std::vector<int64_t> get_reference_padded_sizes(
     const std::vector<int64_t>& sizes,
     const int32_t packed_dim,
-    const bool packed_dim_padded,
+    const int32_t packed_dim_block_size,
     const int32_t outer_packed_dim = -1,
-    const bool outer_packed_dim_padded = false) {
+    const int32_t outer_packed_dim_block_size = 1) {
   int64_t ndim = sizes.size();
   if (ndim == 0) {
     ndim = 1;
@@ -156,21 +194,23 @@ std::vector<int64_t> get_reference_padded_sizes(
     padded_sizes.at(i) = utils::val_at(i - ndim_up4, sizes);
   }
 
-  // Pad the packed dim to the next multiple of 4 if specified
-  if (packed_dim_padded) {
+  // Pad the packed dim to the next multiple of the block size if > 1
+  if (packed_dim_block_size > 1) {
     const int64_t dim_offset = packed_dim + 1;
     const int64_t padded_dim_size = utils::val_at(-dim_offset, sizes);
-    padded_sizes.at(ndim_up4 - dim_offset) = utils::align_up_4(padded_dim_size);
+    padded_sizes.at(ndim_up4 - dim_offset) = utils::align_up(
+        padded_dim_size, static_cast<int64_t>(packed_dim_block_size));
   }
 
-  // For block-packed layouts, also pad the outer packed dimension if specified
+  // For block-packed layouts, also pad the outer packed dimension if > 1
   if (outer_packed_dim >= 0 && outer_packed_dim != packed_dim &&
-      outer_packed_dim_padded) {
+      outer_packed_dim_block_size > 1) {
     const int64_t outer_dim_offset = outer_packed_dim + 1;
     const int64_t outer_padded_dim_size =
         utils::val_at(-outer_dim_offset, sizes);
-    padded_sizes.at(ndim_up4 - outer_dim_offset) =
-        utils::align_up_4(outer_padded_dim_size);
+    padded_sizes.at(ndim_up4 - outer_dim_offset) = utils::align_up(
+        outer_padded_dim_size,
+        static_cast<int64_t>(outer_packed_dim_block_size));
   }
 
   return padded_sizes;
@@ -386,24 +426,29 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
     int32_t packed_dim;
     int32_t outer_packed_dim;
     bool is_block_packed;
+    bool block_transposed;
   };
 
   std::vector<LayoutTestConfig> layout_configs = {
       // Standard layouts with float dtype
+      // For non-block-packed: outer_packed_dim = (packed_dim == 0) ? 1 : 0
       {utils::kWidthPacked,
        vkapi::kFloat,
        WHCN::kWidthDim,
-       WHCN::kWidthDim,
+       WHCN::kHeightDim,
+       false,
        false},
       {utils::kHeightPacked,
        vkapi::kFloat,
        WHCN::kHeightDim,
-       WHCN::kHeightDim,
+       WHCN::kWidthDim,
+       false,
        false},
       {utils::kChannelsPacked,
        vkapi::kFloat,
        WHCN::kChannelsDim,
-       WHCN::kChannelsDim,
+       WHCN::kWidthDim,
+       false,
        false},
 
       // Packed int8 vector layouts (single-dimension packed)
@@ -411,17 +456,14 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
       {utils::kPackedInt8_4W,
        vkapi::kChar,
        WHCN::kWidthDim,
-       WHCN::kWidthDim,
+       WHCN::kHeightDim,
+       false,
        false},
       {utils::kPackedInt8_4C,
        vkapi::kChar,
        WHCN::kChannelsDim,
-       WHCN::kChannelsDim,
-       false},
-      {utils::kPackedInt8_4H,
-       vkapi::kChar,
-       WHCN::kHeightDim,
-       WHCN::kHeightDim,
+       WHCN::kWidthDim,
+       false,
        false},
 
       // Packed int8 block layouts (two-dimension packed)
@@ -430,11 +472,19 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
        vkapi::kChar,
        WHCN::kChannelsDim,
        WHCN::kWidthDim,
-       true},
+       true,
+       false},
       {utils::kPackedInt8_4H4W,
        vkapi::kChar,
        WHCN::kWidthDim,
        WHCN::kHeightDim,
+       true,
+       false},
+      {utils::kPackedInt8_4C1W,
+       vkapi::kChar,
+       WHCN::kChannelsDim,
+       WHCN::kWidthDim,
+       false,
        true},
   };
 
@@ -478,39 +528,64 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
             << ", expected=" << static_cast<int>(expected_dtype)
             << ", got=" << static_cast<int>(tensor.dtype());
 
-        // Determine if packed_dim should be padded
-        // For packed int8 layouts (using kChar which converts to kInt8x4),
-        // always padded For texture storage, always padded For buffer storage
-        // with standard layouts, not padded
-        const bool expected_packed_dim_padded =
-            (config.dtype == vkapi::kChar) || (storage_type != utils::kBuffer);
+        // Determine packed_dim_block_size based on layout and storage type
+        // - kInt8 non-block-packed + texture: 16 (16 values per texel)
+        // - kInt8 non-block-packed + buffer: 4 (alignment)
+        // - kInt8 block-packed: 4 (4 values per dim per texel)
+        // - Standard texture: 4 (4 values per texel)
+        // - Contiguous buffer: 1 (no padding)
+        const bool is_non_block_packed_int8 =
+            config.dtype == vkapi::kChar && !config.is_block_packed;
+        int32_t expected_packed_dim_block_size;
+        if (is_non_block_packed_int8 && storage_type != utils::kBuffer) {
+          expected_packed_dim_block_size = 16;
+        } else if (config.dtype == vkapi::kChar) {
+          expected_packed_dim_block_size = 4;
+        } else if (storage_type != utils::kBuffer) {
+          expected_packed_dim_block_size = 4;
+        } else {
+          expected_packed_dim_block_size = 1;
+        }
 
         // For block-packed layouts, outer_packed_dim is also padded
-        const bool expected_outer_packed_dim_padded = config.is_block_packed;
+        const int32_t expected_outer_packed_dim_block_size =
+            config.is_block_packed ? 4 : 1;
+
+        // Expected block_numel is the product of the two block sizes
+        const int32_t expected_block_numel = expected_packed_dim_block_size *
+            expected_outer_packed_dim_block_size;
 
         // Verify packed_dim_info
         const auto& packed_dim_info = tensor.packed_dim_info();
         ASSERT_EQ(packed_dim_info.packed_dim, config.packed_dim)
             << "packed_dim mismatch for layout="
             << static_cast<int>(config.layout);
-        ASSERT_EQ(packed_dim_info.packed_dim_padded, expected_packed_dim_padded)
-            << "packed_dim_padded mismatch for layout="
+        ASSERT_EQ(
+            packed_dim_info.packed_dim_block_size,
+            expected_packed_dim_block_size)
+            << "packed_dim_block_size mismatch for layout="
             << static_cast<int>(config.layout);
         ASSERT_EQ(packed_dim_info.outer_packed_dim, config.outer_packed_dim)
             << "outer_packed_dim mismatch for layout="
             << static_cast<int>(config.layout);
         ASSERT_EQ(
-            packed_dim_info.outer_packed_dim_padded,
-            expected_outer_packed_dim_padded)
-            << "outer_packed_dim_padded mismatch for layout="
+            packed_dim_info.outer_packed_dim_block_size,
+            expected_outer_packed_dim_block_size)
+            << "outer_packed_dim_block_size mismatch for layout="
             << static_cast<int>(config.layout);
-        ASSERT_EQ(packed_dim_info.is_block_packed, config.is_block_packed)
-            << "is_block_packed mismatch for layout="
+        ASSERT_EQ(packed_dim_info.block_numel, expected_block_numel)
+            << "block_numel mismatch for layout="
+            << static_cast<int>(config.layout);
+        ASSERT_EQ(packed_dim_info.block_transposed, config.block_transposed)
+            << "block_transposed mismatch for layout="
             << static_cast<int>(config.layout);
 
         // Verify dim_order
-        std::vector<int64_t> ref_dim_order =
-            get_reference_dim_order(sizes.size(), config.packed_dim);
+        std::vector<int64_t> ref_dim_order = get_reference_dim_order(
+            sizes.size(),
+            config.packed_dim,
+            config.outer_packed_dim,
+            config.block_transposed);
         ASSERT_TRUE(tensor.dim_order() == ref_dim_order)
             << "Dim order mismatch for layout="
             << static_cast<int>(config.layout);
@@ -519,9 +594,9 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
         std::vector<int64_t> ref_padded_sizes = get_reference_padded_sizes(
             sizes,
             config.packed_dim,
-            expected_packed_dim_padded,
+            expected_packed_dim_block_size,
             config.outer_packed_dim,
-            expected_outer_packed_dim_padded);
+            expected_outer_packed_dim_block_size);
         ASSERT_TRUE(tensor.padded_sizes() == ref_padded_sizes)
             << "Padded sizes mismatch for layout="
             << static_cast<int>(config.layout);
@@ -598,6 +673,43 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test_against_golden) {
   };
 
   std::vector<TestCase> test_cases = {
+      // 1D tensor [7] with width packed, float dtype
+      {/* sizes */ {7},
+       /* dtype */ vkapi::kFloat,
+       /* layout */ utils::kWidthPacked,
+       /* expected_dim_order */ {0},
+       /* expected_padded_sizes_buffer */ {1, 1, 1, 7},
+       /* expected_padded_sizes_texture */ {1, 1, 1, 8},
+       /* expected_strides_buffer */ {1},
+       /* expected_physical_numel_buffer */ 7,
+       /* expected_physical_numel_texture */ 8,
+       /* expected_image_extents */ {2, 1, 1}},
+
+      // 1D tensor [13] with width packed, float dtype
+      {/* sizes */ {13},
+       /* dtype */ vkapi::kFloat,
+       /* layout */ utils::kWidthPacked,
+       /* expected_dim_order */ {0},
+       /* expected_padded_sizes_buffer */ {1, 1, 1, 13},
+       /* expected_padded_sizes_texture */ {1, 1, 1, 16},
+       /* expected_strides_buffer */ {1},
+       /* expected_physical_numel_buffer */ 13,
+       /* expected_physical_numel_texture */ 16,
+       /* expected_image_extents */ {4, 1, 1}},
+
+      // 1D tensor [7] with channels packed, float dtype
+      // C dimension (implicit, size 1) is padded to 4
+      {/* sizes */ {7},
+       /* dtype */ vkapi::kFloat,
+       /* layout */ utils::kChannelsPacked,
+       /* expected_dim_order */ {0},
+       /* expected_padded_sizes_buffer */ {1, 1, 1, 7},
+       /* expected_padded_sizes_texture */ {1, 4, 1, 7},
+       /* expected_strides_buffer */ {1},
+       /* expected_physical_numel_buffer */ 7,
+       /* expected_physical_numel_texture */ 28,
+       /* expected_image_extents */ {7, 1, 1}},
+
       // 2D tensor [5, 7] with width packed, float dtype
       {/* sizes */ {5, 7},
        /* dtype */ vkapi::kFloat,
@@ -659,15 +771,16 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test_against_golden) {
        /* expected_image_extents */ {4, 12, 2}},
 
       // 3D tensor [9, 13, 17] with packed int8 4C layout (odd sizes)
+      // For texture, packed_dim (channels) is padded to multiple of 16
       {/* sizes */ {9, 13, 17},
        /* dtype */ vkapi::kChar,
        /* layout */ utils::kPackedInt8_4C,
        /* expected_dim_order */ {1, 2, 0},
        /* expected_padded_sizes_buffer */ {1, 12, 13, 17},
-       /* expected_padded_sizes_texture */ {1, 12, 13, 17},
+       /* expected_padded_sizes_texture */ {1, 16, 13, 17},
        /* expected_strides_buffer */ {},
        /* expected_physical_numel_buffer */ 663,
-       /* expected_physical_numel_texture */ 663,
+       /* expected_physical_numel_texture */ 884,
        /* expected_image_extents */ {17, 13, 1}},
 
       // 3D tensor [9, 13, 17] with packed int8 4H4W block layout (odd sizes)
@@ -681,6 +794,35 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test_against_golden) {
        /* expected_physical_numel_buffer */ 720,
        /* expected_physical_numel_texture */ 720,
        /* expected_image_extents */ {5, 4, 9}},
+
+      // 3D tensor [9, 13, 17] with packed int8 4C1W block-transposed layout
+      // packed_dim = channels (2), outer_packed_dim = width (0)
+      // block_transposed = true, so dim_order swaps: [1, 0, 2] instead of
+      // [1, 2, 0] Channels padded to 12 (multiple of 4), width padded to 20
+      // (multiple of 4)
+      {/* sizes */ {9, 13, 17},
+       /* dtype */ vkapi::kChar,
+       /* layout */ utils::kPackedInt8_4C1W,
+       /* expected_dim_order */ {1, 0, 2},
+       /* expected_padded_sizes_buffer */ {1, 12, 13, 17},
+       /* expected_padded_sizes_texture */ {1, 16, 13, 17},
+       /* expected_strides_buffer */ {},
+       /* expected_physical_numel_buffer */ 663,
+       /* expected_physical_numel_texture */ 884,
+       /* expected_image_extents */ {17, 13, 1}},
+
+      // 4D tensor [2, 8, 12, 16] with packed int8 4C1W block-transposed layout
+      // Tests 4D case with block_transposed = true
+      {/* sizes */ {2, 8, 12, 16},
+       /* dtype */ vkapi::kChar,
+       /* layout */ utils::kPackedInt8_4C1W,
+       /* expected_dim_order */ {0, 2, 1, 3},
+       /* expected_padded_sizes_buffer */ {2, 8, 12, 16},
+       /* expected_padded_sizes_texture */ {2, 16, 12, 16},
+       /* expected_strides_buffer */ {},
+       /* expected_physical_numel_buffer */ 768,
+       /* expected_physical_numel_texture */ 1536,
+       /* expected_image_extents */ {16, 12, 2}},
   };
 
   for (size_t i = 0; i < test_cases.size(); ++i) {
@@ -1071,7 +1213,7 @@ void test_storage_buffer_type(const size_t len) {
       context(), dtype, len, vkapi::CopyDirection::DEVICE_TO_HOST);
 
   std::string kernel_name("idx_fill_buffer");
-  switch (dtype) {
+  switch (buffer.dtype()) {
     case vkapi::kFloat:
       kernel_name += "_float";
       break;
@@ -1110,7 +1252,14 @@ void test_storage_buffer_type(const size_t len) {
   submit_to_gpu();
 
   std::vector<T> data(len);
-  buffer.copy_to(data.data(), buffer.nbytes());
+
+  if (dtype == vkapi::kHalf && buffer.dtype() == vkapi::kFloat) {
+    buffer.cast_float_to_half_and_copy_to(
+        reinterpret_cast<uint16_t*>(data.data()), data.size());
+  } else {
+    VK_CHECK_COND(dtype == buffer.dtype());
+    buffer.copy_to(data.data(), buffer.nbytes());
+  }
 
   for (size_t i = 0; i < len; ++i) {
     CHECK_VALUE(data, i, T(i));
@@ -1122,9 +1271,6 @@ TEST_F(VulkanComputeAPITest, test_buffer_float) {
 }
 
 TEST_F(VulkanComputeAPITest, test_buffer_float16) {
-  if (!context()->adapter_ptr()->has_full_float16_buffers_support()) {
-    GTEST_SKIP();
-  }
   test_storage_buffer_type<executorch::aten::Half, vkapi::kHalf>(16);
 }
 
@@ -1532,7 +1678,8 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
 
 #define EXTRACT_TENSOR(name)                                                 \
   std::vector<float> data_##name(graph.staging_buffer_numel_of(name.value)); \
-  graph.copy_from_staging(name.staging, data_##name.data(), data_##name.size());
+  graph.maybe_cast_and_copy_from_staging(                                    \
+      name.staging, data_##name.data(), data_##name.size(), vkapi::kFloat);
 
 // The purpose of this test is simply to track the size of various classes over
 // time, in the interest of making sure that they doesn't grow too large.
@@ -2432,10 +2579,6 @@ void run_from_gpu_test(
         utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     vkapi::ScalarType dtype = vkapi::kFloat,
     utils::StorageType storage_type = utils::StorageType::TEXTURE_3D) {
-  if (dtype == vkapi::kHalf &&
-      !context()->adapter_ptr()->supports_16bit_storage_buffers()) {
-    return;
-  }
   vTensor vten = vTensor(context(), sizes, dtype, storage_type, memory_layout);
 
   std::string kernel_name("idx_fill_texture");
@@ -2476,8 +2619,15 @@ void run_from_gpu_test(
 
   submit_to_gpu();
 
-  std::vector<T> data_out(staging_buffer.numel());
-  staging_buffer.copy_to(data_out.data(), staging_buffer.nbytes());
+  std::vector<T> data_out(vten.staging_buffer_numel());
+
+  if (dtype == vkapi::kHalf && staging_buffer.dtype() == vkapi::kFloat) {
+    staging_buffer.cast_float_to_half_and_copy_to(
+        reinterpret_cast<uint16_t*>(data_out.data()), data_out.size());
+  } else {
+    VK_CHECK_COND(dtype == staging_buffer.dtype());
+    staging_buffer.copy_to(data_out.data(), staging_buffer.nbytes());
+  }
 
   for (int i = 0; i < vten.numel(); i++) {
     CHECK_VALUE(data_out, i, i + offset);
@@ -2491,11 +2641,6 @@ void round_trip_test(
         utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     vkapi::ScalarType dtype = vkapi::kFloat,
     utils::StorageType storage_type = utils::StorageType::TEXTURE_3D) {
-  if (dtype == vkapi::kHalf &&
-      !context()->adapter_ptr()->supports_16bit_storage_buffers()) {
-    return;
-  }
-
   vTensor vten = vTensor(context(), sizes, dtype, storage_type, memory_layout);
 
   // Create and fill input staging buffer
@@ -2505,11 +2650,18 @@ void round_trip_test(
       vten.staging_buffer_numel(),
       vkapi::CopyDirection::HOST_TO_DEVICE);
 
-  std::vector<T> data_in(staging_buffer_in.numel());
-  for (int i = 0; i < staging_buffer_in.numel(); i++) {
+  std::vector<T> data_in(vten.staging_buffer_numel());
+  for (int i = 0; i < data_in.size(); i++) {
     data_in[i] = T(i * -1);
   }
-  staging_buffer_in.copy_from(data_in.data(), vten.staging_buffer_nbytes());
+  // When float16 buffers are not supported, staging buffer uses float32
+  // storage. Use conversion methods to properly copy half data.
+  if (dtype == vkapi::kHalf && staging_buffer_in.dtype() == vkapi::kFloat) {
+    staging_buffer_in.cast_half_to_float_and_copy_from(
+        reinterpret_cast<const uint16_t*>(data_in.data()), data_in.size());
+  } else {
+    staging_buffer_in.copy_from(data_in.data(), vten.staging_buffer_nbytes());
+  }
 
   // Output staging buffer
   StagingBuffer staging_buffer_out(
@@ -2533,8 +2685,15 @@ void round_trip_test(
   submit_to_gpu();
 
   // Extract data from output staging buffer
-  std::vector<T> data_out(staging_buffer_out.numel());
-  staging_buffer_out.copy_to(data_out.data(), staging_buffer_out.nbytes());
+  std::vector<T> data_out(vten.staging_buffer_numel());
+  // When float16 buffers are not supported, staging buffer uses float32
+  // storage. Use conversion methods to properly copy out to half data.
+  if (dtype == vkapi::kHalf && staging_buffer_out.dtype() == vkapi::kFloat) {
+    staging_buffer_out.cast_float_to_half_and_copy_to(
+        reinterpret_cast<uint16_t*>(data_out.data()), data_out.size());
+  } else {
+    staging_buffer_out.copy_to(data_out.data(), staging_buffer_out.nbytes());
+  }
 
   // All indices should be equal to the input data
   for (int i = 0; i < vten.numel(); i++) {
@@ -2549,11 +2708,6 @@ void compute_graph_round_trip_test(
         utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     vkapi::ScalarType dtype = vkapi::kFloat,
     utils::StorageType storage_type = utils::StorageType::TEXTURE_3D) {
-  if (dtype == vkapi::kHalf &&
-      !context()->adapter_ptr()->supports_16bit_storage_buffers()) {
-    return;
-  }
-
   GraphConfig config;
   ComputeGraph graph(config);
 
@@ -2569,12 +2723,14 @@ void compute_graph_round_trip_test(
   for (int i = 0; i < data_in.size(); i++) {
     data_in[i] = T(i * -1);
   }
-  graph.copy_into_staging(r_staging_in, data_in.data(), data_in.size());
+  graph.maybe_cast_and_copy_into_staging(
+      r_staging_in, data_in.data(), data_in.size(), dtype);
 
   graph.execute();
 
   std::vector<T> data_out(graph.staging_buffer_numel_of(r_tensor));
-  graph.copy_from_staging(r_staging_out, data_out.data(), data_out.size());
+  graph.maybe_cast_and_copy_from_staging(
+      r_staging_out, data_out.data(), data_out.size(), dtype);
 
   for (int i = 0; i < data_in.size(); i++) {
     CHECK_VALUE(data_out, i, data_in[i]);
@@ -2909,7 +3065,8 @@ void test_grid_priors(
   graph.execute();
 
   std::vector<float> output_data(graph.staging_buffer_numel_of(out.value));
-  graph.copy_from_staging(out.staging, output_data.data(), output_data.size());
+  graph.maybe_cast_and_copy_from_staging(
+      out.staging, output_data.data(), output_data.size(), vkapi::kFloat);
 
   // check results
   std::vector<int64_t> out_sizes = graph.sizes_of(out.value);
@@ -3045,7 +3202,8 @@ void test_to_copy() {
 
   std::vector<float> data_in =
       create_random_float_buffer(M * N * K, -1024, 1024);
-  graph.copy_into_staging(in.staging, data_in.data(), data_in.size());
+  graph.maybe_cast_and_copy_into_staging(
+      in.staging, data_in.data(), data_in.size(), vkapi::kFloat);
 
   IOValueRef out;
   out.value = graph.add_tensor(
@@ -3073,7 +3231,8 @@ void test_to_copy() {
   graph.execute();
 
   std::vector<torch::executor::Half> output_data(graph.numel_of(out.value));
-  graph.copy_from_staging(out.staging, output_data.data(), output_data.size());
+  graph.maybe_cast_and_copy_from_staging(
+      out.staging, output_data.data(), output_data.size(), vkapi::kHalf);
 
   EXPECT_EQ(data_in.size(), output_data.size());
 
@@ -3139,9 +3298,7 @@ void test_to_copy() {
 }
 
 TEST(VulkanComputeGraphOpsTest, test_to_copy) {
-  if (context()->adapter_ptr()->supports_16bit_storage_buffers()) {
-    test_to_copy();
-  }
+  test_to_copy();
 }
 
 vkapi::ShaderInfo pick_dynamic_dispatch_shader(

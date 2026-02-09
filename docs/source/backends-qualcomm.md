@@ -61,6 +61,7 @@ For more details and troubleshooting, refer to the official Microsoft WSL instal
 ### Hardware:
 You will need an Android / Linux device with adb-connected running on one of below Qualcomm SoCs:
  - SA8295
+ - SA8797 (also used by SA8397)
  - SM8450 (Snapdragon 8 Gen 1)
  - SM8475 (Snapdragon 8 Gen 1+)
  - SM8550 (Snapdragon 8 Gen 2)

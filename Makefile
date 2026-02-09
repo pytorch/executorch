@@ -16,6 +16,7 @@
 # -----------------
 # - voxtral:  Multimodal voice + text model (CPU, CUDA, Metal)
 # - whisper:  Speech recognition model (CPU, CUDA, Metal)
+# - parakeet: Speech recognition model (CPU, CUDA, Metal)
 # - llama:    Text generation model (CPU)
 # - llava:    Vision + language model (CPU)
 # - gemma3:   Text generation model (CPU, CUDA)
@@ -87,7 +88,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -98,6 +99,10 @@ help:
 	@echo "  whisper-cuda-debug  - Build Whisper runner with CUDA backend (debug mode)"
 	@echo "  whisper-cpu         - Build Whisper runner with CPU backend"
 	@echo "  whisper-metal       - Build Whisper runner with Metal backend (macOS only)"
+	@echo "  parakeet-cuda       - Build Parakeet runner with CUDA backend"
+	@echo "  parakeet-cuda-debug - Build Parakeet runner with CUDA backend (debug mode)"
+	@echo "  parakeet-cpu        - Build Parakeet runner with CPU backend"
+	@echo "  parakeet-metal      - Build Parakeet runner with Metal backend (macOS only)"
 	@echo "  llama-cpu           - Build Llama runner with CPU backend"
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
@@ -166,6 +171,42 @@ whisper-metal:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/whisper/whisper_runner"
+
+parakeet-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Parakeet runner with CUDA..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+parakeet-cuda-debug:
+	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
+	cmake --workflow --preset llm-debug-cuda
+	@echo "==> Building Parakeet runner with CUDA (debug mode)..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-cuda-debug
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+parakeet-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Parakeet runner (CPU)..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+parakeet-metal:
+	@echo "==> Building and installing ExecuTorch with Metal (stats enabled)..."
+	cmake --workflow --preset llm-metal-stats
+	@echo "==> Building Parakeet runner with Metal..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-metal
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
 
 llama-cpu:
 	@echo "==> Building and installing ExecuTorch..."

@@ -400,9 +400,9 @@ def annotate_abs(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator(
     [
-        torch.torch.ops.aten.arange.default,
-        torch.torch.ops.aten.arange.start,
-        torch.torch.ops.aten.arange.start_step,
+        torch.ops.aten.arange.default,
+        torch.ops.aten.arange.start,
+        torch.ops.aten.arange.start_step,
     ]
 )
 def annotate_arange(node: Node, quantization_config: QuantizationConfig) -> None:
@@ -410,8 +410,6 @@ def annotate_arange(node: Node, quantization_config: QuantizationConfig) -> None
         return
 
     if _is_float_tensor(node):
-        # workaround for node with kwargs could not be correctly annotated
-        node.kwargs = {}
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={},
             output_qspec=quantization_config.output_activation,
@@ -491,8 +489,6 @@ def annotate_scalar_tensor(node: Node, quantization_config: QuantizationConfig) 
     if _is_annotated([node]):
         return
     if _is_float_tensor(node):
-        # workaround for node with kwargs could not be correctly annotated
-        node.kwargs = {}
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={},
             output_qspec=quantization_config.output_activation,
@@ -547,8 +543,6 @@ def annotate_full(node: Node, quantization_config: QuantizationConfig) -> None:
         return
 
     if _is_float_tensor(node):
-        # workaround for node with kwargs could not be correctly annotated
-        node.kwargs = {}
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={},
             output_qspec=quantization_config.output_activation,
@@ -583,13 +577,6 @@ def annotate_grid_sampler(node: Node, quantization_config: QuantizationConfig) -
     [torch.ops.aten.hardswish.default, torch.ops.aten.hardswish_.default]
 )
 def annotate_hardswish(node: Node, quantization_config: QuantizationConfig) -> None:
-    annotate_single_in_single_out(node, quantization_config)
-
-
-@register_annotator(
-    [torch.ops.aten.hardsigmoid.default, torch.ops.aten.hardsigmoid_.default]
-)
-def annotate_hardsigmoid(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
@@ -787,7 +774,16 @@ def annotate_sign(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.slice.Tensor])
 def annotate_slice(node: Node, quantization_config: QuantizationConfig) -> None:
-    annotate_single_in_share_out(node, quantization_config)
+    annotate_in_out_obs_sharing_op(node, quantization_config)
+    if not _is_annotated([node]):
+        annotate_single_in_share_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.narrow.default])
+def annotate_narrow(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_in_out_obs_sharing_op(node, quantization_config)
+    if not _is_annotated([node]):
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.slice_scatter.default])
@@ -871,7 +867,14 @@ def annotate_rsqrt(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.sigmoid, torch.ops.aten.sigmoid.default])
+@register_annotator(
+    [
+        torch.ops.aten.hardsigmoid.default,
+        torch.ops.aten.hardsigmoid_.default,
+        torch.ops.aten.sigmoid,
+        torch.ops.aten.sigmoid.default,
+    ]
+)
 def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
@@ -896,7 +899,7 @@ def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> Non
 
     scale = 1 / (q_max - q_min + 1)
 
-    bias_obs_ctr = observer = FixedQParamsObserver.with_args(
+    output_obs_ctr = observer = FixedQParamsObserver.with_args(
         scale=scale,
         zero_point=0,
         dtype=quantization_config.output_activation.dtype,
@@ -908,7 +911,7 @@ def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> Non
         get_8a8w_qnn_qat_config(),
         get_16a4w_qnn_qat_config(),
     ):
-        bias_obs_ctr = FixedQParamsFakeQuantize.with_args(
+        output_obs_ctr = FixedQParamsFakeQuantize.with_args(
             observer=observer,
             scale=scale,
             zero_point=0,
@@ -923,7 +926,7 @@ def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> Non
         dtype=quantization_config.output_activation.dtype,
         quant_max=q_max,
         quant_min=q_min,
-        observer_or_fake_quant_ctr=bias_obs_ctr,
+        observer_or_fake_quant_ctr=output_obs_ctr,
         qscheme=torch.torch.per_tensor_affine,
     )
 
@@ -1492,8 +1495,6 @@ def annotate_zeros(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]) or not _is_float_tensor(node):
         return
 
-    # workaround for node with kwargs could not be correctly annotated
-    node.kwargs = {}
     node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map={},
         output_qspec=quantization_config.output_activation,

@@ -14,6 +14,7 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,29 @@ namespace vulkan {
 namespace prototyping {
 
 using namespace vkcompute;
+
+//
+// ReferenceKey for caching reference computations
+//
+
+// Captures the identity of input conditions for test case grouping.
+// Test cases with the same ReferenceKey should produce identical reference
+// outputs, so reference computation can be cached and reused.
+struct ReferenceKey {
+  std::string key_string;
+
+  static ReferenceKey from_test_case(const class TestCase& tc);
+
+  bool operator==(const ReferenceKey& other) const {
+    return key_string == other.key_string;
+  }
+};
+
+struct ReferenceKeyHash {
+  size_t operator()(const ReferenceKey& k) const {
+    return std::hash<std::string>{}(k.key_string);
+  }
+};
 
 //
 // Global configuration options
@@ -58,10 +82,69 @@ inline const std::vector<std::string> kLayoutOnlyShaderFilter = {
     "to_nchw"};
 
 //
+// String utilities
+//
+
+// Helper function to get abbreviated layout names for test case naming
+inline std::string layout_abbrev(utils::GPUMemoryLayout layout) {
+  switch (layout) {
+    case utils::kWidthPacked:
+      return "WP";
+    case utils::kChannelsPacked:
+      return "CP";
+    case utils::kPackedInt8_4W:
+      return "4W";
+    case utils::kPackedInt8_4C:
+      return "4C";
+    case utils::kPackedInt8_4W4C:
+      return "4W4C";
+    case utils::kPackedInt8_4H4W:
+      return "4H4W";
+    case utils::kPackedInt8_4C1W:
+      return "4C1W";
+    default:
+      return "UNK";
+  }
+}
+
+// Helper function to get abbreviated storage type names for test case naming
+inline std::string storage_type_abbrev(utils::StorageType storage_type) {
+  switch (storage_type) {
+    case utils::kTexture3D:
+      return "Tex";
+    case utils::kBuffer:
+      return "Buf";
+    default:
+      return "UNK";
+  }
+}
+
+// Helper function to get combined storage type and layout representation
+// Example: (kBuffer, kPackedInt8_4W4C) -> "Buf_4W4C"
+inline std::string repr_str(
+    utils::StorageType storage_type,
+    utils::GPUMemoryLayout layout) {
+  return storage_type_abbrev(storage_type) + "(" + layout_abbrev(layout) + ")";
+}
+
+// Helper function to generate comma-separated shape string for test case naming
+// Example: {1, 128, 56, 56} -> "1,128,56,56"
+inline std::string shape_string(const std::vector<int64_t>& shape) {
+  std::string result;
+  for (size_t i = 0; i < shape.size(); ++i) {
+    if (i > 0) {
+      result += ",";
+    }
+    result += std::to_string(shape[i]);
+  }
+  return result;
+}
+
+//
 // ValueSpec class
 //
 
-enum class SpecType { Tensor, IntList, Int, Float, Bool };
+enum class SpecType { Tensor, IntList, Int, Float, Bool, String };
 
 // Data generation types
 enum class DataGenType {
@@ -87,12 +170,14 @@ struct ValueSpec {
   bool is_constant_tensor;
   bool is_none_flag;
   bool is_int4_tensor;
+  bool data_generated_ = false;
 
   std::vector<float> float_data;
   std::vector<int32_t> int32_data;
   std::vector<uint16_t> half_data; // Using uint16_t as substitute for half
   std::vector<int8_t> int8_data; // For kChar (signed 8-bit)
   std::vector<uint8_t> uint8_data; // For kByte (unsigned 8-bit)
+  std::string string_data;
 
   std::vector<float> ref_float_data;
   std::vector<int32_t> ref_int32_data;
@@ -113,8 +198,9 @@ struct ValueSpec {
         data_gen_type(DataGenType::ZEROS),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {
-    generate_tensor_data();
+        is_int4_tensor(false),
+        data_generated_(false) {
+    // Data generation is deferred until ensure_data_generated() is called
   }
 
   // Constructor for tensor with custom data generation type
@@ -132,8 +218,9 @@ struct ValueSpec {
         data_gen_type(data_gen_type),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {
-    generate_tensor_data();
+        is_int4_tensor(false),
+        data_generated_(false) {
+    // Data generation is deferred until ensure_data_generated() is called
   }
 
   // Constructor for single int
@@ -146,7 +233,8 @@ struct ValueSpec {
         data_gen_type(DataGenType::FIXED),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {
+        is_int4_tensor(false),
+        data_generated_(true) {
     int32_data.push_back(value);
   }
 
@@ -160,7 +248,8 @@ struct ValueSpec {
         data_gen_type(DataGenType::FIXED),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {
+        is_int4_tensor(false),
+        data_generated_(true) {
     float_data.push_back(value);
   }
 
@@ -174,7 +263,8 @@ struct ValueSpec {
         data_gen_type(DataGenType::FIXED),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {
+        is_int4_tensor(false),
+        data_generated_(true) {
     int32_data.push_back(value ? 1 : 0);
   }
 
@@ -189,7 +279,25 @@ struct ValueSpec {
         is_constant_tensor(false),
         is_none_flag(false),
         is_int4_tensor(false),
+        data_generated_(true),
         int32_data(values) {}
+
+  // Factory method for string (avoids ambiguity with vector constructor)
+  static ValueSpec make_string(const std::string& value) {
+    ValueSpec spec;
+    spec.sizes = {1};
+    spec.dtype = vkapi::kInt;
+    spec.memory_layout = utils::kWidthPacked;
+    spec.storage_type = utils::kTexture3D;
+    spec.spec_type = SpecType::String;
+    spec.data_gen_type = DataGenType::FIXED;
+    spec.is_constant_tensor = false;
+    spec.is_none_flag = false;
+    spec.is_int4_tensor = false;
+    spec.data_generated_ = true;
+    spec.string_data = value;
+    return spec;
+  }
 
   // Default constructor
   ValueSpec()
@@ -200,7 +308,8 @@ struct ValueSpec {
         data_gen_type(DataGenType::ZEROS),
         is_constant_tensor(false),
         is_none_flag(false),
-        is_int4_tensor(false) {}
+        is_int4_tensor(false),
+        data_generated_(false) {}
 
   int64_t numel() const;
   size_t nbytes() const;
@@ -221,6 +330,9 @@ struct ValueSpec {
   bool is_bool() const {
     return spec_type == SpecType::Bool;
   }
+  bool is_string() const {
+    return spec_type == SpecType::String;
+  }
 
   int32_t get_int_value() const {
     return int32_data.empty() ? 0 : int32_data[0];
@@ -230,6 +342,9 @@ struct ValueSpec {
   }
   bool get_bool_value() const {
     return int32_data.empty() ? false : (int32_data[0] != 0);
+  }
+  const std::string& get_string_value() const {
+    return string_data;
   }
   const std::vector<int32_t>& get_int_list() const {
     return int32_data;
@@ -306,12 +421,23 @@ struct ValueSpec {
   void* get_mutable_data_ptr();
   float get_element(size_t index) const;
 
+  // Data generation methods for deferred generation and caching
+  bool is_data_generated() const {
+    return data_generated_;
+  }
+  void ensure_data_generated(int seed = -1);
+  void copy_data_from(const ValueSpec& other);
+
   // Set/get constant flag
   bool is_constant() const {
     return is_constant_tensor;
   }
   void set_constant(bool is_constant) {
     is_constant_tensor = is_constant;
+    // Constant tensors need data immediately for test case setup
+    if (is_constant && is_tensor()) {
+      ensure_data_generated();
+    }
   }
 
   // Set/get none flag
@@ -341,7 +467,7 @@ struct ValueSpec {
       float rel_tolerance = 1e-3f) const;
 
  private:
-  void generate_tensor_data();
+  void generate_tensor_data(int seed = -1);
 };
 
 //
@@ -463,6 +589,25 @@ enum class CorrectnessStatus {
   FAILED // Reference function provided but validation failed
 };
 
+// Per-shader timing data for detailed reporting
+struct ShaderTiming {
+  std::string shader_name;
+  std::vector<float> iter_timings_us; // Individual iteration timings
+  uint32_t global_wg_size[3] = {0, 0, 0};
+  uint32_t local_wg_size[3] = {0, 0, 0};
+
+  float get_avg_time_us() const {
+    if (iter_timings_us.empty()) {
+      return 0.0f;
+    }
+    float sum = 0.0f;
+    for (float t : iter_timings_us) {
+      sum += t;
+    }
+    return sum / iter_timings_us.size();
+  }
+};
+
 class BenchmarkResult {
  public:
   BenchmarkResult() : correctness_status_(CorrectnessStatus::SKIPPED) {}
@@ -479,6 +624,18 @@ class BenchmarkResult {
 
   // Add timing for a single iteration
   void add_iter_timing(float time_us);
+
+  // Add per-shader timing for a single iteration
+  void add_shader_timing(
+      const std::string& shader_name,
+      float time_us,
+      const uint32_t global_wg[3],
+      const uint32_t local_wg[3]);
+
+  // Get per-shader timing data
+  const std::vector<ShaderTiming>& get_shader_timings() const {
+    return shader_timings_;
+  }
 
   // Getters
   const std::string& get_kernel_name() const {
@@ -530,6 +687,7 @@ class BenchmarkResult {
   std::string operator_name;
   std::vector<float>
       iter_timings; // Individual iteration timings in microseconds
+  std::vector<ShaderTiming> shader_timings_; // Per-shader timing data
   CorrectnessStatus correctness_status_;
 };
 

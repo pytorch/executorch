@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -89,6 +89,9 @@ for COMMIT in ${COMMITS}; do
         echo -e "${SUCCESS} Lintrunner OK"
     fi
 
+    commit_files=$(git diff-tree --no-commit-id --name-only \
+        --diff-filter=ACMR ${COMMIT} -r)
+
     # Check license headers
     # We do a simple check of if all committed headers contain
     # "$current_year Arm". This does not guarantee OK in ci but should be ok
@@ -97,9 +100,13 @@ for COMMIT in ${COMMITS}; do
 
     current_year=$(date +%Y)
     failed_license_check=false
-    commit_files=$(git diff-tree --no-commit-id --name-only \
-        --diff-filter=ACMR ${COMMIT} -r)
     for commited_file in $commit_files; do
+        # Skip files with certain extensions
+        if [[ "$commited_file" == *.md || "$commited_file" == *.md.in ]]; then
+            echo -e "${INFO} Skipping license check for ${commited_file} (excluded extension)"
+            continue
+        fi
+
         file_header=$(head "$commited_file")
         if ! echo "$file_header" | grep -qi "Arm"; then
             echo -e "${WARNING} No Arm copyright header in ${commited_file}"\
@@ -169,19 +176,39 @@ for COMMIT in ${COMMITS}; do
         FAILED=1
     fi
 
-    # Check subject format, should start with 'Arm backend: ' and be
-    # imperative mood.
-    if [[ ! "$SUBJECT" =~ ^"Arm backend":\ (${VERBS}) ]]; then
-        echo -e "${WARNING} Subject should start with 'Arm backend: '"\
-            "followed by an imperative verb." >&2
+    # Determine whether all modifications are under backends/arm or examples/arm
+    only_arm_changes=true
+    for commited_file in $commit_files; do
+        if [[ $commited_file != backends/arm/* && $commited_file != examples/arm/* ]]; then
+            only_arm_changes=false
+            break
+        fi
+    done
 
+    # Determine if subject has 'Arm backend: ' prefix
+    subject_prefix="Arm backend: "
+    has_arm_backend_prefix=false
+    subject_without_prefix="$SUBJECT"
+    if [[ "$SUBJECT" == ${subject_prefix}* ]]; then
+        has_arm_backend_prefix=true
+        subject_without_prefix=${SUBJECT#"${subject_prefix}"}
+    fi
+
+    # Require 'Arm backend: ' prefix when the commit only touches Arm backend/examples files
+    if [[ $only_arm_changes == true && $has_arm_backend_prefix == false ]]; then
+        echo -e "${ERROR} Subject must start with 'Arm backend: ' when only backends/arm or examples/arm files are modified." >&2
+        FAILED=1
+    fi
+
+    # Imperative mood check (after optional prefix removal)
+    if [[ ! "$subject_without_prefix" =~ ^(${VERBS})(\ |$) ]]; then
+        echo -e "${WARNING} Commit message should begin with an imperative verb." >&2
         if [ $is_script_interactive -eq 1 ]; then
             echo -n "There are warnings in your commit message. Do you want to"\
                 "ignore the warning (y/N): " > /dev/tty
 
             read USER_INPUT < /dev/tty
 
-            # Check user input for warnings
             if [[ ! "$USER_INPUT" =~ ^[Yy]$ ]]; then
                 FAILED=1
             fi

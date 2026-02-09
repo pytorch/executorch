@@ -108,6 +108,8 @@ class ET_EXPERIMENTAL AsrRunner {
 
   bool encoder_method_loaded_ = false;
   bool decoder_method_loaded_ = false;
+  bool sampler_method_loaded_ = false;
+  bool sampler_method_present_ = false;
 
   Stats stats_;
 };

@@ -8,13 +8,13 @@
 
 #version 450 core
 
+${define_required_extensions("buffer", DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
 
 #include "indexing_utils.h"
-
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 

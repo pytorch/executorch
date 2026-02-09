@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -63,11 +63,6 @@ def test_mv2_tosa_FP_channels_last():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-    )
-    # Changing memory format leads to an unsupported as_strided_copy op being inserted into the graph,
-    # leading to a graph break.
-    pipeline.change_args(
-        "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
     )
     pipeline.run()
 

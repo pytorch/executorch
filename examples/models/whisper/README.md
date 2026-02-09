@@ -71,8 +71,7 @@ optimum-cli export executorch \
 ```
 
 This command generates:
-- `model.pte` — Compiled Whisper model
-- `aoti_metal_blob.ptd` — Weight data file for Metal backend
+- `model.pte` — Compiled Whisper model (includes Metal kernel blob)
 
 ### Preprocessor
 
@@ -160,7 +159,6 @@ cmake-out/examples/models/whisper/whisper_runner \
 # Run the Whisper runner
 cmake-out/examples/models/whisper/whisper_runner \
     --model_path model.pte \
-    --data_path aoti_metal_blob.ptd \
     --tokenizer_path ./ \
     --audio_path output.wav \
     --processor_path whisper_preprocessor.pte \

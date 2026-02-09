@@ -54,15 +54,15 @@ class FuseEqualPlaceholdersPass(ArmPass):
             # ensure we don't merge any special case int48_t tensors with int32_t tensors
             # since int48_t tensors needs to be instantiated separately.
             is_special_dtype = node.meta.get(TosaSpecialDtype.meta_key(), None)
-            t_cpu = tensor.detach().cpu().contiguous()
+            t_cpu = tensor.cpu().contiguous().flatten().view(dtype=torch.uint8)
             data_bytes = t_cpu.numpy().tobytes()
             key = (
                 is_special_dtype,
-                str(t_cpu.dtype),
-                tuple(t_cpu.shape),
+                str(tensor.dtype),
+                tuple(tensor.shape),
                 hashlib.sha1(data_bytes, usedforsecurity=False).hexdigest(),
             )
-            hash_buckets[key].append((node, t_cpu))
+            hash_buckets[key].append((node, tensor))
 
         # For each bucket with more than one entry, fuse:
         for nodes_tensors in hash_buckets.values():

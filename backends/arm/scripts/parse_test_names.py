@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -91,16 +91,16 @@ def collect_tests(file_paths: list[pathlib.Path]) -> list[str]:
 
 
 def _match_allowed_op_prefix(test_name: str) -> tuple[str, str, bool]:
-    """
-    Parses a test name on the form
-        test_OP_TARGET_<not_delegated>_<any_other_info>
-    where OP must match a key in op_name_map and TARGET one string in TARGETS. The
-    "not_delegated" suffix indicates that the test tests that the op is not delegated.
+    """Parses a test name on the form
+    test_OP_TARGET_<not_delegated>_<any_other_info> where OP must match a key in
+    op_name_map and TARGET one string in TARGETS. The "not_delegated" suffix
+    indicates that the test tests that the op is not delegated.
 
     Examples of valid names: "test_mm_u55_INT_not_delegated" and
     "test_add_scalar_tosa_FP_two_inputs".
 
     Returns a tuple (OP, TARGET, IS_DELEGATED) if valid.
+
     """
     test_name = test_name.removeprefix("test_")
     is_delegated = "not_delegated" not in test_name
@@ -269,3 +269,6 @@ if __name__ == "__main__":
         print(entry)
 
     print(f"Total tests needing renaming: {len(violations)}")
+
+    if violations:
+        sys.exit(1)

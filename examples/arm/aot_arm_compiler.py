@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,6 +14,13 @@ import os
 import sys
 
 from pathlib import Path
+
+# Add Executorch root to path so this script can be run from anywhere
+_EXECUTORCH_DIR = Path(__file__).resolve().parents[2]
+_EXECUTORCH_DIR_STR = str(_EXECUTORCH_DIR)
+if _EXECUTORCH_DIR_STR not in sys.path:
+    sys.path.insert(0, _EXECUTORCH_DIR_STR)
+
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
@@ -27,11 +34,6 @@ from executorch.backends.arm.quantizer import (
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
-
-from executorch.backends.arm.util.arm_model_evaluator import (
-    evaluate_model,
-    evaluator_calibration_data,
-)
 
 from executorch.backends.arm.vgf import VgfCompileSpec
 
@@ -73,6 +75,27 @@ from ..models.model_factory import EagerModelFactory
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
+
+_arm_model_evaluator = None
+
+
+def _load_arm_model_evaluator() -> Any:
+    """Lazily import arm_model_evaluator to avoid heavy deps when not evaluating."""
+    global _arm_model_evaluator
+    if _arm_model_evaluator is not None:
+        return _arm_model_evaluator
+
+    try:
+        from executorch.backends.arm.util import arm_model_evaluator as arm_eval
+    except Exception as exc:
+        raise RuntimeError(
+            "Unable to run evaluation because arm_model_evaluator could not be imported. "
+            "You probably need to install torchvision or rerun without --evaluate. "
+            f"Original import error: {exc}"
+        )
+
+    _arm_model_evaluator = arm_eval
+    return arm_eval
 
 
 def _load_example_inputs(model_input: str | None) -> Any:  # nosec B614
@@ -387,7 +410,10 @@ def get_calibration_data(
 ):
     # Firstly, if the model is being evaluated, take the evaluators calibration function if it has one
     if evaluator_name is not None:
-        evaluator_data = evaluator_calibration_data(evaluator_name, evaluator_config)
+        arm_eval = _load_arm_model_evaluator()
+        evaluator_data = arm_eval.evaluator_calibration_data(
+            evaluator_name, evaluator_config
+        )
         if evaluator_data is not None:
             return evaluator_data
 
@@ -408,6 +434,7 @@ def get_compile_spec(
     quantize: bool = False,
     config: Optional[str] = None,
     debug_mode: Optional[str] = None,
+    direct_drive: bool = False,
 ) -> TosaCompileSpec | EthosUCompileSpec | VgfCompileSpec:
     compile_spec = None
     if target.startswith("TOSA"):
@@ -420,6 +447,9 @@ def get_compile_spec(
         extra_flags = ["--verbose-operators", "--verbose-cycle-estimate"]
         if debug_mode is not None:
             extra_flags.append("--enable-debug-db")
+        if direct_drive:
+            extra_flags.append("--separate-io-regions")
+            extra_flags.append("--cop-format=COP2")
         compile_spec = EthosUCompileSpec(
             target,
             system_config=system_config,
@@ -590,6 +620,13 @@ def get_args():
         choices=["json", "tosa"],
         help="Flag to enable ATen-to-TOSA debug mode and dumping of Vela's debug database.",
     )
+    parser.add_argument(
+        "--direct_drive",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Flag for enabling direct drive.",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -736,6 +773,7 @@ def to_edge_TOSA_delegate(
         args.quantize,
         args.config,
         args.enable_debug_mode,
+        args.direct_drive,
     )
 
     model_quant = None
@@ -775,6 +813,7 @@ def to_edge_no_delegate(
             args.quantize,
             args.config,
             args.enable_debug_mode,
+            args.direct_drive,
         )
         model, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
@@ -851,7 +890,8 @@ if __name__ == "__main__":  # noqa: C901
             exported_program, args, model, example_inputs
         )
 
-    if args.target != "vgf":
+    # Cortex-m ops are never included in vgf or direct-drive
+    if args.target != "vgf" and not args.direct_drive:
         # Transform so we can use ops from the Cortex M backend
         edge = transform_for_cortex_m_backend(edge, args)
 
@@ -915,7 +955,8 @@ if __name__ == "__main__":  # noqa: C901
         print(f"PTE file saved as {output_file_name}")
 
     if args.evaluate:
-        evaluate_model(
+        arm_eval = _load_arm_model_evaluator()
+        arm_eval.evaluate_model(
             args.model_name,
             args.intermediates,
             args.target,

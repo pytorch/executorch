@@ -42,6 +42,7 @@ from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     base_post_op_replace_passes,
     base_pre_op_replace_passes,
+    convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     EdgeToBackendOpsPass,
     MemoryFormatOpsPass,
@@ -910,8 +911,15 @@ def _generate_edge_program(
             )
         ],
     )
+
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
+
+    # Normalize constant tensor dim order on the unlifted graph
+    edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+        edge_program
+    )
+
     edge_program = _transform(edge_program, *post_op_replace_passes)
 
     return edge_program
@@ -1791,8 +1799,11 @@ class EdgeProgramManager:
         )
 
         if self._etrecord is not None:
-            self._etrecord.add_executorch_program(et_pm)
-            et_pm._etrecord = self._etrecord
+            # Create a clean copy of the ETRecord for the executorch manager
+            # This preserves edge-stage data while allowing executorch data to be added
+            et_etrecord = self._etrecord.copy()
+            et_etrecord.add_executorch_program(et_pm)
+            et_pm._etrecord = et_etrecord
 
         return et_pm
 

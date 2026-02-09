@@ -13,7 +13,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 edge_ops = (exir_ops.edge.aten.leaky_relu.default,)
-torch_ops = (torch.ops.aten.leaky_relu.default,)
+torch_ops = (torch.ops.aten.leaky_relu.default, torch.ops.aten.leaky_relu_.default)
 
 
 def _get_leaky_relu_ops(op) -> tuple:

@@ -787,7 +787,8 @@ class MulTensorPattern(QuantizationPattern):
         # which didn't take the requirements of "Mul" into account, we need to overwrite
         # the existing "quantization_annotation".
         for input_node in input_nodes:
-            input_node.meta["quantization_annotation"].output_qspec = qspec
+            if "quantization_annotation" in input_node.meta:
+                input_node.meta["quantization_annotation"].output_qspec = qspec
 
         return PartitionAnchors(
             inputs=[(node, NodeArgsIdx(0), qspec), (node, NodeArgsIdx(1), qspec)],
@@ -941,6 +942,15 @@ class TanhInPlacePattern(QuantizationPattern):
         return get_anchors_for_fixed_quant_specs(
             fused_partition, scale=1.0 / 128.0, zero_point=0, is_qat=self.is_qat
         )
+
+
+class UpsampleNearest2DPattern(SharedSpecPattern):
+    """
+    Quantizer for `aten.upsample_nearest2d.vec` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.upsample_nearest2d.vec]
 
 
 class ActivationsConcatClusterPattern(QuantizationPattern):

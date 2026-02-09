@@ -62,7 +62,7 @@ class LCMOpenVINOExporter:
                 exported_program, partitioner=[partitioner]
             )
 
-            # Convert to ExecutorTorch program
+            # Convert to ExecuTorch program
             executorch_program = edge_manager.to_executorch(
                 config=ExecutorchBackendConfig()
             )
@@ -102,7 +102,7 @@ class LCMOpenVINOExporter:
                 exported_program, partitioner=[partitioner]
             )
 
-            # Convert to ExecutorTorch program
+            # Convert to ExecuTorch program
             executorch_program = edge_manager.to_executorch(
                 config=ExecutorchBackendConfig()
             )
@@ -142,7 +142,7 @@ class LCMOpenVINOExporter:
                 exported_program, partitioner=[partitioner]
             )
 
-            # Convert to ExecutorTorch program
+            # Convert to ExecuTorch program
             executorch_program = edge_manager.to_executorch(
                 config=ExecutorchBackendConfig()
             )

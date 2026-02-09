@@ -146,9 +146,9 @@ if __name__ == "__main__":  # noqa C901
         "-c",
         "--neutron_converter_flavor",
         required=False,
-        default="SDK_25_09",
+        default="SDK_25_12",
         help="Flavor of installed neutron-converter module. Neutron-converter module named "
-        "'neutron_converter_SDK_25_09' has flavor 'SDK_25_09'.",
+        "'neutron_converter_SDK_25_12' has flavor 'SDK_25_12'.",
     )
     parser.add_argument(
         "-q",
@@ -237,6 +237,13 @@ if __name__ == "__main__":  # noqa C901
         # The dim order of the example inputs will define the dim order of the intermediate tensors in the model.
         example_inputs = tuple(
             i.to(memory_format=torch.channels_last) for i in example_inputs
+        )
+
+    else:
+        # Notify the user of this option.
+        print(
+            "HINT: Converting your model to channels last may significantly improve inference speed. You can use the "
+            "flag `--use_channels_last_dim_order`. See `docs/source/backends/nxp/nxp-dim-order.md` for more information."
         )
 
     # 2. Export the model to ATEN

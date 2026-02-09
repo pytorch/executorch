@@ -167,7 +167,8 @@
         "llm-release"
       ],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_METAL": "ON"
+        "EXECUTORCH_BUILD_METAL": "ON",
+        "EXECUTORCH_METAL_COLLECT_STATS": "OFF"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -209,6 +210,23 @@
       ],
       "cacheVariables": {
         "EXECUTORCH_BUILD_METAL": "ON"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "llm-metal-stats",
+      "displayName": "LLM Metal build with stats collection and logging",
+      "inherits": [
+        "llm-release-metal"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_METAL_COLLECT_STATS": "ON",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "EXECUTORCH_LOG_LEVEL": "Info"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -320,6 +338,15 @@
         "install"
       ],
       "jobs": 0
+    },
+    {
+      "name": "llm-metal-stats-install",
+      "displayName": "Build and install LLM extension artifacts with Metal stats",
+      "configurePreset": "llm-metal-stats",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
     }
   ],
   "workflowPresets": [
@@ -404,6 +431,20 @@
         {
           "type": "build",
           "name": "llm-debug-metal-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-metal-stats",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Metal stats and logging",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-metal-stats"
+        },
+        {
+          "type": "build",
+          "name": "llm-metal-stats-install"
         }
       ]
     }

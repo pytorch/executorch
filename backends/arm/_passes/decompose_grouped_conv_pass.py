@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -75,15 +75,24 @@ class DecomposeGroupedConvPass(ArmPass):
     @staticmethod
     def _get_meta_copy(meta, i, output_slice_size):
         meta_copy = meta.copy()
+
         if "input_qparams" in meta.data and len(meta.data["input_qparams"]) > 0:
             # Handle per-channel quantization by splitting quantization params
             # similarly to how activations/weights/biases are split.
             new_qparams = meta.data.get("input_qparams").copy()
             # Get quantization params of the weights and slice them.
-            qarg = new_qparams[1]
+            w_qarg = new_qparams[1]
             new_qparams[1] = DecomposeGroupedConvPass._split_per_channel_qparams(
-                qarg, index=i, output_slice_size=output_slice_size
+                w_qarg, index=i, output_slice_size=output_slice_size
             )
+            # Special case for int16, grouped conv2d when bias is included.
+            # As we add bias after in the DecomposeConv2dWithInt16ActivationPass we must
+            # also split the bias quantization parameters for bias.
+            if new_qparams[0].dtype == torch.int16 and len(new_qparams) > 2:
+                b_qarg = new_qparams[2]
+                new_qparams[2] = DecomposeGroupedConvPass._split_per_channel_qparams(
+                    b_qarg, index=i, output_slice_size=output_slice_size
+                )
 
             meta_copy.data["input_qparams"] = new_qparams
 

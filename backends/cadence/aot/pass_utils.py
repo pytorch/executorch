@@ -264,6 +264,12 @@ class RemoveOrReplacePassInterface(ExportPass):
                 lambda m: isinstance(m, torch.fx.GraphModule), graph_module.modules()
             ):
                 for node in module.graph.find_nodes(op="call_function", target=target):
+                    if len(node.users) == 0:
+                        # It is possible that maybe_remove_or_replace would have removed
+                        # this target by starting from a different target. In this case,
+                        # we should ignore it. If it wasn't erased, it will be handled
+                        # in eliminate_dead_code.
+                        continue
                     changed |= self.maybe_remove_or_replace(node)
 
         if changed:

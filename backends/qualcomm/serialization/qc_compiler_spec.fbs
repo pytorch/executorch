@@ -34,6 +34,7 @@ table HtpInfo {
 enum QcomChipset: int {
   UNKNOWN_SM = 0,
   SA8295 = 39,
+  SA8797 = 72,
   SM8350 = 30,
   SM8450 = 36,
   SM8475 = 42,

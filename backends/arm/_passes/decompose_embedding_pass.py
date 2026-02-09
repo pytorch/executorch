@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,6 +10,9 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.decompose_index_select_to_gather_pass import (
+    DecomposeIndexSelectToGatherPass,
+)
 from executorch.backends.arm._passes.fuse_view_copy_transform_pass import (
     FuseViewCopyTransformPass,
 )
@@ -35,7 +38,10 @@ class DecomposeEmbeddingPass(ArmPass):
          i = indices is expected to be int32 before this pass
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {FuseViewCopyTransformPass}
+    _passes_required_after: Set[Type[ExportPass]] = {
+        DecomposeIndexSelectToGatherPass,
+        FuseViewCopyTransformPass,
+    }
 
     aten_ops = (torch.ops.aten.embedding.default,)
     edge_ops = (exir_ops.edge.aten.embedding.default,)

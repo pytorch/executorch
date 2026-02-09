@@ -121,6 +121,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
  private:
   friend HybridBase;
   float temperature_ = 0.0f;
+  int num_bos_ = 0;
+  int num_eos_ = 0;
   int model_type_category_;
   std::unique_ptr<llm::IRunner> runner_;
   std::unique_ptr<executorch::extension::llm::MultimodalRunner>
@@ -143,13 +145,17 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature,
       facebook::jni::alias_ref<facebook::jni::JList<jstring>::javaobject>
-          data_files) {
+          data_files,
+      jint num_bos,
+      jint num_eos) {
     return makeCxxInstance(
         model_type_category,
         model_path,
         tokenizer_path,
         temperature,
-        data_files);
+        data_files,
+        num_bos,
+        num_eos);
   }
 
   ExecuTorchLlmJni(
@@ -157,8 +163,12 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature,
-      facebook::jni::alias_ref<jobject> data_files = nullptr) {
+      facebook::jni::alias_ref<jobject> data_files = nullptr,
+      jint num_bos = 0,
+      jint num_eos = 0) {
     temperature_ = temperature;
+    num_bos_ = num_bos;
+    num_eos_ = num_eos;
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
     int32_t num_performant_cores =
@@ -228,7 +238,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
-      jboolean echo) {
+      jboolean echo,
+      jfloat temperature,
+      jint num_bos,
+      jint num_eos) {
+    float effective_temperature = temperature >= 0 ? temperature : temperature_;
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
       prefill_inputs_.clear();
@@ -238,7 +252,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       executorch::extension::llm::GenerationConfig config{
           .echo = static_cast<bool>(echo),
           .seq_len = seq_len,
-          .temperature = temperature_,
+          .temperature = effective_temperature,
+          .num_bos = num_bos,
+          .num_eos = num_eos,
       };
       multi_modal_runner_->generate(
           std::move(inputs),
@@ -249,7 +265,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       executorch::extension::llm::GenerationConfig config{
           .echo = static_cast<bool>(echo),
           .seq_len = seq_len,
-          .temperature = temperature_,
+          .temperature = effective_temperature,
+          .num_bos = num_bos,
+          .num_eos = num_eos,
       };
       runner_->generate(
           prompt->toStdString(),

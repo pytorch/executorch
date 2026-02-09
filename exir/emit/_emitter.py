@@ -83,6 +83,7 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tensor import (
     AddressSpaceOverflowException,
+    dim_order_from_stride,
     layout_enum,
     make_allocation_info,
     make_tensor_value,
@@ -92,11 +93,9 @@ from executorch.exir.tensor import (
 )
 from executorch.exir.types import LeafValueSpec, ValueSpec
 from torch._subclasses.fake_tensor import FakeTensor
-
 from torch.export.exported_program import ExportedProgram, ExportGraphSignature
 from torch.fx.node import Node
 from torch.utils import _pytree as pytree
-
 from typing_extensions import TypeAlias
 
 
@@ -1994,14 +1993,20 @@ class _TopLevelEmitter(_Emitter):
 
             # assign the storage of the placeholder spec to the storage of the real tensor if there is one
             if real_tensor is not None:
-                # for non-contigous tensors, convert to a contiguous one
-                real_tensor = real_tensor.contiguous()
+                # For tensors that are neither contiguous nor channels-last, convert to contiguous format.
+                if not (
+                    real_tensor.is_contiguous()
+                    or real_tensor.is_contiguous(memory_format=torch.channels_last)
+                ):
+                    real_tensor = real_tensor.contiguous()
+
                 # Weights cannot be views during emission or serialization
                 if real_tensor.nbytes != real_tensor.untyped_storage().nbytes():
                     real_tensor = real_tensor.clone()
 
                 spec.storage = real_tensor.untyped_storage()
-
+                spec.stride = real_tensor.stride()
+                spec.dim_order = dim_order_from_stride(spec.stride)
             # User inputs and mutable buffers are not constants, other buffers or parameters are.
             if initialize_buffer and is_mutable_buffer:
                 spec.const = True

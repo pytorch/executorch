@@ -20,16 +20,12 @@ from typing import cast, Dict, Optional, Sequence
 import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import quantize_tensor_multiplier
-from executorch.backends.cadence.aot.fuse_ops import (
-    FuseCascadedTransposeOrPermuteOps,
-    FuseCascadedViewOps,
-)
+from executorch.backends.cadence.aot.fuse_ops import FuseCascadedTransposeOrPermuteOps
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     register_cadence_pass,
     RemoveOrReplacePassInterface,
 )
-from executorch.backends.cadence.aot.remove_ops import RemoveNopSelectOpPass
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
@@ -1663,16 +1659,6 @@ class ReplaceNopTransposeOrPermuteWithViewPass(RemoveOrReplacePassInterface):
 
         return False
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        result = super().call(graph_module)
-
-        # TODO: I tried conditionally running this only if the above made any modifications,
-        # but for whatever reason was getting numerical failures in
-        # test_mtl_e2e_test_a16w8_two_layers_turing_3_1_1k. Always running this pass
-        # resolved that issue.
-        fuse_cascaded_result = FuseCascadedViewOps().call(result.graph_module)
-        return PassResult(fuse_cascaded_result.graph_module, True)
-
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceLinearWithFullyConnectedOpPass(RemoveOrReplacePassInterface):
@@ -1793,7 +1779,6 @@ class ReplaceInfArgInFullWithValuePass(RemoveOrReplacePassInterface):
         return [exir_ops.edge.aten.full.default]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-
         new_args = list(node.args)
         fill_value = node.args[1]
         if fill_value == float("-inf"):
@@ -2503,7 +2488,6 @@ class CadenceReplaceOpsInGraph:
         ReplacePermuteWithTransposePass,
         ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
         ReplaceAddMMWithLinearPass,
-        RemoveNopSelectOpPass,
         ReplacePadWithCatPass,
         ReplaceConstantPadNdWithSlicePass,
         ReplaceConvWithChannelLastConvPass,

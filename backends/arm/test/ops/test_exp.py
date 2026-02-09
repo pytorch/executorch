@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -29,6 +29,15 @@ test_data_suite = {
     "ramp": lambda: torch.arange(-16, 16, 0.2),
 }
 
+test_data_suite_bf16 = {
+    "rand_bf16": lambda: torch.rand(6, 6, dtype=torch.bfloat16) - 0.5,
+    "ramp_bf16": lambda: torch.arange(-8, 8, 0.5, dtype=torch.bfloat16),
+}
+test_data_suite_fp16 = {
+    "rand_fp16": lambda: torch.rand(6, 6, dtype=torch.float16) - 0.5,
+    "ramp_fp16": lambda: torch.arange(-8, 8, 0.5, dtype=torch.float16),
+}
+
 aten_op = "torch.ops.aten.exp.default"
 input_t1 = Tuple[torch.Tensor]  # Input x
 
@@ -38,13 +47,16 @@ class Exp(torch.nn.Module):
         return torch.exp(x)
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 def test_exp_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Exp(),
         (test_data(),),
         aten_op,
         exir_op=[],
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -84,15 +96,24 @@ def test_exp_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_exp_vgf_no_quant(test_data: Tuple):
+    data = test_data()
+    if data.dtype == torch.float16:
+        atol = 2e-2
+        rtol = 2e-2
+    else:
+        atol = 1e-3
+        rtol = 1e-3
     pipeline = VgfPipeline[input_t1](
         Exp(),
-        (test_data(),),
+        (data,),
         aten_op,
         exir_op=[],
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 
