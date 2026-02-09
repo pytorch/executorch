@@ -571,14 +571,14 @@ def _create_mlx_partitioners(programs):
 
     partitioner = {}
     for key in programs.keys():
-        if key == "preprocessor":
-            # Skip preprocessor - FFT ops are not supported by MLX and fall back
-            # to portable pocketfft implementation. There is a bug in pocketfft
-            # that causes SIGABRT ("pointer being freed was not allocated") in
-            # release builds but not debug builds.
-            partitioner[key] = []
-        else:
-            partitioner[key] = [MLXPartitioner()]
+        # if key == "preprocessor":
+        #     # Skip preprocessor - FFT ops are not supported by MLX and fall back
+        #     # to portable pocketfft implementation. There is a bug in pocketfft
+        #     # that causes SIGABRT ("pointer being freed was not allocated") in
+        #     # release builds but not debug builds.
+        #     partitioner[key] = []
+        # else:
+        partitioner[key] = [MLXPartitioner()]
 
     return partitioner, programs
 

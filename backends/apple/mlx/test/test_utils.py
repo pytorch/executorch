@@ -249,7 +249,6 @@ def export_model_to_pte(
     model: torch.nn.Module,
     example_inputs: Tuple[torch.Tensor, ...],
     output_path: Union[str, Path],
-    use_fp16: bool = False,
     dynamic_shapes: Optional[Dict] = None,
     verbose: bool = False,
 ) -> None:
@@ -260,14 +259,13 @@ def export_model_to_pte(
         model: The PyTorch model to export.
         example_inputs: Example inputs for tracing.
         output_path: Path to save the .pte file.
-        use_fp16: Whether to use FP16 precision.
+        dynamic_shapes:
         dynamic_shapes: Optional dynamic shapes specification for torch.export.
             Example: {0: {0: Dim("batch", min=1, max=32)}} for dynamic batch on first input.
         verbose: Whether to print the exported program for debugging.
     """
     import executorch.exir as exir
     from executorch.backends.apple.mlx import MLXPartitioner
-    from executorch.exir.backend.backend_details import CompileSpec
     from executorch.exir.capture._config import ExecutorchBackendConfig
     from torch.export import export
 
@@ -286,10 +284,9 @@ def export_model_to_pte(
         print(exported_program)
 
     # Lower to edge and delegate to MLX
-    compile_specs = [CompileSpec("use_fp16", bytes([use_fp16]))]
     edge_program = exir.to_edge_transform_and_lower(
         exported_program,
-        partitioner=[MLXPartitioner(compile_specs=compile_specs)],
+        partitioner=[MLXPartitioner()],
     )
 
     # Print edge program if verbose
@@ -816,7 +813,6 @@ class OpTestCase:
     name: str = "base_test"
     rtol: float = 1e-5
     atol: float = 1e-5
-    use_fp16: bool = False
     seed: int = 42  # Default seed for reproducibility
     timeout: int = DEFAULT_TEST_TIMEOUT  # Timeout in seconds
     skip_comparison: bool = False  # Skip output comparison (for pattern-only tests)
@@ -899,7 +895,6 @@ class OpTestCase:
             model,
             export_inputs,
             pte_path,
-            use_fp16=self.use_fp16,
             dynamic_shapes=dynamic_shapes,
             verbose=verbose,
         )

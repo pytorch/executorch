@@ -42,8 +42,6 @@ from typing import (
 
 import torch
 from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
-    DataSegment,
-    DTypeId,
     FloatOrVid,
     Instruction,
     IntOrVid,
@@ -56,6 +54,8 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     Tid,
     Vid,
 )
+from executorch.exir._serialize._named_data_store import NamedDataStore
+from executorch.exir.scalar_type import ScalarType
 from executorch.exir.sym_util import eval_shape_upper_bound
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
@@ -196,23 +196,26 @@ def emit_stop_position(
 # Type conversions
 # =============================================================================
 
-_TORCH_DTYPE_TO_DTYPEID: Dict[torch.dtype, DTypeId] = {
-    torch.float16: DTypeId.f16,
-    torch.float32: DTypeId.f32,
-    torch.bfloat16: DTypeId.bf16,
-    torch.int32: DTypeId.i32,
-    torch.int64: DTypeId.i64,
-    torch.uint32: DTypeId.u32,
-    torch.uint8: DTypeId.u8,
-    torch.bool: DTypeId.boolean,
-    torch.int8: DTypeId.i8,
+# Mapping from torch dtype to ET ScalarType int value
+# See executorch/exir/scalar_type.py for ScalarType enum
+_TORCH_DTYPE_TO_SCALAR_TYPE: Dict[torch.dtype, int] = {
+    torch.float16: ScalarType.HALF,
+    torch.float32: ScalarType.FLOAT,
+    torch.bfloat16: ScalarType.BFLOAT16,
+    torch.int32: ScalarType.INT,
+    torch.int64: ScalarType.LONG,
+    torch.uint32: ScalarType.UINT32,
+    torch.uint8: ScalarType.BYTE,
+    torch.bool: ScalarType.BOOL,
+    torch.int8: ScalarType.CHAR,
 }
 
 
-def _torch_dtype_to_dtypeid(dtype: torch.dtype) -> DTypeId:
-    if dtype not in _TORCH_DTYPE_TO_DTYPEID:
+def torch_dtype_to_scalar_type(dtype: torch.dtype) -> int:
+    """Convert torch dtype to ET ScalarType int value."""
+    if dtype not in _TORCH_DTYPE_TO_SCALAR_TYPE:
         raise ValueError(f"Unsupported dtype: {dtype}")
-    return _TORCH_DTYPE_TO_DTYPEID[dtype]
+    return int(_TORCH_DTYPE_TO_SCALAR_TYPE[dtype])
 
 
 def _check_dtype(node: Node) -> Optional[str]:
@@ -227,7 +230,7 @@ def _check_dtype(node: Node) -> Optional[str]:
     """
     fake_val = node.meta.get("val", None)
     if fake_val is not None and hasattr(fake_val, "dtype"):
-        if fake_val.dtype not in _TORCH_DTYPE_TO_DTYPEID:
+        if fake_val.dtype not in _TORCH_DTYPE_TO_SCALAR_TYPE:
             return f"has unsupported dtype: {fake_val.dtype}"
     return None
 
@@ -663,7 +666,7 @@ class MLXProgramBuilder:
         ep: The ExportedProgram to build from
     """
 
-    def __init__(self, ep: ExportedProgram):
+    def __init__(self, ep: ExportedProgram, named_data_key_prefix: str = ""):
         self.ep: ExportedProgram = ep
         self._instrs: List[Instruction] = []
         self.extra_constants: Dict[str, torch.Tensor] = {}
@@ -676,6 +679,24 @@ class MLXProgramBuilder:
         # Maps for remapping local slot indices to global Tid/Vid indices during build
         self._tid_slot_map: List[Tuple[Tid, Slot]] = []
         self._vid_slot_map: List[Tuple[Vid, Slot]] = []
+        # Prefix for named_data_store keys and named_slots to avoid collisions
+        # in multi-method programs where different methods may have lifted tensor
+        # constants with the same auto-generated name.
+        self._named_data_key_prefix: str = named_data_key_prefix
+        # Unprefixed canonical-name → Slot for constants, populated by _build_io_maps().
+        # Used by get_named_data_store() to look up tensors without prefix interference.
+        self._constant_name_to_slot: Dict[str, Slot] = {}
+
+    def _prefix_key(self, name: str) -> str:
+        """Apply the named-data key prefix for the .pte namespace.
+
+        This is the single point where canonical (unprefixed) names are
+        transformed into the external keys used in the .pte's ``named_data``
+        section and the FlatBuffer ``named_slots`` field.
+        """
+        if self._named_data_key_prefix:
+            return f"{self._named_data_key_prefix}/{name}"
+        return name
 
     # -------------------------------------------------------------------------
     # Op emission helpers
@@ -686,7 +707,7 @@ class MLXProgramBuilder:
 
     # -------------------------------------------------------------------------
     # Slot and arg helpers
-    # -------------------------------------------------------------------------
+    # ---------------------------------------- ---------------------------------
 
     def args(self, node: Node) -> Tuple[Any, ...]:
         return self.slot_map(node.args)
@@ -953,6 +974,15 @@ class MLXProgramBuilder:
                 if node.name in constant_tensors:
                     self.make_or_get_slot(node, id_space=IdSpace.Constant)
                 elif node.name in user_inputs:
+                    val = node.meta.get("val", None)
+                    if isinstance(val, torch.Tensor) and not val.is_contiguous():
+                        raise ValueError(
+                            f"MLX backend requires contiguous input tensors, "
+                            f"but input '{node.name}' has non-contiguous strides. "
+                            f"shape={list(val.shape)}, stride={list(val.stride())}. "
+                            f"Ensure example inputs passed to torch.export.export() "
+                            f"are contiguous (call .contiguous() on them)."
+                        )
                     self.make_or_get_slot(node, id_space=IdSpace.Input)
                 elif node.name in mutable_buffers:
                     self.make_or_get_slot(node, id_space=IdSpace.MutableBuffer)
@@ -1241,7 +1271,9 @@ class MLXProgramBuilder:
         input_map: List[SlotVariant] = []
         output_map: List[SlotVariant] = []
         mutable_buffer_map: List[SlotVariant] = []
-        name_to_slot_dict: Dict[str, Slot] = {}
+        # Canonical (unprefixed) name → Slot.  The prefix is applied only at
+        # the exit boundaries: NamedSlot construction and NamedDataStore keys.
+        name_to_slot: Dict[str, Slot] = {}
 
         for ispec in self.ep.graph_signature.input_specs:
             slot = self.slot_manager.get_slot(ispec.arg.name)
@@ -1251,17 +1283,15 @@ class MLXProgramBuilder:
             name = ispec.target if ispec.target is not None else ispec.arg.name
             if slot.id_space == IdSpace.Input:
                 input_map.append(self._to_slot_variant(slot, slot_to_tid, slot_to_vid))
-                name_to_slot_dict[name] = slot
+                name_to_slot[name] = slot
             elif slot.id_space == IdSpace.MutableBuffer:
-                # Mutable buffers are also inputs to the delegate
-                input_map.append(self._to_slot_variant(slot, slot_to_tid, slot_to_vid))
                 mutable_buffer_map.append(
                     self._to_slot_variant(slot, slot_to_tid, slot_to_vid)
                 )
-                name_to_slot_dict[name] = slot
+                name_to_slot[name] = slot
             else:
                 if slot in used_slots:
-                    name_to_slot_dict[name] = slot
+                    name_to_slot[name] = slot
 
         for ospec in self.ep.graph_signature.output_specs:
             name = ospec.arg.name
@@ -1272,22 +1302,29 @@ class MLXProgramBuilder:
             if slot.id_space == IdSpace.Output:
                 output_map.append(self._to_slot_variant(slot, slot_to_tid, slot_to_vid))
                 name = ospec.target if ospec.target is not None else ospec.arg.name
-                name_to_slot_dict[name] = slot
+                name_to_slot[name] = slot
             elif slot.id_space == IdSpace.MutableBuffer:
-                # Mutable buffer mutations are also outputs from the delegate
-                output_map.append(self._to_slot_variant(slot, slot_to_tid, slot_to_vid))
                 name = ospec.target if ospec.target is not None else ospec.arg.name
-                name_to_slot_dict[name] = slot
+                name_to_slot[name] = slot
 
         for name in self.extra_constants:
             slot = self.slot_manager.get_slot(name)
             assert slot is not None and isinstance(slot, Slot)
             if slot in used_slots:
-                name_to_slot_dict[name] = slot
+                name_to_slot[name] = slot
 
+        # Store unprefixed constant mapping for get_named_data_store()
+        self._constant_name_to_slot = {
+            n: s for n, s in name_to_slot.items() if s.id_space == IdSpace.Constant
+        }
+
+        # Apply prefix at the exit boundary — the FlatBuffer named_slots
         named_slots = [
-            NamedSlot(name=n, slot=self._to_slot_variant(s, slot_to_tid, slot_to_vid))
-            for n, s in name_to_slot_dict.items()
+            NamedSlot(
+                name=self._prefix_key(n),
+                slot=self._to_slot_variant(s, slot_to_tid, slot_to_vid),
+            )
+            for n, s in name_to_slot.items()
         ]
 
         return input_map, output_map, mutable_buffer_map, named_slots
@@ -1338,10 +1375,13 @@ class MLXProgramBuilder:
                 else:
                     shape.append(IntOrVid.from_literal(int(dim)))
 
+            # Generate standard dim_order (contiguous layout: [0, 1, 2, ...])
+            dim_order = list(range(len(t.shape))) if len(t.shape) > 0 else None
+
             return TensorMeta(
                 shape=shape,
-                dtype=_torch_dtype_to_dtypeid(t.dtype),
-                strides=None,
+                scalar_type=torch_dtype_to_scalar_type(t.dtype),
+                dim_order=dim_order,
             )
 
         tensor_meta: Dict[int, TensorMeta] = {}
@@ -1398,81 +1438,80 @@ class MLXProgramBuilder:
 
         # Compute final counts
         num_constant_tensors = num_tensors[IdSpace.Constant]
-        num_non_constant_tensors = sum(num_tensors.values()) - num_constant_tensors
-        num_non_constant_values = sum(num_values.values())
+        num_temp_tensors = num_tensors[IdSpace.Temp]
+        num_values_count = sum(num_values.values())
 
         return MLXGraph(
             version="1",
             num_constant_tensors=num_constant_tensors,
-            num_non_constant_tensors=num_non_constant_tensors,
-            num_non_constant_values=num_non_constant_values,
             num_input_tensors=num_tensors[IdSpace.Input],
             num_output_tensors=num_tensors[IdSpace.Output],
             num_mutable_buffer_tensors=num_tensors[IdSpace.MutableBuffer],
+            num_temp_tensors=num_temp_tensors,
+            num_values=num_values_count,
             instructions=self._instrs,
             input_map=input_map,
             output_map=output_map,
             mutable_buffer_map=mutable_buffer_map,
             named_slots=named_slots,
             tensor_meta=tensor_meta_list,
-            constant_segment=DataSegment(offset=0, size=0),
         )
 
-    def get_constant_data(self) -> Tuple[bytes, Dict[str, int]]:
+    def get_named_data_store(self) -> NamedDataStore:
         """
-        Extract constant tensor data.
+        Get a NamedDataStore containing all constant tensors.
 
-        Constants are serialized in global Tid order to match C++ runtime expectations.
-        Only constants referenced by instructions are included.
-
-        Returns:
-            (constant_bytes, name_to_offset) mapping constant names to byte offsets.
+        Uses the unprefixed canonical-name → Slot mapping built by
+        ``_build_io_maps()`` so that tensor lookups hit ``ep.state_dict`` /
+        ``ep.constants`` / ``extra_constants`` (which all use unprefixed
+        keys).  The prefix is applied at the exit boundary — the
+        ``NamedDataStore`` key — so it matches the FlatBuffer ``named_slots``.
         """
-        assert self._mlx_graph is not None, "Must call build() first"
-        assert hasattr(self, "_slot_to_final_tid"), "Must call build() first"
+        named_data_store = NamedDataStore()
 
-        from io import BytesIO
+        # Sort by final TID for deterministic ordering
+        entries = sorted(
+            self._constant_name_to_slot.items(),
+            key=lambda x: self._slot_to_final_tid.get(x[1], 0),
+        )
 
-        buffer = BytesIO()
-        name_to_offset: Dict[str, int] = {}
-
-        # Build list of (name, slot, global_tid) for used constants
-        constant_entries: List[Tuple[str, Slot, int]] = []
-        for name, slot in self.slot_manager.name_to_slot.items():
-            if isinstance(slot, tuple):
-                continue
-            if slot.id_space != IdSpace.Constant:
-                continue
-            if slot not in self._slot_to_final_tid:
-                continue
-            global_tid = self._slot_to_final_tid[slot]
-            constant_entries.append((name, slot, global_tid))
-
-        # Sort by global Tid to match C++ runtime expectations
-        constant_entries.sort(key=lambda x: x[2])
-
-        # Serialize in Tid order
-        for name, _slot, _global_tid in constant_entries:
-            tensor = self._find_constant_tensor(name)
+        logging.info(f"Adding {len(entries)} constants to NamedDataStore...")
+        for canonical_name, _slot in entries:
+            tensor = self._find_constant_tensor(canonical_name)
             if tensor is None:
                 continue
 
-            # Align to 16 bytes
-            current_pos = buffer.tell()
-            padding = (16 - (current_pos % 16)) % 16
-            if padding > 0:
-                buffer.write(b"\x00" * padding)
-
-            name_to_offset[name] = buffer.tell()
             t = tensor.detach().cpu().contiguous()
-            # BFloat16 is not supported by numpy, so we extract raw bytes via view
-            if t.dtype == torch.bfloat16:
-                tensor_bytes = t.view(torch.uint16).numpy().tobytes()
-            else:
-                tensor_bytes = t.numpy().tobytes()
-            buffer.write(tensor_bytes)
+            named_data_store.add_named_data(
+                key=self._prefix_key(canonical_name),
+                data=t,
+                alignment=16,
+            )
+        logging.info("Done adding constants to NamedDataStore")
 
-        return buffer.getvalue(), name_to_offset
+        return named_data_store
+
+    def get_mutable_buffer_names(self) -> List[str]:
+        """
+        Get the names of all mutable buffers in Tid order.
+
+        Returns:
+            List of mutable buffer names in the order they appear in mutable_buffer_map.
+        """
+        assert self._mlx_graph is not None, "Must call build() first"
+
+        names = []
+        for name, slot in self.slot_manager.name_to_slot.items():
+            if isinstance(slot, tuple):
+                continue
+            if slot.id_space != IdSpace.MutableBuffer:
+                continue
+            if slot in self._slot_to_final_tid:
+                names.append((name, self._slot_to_final_tid[slot]))
+
+        # Sort by Tid and return just the names
+        names.sort(key=lambda x: x[1])
+        return [n for n, _ in names]
 
     def _find_constant_tensor(self, name: str) -> Optional[torch.Tensor]:
         """Find a constant tensor by name from various sources."""

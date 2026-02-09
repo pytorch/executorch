@@ -57,7 +57,6 @@ def run_inference(
 
     # input_pos must be a 1D tensor [1] to match export signature
     input_pos = torch.tensor([0], dtype=torch.long)
-    logger.info(f"Prefill: input_ids shape={input_ids.shape}, input_pos={input_pos}")
     outputs = forward.execute([input_ids, input_pos])
     logits = outputs[0]
 
@@ -82,9 +81,6 @@ def run_inference(
         input_pos = torch.tensor([pos], dtype=torch.long)
         # Input is just the last generated token
         token_input = torch.tensor([[next_token]], dtype=torch.long)
-
-        if i < 3:
-            logger.info(f"Decode step {i}: pos={pos}, token={next_token}")
 
         outputs = forward.execute([token_input, input_pos])
         logits = outputs[0]

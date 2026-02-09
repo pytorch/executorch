@@ -24,13 +24,13 @@ from typing import Any, List, Optional, Tuple
 
 import torch
 from executorch.backends.apple.mlx.program_builder import (
-    _torch_dtype_to_dtypeid,
     emit_stop_position,
     get_aten_target_normalized,
     MLXProgramBuilder,
     PatternHandler,
     REGISTRY,
     Slot,
+    torch_dtype_to_scalar_type,
 )
 from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     IdCopyNode,
@@ -758,7 +758,7 @@ class QuantizedLinearHandler(PatternHandler):
         )
         _, scale = P.get_placeholder_target_and_tensor(self.scale)
 
-        out_dtype = _torch_dtype_to_dtypeid(self.out_dtype)
+        out_scalar_type = torch_dtype_to_scalar_type(self.out_dtype)
 
         # Check if we can use scale_only optimization:
         # When zero_point is all zeros, biases = -scales * 2^(bits-1)
@@ -797,7 +797,7 @@ class QuantizedLinearHandler(PatternHandler):
                 group_size=self.group_size,
                 bits=self.bits,
                 mode="affine",
-                out_dtype=out_dtype,
+                out_scalar_type=out_scalar_type,
                 scale_only=use_scale_only,
             )
         )
@@ -888,7 +888,7 @@ class QuantizedEmbeddingHandler(PatternHandler):
         _, scale = P.get_placeholder_target_and_tensor(self.scale)
 
         Q, B = _to_mlx_qparams(qdata, scale, zero_point, self.bits)
-        out_dtype = _torch_dtype_to_dtypeid(self.out_dtype)
+        out_scalar_type = torch_dtype_to_scalar_type(self.out_dtype)
 
         w = P.make_or_get_constant(f"{qdata_target}_to_packed", Q)
         biases = P.make_or_get_constant(f"{zero_point_target}_to_biases", B)
@@ -905,7 +905,7 @@ class QuantizedEmbeddingHandler(PatternHandler):
                 group_size=self.group_size,
                 bits=self.bits,
                 mode="affine",
-                out_dtype=out_dtype,
+                out_scalar_type=out_scalar_type,
             )
         )
         return out

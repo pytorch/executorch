@@ -1,0 +1,36 @@
+diff --git a/pocketfft_hdronly.h b/pocketfft_hdronly.h
+index 57db7d7..e831ac0 100644
+--- a/pocketfft_hdronly.h
++++ b/pocketfft_hdronly.h
+@@ -162,8 +162,20 @@ template<> struct VLEN<double> { static constexpr size_t val=2; };
+ // std::aligned_alloc is a bit cursed ... it doesn't exist on MacOS < 10.15
+ // and in musl, and other OSes seem to have even more peculiarities.
+ // Let's unconditionally work around it for now.
+-# if 0
+-//#if (__cplusplus >= 201703L) && (!defined(__MINGW32__)) && (!defined(_MSC_VER)) && (__MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_15)
++#if defined(__APPLE__) || defined(__unix__)
++// Use posix_memalign on POSIX systems - it is ASAN-compatible.
++// The portable aligned_alloc below stores metadata at ptr[-1], which conflicts
++// with ASAN's heap redzone and causes intermittent bus errors.
++inline void *aligned_alloc(size_t align, size_t size)
++  {
++  void *ptr = nullptr;
++  if (posix_memalign(&ptr, align, size) != 0)
++    throw std::bad_alloc();
++  return ptr;
++  }
++inline void aligned_dealloc(void *ptr)
++    { free(ptr); }
++#elif (__cplusplus >= 201703L) && (!defined(__MINGW32__)) && (!defined(_MSC_VER))
+ inline void *aligned_alloc(size_t align, size_t size)
+   {
+   // aligned_alloc() requires that the requested size is a multiple of "align"
+@@ -173,7 +185,7 @@ inline void *aligned_alloc(size_t align, size_t size)
+   }
+ inline void aligned_dealloc(void *ptr)
+     { free(ptr); }
+-#else // portable emulation
++#else // portable emulation (NOT ASAN-compatible - stores metadata at ptr[-1])
+ inline void *aligned_alloc(size_t align, size_t size)
+   {
+   align = std::max(align, alignof(max_align_t));

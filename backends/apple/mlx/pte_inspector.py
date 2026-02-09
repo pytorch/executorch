@@ -161,9 +161,13 @@ def parse_mlx_flatbuffer(fb_data: bytes) -> Dict[str, Any]:  # noqa: C901
         result = {
             "version": graph.Version().decode("utf-8") if graph.Version() else None,
             "num_constant_tensors": graph.NumConstantTensors(),
-            "num_non_constant_tensors": graph.NumNonConstantTensors(),
-            "num_non_constant_values": graph.NumNonConstantValues(),
+            "num_input_tensors": graph.NumInputTensors(),
+            "num_output_tensors": graph.NumOutputTensors(),
+            "num_mutable_buffer_tensors": graph.NumMutableBufferTensors(),
+            "num_temp_tensors": graph.NumTempTensors(),
+            "num_values": graph.NumValues(),
             "num_instructions": graph.InstructionsLength(),
+            "num_init_instructions": graph.InitInstructionsLength(),
             "input_map_length": graph.InputMapLength(),
             "output_map_length": graph.OutputMapLength(),
             "mutable_buffer_map_length": graph.MutableBufferMapLength(),
@@ -677,16 +681,28 @@ def show_mlx_summary(pte_data: bytes) -> None:  # noqa: C901
 
                             print("\nMLX Graph Info:")
                             print(
-                                f"  num_constant_tensors:     {graph_info.get('num_constant_tensors', '?')}"
+                                f"  num_constant_tensors:       {graph_info.get('num_constant_tensors', '?')}"
                             )
                             print(
-                                f"  num_non_constant_tensors: {graph_info.get('num_non_constant_tensors', '?')}"
+                                f"  num_input_tensors:          {graph_info.get('num_input_tensors', '?')}"
                             )
                             print(
-                                f"  num_non_constant_values:  {graph_info.get('num_non_constant_values', '?')}"
+                                f"  num_output_tensors:         {graph_info.get('num_output_tensors', '?')}"
                             )
                             print(
-                                f"  num_instructions:         {graph_info.get('num_instructions', '?')}"
+                                f"  num_mutable_buffer_tensors: {graph_info.get('num_mutable_buffer_tensors', '?')}"
+                            )
+                            print(
+                                f"  num_temp_tensors:           {graph_info.get('num_temp_tensors', '?')}"
+                            )
+                            print(
+                                f"  num_values:                 {graph_info.get('num_values', '?')}"
+                            )
+                            print(
+                                f"  num_instructions:           {graph_info.get('num_instructions', '?')}"
+                            )
+                            print(
+                                f"  num_init_instructions:      {graph_info.get('num_init_instructions', '?')}"
                             )
 
                             print("\nI/O Maps:")
@@ -834,9 +850,15 @@ def show_mlx_instructions(pte_data: bytes) -> None:  # noqa: C901
             # Basic info
             print(f"Version: {graph.get('version', 'unknown')}")
             print(f"Constant tensors: {graph.get('num_constant_tensors', 0)}")
-            print(f"Non-constant tensors: {graph.get('num_non_constant_tensors', 0)}")
-            print(f"Non-constant values: {graph.get('num_non_constant_values', 0)}")
+            print(f"Input tensors: {graph.get('num_input_tensors', 0)}")
+            print(f"Output tensors: {graph.get('num_output_tensors', 0)}")
+            print(
+                f"Mutable buffer tensors: {graph.get('num_mutable_buffer_tensors', 0)}"
+            )
+            print(f"Temp tensors: {graph.get('num_temp_tensors', 0)}")
+            print(f"Values: {graph.get('num_values', 0)}")
             print(f"Instructions: {graph.get('num_instructions', 0)}")
+            print(f"Init instructions: {graph.get('num_init_instructions', 0)}")
 
             # Constant data size
             constant_seg = graph.get("constant_segment", {})

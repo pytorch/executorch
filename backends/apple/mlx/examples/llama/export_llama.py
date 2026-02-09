@@ -33,7 +33,7 @@ from typing import Optional, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     from transformers import AutoModelForCausalLM
 
-# Import custom MLX ops for rms_norm and apply_rope
+# Import MLX ops to register handlers
 import executorch.backends.apple.mlx.ops  # noqa: F401
 import torch
 import torch.nn as nn
@@ -51,12 +51,18 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Custom RMSNorm using MLX op
+# Custom RMSNorm using aten op
 # =============================================================================
 
 
 class CustomRMSNorm(nn.Module):
-    """RMSNorm using the custom mlx::rms_norm op for efficient MLX execution."""
+    """RMSNorm using torch.nn.functional.rms_norm for efficient MLX execution.
+
+    This replaces the HuggingFace LlamaRMSNorm (which uses manual variance + rsqrt
+    computation) with the aten rms_norm op. The MLX backend has a handler that maps
+    aten.rms_norm directly to MLX's fast::rms_norm, so this gives us fused execution
+    without needing a custom op.
+    """
 
     def __init__(self, base_rms: nn.Module):
         super().__init__()
@@ -66,7 +72,7 @@ class CustomRMSNorm(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.ops.mlx.rms_norm(x, self.weight, self.eps)
+        return F.rms_norm(x, (self.weight.shape[0],), self.weight, self.eps)
 
 
 # =============================================================================
@@ -290,7 +296,7 @@ class KVCacheAttention(nn.Module):
 class LlamaWithFunctionalKV(nn.Module):
     """
     Wrapper around HuggingFace Llama that:
-    1. Replaces RMSNorm with custom mlx::rms_norm op
+    1. Replaces RMSNorm with aten rms_norm (mapped to MLX's fast::rms_norm)
     2. Replaces attention with KVCacheAttention (using mlx::apply_rope)
     3. Provides a trace-friendly forward that takes (token_ids, input_pos)
     """
@@ -299,7 +305,7 @@ class LlamaWithFunctionalKV(nn.Module):
         self,
         base: "AutoModelForCausalLM",
         time_axis: int = 1,
-        max_seq_len: int = 4096,
+        max_seq_len: int = 1024,
         rope_base: float = 500000.0,
     ):
         super().__init__()
@@ -383,9 +389,10 @@ class LlamaWithFunctionalKV(nn.Module):
 def export_llama_to_mlx(
     model_id: str,
     output_path: str,
-    quantize: Optional[str] = None,
-    max_seq_len: int = 4096,
+    max_seq_len: int = 1024,
     dtype: str = "fp32",
+    quantize_linear: Optional[str] = None,
+    quantize_embeddings: Optional[str] = None,
 ) -> None:
     """
     Export a Llama model to MLX delegate.
@@ -393,9 +400,10 @@ def export_llama_to_mlx(
     Args:
         model_id: HuggingFace model ID
         output_path: Path to save the .pte file
-        quantize: Quantization method ("int4", "int8", or None)
         max_seq_len: Maximum sequence length for KV cache
         dtype: Model dtype ("fp32", "fp16", "bf16")
+        quantize_linear: Quantization method for linear layers ("int4", "int8", or None)
+        quantize_embeddings: Quantization method for embedding layers ("int4", "int8", or None)
     """
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -416,47 +424,51 @@ def export_llama_to_mlx(
     model.eval()
 
     # Apply quantization if requested
-    if quantize:
-        logger.info(f"Applying {quantize} quantization...")
+    if quantize_linear or quantize_embeddings:
+        logger.info("Applying quantization with TorchAO...")
         try:
             from torchao.quantization.granularity import PerGroup
             from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 
-            if quantize == "int4":
-                # Quantize embeddings with group size 32
-                quantize_(
-                    model,
-                    IntxWeightOnlyConfig(
-                        weight_dtype=torch.int4, granularity=PerGroup(32)
-                    ),
-                    lambda m, fqn: isinstance(m, torch.nn.Embedding),
+            # Quantize embedding layers
+            if quantize_embeddings:
+                embed_dtype = (
+                    torch.int4 if quantize_embeddings == "int4" else torch.int8
                 )
-                # Quantize linear layers with group size 64
-                quantize_(
-                    model,
-                    IntxWeightOnlyConfig(
-                        weight_dtype=torch.int4, granularity=PerGroup(64)
-                    ),
-                )
-            elif quantize == "int8":
-                quantize_(
-                    model,
-                    IntxWeightOnlyConfig(
-                        weight_dtype=torch.int8, granularity=PerGroup(32)
-                    ),
-                    lambda m, fqn: isinstance(m, torch.nn.Embedding),
+                embed_group_size = 32 if quantize_embeddings == "int4" else 128
+                logger.info(
+                    f"Quantizing embedding layers with {quantize_embeddings} (group size {embed_group_size})..."
                 )
                 quantize_(
                     model,
                     IntxWeightOnlyConfig(
-                        weight_dtype=torch.int8, granularity=PerGroup(64)
+                        weight_dtype=embed_dtype,
+                        granularity=PerGroup(embed_group_size),
                     ),
+                    filter_fn=lambda m, fqn: isinstance(m, torch.nn.Embedding),
                 )
-            else:
-                logger.warning(f"Unknown quantization method: {quantize}")
+
+            # Quantize linear layers
+            if quantize_linear:
+                linear_dtype = torch.int4 if quantize_linear == "int4" else torch.int8
+                linear_group_size = 32 if quantize_linear == "int4" else 128
+                logger.info(
+                    f"Quantizing linear layers with {quantize_linear} (group size {linear_group_size})..."
+                )
+                quantize_(
+                    model,
+                    IntxWeightOnlyConfig(
+                        weight_dtype=linear_dtype,
+                        granularity=PerGroup(linear_group_size),
+                    ),
+                    filter_fn=lambda m, fqn: isinstance(m, torch.nn.Linear),
+                )
 
             # Tie lm_head weights to embedding after quantization
-            model.model.lm_head.weight = model.model.model.embed_tokens.weight
+            if quantize_embeddings:
+                model.model.lm_head.weight = model.model.model.embed_tokens.weight
+
+            logger.info("Applied quantization successfully")
         except ImportError:
             logger.error("TorchAO not installed. Run: pip install torchao")
             raise
@@ -484,10 +496,7 @@ def export_llama_to_mlx(
     import executorch.exir as exir
     from executorch.backends.apple.mlx import MLXPartitioner
     from executorch.exir import EdgeCompileConfig
-    from executorch.exir.backend.backend_details import CompileSpec
     from executorch.exir.capture._config import ExecutorchBackendConfig
-
-    compile_specs = [CompileSpec("use_fp16", bytes([False]))]
 
     # Allow repeat_interleave and sdpa ops - they will be handled by MLX backend
     edge_config = EdgeCompileConfig(
@@ -499,7 +508,7 @@ def export_llama_to_mlx(
 
     edge_program = exir.to_edge_transform_and_lower(
         ep,
-        partitioner=[MLXPartitioner(compile_specs=compile_specs)],
+        partitioner=[MLXPartitioner()],
         compile_config=edge_config,
     )
 
@@ -539,24 +548,31 @@ def main():
         help="Output .pte file path",
     )
     parser.add_argument(
-        "--quantize",
-        type=str,
-        choices=["int4", "int8"],
-        default=None,
-        help="Quantization method",
-    )
-    parser.add_argument(
         "--max-seq-len",
         type=int,
-        default=4096,
+        default=1024,
         help="Maximum sequence length for KV cache",
     )
     parser.add_argument(
         "--dtype",
         type=str,
         choices=["fp32", "fp16", "bf16"],
-        default="fp32",
+        default="bf16",
         help="Model dtype (fp32, fp16, bf16)",
+    )
+    parser.add_argument(
+        "--quantize-linear",
+        type=str,
+        choices=["int4", "int8"],
+        default=None,
+        help="Quantization method for linear layers",
+    )
+    parser.add_argument(
+        "--quantize-embeddings",
+        type=str,
+        choices=["int4", "int8"],
+        default=None,
+        help="Quantization method for embedding layers",
     )
 
     args = parser.parse_args()
@@ -564,9 +580,10 @@ def main():
     export_llama_to_mlx(
         model_id=args.model_id,
         output_path=args.output,
-        quantize=args.quantize,
         max_seq_len=args.max_seq_len,
         dtype=args.dtype,
+        quantize_linear=args.quantize_linear,
+        quantize_embeddings=args.quantize_embeddings,
     )
 
 
