@@ -14,6 +14,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 
 #include <mlx/mlx.h>
 
@@ -21,7 +22,6 @@
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <unordered_set>
 
 namespace executorch {
 namespace backends {
@@ -49,119 +49,55 @@ using ::mlx::core::eval;
 
 namespace {
 
-Result<Dtype> et_dtype_to_mlx(executorch::aten::ScalarType dtype) {
-  switch (dtype) {
-    case executorch::aten::ScalarType::Float:
-      return ::mlx::core::float32;
-    case executorch::aten::ScalarType::Half:
-      return ::mlx::core::float16;
-    case executorch::aten::ScalarType::BFloat16:
-      return ::mlx::core::bfloat16;
-    case executorch::aten::ScalarType::Int:
-      return ::mlx::core::int32;
-    case executorch::aten::ScalarType::Long:
-      return ::mlx::core::int64;
-    case executorch::aten::ScalarType::Short:
-      return ::mlx::core::int16;
-    case executorch::aten::ScalarType::Byte:
-      return ::mlx::core::uint8;
-    case executorch::aten::ScalarType::Char:
-      return ::mlx::core::int8;
-    case executorch::aten::ScalarType::Bool:
-      return ::mlx::core::bool_;
-    default:
-      ET_LOG(Error, "Unsupported dtype %d", static_cast<int>(dtype));
-      return Error::NotSupported;
-  }
-}
-
-Result<array> tensor_to_mlx(
+array tensor_to_mlx(
     const ETTensor& t,
     const std::optional<TensorMeta>& expected_meta = std::nullopt) {
-  // Check that input tensor is contiguous - MLX array constructor expects dense
-  // data
   if (!executorch::runtime::tensor_is_contiguous(t)) {
-    ET_LOG(Error, "tensor_to_mlx: input tensor is not contiguous");
-    return Error::InvalidArgument;
+    throw std::runtime_error("tensor_to_mlx: input tensor is not contiguous");
   }
 
-  Result<Dtype> dtype_result = et_dtype_to_mlx(t.scalar_type());
-  if (!dtype_result.ok()) {
-    return dtype_result.error();
-  }
-  Dtype dtype = dtype_result.get();
+  Dtype dtype =
+      resolve_dtype(static_cast<executorch::aten::ScalarType>(t.scalar_type()));
 
-  // Check dtype matches expected if metadata is available
   if (expected_meta.has_value()) {
-    auto expected_dtype_result = to_mlx_dtype(expected_meta->dtype);
-    if (!expected_dtype_result.ok()) {
-      ET_LOG(Error, "tensor_to_mlx: unsupported expected dtype");
-      return expected_dtype_result.error();
-    }
-    Dtype expected_dtype = expected_dtype_result.get();
+    Dtype expected_dtype = resolve_dtype(expected_meta->scalar_type);
     if (dtype != expected_dtype) {
-      ET_LOG(
-          Error,
-          "tensor_to_mlx: dtype mismatch - input tensor has %s but model expects %s",
-          ExecutionState::dtype_str(dtype),
+      throw std::runtime_error(
+          std::string("tensor_to_mlx: dtype mismatch - input tensor has ") +
+          ExecutionState::dtype_str(dtype) + " but model expects " +
           ExecutionState::dtype_str(expected_dtype));
-      return Error::InvalidArgument;
     }
   }
 
-  // Convert shape to MLX Shape type
   ::mlx::core::Shape shape;
   for (int i = 0; i < t.dim(); ++i) {
     shape.push_back(static_cast<int>(t.size(i)));
   }
 
-  // Try zero-copy constructor with external memory
-  // On Apple Silicon with unified memory, this will wrap the pointer directly
-  // If it fails, MLX will automatically fall back to copying the data
   void* data_ptr = const_cast<void*>(t.const_data_ptr());
-
-  // No-op deleter: ExecuTorch owns and manages the tensor memory
-  auto deleter = [](void*) {
-    // ExecuTorch tensor lifetime is managed externally
-  };
+  auto deleter = [](void*) {};
   return array(data_ptr, shape, dtype, deleter);
 }
 
-Error mlx_to_tensor(const array& arr, ETTensor& out) {
+void mlx_to_tensor(const array& arr, ETTensor& out) {
   array contiguous_arr = ::mlx::core::contiguous(arr);
 
-  // Check dtype match - memcpy requires matching dtypes
-  Result<Dtype> expected_dtype_result = et_dtype_to_mlx(out.scalar_type());
-  if (!expected_dtype_result.ok()) {
-    ET_LOG(
-        Error,
-        "mlx_to_tensor: unsupported output dtype %d",
-        static_cast<int>(out.scalar_type()));
-    return expected_dtype_result.error();
-  }
-  Dtype expected_dtype = expected_dtype_result.get();
+  Dtype expected_dtype = resolve_dtype(
+      static_cast<executorch::aten::ScalarType>(out.scalar_type()));
 
   if (contiguous_arr.dtype() != expected_dtype) {
-    ET_LOG(
-        Debug,
-        "mlx_to_tensor: dtype mismatch, casting MLX array from dtype %d to %d",
-        static_cast<int>(contiguous_arr.dtype().val()),
-        static_cast<int>(expected_dtype.val()));
     contiguous_arr = ::mlx::core::astype(contiguous_arr, expected_dtype);
   }
 
   eval(contiguous_arr);
 
-  // Update output tensor shape to match actual MLX output shape (for dynamic
-  // shapes)
+  // Resize output tensor if shape doesn't match (dynamic shapes)
   const auto& mlx_shape = contiguous_arr.shape();
   auto out_sizes = out.sizes();
 
-  // Check if shapes match; if not, we need to resize the output
   bool shape_matches = (mlx_shape.size() == static_cast<size_t>(out.dim()));
   if (shape_matches) {
     for (size_t i = 0; i < mlx_shape.size(); ++i) {
-      // Explicit cast to common type to avoid signed/unsigned comparison issues
       if (static_cast<int64_t>(mlx_shape[i]) !=
           static_cast<int64_t>(out_sizes[i])) {
         shape_matches = false;
@@ -171,7 +107,6 @@ Error mlx_to_tensor(const array& arr, ETTensor& out) {
   }
 
   if (!shape_matches) {
-    // Create new sizes array for resize
     std::vector<executorch::aten::SizesType> new_sizes(
         mlx_shape.begin(), mlx_shape.end());
     auto err = resize_tensor(
@@ -179,26 +114,19 @@ Error mlx_to_tensor(const array& arr, ETTensor& out) {
         ArrayRef<executorch::aten::SizesType>(
             new_sizes.data(), new_sizes.size()));
     if (err != Error::Ok) {
-      ET_LOG(Error, "Failed to resize output tensor for dynamic shape");
-      return err;
+      throw std::runtime_error("mlx_to_tensor: failed to resize output tensor");
     }
   }
 
-  // Verify sizes match before memcpy
   size_t mlx_nbytes = contiguous_arr.nbytes();
   size_t out_nbytes = out.nbytes();
   if (mlx_nbytes != out_nbytes) {
-    ET_LOG(
-        Error,
-        "mlx_to_tensor: size mismatch after resize - MLX has %zu bytes, output tensor has %zu bytes",
-        mlx_nbytes,
-        out_nbytes);
-    return Error::InvalidState;
+    throw std::runtime_error(
+        "mlx_to_tensor: size mismatch - MLX has " + std::to_string(mlx_nbytes) +
+        " bytes, output has " + std::to_string(out_nbytes) + " bytes");
   }
 
-  void* out_ptr = out.mutable_data_ptr();
-  std::memcpy(out_ptr, contiguous_arr.data<void>(), out_nbytes);
-  return Error::Ok;
+  std::memcpy(out.mutable_data_ptr(), contiguous_arr.data<void>(), out_nbytes);
 }
 
 } // namespace
@@ -207,19 +135,15 @@ struct MLXHandle {
   MLXProgram program;
   ConstantData constants;
   MutableBufferData mutable_buffers;
+  ExecutionState state; // Reusable execution state
   Interpreter interpreter;
 
-  // Keep the constant buffer alive for zero-copy constants
-  // The buffer must outlive the MLX arrays that reference it
-  FreeableBuffer* constant_buffer{nullptr};
+  // Keep the constant buffers alive for zero-copy constants
+  // Each FreeableBuffer must outlive the MLX arrays that reference it
+  std::vector<FreeableBuffer> constant_buffers;
 
   MLXHandle() = default;
-  ~MLXHandle() {
-    // Free the constant buffer when handle is destroyed
-    if (constant_buffer != nullptr) {
-      constant_buffer->Free();
-    }
-  }
+  ~MLXHandle() = default;
 
   MLXHandle(const MLXHandle&) = delete;
   MLXHandle& operator=(const MLXHandle&) = delete;
@@ -249,26 +173,32 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       handle->program = loader::load_program(
           static_cast<const uint8_t*>(processed->data()), processed->size());
 
-      load_constants(handle->program, handle->constants);
+      // Load constants from named_data_map
+      // Constants are stored by name in the .pte file and provided by ET at
+      // runtime
+      const runtime::NamedDataMap* named_data_map =
+          context.get_named_data_map();
+      load_constants(
+          handle->program,
+          named_data_map,
+          handle->constants,
+          handle->constant_buffers);
 
-      if constexpr (kEnableConstantZeroCopy) {
-        // Zero-copy enabled: keep buffer alive for constant lifetimes
-        // If MLX falls back to copying, there may be temporary memory overhead
-        // but this is rare and only occurs on non-unified memory systems
-        handle->constant_buffer = processed;
-      } else {
-        // Zero-copy disabled: constants were copied, buffer no longer needed
-        processed->Free();
-      }
+      // Delegate payload no longer needed after constants are loaded
+      processed->Free();
+      processed = nullptr;
 
+      // Load mutable buffers (e.g., KV cache)
       load_mutable_buffers(handle->program, handle->mutable_buffers);
+
+      // Bind execution state (reused across execute() calls)
+      handle->state.bind(
+          handle->program, handle->constants, handle->mutable_buffers);
+
     } catch (const std::exception& e) {
       ET_LOG(Error, "Failed to load MLX program: %s", e.what());
       handle->~MLXHandle();
-      // Free buffer if we still own it
-      if (kEnableConstantZeroCopy && handle->constant_buffer != nullptr) {
-        handle->constant_buffer->Free();
-      } else if (!kEnableConstantZeroCopy) {
+      if (processed != nullptr) {
         processed->Free();
       }
       return Error::InvalidProgram;
@@ -282,255 +212,82 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       DelegateHandle* handle,
       Span<EValue*> args) const override {
     try {
-      auto* mlx_handle = static_cast<MLXHandle*>(handle);
-      const auto& program = mlx_handle->program;
+      auto* h = static_cast<MLXHandle*>(handle);
+      const auto& program = h->program;
 
-      ExecutionState state;
-      state.bind(program, mlx_handle->constants);
+      // Reset per-execution state (clears inputs/outputs/temps, keeps mutable
+      // buffers)
+      h->state.reset();
 
-      size_t num_inputs = program.input_map.size();
-      size_t num_outputs = program.output_map.size();
-      size_t num_mutable_buffers = program.mutable_buffer_map.size();
-
-      // Build a set of mutable buffer tensor IDs for quick lookup
-      std::unordered_set<uint32_t> mutable_buffer_tids;
-      for (const auto& slot : program.mutable_buffer_map) {
-        if (slot.slot_type == SlotType::TensorSlot) {
-          mutable_buffer_tids.insert(slot.idx);
-        }
-      }
-
-      // Count tensor and int outputs (excluding mutable buffer mutations)
-      size_t num_tensor_outputs = 0;
-      size_t num_int_outputs = 0;
-      for (size_t i = 0; i < num_outputs; ++i) {
-        const auto& slot = program.output_map[i];
-        if (slot.slot_type == SlotType::TensorSlot) {
-          // Check if this is a mutable buffer (BUFFER_MUTATION output)
-          // Mutable buffer outputs don't need ExecuTorch output tensors -
-          // they're updated in-place
-          if (mutable_buffer_tids.find(slot.idx) == mutable_buffer_tids.end()) {
-            num_tensor_outputs++;
-          }
-        } else if (slot.slot_type == SlotType::IntValueSlot) {
-          num_int_outputs++;
-        }
-      }
-
-      // Count regular inputs by type (excluding mutable buffers which are
-      // delegate-owned)
-      size_t num_regular_tensor_inputs = 0;
-      size_t num_regular_int_inputs = 0;
-      for (size_t i = 0; i < num_inputs; ++i) {
-        const auto& slot = program.input_map[i];
-        if (slot.slot_type == SlotType::TensorSlot) {
-          // Skip if this is a mutable buffer
-          if (mutable_buffer_tids.find(slot.idx) == mutable_buffer_tids.end()) {
-            num_regular_tensor_inputs++;
-          }
-        } else if (slot.slot_type == SlotType::IntValueSlot) {
-          num_regular_int_inputs++;
-        }
-      }
-
-      // Collect tensor and int args from ExecuTorch
-      std::vector<const ETTensor*> input_tensors;
-      std::vector<int64_t> input_ints;
-      std::vector<ETTensor*> output_tensors;
-      std::vector<EValue*> output_ints;
-
-      for (size_t i = 0; i < args.size(); ++i) {
-        if (args[i] == nullptr) {
-          continue;
-        }
-
-        if (args[i]->isTensor()) {
-          if (input_tensors.size() < num_regular_tensor_inputs) {
-            input_tensors.push_back(&args[i]->toTensor());
-          } else if (output_tensors.size() < num_tensor_outputs) {
-            output_tensors.push_back(&args[i]->toTensor());
-          }
-        } else if (args[i]->isInt()) {
-          // Int args: first num_regular_int_inputs are inputs, rest are outputs
-          if (input_ints.size() < num_regular_int_inputs) {
-            input_ints.push_back(args[i]->toInt());
-          } else if (output_ints.size() < num_int_outputs) {
-            output_ints.push_back(args[i]);
-          }
-        } else if (args[i]->isTensorList()) {
-          auto tensor_list = args[i]->toTensorList();
-          for (auto& tensor : tensor_list) {
-            if (input_tensors.size() < num_regular_tensor_inputs) {
-              input_tensors.push_back(&tensor);
-            } else if (output_tensors.size() < num_tensor_outputs) {
-              // Note: const_cast is required because toTensorList() only
-              // provides const refs, but ExecuTorch output tensors are
-              // pre-allocated mutable buffers. This is safe as long as the
-              // runtime provides writable output buffers.
-              output_tensors.push_back(const_cast<ETTensor*>(&tensor));
-            }
-          }
-        }
-      }
-
-      if (input_tensors.size() != num_regular_tensor_inputs) {
-        ET_LOG(
-            Error,
-            "Expected %zu regular tensor inputs, got %zu",
-            num_regular_tensor_inputs,
-            input_tensors.size());
-        return Error::InvalidArgument;
-      }
-      if (input_ints.size() != num_regular_int_inputs) {
-        ET_LOG(
-            Error,
-            "Expected %zu int inputs, got %zu",
-            num_regular_int_inputs,
-            input_ints.size());
-        return Error::InvalidArgument;
-      }
-      if (output_tensors.size() != num_tensor_outputs) {
-        ET_LOG(
-            Error,
-            "Expected %zu tensor outputs, got %zu",
-            num_tensor_outputs,
-            output_tensors.size());
-        return Error::InvalidArgument;
-      }
-      if (output_ints.size() != num_int_outputs) {
-        ET_LOG(
-            Error,
-            "Expected %zu int outputs, got %zu",
-            num_int_outputs,
-            output_ints.size());
+      // Walk args in lockstep with input_map, then output_map.
+      // Since mutable buffers are not in the maps, args correspond 1:1 with map
+      // entries.
+      size_t arg_idx = 0;
+      const size_t expected_args =
+          program.input_map.size() + program.output_map.size();
+      if (args.size() != expected_args) {
+        ET_LOG(Error, "Expected %zu args, got %zu", expected_args, args.size());
         return Error::InvalidArgument;
       }
 
-      // Bind inputs to state
-      // First, bind mutable buffers from delegate-owned storage
-      for (const auto& slot : program.mutable_buffer_map) {
+      // --- Bind inputs ---
+      for (const auto& slot : program.input_map) {
         if (slot.slot_type == SlotType::TensorSlot) {
+          const ETTensor& tensor = args[arg_idx++]->toTensor();
           Tid tid{slot.idx};
-          // Get the delegate-owned MLX array (persists across executions)
-          array& arr = mlx_handle->mutable_buffers.get(tid);
-          state.set_tensor(tid, arr); // Copy to state
-        }
-      }
-
-      // Then, bind regular inputs from ExecuTorch
-      size_t regular_tensor_idx = 0;
-      size_t regular_int_idx = 0;
-
-      for (size_t i = 0; i < num_inputs; ++i) {
-        const auto& slot = program.input_map[i];
-        if (slot.slot_type == SlotType::TensorSlot) {
-          Tid tid{slot.idx};
-          // Skip if this is a mutable buffer (already bound above)
-          if (mutable_buffer_tids.find(slot.idx) != mutable_buffer_tids.end()) {
-            continue;
-          }
-          // Bind regular input from ExecuTorch
-          // Get expected tensor metadata if available for dtype validation
           std::optional<TensorMeta> expected_meta = std::nullopt;
           if (tid.idx < program.tensor_meta.size()) {
             expected_meta = program.tensor_meta[tid.idx];
           }
-          Result<array> arr_result =
-              tensor_to_mlx(*input_tensors[regular_tensor_idx], expected_meta);
-          if (!arr_result.ok()) {
+          h->state.set_tensor(tid, tensor_to_mlx(tensor, expected_meta));
+        } else if (slot.slot_type == SlotType::IntValueSlot) {
+          int64_t val = args[arg_idx]->toInt();
+          arg_idx++;
+          if (val > std::numeric_limits<int32_t>::max() ||
+              val < std::numeric_limits<int32_t>::min()) {
             ET_LOG(
                 Error,
-                "Failed to convert input tensor %zu to MLX array",
-                regular_tensor_idx);
-            return arr_result.error();
-          }
-          state.set_tensor(tid, std::move(arr_result.get()));
-          regular_tensor_idx++;
-        } else if (slot.slot_type == SlotType::IntValueSlot) {
-          // Bind int value input from ExecuTorch
-          Vid<int32_t> vid{slot.idx};
-          if (regular_int_idx < input_ints.size()) {
-            int64_t val = input_ints[regular_int_idx];
-            // Check for int32 overflow before casting
-            if (val > std::numeric_limits<int32_t>::max() ||
-                val < std::numeric_limits<int32_t>::min()) {
-              ET_LOG(
-                  Error,
-                  "Int input %zu value %lld exceeds int32 range",
-                  regular_int_idx,
-                  static_cast<long long>(val));
-              return Error::InvalidArgument;
-            }
-            state.set_value(vid, static_cast<int32_t>(val));
-            regular_int_idx++;
-          } else {
-            ET_LOG(Error, "Missing int input for slot %zu", i);
+                "Int input value %lld exceeds int32 range",
+                static_cast<long long>(val));
             return Error::InvalidArgument;
           }
+          h->state.set_value(Vid<int32_t>{slot.idx}, static_cast<int32_t>(val));
         } else {
-          ET_LOG(
-              Error,
-              "Input slot %zu has unsupported type %d",
-              i,
-              static_cast<int>(slot.slot_type));
-          return Error::InvalidProgram;
+          throw std::runtime_error(
+              "Unhandled input slot type: " +
+              std::to_string(static_cast<int>(slot.slot_type)));
         }
       }
 
-      // Run the MLX program
-      mlx_handle->interpreter.run(program, state);
+      // --- Run the MLX program ---
+      h->interpreter.run(program, h->state);
 
-      // After execution, update delegate-owned mutable buffers with the results
-      // This is needed because slice_update returns a new array
-      for (const auto& slot : program.mutable_buffer_map) {
-        if (slot.slot_type == SlotType::TensorSlot) {
-          Tid tid{slot.idx};
-          // Get the updated tensor from execution state and store it back
-          array updated = state.const_tensor_ref(tid);
-          mlx_handle->mutable_buffers.set(tid, std::move(updated));
-        }
-      }
-
-      // Collect regular tensor outputs (not mutable buffers) for eval
+      // --- Collect tensor outputs for batch eval ---
       std::vector<array> tensor_arrays;
-      tensor_arrays.reserve(num_tensor_outputs);
-
-      for (size_t i = 0; i < num_outputs; ++i) {
-        const auto& slot = program.output_map[i];
+      tensor_arrays.reserve(program.num_output_tensors);
+      for (const auto& slot : program.output_map) {
         if (slot.slot_type == SlotType::TensorSlot) {
-          Tid tid{slot.idx};
-          // Skip mutable buffer outputs - they don't have ExecuTorch output
-          // tensors
-          if (mutable_buffer_tids.find(slot.idx) != mutable_buffer_tids.end()) {
-            continue;
-          }
-          tensor_arrays.push_back(state.const_tensor_ref(tid));
+          tensor_arrays.push_back(h->state.const_tensor_ref(Tid{slot.idx}));
         }
       }
-
-      // Evaluate all tensor outputs
       eval(tensor_arrays);
 
-      // Write tensor outputs to ExecuTorch
-      for (size_t i = 0; i < num_tensor_outputs; ++i) {
-        Error err = mlx_to_tensor(tensor_arrays[i], *output_tensors[i]);
-        if (err != Error::Ok) {
-          ET_LOG(
-              Error, "Failed to copy MLX output %zu to ExecuTorch tensor", i);
-          return err;
-        }
-      }
-
-      // Write int outputs if we have them
-      size_t int_idx = 0;
-      for (size_t i = 0; i < num_outputs && int_idx < output_ints.size(); ++i) {
-        const auto& slot = program.output_map[i];
-        if (slot.slot_type == SlotType::IntValueSlot) {
+      // --- Write outputs back to args ---
+      size_t tensor_out_idx = 0;
+      for (const auto& slot : program.output_map) {
+        if (slot.slot_type == SlotType::TensorSlot) {
+          ETTensor& out_tensor = args[arg_idx++]->toTensor();
+          mlx_to_tensor(tensor_arrays[tensor_out_idx++], out_tensor);
+        } else if (slot.slot_type == SlotType::IntValueSlot) {
           Vid<int32_t> vid{slot.idx};
           int64_t int_val =
-              static_cast<int64_t>(state.const_value_ref<int32_t>(vid));
-          *output_ints[int_idx] = EValue(int_val);
-          int_idx++;
+              static_cast<int64_t>(h->state.const_value_ref<int32_t>(vid));
+          *args[arg_idx] = EValue(int_val);
+          arg_idx++;
+        } else {
+          throw std::runtime_error(
+              "Unhandled output slot type: " +
+              std::to_string(static_cast<int>(slot.slot_type)));
         }
       }
 

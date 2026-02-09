@@ -9,18 +9,17 @@
 """
 Serialization utilities for MLX delegate.
 
-Converts MLXGraph dataclasses to FlatBuffer binary format with separate
-constant data segment.
+Converts MLXGraph dataclasses to FlatBuffer binary format.
+
+Constants are NOT embedded in the delegate payload - they are provided by
+ExecuTorch via named_data_map at runtime.
 
 Layout:
     [Header: 24 bytes]
         - Padding: 4 bytes (zeros)
         - Magic: 4 bytes ("MLX0")
-        - Data segment offset: 8 bytes (little-endian uint64)
-        - Data segment size: 8 bytes (little-endian uint64)
+        - Reserved: 16 bytes (zeros, for future use)
     [FlatBuffer payload]
-    [Padding to 16-byte alignment]
-    [Constant data segment]
 """
 
 from __future__ import annotations
@@ -43,8 +42,6 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (  # no
     ConcatenateNode,
     ContiguousNode,
     Conv1DNode,
-    DataSegment,
-    DTypeId,
     ExpandDimsNode,
     FloatOrVid,
     FloorDivideIntNode,
@@ -241,16 +238,6 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         # 5. Build version string (must be created before the table that uses it)
         version_off = builder.CreateString(self.graph.version)
 
-        # Build DataSegment table first (it's a table, not a struct)
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import (
-            DataSegment as FBDataSegmentModule,
-        )
-
-        FBDataSegmentModule.Start(builder)
-        FBDataSegmentModule.AddOffset(builder, self.graph.constant_segment.offset)
-        FBDataSegmentModule.AddSize(builder, self.graph.constant_segment.size)
-        data_segment_off = FBDataSegmentModule.End(builder)
-
         # 6. Build the root MLXGraph table
         from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import (
             MLXGraph as FBMLXGraphModule,
@@ -259,24 +246,19 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         FBMLXGraphModule.Start(builder)
         FBMLXGraphModule.AddVersion(builder, version_off)
         FBMLXGraphModule.AddNumConstantTensors(builder, self.graph.num_constant_tensors)
-        FBMLXGraphModule.AddNumNonConstantTensors(
-            builder, self.graph.num_non_constant_tensors
-        )
-        FBMLXGraphModule.AddNumNonConstantValues(
-            builder, self.graph.num_non_constant_values
-        )
         FBMLXGraphModule.AddNumInputTensors(builder, self.graph.num_input_tensors)
         FBMLXGraphModule.AddNumOutputTensors(builder, self.graph.num_output_tensors)
         FBMLXGraphModule.AddNumMutableBufferTensors(
             builder, self.graph.num_mutable_buffer_tensors
         )
+        FBMLXGraphModule.AddNumTempTensors(builder, self.graph.num_temp_tensors)
+        FBMLXGraphModule.AddNumValues(builder, self.graph.num_values)
         FBMLXGraphModule.AddInstructions(builder, instructions_vec)
         FBMLXGraphModule.AddInputMap(builder, input_map_vec)
         FBMLXGraphModule.AddOutputMap(builder, output_map_vec)
         FBMLXGraphModule.AddMutableBufferMap(builder, mutable_buffer_map_vec)
         FBMLXGraphModule.AddNamedSlots(builder, named_slots_vec)
         FBMLXGraphModule.AddTensorMeta(builder, tensor_meta_vec)
-        FBMLXGraphModule.AddConstantSegment(builder, data_segment_off)
         root = FBMLXGraphModule.End(builder)
 
         builder.Finish(root)
@@ -379,9 +361,13 @@ class MLXGraphSerializer(GeneratedOpBuilders):
             builder.PrependUOffsetTRelative(off)
         shape_vec = builder.EndVector()
 
-        strides_vec = 0
-        if tm.strides:
-            strides_vec = _build_int_vector(builder, tm.strides)
+        # Build dim_order vector (uint8)
+        dim_order_vec = 0
+        if tm.dim_order:
+            builder.StartVector(1, len(tm.dim_order), 1)  # elem_size=1 for uint8
+            for d in reversed(tm.dim_order):
+                builder.PrependUint8(d)
+            dim_order_vec = builder.EndVector()
 
         from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import (
             TensorMeta as FBTensorMetaModule,
@@ -389,9 +375,10 @@ class MLXGraphSerializer(GeneratedOpBuilders):
 
         FBTensorMetaModule.Start(builder)
         FBTensorMetaModule.AddShape(builder, shape_vec)
-        FBTensorMetaModule.AddDtype(builder, tm.dtype)
-        if strides_vec:
-            FBTensorMetaModule.AddStrides(builder, strides_vec)
+        if tm.scalar_type is not None:
+            FBTensorMetaModule.AddScalarType(builder, tm.scalar_type)
+        if dim_order_vec:
+            FBTensorMetaModule.AddDimOrder(builder, dim_order_vec)
         return FBTensorMetaModule.End(builder)
 
 

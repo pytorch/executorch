@@ -395,10 +395,10 @@ class WhisperCrossKVProjection(nn.Module):
 def export_whisper_to_mlx(
     model_id: str,
     output_dir: str,
-    quantize: Optional[str] = None,
     max_decoder_seq_len: int = 256,
-    dtype: str = "fp32",
-    quantize_embeddings: bool = True,
+    dtype: str = "bf16",
+    quantize_linear: Optional[str] = None,
+    quantize_embeddings: Optional[str] = None,
 ) -> None:
     """
     Export Whisper model components to MLX delegate.
@@ -411,10 +411,10 @@ def export_whisper_to_mlx(
     Args:
         model_id: HuggingFace model ID
         output_dir: Directory to save .pte files
-        quantize: Quantization method ("int4", "int8", or None)
         max_decoder_seq_len: Maximum decoder sequence length
         dtype: Model dtype ("fp32", "fp16", "bf16")
-        quantize_embeddings: Whether to quantize embedding layers (default: True)
+        quantize_linear: Quantization method for linear layers ("int4", "int8", or None)
+        quantize_embeddings: Quantization method for embedding layers ("int4", "int8", or None)
     """
     from transformers import AutoProcessor, WhisperForConditionalGeneration
 
@@ -458,53 +458,50 @@ def export_whisper_to_mlx(
     decoder_wrapper = WhisperDecoderWithCache(model, max_decoder_seq_len).eval()
 
     # Apply quantization if requested
-    if quantize:
-        logger.info(
-            f"Applying {quantize} quantization "
-            f"(quantize_embeddings={quantize_embeddings})..."
-        )
+    if quantize_linear or quantize_embeddings:
+        logger.info("Applying quantization with TorchAO...")
         try:
             from torchao.quantization.granularity import PerGroup
             from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 
-            weight_dtype = torch.int4 if quantize == "int4" else torch.int8
-
-            # Quantize encoder
-            quantize_(
-                encoder_wrapper,
-                IntxWeightOnlyConfig(
-                    weight_dtype=weight_dtype, granularity=PerGroup(64)
-                ),
-            )
-
-            # Quantize cross-KV projection
-            quantize_(
-                cross_kv_wrapper,
-                IntxWeightOnlyConfig(
-                    weight_dtype=weight_dtype, granularity=PerGroup(64)
-                ),
-            )
-
-            # Quantize decoder Linear layers with group 64
-            quantize_(
-                decoder_wrapper,
-                IntxWeightOnlyConfig(
-                    weight_dtype=weight_dtype, granularity=PerGroup(64)
-                ),
-                lambda m, fqn: isinstance(m, nn.Linear),
-            )
-
-            # Optionally quantize decoder embeddings
+            # Quantize embedding layers
             # Note: embed_positions is accessed via indexing which doesn't work with quantized tensors
             if quantize_embeddings:
+                embed_dtype = (
+                    torch.int4 if quantize_embeddings == "int4" else torch.int8
+                )
+                embed_group_size = 32 if quantize_embeddings == "int4" else 128
+                logger.info(
+                    f"Quantizing embedding layers with {quantize_embeddings} (group size {embed_group_size})..."
+                )
                 quantize_(
                     decoder_wrapper,
                     IntxWeightOnlyConfig(
-                        weight_dtype=weight_dtype, granularity=PerGroup(32)
+                        weight_dtype=embed_dtype,
+                        granularity=PerGroup(embed_group_size),
                     ),
                     lambda m, fqn: isinstance(m, nn.Embedding)
                     and "embed_tokens" in fqn,
                 )
+
+            # Quantize linear layers
+            if quantize_linear:
+                linear_dtype = torch.int4 if quantize_linear == "int4" else torch.int8
+                linear_group_size = 32 if quantize_linear == "int4" else 128
+                logger.info(
+                    f"Quantizing linear layers with {quantize_linear} (group size {linear_group_size})..."
+                )
+                for module in [encoder_wrapper, cross_kv_wrapper, decoder_wrapper]:
+                    quantize_(
+                        module,
+                        IntxWeightOnlyConfig(
+                            weight_dtype=linear_dtype,
+                            granularity=PerGroup(linear_group_size),
+                        ),
+                        filter_fn=lambda m, fqn: isinstance(m, nn.Linear),
+                    )
+
+            logger.info("Applied quantization successfully")
         except ImportError:
             logger.error("TorchAO not installed. Run: pip install torchao")
             raise
@@ -529,6 +526,8 @@ def export_whisper_to_mlx(
 
     with torch.no_grad():
         example_cross_k, example_cross_v = cross_kv_wrapper(encoder_hidden_states)
+        example_cross_k = tuple(k.contiguous() for k in example_cross_k)
+        example_cross_v = tuple(v.contiguous() for v in example_cross_v)
 
         cross_kv_ep = torch.export.export(
             cross_kv_wrapper,
@@ -584,7 +583,8 @@ def export_whisper_to_mlx(
     metadata = {
         "model_id": model_id,
         "dtype": dtype,
-        "quantize": quantize,
+        "quantize_linear": quantize_linear,
+        "quantize_embeddings": quantize_embeddings,
         "max_decoder_seq_len": max_decoder_seq_len,
         "encoder_seq_len": encoder_seq_len,
         "num_decoder_layers": decoder_wrapper.num_layers,
@@ -601,10 +601,7 @@ def _save_to_pte(ep, output_path: str, name: str) -> None:
     import executorch.exir as exir
     from executorch.backends.apple.mlx import MLXPartitioner
     from executorch.exir import EdgeCompileConfig
-    from executorch.exir.backend.backend_details import CompileSpec
     from executorch.exir.capture._config import ExecutorchBackendConfig
-
-    compile_specs = [CompileSpec("use_fp16", bytes([False]))]
 
     # Allow repeat_interleave and sdpa ops
     edge_config = EdgeCompileConfig(
@@ -616,7 +613,7 @@ def _save_to_pte(ep, output_path: str, name: str) -> None:
 
     edge_program = exir.to_edge_transform_and_lower(
         ep,
-        partitioner=[MLXPartitioner(compile_specs=compile_specs)],
+        partitioner=[MLXPartitioner()],
         compile_config=edge_config,
     )
 
@@ -644,15 +641,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="/tmp/whisper_mlx",
+        default="whisper_mlx",
         help="Output directory for .pte files",
-    )
-    parser.add_argument(
-        "--quantize",
-        type=str,
-        choices=["int4", "int8"],
-        default=None,
-        help="Quantization method",
     )
     parser.add_argument(
         "--max-decoder-seq-len",
@@ -664,13 +654,22 @@ def main():
         "--dtype",
         type=str,
         choices=["fp32", "fp16", "bf16"],
-        default="fp32",
+        default="bf16",
         help="Model dtype",
     )
     parser.add_argument(
-        "--no-quantize-embeddings",
-        action="store_true",
-        help="Disable quantization of embedding layers (when using --quantize)",
+        "--quantize-linear",
+        type=str,
+        choices=["int4", "int8"],
+        default=None,
+        help="Quantization method for linear layers",
+    )
+    parser.add_argument(
+        "--quantize-embeddings",
+        type=str,
+        choices=["int4", "int8"],
+        default=None,
+        help="Quantization method for embedding layers",
     )
 
     args = parser.parse_args()
@@ -678,10 +677,10 @@ def main():
     export_whisper_to_mlx(
         model_id=args.model_id,
         output_dir=args.output_dir,
-        quantize=args.quantize,
         max_decoder_seq_len=args.max_decoder_seq_len,
         dtype=args.dtype,
-        quantize_embeddings=not args.no_quantize_embeddings,
+        quantize_linear=args.quantize_linear,
+        quantize_embeddings=args.quantize_embeddings,
     )
 
 

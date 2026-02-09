@@ -8,7 +8,7 @@
 
 """MLX backend for ExecuTorch - executes models on Apple Silicon using MLX."""
 
-# Import custom_ops module to register custom ATen ops before anything else
+# Import custom_ops module to register custom ATen ops (rope, etc.)
 from executorch.backends.apple.mlx import custom_ops as _custom_ops  # noqa: F401
 from executorch.backends.apple.mlx.partitioner import MLXPartitioner
 
