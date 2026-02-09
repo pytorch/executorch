@@ -18,15 +18,6 @@ from torch_pin import NIGHTLY_VERSION, TORCH_VERSION
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
 TORCH_NIGHTLY_URL_BASE = "https://download.pytorch.org/whl/nightly"
 
-# Supported CUDA versions - modify this to add/remove supported versions
-# Format: tuple of (major, minor) version numbers
-SUPPORTED_CUDA_VERSIONS = (
-    (12, 6),
-    (12, 8),
-    (12, 9),
-    (13, 0),
-)
-
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features.
 #
@@ -39,7 +30,7 @@ SUPPORTED_CUDA_VERSIONS = (
 # https://hud.pytorch.org/hud/pytorch/pytorch/nightly/ @lint-ignore
 #
 # NOTE: If you're changing, make the corresponding supported CUDA versions in
-# SUPPORTED_CUDA_VERSIONS above if needed.
+# SUPPORTED_CUDA_VERSIONS in install_utils.py if needed.
 
 
 def install_requirements(use_pytorch_nightly):
@@ -53,7 +44,7 @@ def install_requirements(use_pytorch_nightly):
         sys.exit(1)
 
     # Determine the appropriate PyTorch URL based on CUDA delegate status
-    torch_url = determine_torch_url(TORCH_NIGHTLY_URL_BASE, SUPPORTED_CUDA_VERSIONS)
+    torch_url = determine_torch_url(TORCH_NIGHTLY_URL_BASE)
 
     # pip packages needed by exir.
     TORCH_PACKAGE = [
@@ -123,7 +114,7 @@ def install_requirements(use_pytorch_nightly):
 
 def install_optional_example_requirements(use_pytorch_nightly):
     # Determine the appropriate PyTorch URL based on CUDA delegate status
-    torch_url = determine_torch_url(TORCH_NIGHTLY_URL_BASE, SUPPORTED_CUDA_VERSIONS)
+    torch_url = determine_torch_url(TORCH_NIGHTLY_URL_BASE)
 
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [

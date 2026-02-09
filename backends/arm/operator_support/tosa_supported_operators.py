@@ -184,6 +184,7 @@ def is_quantized(node: torch.fx.Node) -> bool:
 
     Returns:
         bool: True if the node is quantized, False otherwise.
+
     """
 
     try:
@@ -287,7 +288,9 @@ def tosa_support_factory(
         ],
     ]
 
-    if not tosa_spec.support_float():
+    if tosa_spec.support_float():
+        negative_checks.append(CheckMixedFloatingInputs(reporter))
+    else:
         negative_checks.append(CheckArmQuantized(reporter))
         negative_checks.append(CheckProperQuantization(reporter))
 
@@ -371,10 +374,11 @@ class TOSAProINTFPSupportList(OperatorSupportBase):
 
 
 class CheckArmQuantized(OperatorSupportBase):
-    """
-    Check if the node was marked as quantized in the Arm backend.
-    This is used to ensure that nodes that were quantized in the Arm backend
-    are only partitioned if they are supported by the TOSA backend.
+    """Check if the node was marked as quantized in the Arm backend.
+
+    This is used to ensure that nodes that were quantized in the Arm backend are
+    only partitioned if they are supported by the TOSA backend.
+
     """
 
     def __init__(self, reporter: WhyNoPartitionReporter):
@@ -610,7 +614,9 @@ class CheckDtypeInputsAndOutputs(OperatorSupportBase):
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        """Return True if no disallowed dtypes are present on inputs or outputs."""
+        """Return True if no disallowed dtypes are present on inputs or
+        outputs.
+        """
         if is_submodule_node(node):
             return True
         for input_node in (
@@ -644,6 +650,49 @@ class CheckDtypeInputsAndOutputs(OperatorSupportBase):
                     f"Had {output.dtype} output that is not supported by {self.tosa_spec}.",
                 )
                 return False
+        return True
+
+
+class CheckMixedFloatingInputs(OperatorSupportBase):
+    """Reject nodes with mixed floating-point input dtypes."""
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        """Return True if floating inputs are either absent or of a single
+        dtype.
+        """
+        if is_submodule_node(node):
+            return True
+
+        if node.target in (
+            torch.ops.higher_order.while_loop,
+            torch.ops.higher_order.cond,
+        ):
+            return True
+
+        floating_dtypes = set()
+        for input_node in (
+            input_node
+            for input_node in node.all_input_nodes
+            if input_node.op != "get_attr"
+        ):
+            dtype = get_first_fake_tensor(input_node).dtype
+            if dtype.is_floating_point:
+                floating_dtypes.add(dtype)
+
+        if len(floating_dtypes) > 1:
+            self.reporter.report_reject(
+                node,
+                f"Mixed floating-point input dtypes {floating_dtypes} are not supported by TOSA."
+                " Did you call model.to(dtype=...) or cast properly?",
+            )
+            return False
+
         return True
 
 

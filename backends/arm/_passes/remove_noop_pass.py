@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -25,7 +25,9 @@ class RemoveNoopPass(ArmPass):
         if op not in (
             exir_ops.edge.dim_order_ops._clone_dim_order.default,
             exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+            exir_ops.edge.aten.alias_copy.default,
             exir_ops.edge.aten.copy.default,
+            exir_ops.edge.aten.detach_copy.default,
         ):
             return super().call_operator(op, args, kwargs, meta)
 
