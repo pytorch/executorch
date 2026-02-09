@@ -68,6 +68,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.tanh_converter import (
     TanhConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.upsample_nearest2d_converter import (
+    UpsampleNearest2DConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import (
     ViewCopyConverter,
 )
@@ -97,5 +100,6 @@ __all__ = [
     "SoftmaxConverter",
     "SubTensorConverter",
     "TanhConverter",
+    "UpsampleNearest2DConverter",
     "ViewCopyConverter",
 ]
