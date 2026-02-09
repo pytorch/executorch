@@ -20,7 +20,8 @@ them to optimized MLX operations. Examples include:
 
 from __future__ import annotations
 
-from typing import Any, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from executorch.backends.apple.mlx.program_builder import (
@@ -51,8 +52,69 @@ QUANTIZED_SERIALIZE_BIASES = True
 
 
 # =============================================================================
-# SLICE_UPDATE pattern
+# Pattern-matching utilities
 # =============================================================================
+
+
+def match_target(node: Node, op) -> bool:
+    """Check if a node's normalized aten target matches the given op."""
+    return node.op == "call_function" and get_aten_target_normalized(node.target) == op
+
+
+def has_single_user(node: Node) -> bool:
+    """Check if a node has exactly one consumer."""
+    return len(node.users) == 1
+
+
+@dataclass
+class OpStep:
+    """One step in a backward walk through the graph."""
+
+    op: Any
+    optional: bool = False
+    args: Optional[Dict[int, Any]] = field(default=None)
+
+
+def walk_back(
+    node: Node,
+    steps: List[OpStep],
+) -> Optional[Tuple[Node, List[Node]]]:
+    """Walk backwards through a chain of single-user ops.
+
+    Starting from *node*, try to match each step against the current node.
+    At every matched step the walk advances to ``cur.args[0]``.  Optional
+    steps are silently skipped when they don't match.
+
+    Returns:
+        ``(base_node, body_nodes)`` if the full chain matches, else ``None``.
+        *base_node* is the input to the first (deepest) op in the chain.
+        *body_nodes* are the matched intermediate nodes (in walk order).
+    """
+    body: List[Node] = []
+    cur = node
+
+    for step in steps:
+        if not isinstance(cur, Node):
+            return None
+
+        if match_target(cur, step.op):
+            if not has_single_user(cur):
+                return None
+            if step.args:
+                for idx, expected in step.args.items():
+                    if len(cur.args) <= idx or cur.args[idx] != expected:
+                        return None
+            body.append(cur)
+            cur = cur.args[0]
+        elif step.optional:
+            continue
+        else:
+            return None
+
+    if not isinstance(cur, Node):
+        return None
+
+    return cur, body
 
 
 @REGISTRY.register_pattern(name="SLICE_UPDATE")
@@ -85,13 +147,8 @@ class SliceUpdateHandler(PatternHandler):
     def maybe_create(  # noqa: C901
         cls, ep: ExportedProgram, head: Node
     ) -> Optional["SliceUpdateHandler"]:
-        _op_namespace = torch.ops.aten
-
         slice_scatter_node = head
-        if (
-            get_aten_target_normalized(slice_scatter_node.target)
-            != _op_namespace.slice_scatter.default
-        ):
+        if not match_target(slice_scatter_node, torch.ops.aten.slice_scatter.default):
             return None
 
         # Slice scatter should write to a mutable input/buffer to be a slice update.
@@ -107,21 +164,18 @@ class SliceUpdateHandler(PatternHandler):
         ss_dst, ss_src, ss_axis, ss_start, ss_end = slice_scatter_node.args
 
         copy_node = ss_src
-        if get_aten_target_normalized(copy_node.target) != _op_namespace.copy.default:
+        if not match_target(copy_node, torch.ops.aten.copy.default):
             return None
-        if copy_node.users != {slice_scatter_node: None}:
+        if not has_single_user(copy_node):
             return None
         if len(copy_node.args) != 2:
             return None
         c_dst, c_src = copy_node.args
 
         slice_node = c_dst
-        # In Edge IR, slice.Tensor becomes slice_copy.Tensor
-        # Use get_aten_target_normalized to normalize both to slice.Tensor for comparison
-        slice_target = get_aten_target_normalized(slice_node.target)
-        if slice_target != _op_namespace.slice.Tensor:
+        if not match_target(slice_node, torch.ops.aten.slice.Tensor):
             return None
-        if slice_node.users != {copy_node: None}:
+        if not has_single_user(slice_node):
             return None
         if len(slice_node.args) != 4:
             return None
@@ -232,13 +286,8 @@ class IndexUpdateHandler(PatternHandler):
     def maybe_create(  # noqa: C901
         cls, ep: ExportedProgram, head: Node
     ) -> Optional["IndexUpdateHandler"]:
-        _op_namespace = torch.ops.aten
-
         index_copy_node = head
-        if (
-            get_aten_target_normalized(index_copy_node.target)
-            != _op_namespace.index_copy.default
-        ):
+        if not match_target(index_copy_node, torch.ops.aten.index_copy.default):
             return None
 
         # index_copy should write to a mutable input/buffer to be an index update.
@@ -367,8 +416,6 @@ class UpdateCacheHandler(PatternHandler):
         Uses get_aten_target_normalized to handle both ATen IR
         (transpose.int) and Edge IR (transpose_copy.int).
         """
-        _op_ns = torch.ops.aten
-
         # Only check getitem nodes
         if head.op != "call_function" or "getitem" not in str(head.target):
             return None
@@ -406,9 +453,7 @@ class UpdateCacheHandler(PatternHandler):
 
         # Check for transpose - use get_aten_target_normalized to handle both
         # ATen IR (transpose.int) and Edge IR (transpose_copy.int)
-        value_target = get_aten_target_normalized(value_node.target)
-
-        if value_target != _op_ns.transpose.int:
+        if not match_target(value_node, torch.ops.aten.transpose.int):
             return None
 
         if len(value_node.args) < 3:
@@ -528,13 +573,36 @@ class SDPAHandler(PatternHandler):
         return q, k, v, attn_mask, dropout_p, is_causal, scale, enable_gqa
 
     @classmethod
-    def maybe_create(cls, ep: ExportedProgram, head: Node) -> Optional["SDPAHandler"]:
-        _op_namespace = torch.ops.aten
+    def _try_unwrap_repeat_kv(cls, node: Node) -> Optional[Tuple[Node, List[Node]]]:
+        """Try to unwrap a HuggingFace repeat_kv pattern.
 
+        HuggingFace's repeat_kv expands KV heads for grouped query attention:
+            hidden_states[:, :, None, :, :].expand(B, n_kv, n_rep, T, D)
+            .clone().reshape(B, n_heads, T, D)
+
+        In Edge IR this becomes:
+            unsqueeze_copy(x, 2) → expand_copy → clone → view_copy
+
+        Returns:
+            (base_node, body_nodes) if pattern matches, else None.
+            base_node is the original [B, n_kv, T, D] tensor.
+            body_nodes are the intermediate nodes to absorb.
+        """
+        return walk_back(
+            node,
+            [
+                OpStep(torch.ops.aten.view.default),
+                OpStep(torch.ops.aten.clone.default, optional=True),
+                OpStep(torch.ops.aten.expand.default),
+                OpStep(torch.ops.aten.unsqueeze.default, args={1: 2}),
+            ],
+        )
+
+    @classmethod
+    def maybe_create(cls, ep: ExportedProgram, head: Node) -> Optional["SDPAHandler"]:
         sdpa_node = head
-        if (
-            get_aten_target_normalized(sdpa_node.target)
-            != _op_namespace.scaled_dot_product_attention.default
+        if not match_target(
+            sdpa_node, torch.ops.aten.scaled_dot_product_attention.default
         ):
             return None
 
@@ -544,15 +612,14 @@ class SDPAHandler(PatternHandler):
         is_grouped_kv = False
         k_base = k
         v_base = v
+        body: List[Node] = []
         if (
-            get_aten_target_normalized(k.target)
-            == _op_namespace.repeat_interleave.self_int
-            and (k.users == {sdpa_node: None})
+            match_target(k, torch.ops.aten.repeat_interleave.self_int)
+            and has_single_user(k)
             and (len(k.args) == 3)
             and (len(k.kwargs) == 0)
-            and get_aten_target_normalized(v.target)
-            == _op_namespace.repeat_interleave.self_int
-            and (v.users == {sdpa_node: None})
+            and match_target(v, torch.ops.aten.repeat_interleave.self_int)
+            and has_single_user(v)
             and (len(v.args) == 3)
             and (len(v.kwargs) == 0)
         ):
@@ -563,9 +630,22 @@ class SDPAHandler(PatternHandler):
                 is_grouped_kv = True
                 k_base = k_unrepeated
                 v_base = v_unrepeated
+                body = [k, v]
+
+        # Detect HuggingFace repeat_kv pattern:
+        # unsqueeze(dim=2) → expand → clone → view
+        if not is_grouped_kv:
+            k_unwrap = cls._try_unwrap_repeat_kv(k)
+            v_unwrap = cls._try_unwrap_repeat_kv(v)
+            if k_unwrap is not None and v_unwrap is not None:
+                k_base, k_body = k_unwrap
+                v_base, v_body = v_unwrap
+                is_grouped_kv = True
+                body = k_body + v_body
 
         head = sdpa_node
-        body = [k, v] if is_grouped_kv else []
+        if not is_grouped_kv:
+            body = []
         return SDPAHandler(head, body, q_node=q, k_node=k_base, v_node=v_base)
 
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
@@ -707,24 +787,15 @@ class QuantizedLinearHandler(PatternHandler):
     def maybe_create(
         cls, ep: ExportedProgram, head: Node
     ) -> Optional["QuantizedLinearHandler"]:
-        _op_namespace = torch.ops.aten
-
         linear_node = head
-        if (
-            get_aten_target_normalized(linear_node.target)
-            != _op_namespace.linear.default
-        ):
+        if not match_target(linear_node, torch.ops.aten.linear.default):
             return None
 
         x, w = linear_node.args[0:2]
         dequant_node = w
-        if (
-            get_aten_target_normalized(dequant_node.target)
-            != torch.ops.torchao.dequantize_affine.default
-        ):
+        if not match_target(dequant_node, torch.ops.torchao.dequantize_affine.default):
             return None
-
-        if dequant_node.users != {linear_node: None}:
+        if not has_single_user(dequant_node):
             return None
 
         parsed = _parse_dequant_node(dequant_node)
@@ -838,24 +909,16 @@ class QuantizedEmbeddingHandler(PatternHandler):
     def maybe_create(
         cls, ep: ExportedProgram, head: Node
     ) -> Optional["QuantizedEmbeddingHandler"]:
-        _op_namespace = torch.ops.aten
-
         embedding_node = head
-        if (
-            get_aten_target_normalized(embedding_node.target)
-            != _op_namespace.embedding.default
-        ):
+        if not match_target(embedding_node, torch.ops.aten.embedding.default):
             return None
 
         w, x = embedding_node.args[0:2]
 
         dequant_node = w
-        if (
-            get_aten_target_normalized(dequant_node.target)
-            != torch.ops.torchao.dequantize_affine.default
-        ):
+        if not match_target(dequant_node, torch.ops.torchao.dequantize_affine.default):
             return None
-        if dequant_node.users != {embedding_node: None}:
+        if not has_single_user(dequant_node):
             return None
 
         parsed = _parse_dequant_node(dequant_node)
