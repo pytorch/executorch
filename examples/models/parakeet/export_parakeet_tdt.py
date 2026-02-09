@@ -335,7 +335,8 @@ def export_all(
     programs = {}
 
     # Determine device based on backend (preprocessor always stays on CPU)
-    device = torch.device("cuda" if backend == "cuda" else "cpu")
+    # Use CUDA for both cuda and cuda-windows backends when available
+    device = torch.device("cuda" if backend in ("cuda", "cuda-windows") else "cpu")
 
     # Get audio parameters from model config
     sample_rate = model.preprocessor._cfg.sample_rate
@@ -370,7 +371,8 @@ def export_all(
     torch.cuda.is_available = old_cuda_is_available
 
     # Move model to CUDA after preprocessor export (preprocessor must stay on CPU)
-    if backend == "cuda":
+    # Use CUDA for both cuda and cuda-windows backends when available
+    if backend in ("cuda", "cuda-windows"):
         model.cuda()
 
     feat_in = getattr(model.encoder, "_feat_in", 128)
