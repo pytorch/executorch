@@ -39,7 +39,7 @@ class RopeWithAttentionSink(Rope):
 
     For torch.export compatibility, this just passes through the position - the
     actual position adjustment is handled by the cache update logic.
-    
+
     Note: This class uses the model's max_context_len (params.max_context_len) for
     RoPE frequency table size, which should be large enough to support generation
     beyond the sliding window. The actual KV cache size is sink_size + window_size * 2.
@@ -104,11 +104,11 @@ def _create_causal_mask_for_attention_sink(
 ):
     """
     Create causal mask for attention sink.
-    
+
     Unlike regular ring buffer mask, this mask:
     1. ALWAYS allows attending to sink tokens (positions 0 to sink_size-1)
     2. Uses sliding window for other tokens
-    
+
     Args:
         cache_positions: Tensor of actual positions stored at each cache index
         window_size: Size of the sliding window
@@ -118,20 +118,20 @@ def _create_causal_mask_for_attention_sink(
     """
     pos_q = start_pos + torch.arange(seq_len, dtype=torch.long).view(-1, 1)
     delta = pos_q - cache_positions
-    
+
     # Valid if position is filled (>= 0) and causal (delta >= 0)
     is_valid = (cache_positions >= 0) & (delta >= 0)
-    
+
     # Sink tokens (original positions 0 to sink_size-1) are always visible
     is_sink = cache_positions < sink_size
-    
+
     # Window tokens must be within sliding window
     # Use <= to include the boundary token. For window_size=124, we want to attend
     # to the last 124 tokens BEFORE the current position (delta 1 to 124), plus
     # position 4 (first non-sink token) which has delta exactly = window_size.
     # This ensures sink_size + window_size tokens are visible when cache is full.
     is_in_window = delta <= window_size
-    
+
     # Final mask: valid AND (is_sink OR is_in_window)
     attn_mask = is_valid & (is_sink | is_in_window)
     attn_mask = torch.where(attn_mask == True, 0, float("-inf"))  # noqa E712
@@ -141,11 +141,11 @@ def _create_causal_mask_for_attention_sink(
 class CachePositionsManagerWithSink(nn.Module):
     """
     Manages cache positions for attention sink + sliding window.
-    
+
     For sink_size=0: behaves exactly like original CachePositionsManager (simple ring buffer).
     For sink_size>0: sink tokens (indices 0 to sink_size-1) are NEVER overwritten.
                      Ring buffer only cycles through indices sink_size to cache_size-1.
-    
+
     IMPORTANT: cache_size should be the actual cache dimension size (sink_size + 2*window_size).
     """
 
@@ -167,11 +167,11 @@ class CachePositionsManagerWithSink(nn.Module):
     ) -> torch.Tensor:
         """
         Calculate indices into k_cache, v_cache for placing k_val, v_val.
-        
+
         Index calculation:
         - Position < sink_size: index = position (sink tokens at fixed indices)
         - Position >= sink_size: index = sink_size + (position - sink_size) % ring_size
-        
+
         This ensures sink tokens (indices 0 to sink_size-1) are NEVER overwritten.
         """
         start_pos = input_pos[0].item()
@@ -179,7 +179,7 @@ class CachePositionsManagerWithSink(nn.Module):
 
         # Original positions for the sequence
         orig_positions = torch.arange(seq_len, dtype=torch.long) + start_pos
-        
+
         if self.sink_size == 0:
             # Simple ring buffer: just mod by cache size
             indices = orig_positions % self.max_context_length
@@ -333,8 +333,17 @@ def attention_sink_forward(
     torch._check_is_size(start_pos)
     attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(start_pos, seqlen)
 
+    # For SDPA, we need to pass a cache-relative position, not the absolute sequence position.
+    # The cache position determines how many KV entries to attend to.
+    # With a ring buffer, after filling up, we always have a full cache.
+    cache_size = self.kv_cache.max_context_length
+    # Effective cache position: min(start_pos, cache_size - 1) so SDPA knows how many entries exist
+    # Once cache is full (start_pos >= cache_size), we always have cache_size entries filled
+    effective_cache_pos = min(start_pos, cache_size - 1)
+    cache_input_pos = torch.tensor([effective_cache_pos], dtype=input_pos.dtype, device=input_pos.device)
+
     # SDPA
-    output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
+    output = self.SDPA(cache_input_pos, q, k, v, bsz, seqlen, attn_mask)
 
     # Return tuple like original AttentionMHA.forward
     return self.wo(output), None
@@ -391,8 +400,10 @@ def _replace_attention(
             if "SDPACustom" in child_module.SDPA.__class__.__name__:
                 child_module.SDPA.use_attention_mask = True
 
-            # Don't replace forward - let the original AttentionMHA.forward handle it
-            # since our KVCache has is_ring_buffer=True, it will use the ring buffer mask
+            # Replace forward with attention_sink_forward to handle cache position mapping
+            child_module.forward = types.MethodType(
+                attention_sink_forward, child_module
+            )
 
 
 def enable_attention_sink(
