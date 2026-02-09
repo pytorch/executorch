@@ -26,9 +26,10 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def get_negate_zero_points(node: torch.fx.Node, is_int8: bool) -> tuple[int, int]:
-    """
-    Returns (input1_zp, output_zp) for TOSA NEGATE.
+    """Returns (input1_zp, output_zp) for TOSA NEGATE.
+
     Must be zero for non-int8 types.
+
     """
     if is_int8:
         return (

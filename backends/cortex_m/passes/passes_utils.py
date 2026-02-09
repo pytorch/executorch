@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,7 +18,7 @@ SHIFT_INT8 = 20
 
 
 def quantize_val(val, scale, zp, qmin, qmax):
-    return min(max(round(val / scale + zp), qmin), qmax)
+    return float(min(max(torch.round(torch.Tensor([val / scale + zp])), qmin), qmax))
 
 
 def dequantize_per_tensor_cmsis(
@@ -103,6 +103,24 @@ def extract_scalar_value(node_arg) -> float:
         raise ValueError(
             f"Cannot extract scalar value from {type(node_arg)}: {node_arg}"
         )
+
+
+def coerce_int_pair(raw, default: tuple[int, int]) -> tuple[int, int]:
+    if hasattr(raw, "meta"):
+        raw = raw.meta.get("val", raw)  # type: ignore[attr-defined]
+    if raw is None:
+        return default
+    if isinstance(raw, torch.Tensor):
+        raw = raw.flatten().tolist()
+    if isinstance(raw, (list, tuple, torch.Size)):
+        items = [int(v) for v in raw]
+    else:
+        items = [int(raw)]
+    if not items:
+        return default
+    if len(items) == 1:
+        return (items[0], items[0])
+    return (items[0], items[1])
 
 
 def is_qualified_int8_node(args) -> bool:

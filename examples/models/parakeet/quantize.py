@@ -17,7 +17,7 @@ def quantize_model_(  # noqa: C901
 
     Args:
         module: The PyTorch module to quantize.
-        qlinear_config: Quantization config for linear layers ("4w", "8w", "8da4w", "8da8w").
+        qlinear_config: Quantization config for linear layers ("4w", "8w", "8da4w", "8da8w", "fpa4w").
         qlinear_group_size: Group size for linear quantization (default: 32).
         qlinear_packing_format: Packing format for linear layers (e.g., "tile_packed_to_4d").
         qembedding_config: Quantization config for embedding layers ("4w", "8w").
@@ -26,12 +26,42 @@ def quantize_model_(  # noqa: C901
     if not qlinear_config and not qembedding_config:
         return
 
+    from torchao.quantization.quant_api import quantize_
+
+    # Metal (MPS) quantization uses different API
+    if qlinear_config == "fpa4w":
+        # Load MPS ops
+        import torchao.experimental.ops.mps  # noqa: F401
+        from torchao.experimental.quant_api import UIntxWeightOnlyConfig
+
+        config = UIntxWeightOnlyConfig(
+            group_size=qlinear_group_size,
+            bitwidth=4,
+            uintx_choose_qparams_algorithm="hqq",
+        )
+
+        def linear_filter(m, fqn):
+            if isinstance(m, torch.nn.Linear):
+                if m.weight.shape[1] % qlinear_group_size != 0:
+                    raise ValueError(
+                        f"Metal int4 quantization requires weight dimension (K) to be multiple of group_size. "
+                        f"Layer {fqn} has weight shape {m.weight.shape} (K={m.weight.shape[1]}, group_size={qlinear_group_size})"  # noqa: E501
+                    )
+                return True
+            return False
+
+        print(
+            f"  Applying {qlinear_config} linear quantization "
+            f"(group_size={qlinear_group_size})..."
+        )
+        quantize_(module, config, filter_fn=linear_filter)
+        return
+
     from torchao.quantization.granularity import PerAxis, PerGroup
     from torchao.quantization.quant_api import (
         Int4WeightOnlyConfig,
         Int8DynamicActivationIntxWeightConfig,
         IntxWeightOnlyConfig,
-        quantize_,
     )
 
     # Quantize embedding layers first
@@ -89,6 +119,7 @@ def quantize_model_(  # noqa: C901
             config = Int8DynamicActivationIntxWeightConfig(
                 weight_dtype=torch.int4,
                 weight_granularity=granularity,
+                intx_choose_qparams_algorithm="hqq_scale_only",
             )
         elif qlinear_config == "8da8w":
             config = Int8DynamicActivationIntxWeightConfig(

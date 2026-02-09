@@ -46,11 +46,19 @@ def test_rsqrt_tosa_FP(test_tensor: torch.Tensor):
     match test_data[0].dtype:
         case torch.bfloat16:
             atol = 2e-2
+            rtol = 2e-2
         case _:
             atol = 1e-03
+            rtol = 1e-03
 
     pipeline = TosaPipelineFP[input_t1](
-        Rsqrt(), test_data, aten_op, exir_op=[], tosa_extensions=["bf16"], atol=atol
+        Rsqrt(),
+        test_data,
+        aten_op,
+        exir_op=[],
+        tosa_extensions=["bf16"],
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 

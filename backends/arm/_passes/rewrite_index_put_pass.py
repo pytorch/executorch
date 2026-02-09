@@ -6,6 +6,8 @@
 import math
 from typing import Any, Iterable, List, Sequence, Set, Type
 
+import torch
+
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.fuse_view_copy_transform_pass import (
     FuseViewCopyTransformPass,
@@ -189,9 +191,17 @@ class RewriteIndexPutPass(ArmPass):
         processed_indices = self._expand_none_indices(
             source_shape, indices, plain_meta, full_op
         )
+        index_shapes = [tuple(idx.data.shape) for idx in processed_indices]
+        try:
+            broadcast_shape = torch.broadcast_shapes(*index_shapes)
+        except Exception as exc:
+            raise RuntimeError(
+                "RewriteIndexPutPass: failed to broadcast index shapes %s: %s"
+                % (index_shapes, exc)
+            ) from exc
 
         N, K, W, C = calculate_tosa_values(
-            list(processed_indices[0].data.shape),
+            list(broadcast_shape),
             [idx.node for idx in processed_indices],
             source_shape,
         )
@@ -204,6 +214,13 @@ class RewriteIndexPutPass(ArmPass):
             full_op,
             plain_meta,
         )
+        idx_shape = list(indices_reshaped.data.shape)
+        idx_numel = math.prod(idx_shape)
+        if idx_numel != N * W:
+            raise RuntimeError(
+                "RewriteIndexPutPass: flat index numel (%s) does not match expected N*W (%s)"
+                % (idx_numel, N * W)
+            )
 
         # Scatter expects a 3D layout; flatten everything into [N, K, C].
         reshape_indices = super().call_operator(
