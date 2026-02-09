@@ -66,6 +66,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup ExecuTorch"
+        # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
+        export USE_MKL=OFF
         PYTHON_EXECUTABLE=python ./install_executorch.sh
         echo "::endgroup::"
 

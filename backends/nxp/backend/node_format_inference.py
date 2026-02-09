@@ -6,9 +6,10 @@
 import logging
 import operator
 
+from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
+
 from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
 from executorch.backends.nxp.backend.edge_program_converter import functions_converters
-from executorch.backends.nxp.backend.node_format import NodeFormat, NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch.export import ExportedProgram
@@ -26,6 +27,7 @@ class NodeFormatInference:
         exir_ops.edge.aten.convolution.default: {"inputs": [0, 1]},
         exir_ops.edge.aten.max_pool2d_with_indices.default: {"inputs": [0]},
         exir_ops.edge.aten.max_pool2d.default: {"inputs": [0]},
+        exir_ops.edge.aten.upsample_nearest2d.vec: {"inputs": [0]},
     }
 
     # A set of Edge Aten ops, which have the ability to change the format (for example - input nodes
@@ -84,7 +86,7 @@ class NodeFormatInference:
                 node.meta = {}
             if NXP_NODE_FORMAT not in node.meta:
                 logging.warning(f"Node `{node}` does not have inferred format.")
-                node.meta[NXP_NODE_FORMAT] = NodeFormat.NONE
+                node.meta[NXP_NODE_FORMAT] = DataFormat.NONE
 
     def _infer_format_of_nodes(self, node: Node):
         op_type = self._get_node_op_type(node)
@@ -102,10 +104,10 @@ class NodeFormatInference:
                 # Note: If the format for the input/output has already been assigned as channels first, it will NOT be
                 #  overwritten.
                 self._assign_format_to_node(
-                    self._node_outputs[node][0], NodeFormat.FORMATLESS
+                    self._node_outputs[node][0], DataFormat.FORMATLESS
                 )
                 self._assign_format_to_node(
-                    self._node_inputs[node][0], NodeFormat.FORMATLESS
+                    self._node_inputs[node][0], DataFormat.FORMATLESS
                 )
 
             else:
@@ -123,7 +125,7 @@ class NodeFormatInference:
             #  delegated partitions. Propagating the format here could unnecessarily enforce the format in one of these
             #  partitions, which would require extra transpositions.
             for processed_node in self._node_inputs[node] + [node]:
-                self._assign_format_to_node(processed_node, NodeFormat.NONE)
+                self._assign_format_to_node(processed_node, DataFormat.NONE)
 
     def _infer_format_based_on_io_ranks(self, node: Node):
         """Determine the format of the output tensor of given "reshape style operator" based on the ranks of its input
@@ -141,12 +143,12 @@ class NodeFormatInference:
             else:
                 # Either the op 'flattens' the tensor, so output is formatless, or it scales it up, in which case the
                 # format is assumed to be 'FORMATLESS', and may be back propagated as channels first later.
-                self._assign_format_to_node(node, NodeFormat.FORMATLESS)
+                self._assign_format_to_node(node, DataFormat.FORMATLESS)
 
         except:
             # Some shape data is not known, so we cannot be extra clever. Just set the output to `FORMATLESS` and
             #  everything will be alright.
-            self._assign_format_to_node(node, NodeFormat.FORMATLESS)
+            self._assign_format_to_node(node, DataFormat.FORMATLESS)
 
     def _match_formats_of_nodes(self, node_1, node_2):
         """If one of 'node_1' or 'node_2' is channels first, make the other channels first as well.
@@ -159,25 +161,25 @@ class NodeFormatInference:
         if format_1.is_channels_first() or format_2.is_channels_first():
             # At least 1 is channels first
             if not format_1.is_channels_first():
-                self._assign_format_to_node(node_1, NodeFormat.CHANNELS_FIRST)
+                self._assign_format_to_node(node_1, DataFormat.CHANNELS_FIRST)
             elif not format_2.is_channels_first():
-                self._assign_format_to_node(node_2, NodeFormat.CHANNELS_FIRST)
+                self._assign_format_to_node(node_2, DataFormat.CHANNELS_FIRST)
 
         else:
-            self._assign_format_to_node(node_1, NodeFormat.FORMATLESS)
-            self._assign_format_to_node(node_2, NodeFormat.FORMATLESS)
+            self._assign_format_to_node(node_1, DataFormat.FORMATLESS)
+            self._assign_format_to_node(node_2, DataFormat.FORMATLESS)
 
-    def _assign_format_to_node(self, node: Node, node_format: NodeFormat):
+    def _assign_format_to_node(self, node: Node, node_format: DataFormat):
         """
         Assign format to node, but only if it's not channels first.
         """
         old_node_format = self._get_node_format(node)
 
-        if old_node_format is NodeFormat.CHANNELS_FIRST:
+        if old_node_format is DataFormat.CHANNELS_FIRST:
             # Once CHANNEL_FIRST was assigned, we don't want to reassign
             return
 
-        if node_format is NodeFormat.NONE and old_node_format is not NodeFormat.NONE:
+        if node_format is DataFormat.NONE and old_node_format is not DataFormat.NONE:
             # A format has already been assigned to the node before. Don't replace it with `NONE`.
             return
 
@@ -204,16 +206,16 @@ class NodeFormatInference:
         for index, ancestor_node in enumerate(self._node_inputs[node]):
             # Go through input nodes and assign them correct format
             if index in self.ops_with_channels_first_nodes[op_type]["inputs"]:
-                self._assign_format_to_node(ancestor_node, NodeFormat.CHANNELS_FIRST)
+                self._assign_format_to_node(ancestor_node, DataFormat.CHANNELS_FIRST)
 
                 # We need to propagate channels first format up to already visited nodes
                 self._propagate_channels_first_format_up(ancestor_node)
             else:
-                self._assign_format_to_node(ancestor_node, NodeFormat.FORMATLESS)
+                self._assign_format_to_node(ancestor_node, DataFormat.FORMATLESS)
 
         # (TODO Lukas Sztefek): It is expected here, that CHANNELS_FIRST node always produces CHANNELS_FIRST output.
         # Validate the assumption.
-        self._assign_format_to_node(node, NodeFormat.CHANNELS_FIRST)
+        self._assign_format_to_node(node, DataFormat.CHANNELS_FIRST)
 
     def _handle_node_which_can_use_any_node_format(self, node: Node):
         """
@@ -226,12 +228,12 @@ class NodeFormatInference:
         if hasattr(val := node.meta["val"], "dim_order") and is_channels_last_dim_order(
             list(val.dim_order())
         ):
-            self._assign_format_to_node(node, NodeFormat.CHANNELS_FIRST)
+            self._assign_format_to_node(node, DataFormat.CHANNELS_FIRST)
 
         if not self._node_produces_or_consumes_channels_first_format(node):
             # Neither inputs nor current node are channels first -> assign everything to formatless
             for processed_node in self._node_inputs[node] + [node]:
-                self._assign_format_to_node(processed_node, NodeFormat.FORMATLESS)
+                self._assign_format_to_node(processed_node, DataFormat.FORMATLESS)
 
         else:
             # Node produces or consumes channels first content
@@ -243,18 +245,18 @@ class NodeFormatInference:
                     continue
                 elif is_0d_to_2d:
                     # Node has less than 3 dimensions so it cannot be considered CHANNELS_FIRST
-                    self._assign_format_to_node(processed_node, NodeFormat.FORMATLESS)
+                    self._assign_format_to_node(processed_node, DataFormat.FORMATLESS)
                 else:
                     # Node has more than 2D output -> make it channels first
                     self._assign_format_to_node(
-                        processed_node, NodeFormat.CHANNELS_FIRST
+                        processed_node, DataFormat.CHANNELS_FIRST
                     )
                     self._propagate_channels_first_format_up(processed_node)
 
     def _propagate_channels_first_format_up(self, node: Node):
         if self._node_is_placeholder(node):
             # Input or buffer node -> there is no parent node so we can end propagation here
-            self._assign_format_to_node(node, NodeFormat.CHANNELS_FIRST)
+            self._assign_format_to_node(node, DataFormat.CHANNELS_FIRST)
             return
 
         if node in self.ops_that_can_change_tensor_format:
@@ -293,10 +295,10 @@ class NodeFormatInference:
             for ancestor_node in input_nodes
         )
 
-    def _get_node_format(self, node) -> NodeFormat:
+    def _get_node_format(self, node) -> DataFormat:
         if not hasattr(node, "meta"):
             node.meta = {}
-        return node.meta.get(NXP_NODE_FORMAT, NodeFormat.NONE)
+        return node.meta.get(NXP_NODE_FORMAT, DataFormat.NONE)
 
     def _node_is_placeholder(self, node: Node) -> bool:
         return node.op == "placeholder"
