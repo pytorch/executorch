@@ -14,7 +14,6 @@ These ops are used during model export to represent operations that MLX
 can execute efficiently but may not have direct PyTorch equivalents.
 
 The ops are registered using torch.library and include:
-- rms_norm: RMSNorm normalization
 - rope: Rotary Position Embedding (single tensor)
 """
 
@@ -22,37 +21,6 @@ from typing import Optional
 
 import torch
 from torch import Tensor
-
-
-# =============================================================================
-# rms_norm: RMSNorm normalization
-# =============================================================================
-
-
-@torch.library.custom_op("mlx::rms_norm", mutates_args=())
-def rms_norm(x: Tensor, weight: Tensor, eps: float = 1e-5) -> Tensor:
-    """
-    RMSNorm normalization.
-
-    Args:
-        x: Input tensor of shape (..., hidden_dim)
-        weight: Weight tensor of shape (hidden_dim,)
-        eps: Small constant for numerical stability
-
-    Returns:
-        Normalized tensor of the same shape as x
-    """
-    x_f = x.to(torch.float32)
-    var = x_f.pow(2).mean(dim=-1, keepdim=True)
-    y = x_f * torch.rsqrt(var + eps)
-    y = y.to(x.dtype)
-    return y * weight.to(x.dtype)
-
-
-@torch.library.register_fake("mlx::rms_norm")
-def rms_norm_fake(x: Tensor, weight: Tensor, eps: float = 1e-5) -> Tensor:
-    """Fake implementation for tracing."""
-    return x.new_empty(x.shape)
 
 
 # =============================================================================

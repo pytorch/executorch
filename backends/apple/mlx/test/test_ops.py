@@ -22,12 +22,12 @@ Usage:
     python -m executorch.backends.apple.mlx.test.run_all_tests
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 
-# Import custom ops for RMSNorm, RoPE, and KV cache tests
+# Import custom ops for RoPE and KV cache tests
 from executorch.backends.apple.mlx import (  # noqa: F401 - registers mlx ops  # noqa: F401 - registers mlx.rope
     custom_ops,
     ops,
@@ -145,6 +145,7 @@ class SubTest(OpTestCase):
             cls(shape=(4, 8)),
             cls(shape=(2, 8, 16)),
             cls(shape=(1, 128, 128)),
+            cls(shape=(2, 3, 4), scalar_sub=True),
         ]
 
     def create_model(self) -> nn.Module:
@@ -254,6 +255,7 @@ class DivTest(OpTestCase):
             cls(shape=(4, 8)),
             cls(shape=(2, 8, 16)),
             cls(shape=(1, 128, 64)),
+            cls(shape=(2, 3, 4), scalar_divisor=True),
         ]
 
     def create_model(self) -> nn.Module:
@@ -271,42 +273,6 @@ class DivTest(OpTestCase):
 # =============================================================================
 # ACTIVATION OPS
 # =============================================================================
-
-
-class ReluModel(nn.Module):
-    """Model that applies ReLU activation."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.relu(x)
-
-
-@register_test
-class ReluTest(OpTestCase):
-    name = "relu"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shape: Tuple[int, ...] = (2, 3, 4)):
-        self.shape = shape
-        shape_str = "x".join(str(s) for s in shape)
-        self.name = f"relu_{shape_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["ReluTest"]:
-        return [
-            cls(shape=(2, 3, 4)),
-            cls(shape=(10,)),
-            cls(shape=(4, 8)),
-            cls(shape=(2, 8, 16)),
-            cls(shape=(1, 128, 64)),
-        ]
-
-    def create_model(self) -> nn.Module:
-        return ReluModel()
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape) * 2 - 1
-        return (x,)
 
 
 class ClampModel(nn.Module):
@@ -375,44 +341,6 @@ class ClampTest(OpTestCase):
         return (x,)
 
 
-class SiLUModel(nn.Module):
-    """Simple model using SiLU activation."""
-
-    def __init__(self):
-        super().__init__()
-        self.silu = nn.SiLU()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.silu(x)
-
-
-@register_test
-class SiLUTest(OpTestCase):
-    """Test case for SiLU activation."""
-
-    name = "silu"
-    rtol = 1e-4
-    atol = 1e-4
-
-    def __init__(self, shape: Tuple[int, ...] = (2, 16, 64)):
-        self.shape = shape
-        self.name = "silu"
-
-    @classmethod
-    def get_test_configs(cls) -> List["SiLUTest"]:
-        return [
-            cls(),
-            cls(shape=(4, 32, 128)),
-        ]
-
-    def create_model(self) -> nn.Module:
-        return SiLUModel()
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape)
-        return (x,)
-
-
 class GELUModel(nn.Module):
     """Simple model using GELU activation."""
 
@@ -449,123 +377,6 @@ class GELUTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.shape)
-        return (x,)
-
-
-class SigmoidModel(nn.Module):
-    """Model that applies sigmoid activation."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.sigmoid(x)
-
-
-@register_test
-class SigmoidTest(OpTestCase):
-    """Test case for sigmoid op."""
-
-    name = "sigmoid"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shape: Tuple[int, ...] = (2, 3, 4)):
-        self.shape = shape
-        shape_str = "x".join(str(s) for s in shape)
-        self.name = f"sigmoid_{shape_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["SigmoidTest"]:
-        return [
-            cls(shape=(2, 3, 4)),
-            cls(shape=(10,)),
-            cls(shape=(4, 8)),
-            cls(shape=(2, 8, 16)),
-            cls(shape=(1, 1, 128)),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape) * 2
-        return (x,)
-
-    def create_model(self) -> nn.Module:
-        return SigmoidModel()
-
-
-class TanhModel(nn.Module):
-    """Model that applies tanh activation."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.tanh(x)
-
-
-@register_test
-class TanhTest(OpTestCase):
-    """Test case for tanh op."""
-
-    name = "tanh"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shape: Tuple[int, ...] = (2, 3, 4)):
-        self.shape = shape
-        shape_str = "x".join(str(s) for s in shape)
-        self.name = f"tanh_{shape_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["TanhTest"]:
-        return [
-            cls(shape=(2, 3, 4)),
-            cls(shape=(10,)),
-            cls(shape=(4, 8)),
-            cls(shape=(2, 8, 16)),
-            cls(shape=(1, 1, 128)),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape) * 3
-        return (x,)
-
-    def create_model(self) -> nn.Module:
-        return TanhModel()
-
-
-# =============================================================================
-# MATH OPS
-# =============================================================================
-
-
-class RsqrtModel(nn.Module):
-    """Model that computes reciprocal square root."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.rsqrt(x)
-
-
-@register_test
-class RsqrtTest(OpTestCase):
-    name = "rsqrt"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shape: Tuple[int, ...] = (2, 3, 4)):
-        self.shape = shape
-        shape_str = "x".join(str(s) for s in shape)
-        self.name = f"rsqrt_{shape_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["RsqrtTest"]:
-        return [
-            cls(shape=(2, 3, 4)),
-            cls(shape=(10,)),
-            cls(shape=(4, 8)),
-            cls(shape=(2, 8, 16)),
-            cls(shape=(1, 64)),
-        ]
-
-    def create_model(self) -> nn.Module:
-        return RsqrtModel()
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.rand(self.shape) + 0.1
         return (x,)
 
 
@@ -820,42 +631,6 @@ class PermuteTest(OpTestCase):
         return (x,)
 
 
-class CloneModel(nn.Module):
-    """Model that clones a tensor."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.clone()
-
-
-@register_test
-class CloneTest(OpTestCase):
-    """Test case for tensor.clone()."""
-
-    name = "clone"
-    rtol = 1e-4
-    atol = 1e-4
-
-    def __init__(self, shape: Tuple[int, ...] = (2, 3, 4)):
-        self.shape = shape
-        shape_str = "x".join(str(d) for d in shape)
-        self.name = f"clone_{shape_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["CloneTest"]:
-        return [
-            cls(shape=(2, 3, 4)),
-            cls(shape=(8, 8)),
-            cls(shape=(16,)),
-        ]
-
-    def create_model(self) -> nn.Module:
-        return CloneModel()
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape)
-        return (x,)
-
-
 class NarrowModel(nn.Module):
     """Model that narrows a tensor along a dimension."""
 
@@ -1019,15 +794,16 @@ class RepeatTest(OpTestCase):
 # =============================================================================
 
 
-class CatModel(nn.Module):
-    """Model that concatenates multiple tensors along a dimension."""
+class CatNModel(nn.Module):
+    """Model that concatenates N tensors along a dimension."""
 
-    def __init__(self, dim=0):
+    def __init__(self, dim: int = 0, n: int = 3):
         super().__init__()
         self.dim = dim
+        self.n = n
 
-    def forward(self, x1, x2, x3):
-        return torch.cat([x1, x2, x3], dim=self.dim)
+    def forward(self, *tensors: torch.Tensor) -> torch.Tensor:
+        return torch.cat(tensors[: self.n], dim=self.dim)
 
 
 @register_test
@@ -1036,54 +812,26 @@ class CatTest(OpTestCase):
     rtol = 1e-5
     atol = 1e-5
 
-    def __init__(self, shapes=None, dim=0):
-        self.shapes = shapes if shapes is not None else [(2, 3), (4, 3), (1, 3)]
+    def __init__(self, shapes: List[Tuple[int, ...]], dim: int = 0, tag: str = ""):
+        self.shapes = shapes
         self.dim = dim
+        self.name = f"cat_{tag}" if tag else "cat"
+
+    @classmethod
+    def get_test_configs(cls) -> List["CatTest"]:
+        return [
+            cls(shapes=[(2, 3), (4, 3), (1, 3)], dim=0, tag="2d_dim0"),
+            cls(shapes=[(3, 2), (3, 4), (3, 1)], dim=1, tag="2d_dim1"),
+            cls(shapes=[(2, 3, 4), (5, 3, 4), (3, 3, 4)], dim=0, tag="3d_dim0"),
+            cls(shapes=[(3, 4), (2, 4)], dim=0, tag="two_tensors"),
+            cls(shapes=[(3, 2, 4), (3, 5, 4), (3, 1, 4)], dim=-2, tag="neg_dim"),
+        ]
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        tensors = [torch.randn(shape) for shape in self.shapes]
-        return tuple(tensors)
+        return tuple(torch.randn(s) for s in self.shapes)
 
     def create_model(self) -> nn.Module:
-        return CatModel(dim=self.dim)
-
-
-@register_test
-class CatAlongDim1Test(OpTestCase):
-    name = "cat_dim1"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shapes=None, dim=1):
-        self.shapes = shapes if shapes is not None else [(3, 2), (3, 4), (3, 1)]
-        self.dim = dim
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        tensors = [torch.randn(shape) for shape in self.shapes]
-        return tuple(tensors)
-
-    def create_model(self) -> nn.Module:
-        return CatModel(dim=self.dim)
-
-
-@register_test
-class Cat3DTest(OpTestCase):
-    name = "cat_3d"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shapes=None, dim=0):
-        self.shapes = (
-            shapes if shapes is not None else [(2, 3, 4), (5, 3, 4), (3, 3, 4)]
-        )
-        self.dim = dim
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        tensors = [torch.randn(shape) for shape in self.shapes]
-        return tuple(tensors)
-
-    def create_model(self) -> nn.Module:
-        return CatModel(dim=self.dim)
+        return CatNModel(dim=self.dim, n=len(self.shapes))
 
 
 class WhereModel(nn.Module):
@@ -1567,7 +1315,6 @@ class KVCachePatternTest(OpTestCase):
             model,
             export_inputs,
             pte_path,
-            use_fp16=self.use_fp16,
             dynamic_shapes=self.get_dynamic_shapes(),
             verbose=verbose,
         )
@@ -1584,64 +1331,11 @@ class KVCachePatternTest(OpTestCase):
 
 
 # =============================================================================
-# RMS NORM OP (Custom Op)
+# RMS NORM (torch.nn.functional.rms_norm)
 # =============================================================================
 
 
 class RMSNormModel(nn.Module):
-    """Model using the custom mlx::rms_norm op."""
-
-    def __init__(self, hidden_dim: int = 64, eps: float = 1e-5):
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_dim))
-        self.eps = eps
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.ops.mlx.rms_norm(x, self.weight, self.eps)
-
-
-@register_test
-class RMSNormTest(OpTestCase):
-    """Test case for mlx::rms_norm op."""
-
-    name = "rms_norm"
-    rtol = 1e-4
-    atol = 1e-4
-
-    def __init__(
-        self,
-        hidden_dim: int = 64,
-        batch_size: int = 2,
-        seq_len: int = 16,
-        eps: float = 1e-5,
-    ):
-        self.hidden_dim = hidden_dim
-        self.batch_size = batch_size
-        self.seq_len = seq_len
-        self.eps = eps
-        self.name = "rms_norm"
-
-    @classmethod
-    def get_test_configs(cls) -> List["RMSNormTest"]:
-        return [
-            cls(),
-            cls(hidden_dim=128, eps=1e-6),
-        ]
-
-    def create_model(self) -> nn.Module:
-        return RMSNormModel(self.hidden_dim, self.eps)
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.batch_size, self.seq_len, self.hidden_dim)
-        return (x,)
-
-
-# =============================================================================
-# ATEN RMS NORM (torch.nn.functional.rms_norm)
-# =============================================================================
-
-
-class AtenRMSNormModel(nn.Module):
     """Model using torch.nn.functional.rms_norm."""
 
     def __init__(self, hidden_dim: int = 64, eps: float = 1e-5):
@@ -1657,7 +1351,7 @@ class AtenRMSNormModel(nn.Module):
 
 
 @register_test
-class AtenRMSNormTest(OpTestCase):
+class RMSNormTest(OpTestCase):
     """Test case for torch.nn.functional.rms_norm (aten.rms_norm)."""
 
     name = "aten_rms_norm"
@@ -1678,14 +1372,14 @@ class AtenRMSNormTest(OpTestCase):
         self.name = "aten_rms_norm"
 
     @classmethod
-    def get_test_configs(cls) -> List["AtenRMSNormTest"]:
+    def get_test_configs(cls) -> List["RMSNormTest"]:
         return [
             cls(),
             cls(hidden_dim=128, eps=1e-6),
         ]
 
     def create_model(self) -> nn.Module:
-        return AtenRMSNormModel(self.hidden_dim, self.eps)
+        return RMSNormModel(self.hidden_dim, self.eps)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.batch_size, self.seq_len, self.hidden_dim)
@@ -2257,319 +1951,6 @@ class DynamicArangeTest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         pos = torch.tensor([self.position], dtype=torch.long)
         return (pos,)
-
-
-# =============================================================================
-# ADDITIONAL BATCH NORM OPS (No Affine)
-# =============================================================================
-
-
-@register_test
-class BatchNorm2dNoAffineTest(OpTestCase):
-    """Test case for batch norm with affine=False (no weight/bias)."""
-
-    name = "batch_norm_2d_no_affine"
-    rtol = 1e-3
-    atol = 1e-3
-
-    def __init__(
-        self,
-        batch_size: int = 2,
-        num_features: int = 16,
-        height: int = 8,
-        width: int = 8,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.batch_size = batch_size
-        self.num_features = num_features
-        self.height = height
-        self.width = width
-        self.dtype = dtype
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"batch_norm_2d_no_affine_{batch_size}x{num_features}x{height}x{width}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["BatchNorm2dNoAffineTest"]:
-        return [
-            cls(batch_size=1, num_features=16, height=8, width=8, dtype=torch.float32),
-            cls(batch_size=2, num_features=32, height=4, width=4, dtype=torch.bfloat16),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(
-            self.batch_size,
-            self.num_features,
-            self.height,
-            self.width,
-            dtype=self.dtype,
-        )
-        return (x,)
-
-    def create_model(self) -> nn.Module:
-        return BatchNormModel(self.num_features, self.dtype, affine=False)
-
-
-@register_test
-class BatchNorm1dNoAffineTest(OpTestCase):
-    """Test case for 1D batch norm with affine=False (no weight/bias)."""
-
-    name = "batch_norm_1d_no_affine"
-    rtol = 1e-3
-    atol = 1e-3
-
-    def __init__(
-        self,
-        batch_size: int = 2,
-        num_features: int = 16,
-        seq_len: int = 32,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.batch_size = batch_size
-        self.num_features = num_features
-        self.seq_len = seq_len
-        self.dtype = dtype
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = (
-            f"batch_norm_1d_no_affine_{batch_size}x{num_features}x{seq_len}_{dtype_str}"
-        )
-
-    @classmethod
-    def get_test_configs(cls) -> List["BatchNorm1dNoAffineTest"]:
-        return [
-            cls(batch_size=1, num_features=16, seq_len=32, dtype=torch.float32),
-            cls(batch_size=2, num_features=32, seq_len=64, dtype=torch.bfloat16),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(
-            self.batch_size, self.num_features, self.seq_len, dtype=self.dtype
-        )
-        return (x,)
-
-    def create_model(self) -> nn.Module:
-        return BatchNorm1dModel(self.num_features, self.dtype, affine=False)
-
-
-# =============================================================================
-# ADDITIONAL CAT OPS
-# =============================================================================
-
-
-class Cat2Model(nn.Module):
-    """Model that concatenates 2 tensors."""
-
-    def __init__(self, dim=0):
-        super().__init__()
-        self.dim = dim
-
-    def forward(self, x1, x2):
-        return torch.cat([x1, x2], dim=self.dim)
-
-
-@register_test
-class CatTwoTensorsTest(OpTestCase):
-    """Test case for cat with two tensors."""
-
-    name = "cat_two"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shapes=None, dim=0):
-        self.shapes = shapes if shapes is not None else [(3, 4), (2, 4)]
-        self.dim = dim
-
-    @classmethod
-    def get_test_configs(cls) -> List["CatTwoTensorsTest"]:
-        return [cls()]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        tensors = [torch.randn(shape) for shape in self.shapes]
-        return tuple(tensors)
-
-    def create_model(self) -> nn.Module:
-        return Cat2Model(dim=self.dim)
-
-
-@register_test
-class CatNegativeDimTest(OpTestCase):
-    """Test case for cat with negative dimension."""
-
-    name = "cat_neg_dim"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shapes=None, dim=-2):
-        self.shapes = (
-            shapes if shapes is not None else [(3, 2, 4), (3, 5, 4), (3, 1, 4)]
-        )
-        self.dim = dim
-
-    @classmethod
-    def get_test_configs(cls) -> List["CatNegativeDimTest"]:
-        return [cls()]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        tensors = [torch.randn(shape) for shape in self.shapes]
-        return tuple(tensors)
-
-    def create_model(self) -> nn.Module:
-        return CatModel(dim=self.dim)
-
-
-# =============================================================================
-# ADDITIONAL SPLIT OPS
-# =============================================================================
-
-
-class SplitUniformModel(nn.Module):
-    """Model that splits a tensor into chunks of uniform size using torch.split."""
-
-    def __init__(self, split_size, dim=0):
-        super().__init__()
-        self.split_size = split_size
-        self.dim = dim
-
-    def forward(self, x):
-        chunks = torch.split(x, self.split_size, dim=self.dim)
-        return chunks[0]
-
-
-class SplitUniformMultiOutputModel(nn.Module):
-    """Model that splits uniformly and uses multiple outputs."""
-
-    def __init__(self, split_size, dim=0):
-        super().__init__()
-        self.split_size = split_size
-        self.dim = dim
-
-    def forward(self, x):
-        chunks = torch.split(x, self.split_size, dim=self.dim)
-        return torch.cat([chunks[0], chunks[-1]], dim=self.dim)
-
-
-@register_test
-class Split3DTest(OpTestCase):
-    """Test case for split with 3D tensor."""
-
-    name = "split_3d"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shape=(2, 12, 4), sizes=None, dim=1):
-        self.shape = shape
-        self.sizes = sizes if sizes is not None else [3, 4, 5]
-        self.dim = dim
-
-    @classmethod
-    def get_test_configs(cls) -> List["Split3DTest"]:
-        return [cls()]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape)
-        return (x,)
-
-    def create_model(self) -> nn.Module:
-        return SplitModel(sizes=self.sizes, dim=self.dim)
-
-
-@register_test
-class SplitTwoChunksTest(OpTestCase):
-    """Test case for split into two chunks."""
-
-    name = "split_two"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shape=(8, 4), sizes=None, dim=0):
-        self.shape = shape
-        self.sizes = sizes if sizes is not None else [3, 5]
-        self.dim = dim
-
-    @classmethod
-    def get_test_configs(cls) -> List["SplitTwoChunksTest"]:
-        return [cls()]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape)
-        return (x,)
-
-    def create_model(self) -> nn.Module:
-        return SplitModel(sizes=self.sizes, dim=self.dim)
-
-
-@register_test
-class SplitUniformTest(OpTestCase):
-    """Test splitting with uniform chunk size."""
-
-    name = "split_uniform"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shape=(10, 4), split_size=3, dim=0):
-        self.shape = shape
-        self.split_size = split_size
-        self.dim = dim
-
-    @classmethod
-    def get_test_configs(cls) -> List["SplitUniformTest"]:
-        return [cls()]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape)
-        return (x,)
-
-    def create_model(self) -> nn.Module:
-        return SplitUniformModel(split_size=self.split_size, dim=self.dim)
-
-
-@register_test
-class SplitUniformDim1Test(OpTestCase):
-    """Test uniform split along dim 1."""
-
-    name = "split_uniform_dim1"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shape=(3, 7), split_size=4, dim=1):
-        self.shape = shape
-        self.split_size = split_size
-        self.dim = dim
-
-    @classmethod
-    def get_test_configs(cls) -> List["SplitUniformDim1Test"]:
-        return [cls()]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape)
-        return (x,)
-
-    def create_model(self) -> nn.Module:
-        return SplitUniformModel(split_size=self.split_size, dim=self.dim)
-
-
-@register_test
-class SplitUniformMultiOutputTest(OpTestCase):
-    """Test uniform split with multiple outputs used."""
-
-    name = "split_uniform_multi"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shape=(11, 5), split_size=3, dim=0):
-        self.shape = shape
-        self.split_size = split_size
-        self.dim = dim
-
-    @classmethod
-    def get_test_configs(cls) -> List["SplitUniformMultiOutputTest"]:
-        return [cls()]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape)
-        return (x,)
-
-    def create_model(self) -> nn.Module:
-        return SplitUniformMultiOutputModel(split_size=self.split_size, dim=self.dim)
 
 
 class LayerNormModel(nn.Module):
@@ -3172,7 +2553,7 @@ class IndexUpdateTest(OpTestCase):
 # =============================================================================
 
 
-class SplitModel(nn.Module):
+class SplitWithSizesModel(nn.Module):
     """Model that splits a tensor into chunks with specified sizes."""
 
     def __init__(self, sizes, dim=0):
@@ -3185,8 +2566,8 @@ class SplitModel(nn.Module):
         return chunks[0]
 
 
-class SplitMultiOutputModel(nn.Module):
-    """Model that splits and uses multiple outputs."""
+class SplitWithSizesMultiOutputModel(nn.Module):
+    """Model that splits with specified sizes and uses multiple outputs."""
 
     def __init__(self, sizes, dim=0):
         super().__init__()
@@ -3198,61 +2579,104 @@ class SplitMultiOutputModel(nn.Module):
         return chunks[0] + chunks[-1]
 
 
+class SplitUniformModel(nn.Module):
+    """Model that splits a tensor into chunks of uniform size using torch.split."""
+
+    def __init__(self, split_size, dim=0):
+        super().__init__()
+        self.split_size = split_size
+        self.dim = dim
+
+    def forward(self, x):
+        chunks = torch.split(x, self.split_size, dim=self.dim)
+        return chunks[0]
+
+
+class SplitUniformMultiOutputModel(nn.Module):
+    """Model that splits uniformly and uses multiple outputs."""
+
+    def __init__(self, split_size, dim=0):
+        super().__init__()
+        self.split_size = split_size
+        self.dim = dim
+
+    def forward(self, x):
+        chunks = torch.split(x, self.split_size, dim=self.dim)
+        return torch.cat([chunks[0], chunks[-1]], dim=self.dim)
+
+
 @register_test
 class SplitTest(OpTestCase):
     name = "split"
     rtol = 1e-5
     atol = 1e-5
 
-    def __init__(self, shape=(9, 4), sizes=None, dim=0):
+    def __init__(self, shape, model_cls, model_kwargs, tag=""):
         self.shape = shape
-        self.sizes = sizes if sizes is not None else [2, 3, 4]
-        self.dim = dim
+        self.model_cls = model_cls
+        self.model_kwargs = model_kwargs
+        self.name = f"split_{tag}" if tag else "split"
+
+    @classmethod
+    def get_test_configs(cls) -> List["SplitTest"]:
+        return [
+            # split_with_sizes_copy tests
+            cls(
+                shape=(9, 4),
+                model_cls=SplitWithSizesModel,
+                model_kwargs={"sizes": [2, 3, 4], "dim": 0},
+                tag="sizes_dim0",
+            ),
+            cls(
+                shape=(3, 10),
+                model_cls=SplitWithSizesModel,
+                model_kwargs={"sizes": [2, 3, 5], "dim": 1},
+                tag="sizes_dim1",
+            ),
+            cls(
+                shape=(2, 12, 4),
+                model_cls=SplitWithSizesModel,
+                model_kwargs={"sizes": [3, 4, 5], "dim": 1},
+                tag="sizes_3d",
+            ),
+            cls(
+                shape=(8, 4),
+                model_cls=SplitWithSizesModel,
+                model_kwargs={"sizes": [3, 5], "dim": 0},
+                tag="sizes_two",
+            ),
+            cls(
+                shape=(10, 3),
+                model_cls=SplitWithSizesMultiOutputModel,
+                model_kwargs={"sizes": [5, 5], "dim": 0},
+                tag="sizes_multi",
+            ),
+            # torch.split (uniform) tests
+            cls(
+                shape=(10, 4),
+                model_cls=SplitUniformModel,
+                model_kwargs={"split_size": 3, "dim": 0},
+                tag="uniform_dim0",
+            ),
+            cls(
+                shape=(3, 7),
+                model_cls=SplitUniformModel,
+                model_kwargs={"split_size": 4, "dim": 1},
+                tag="uniform_dim1",
+            ),
+            cls(
+                shape=(11, 5),
+                model_cls=SplitUniformMultiOutputModel,
+                model_kwargs={"split_size": 3, "dim": 0},
+                tag="uniform_multi",
+            ),
+        ]
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape)
-        return (x,)
+        return (torch.randn(self.shape),)
 
     def create_model(self) -> nn.Module:
-        return SplitModel(sizes=self.sizes, dim=self.dim)
-
-
-@register_test
-class SplitDim1Test(OpTestCase):
-    name = "split_dim1"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shape=(3, 10), sizes=None, dim=1):
-        self.shape = shape
-        self.sizes = sizes if sizes is not None else [2, 3, 5]
-        self.dim = dim
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape)
-        return (x,)
-
-    def create_model(self) -> nn.Module:
-        return SplitModel(sizes=self.sizes, dim=self.dim)
-
-
-@register_test
-class SplitMultiOutputTest(OpTestCase):
-    name = "split_multi"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(self, shape=(10, 3), sizes=None, dim=0):
-        self.shape = shape
-        self.sizes = sizes if sizes is not None else [5, 5]
-        self.dim = dim
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.shape)
-        return (x,)
-
-    def create_model(self) -> nn.Module:
-        return SplitMultiOutputModel(sizes=self.sizes, dim=self.dim)
+        return self.model_cls(**self.model_kwargs)
 
 
 # =============================================================================
@@ -3331,910 +2755,158 @@ class ArangeTest(OpTestCase):
 # =============================================================================
 
 
-class FloorModel(nn.Module):
+class UnaryOpModel(nn.Module):
+    """Generic model that applies a single unary torch op."""
+
+    def __init__(self, op_fn: Callable):
+        super().__init__()
+        self.op_fn = op_fn
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.floor(x)
-
-
-class CeilModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.ceil(x)
-
-
-class SquareModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.square(x)
-
-
-class ExpModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.exp(x)
-
-
-class SinModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.sin(x)
-
-
-class CosModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.cos(x)
-
-
-class TanModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.tan(x)
-
-
-class AsinModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.asin(x)
-
-
-class AcosModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.acos(x)
-
-
-class AtanModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.atan(x)
-
-
-class SinhModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.sinh(x)
-
-
-class CoshModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.cosh(x)
-
-
-class AsinhModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.asinh(x)
-
-
-class AcoshModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.acosh(x)
-
-
-class AtanhModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.atanh(x)
-
-
-class Log2Model(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.log2(x)
-
-
-class Log10Model(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.log10(x)
-
-
-class Log1pModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.log1p(x)
-
-
-class ErfModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.erf(x)
-
-
-class Expm1Model(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.expm1(x)
-
-
-class RoundModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.round(x)
-
-
-class ReciprocalModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.reciprocal(x)
-
-
-class SqrtModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.sqrt(x)
-
-
-class AbsModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.abs(x)
-
-
-class NegModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.neg(x)
-
-
-@register_test
-class FloorTest(OpTestCase):
-    """Test case for aten.floor op."""
-
-    name = "floor"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"floor_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["FloorTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype) * 10,)
-
-    def create_model(self) -> nn.Module:
-        return FloorModel()
-
-
-@register_test
-class CeilTest(OpTestCase):
-    """Test case for aten.ceil op."""
-
-    name = "ceil"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"ceil_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["CeilTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype) * 10,)
-
-    def create_model(self) -> nn.Module:
-        return CeilModel()
-
-
-@register_test
-class SquareTest(OpTestCase):
-    """Test case for aten.square op."""
-
-    name = "square"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"square_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["SquareTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return SquareModel()
-
-
-@register_test
-class ExpTest(OpTestCase):
-    """Test case for aten.exp op."""
-
-    name = "exp"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"exp_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["ExpTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return ExpModel()
-
-
-@register_test
-class SinTest(OpTestCase):
-    """Test case for aten.sin op."""
-
-    name = "sin"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"sin_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["SinTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype) * 3.14159,)
-
-    def create_model(self) -> nn.Module:
-        return SinModel()
-
-
-@register_test
-class CosTest(OpTestCase):
-    """Test case for aten.cos op."""
-
-    name = "cos"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"cos_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["CosTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype) * 3.14159,)
-
-    def create_model(self) -> nn.Module:
-        return CosModel()
-
-
-@register_test
-class TanTest(OpTestCase):
-    """Test case for aten.tan op."""
-
-    name = "tan"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"tan_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["TanTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype) * 0.5,)
-
-    def create_model(self) -> nn.Module:
-        return TanModel()
-
-
-@register_test
-class AsinTest(OpTestCase):
-    """Test case for aten.asin op."""
-
-    name = "asin"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"asin_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["AsinTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.rand(self.shape, dtype=self.dtype) * 2 - 1,)
-
-    def create_model(self) -> nn.Module:
-        return AsinModel()
-
-
-@register_test
-class AcosTest(OpTestCase):
-    """Test case for aten.acos op."""
-
-    name = "acos"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"acos_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["AcosTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.rand(self.shape, dtype=self.dtype) * 2 - 1,)
-
-    def create_model(self) -> nn.Module:
-        return AcosModel()
-
-
-@register_test
-class AtanTest(OpTestCase):
-    """Test case for aten.atan op."""
-
-    name = "atan"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"atan_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["AtanTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return AtanModel()
-
-
-@register_test
-class SinhTest(OpTestCase):
-    """Test case for aten.sinh op."""
-
-    name = "sinh"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"sinh_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["SinhTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return SinhModel()
-
-
-@register_test
-class CoshTest(OpTestCase):
-    """Test case for aten.cosh op."""
-
-    name = "cosh"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"cosh_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["CoshTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return CoshModel()
-
-
-@register_test
-class AsinhTest(OpTestCase):
-    """Test case for aten.asinh op."""
-
-    name = "asinh"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"asinh_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["AsinhTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return AsinhModel()
-
-
-@register_test
-class AcoshTest(OpTestCase):
-    """Test case for aten.acosh op."""
-
-    name = "acosh"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"acosh_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["AcoshTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.rand(self.shape, dtype=self.dtype) + 1.0,)
-
-    def create_model(self) -> nn.Module:
-        return AcoshModel()
-
-
-@register_test
-class AtanhTest(OpTestCase):
-    """Test case for aten.atanh op."""
-
-    name = "atanh"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"atanh_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["AtanhTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.rand(self.shape, dtype=self.dtype) * 1.8 - 0.9,)
-
-    def create_model(self) -> nn.Module:
-        return AtanhModel()
-
-
-@register_test
-class Log2Test(OpTestCase):
-    """Test case for aten.log2 op."""
-
-    name = "log2"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"log2_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["Log2Test"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.rand(self.shape, dtype=self.dtype) + 0.1,)
-
-    def create_model(self) -> nn.Module:
-        return Log2Model()
-
-
-@register_test
-class Log10Test(OpTestCase):
-    """Test case for aten.log10 op."""
-
-    name = "log10"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"log10_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["Log10Test"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.rand(self.shape, dtype=self.dtype) + 0.1,)
-
-    def create_model(self) -> nn.Module:
-        return Log10Model()
-
-
-@register_test
-class Log1pTest(OpTestCase):
-    """Test case for aten.log1p op."""
-
-    name = "log1p"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"log1p_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["Log1pTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.rand(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return Log1pModel()
-
-
-@register_test
-class ErfTest(OpTestCase):
-    """Test case for aten.erf op."""
-
-    name = "erf"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"erf_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["ErfTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return ErfModel()
-
-
-@register_test
-class Expm1Test(OpTestCase):
-    """Test case for aten.expm1 op."""
-
-    name = "expm1"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"expm1_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["Expm1Test"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return Expm1Model()
-
-
-@register_test
-class RoundTest(OpTestCase):
-    """Test case for aten.round op."""
-
-    name = "round"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"round_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["RoundTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype) * 10,)
-
-    def create_model(self) -> nn.Module:
-        return RoundModel()
-
-
-@register_test
-class ReciprocalTest(OpTestCase):
-    """Test case for aten.reciprocal op."""
-
-    name = "reciprocal"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"reciprocal_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["ReciprocalTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype) + 1.0,)
-
-    def create_model(self) -> nn.Module:
-        return ReciprocalModel()
-
-
-@register_test
-class SqrtTest(OpTestCase):
-    """Test case for aten.sqrt op."""
-
-    name = "sqrt"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"sqrt_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["SqrtTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.rand(self.shape, dtype=self.dtype) + 0.1,)
-
-    def create_model(self) -> nn.Module:
-        return SqrtModel()
-
-
-@register_test
-class AbsTest(OpTestCase):
-    """Test case for aten.abs op."""
-
-    name = "abs"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"abs_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["AbsTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return AbsModel()
-
-
-@register_test
-class NegTest(OpTestCase):
-    """Test case for aten.neg op."""
-
-    name = "neg"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"neg_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["NegTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return NegModel()
+        return self.op_fn(x)
+
+
+def _input_fn(
+    uniform: bool = False, scale: float = 1.0, offset: float = 0.0, abs: bool = False
+):
+    """Return a callable(shape, dtype) that generates a single-element input tuple.
+
+    Args:
+        uniform: Use torch.rand (uniform [0,1]) instead of torch.randn (normal).
+        scale: Multiply the base tensor by this value.
+        offset: Add this value after scaling.
+        abs: Apply .abs() to the base tensor before scale/offset.
+    """
+
+    def fn(shape, dtype):
+        base = (
+            torch.rand(shape, dtype=dtype)
+            if uniform
+            else torch.randn(shape, dtype=dtype)
+        )
+        if abs:
+            base = base.abs()
+        return (base * scale + offset,)
+
+    return fn
+
+
+def _bool_input_fn():
+    """Return a callable(shape, dtype) that generates a single-element bool tensor tuple."""
+
+    def fn(shape, _dtype):
+        return (torch.randint(0, 2, shape, dtype=torch.bool),)
+
+    return fn
+
+
+# Standard shape and dtype configs used by unary tests.
+_SHAPES_3 = [(16,), (4, 4), (2, 3, 4)]
+_SHAPES_2 = [(16,), (4, 4)]
+_UNARY_DTYPES = [torch.float32, torch.float16, torch.bfloat16]
+
+
+def _make_unary_op_test(
+    op_name: str,
+    op_fn: Callable,
+    shapes: List[Tuple[int, ...]] = None,
+    dtypes: List[torch.dtype] = None,
+    input_fn: Callable = None,
+) -> type:
+    """Generate a registered OpTestCase subclass for a unary math op.
+
+    Args:
+        op_name: Name used for test registration and output directories.
+        op_fn: The torch function to test (e.g. torch.floor).
+        shapes: List of input shapes. Defaults to _SHAPES_2.
+        dtypes: List of dtypes to test. Defaults to _UNARY_DTYPES.
+        input_fn: Callable(shape, dtype) -> Tuple[Tensor, ...] that creates inputs.
+                  Defaults to _input_fn() (standard randn).
+    """
+    if shapes is None:
+        shapes = _SHAPES_2
+    if dtypes is None:
+        dtypes = _UNARY_DTYPES
+    if input_fn is None:
+        input_fn = _input_fn()
+
+    class _Test(OpTestCase):
+        name = op_name
+
+        def __init__(
+            self,
+            shape: Tuple[int, ...],
+            dtype: torch.dtype,
+        ):
+            self.shape = shape
+            self.dtype = dtype
+            shape_str = "x".join(str(s) for s in shape)
+            dtype_str = str(dtype).replace("torch.", "")
+            self.name = f"{op_name}_{shape_str}_{dtype_str}"
+
+        @classmethod
+        def get_test_configs(cls) -> List["_Test"]:
+            return [cls(shape=s, dtype=d) for s in shapes for d in dtypes]
+
+        def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+            return input_fn(self.shape, self.dtype)
+
+        def create_model(self) -> nn.Module:
+            return UnaryOpModel(op_fn)
+
+    _Test.__name__ = f"{op_name.title().replace('_', '')}Test"
+    _Test.__qualname__ = _Test.__name__
+    return _Test
+
+
+# fmt: off
+# Each entry is a dict with required keys "op_name" and "op_fn".
+# Optional keys: "shapes" (default _SHAPES_2), "dtypes" (default _UNARY_DTYPES),
+#                "input_fn" (default _input_fn()).
+# _input_fn(uniform, scale, offset) — uniform=True uses rand, False uses randn.
+_UNARY_OP_TESTS = [
+    {"op_name": "floor",      "op_fn": torch.floor,      "shapes": _SHAPES_3, "input_fn": _input_fn(scale=10)},
+    {"op_name": "ceil",       "op_fn": torch.ceil,       "shapes": _SHAPES_3, "input_fn": _input_fn(scale=10)},
+    {"op_name": "square",     "op_fn": torch.square,     "shapes": _SHAPES_3},
+    {"op_name": "exp",        "op_fn": torch.exp,        "shapes": _SHAPES_3},
+    {"op_name": "sin",        "op_fn": torch.sin,        "shapes": _SHAPES_3, "input_fn": _input_fn(scale=3.14159)},
+    {"op_name": "cos",        "op_fn": torch.cos,        "shapes": _SHAPES_3, "input_fn": _input_fn(scale=3.14159)},
+    {"op_name": "tan",        "op_fn": torch.tan,        "input_fn": _input_fn(scale=0.5)},
+    {"op_name": "asin",       "op_fn": torch.asin,       "input_fn": _input_fn(uniform=True, scale=2, offset=-1)},
+    {"op_name": "acos",       "op_fn": torch.acos,       "input_fn": _input_fn(uniform=True, scale=2, offset=-1)},
+    {"op_name": "atan",       "op_fn": torch.atan},
+    {"op_name": "sinh",       "op_fn": torch.sinh},
+    {"op_name": "cosh",       "op_fn": torch.cosh},
+    {"op_name": "asinh",      "op_fn": torch.asinh},
+    {"op_name": "acosh",      "op_fn": torch.acosh,      "input_fn": _input_fn(uniform=True, offset=1.0)},
+    {"op_name": "atanh",      "op_fn": torch.atanh,      "input_fn": _input_fn(uniform=True, scale=1.8, offset=-0.9)},
+    {"op_name": "log2",       "op_fn": torch.log2,       "input_fn": _input_fn(uniform=True, offset=0.1)},
+    {"op_name": "log10",      "op_fn": torch.log10,      "input_fn": _input_fn(uniform=True, offset=0.1)},
+    {"op_name": "log1p",      "op_fn": torch.log1p,      "input_fn": _input_fn(uniform=True)},
+    {"op_name": "erf",        "op_fn": torch.erf},
+    {"op_name": "expm1",      "op_fn": torch.expm1},
+    {"op_name": "round",      "op_fn": torch.round,      "input_fn": _input_fn(scale=10)},
+    {"op_name": "reciprocal", "op_fn": torch.reciprocal, "input_fn": _input_fn(offset=1.0)},
+    {"op_name": "sqrt",       "op_fn": torch.sqrt,       "input_fn": _input_fn(uniform=True, offset=0.1)},
+    {"op_name": "abs",        "op_fn": torch.abs},
+    {"op_name": "neg",        "op_fn": torch.neg},
+    {"op_name": "logical_not","op_fn": torch.logical_not, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn": _bool_input_fn()},
+    # activations
+    {"op_name": "relu",    "op_fn": torch.relu,    "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 128, 64)], "dtypes": [torch.float32], "input_fn": _input_fn(scale=2, offset=-1)},
+    {"op_name": "sigmoid", "op_fn": torch.sigmoid, "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=2)},
+    {"op_name": "tanh",    "op_fn": torch.tanh,    "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=3)},
+    {"op_name": "silu",    "op_fn": nn.SiLU(),     "shapes": [(2, 16, 64), (4, 32, 128)], "dtypes": [torch.float32]},
+    # math
+    {"op_name": "rsqrt",   "op_fn": torch.rsqrt,   "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 64)],     "dtypes": [torch.float32], "input_fn": _input_fn(uniform=True, offset=0.1)},
+    {"op_name": "clone",   "op_fn": torch.clone,   "shapes": [(2, 3, 4), (8, 8), (16,)], "dtypes": [torch.float32]},
+]
+# fmt: on
+
+# Generate and register all unary math op test classes.
+for _entry in _UNARY_OP_TESTS:
+    _cls = _make_unary_op_test(**_entry)
+    register_test(_cls)
+    globals()[_cls.__name__] = _cls
 
 
 # =============================================================================
@@ -4242,34 +2914,13 @@ class NegTest(OpTestCase):
 # =============================================================================
 
 
-class MaximumModel(nn.Module):
+class BinaryOpModel(nn.Module):
+    def __init__(self, op_fn: Callable):
+        super().__init__()
+        self.op_fn = op_fn
+
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return torch.maximum(a, b)
-
-
-class MinimumModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return torch.minimum(a, b)
-
-
-class Atan2Model(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return torch.atan2(a, b)
-
-
-class LogaddexpModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return torch.logaddexp(a, b)
-
-
-class FloorDivideModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return torch.floor_divide(a, b)
-
-
-class PowerModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return torch.pow(a, b)
+        return self.op_fn(a, b)
 
 
 class PowerScalarModel(nn.Module):
@@ -4281,224 +2932,85 @@ class PowerScalarModel(nn.Module):
         return torch.pow(a, self.exponent)
 
 
-class LogsumexpModel(nn.Module):
-    def __init__(self, dim: int, keepdim: bool = False):
-        super().__init__()
-        self.dim = dim
-        self.keepdim = keepdim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.logsumexp(x, dim=self.dim, keepdim=self.keepdim)
+_BINARY_DTYPES = [torch.float32]
 
 
-@register_test
-class MaximumTest(OpTestCase):
-    """Test case for aten.maximum op."""
+def _make_binary_op_test(
+    op_name: str,
+    op_fn: Callable,
+    shapes: List[Tuple[int, ...]] = None,
+    dtypes: List[torch.dtype] = None,
+    input_fn_a: Callable = None,
+    input_fn_b: Callable = None,
+) -> type:
+    """Generate a registered OpTestCase subclass for a binary math op."""
+    if shapes is None:
+        shapes = _SHAPES_3
+    if dtypes is None:
+        dtypes = _BINARY_DTYPES
+    if input_fn_a is None:
+        input_fn_a = _input_fn()
+    if input_fn_b is None:
+        input_fn_b = _input_fn()
 
-    name = "maximum"
+    class _Test(OpTestCase):
+        name = op_name
 
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"maximum_{shape_str}_{dtype_str}"
+        def __init__(
+            self,
+            shape: Tuple[int, ...],
+            dtype: torch.dtype,
+        ):
+            self.shape = shape
+            self.dtype = dtype
+            shape_str = "x".join(str(s) for s in shape)
+            dtype_str = str(dtype).replace("torch.", "")
+            self.name = f"{op_name}_{shape_str}_{dtype_str}"
 
-    @classmethod
-    def get_test_configs(cls) -> List["MaximumTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
+        @classmethod
+        def get_test_configs(cls) -> List["_Test"]:
+            return [cls(shape=s, dtype=d) for s in shapes for d in dtypes]
 
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (
-            torch.randn(self.shape, dtype=self.dtype),
-            torch.randn(self.shape, dtype=self.dtype),
-        )
+        def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+            return input_fn_a(self.shape, self.dtype) + input_fn_b(
+                self.shape, self.dtype
+            )
 
-    def create_model(self) -> nn.Module:
-        return MaximumModel()
+        def create_model(self) -> nn.Module:
+            return BinaryOpModel(op_fn)
 
-
-@register_test
-class MinimumTest(OpTestCase):
-    """Test case for aten.minimum op."""
-
-    name = "minimum"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"minimum_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["MinimumTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (
-            torch.randn(self.shape, dtype=self.dtype),
-            torch.randn(self.shape, dtype=self.dtype),
-        )
-
-    def create_model(self) -> nn.Module:
-        return MinimumModel()
+    _Test.__name__ = f"{op_name.title().replace('_', '')}Test"
+    _Test.__qualname__ = _Test.__name__
+    return _Test
 
 
-@register_test
-class Atan2Test(OpTestCase):
-    """Test case for aten.atan2 op."""
-
-    name = "atan2"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"atan2_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["Atan2Test"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (
-            torch.randn(self.shape, dtype=self.dtype),
-            torch.randn(self.shape, dtype=self.dtype),
-        )
-
-    def create_model(self) -> nn.Module:
-        return Atan2Model()
+# fmt: off
+_BINARY_OP_TESTS = [
+    # math
+    {"op_name": "maximum",       "op_fn": torch.maximum},
+    {"op_name": "minimum",       "op_fn": torch.minimum},
+    {"op_name": "atan2",         "op_fn": torch.atan2},
+    {"op_name": "logaddexp",     "op_fn": torch.logaddexp},
+    {"op_name": "floor_divide",  "op_fn": torch.floor_divide, "input_fn_a": _input_fn(scale=10), "input_fn_b": _input_fn(abs=True, offset=1)},
+    {"op_name": "power",         "op_fn": torch.pow,          "input_fn_a": _input_fn(uniform=True, offset=0.5), "input_fn_b": _input_fn(uniform=True, scale=2)},
+    # comparison
+    {"op_name": "less",          "op_fn": torch.lt, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.float32, torch.bfloat16]},
+    {"op_name": "less_equal",    "op_fn": torch.le, "shapes": [(2, 3, 4), (10,)], "dtypes": [torch.float32]},
+    {"op_name": "greater",       "op_fn": torch.gt, "shapes": [(2, 3, 4), (10,)], "dtypes": [torch.float32]},
+    {"op_name": "greater_equal", "op_fn": torch.ge, "shapes": [(2, 3, 4), (10,)], "dtypes": [torch.float32]},
+    {"op_name": "equal",         "op_fn": torch.eq, "shapes": [(2, 3, 4), (10,)], "dtypes": [torch.float32]},
+    {"op_name": "not_equal",     "op_fn": torch.ne, "shapes": [(2, 3, 4), (10,)], "dtypes": [torch.float32]},
+    # logical
+    {"op_name": "logical_and",   "op_fn": torch.logical_and, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
+    {"op_name": "logical_or",    "op_fn": torch.logical_or,  "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
+]
+# fmt: on
 
 
-@register_test
-class LogaddexpTest(OpTestCase):
-    """Test case for aten.logaddexp op."""
-
-    name = "logaddexp"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"logaddexp_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["LogaddexpTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (
-            torch.randn(self.shape, dtype=self.dtype),
-            torch.randn(self.shape, dtype=self.dtype),
-        )
-
-    def create_model(self) -> nn.Module:
-        return LogaddexpModel()
-
-
-@register_test
-class FloorDivideTest(OpTestCase):
-    """Test case for aten.floor_divide op."""
-
-    name = "floor_divide"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"floor_divide_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["FloorDivideTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (
-            torch.randn(self.shape, dtype=self.dtype) * 10,
-            torch.randn(self.shape, dtype=self.dtype).abs() + 1,
-        )
-
-    def create_model(self) -> nn.Module:
-        return FloorDivideModel()
-
-
-@register_test
-class PowerTest(OpTestCase):
-    """Test case for aten.pow op (Tensor_Tensor variant)."""
-
-    name = "power"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"power_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["PowerTest"]:
-        return [
-            cls(shape=(16,), dtype=torch.float32),
-            cls(shape=(4, 4), dtype=torch.float32),
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (
-            torch.rand(self.shape, dtype=self.dtype) + 0.5,
-            torch.rand(self.shape, dtype=self.dtype) * 2,
-        )
-
-    def create_model(self) -> nn.Module:
-        return PowerModel()
+for _entry in _BINARY_OP_TESTS:
+    _cls = _make_binary_op_test(**_entry)
+    register_test(_cls)
+    globals()[_cls.__name__] = _cls
 
 
 @register_test
@@ -4536,854 +3048,158 @@ class PowerScalarTest(OpTestCase):
         return PowerScalarModel(self.exponent)
 
 
-@register_test
-class LogsumexpTest(OpTestCase):
-    """Test case for aten.logsumexp op."""
-
-    name = "logsumexp"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dim: int = -1,
-        keepdim: bool = False,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dim = dim
-        self.keepdim = keepdim
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        kd_str = "_kd" if keepdim else ""
-        self.name = f"logsumexp_{shape_str}_dim{dim}{kd_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["LogsumexpTest"]:
-        return [
-            cls(shape=(16,), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, keepdim=True, dtype=torch.float32),
-            cls(shape=(2, 3, 4), dim=1, dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return LogsumexpModel(dim=self.dim, keepdim=self.keepdim)
-
-
 # =============================================================================
 # REDUCTION OPS
 # =============================================================================
 
 
-class SumModel(nn.Module):
-    def __init__(self, dim=None, keepdim=False):
+class ReductionOpModel(nn.Module):
+    def __init__(self, op_fn: Callable, dim=None, keepdim: bool = False):
         super().__init__()
+        self.op_fn = op_fn
         self.dim = dim
         self.keepdim = keepdim
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.dim is None:
-            return torch.sum(x)
-        return torch.sum(x, dim=self.dim, keepdim=self.keepdim)
+            return self.op_fn(x)
+        return self.op_fn(x, dim=self.dim, keepdim=self.keepdim)
 
 
-class MeanModel(nn.Module):
-    def __init__(self, dim=None, keepdim=False):
+class CorrectionReductionOpModel(nn.Module):
+    def __init__(
+        self, op_fn: Callable, dim=None, keepdim: bool = False, correction: int = 1
+    ):
         super().__init__()
-        self.dim = dim
-        self.keepdim = keepdim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.dim is None:
-            return torch.mean(x)
-        return torch.mean(x, dim=self.dim, keepdim=self.keepdim)
-
-
-class VarModel(nn.Module):
-    def __init__(self, dim=None, keepdim=False, correction=1):
-        super().__init__()
+        self.op_fn = op_fn
         self.dim = dim
         self.keepdim = keepdim
         self.correction = correction
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.dim is None:
-            return torch.var(x, correction=self.correction)
-        return torch.var(
+            return self.op_fn(x, correction=self.correction)
+        return self.op_fn(
             x, dim=self.dim, keepdim=self.keepdim, correction=self.correction
         )
 
 
-class StdModel(nn.Module):
-    def __init__(self, dim=None, keepdim=False, correction=1):
-        super().__init__()
-        self.dim = dim
-        self.keepdim = keepdim
-        self.correction = correction
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.dim is None:
-            return torch.std(x, correction=self.correction)
-        return torch.std(
-            x, dim=self.dim, keepdim=self.keepdim, correction=self.correction
-        )
-
-
-class ProdModel(nn.Module):
-    def __init__(self, dim=None, keepdim=False):
-        super().__init__()
-        self.dim = dim
-        self.keepdim = keepdim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.dim is None:
-            return torch.prod(x)
-        return torch.prod(x, dim=self.dim, keepdim=self.keepdim)
-
-
-class AmaxModel(nn.Module):
-    def __init__(self, dim=None, keepdim=False):
-        super().__init__()
-        self.dim = dim
-        self.keepdim = keepdim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.dim is None:
-            return torch.amax(x)
-        return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
-
-
-class AminModel(nn.Module):
-    def __init__(self, dim=None, keepdim=False):
-        super().__init__()
-        self.dim = dim
-        self.keepdim = keepdim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.dim is None:
-            return torch.amin(x)
-        return torch.amin(x, dim=self.dim, keepdim=self.keepdim)
-
-
-class ArgmaxModel(nn.Module):
-    def __init__(self, dim=None, keepdim=False):
-        super().__init__()
-        self.dim = dim
-        self.keepdim = keepdim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.dim is None:
-            return torch.argmax(x)
-        return torch.argmax(x, dim=self.dim, keepdim=self.keepdim)
-
-
-class ArgminModel(nn.Module):
-    def __init__(self, dim=None, keepdim=False):
-        super().__init__()
-        self.dim = dim
-        self.keepdim = keepdim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.dim is None:
-            return torch.argmin(x)
-        return torch.argmin(x, dim=self.dim, keepdim=self.keepdim)
-
-
-@register_test
-class SumTest(OpTestCase):
-    """Test case for aten.sum op."""
-
-    name = "sum"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dim=None,
-        keepdim: bool = False,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dim = dim
-        self.keepdim = keepdim
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        dim_str = f"_dim{dim}" if dim is not None else "_all"
-        kd_str = "_kd" if keepdim else ""
-        self.name = f"sum_{shape_str}{dim_str}{kd_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["SumTest"]:
-        return [
-            cls(shape=(16,), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, keepdim=True, dtype=torch.float32),
-            cls(shape=(2, 3, 4), dim=1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=None, dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return SumModel(dim=self.dim, keepdim=self.keepdim)
-
-
-@register_test
-class MeanTest(OpTestCase):
-    """Test case for aten.mean op."""
-
-    name = "mean"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dim=None,
-        keepdim: bool = False,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dim = dim
-        self.keepdim = keepdim
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        dim_str = f"_dim{dim}" if dim is not None else "_all"
-        kd_str = "_kd" if keepdim else ""
-        self.name = f"mean_{shape_str}{dim_str}{kd_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["MeanTest"]:
-        return [
-            cls(shape=(16,), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, keepdim=True, dtype=torch.float32),
-            cls(shape=(2, 3, 4), dim=1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=None, dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return MeanModel(dim=self.dim, keepdim=self.keepdim)
-
-
-@register_test
-class VarTest(OpTestCase):
-    """Test case for aten.var op."""
-
-    name = "var"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dim=None,
-        keepdim: bool = False,
-        correction: int = 1,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dim = dim
-        self.keepdim = keepdim
-        self.correction = correction
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        dim_str = f"_dim{dim}" if dim is not None else "_all"
-        kd_str = "_kd" if keepdim else ""
-        corr_str = f"_corr{correction}"
-        self.name = f"var_{shape_str}{dim_str}{kd_str}{corr_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["VarTest"]:
-        return [
-            cls(shape=(16,), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, keepdim=True, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, correction=0, dtype=torch.float32),
-            cls(shape=(2, 3, 4), dim=1, dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return VarModel(dim=self.dim, keepdim=self.keepdim, correction=self.correction)
-
-
-@register_test
-class StdTest(OpTestCase):
-    """Test case for aten.std op."""
-
-    name = "std"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dim=None,
-        keepdim: bool = False,
-        correction: int = 1,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dim = dim
-        self.keepdim = keepdim
-        self.correction = correction
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        dim_str = f"_dim{dim}" if dim is not None else "_all"
-        kd_str = "_kd" if keepdim else ""
-        corr_str = f"_corr{correction}"
-        self.name = f"std_{shape_str}{dim_str}{kd_str}{corr_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["StdTest"]:
-        return [
-            cls(shape=(16,), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, keepdim=True, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, correction=0, dtype=torch.float32),
-            cls(shape=(2, 3, 4), dim=1, dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return StdModel(dim=self.dim, keepdim=self.keepdim, correction=self.correction)
-
-
-@register_test
-class ProdTest(OpTestCase):
-    """Test case for aten.prod op."""
-
-    name = "prod"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dim=None,
-        keepdim: bool = False,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dim = dim
-        self.keepdim = keepdim
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        dim_str = f"_dim{dim}" if dim is not None else "_all"
-        kd_str = "_kd" if keepdim else ""
-        self.name = f"prod_{shape_str}{dim_str}{kd_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["ProdTest"]:
-        return [
-            cls(shape=(8,), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, keepdim=True, dtype=torch.float32),
-            cls(shape=(2, 3, 4), dim=1, dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype) * 0.5 + 1.0,)
-
-    def create_model(self) -> nn.Module:
-        return ProdModel(dim=self.dim, keepdim=self.keepdim)
-
-
-@register_test
-class AmaxTest(OpTestCase):
-    """Test case for aten.amax op."""
-
-    name = "amax"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dim=None,
-        keepdim: bool = False,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dim = dim
-        self.keepdim = keepdim
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        dim_str = f"_dim{dim}" if dim is not None else "_all"
-        kd_str = "_kd" if keepdim else ""
-        self.name = f"amax_{shape_str}{dim_str}{kd_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["AmaxTest"]:
-        return [
-            cls(shape=(16,), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, keepdim=True, dtype=torch.float32),
-            cls(shape=(2, 3, 4), dim=1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=None, dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return AmaxModel(dim=self.dim, keepdim=self.keepdim)
-
-
-@register_test
-class AminTest(OpTestCase):
-    """Test case for aten.amin op."""
-
-    name = "amin"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dim=None,
-        keepdim: bool = False,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dim = dim
-        self.keepdim = keepdim
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        dim_str = f"_dim{dim}" if dim is not None else "_all"
-        kd_str = "_kd" if keepdim else ""
-        self.name = f"amin_{shape_str}{dim_str}{kd_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["AminTest"]:
-        return [
-            cls(shape=(16,), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, keepdim=True, dtype=torch.float32),
-            cls(shape=(2, 3, 4), dim=1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=None, dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return AminModel(dim=self.dim, keepdim=self.keepdim)
-
-
-@register_test
-class ArgmaxTest(OpTestCase):
-    """Test case for aten.argmax op."""
-
-    name = "argmax"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dim=None,
-        keepdim: bool = False,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dim = dim
-        self.keepdim = keepdim
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        dim_str = f"_dim{dim}" if dim is not None else "_all"
-        kd_str = "_kd" if keepdim else ""
-        self.name = f"argmax_{shape_str}{dim_str}{kd_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["ArgmaxTest"]:
-        return [
-            cls(shape=(16,), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, keepdim=True, dtype=torch.float32),
-            cls(shape=(2, 3, 4), dim=1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=None, dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return ArgmaxModel(dim=self.dim, keepdim=self.keepdim)
-
-
-@register_test
-class ArgminTest(OpTestCase):
-    """Test case for aten.argmin op."""
-
-    name = "argmin"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        dim=None,
-        keepdim: bool = False,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.dim = dim
-        self.keepdim = keepdim
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        dim_str = f"_dim{dim}" if dim is not None else "_all"
-        kd_str = "_kd" if keepdim else ""
-        self.name = f"argmin_{shape_str}{dim_str}{kd_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["ArgminTest"]:
-        return [
-            cls(shape=(16,), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=0, dtype=torch.float32),
-            cls(shape=(4, 4), dim=-1, keepdim=True, dtype=torch.float32),
-            cls(shape=(2, 3, 4), dim=1, dtype=torch.float32),
-            cls(shape=(4, 4), dim=None, dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return ArgminModel(dim=self.dim, keepdim=self.keepdim)
-
-
-# =============================================================================
-# LOGICAL AND COMPARISON OPS
-# =============================================================================
-
-
-class LessModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return a < b
-
-
-class LessEqualModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return a <= b
-
-
-class GreaterModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return a > b
-
-
-class GreaterEqualModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return a >= b
-
-
-class EqualModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return a == b
-
-
-class NotEqualModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return a != b
-
-
-class LogicalNotModel(nn.Module):
-    def forward(self, a: torch.Tensor) -> torch.Tensor:
-        return torch.logical_not(a)
-
-
-class LogicalAndModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return torch.logical_and(a, b)
-
-
-class LogicalOrModel(nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return torch.logical_or(a, b)
-
-
-@register_test
-class LessTest(OpTestCase):
-    """Test case for aten.lt (less than) op."""
-
-    name = "less"
-
-    def __init__(
-        self, shape: Tuple[int, ...] = (2, 3, 4), dtype: torch.dtype = torch.float32
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"less_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["LessTest"]:
-        return [
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-            cls(shape=(10,), dtype=torch.float32),
-            cls(shape=(4, 8), dtype=torch.bfloat16),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        a = torch.randn(self.shape, dtype=self.dtype)
-        b = torch.randn(self.shape, dtype=self.dtype)
-        return (a, b)
-
-    def create_model(self) -> nn.Module:
-        return LessModel()
-
-
-@register_test
-class LessEqualTest(OpTestCase):
-    """Test case for aten.le (less than or equal) op."""
-
-    name = "less_equal"
-
-    def __init__(
-        self, shape: Tuple[int, ...] = (2, 3, 4), dtype: torch.dtype = torch.float32
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"less_equal_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["LessEqualTest"]:
-        return [
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-            cls(shape=(10,), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        a = torch.randn(self.shape, dtype=self.dtype)
-        b = torch.randn(self.shape, dtype=self.dtype)
-        return (a, b)
-
-    def create_model(self) -> nn.Module:
-        return LessEqualModel()
-
-
-@register_test
-class GreaterTest(OpTestCase):
-    """Test case for aten.gt (greater than) op."""
-
-    name = "greater"
-
-    def __init__(
-        self, shape: Tuple[int, ...] = (2, 3, 4), dtype: torch.dtype = torch.float32
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"greater_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["GreaterTest"]:
-        return [
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-            cls(shape=(10,), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        a = torch.randn(self.shape, dtype=self.dtype)
-        b = torch.randn(self.shape, dtype=self.dtype)
-        return (a, b)
-
-    def create_model(self) -> nn.Module:
-        return GreaterModel()
-
-
-@register_test
-class GreaterEqualTest(OpTestCase):
-    """Test case for aten.ge (greater than or equal) op."""
-
-    name = "greater_equal"
-
-    def __init__(
-        self, shape: Tuple[int, ...] = (2, 3, 4), dtype: torch.dtype = torch.float32
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"greater_equal_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["GreaterEqualTest"]:
-        return [
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-            cls(shape=(10,), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        a = torch.randn(self.shape, dtype=self.dtype)
-        b = torch.randn(self.shape, dtype=self.dtype)
-        return (a, b)
-
-    def create_model(self) -> nn.Module:
-        return GreaterEqualModel()
-
-
-@register_test
-class EqualTest(OpTestCase):
-    """Test case for aten.eq (equal) op."""
-
-    name = "equal"
-
-    def __init__(
-        self, shape: Tuple[int, ...] = (2, 3, 4), dtype: torch.dtype = torch.float32
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"equal_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["EqualTest"]:
-        return [
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-            cls(shape=(10,), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        a = torch.randn(self.shape, dtype=self.dtype)
-        b = torch.randn(self.shape, dtype=self.dtype)
-        return (a, b)
-
-    def create_model(self) -> nn.Module:
-        return EqualModel()
-
-
-@register_test
-class NotEqualTest(OpTestCase):
-    """Test case for aten.ne (not equal) op."""
-
-    name = "not_equal"
-
-    def __init__(
-        self, shape: Tuple[int, ...] = (2, 3, 4), dtype: torch.dtype = torch.float32
-    ):
-        self.shape = shape
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"not_equal_{shape_str}_{dtype_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["NotEqualTest"]:
-        return [
-            cls(shape=(2, 3, 4), dtype=torch.float32),
-            cls(shape=(10,), dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        a = torch.randn(self.shape, dtype=self.dtype)
-        b = torch.randn(self.shape, dtype=self.dtype)
-        return (a, b)
-
-    def create_model(self) -> nn.Module:
-        return NotEqualModel()
-
-
-@register_test
-class LogicalNotTest(OpTestCase):
-    """Test case for aten.logical_not op."""
-
-    name = "logical_not"
-
-    def __init__(self, shape: Tuple[int, ...] = (2, 3, 4)):
-        self.shape = shape
-        shape_str = "x".join(str(s) for s in shape)
-        self.name = f"logical_not_{shape_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["LogicalNotTest"]:
-        return [
-            cls(shape=(2, 3, 4)),
-            cls(shape=(10,)),
-            cls(shape=(4, 8)),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        a = torch.randint(0, 2, self.shape, dtype=torch.bool)
-        return (a,)
-
-    def create_model(self) -> nn.Module:
-        return LogicalNotModel()
-
-
-@register_test
-class LogicalAndTest(OpTestCase):
-    """Test case for aten.logical_and op."""
-
-    name = "logical_and"
-
-    def __init__(self, shape: Tuple[int, ...] = (2, 3, 4)):
-        self.shape = shape
-        shape_str = "x".join(str(s) for s in shape)
-        self.name = f"logical_and_{shape_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["LogicalAndTest"]:
-        return [
-            cls(shape=(2, 3, 4)),
-            cls(shape=(10,)),
-            cls(shape=(4, 8)),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        a = torch.randint(0, 2, self.shape, dtype=torch.bool)
-        b = torch.randint(0, 2, self.shape, dtype=torch.bool)
-        return (a, b)
-
-    def create_model(self) -> nn.Module:
-        return LogicalAndModel()
-
-
-@register_test
-class LogicalOrTest(OpTestCase):
-    """Test case for aten.logical_or op."""
-
-    name = "logical_or"
-
-    def __init__(self, shape: Tuple[int, ...] = (2, 3, 4)):
-        self.shape = shape
-        shape_str = "x".join(str(s) for s in shape)
-        self.name = f"logical_or_{shape_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["LogicalOrTest"]:
-        return [
-            cls(shape=(2, 3, 4)),
-            cls(shape=(10,)),
-            cls(shape=(4, 8)),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        a = torch.randint(0, 2, self.shape, dtype=torch.bool)
-        b = torch.randint(0, 2, self.shape, dtype=torch.bool)
-        return (a, b)
-
-    def create_model(self) -> nn.Module:
-        return LogicalOrModel()
+def _make_reduction_op_test(
+    op_name: str,
+    op_fn: Callable,
+    configs: List[dict],
+    input_fn: Callable = None,
+    has_correction: bool = False,
+) -> type:
+    """Generate a registered OpTestCase subclass for a reduction op.
+
+    Args:
+        op_name: Name used for test registration.
+        op_fn: The torch function (e.g. torch.sum).
+        configs: List of dicts with keys: shape, dim, keepdim, dtype, and
+                 optionally correction (for var/std).
+        input_fn: Callable(shape, dtype) -> Tuple[Tensor, ...].
+        has_correction: If True, use CorrectionReductionOpModel.
+    """
+    if input_fn is None:
+        input_fn = _input_fn()
+
+    class _Test(OpTestCase):
+        name = op_name
+
+        def __init__(self, shape, dim, keepdim, dtype, correction=1):
+            self.shape = shape
+            self.dim = dim
+            self.keepdim = keepdim
+            self.dtype = dtype
+            self.correction = correction
+            shape_str = "x".join(str(s) for s in shape)
+            dtype_str = str(dtype).replace("torch.", "")
+            dim_str = f"_dim{dim}" if dim is not None else "_all"
+            kd_str = "_kd" if keepdim else ""
+            corr_str = f"_corr{correction}" if has_correction else ""
+            self.name = f"{op_name}_{shape_str}{dim_str}{kd_str}{corr_str}_{dtype_str}"
+
+        @classmethod
+        def get_test_configs(cls) -> List["_Test"]:
+            return [cls(**c) for c in configs]
+
+        def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+            return input_fn(self.shape, self.dtype)
+
+        def create_model(self) -> nn.Module:
+            if has_correction:
+                return CorrectionReductionOpModel(
+                    op_fn,
+                    dim=self.dim,
+                    keepdim=self.keepdim,
+                    correction=self.correction,
+                )
+            return ReductionOpModel(op_fn, dim=self.dim, keepdim=self.keepdim)
+
+    _Test.__name__ = f"{op_name.title().replace('_', '')}Test"
+    _Test.__qualname__ = _Test.__name__
+    return _Test
+
+
+_REDUCTION_CONFIGS_6 = [
+    {"shape": (16,), "dim": 0, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": -1, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": 0, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": -1, "keepdim": True, "dtype": torch.float32},
+    {"shape": (2, 3, 4), "dim": 1, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": None, "keepdim": False, "dtype": torch.float32},
+]
+
+_REDUCTION_CONFIGS_5 = [
+    {"shape": (16,), "dim": 0, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": -1, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": -1, "keepdim": True, "dtype": torch.float32},
+    {
+        "shape": (4, 4),
+        "dim": -1,
+        "keepdim": False,
+        "dtype": torch.float32,
+        "correction": 0,
+    },
+    {"shape": (2, 3, 4), "dim": 1, "keepdim": False, "dtype": torch.float32},
+]
+
+_PROD_CONFIGS = [
+    {"shape": (8,), "dim": 0, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": -1, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": 0, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": -1, "keepdim": True, "dtype": torch.float32},
+    {"shape": (2, 3, 4), "dim": 1, "keepdim": False, "dtype": torch.float32},
+]
+
+_LOGSUMEXP_CONFIGS = [
+    {"shape": (16,), "dim": 0, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": -1, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": 0, "keepdim": False, "dtype": torch.float32},
+    {"shape": (4, 4), "dim": -1, "keepdim": True, "dtype": torch.float32},
+    {"shape": (2, 3, 4), "dim": 1, "keepdim": False, "dtype": torch.float32},
+]
+
+# fmt: off
+_REDUCTION_OP_TESTS = [
+    {"op_name": "sum",       "op_fn": torch.sum,       "configs": _REDUCTION_CONFIGS_6},
+    {"op_name": "mean",      "op_fn": torch.mean,      "configs": _REDUCTION_CONFIGS_6},
+    {"op_name": "amax",      "op_fn": torch.amax,      "configs": _REDUCTION_CONFIGS_6},
+    {"op_name": "amin",      "op_fn": torch.amin,      "configs": _REDUCTION_CONFIGS_6},
+    {"op_name": "argmax",    "op_fn": torch.argmax,    "configs": _REDUCTION_CONFIGS_6},
+    {"op_name": "argmin",    "op_fn": torch.argmin,    "configs": _REDUCTION_CONFIGS_6},
+    {"op_name": "prod",      "op_fn": torch.prod,      "configs": _PROD_CONFIGS, "input_fn": _input_fn(scale=0.5, offset=1.0)},
+    {"op_name": "var",       "op_fn": torch.var,       "configs": _REDUCTION_CONFIGS_5, "has_correction": True},
+    {"op_name": "std",       "op_fn": torch.std,       "configs": _REDUCTION_CONFIGS_5, "has_correction": True},
+    {"op_name": "logsumexp", "op_fn": torch.logsumexp, "configs": _LOGSUMEXP_CONFIGS},
+]
+# fmt: on
+
+for _entry in _REDUCTION_OP_TESTS:
+    _cls = _make_reduction_op_test(**_entry)
+    register_test(_cls)
+    globals()[_cls.__name__] = _cls
 
 
 # =============================================================================
@@ -5391,106 +3207,69 @@ class LogicalOrTest(OpTestCase):
 # =============================================================================
 
 
-class TrilModel(nn.Module):
-    def __init__(self, diagonal: int = 0):
+class TriangularModel(nn.Module):
+    def __init__(self, mode: str = "tril", diagonal: int = 0):
         super().__init__()
+        self.op_fn = torch.tril if mode == "tril" else torch.triu
         self.diagonal = diagonal
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.tril(x, diagonal=self.diagonal)
+        return self.op_fn(x, diagonal=self.diagonal)
 
 
-class TriuModel(nn.Module):
-    def __init__(self, diagonal: int = 0):
-        super().__init__()
-        self.diagonal = diagonal
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.triu(x, diagonal=self.diagonal)
-
-
-@register_test
-class TrilTest(OpTestCase):
-    """Test case for aten.tril op."""
-
-    name = "tril"
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        diagonal: int = 0,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.diagonal = diagonal
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        diag_str = f"d{diagonal}" if diagonal != 0 else ""
-        self.name = f"tril_{shape_str}_{dtype_str}{diag_str}"
-
-    @classmethod
-    def get_test_configs(cls) -> List["TrilTest"]:
-        return [
-            cls(shape=(4, 4), diagonal=0, dtype=torch.float32),
-            cls(shape=(8, 8), diagonal=0, dtype=torch.float32),
-            cls(shape=(4, 6), diagonal=0, dtype=torch.float32),
-            cls(shape=(6, 4), diagonal=0, dtype=torch.float32),
-            cls(shape=(4, 4), diagonal=1, dtype=torch.float32),
-            cls(shape=(4, 4), diagonal=-1, dtype=torch.float32),
-            cls(shape=(4, 4), diagonal=2, dtype=torch.float32),
-            cls(shape=(4, 4), diagonal=0, dtype=torch.bfloat16),
-            cls(shape=(2, 4, 4), diagonal=0, dtype=torch.float32),
-            cls(shape=(2, 3, 4, 4), diagonal=0, dtype=torch.float32),
-        ]
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
-
-    def create_model(self) -> nn.Module:
-        return TrilModel(diagonal=self.diagonal)
+_TRIANGULAR_CONFIGS = [
+    {"shape": (4, 4), "diagonal": 0, "dtype": torch.float32},
+    {"shape": (8, 8), "diagonal": 0, "dtype": torch.float32},
+    {"shape": (4, 6), "diagonal": 0, "dtype": torch.float32},
+    {"shape": (6, 4), "diagonal": 0, "dtype": torch.float32},
+    {"shape": (4, 4), "diagonal": 1, "dtype": torch.float32},
+    {"shape": (4, 4), "diagonal": -1, "dtype": torch.float32},
+    {"shape": (4, 4), "diagonal": 2, "dtype": torch.float32},
+    {"shape": (4, 4), "diagonal": 0, "dtype": torch.bfloat16},
+    {"shape": (2, 4, 4), "diagonal": 0, "dtype": torch.float32},
+    {"shape": (2, 3, 4, 4), "diagonal": 0, "dtype": torch.float32},
+]
 
 
-@register_test
-class TriuTest(OpTestCase):
-    """Test case for aten.triu op."""
+def _make_triangular_test(mode: str) -> type:
+    """Generate a registered OpTestCase subclass for tril or triu."""
 
-    name = "triu"
+    class _Test(OpTestCase):
+        name = mode
 
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 4),
-        diagonal: int = 0,
-        dtype: torch.dtype = torch.float32,
-    ):
-        self.shape = shape
-        self.diagonal = diagonal
-        self.dtype = dtype
-        shape_str = "x".join(str(s) for s in shape)
-        dtype_str = str(dtype).replace("torch.", "")
-        diag_str = f"d{diagonal}" if diagonal != 0 else ""
-        self.name = f"triu_{shape_str}_{dtype_str}{diag_str}"
+        def __init__(
+            self,
+            shape: Tuple[int, ...] = (4, 4),
+            diagonal: int = 0,
+            dtype: torch.dtype = torch.float32,
+        ):
+            self.shape = shape
+            self.diagonal = diagonal
+            self.dtype = dtype
+            shape_str = "x".join(str(s) for s in shape)
+            dtype_str = str(dtype).replace("torch.", "")
+            diag_str = f"d{diagonal}" if diagonal != 0 else ""
+            self.name = f"{mode}_{shape_str}_{dtype_str}{diag_str}"
 
-    @classmethod
-    def get_test_configs(cls) -> List["TriuTest"]:
-        return [
-            cls(shape=(4, 4), diagonal=0, dtype=torch.float32),
-            cls(shape=(8, 8), diagonal=0, dtype=torch.float32),
-            cls(shape=(4, 6), diagonal=0, dtype=torch.float32),
-            cls(shape=(6, 4), diagonal=0, dtype=torch.float32),
-            cls(shape=(4, 4), diagonal=1, dtype=torch.float32),
-            cls(shape=(4, 4), diagonal=-1, dtype=torch.float32),
-            cls(shape=(4, 4), diagonal=2, dtype=torch.float32),
-            cls(shape=(4, 4), diagonal=0, dtype=torch.bfloat16),
-            cls(shape=(2, 4, 4), diagonal=0, dtype=torch.float32),
-            cls(shape=(2, 3, 4, 4), diagonal=0, dtype=torch.float32),
-        ]
+        @classmethod
+        def get_test_configs(cls) -> List["_Test"]:
+            return [cls(**c) for c in _TRIANGULAR_CONFIGS]
 
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape, dtype=self.dtype),)
+        def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+            return (torch.randn(self.shape, dtype=self.dtype),)
 
-    def create_model(self) -> nn.Module:
-        return TriuModel(diagonal=self.diagonal)
+        def create_model(self) -> nn.Module:
+            return TriangularModel(mode=mode, diagonal=self.diagonal)
+
+    _Test.__name__ = f"{mode.title()}Test"
+    _Test.__qualname__ = _Test.__name__
+    return _Test
+
+
+TrilTest = _make_triangular_test("tril")
+TriuTest = _make_triangular_test("triu")
+register_test(TrilTest)
+register_test(TriuTest)
 
 
 # =============================================================================
@@ -5509,12 +3288,16 @@ class OnesLikeModel(nn.Module):
 
 
 class FullLikeModel(nn.Module):
-    def __init__(self, fill_value: float):
+    def __init__(self, fill_value: float, dtype: Optional[torch.dtype] = None):
         super().__init__()
         self.fill_value = fill_value
+        self.dtype = dtype
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.full_like(x, self.fill_value)
+        t = torch.full_like(x, self.fill_value, dtype=self.dtype)
+        if self.dtype is not None and self.dtype != x.dtype:
+            return x * t.to(x.dtype)
+        return t
 
 
 @register_test
@@ -5594,13 +3377,24 @@ class FullLikeTest(OpTestCase):
         shape: Tuple[int, ...] = (4, 4),
         fill_value: float = 3.14,
         dtype: torch.dtype = torch.float32,
+        fill_dtype: Optional[torch.dtype] = None,
+        rtol: Optional[float] = None,
+        atol: Optional[float] = None,
     ):
         self.shape = shape
         self.fill_value = fill_value
         self.dtype = dtype
+        self.fill_dtype = fill_dtype
+        if rtol is not None:
+            self.rtol = rtol
+        if atol is not None:
+            self.atol = atol
         shape_str = "x".join(str(s) for s in shape)
         dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"full_like_{shape_str}_v{fill_value}_{dtype_str}"
+        fill_dtype_str = (
+            f"_as_{str(fill_dtype).replace('torch.', '')}" if fill_dtype else ""
+        )
+        self.name = f"full_like_{shape_str}_v{fill_value}_{dtype_str}{fill_dtype_str}"
 
     @classmethod
     def get_test_configs(cls) -> List["FullLikeTest"]:
@@ -5609,13 +3403,26 @@ class FullLikeTest(OpTestCase):
             cls(shape=(4, 4), fill_value=2.71, dtype=torch.float32),
             cls(shape=(2, 3, 4), fill_value=-1.0, dtype=torch.float32),
             cls(shape=(4, 4), fill_value=0.5, dtype=torch.bfloat16),
+            # Explicit fill_dtype exercises scalar_type serialization (optional_int).
+            # 1.005859375 rounds differently in bf16 vs f32, so the model multiplies
+            # the bf16 mask back into the f32 input to make the precision loss observable.
+            cls(
+                shape=(4, 4),
+                fill_value=1.005859375,
+                fill_dtype=torch.bfloat16,
+                rtol=0.0,
+                atol=0.0,
+            ),
         ]
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.fill_dtype is not None:
+            torch.manual_seed(42)
+            return (torch.randn(self.shape, dtype=self.dtype) * 100,)
         return (torch.randn(self.shape, dtype=self.dtype),)
 
     def create_model(self) -> nn.Module:
-        return FullLikeModel(fill_value=self.fill_value)
+        return FullLikeModel(fill_value=self.fill_value, dtype=self.fill_dtype)
 
 
 # =============================================================================
@@ -5894,16 +3701,17 @@ class BatchNorm2dTest(OpTestCase):
         height: int = 8,
         width: int = 8,
         dtype: torch.dtype = torch.float32,
+        affine: bool = True,
     ):
         self.batch_size = batch_size
         self.num_features = num_features
         self.height = height
         self.width = width
         self.dtype = dtype
+        self.affine = affine
         dtype_str = str(dtype).replace("torch.", "")
-        self.name = (
-            f"batch_norm_2d_{batch_size}x{num_features}x{height}x{width}_{dtype_str}"
-        )
+        prefix = "batch_norm_2d_no_affine" if not affine else "batch_norm_2d"
+        self.name = f"{prefix}_{batch_size}x{num_features}x{height}x{width}_{dtype_str}"
 
     @classmethod
     def get_test_configs(cls) -> List["BatchNorm2dTest"]:
@@ -5916,6 +3724,23 @@ class BatchNorm2dTest(OpTestCase):
             cls(batch_size=2, num_features=16, height=8, width=8, dtype=torch.bfloat16),
             cls(batch_size=1, num_features=32, height=4, width=4, dtype=torch.bfloat16),
             cls(batch_size=2, num_features=16, height=8, width=8, dtype=torch.float16),
+            # No-affine variants (no weight/bias)
+            cls(
+                batch_size=1,
+                num_features=16,
+                height=8,
+                width=8,
+                dtype=torch.float32,
+                affine=False,
+            ),
+            cls(
+                batch_size=2,
+                num_features=32,
+                height=4,
+                width=4,
+                dtype=torch.bfloat16,
+                affine=False,
+            ),
         ]
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
@@ -5929,7 +3754,7 @@ class BatchNorm2dTest(OpTestCase):
         return (x,)
 
     def create_model(self) -> nn.Module:
-        return BatchNormModel(self.num_features, self.dtype)
+        return BatchNormModel(self.num_features, self.dtype, affine=self.affine)
 
 
 @register_test
@@ -5946,13 +3771,16 @@ class BatchNorm1dTest(OpTestCase):
         num_features: int = 16,
         seq_len: int = 32,
         dtype: torch.dtype = torch.float32,
+        affine: bool = True,
     ):
         self.batch_size = batch_size
         self.num_features = num_features
         self.seq_len = seq_len
         self.dtype = dtype
+        self.affine = affine
         dtype_str = str(dtype).replace("torch.", "")
-        self.name = f"batch_norm_1d_{batch_size}x{num_features}x{seq_len}_{dtype_str}"
+        prefix = "batch_norm_1d_no_affine" if not affine else "batch_norm_1d"
+        self.name = f"{prefix}_{batch_size}x{num_features}x{seq_len}_{dtype_str}"
 
     @classmethod
     def get_test_configs(cls) -> List["BatchNorm1dTest"]:
@@ -5961,6 +3789,21 @@ class BatchNorm1dTest(OpTestCase):
             cls(batch_size=2, num_features=32, seq_len=64, dtype=torch.float32),
             cls(batch_size=2, num_features=16, seq_len=32, dtype=torch.bfloat16),
             cls(batch_size=2, num_features=16, seq_len=32, dtype=torch.float16),
+            # No-affine variants (no weight/bias)
+            cls(
+                batch_size=1,
+                num_features=16,
+                seq_len=32,
+                dtype=torch.float32,
+                affine=False,
+            ),
+            cls(
+                batch_size=2,
+                num_features=32,
+                seq_len=64,
+                dtype=torch.bfloat16,
+                affine=False,
+            ),
         ]
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
@@ -5970,7 +3813,7 @@ class BatchNorm1dTest(OpTestCase):
         return (x,)
 
     def create_model(self) -> nn.Module:
-        return BatchNorm1dModel(self.num_features, self.dtype)
+        return BatchNorm1dModel(self.num_features, self.dtype, affine=self.affine)
 
 
 # =============================================================================
@@ -6115,8 +3958,8 @@ class SDPATest(OpTestCase):
         return (q, k, v)
 
 
-# Note: RMSNormTest and RopeTest require custom ops imports
-# They are kept in separate files (test_rms_norm.py, test_rope.py) for now
+# Note: RopeTest requires custom ops imports
+# They are kept in separate files (test_rope.py) for now
 # as they require:
 #   from executorch.backends.apple.mlx import custom_ops  # noqa: F401
 #   from executorch.backends.apple.mlx import ops  # noqa: F401

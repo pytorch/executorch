@@ -426,11 +426,15 @@ exec_arange(const ARangeNode& n, ExecutionState& st, StreamOrDevice s) {
   int stop_val = resolve_int(n.stop, st);
   int step_val = resolve_int(n.step, st);
 
-  if (n.dtype.has_value()) {
+  if (n.scalar_type.has_value()) {
     st.set_tensor(
         n.out,
         arange(
-            start_val, stop_val, step_val, resolve_dtype(n.dtype.value()), s));
+            start_val,
+            stop_val,
+            step_val,
+            resolve_dtype(n.scalar_type.value()),
+            s));
   } else {
     // No dtype specified - use MLX's default (infers from inputs)
     st.set_tensor(n.out, arange(start_val, stop_val, step_val, s));
@@ -691,7 +695,7 @@ exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
 inline void
 exec_astype(const AsTypeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
-      n.out, astype(st.const_tensor_ref(n.x), resolve_dtype(n.dtype), s));
+      n.out, astype(st.const_tensor_ref(n.x), resolve_dtype(n.scalar_type), s));
 }
 
 // ----- Quantized Linear -----
@@ -733,7 +737,7 @@ inline void exec_quantized_linear(
     Y = add(Y, b, s);
   }
 
-  Dtype out_dtype = resolve_dtype(n.out_dtype);
+  Dtype out_dtype = resolve_dtype(n.out_scalar_type);
   if (out_dtype != Y.dtype()) {
     Y = astype(Y, out_dtype, s);
   }
@@ -757,7 +761,7 @@ inline void exec_concatenate(
 // ----- Full -----
 inline void exec_full(const FullNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
-      n.out, full(to_shape(n.shape, st), n.v, resolve_dtype(n.dtype), s));
+      n.out, full(to_shape(n.shape, st), n.v, resolve_dtype(n.scalar_type), s));
 }
 
 // ----- FullLike -----
@@ -765,7 +769,8 @@ inline void
 exec_full_like(const FullLikeNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   // Use input dtype if not specified
-  auto dtype = n.dtype.has_value() ? resolve_dtype(n.dtype.value()) : x.dtype();
+  auto dtype = n.scalar_type.has_value() ? resolve_dtype(n.scalar_type.value())
+                                         : x.dtype();
   st.set_tensor(n.out, full_like(x, n.v, dtype, s));
 }
 
@@ -946,7 +951,7 @@ inline void exec_quantized_gather(
       std::nullopt, // dtype - let MLX infer
       s);
 
-  Dtype out_dtype = resolve_dtype(n.out_dtype);
+  Dtype out_dtype = resolve_dtype(n.out_scalar_type);
   if (out_dtype != Y.dtype()) {
     Y = astype(Y, out_dtype, s);
   }
@@ -1020,7 +1025,7 @@ exec_logical_or(const LogicalOrNode& n, ExecutionState& st, StreamOrDevice s) {
 inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
   int rows = resolve_int(n.n, st);
   int cols = resolve_int(n.m, st);
-  auto dtype = resolve_dtype(n.dtype);
+  auto dtype = resolve_dtype(n.scalar_type);
   st.set_tensor(n.out, tri(rows, cols, n.k, dtype, s));
 }
 

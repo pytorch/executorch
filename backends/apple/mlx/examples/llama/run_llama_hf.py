@@ -53,7 +53,6 @@ def run_inference(
     formatted_prompt = tokenizer.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )
-    logger.info(f"Formatted prompt: {formatted_prompt!r}")
     input_ids = tokenizer.encode(formatted_prompt, return_tensors="pt")
     logger.info(f"Input shape: {input_ids.shape}")
 
@@ -67,9 +66,6 @@ def run_inference(
     # cache_position must match the sequence length of input_ids
     # For prefill with N tokens, cache_position = [0, 1, 2, ..., N-1]
     cache_position = torch.arange(seq_len, dtype=torch.long)
-    logger.info(
-        f"Prefill: input_ids shape={input_ids.shape}, cache_position shape={cache_position.shape}"
-    )
     outputs = forward.execute([input_ids, cache_position])
     logits = outputs[0]
 
@@ -112,15 +108,13 @@ def run_inference(
     logger.info(f"Decode time: {decode_time:.3f}s ({tokens_per_sec:.1f} tokens/sec)")
 
     # Decode only the newly generated tokens (not the input prompt)
-    new_tokens = generated_tokens[input_ids.shape[1]:]
+    new_tokens = generated_tokens[input_ids.shape[1] :]
     generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
     return generated_text
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run exported HuggingFace Llama model"
-    )
+    parser = argparse.ArgumentParser(description="Run exported HuggingFace Llama model")
     parser.add_argument(
         "--pte",
         type=str,

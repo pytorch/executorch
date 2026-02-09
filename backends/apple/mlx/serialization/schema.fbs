@@ -12,17 +12,10 @@ namespace mlx_delegate;
 // Core types
 // =============================================================================
 
-enum DTypeId : byte {
-    f16 = 0,
-    f32 = 1,
-    bf16 = 2,
-    i32 = 3,
-    i64 = 4,
-    u32 = 5,
-    u8 = 6,
-    boolean = 7,
-    i8 = 8
-}
+// Note: DTypeId enum removed - we now use ET's ScalarType (int8) directly.
+// See runtime/core/portable_type/scalar_type.h for ScalarType values.
+
+// Tensor slot identifier
 
 // Tensor slot identifier - indexes into tensors array
 struct Tid {
@@ -227,7 +220,7 @@ table ARangeNode {
     start: IntOrVid (required);  // Can be literal or dynamic (from item())
     stop: IntOrVid (required);   // Can be literal or dynamic (from item())
     step: IntOrVid (required);   // Can be literal or dynamic
-    dtype: DTypeId = null;  // optional - None means infer from context
+    scalar_type: int8 = null;    // ET ScalarType (optional - None means infer from context)
 }
 
 table SiluNode {
@@ -346,7 +339,7 @@ table SliceNode {
 table AsTypeNode {
     x: Tid (required);
     out: Tid (required);
-    dtype: DTypeId;
+    scalar_type: int8;           // ET ScalarType
 }
 
 table QuantizedLinearNode {
@@ -359,7 +352,7 @@ table QuantizedLinearNode {
     group_size: int32;
     bits: int32;
     mode: string (required);
-    out_dtype: DTypeId;
+    out_scalar_type: int8;       // ET ScalarType for output
     scale_only: bool = false;  // if true, compute biases = -scales * 2^(bits-1); if false, biases tensor required
 }
 
@@ -373,14 +366,14 @@ table FullNode {
     out: Tid (required);
     shape: [IntOrVid] (required);
     v: float;
-    dtype: DTypeId;
+    scalar_type: int8;           // ET ScalarType
 }
 
 table FullLikeNode {
     x: Tid (required);          // Input tensor to copy shape from
     out: Tid (required);
     v: float;                   // Fill value
-    dtype: DTypeId = null;      // Optional dtype override (if null, use x's dtype)
+    scalar_type: int8 = null;   // ET ScalarType (optional - if null, use x's dtype)
 }
 
 table ArgmaxNode {
@@ -417,7 +410,7 @@ table QuantizedGatherNode {
     group_size: int32;
     bits: int32;
     mode: string (required);
-    out_dtype: DTypeId;
+    out_scalar_type: int8;       // ET ScalarType for output
 }
 
 // Comparison ops (return bool arrays)
@@ -481,7 +474,7 @@ table TriNode {
     n: IntOrVid (required);   // Number of rows
     m: IntOrVid (required);   // Number of columns
     k: int32 = 0;             // Diagonal offset: 0=main, +above, -below
-    dtype: DTypeId;
+    scalar_type: int8;        // ET ScalarType
 }
 
 table TrilNode {
@@ -857,8 +850,8 @@ table Instruction {
 
 table TensorMeta {
     shape: [IntOrVid] (required);  // Can be literal ints or Vid refs for dynamic dims
-    dtype: DTypeId;
-    strides: [int32];
+    scalar_type: int8;             // ET ScalarType value (see runtime/core/portable_type/scalar_type.h)
+    dim_order: [uint8];            // Memory layout order (matches TensorLayout.dim_order, DimOrderType = uint8_t)
 }
 
 // =============================================================================
@@ -887,15 +880,6 @@ table NamedSlot {
 }
 
 // =============================================================================
-// Data segment for constants
-// =============================================================================
-
-table DataSegment {
-    offset: uint64;
-    size: uint64;
-}
-
-// =============================================================================
 // Root type: MLX Graph
 // =============================================================================
 
@@ -904,31 +888,28 @@ table MLXGraph {
     version: string;
 
     // Tensor slot counts
-    num_constant_tensors: uint32;
-    num_non_constant_tensors: uint32;
-    num_non_constant_values: uint32;
 
-    // Per-IdSpace tensor counts (for O(1) tensor type lookup in logging)
+    num_constant_tensors: uint32;
     num_input_tensors: uint32;
     num_output_tensors: uint32;
     num_mutable_buffer_tensors: uint32;
+    num_temp_tensors: uint32;
+    num_values: uint32;
 
-    // Instructions (the program)
-    instructions: [Instruction] (required);
+    // Instructions
+    instructions: [Instruction] (required);      // Run every execute() call
+    init_instructions: [Instruction];            // Run once at init()
 
     // I/O mappings
     input_map: [SlotVariant];
     output_map: [SlotVariant];
     mutable_buffer_map: [SlotVariant];
 
-    // Name to slot lookup
+    // Name to slot lookup (used for constant/mutable buffer keys in named_data_map)
     named_slots: [NamedSlot];
 
-    // Tensor metadata (for non-temp tensors)
+    // Tensor metadata (for non-temp tensors), indexed by Tid
     tensor_meta: [TensorMeta];
-
-    // Constant data segment info
-    constant_segment: DataSegment;
 }
 
 root_type MLXGraph;

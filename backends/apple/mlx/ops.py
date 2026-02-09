@@ -20,12 +20,12 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.backends.apple.mlx.program_builder import (
-    _torch_dtype_to_dtypeid,
     emit_stop_position,
     IntOrVid,
     MLXProgramBuilder,
     REGISTRY,
     Slot,
+    torch_dtype_to_scalar_type,
 )
 from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     AbsNode,
@@ -715,7 +715,7 @@ try:
                 AsTypeNode(
                     x=P.slot_to_tid(x),
                     out=P.slot_to_tid(out),
-                    dtype=_torch_dtype_to_dtypeid(dtype),
+                    scalar_type=torch_dtype_to_scalar_type(dtype),
                 )
             )
         else:
@@ -758,7 +758,7 @@ def _to_copy_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             AsTypeNode(
                 x=P.slot_to_tid(x),
                 out=P.slot_to_tid(out),
-                dtype=_torch_dtype_to_dtypeid(dtype),
+                scalar_type=torch_dtype_to_scalar_type(dtype),
             )
         )
     else:
@@ -1590,7 +1590,7 @@ def _arange_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     # arange defaults to int64 when dtype is not specified (like torch.arange)
     dtype = kwargs.get("dtype", torch.int64)
-    dtype_id = _torch_dtype_to_dtypeid(dtype)
+    scalar_type_val = torch_dtype_to_scalar_type(dtype)
 
     out = P.make_or_get_slot(n)
     P.emit(
@@ -1599,7 +1599,7 @@ def _arange_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             start=P.to_int_or_vid(start),
             stop=P.to_int_or_vid(stop),
             step=P.to_int_or_vid(step),
-            dtype=dtype_id,
+            scalar_type=scalar_type_val,
         )
     )
     return out
@@ -1627,7 +1627,7 @@ def _arange_start_step_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     # arange defaults to int64 when dtype is not specified (like torch.arange)
     dtype = kwargs.get("dtype", torch.int64)
-    dtype_id = _torch_dtype_to_dtypeid(dtype)
+    scalar_type_val = torch_dtype_to_scalar_type(dtype)
 
     out = P.make_or_get_slot(n)
     P.emit(
@@ -1636,31 +1636,7 @@ def _arange_start_step_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             start=P.to_int_or_vid(start),
             stop=P.to_int_or_vid(stop),
             step=P.to_int_or_vid(step),
-            dtype=dtype_id,
-        )
-    )
-    return out
-
-
-# =============================================================================
-# Custom MLX ops
-# =============================================================================
-
-
-@REGISTRY.register(target=[torch.ops.mlx.rms_norm.default])
-def _rms_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    args = P.args(n)
-    require_args(args, 2, 3, "mlx.rms_norm")
-    require_kwargs(P.kwargs(n), set(), "mlx.rms_norm")
-    x, w = args[0], args[1]
-    eps = args[2] if len(args) >= 3 else 1e-5
-    out = P.make_or_get_slot(n)
-    P.emit(
-        RMSNormNode(
-            x=P.slot_to_tid(x),
-            weight=P.slot_to_tid(w),
-            out=P.slot_to_tid(out),
-            eps=eps,
+            scalar_type=scalar_type_val,
         )
     )
     return out
@@ -1943,7 +1919,7 @@ def _relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         FullNode(
             shape=[],  # Scalar (will be broadcast in maximum)
             v=0.0,
-            dtype=_torch_dtype_to_dtypeid(dtype),
+            scalar_type=torch_dtype_to_scalar_type(dtype),
             out=P.slot_to_tid(zero_slot),
         )
     )
@@ -2207,7 +2183,7 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             FullNode(
                 shape=[],  # Scalar
                 v=float(val),
-                dtype=_torch_dtype_to_dtypeid(dtype),
+                scalar_type=torch_dtype_to_scalar_type(dtype),
                 out=P.slot_to_tid(slot),
             )
         )
@@ -2359,7 +2335,7 @@ def _native_batch_norm_legit_no_training_handler(P: MLXProgramBuilder, n: Node) 
             out=P.slot_to_tid(eps_slot),
             shape=[],  # 0-D scalar
             v=float(eps),
-            dtype=_torch_dtype_to_dtypeid(torch.float32),
+            scalar_type=torch_dtype_to_scalar_type(torch.float32),
         )
     )
     _, tmp_var_eps = P.make_tmp_slot()
@@ -2480,7 +2456,7 @@ def _full_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             out=P.slot_to_tid(out),
             shape=shape_iovs,
             v=float(fill_value),
-            dtype=_torch_dtype_to_dtypeid(dtype),
+            scalar_type=torch_dtype_to_scalar_type(dtype),
         )
     )
     return out
@@ -2515,7 +2491,7 @@ def _zeros_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             out=P.slot_to_tid(out),
             shape=shape_iovs,
             v=0.0,
-            dtype=_torch_dtype_to_dtypeid(dtype),
+            scalar_type=torch_dtype_to_scalar_type(dtype),
         )
     )
     return out
@@ -2550,7 +2526,7 @@ def _ones_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             out=P.slot_to_tid(out),
             shape=shape_iovs,
             v=1.0,
-            dtype=_torch_dtype_to_dtypeid(dtype),
+            scalar_type=torch_dtype_to_scalar_type(dtype),
         )
     )
     return out
@@ -2584,7 +2560,9 @@ def _zeros_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
             v=0.0,
-            dtype=_torch_dtype_to_dtypeid(dtype) if dtype is not None else None,
+            scalar_type=(
+                torch_dtype_to_scalar_type(dtype) if dtype is not None else None
+            ),
         )
     )
     return out
@@ -2618,7 +2596,9 @@ def _ones_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
             v=1.0,
-            dtype=_torch_dtype_to_dtypeid(dtype) if dtype is not None else None,
+            scalar_type=(
+                torch_dtype_to_scalar_type(dtype) if dtype is not None else None
+            ),
         )
     )
     return out
@@ -2653,7 +2633,9 @@ def _full_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
             v=float(fill_value),
-            dtype=_torch_dtype_to_dtypeid(dtype) if dtype is not None else None,
+            scalar_type=(
+                torch_dtype_to_scalar_type(dtype) if dtype is not None else None
+            ),
         )
     )
     return out
@@ -2887,7 +2869,7 @@ def _scalar_tensor_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             out=P.slot_to_tid(out),
             shape=[],  # 0-D tensor (scalar)
             v=float(scalar_value),
-            dtype=_torch_dtype_to_dtypeid(dtype),
+            scalar_type=torch_dtype_to_scalar_type(dtype),
         )
     )
     return out
@@ -3347,7 +3329,7 @@ def _pow_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 out=P.slot_to_tid(b_slot),
                 shape=[],  # 0-D scalar - broadcasts correctly
                 v=float(b),
-                dtype=_torch_dtype_to_dtypeid(dtype),
+                scalar_type=torch_dtype_to_scalar_type(dtype),
             )
         )
         b = b_slot

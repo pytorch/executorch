@@ -46,6 +46,8 @@ GENERATED_SERIALIZERS = SCRIPT_DIR / "_generated_serializers.py"
 GENERATED_SCHEMA_PY = SCRIPT_DIR / "mlx_graph_schema.py"
 GENERATED_INSPECTOR = SCRIPT_DIR.parent / "_generated_inspector.py"
 RUNTIME_DIR = SCRIPT_DIR.parent / "runtime"
+LOADER_H_TMPL = SCRIPT_DIR / "MLXLoader.h.tmpl"
+LOADER_CPP_TMPL = SCRIPT_DIR / "MLXLoader.cpp.tmpl"
 LOADER_H = RUNTIME_DIR / "MLXLoader.h"
 LOADER_CPP = RUNTIME_DIR / "MLXLoader.cpp"
 
@@ -65,9 +67,117 @@ class FBSEnum:
 @dataclass
 class FBSField:
     name: str
-    type_str: str  # e.g., "Tid", "[int32]", "IntOrVid"
+    type_str: str
     required: bool
-    default: Optional[str]  # default value if specified
+    default: Optional[str]
+
+
+# =============================================================================
+# Shared type constants
+# =============================================================================
+
+# FBS integer types (signed and unsigned)
+FBS_INTEGER_TYPES = frozenset(
+    {
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    }
+)
+
+# FBS float types
+FBS_FLOAT_TYPES = frozenset({"float", "double"})
+
+# All FBS primitive scalar types (numbers + bool)
+FBS_SCALAR_TYPES = FBS_INTEGER_TYPES | FBS_FLOAT_TYPES | frozenset({"bool"})
+
+# Compound "or" types that wrap a literal + Vid
+FBS_COMPOUND_TYPES = frozenset({"IntOrVid", "FloatOrVid", "TidOrVid"})
+
+# Python type mapping for FBS primitives
+FBS_TO_PYTHON = {
+    "int8": "int",
+    "int16": "int",
+    "int32": "int",
+    "int64": "int",
+    "uint8": "int",
+    "uint16": "int",
+    "uint32": "int",
+    "uint64": "int",
+    "float": "float",
+    "double": "float",
+    "bool": "bool",
+    "string": "str",
+    "byte": "int",
+}
+
+# C++ type mapping for FBS primitives
+FBS_TO_CPP = {
+    "int8": "int8_t",
+    "int16": "int16_t",
+    "int32": "int32_t",
+    "int64": "int64_t",
+    "uint8": "uint8_t",
+    "uint16": "uint16_t",
+    "uint32": "uint32_t",
+    "uint64": "uint64_t",
+    "float": "float",
+    "double": "double",
+    "bool": "bool",
+    "string": "std::string",
+    "byte": "uint8_t",
+    "Tid": "Tid",
+    "Vid": "Vid<int32_t>",
+    "IntOrVid": "std::variant<int64_t, Vid<int32_t>>",
+    "FloatOrVid": "std::variant<double, Vid<int32_t>>",
+}
+
+
+def _section_header(comment: str, title: str) -> List[str]:
+    """Generate a section-header banner for generated output."""
+    sep = f"{comment} {'=' * 76}"
+    return [sep, f"{comment} {title}", sep, ""]
+
+
+def _file_header(comment: str, description: str = "") -> List[str]:
+    """Generate a standard auto-generated file header.
+
+    Args:
+        comment: Comment prefix, e.g. '#' for Python or '//' for C++.
+        description: Optional description appended after the banner.
+    """
+    sep = f"{comment} {'=' * 76}"
+    lines = [
+        f"{comment}",
+        f"{comment} Copyright (c) Meta Platforms, Inc. and affiliates.",
+        f"{comment} All rights reserved.",
+        f"{comment}",
+        f"{comment} This source code is licensed under the BSD-style license found in the",
+        f"{comment} LICENSE file in the root directory of this source tree.",
+        f"{comment}",
+        sep,
+        f"{comment} AUTO-GENERATED FILE - DO NOT EDIT MANUALLY",
+        sep,
+        f"{comment}",
+        f"{comment} This file was generated from schema.fbs by the MLX delegate code generator.",
+        f"{comment}",
+        f"{comment} Source:    backends/apple/mlx/serialization/schema.fbs",
+        f"{comment} Generator: backends/apple/mlx/serialization/generate.py",
+        f"{comment}",
+        f"{comment} To regenerate, run from the executorch root:",
+        f"{comment}     python backends/apple/mlx/serialization/generate.py",
+        f"{comment}",
+        sep,
+    ]
+    if description:
+        lines.append(f"{comment}")
+        lines.append(f"{comment} {description}")
+    return lines
 
 
 @dataclass
@@ -183,6 +293,105 @@ def _parse_fields(body: str) -> List[FBSField]:
     return fields
 
 
+# Config for compound type factory methods.
+# Maps compound type name -> (primary_field_name, primary_python_type, description)
+_COMPOUND_TYPE_CONFIG = {
+    "IntOrVid": ("literal", "int", "a literal integer"),
+    "FloatOrVid": ("literal", "float", "a literal float"),
+    "TidOrVid": ("tid", "Tid", "a tensor reference"),
+}
+
+
+def _generate_compound_type(table: FBSTable) -> List[str]:
+    """Generate a Python dataclass for a compound type (IntOrVid, etc.) from schema."""
+    name = table.name
+    config = _COMPOUND_TYPE_CONFIG.get(name)
+    if not config:
+        raise ValueError(f"No compound type config for '{name}'")
+
+    primary_field, primary_py_type, primary_desc = config
+
+    # Build the docstring from the schema structure
+    lines = [
+        "@dataclass",
+        f"class {name}:",
+    ]
+
+    # Docstring: describe the two alternatives
+    lines.append(
+        f'    """Represents either {primary_desc} or a runtime Vid reference."""'
+    )
+
+    # Dataclass fields from the parsed schema
+    for fld in table.fields:
+        if fld.default == "false":
+            default = "False"
+        elif fld.default == "true":
+            default = "True"
+        elif fld.type_str in ("Tid", "Vid"):
+            default = "None"
+        elif fld.default is not None:
+            default = fld.default
+        elif fld.type_str in FBS_INTEGER_TYPES:
+            default = "0"
+        elif fld.type_str in FBS_FLOAT_TYPES:
+            default = "0.0"
+        else:
+            default = "None"
+        truly_required = default != "None"
+        py_type = _fbs_type_to_python(fld.type_str, truly_required)
+        lines.append(f"    {fld.name}: {py_type} = {default}")
+
+    # Factory: from_primary (e.g. from_literal, from_tid)
+    lines.append("")
+    lines.append("    @classmethod")
+    lines.append(
+        f'    def from_{primary_field}(cls, value: {primary_py_type}) -> "{name}":'
+    )
+    lines.append(f'        """Create a {name} from {primary_desc}."""')
+    lines.append(f"        return cls({primary_field}=value, is_vid=False)")
+
+    # Factory: from_vid
+    lines.append("")
+    lines.append("    @classmethod")
+    lines.append(f'    def from_vid(cls, vid: Vid) -> "{name}":')
+    lines.append(f'        """Create a {name} from a Vid reference."""')
+    lines.append("        return cls(vid=vid, is_vid=True)")
+
+    lines.append("")
+    return lines
+
+
+def _generate_dataclass(table: FBSTable) -> List[str]:
+    """Generate a Python @dataclass from a parsed FBS table.
+
+    Handles field ordering (required/defaulted before optional), skips
+    _is_set sentinel fields, and emits proper type annotations with defaults.
+    """
+    lines = ["@dataclass", f"class {table.name}:"]
+    fields = [f for f in table.fields if not f.name.endswith("_is_set")]
+    if not fields:
+        lines.append("    pass")
+    else:
+        required_fields = [f for f in fields if f.required or f.default is not None]
+        optional_fields = [f for f in fields if not f.required and f.default is None]
+
+        for fld in required_fields:
+            py_type = _fbs_type_to_python(fld.type_str, True)
+            default = _fbs_default_to_python(fld.default, fld.type_str)
+            if default is not None:
+                lines.append(f"    {fld.name}: {py_type} = {default}")
+            else:
+                lines.append(f"    {fld.name}: {py_type}")
+
+        for fld in optional_fields:
+            py_type = _fbs_type_to_python(fld.type_str, fld.required)
+            lines.append(f"    {fld.name}: {py_type} = None")
+
+    lines.extend(["", ""])
+    return lines
+
+
 # =============================================================================
 # Python dataclass generation
 # =============================================================================
@@ -190,40 +399,20 @@ def _parse_fields(body: str) -> List[FBSField]:
 
 def generate_python_schema(schema: FBSSchema) -> str:  # noqa: C901
     """Generate mlx_graph_schema.py from parsed FBS."""
-    lines = [
-        "#",
-        "# Copyright (c) Meta Platforms, Inc. and affiliates.",
-        "# All rights reserved.",
-        "#",
-        "# This source code is licensed under the BSD-style license found in the",
-        "# LICENSE file in the root directory of this source tree.",
-        "#",
-        "# ============================================================================",
-        "# AUTO-GENERATED FILE - DO NOT EDIT MANUALLY",
-        "# ============================================================================",
-        "#",
-        "# This file was generated from schema.fbs by the MLX delegate code generator.",
-        "#",
-        "# Source:    backends/apple/mlx/serialization/schema.fbs",
-        "# Generator: backends/apple/mlx/serialization/generate.py",
-        "#",
-        "# To regenerate, run from the executorch root:",
-        "#     python backends/apple/mlx/serialization/generate.py",
-        "#",
-        "# ============================================================================",
-        "",
-        "from __future__ import annotations",
-        "",
-        "from dataclasses import dataclass, field",
-        "from enum import IntEnum",
-        "from typing import List, Optional, Union",
-        "",
-        "",
-        "# =============================================================================",
-        "# Enums",
-        "# =============================================================================",
-        "",
-    ]
+    lines = _file_header("#")
+    lines.extend(
+        [
+            "",
+            "from __future__ import annotations",
+            "",
+            "from dataclasses import dataclass, field",
+            "from enum import IntEnum",
+            "from typing import List, Optional, Union",
+            "",
+            "",
+            *_section_header("#", "Enums"),
+        ]
+    )
 
     # Generate enums
     for enum in schema.enums:
@@ -237,14 +426,7 @@ def generate_python_schema(schema: FBSSchema) -> str:  # noqa: C901
         lines.append("")
         lines.append("")
 
-    lines.extend(
-        [
-            "# =============================================================================",
-            "# Core types",
-            "# =============================================================================",
-            "",
-        ]
-    )
+    lines.extend(_section_header("#", "Core types"))
 
     # Generate structs (Tid, Vid)
     for struct in schema.structs:
@@ -260,130 +442,26 @@ def generate_python_schema(schema: FBSSchema) -> str:  # noqa: C901
         lines.append("")
         lines.append("")
 
-    # Generate IntOrVid with helper methods
-    lines.extend(
-        [
-            "@dataclass",
-            "class IntOrVid:",
-            '    """Represents either a literal int or a runtime Vid reference."""',
-            "    literal: int = 0",
-            "    vid: Optional[Vid] = None",
-            "    is_vid: bool = False",
-            "",
-            "    @classmethod",
-            '    def from_literal(cls, value: int) -> "IntOrVid":',
-            '        """Create an IntOrVid from a literal integer."""',
-            "        return cls(literal=value, is_vid=False)",
-            "",
-            "    @classmethod",
-            '    def from_vid(cls, vid: Vid) -> "IntOrVid":',
-            '        """Create an IntOrVid from a Vid reference."""',
-            "        return cls(vid=vid, is_vid=True)",
-            "",
-            "",
-            "@dataclass",
-            "class FloatOrVid:",
-            '    """Represents either a literal float or a runtime Vid reference."""',
-            "    literal: float = 0.0",
-            "    vid: Optional[Vid] = None",
-            "    is_vid: bool = False",
-            "",
-            "    @classmethod",
-            '    def from_literal(cls, value: float) -> "FloatOrVid":',
-            '        """Create a FloatOrVid from a literal float."""',
-            "        return cls(literal=value, is_vid=False)",
-            "",
-            "    @classmethod",
-            '    def from_vid(cls, vid: Vid) -> "FloatOrVid":',
-            '        """Create a FloatOrVid from a Vid reference."""',
-            "        return cls(vid=vid, is_vid=True)",
-            "",
-            "",
-            "@dataclass",
-            "class TidOrVid:",
-            '    """Represents either a tensor (Tid) or a scalar value (Vid)."""',
-            "    tid: Optional[Tid] = None",
-            "    vid: Optional[Vid] = None",
-            "    is_vid: bool = False",
-            "",
-            "    @classmethod",
-            '    def from_tid(cls, tid: Tid) -> "TidOrVid":',
-            '        """Create a TidOrVid from a tensor reference."""',
-            "        return cls(tid=tid, is_vid=False)",
-            "",
-            "    @classmethod",
-            '    def from_vid(cls, vid: Vid) -> "TidOrVid":',
-            '        """Create a TidOrVid from a scalar value reference."""',
-            "        return cls(vid=vid, is_vid=True)",
-            "",
-            "",
-        ]
-    )
+    # Generate compound types (IntOrVid, FloatOrVid, TidOrVid) from schema
+    for type_name in sorted(FBS_COMPOUND_TYPES):
+        table = next((t for t in schema.tables if t.name == type_name), None)
+        if table:
+            lines.extend(_generate_compound_type(table))
+            lines.append("")
 
-    # Generate SlotVariant, NamedSlot, DataSegment, TensorMeta (but not Instruction/MLXGraph yet - they reference OpNode)
-    other_tables = ["SlotVariant", "NamedSlot", "DataSegment", "TensorMeta"]
+    # Generate SlotVariant, NamedSlot, TensorMeta (but not Instruction/MLXGraph yet - they reference OpNode)
+    other_tables = ["SlotVariant", "NamedSlot", "TensorMeta"]
     for table_name in other_tables:
         table = next((t for t in schema.tables if t.name == table_name), None)
         if table:
-            lines.append("@dataclass")
-            lines.append(f"class {table.name}:")
-            if not table.fields:
-                lines.append("    pass")
-            else:
-                for fld in table.fields:
-                    py_type = _fbs_type_to_python(fld.type_str, fld.required)
-                    default = _fbs_default_to_python(fld.default, fld.type_str)
-                    if default is not None:
-                        lines.append(f"    {fld.name}: {py_type} = {default}")
-                    elif not fld.required:
-                        lines.append(f"    {fld.name}: {py_type} = None")
-                    else:
-                        lines.append(f"    {fld.name}: {py_type}")
-            lines.append("")
-            lines.append("")
+            lines.extend(_generate_dataclass(table))
 
-    lines.extend(
-        [
-            "# =============================================================================",
-            "# Op nodes",
-            "# =============================================================================",
-            "",
-        ]
-    )
+    lines.extend(_section_header("#", "Op nodes"))
 
     # Generate op node dataclasses
     op_nodes = schema.get_op_nodes()
     for table in op_nodes:
-        lines.append("@dataclass")
-        lines.append(f"class {table.name}:")
-        if not table.fields:
-            lines.append("    pass")
-        else:
-            # Separate required and optional fields (required first for dataclass)
-            required_fields = []
-            optional_fields = []
-            for fld in table.fields:
-                if fld.name.endswith("_is_set"):
-                    continue  # Skip sentinel fields
-                if fld.required or fld.default is not None:
-                    required_fields.append(fld)
-                else:
-                    optional_fields.append(fld)
-
-            for fld in required_fields:
-                py_type = _fbs_type_to_python(fld.type_str, fld.required)
-                default = _fbs_default_to_python(fld.default, fld.type_str)
-                if default is not None:
-                    lines.append(f"    {fld.name}: {py_type} = {default}")
-                else:
-                    lines.append(f"    {fld.name}: {py_type}")
-
-            for fld in optional_fields:
-                py_type = _fbs_type_to_python(fld.type_str, fld.required)
-                lines.append(f"    {fld.name}: {py_type} = None")
-
-        lines.append("")
-        lines.append("")
+        lines.extend(_generate_dataclass(table))
 
     # Generate OpNodeUnion type alias
     op_names = [t.name for t in op_nodes]
@@ -397,10 +475,7 @@ def generate_python_schema(schema: FBSSchema) -> str:  # noqa: C901
     # Generate Instruction and MLXGraph (these reference OpNode so must come after)
     lines.extend(
         [
-            "# =============================================================================",
-            "# Container types (reference OpNodeUnion)",
-            "# =============================================================================",
-            "",
+            *_section_header("#", "Container types (reference OpNodeUnion)"),
             "@dataclass",
             "class Instruction:",
             "    op: OpNodeUnion",
@@ -411,17 +486,17 @@ def generate_python_schema(schema: FBSSchema) -> str:  # noqa: C901
             "    instructions: List[Instruction]",
             "    version: Optional[str] = None",
             "    num_constant_tensors: int = 0",
-            "    num_non_constant_tensors: int = 0",
-            "    num_non_constant_values: int = 0",
             "    num_input_tensors: int = 0",
             "    num_output_tensors: int = 0",
             "    num_mutable_buffer_tensors: int = 0",
+            "    num_temp_tensors: int = 0",
+            "    num_values: int = 0",
+            "    init_instructions: Optional[List[Instruction]] = None",
             "    input_map: Optional[List[SlotVariant]] = None",
             "    output_map: Optional[List[SlotVariant]] = None",
             "    mutable_buffer_map: Optional[List[SlotVariant]] = None",
             "    named_slots: Optional[List[NamedSlot]] = None",
             "    tensor_meta: Optional[List[TensorMeta]] = None",
-            "    constant_segment: Optional[DataSegment] = None",
             "",
         ]
     )
@@ -430,30 +505,21 @@ def generate_python_schema(schema: FBSSchema) -> str:  # noqa: C901
 
 
 def _fbs_type_to_python(fbs_type: str, required: bool) -> str:
-    """Convert FBS type to Python type annotation."""
+    """Convert FBS type to Python type annotation.
+
+    When required=False, the result is wrapped in Optional[…] for all types
+    (scalars, lists, and reference types alike).
+    """
     # Handle arrays
     if fbs_type.startswith("[") and fbs_type.endswith("]"):
         inner = fbs_type[1:-1]
         inner_py = _fbs_type_to_python(inner, True)
-        return f"List[{inner_py}]"
+        base = f"List[{inner_py}]"
+        return base if required else f"Optional[{base}]"
 
-    # Map FBS types to Python
-    type_map = {
-        "int32": "int",
-        "int64": "int",
-        "uint32": "int",
-        "uint64": "int",
-        "float": "float",
-        "double": "float",
-        "bool": "bool",
-        "string": "str",
-        "byte": "int",
-    }
+    py_type = FBS_TO_PYTHON.get(fbs_type, fbs_type)
 
-    py_type = type_map.get(fbs_type, fbs_type)
-
-    if not required and fbs_type not in type_map:
-        # Optional reference types
+    if not required:
         return f"Optional[{py_type}]"
 
     return py_type
@@ -487,139 +553,137 @@ def _fbs_default_to_python(default: Optional[str], fbs_type: str) -> Optional[st
 def generate_python_serializers(schema: FBSSchema) -> str:
     """Generate _generated_serializers.py from parsed FBS."""
     op_nodes = schema.get_op_nodes()
+    op_union = next((u for u in schema.unions if u.name == "OpNode"), None)
+
+    header = _file_header(
+        "#",
+        "This file contains auto-generated serializer methods for all op types.",
+    )
+
+    # Imports and module-level code
+    op_imports = ",\n".join(f"    {t.name}" for t in op_nodes)
+    lines = [
+        *header,
+        "",
+        "from __future__ import annotations",
+        "",
+        "from typing import List, Tuple, Dict",
+        "",
+        "import flatbuffers",
+        "",
+    ]
 
     # Generate op type names dict from union order
-    op_union = next((u for u in schema.unions if u.name == "OpNode"), None)
-    op_type_names_lines = [
+    lines.append(
         "# FlatBuffer union indices: 0 = NONE, then 1-indexed from union order"
-    ]
-    op_type_names_lines.append("MLX_OP_TYPE_NAMES = {")
-    op_type_names_lines.append('    0: "NONE",')
+    )
+    lines.append("MLX_OP_TYPE_NAMES = {")
+    lines.append('    0: "NONE",')
     if op_union:
         for i, type_name in enumerate(op_union.types, start=1):
-            op_type_names_lines.append(f'    {i}: "{type_name}",')
-    op_type_names_lines.append("}")
-    op_type_names = "\n".join(op_type_names_lines)
+            lines.append(f'    {i}: "{type_name}",')
+    lines.append("}")
+    lines.append("")
 
-    # Build imports
-    op_imports = ",\n".join(f"    {t.name}" for t in op_nodes)
-
-    header = f'''#
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-#
-# ============================================================================
-# AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
-# ============================================================================
-#
-# This file was generated from schema.fbs by the MLX delegate code generator.
-#
-# Source:    backends/apple/mlx/serialization/schema.fbs
-# Generator: backends/apple/mlx/serialization/generate.py
-#
-# To regenerate, run from the executorch root:
-#     python backends/apple/mlx/serialization/generate.py
-#
-# ============================================================================
-#
-# This file contains auto-generated serializer methods for all op types.
-
-from __future__ import annotations
-
-from typing import List, Tuple, Dict
-
-import flatbuffers
-
-{op_type_names}
-
-from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
-{op_imports},
-    IntOrVid,
-    FloatOrVid,
-    TidOrVid,
-    Tid,
-    Vid,
-)
-
-
-def _build_int_vector(builder: flatbuffers.Builder, vec: List[int]) -> int:
-    """Build a vector of int32."""
-    builder.StartVector(4, len(vec), 4)
-    for v in reversed(vec):
-        builder.PrependInt32(v)
-    return builder.EndVector()
-
-
-class GeneratedOpBuilders:
-    """Mixin class with auto-generated op builder methods."""
-
-    def _build_int_or_vid(self, builder: flatbuffers.Builder, iov: IntOrVid) -> int:
-        """Build an IntOrVid table."""
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import IntOrVid as FBIntOrVidModule
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Vid import CreateVid
-
-        FBIntOrVidModule.Start(builder)
-        FBIntOrVidModule.AddLiteral(builder, iov.literal)
-        FBIntOrVidModule.AddIsVid(builder, iov.is_vid)
-        if iov.vid is not None:
-            # Vid is an inline struct - must be added last for proper FlatBuffer layout
-            FBIntOrVidModule.AddVid(builder, CreateVid(builder, iov.vid.idx))
-        return FBIntOrVidModule.End(builder)
-
-    def _build_tid_or_vid(self, builder: flatbuffers.Builder, tov: TidOrVid) -> int:
-        """Build a TidOrVid table."""
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import TidOrVid as FBTidOrVidModule
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Tid import CreateTid
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Vid import CreateVid
-
-        FBTidOrVidModule.Start(builder)
-        FBTidOrVidModule.AddIsVid(builder, tov.is_vid)
-        if tov.tid is not None:
-            FBTidOrVidModule.AddTid(builder, CreateTid(builder, tov.tid.idx))
-        if tov.vid is not None:
-            FBTidOrVidModule.AddVid(builder, CreateVid(builder, tov.vid.idx))
-        return FBTidOrVidModule.End(builder)
-
-    def _build_int_or_vid_vector(
-        self, builder: flatbuffers.Builder, vec: List[IntOrVid]
-    ) -> int:
-        """Build a vector of IntOrVid tables."""
-        offsets = []
-        for iov in vec:
-            offsets.append(self._build_int_or_vid(builder, iov))
-        builder.StartVector(4, len(offsets), 4)
-        for off in reversed(offsets):
-            builder.PrependUOffsetTRelative(off)
-        return builder.EndVector()
-
-    def _build_tid_vector(
-        self, builder: flatbuffers.Builder, vec: List[Tid]
-    ) -> int:
-        """Build a vector of Tid structs."""
-        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Tid import CreateTid
-
-        # For vectors of structs, we need to build the vector differently
-        # Each Tid struct is 4 bytes (uint32), so we manually write them
-        builder.StartVector(4, len(vec), 4)
-        for tid in reversed(vec):
-            builder.Prep(4, 0)  # Align for struct
-            builder.PrependUint32(tid.idx)
-        return builder.EndVector()
-
-'''
+    lines.extend(
+        [
+            "from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (",
+            f"{op_imports},",
+            "    IntOrVid,",
+            "    FloatOrVid,",
+            "    TidOrVid,",
+            "    Tid,",
+            "    Vid,",
+            ")",
+            "",
+            "",
+            "def _build_int_vector(builder: flatbuffers.Builder, vec: List[int]) -> int:",
+            '    """Build a vector of int32."""',
+            "    builder.StartVector(4, len(vec), 4)",
+            "    for v in reversed(vec):",
+            "        builder.PrependInt32(v)",
+            "    return builder.EndVector()",
+            "",
+            "",
+            "class GeneratedOpBuilders:",
+            '    """Mixin class with auto-generated op builder methods."""',
+            "",
+            "    def _build_int_or_vid(self, builder: flatbuffers.Builder, iov: IntOrVid) -> int:",
+            '        """Build an IntOrVid table."""',
+            "        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import IntOrVid as FBIntOrVidModule",
+            "        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Vid import CreateVid",
+            "",
+            "        FBIntOrVidModule.Start(builder)",
+            "        FBIntOrVidModule.AddLiteral(builder, iov.literal)",
+            "        FBIntOrVidModule.AddIsVid(builder, iov.is_vid)",
+            "        if iov.vid is not None:",
+            "            # Vid is an inline struct - must be added last for proper FlatBuffer layout",
+            "            FBIntOrVidModule.AddVid(builder, CreateVid(builder, iov.vid.idx))",
+            "        return FBIntOrVidModule.End(builder)",
+            "",
+            "    def _build_float_or_vid(self, builder: flatbuffers.Builder, fov: FloatOrVid) -> int:",
+            '        """Build a FloatOrVid table."""',
+            "        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import FloatOrVid as FBFloatOrVidModule",
+            "        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Vid import CreateVid",
+            "",
+            "        FBFloatOrVidModule.Start(builder)",
+            "        FBFloatOrVidModule.AddLiteral(builder, fov.literal)",
+            "        FBFloatOrVidModule.AddIsVid(builder, fov.is_vid)",
+            "        if fov.vid is not None:",
+            "            FBFloatOrVidModule.AddVid(builder, CreateVid(builder, fov.vid.idx))",
+            "        return FBFloatOrVidModule.End(builder)",
+            "",
+            "    def _build_tid_or_vid(self, builder: flatbuffers.Builder, tov: TidOrVid) -> int:",
+            '        """Build a TidOrVid table."""',
+            "        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import TidOrVid as FBTidOrVidModule",
+            "        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Tid import CreateTid",
+            "        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Vid import CreateVid",
+            "",
+            "        FBTidOrVidModule.Start(builder)",
+            "        FBTidOrVidModule.AddIsVid(builder, tov.is_vid)",
+            "        if tov.tid is not None:",
+            "            FBTidOrVidModule.AddTid(builder, CreateTid(builder, tov.tid.idx))",
+            "        if tov.vid is not None:",
+            "            FBTidOrVidModule.AddVid(builder, CreateVid(builder, tov.vid.idx))",
+            "        return FBTidOrVidModule.End(builder)",
+            "",
+            "    def _build_int_or_vid_vector(",
+            "        self, builder: flatbuffers.Builder, vec: List[IntOrVid]",
+            "    ) -> int:",
+            '        """Build a vector of IntOrVid tables."""',
+            "        offsets = []",
+            "        for iov in vec:",
+            "            offsets.append(self._build_int_or_vid(builder, iov))",
+            "        builder.StartVector(4, len(offsets), 4)",
+            "        for off in reversed(offsets):",
+            "            builder.PrependUOffsetTRelative(off)",
+            "        return builder.EndVector()",
+            "",
+            "    def _build_tid_vector(",
+            "        self, builder: flatbuffers.Builder, vec: List[Tid]",
+            "    ) -> int:",
+            '        """Build a vector of Tid structs."""',
+            "        from executorch.backends.apple.mlx.serialization._generated.mlx_delegate.Tid import CreateTid",
+            "",
+            "        # For vectors of structs, we need to build the vector differently",
+            "        # Each Tid struct is 4 bytes (uint32), so we manually write them",
+            "        builder.StartVector(4, len(vec), 4)",
+            "        for tid in reversed(vec):",
+            "            builder.Prep(4, 0)  # Align for struct",
+            "            builder.PrependUint32(tid.idx)",
+            "        return builder.EndVector()",
+            "",
+        ]
+    )
 
     # Generate builder methods for each op
-    methods = []
     for table in op_nodes:
-        methods.append(_generate_op_builder_method(table))
+        lines.append(_generate_op_builder_method(table))
 
-    return header + "\n".join(methods)
+    return "\n".join(lines)
 
 
-def _generate_op_builder_method(table: FBSTable) -> str:  # noqa: C901
+def _generate_op_builder_method(table: FBSTable) -> str:
     """Generate a _build_XxxNode method for the serializer class."""
     class_name = table.name
     fb_module_name = f"FB{class_name}Module"
@@ -643,35 +707,9 @@ def _generate_op_builder_method(table: FBSTable) -> str:  # noqa: C901
         if fld.name.endswith("_is_set"):
             continue
         kind = _get_field_kind(fld, table)
-
-        if kind == "str":
-            prebuild_lines.append(
-                f"        {fld.name}_off = builder.CreateString(op.{fld.name})"
-            )
-        elif kind == "list_int":
-            prebuild_lines.append(
-                f"        {fld.name}_vec = _build_int_vector(builder, op.{fld.name})"
-            )
-        elif kind == "list_int_or_vid":
-            prebuild_lines.append(
-                f"        {fld.name}_vec = self._build_int_or_vid_vector(builder, op.{fld.name})"
-            )
-        elif kind == "list_tid":
-            prebuild_lines.append(
-                f"        {fld.name}_vec = self._build_tid_vector(builder, op.{fld.name})"
-            )
-        elif kind == "int_or_vid":
-            prebuild_lines.append(
-                f"        {fld.name}_off = self._build_int_or_vid(builder, op.{fld.name})"
-            )
-        elif kind == "tid_or_vid":
-            prebuild_lines.append(
-                f"        {fld.name}_off = self._build_tid_or_vid(builder, op.{fld.name})"
-            )
-        elif kind == "optional_str":
-            prebuild_lines.append(
-                f"        {fld.name}_off = builder.CreateString(op.{fld.name}) if op.{fld.name} is not None else None"
-            )
+        pb = _emit_py_prebuild(kind, fld)
+        if pb:
+            prebuild_lines.extend(pb)
 
     if prebuild_lines:
         lines.extend(prebuild_lines)
@@ -686,72 +724,13 @@ def _generate_op_builder_method(table: FBSTable) -> str:  # noqa: C901
             continue
         fb_field_name = _to_pascal_case(fld.name)
         kind = _get_field_kind(fld, table)
-
-        if kind == "tid":
-            lines.append(
-                f"        {fb_module_name}.Add{fb_field_name}(builder, CreateTid(builder, op.{fld.name}.idx))"
+        add_lines = _emit_py_add(kind, fld, fb_module_name, fb_field_name)
+        if add_lines is None:
+            raise ValueError(
+                f"Unhandled field kind '{kind}' for field '{fld.name}' in table '{table.name}'. "
+                f"Add a handler in _emit_py_add()."
             )
-        elif kind == "vid":
-            lines.append(
-                f"        {fb_module_name}.Add{fb_field_name}(builder, CreateVid(builder, op.{fld.name}.idx))"
-            )
-        elif kind in ("int", "float", "bool"):
-            lines.append(
-                f"        {fb_module_name}.Add{fb_field_name}(builder, op.{fld.name})"
-            )
-        elif kind == "str":
-            lines.append(
-                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_off)"
-            )
-        elif kind == "dtype":
-            lines.append(
-                f"        {fb_module_name}.Add{fb_field_name}(builder, op.{fld.name})"
-            )
-        elif kind == "list_int":
-            lines.append(
-                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_vec)"
-            )
-        elif kind == "list_int_or_vid":
-            lines.append(
-                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_vec)"
-            )
-        elif kind == "list_tid":
-            lines.append(
-                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_vec)"
-            )
-        elif kind == "int_or_vid":
-            lines.append(
-                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_off)"
-            )
-        elif kind == "tid_or_vid":
-            lines.append(
-                f"        {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_off)"
-            )
-        elif kind == "optional_tid":
-            lines.append(f"        if op.{fld.name} is not None:")
-            lines.append(
-                f"            {fb_module_name}.Add{fb_field_name}(builder, CreateTid(builder, op.{fld.name}.idx))"
-            )
-        elif kind == "optional_vid":
-            lines.append(f"        if op.{fld.name} is not None:")
-            lines.append(
-                f"            {fb_module_name}.Add{fb_field_name}(builder, CreateVid(builder, op.{fld.name}.idx))"
-            )
-        elif kind == "optional_float":
-            lines.append(f"        if op.{fld.name} is not None:")
-            lines.append(
-                f"            {fb_module_name}.Add{fb_field_name}(builder, op.{fld.name})"
-            )
-        elif kind == "optional_dtype":
-            lines.append(f"        if op.{fld.name} is not None:")
-            lines.append(
-                f"            {fb_module_name}.Add{fb_field_name}(builder, op.{fld.name})"
-            )
-        elif kind == "optional_str":
-            lines.append(f"        if {fld.name}_off is not None:")
-            lines.append(
-                f"            {fb_module_name}.Add{fb_field_name}(builder, {fld.name}_off)"
-            )
+        lines.extend(add_lines)
 
     # End the FlatBuffer table and return offset + union type
     lines.append(f"        offset = {fb_module_name}.End(builder)")
@@ -761,20 +740,116 @@ def _generate_op_builder_method(table: FBSTable) -> str:  # noqa: C901
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Python builder emitters — data-driven per field kind
+# ---------------------------------------------------------------------------
+
+# Prebuild emitters: return list of lines or None if no prebuild needed.
+# These build offsets/vectors that must be created before FlatBuffer Start().
+
+_PY_PREBUILD_VECTOR = {
+    "list_int": "_build_int_vector(builder, op.{name})",
+    "list_int_or_vid": "self._build_int_or_vid_vector(builder, op.{name})",
+    "list_tid": "self._build_tid_vector(builder, op.{name})",
+}
+
+_PY_PREBUILD_OFFSET = {
+    "str": "builder.CreateString(op.{name})",
+    "int_or_vid": "self._build_int_or_vid(builder, op.{name})",
+    "float_or_vid": "self._build_float_or_vid(builder, op.{name})",
+    "tid_or_vid": "self._build_tid_or_vid(builder, op.{name})",
+    "optional_str": "builder.CreateString(op.{name}) if op.{name} is not None else None",
+}
+
+
+def _emit_py_prebuild(kind: str, fld: FBSField) -> List[str]:
+    """Emit prebuild lines for a field kind, or empty list if none needed."""
+    n = fld.name
+    if kind in _PY_PREBUILD_VECTOR:
+        expr = _PY_PREBUILD_VECTOR[kind].format(name=n)
+        if fld.required:
+            return [f"        {n}_vec = {expr}"]
+        else:
+            return [f"        {n}_vec = {expr} if op.{n} is not None else None"]
+    if kind in _PY_PREBUILD_OFFSET:
+        suffix = "_off"
+        expr = _PY_PREBUILD_OFFSET[kind].format(name=n)
+        return [f"        {n}{suffix} = {expr}"]
+    return []
+
+
+# Maps struct kinds to their Python Create function name
+_PY_STRUCT_CREATOR = {"tid": "CreateTid", "vid": "CreateVid"}
+
+
+def _emit_py_add(
+    kind: str, fld: FBSField, mod: str, fb_name: str
+) -> "List[str] | None":
+    """Emit Add lines for a field kind, or None if kind is unrecognized."""
+    n = fld.name
+    add = f"{mod}.Add{fb_name}"
+
+    # Required struct via inline Create call
+    if kind in _PY_STRUCT_CREATOR:
+        creator = _PY_STRUCT_CREATOR[kind]
+        return [f"        {add}(builder, {creator}(builder, op.{n}.idx))"]
+    # Scalars (direct value)
+    if kind in ("int", "float", "bool"):
+        return [f"        {add}(builder, op.{n})"]
+    # Pre-built offsets (string, compound types)
+    if kind in ("str", "int_or_vid", "float_or_vid", "tid_or_vid"):
+        return [f"        {add}(builder, {n}_off)"]
+    # Pre-built vectors (required vs optional)
+    if kind in ("list_int", "list_int_or_vid", "list_tid"):
+        if fld.required:
+            return [f"        {add}(builder, {n}_vec)"]
+        return [
+            f"        if {n}_vec is not None:",
+            f"            {add}(builder, {n}_vec)",
+        ]
+    # Optional struct via inline Create call
+    if kind in ("optional_tid", "optional_vid"):
+        creator = _PY_STRUCT_CREATOR[kind.removeprefix("optional_")]
+        return [
+            f"        if op.{n} is not None:",
+            f"            {add}(builder, {creator}(builder, op.{n}.idx))",
+        ]
+    # Optional scalars
+    if kind in ("optional_float", "optional_int"):
+        return [
+            f"        if op.{n} is not None:",
+            f"            {add}(builder, op.{n})",
+        ]
+    # Optional string offset
+    if kind == "optional_str":
+        return [
+            f"        if {n}_off is not None:",
+            f"            {add}(builder, {n}_off)",
+        ]
+    return None
+
+
 def _get_field_kind(fld: FBSField, table: FBSTable) -> str:  # noqa: C901
-    """Determine the kind of a field for serialization."""
+    """Classify a field into a canonical kind string.
+
+    This is the single source of truth for field classification, used by all
+    generators (Python builder, C++ loader, and inspector via _INSPECTOR_KIND_MAP).
+    """
     t = fld.type_str
 
     # Handle arrays
     if t.startswith("[") and t.endswith("]"):
         inner = t[1:-1]
-        if inner in ("int32", "int64"):
+        if inner in FBS_INTEGER_TYPES:
             return "list_int"
         if inner == "IntOrVid":
             return "list_int_or_vid"
         if inner == "Tid":
             return "list_tid"
-        return f"list_{inner}"
+        raise ValueError(
+            f"Unrecognized array element type '{inner}' for field '{fld.name}' in table '{table.name}'. "
+            f"Add a handler in _get_field_kind()."
+        )
 
     # Handle basic types
     if t == "Tid":
@@ -787,14 +862,11 @@ def _get_field_kind(fld: FBSField, table: FBSTable) -> str:  # noqa: C901
         return "float_or_vid"
     if t == "TidOrVid":
         return "tid_or_vid"
-    if t == "DTypeId":
-        # Check if this is optional (has = null default)
+    if t in FBS_INTEGER_TYPES:
         if fld.default == "null":
-            return "optional_dtype"
-        return "dtype"
-    if t in ("int32", "int64", "uint32", "uint64"):
+            return "optional_int"
         return "int"
-    if t in ("float", "double"):
+    if t in FBS_FLOAT_TYPES:
         # Check if this is optional (has = null default)
         if fld.default == "null":
             return "optional_float"
@@ -804,7 +876,10 @@ def _get_field_kind(fld: FBSField, table: FBSTable) -> str:  # noqa: C901
     if t == "string":
         return "optional_str" if not fld.required else "str"
 
-    return "unknown"
+    raise ValueError(
+        f"Unrecognized field type '{t}' for field '{fld.name}' in table '{table.name}'. "
+        f"Add a handler in _get_field_kind()."
+    )
 
 
 def _to_pascal_case(name: str) -> str:
@@ -822,393 +897,50 @@ def _to_pascal_case(name: str) -> str:
 
 
 def generate_cpp_loader_h(schema: FBSSchema) -> str:
-    """Generate MLXLoader.h from parsed FBS."""
+    """Generate MLXLoader.h from parsed FBS using template."""
     op_nodes = schema.get_op_nodes()
 
-    lines = [
-        "//",
-        "// Copyright (c) Meta Platforms, Inc. and affiliates.",
-        "// All rights reserved.",
-        "//",
-        "// This source code is licensed under the BSD-style license found in the",
-        "// LICENSE file in the root directory of this source tree.",
-        "//",
-        "// ============================================================================",
-        "// AUTO-GENERATED FILE - DO NOT EDIT MANUALLY",
-        "// ============================================================================",
-        "//",
-        "// This file was generated from schema.fbs by the MLX delegate code generator.",
-        "//",
-        "// Source:    backends/apple/mlx/serialization/schema.fbs",
-        "// Generator: backends/apple/mlx/serialization/generate.py",
-        "//",
-        "// To regenerate, run from the executorch root:",
-        "//     python backends/apple/mlx/serialization/generate.py",
-        "//",
-        "// ============================================================================",
-        "//",
-        "",
-        "#pragma once",
-        "",
-        "#include <cstdint>",
-        "#include <cstring>",
-        "#include <optional>",
-        "#include <stdexcept>",
-        "#include <string>",
-        "#include <variant>",
-        "#include <vector>",
-        "",
-        '#include "schema_generated.h"',
-        "",
-        "namespace executorch {",
-        "namespace backends {",
-        "namespace mlx {",
-        "",
-        "// =============================================================================",
-        "// Core types matching the Python side",
-        "// =============================================================================",
-        "",
-        "struct Tid {",
-        "  uint32_t idx{};",
-        "};",
-        "",
-        "template <typename T>",
-        "struct Vid {",
-        "  uint32_t idx{};",
-        "};",
-        "",
-    ]
-
-    # Generate DTypeId enum
-    dtype_enum = next((e for e in schema.enums if e.name == "DTypeId"), None)
-    if dtype_enum:
-        lines.append("enum class DTypeId : int {")
-        for name, _val in dtype_enum.values:
-            lines.append(f"  {name},")
-        lines.append("};")
-        lines.append("")
-
-    lines.extend(
-        [
-            "// =============================================================================",
-            "// Tensor metadata",
-            "// =============================================================================",
-            "",
-            "struct TensorMeta {",
-            "  std::vector<std::variant<int64_t, Vid<int32_t>>> shape;",
-            "  DTypeId dtype;",
-            "  std::vector<int32_t> strides;",
-            "};",
-            "",
-            "// TidOrVid: either a tensor (Tid) or a scalar value (Vid)",
-            "struct TidOrVid {",
-            "  Tid tid{};",
-            "  Vid<int32_t> vid{};",
-            "  bool is_vid{false};  // false = use tid, true = use vid",
-            "};",
-            "",
-            "// =============================================================================",
-            "// Constant segment info",
-            "// =============================================================================",
-            "",
-            "struct ConstantSegment {",
-            "  uint64_t offset;",
-            "  uint64_t size;",
-            "};",
-            "",
-            "// =============================================================================",
-            "// Op node types (AUTO-GENERATED from schema.fbs)",
-            "// =============================================================================",
-            "",
-        ]
-    )
-
-    # Generate op node structs
+    # --- Dynamic part 1: op node structs ---
+    struct_lines = []
     for table in op_nodes:
-        lines.append(f"struct {table.name} {{")
+        struct_lines.append(f"struct {table.name} {{")
         if not table.fields:
-            lines.append("};")
+            struct_lines.append("};")
         else:
             for fld in table.fields:
                 if fld.name.endswith("_is_set"):
                     continue
                 cpp_type = _fbs_type_to_cpp(fld.type_str, fld.required, table, fld)
-                lines.append(f"  {cpp_type} {fld.name};")
-            lines.append("};")
-        lines.append("")
+                struct_lines.append(f"  {cpp_type} {fld.name};")
+            struct_lines.append("};")
+        struct_lines.append("")
 
-    # Generate OpCode enum
-    lines.extend(
-        [
-            "// =============================================================================",
-            "// OpCode enum (AUTO-GENERATED from schema.fbs)",
-            "// =============================================================================",
-            "",
-            "enum class OpCode : uint8_t {",
-        ]
-    )
+    # --- Dynamic part 2: OpCode enum values ---
+    enum_lines = []
+    for table in op_nodes:
+        enum_lines.append(f"  {_table_name_to_opcode(table.name)},")
 
+    # --- Dynamic part 3: op_name() switch cases ---
+    name_lines = []
     for table in op_nodes:
         op_code = _table_name_to_opcode(table.name)
-        lines.append(f"  {op_code},")
-    lines.append("  SENTINEL")
-    lines.append("};")
-    lines.append("")
+        name_lines.append(f"    case OpCode::{op_code}:")
+        name_lines.append(f'      return "{op_code}";')
 
-    # Generate op_name() function for logging
-    lines.extend(
-        [
-            "// OpCode to string conversion (for logging)",
-            "inline const char* op_name(OpCode op) {",
-            "  switch (op) {",
-        ]
-    )
-    for table in op_nodes:
-        op_code = _table_name_to_opcode(table.name)
-        lines.append(f"    case OpCode::{op_code}:")
-        lines.append(f'      return "{op_code}";')
-    lines.append("    case OpCode::SENTINEL:")
-    lines.append('      return "SENTINEL";')
-    lines.append("  }")
-    lines.append('  return "UNKNOWN";')
-    lines.append("}")
-    lines.append("")
-
-    # Generate NodeVariant
-    lines.extend(
-        [
-            "// =============================================================================",
-            "// NodeVariant for type-erased op storage (AUTO-GENERATED)",
-            "// =============================================================================",
-            "",
-            "using NodeVariant = std::variant<",
-        ]
-    )
+    # --- Dynamic part 4: NodeVariant type list ---
+    variant_lines = []
     for i, table in enumerate(op_nodes):
-        comma = "," if i < len(op_nodes) - 1 else ">"
-        lines.append(f"    {table.name}{comma}")
-    lines.append(";")
-    lines.append("")
+        comma = "," if i < len(op_nodes) - 1 else ""
+        variant_lines.append(f"    {table.name}{comma}")
 
-    # Add the rest of the header (manual parts)
-    lines.extend(
-        [
-            "// =============================================================================",
-            "// Instruction",
-            "// =============================================================================",
-            "",
-            "struct Instruction {",
-            "  OpCode op{OpCode::NOOP};",
-            "  NodeVariant node;",
-            "",
-            "  template <typename T>",
-            "  T& get() {",
-            "    return std::get<T>(node);",
-            "  }",
-            "",
-            "  template <typename T>",
-            "  const T& get() const {",
-            "    return std::get<T>(node);",
-            "  }",
-            "};",
-            "",
-            "// =============================================================================",
-            "// SlotVariant for I/O mapping",
-            "// =============================================================================",
-            "",
-            "enum class SlotType : uint8_t {",
-            "  TensorSlot = 0,",
-            "  IntValueSlot = 1,",
-            "  FloatValueSlot = 2,",
-            "  BoolValueSlot = 3,",
-            "};",
-            "",
-            "struct SlotVariant {",
-            "  uint32_t idx;",
-            "  SlotType slot_type;",
-            "};",
-            "",
-            "// =============================================================================",
-            "// Named slot (name -> slot mapping)",
-            "// =============================================================================",
-            "",
-            "struct NamedSlot {",
-            "  std::string name;",
-            "  SlotVariant slot;",
-            "};",
-            "",
-            "// =============================================================================",
-            "// MLXProgram - the loaded program ready for execution",
-            "// =============================================================================",
-            "",
-            "struct MLXProgram {",
-            "  std::string version;",
-            "",
-            "  // Tensor/value slot counts",
-            "  uint32_t num_constant_tensors{0};",
-            "  uint32_t num_non_constant_tensors{0};",
-            "  uint32_t num_non_constant_values{0};",
-            "",
-            "  // Per-IdSpace tensor counts (for O(1) tensor type lookup in logging)",
-            "  uint32_t num_input_tensors{0};",
-            "  uint32_t num_output_tensors{0};",
-            "  uint32_t num_mutable_buffer_tensors{0};",
-            "",
-            "  // Instructions",
-            "  std::vector<Instruction> instructions;",
-            "",
-            "  // I/O mappings",
-            "  std::vector<SlotVariant> input_map;",
-            "  std::vector<SlotVariant> output_map;",
-            "  std::vector<SlotVariant> mutable_buffer_map;",
-            "",
-            "  // Name to slot lookup",
-            "  std::vector<NamedSlot> named_slots;",
-            "",
-            "  // Tensor metadata",
-            "  std::vector<std::optional<TensorMeta>> tensor_meta;",
-            "",
-            "  // Constant segment info",
-            "  ConstantSegment constant_segment;",
-            "",
-            "  // Pointer to constant data (set after loading)",
-            "  const uint8_t* constant_data{nullptr};",
-            "",
-            "  // Helper methods",
-            "  inline uint32_t num_tensors() const {",
-            "    return num_constant_tensors + num_non_constant_tensors;",
-            "  }",
-            "",
-            "  inline uint32_t num_values() const {",
-            "    return num_non_constant_values;",
-            "  }",
-            "",
-            "  inline bool is_constant_tensor(Tid id) const {",
-            "    return id.idx < num_constant_tensors;",
-            "  }",
-            "",
-            "  inline size_t num_inputs() const {",
-            "    return input_map.size();",
-            "  }",
-            "",
-            "  inline size_t num_outputs() const {",
-            "    return output_map.size();",
-            "  }",
-            "};",
-            "",
-            "// =============================================================================",
-            "// FlatBuffer loading functions",
-            "// =============================================================================",
-            "",
-            "namespace loader {",
-            "",
-        ]
-    )
-
-    # Generate convert_dtype
-    if dtype_enum:
-        lines.append("// Convert FlatBuffer DTypeId to our DTypeId")
-        lines.append("inline DTypeId convert_dtype(mlx_delegate::DTypeId fb_dtype) {")
-        lines.append("  switch (fb_dtype) {")
-        for name, _ in dtype_enum.values:
-            lines.append(f"    case mlx_delegate::DTypeId_{name}:")
-            lines.append(f"      return DTypeId::{name};")
-        lines.append("    default:")
-        lines.append("      return DTypeId::f32;")
-        lines.append("  }")
-        lines.append("}")
-        lines.append("")
-
-    lines.extend(
-        [
-            "// Convert FlatBuffer SlotType to our SlotType",
-            "inline SlotType convert_slot_type(mlx_delegate::SlotType fb_type) {",
-            "  switch (fb_type) {",
-            "    case mlx_delegate::SlotType_TensorSlot:",
-            "      return SlotType::TensorSlot;",
-            "    case mlx_delegate::SlotType_IntValueSlot:",
-            "      return SlotType::IntValueSlot;",
-            "    case mlx_delegate::SlotType_FloatValueSlot:",
-            "      return SlotType::FloatValueSlot;",
-            "    case mlx_delegate::SlotType_BoolValueSlot:",
-            "      return SlotType::BoolValueSlot;",
-            "    default:",
-            "      return SlotType::TensorSlot;",
-            "  }",
-            "}",
-            "",
-            "// Convert FlatBuffer Tid",
-            "inline Tid convert_tid(const mlx_delegate::Tid* fb_tid) {",
-            "  if (!fb_tid) {",
-            "    return Tid{0};",
-            "  }",
-            "  return Tid{fb_tid->idx()};",
-            "}",
-            "",
-            "// Convert FlatBuffer Vid",
-            "inline Vid<int32_t> convert_vid(const mlx_delegate::Vid* fb_vid) {",
-            "  if (!fb_vid) {",
-            "    return Vid<int32_t>{0};",
-            "  }",
-            "  return Vid<int32_t>{fb_vid->idx()};",
-            "}",
-            "",
-            "// Convert FlatBuffer IntOrVid",
-            "inline std::variant<int64_t, Vid<int32_t>> convert_int_or_vid(",
-            "    const mlx_delegate::IntOrVid* fb) {",
-            "  if (!fb) {",
-            "    return int64_t{0};",
-            "  }",
-            "  if (!fb->is_vid()) {",
-            "    return fb->literal();",
-            "  }",
-            "  const auto* vid_ptr = fb->vid();",
-            "  if (!vid_ptr) {",
-            "    return int64_t{0};",
-            "  }",
-            "  return Vid<int32_t>{vid_ptr->idx()};",
-            "}",
-            "",
-            "// Convert FlatBuffer TidOrVid (tensor or scalar value)",
-            "inline TidOrVid convert_tid_or_vid(",
-            "    const mlx_delegate::TidOrVid* fb) {",
-            "  if (!fb) {",
-            "    return TidOrVid{Tid{0}, Vid<int32_t>{0}, false};",
-            "  }",
-            "  TidOrVid result;",
-            "  result.is_vid = fb->is_vid();",
-            "  if (fb->tid()) {",
-            "    result.tid = Tid{fb->tid()->idx()};",
-            "  }",
-            "  if (fb->vid()) {",
-            "    result.vid = Vid<int32_t>{fb->vid()->idx()};",
-            "  }",
-            "  return result;",
-            "}",
-            "",
-            "// Convert FlatBuffer SlotVariant",
-            "inline SlotVariant convert_slot_variant(const mlx_delegate::SlotVariant* fb) {",
-            "  if (!fb) {",
-            "    return SlotVariant{0, SlotType::TensorSlot};",
-            "  }",
-            "  return SlotVariant{fb->idx(), convert_slot_type(fb->slot_type())};",
-            "}",
-            "",
-            "// Load an instruction from FlatBuffer",
-            "Instruction load_instruction(const mlx_delegate::Instruction* fb_instr);",
-            "",
-            "// Load the full MLXProgram from FlatBuffer data",
-            "MLXProgram load_program(const void* data, size_t size);",
-            "",
-            "} // namespace loader",
-            "",
-            "} // namespace mlx",
-            "} // namespace backends",
-            "} // namespace executorch",
-        ]
-    )
-
-    return "\n".join(lines)
+    # Read template and fill placeholders
+    header = "\n".join(_file_header("//")) + "\n//\n"
+    tmpl = LOADER_H_TMPL.read_text()
+    result = tmpl.replace("{{OP_NODE_STRUCTS}}", "\n".join(struct_lines))
+    result = result.replace("{{OPCODE_ENUM_VALUES}}", "\n".join(enum_lines))
+    result = result.replace("{{OP_NAME_CASES}}", "\n".join(name_lines))
+    result = result.replace("{{NODE_VARIANT_TYPES}}", "\n".join(variant_lines))
+    return header + result
 
 
 def _fbs_type_to_cpp(
@@ -1236,25 +968,7 @@ def _fbs_type_to_cpp(
         inner_cpp = _fbs_type_to_cpp(inner, True)
         return f"std::vector<{inner_cpp}>"
 
-    # Map FBS types to C++
-    type_map = {
-        "int32": "int32_t",
-        "int64": "int64_t",
-        "uint32": "uint32_t",
-        "uint64": "uint64_t",
-        "float": "float",
-        "double": "double",
-        "bool": "bool",
-        "string": "std::string",
-        "byte": "uint8_t",
-        "Tid": "Tid",
-        "Vid": "Vid<int32_t>",
-        "DTypeId": "DTypeId",
-        "IntOrVid": "std::variant<int64_t, Vid<int32_t>>",
-        "FloatOrVid": "std::variant<double, Vid<int32_t>>",
-    }
-
-    cpp_type = type_map.get(fbs_type, fbs_type)
+    cpp_type = FBS_TO_CPP.get(fbs_type, fbs_type)
 
     # Handle optional types
     if not required:
@@ -1262,299 +976,52 @@ def _fbs_type_to_cpp(
             return "std::optional<Tid>"
         if fbs_type == "Vid":
             return "std::optional<Vid<int32_t>>"
-        # DTypeId with '= null' default should be optional
-        if fbs_type == "DTypeId" and fld is not None and fld.default == "null":
-            return "std::optional<DTypeId>"
+        if fld is not None and fld.default == "null" and fbs_type in FBS_TO_CPP:
+            return f"std::optional<{cpp_type}>"
 
     return cpp_type
+
+
+_OPCODE_OVERRIDES = {
+    "ARange": "ARANGE",
+    "AsType": "ASTYPE",
+    "Conv1D": "CONV1D",
+    "Conv2D": "CONV2D",
+}
 
 
 def _table_name_to_opcode(name: str) -> str:
     """Convert table name like 'LinearNode' to opcode like 'LINEAR'.
 
-    Handles special cases like:
-    - RMSNormNode -> RMS_NORM (not R_M_S_NORM)
-    - Conv1DNode -> CONV1D (not CONV1_D)
-    - ARangeNode -> ARANGE (not A_RANGE)
-    - IdCopyNode -> ID_COPY
+    Uses regex-based camelCase → UPPER_SNAKE_CASE conversion with a small
+    override dict for names whose conventional opcode doesn't follow the
+    normal camelCase splitting rules (e.g. Conv1D → CONV1D, not CONV1_D).
     """
-    # Remove 'Node' suffix
-    if name.endswith("Node"):
-        name = name[:-4]
-
-    # Special case mappings for acronyms and numbers
-    special_cases = {
-        "RMSNorm": "RMS_NORM",
-        "LayerNorm": "LAYER_NORM",
-        "Conv1D": "CONV1D",
-        "Conv2D": "CONV2D",
-        "ARange": "ARANGE",
-        "IdCopy": "ID_COPY",
-        "SymSize": "SYM_SIZE",
-        "ItemInt": "ITEM_INT",
-        "ExpandDims": "EXPAND_DIMS",
-        "TakeAlongAxis": "TAKE_ALONG_AXIS",
-        "AddInt": "ADD_INT",
-        "SubtractInt": "SUBTRACT_INT",
-        "MultiplyInt": "MULTIPLY_INT",
-        "FloorDivideInt": "FLOOR_DIVIDE_INT",
-        "SliceUpdate": "SLICE_UPDATE",
-        "IndexUpdate": "INDEX_UPDATE",
-        "QuantizedLinear": "QUANTIZED_LINEAR",
-        "QuantizedGather": "QUANTIZED_GATHER",
-        "BroadcastTo": "BROADCAST_TO",
-        "LessEqual": "LESS_EQUAL",
-        "GreaterEqual": "GREATER_EQUAL",
-        "NotEqual": "NOT_EQUAL",
-        "LogicalNot": "LOGICAL_NOT",
-        "LogicalAnd": "LOGICAL_AND",
-        "LogicalOr": "LOGICAL_OR",
-        "FullLike": "FULL_LIKE",
-        # Math ops with compound names
-        "LogAddExp": "LOG_ADD_EXP",
-        "FloorDivide": "FLOOR_DIVIDE",
-        "LogSumExp": "LOG_SUM_EXP",
-    }
-
-    if name in special_cases:
-        return special_cases[name]
-
-    # For simple names, just uppercase
-    # This handles: Noop, Linear, Tile, Rope, Sdpa, Add, Mul, Gelu, Silu,
-    #               Reshape, Transpose, Contiguous, Gather, Slice, Cast,
-    #               Concat, Full, Zeros, Ones, Argmax
-    return name.upper()
+    name = name.removesuffix("Node")
+    if name in _OPCODE_OVERRIDES:
+        return _OPCODE_OVERRIDES[name]
+    s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+    s = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", s)
+    return s.upper()
 
 
 def generate_cpp_loader_cpp(schema: FBSSchema) -> str:
-    """Generate MLXLoader.cpp from parsed FBS."""
+    """Generate MLXLoader.cpp from parsed FBS using template."""
     op_nodes = schema.get_op_nodes()
 
-    lines = [
-        "//",
-        "// Copyright (c) Meta Platforms, Inc. and affiliates.",
-        "// All rights reserved.",
-        "//",
-        "// This source code is licensed under the BSD-style license found in the",
-        "// LICENSE file in the root directory of this source tree.",
-        "//",
-        "// ============================================================================",
-        "// AUTO-GENERATED FILE - DO NOT EDIT MANUALLY",
-        "// ============================================================================",
-        "//",
-        "// This file was generated from schema.fbs by the MLX delegate code generator.",
-        "//",
-        "// Source:    backends/apple/mlx/serialization/schema.fbs",
-        "// Generator: backends/apple/mlx/serialization/generate.py",
-        "//",
-        "// To regenerate, run from the executorch root:",
-        "//     python backends/apple/mlx/serialization/generate.py",
-        "//",
-        "// ============================================================================",
-        "//",
-        "",
-        '#include "MLXLoader.h"',
-        "",
-        "#include <cstring>",
-        "#include <stdexcept>",
-        "",
-        "namespace executorch {",
-        "namespace backends {",
-        "namespace mlx {",
-        "namespace loader {",
-        "",
-        "namespace {",
-        "",
-        "// Header structure for MLX payload",
-        "constexpr size_t kHeaderSize = 24;",
-        'constexpr uint32_t kMagic = 0x30584C4D;  // "MLX0" in little-endian',
-        "",
-        "struct MLXHeader {",
-        "  uint32_t padding;",
-        "  uint32_t magic;",
-        "  uint64_t data_offset;",
-        "  uint64_t data_size;",
-        "};",
-        "",
-        "bool parse_header(const void* data, size_t size, MLXHeader& header) {",
-        "  if (size < kHeaderSize) {",
-        "    return false;",
-        "  }",
-        "  std::memcpy(&header, data, sizeof(MLXHeader));",
-        "  if (header.magic != kMagic) {",
-        "    return false;",
-        "  }",
-        "  return true;",
-        "}",
-        "",
-        "// Helper to convert FlatBuffer vectors to std::vector",
-        "template <typename T>",
-        "std::vector<T> to_vector(const flatbuffers::Vector<T>* fb_vec) {",
-        "  if (!fb_vec) {",
-        "    return {};",
-        "  }",
-        "  return std::vector<T>(fb_vec->begin(), fb_vec->end());",
-        "}",
-        "",
-        "}  // namespace",
-        "",
-        "// =============================================================================",
-        "// load_instruction - AUTO-GENERATED switch statement",
-        "// =============================================================================",
-        "",
-        "Instruction load_instruction(const mlx_delegate::Instruction* fb_instr) {",
-        "  Instruction instr;",
-        "",
-        "  if (!fb_instr || !fb_instr->op()) {",
-        "    instr.op = OpCode::NOOP;",
-        "    instr.node = NoopNode{};",
-        "    return instr;",
-        "  }",
-        "",
-        "  auto op_type = fb_instr->op_type();",
-        "",
-        "  switch (op_type) {",
-    ]
-
-    # Generate switch cases for each op
+    # --- Dynamic part: switch cases for load_instruction ---
+    case_lines = []
     for table in op_nodes:
-        lines.extend(_generate_loader_case(table))
+        case_lines.extend(_generate_loader_case(table))
 
-    lines.extend(
-        [
-            "    default: {",
-            "      instr.op = OpCode::NOOP;",
-            "      instr.node = NoopNode{};",
-            "      break;",
-            "    }",
-            "  }",
-            "",
-            "  return instr;",
-            "}",
-            "",
-        ]
-    )
-
-    # Add load_program function (mostly static)
-    lines.extend(
-        [
-            "// =============================================================================",
-            "// load_program",
-            "// =============================================================================",
-            "",
-            "MLXProgram load_program(const void* data, size_t size) {",
-            "  MLXHeader header;",
-            "  if (!parse_header(data, size, header)) {",
-            '    throw std::runtime_error("Invalid MLX header");',
-            "  }",
-            "",
-            "  const uint8_t* fb_data = static_cast<const uint8_t*>(data) + kHeaderSize;",
-            "  size_t fb_size = header.data_offset - kHeaderSize;",
-            "",
-            "  flatbuffers::Verifier verifier(fb_data, fb_size);",
-            "  if (!mlx_delegate::VerifyMLXGraphBuffer(verifier)) {",
-            '    throw std::runtime_error("Invalid FlatBuffer data");',
-            "  }",
-            "",
-            "  const auto* fb_graph = mlx_delegate::GetMLXGraph(fb_data);",
-            "  if (!fb_graph) {",
-            '    throw std::runtime_error("Failed to parse MLXGraph");',
-            "  }",
-            "",
-            "  MLXProgram program;",
-            "",
-            "  if (fb_graph->version()) {",
-            "    program.version = fb_graph->version()->str();",
-            "  }",
-            "",
-            "  program.num_constant_tensors = fb_graph->num_constant_tensors();",
-            "  program.num_non_constant_tensors = fb_graph->num_non_constant_tensors();",
-            "  program.num_non_constant_values = fb_graph->num_non_constant_values();",
-            "  program.num_input_tensors = fb_graph->num_input_tensors();",
-            "  program.num_output_tensors = fb_graph->num_output_tensors();",
-            "  program.num_mutable_buffer_tensors = fb_graph->num_mutable_buffer_tensors();",
-            "",
-            "  if (fb_graph->instructions()) {",
-            "    program.instructions.reserve(fb_graph->instructions()->size());",
-            "    for (size_t i = 0; i < fb_graph->instructions()->size(); ++i) {",
-            "      const auto* fb_instr = fb_graph->instructions()->Get(i);",
-            "      program.instructions.push_back(load_instruction(fb_instr));",
-            "    }",
-            "  }",
-            "",
-            "  if (fb_graph->input_map()) {",
-            "    for (size_t i = 0; i < fb_graph->input_map()->size(); ++i) {",
-            "      const auto* slot = fb_graph->input_map()->Get(i);",
-            "      program.input_map.push_back(convert_slot_variant(slot));",
-            "    }",
-            "  }",
-            "",
-            "  if (fb_graph->output_map()) {",
-            "    for (size_t i = 0; i < fb_graph->output_map()->size(); ++i) {",
-            "      const auto* slot = fb_graph->output_map()->Get(i);",
-            "      program.output_map.push_back(convert_slot_variant(slot));",
-            "    }",
-            "  }",
-            "",
-            "  if (fb_graph->mutable_buffer_map()) {",
-            "    for (size_t i = 0; i < fb_graph->mutable_buffer_map()->size(); ++i) {",
-            "      const auto* slot = fb_graph->mutable_buffer_map()->Get(i);",
-            "      program.mutable_buffer_map.push_back(convert_slot_variant(slot));",
-            "    }",
-            "  }",
-            "",
-            "  if (fb_graph->named_slots()) {",
-            "    for (size_t i = 0; i < fb_graph->named_slots()->size(); ++i) {",
-            "      const auto* fb_slot = fb_graph->named_slots()->Get(i);",
-            "      NamedSlot slot;",
-            '      slot.name = fb_slot->name() ? fb_slot->name()->str() : "";',
-            "      slot.slot = convert_slot_variant(fb_slot->slot());",
-            "      program.named_slots.push_back(std::move(slot));",
-            "    }",
-            "  }",
-            "",
-            "  if (fb_graph->tensor_meta()) {",
-            "    for (size_t i = 0; i < fb_graph->tensor_meta()->size(); ++i) {",
-            "      const auto* fb_meta = fb_graph->tensor_meta()->Get(i);",
-            "      if (fb_meta) {",
-            "        TensorMeta meta;",
-            "        if (fb_meta->shape()) {",
-            "          for (size_t j = 0; j < fb_meta->shape()->size(); ++j) {",
-            "            const auto* iov = fb_meta->shape()->Get(j);",
-            "            meta.shape.push_back(convert_int_or_vid(iov));",
-            "          }",
-            "        }",
-            "        meta.dtype = convert_dtype(fb_meta->dtype());",
-            "        meta.strides = to_vector(fb_meta->strides());",
-            "        program.tensor_meta.push_back(std::move(meta));",
-            "      } else {",
-            "        program.tensor_meta.push_back(std::nullopt);",
-            "      }",
-            "    }",
-            "  }",
-            "",
-            "  if (fb_graph->constant_segment()) {",
-            "    program.constant_segment.offset = fb_graph->constant_segment()->offset();",
-            "    program.constant_segment.size = fb_graph->constant_segment()->size();",
-            "  }",
-            "",
-            "  program.constant_data =",
-            "      static_cast<const uint8_t*>(data) + header.data_offset;",
-            "",
-            "  return program;",
-            "}",
-            "",
-            "}  // namespace loader",
-            "}  // namespace mlx",
-            "}  // namespace backends",
-            "}  // namespace executorch",
-        ]
-    )
-
-    return "\n".join(lines)
+    # Read template and fill placeholders
+    header = "\n".join(_file_header("//")) + "\n"
+    tmpl = LOADER_CPP_TMPL.read_text()
+    result = tmpl.replace("{{LOAD_INSTRUCTION_CASES}}", "\n".join(case_lines))
+    return header + result
 
 
-def _generate_loader_case(table: FBSTable) -> List[str]:  # noqa: C901
+def _generate_loader_case(table: FBSTable) -> List[str]:
     """Generate a switch case for loading an op node."""
     class_name = table.name
     op_code = _table_name_to_opcode(class_name)
@@ -1583,85 +1050,15 @@ def _generate_loader_case(table: FBSTable) -> List[str]:  # noqa: C901
         if fld.name.endswith("_is_set"):
             continue
 
-        # FlatBuffer C++ accessor uses the original field name from the schema
         fb_field_name = fld.name
         kind = _get_field_kind(fld, table)
-
-        if kind == "tid":
-            lines.append(f"      node.{fld.name} = convert_tid(fb->{fb_field_name}());")
-        elif kind == "optional_tid":
-            lines.append(f"      if (fb->{fb_field_name}()) {{")
-            lines.append(
-                f"        node.{fld.name} = convert_tid(fb->{fb_field_name}());"
+        load_lines = _emit_cpp_load(kind, fld.name, fb_field_name)
+        if load_lines is None:
+            raise ValueError(
+                f"Unhandled field kind '{kind}' for field '{fld.name}' in table '{table.name}'. "
+                f"Add a handler in _emit_cpp_load()."
             )
-            lines.append("      }")
-        elif kind == "vid":
-            lines.append(f"      node.{fld.name} = convert_vid(fb->{fb_field_name}());")
-        elif kind == "optional_vid":
-            lines.append(f"      if (fb->{fb_field_name}()) {{")
-            lines.append(
-                f"        node.{fld.name} = convert_vid(fb->{fb_field_name}());"
-            )
-            lines.append("      }")
-        elif kind == "int":
-            lines.append(f"      node.{fld.name} = fb->{fb_field_name}();")
-        elif kind == "bool":
-            lines.append(f"      node.{fld.name} = fb->{fb_field_name}();")
-        elif kind == "float":
-            lines.append(f"      node.{fld.name} = fb->{fb_field_name}();")
-        elif kind == "optional_float":
-            # Optional scalar with = null default - FlatBuffers returns flatbuffers::Optional
-            lines.append(f"      auto {fb_field_name}_opt = fb->{fb_field_name}();")
-            lines.append(f"      if ({fb_field_name}_opt.has_value()) {{")
-            lines.append(f"        node.{fld.name} = {fb_field_name}_opt.value();")
-            lines.append("      }")
-        elif kind == "str":
-            lines.append(
-                f'      node.{fld.name} = fb->{fb_field_name}() ? fb->{fb_field_name}()->str() : "";'
-            )
-        elif kind == "optional_str":
-            lines.append(f"      if (fb->{fb_field_name}()) {{")
-            lines.append(f"        node.{fld.name} = fb->{fb_field_name}()->str();")
-            lines.append("      }")
-        elif kind == "dtype":
-            lines.append(
-                f"      node.{fld.name} = convert_dtype(fb->{fb_field_name}());"
-            )
-        elif kind == "optional_dtype":
-            # Optional scalar with = null default - FlatBuffers returns flatbuffers::Optional
-            lines.append(f"      auto {fb_field_name}_opt = fb->{fb_field_name}();")
-            lines.append(f"      if ({fb_field_name}_opt.has_value()) {{")
-            lines.append(
-                f"        node.{fld.name} = convert_dtype({fb_field_name}_opt.value());"
-            )
-            lines.append("      }")
-        elif kind == "int_or_vid":
-            lines.append(
-                f"      node.{fld.name} = convert_int_or_vid(fb->{fb_field_name}());"
-            )
-        elif kind == "tid_or_vid":
-            lines.append(
-                f"      node.{fld.name} = convert_tid_or_vid(fb->{fb_field_name}());"
-            )
-        elif kind == "int_vector" or kind == "list_int":
-            lines.append(f"      node.{fld.name} = to_vector(fb->{fb_field_name}());")
-        elif kind == "list_int_or_vid":
-            lines.append(f"      if (fb->{fb_field_name}()) {{")
-            lines.append(
-                f"        for (size_t i = 0; i < fb->{fb_field_name}()->size(); ++i) {{"
-            )
-            lines.append(
-                f"          node.{fld.name}.push_back(convert_int_or_vid(fb->{fb_field_name}()->Get(i)));"
-            )
-            lines.append("        }")
-            lines.append("      }")
-        elif kind == "list_tid":
-            lines.append("      // Load tensors vector")
-            lines.append(f"      if (fb->{fb_field_name}()) {{")
-            lines.append(f"        for (auto fb_tid : *fb->{fb_field_name}()) {{")
-            lines.append(f"          node.{fld.name}.push_back(convert_tid(fb_tid));")
-            lines.append("        }")
-            lines.append("      }")
+        lines.extend(load_lines)
 
     lines.extend(
         [
@@ -1674,6 +1071,81 @@ def _generate_loader_case(table: FBSTable) -> List[str]:  # noqa: C901
     )
 
     return lines
+
+
+# ---------------------------------------------------------------------------
+# C++ loader emitters — data-driven per field kind
+# ---------------------------------------------------------------------------
+
+
+# Maps kinds to their C++ converter function name
+_CPP_CONVERTER = {
+    "tid": "convert_tid",
+    "vid": "convert_vid",
+    "int_or_vid": "convert_int_or_vid",
+    "float_or_vid": "convert_float_or_vid",
+    "tid_or_vid": "convert_tid_or_vid",
+}
+
+
+def _emit_cpp_load(kind: str, name: str, fb_name: str) -> "List[str] | None":
+    """Emit C++ load lines for a field kind, or None if kind is unrecognized."""
+    # Required struct / compound via converter
+    if kind in _CPP_CONVERTER:
+        conv = _CPP_CONVERTER[kind]
+        return [f"      node.{name} = {conv}(fb->{fb_name}());"]
+    # Scalars (direct value)
+    if kind in ("int", "float", "bool"):
+        return [f"      node.{name} = fb->{fb_name}();"]
+    # Required string
+    if kind == "str":
+        return [f'      node.{name} = fb->{fb_name}() ? fb->{fb_name}()->str() : "";']
+    # Optional struct / compound via guarded converter
+    base_kind = kind.removeprefix("optional_")
+    if kind.startswith("optional_") and base_kind in _CPP_CONVERTER:
+        conv = _CPP_CONVERTER[base_kind]
+        return [
+            f"      if (fb->{fb_name}()) {{",
+            f"        node.{name} = {conv}(fb->{fb_name}());",
+            "      }",
+        ]
+    # Optional scalar (FlatBuffers returns flatbuffers::Optional)
+    if kind in ("optional_float", "optional_int"):
+        return [
+            f"      auto {fb_name}_opt = fb->{fb_name}();",
+            f"      if ({fb_name}_opt.has_value()) {{",
+            f"        node.{name} = {fb_name}_opt.value();",
+            "      }",
+        ]
+    # Optional string
+    if kind == "optional_str":
+        return [
+            f"      if (fb->{fb_name}()) {{",
+            f"        node.{name} = fb->{fb_name}()->str();",
+            "      }",
+        ]
+    # Integer/bool vector via to_vector
+    if kind == "list_int":
+        return [f"      node.{name} = to_vector(fb->{fb_name}());"]
+    # Int-or-vid vector (indexed access)
+    if kind == "list_int_or_vid":
+        return [
+            f"      if (fb->{fb_name}()) {{",
+            f"        for (size_t i = 0; i < fb->{fb_name}()->size(); ++i) {{",
+            f"          node.{name}.push_back(convert_int_or_vid(fb->{fb_name}()->Get(i)));",
+            "        }",
+            "      }",
+        ]
+    # Tid vector (range-based iteration)
+    if kind == "list_tid":
+        return [
+            f"      if (fb->{fb_name}()) {{",
+            f"        for (auto fb_tid : *fb->{fb_name}()) {{",
+            f"          node.{name}.push_back(convert_tid(fb_tid));",
+            "        }",
+            "      }",
+        ]
+    return None
 
 
 # =============================================================================
@@ -1735,82 +1207,61 @@ def run_flatc(flatc_path: str = "flatc") -> bool:
 # =============================================================================
 
 
-def _get_inspector_field_kind(fld: FBSField, table: FBSTable) -> str:
-    """Determine the inspector field kind for a field.
-
-    Returns one of: 'tid', 'vid', 'int_or_vid', 'float_or_vid', 'int_list',
-    'int_or_vid_list', 'tid_list', 'scalar', 'string'.
-    """
-    t = fld.type_str
-
-    if t == "Tid":
-        return "tid"
-    if t == "Vid":
-        return "vid"
-    if t == "IntOrVid":
-        return "int_or_vid"
-    if t == "FloatOrVid":
-        return "float_or_vid"
-    if t == "[int32]" or t == "[int64]":
-        return "int_list"
-    if t == "[IntOrVid]":
-        return "int_or_vid_list"
-    if t == "[Tid]":
-        return "tid_list"
-    if t == "string":
-        return "string"
-    # Everything else (int, float, bool, enum) is a scalar
-    return "scalar"
+# Mapping from fine-grained field kinds (from _get_field_kind) to inspector
+# display kinds.  The inspector uses coarser categories: optional/required
+# distinctions collapse, and int/float/bool all map to "scalar".
+_INSPECTOR_KIND_MAP = {
+    "tid": "tid",
+    "optional_tid": "tid",
+    "vid": "vid",
+    "optional_vid": "vid",
+    "int_or_vid": "int_or_vid",
+    "float_or_vid": "float_or_vid",
+    "tid_or_vid": "tid_or_vid",
+    "list_int": "int_list",
+    "list_int_or_vid": "int_or_vid_list",
+    "list_tid": "tid_list",
+    "int": "scalar",
+    "optional_int": "scalar",
+    "float": "scalar",
+    "optional_float": "scalar",
+    "bool": "scalar",
+    "str": "string",
+    "optional_str": "string",
+}
 
 
 def generate_inspector(schema: "Schema") -> str:  # noqa: F821
     """Generate the inspector field mappings file."""
-    lines = [
-        "#",
-        "# Copyright (c) Meta Platforms, Inc. and affiliates.",
-        "# All rights reserved.",
-        "#",
-        "# This source code is licensed under the BSD-style license found in the",
-        "# LICENSE file in the root directory of this source tree.",
-        "#",
-        "# " + "=" * 76,
-        "# AUTO-GENERATED FILE - DO NOT EDIT MANUALLY",
-        "# " + "=" * 76,
-        "#",
-        "# This file was generated from schema.fbs by the MLX delegate code generator.",
-        "#",
-        "# Source:    backends/apple/mlx/serialization/schema.fbs",
-        "# Generator: backends/apple/mlx/serialization/generate.py",
-        "#",
-        "# To regenerate, run from the executorch root:",
-        "#     python backends/apple/mlx/serialization/generate.py",
-        "#",
-        "# " + "=" * 76,
-        "",
-        '"""',
-        "Auto-generated inspector field mappings for MLX delegate.",
-        "",
-        "This module provides field metadata for each op node type, enabling",
-        "the pte_inspector to parse FlatBuffer op nodes without manually",
-        "maintaining field mappings.",
-        '"""',
-        "",
-        "from __future__ import annotations",
-        "",
-        "from typing import Dict, List, Tuple",
-        "",
-        "",
-        "# Field kinds and their extractors",
-        "# Each field is a tuple of (display_name, accessor_name, kind)",
-        "# where kind is one of: 'tid', 'vid', 'int_or_vid', 'float_or_vid',",
-        "# 'int_list', 'int_or_vid_list', 'tid_list', 'scalar', 'string'",
-        "",
-        "FieldSpec = Tuple[str, str, str]  # (display_name, accessor_name, kind)",
-        "",
-        "",
-        "# Mapping from op node name to list of field specs",
-        "OP_NODE_FIELDS: Dict[str, List[FieldSpec]] = {",
-    ]
+    lines = _file_header("#")
+    lines.extend(
+        [
+            "",
+            '"""',
+            "Auto-generated inspector field mappings for MLX delegate.",
+            "",
+            "This module provides field metadata for each op node type, enabling",
+            "the pte_inspector to parse FlatBuffer op nodes without manually",
+            "maintaining field mappings.",
+            '"""',
+            "",
+            "from __future__ import annotations",
+            "",
+            "from typing import Dict, List, Tuple",
+            "",
+            "",
+            "# Field kinds and their extractors",
+            "# Each field is a tuple of (display_name, accessor_name, kind)",
+            "# where kind is one of: 'tid', 'vid', 'int_or_vid', 'float_or_vid',",
+            "# 'int_list', 'int_or_vid_list', 'tid_list', 'scalar', 'string'",
+            "",
+            "FieldSpec = Tuple[str, str, str]  # (display_name, accessor_name, kind)",
+            "",
+            "",
+            "# Mapping from op node name to list of field specs",
+            "OP_NODE_FIELDS: Dict[str, List[FieldSpec]] = {",
+        ]
+    )
 
     op_nodes = schema.get_op_nodes()
 
@@ -1821,10 +1272,16 @@ def generate_inspector(schema: "Schema") -> str:  # noqa: F821
             if fld.name.endswith("_is_set"):
                 continue
 
-            kind = _get_inspector_field_kind(fld, table)
-            # Convert snake_case to PascalCase for accessor
+            kind = _get_field_kind(fld, table)
+            inspector_kind = _INSPECTOR_KIND_MAP.get(kind)
+            if inspector_kind is None:
+                raise ValueError(
+                    f"No inspector mapping for field kind '{kind}' "
+                    f"(field '{fld.name}' in table '{table.name}'). "
+                    f"Add a mapping in _INSPECTOR_KIND_MAP."
+                )
             accessor = _to_pascal_case(fld.name)
-            lines.append(f'        ("{fld.name}", "{accessor}", "{kind}"),')
+            lines.append(f'        ("{fld.name}", "{accessor}", "{inspector_kind}"),')
         lines.append("    ],")
 
     lines.append("}")
@@ -1880,45 +1337,27 @@ def main():  # noqa: C901
     if not args.skip_flatc:
         run_flatc(args.flatc)
 
-    # Generate Python schema
-    print(f"Generating {GENERATED_SCHEMA_PY}...")
-    py_schema = generate_python_schema(schema)
-    if args.dry_run:
-        print("--- mlx_graph_schema.py (first 50 lines) ---")
-        print("\n".join(py_schema.split("\n")[:50]))
-    else:
-        with open(GENERATED_SCHEMA_PY, "w") as f:
-            f.write(py_schema)
-
-    # Generate Python serializers
-    print(f"Generating {GENERATED_SERIALIZERS}...")
-    py_serializers = generate_python_serializers(schema)
-    if args.dry_run:
-        print("--- _generated_serializers.py (first 50 lines) ---")
-        print("\n".join(py_serializers.split("\n")[:50]))
-    else:
-        with open(GENERATED_SERIALIZERS, "w") as f:
-            f.write(py_serializers)
-
-    # Generate C++ header
-    print(f"Generating {LOADER_H}...")
-    cpp_h = generate_cpp_loader_h(schema)
-    if args.dry_run:
-        print("--- MLXLoader.h (first 50 lines) ---")
-        print("\n".join(cpp_h.split("\n")[:50]))
-    else:
-        with open(LOADER_H, "w") as f:
-            f.write(cpp_h)
-
-    # Generate C++ implementation
-    print(f"Generating {LOADER_CPP}...")
-    cpp_cpp = generate_cpp_loader_cpp(schema)
-    if args.dry_run:
-        print("--- MLXLoader.cpp (first 50 lines) ---")
-        print("\n".join(cpp_cpp.split("\n")[:50]))
-    else:
-        with open(LOADER_CPP, "w") as f:
-            f.write(cpp_cpp)
+    # Generate all code files
+    generators = [
+        (generate_python_schema, GENERATED_SCHEMA_PY, "mlx_graph_schema.py"),
+        (
+            generate_python_serializers,
+            GENERATED_SERIALIZERS,
+            "_generated_serializers.py",
+        ),
+        (generate_cpp_loader_h, LOADER_H, "MLXLoader.h"),
+        (generate_cpp_loader_cpp, LOADER_CPP, "MLXLoader.cpp"),
+        (generate_inspector, GENERATED_INSPECTOR, "_generated_inspector.py"),
+    ]
+    for gen_fn, output_path, label in generators:
+        print(f"Generating {output_path}...")
+        content = gen_fn(schema)
+        if args.dry_run:
+            print(f"--- {label} (first 50 lines) ---")
+            print("\n".join(content.split("\n")[:50]))
+        else:
+            with open(output_path, "w") as f:
+                f.write(content)
 
     # Create __init__.py for _generated package that re-exports from mlx_delegate
     init_file = GENERATED_DIR / "__init__.py"
@@ -1947,16 +1386,6 @@ def main():  # noqa: C901
 
         init_content += f"\n__all__ = {sorted(exports)!r}\n"
         init_file.write_text(init_content)
-
-    # Generate inspector field mappings
-    print(f"Generating {GENERATED_INSPECTOR}...")
-    inspector_py = generate_inspector(schema)
-    if args.dry_run:
-        print("--- _generated_inspector.py (first 50 lines) ---")
-        print("\n".join(inspector_py.split("\n")[:50]))
-    else:
-        with open(GENERATED_INSPECTOR, "w") as f:
-            f.write(inspector_py)
 
     print("Done!")
     print("")

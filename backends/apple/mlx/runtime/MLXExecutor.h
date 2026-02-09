@@ -16,12 +16,15 @@
 #include <mlx/ops.h>
 
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/freeable_buffer.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/result.h>
 
 #include <iomanip>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -113,7 +116,7 @@ struct MutableBufferData {
 
   inline void set(Tid id, Tensor t) {
     if (id.idx >= tensors.size()) {
-      tensors.resize(id.idx + 1, std::nullopt);
+      throw std::out_of_range("MutableBufferData::set: id out of range");
     }
     tensors[id.idx] = std::move(t);
   }
@@ -124,14 +127,22 @@ struct MutableBufferData {
 };
 
 // =============================================================================
-// ExecutionState - per-run mutable state
+// ExecutionState - reusable execution context
+//
+// Design: Separates tensors by lifetime for clarity and shareability:
+// - Constants: stored in ConstantData, accessed via pointer (can be shared)
+// - Mutable buffers: stored in MutableBufferData, accessed via pointer
+// (persistent)
+// - Inputs/outputs/temps: stored in tensors vector (per-execution)
 // =============================================================================
 
 struct ExecutionState {
   const MLXProgram* program{nullptr};
-  const ConstantData* constants{nullptr};
+  const ConstantData* constants{nullptr}; // Shared, read-only
+  MutableBufferData* mutable_buffers{nullptr}; // Per-handle, persistent
 
-  // Non-constant tensors (inputs, outputs, mutable buffers, temps)
+  // Per-execution tensors: inputs, outputs, temps (NOT constants or mutable
+  // buffers)
   std::vector<std::optional<Tensor>> tensors;
 
   // Non-constant values (SymInt, etc.)
@@ -142,26 +153,58 @@ struct ExecutionState {
   const char* current_op_name{nullptr};
 
   // Tensor ID range boundaries for O(1) type lookup (computed at bind time)
+  uint32_t num_constants{0};
   uint32_t input_end{0};
   uint32_t output_end{0};
   uint32_t mutable_buffer_end{0};
 
-  void bind(const MLXProgram& prog, const ConstantData& const_data) {
+  void bind(
+      const MLXProgram& prog,
+      const ConstantData& const_data,
+      MutableBufferData& mut_bufs) {
     program = &prog;
     constants = &const_data;
-    tensors.assign(prog.num_non_constant_tensors, std::nullopt);
-    values.assign(prog.num_non_constant_values, std::nullopt);
+    mutable_buffers = &mut_bufs;
+
+    // Allocate space for inputs, outputs, and temps only (not constants or
+    // mutable buffers)
+    size_t num_per_execution_tensors = prog.num_input_tensors +
+        prog.num_output_tensors + prog.num_temp_tensors;
+    tensors.assign(num_per_execution_tensors, std::nullopt);
+    values.assign(prog.num_values, std::nullopt);
 
     // Compute tensor ID range boundaries for fast type lookup
     // ID assignment order: Constant -> Input -> Output -> MutableBuffer -> Temp
-    uint32_t constant_end = prog.num_constant_tensors;
-    input_end = constant_end + prog.num_input_tensors;
+    num_constants = prog.num_constant_tensors;
+    input_end = num_constants + prog.num_input_tensors;
     output_end = input_end + prog.num_output_tensors;
     mutable_buffer_end = output_end + prog.num_mutable_buffer_tensors;
   }
 
+  // Check if a tensor ID is a mutable buffer
+  inline bool is_mutable_buffer(Tid id) const {
+    return id.idx >= output_end && id.idx < mutable_buffer_end;
+  }
+
+  // Convert tensor ID to index in the tensors vector
+  // Accounts for constants and mutable buffers not being in the vector
+  inline uint32_t tensor_index(Tid id) const {
+    if (id.idx < num_constants) {
+      throw std::runtime_error(
+          "tensor_index: called with constant tensor id " +
+          std::to_string(id.idx));
+    }
+    uint32_t idx = id.idx - num_constants;
+    // If this ID is after mutable buffer range, subtract mutable buffer count
+    if (id.idx >= mutable_buffer_end) {
+      idx -= program->num_mutable_buffer_tensors;
+    }
+    return idx;
+  }
+
   void reset() {
-    // Clear non-constant tensors/values for reuse
+    // Clear per-execution tensors (inputs, outputs, temps)
+    // Constants and mutable buffers are not in this vector
     for (auto& t : tensors) {
       t = std::nullopt;
     }
@@ -200,18 +243,6 @@ struct ExecutionState {
       default:
         return "?";
     }
-  }
-
-  static inline std::string format_shape(const ::mlx::core::Shape& shape) {
-    std::ostringstream ss;
-    ss << "(";
-    for (size_t i = 0; i < shape.size(); ++i) {
-      if (i > 0)
-        ss << ",";
-      ss << shape[i];
-    }
-    ss << ")";
-    return ss.str();
   }
 
   static inline std::string format_tensor_info(const Tensor& t) {
@@ -335,19 +366,32 @@ struct ExecutionState {
     if (program->is_constant_tensor(id)) {
       throw std::runtime_error("tensor_ref: cannot mutate constant tensor");
     }
-    auto& opt = tensors[id.idx - program->num_constant_tensors];
-    if (!opt) {
-      throw std::runtime_error(
-          "tensor_ref: uninitialized tensor idx=" + std::to_string(id.idx));
+    // Route to mutable buffers or per-execution tensors
+    Tensor* t = nullptr;
+    if (is_mutable_buffer(id)) {
+      if (!mutable_buffers) {
+        throw std::runtime_error("tensor_ref: mutable_buffers not bound");
+      }
+      t = &mutable_buffers->get(id);
+    } else {
+      uint32_t idx = tensor_index(id);
+      if (idx >= tensors.size()) {
+        throw std::out_of_range("tensor_ref: tensor idx out of range");
+      }
+      auto& opt = tensors[idx];
+      if (!opt) {
+        throw std::runtime_error(
+            "tensor_ref: uninitialized tensor idx=" + std::to_string(id.idx));
+      }
+      t = &*opt;
     }
     if constexpr (kEnableOpLogging) {
-      std::cout << "  " << format_tensor_info(*opt) << "\n";
+      std::cout << "  " << format_tensor_info(*t) << "\n";
     }
-    return *opt;
+    return *t;
   }
 
   inline const Tensor& const_tensor_ref(Tid id) const {
-    const bool is_const = program && program->is_constant_tensor(id);
     if constexpr (kEnableOpLogging) {
       std::cout << "  in   " << tensor_type_prefix(id) << id.idx << std::flush;
     }
@@ -359,13 +403,25 @@ struct ExecutionState {
     }
 
     const Tensor* t = nullptr;
-    if (is_const) {
+    if (program->is_constant_tensor(id)) {
+      // Route to constants
       if (!constants) {
         throw std::runtime_error("const_tensor_ref: constants not bound");
       }
       t = &constants->get(id);
+    } else if (is_mutable_buffer(id)) {
+      // Route to mutable buffers
+      if (!mutable_buffers) {
+        throw std::runtime_error("const_tensor_ref: mutable_buffers not bound");
+      }
+      t = &mutable_buffers->get(id);
     } else {
-      const auto& opt = tensors[id.idx - program->num_constant_tensors];
+      // Route to per-execution tensors
+      uint32_t idx = tensor_index(id);
+      if (idx >= tensors.size()) {
+        throw std::out_of_range("const_tensor_ref: tensor idx out of range");
+      }
+      const auto& opt = tensors[idx];
       if (!opt) {
         throw std::runtime_error(
             "const_tensor_ref: uninitialized tensor idx=" +
@@ -394,11 +450,19 @@ struct ExecutionState {
     if (id.idx < program->num_constant_tensors) {
       throw std::runtime_error("set_tensor: cannot write to constant tensor");
     }
-    uint32_t off = id.idx - program->num_constant_tensors;
-    if (off >= tensors.size()) {
-      throw std::out_of_range("set_tensor: tensor idx out of range");
+    // Route to mutable buffers or per-execution tensors
+    if (is_mutable_buffer(id)) {
+      if (!mutable_buffers) {
+        throw std::runtime_error("set_tensor: mutable_buffers not bound");
+      }
+      mutable_buffers->set(id, std::move(arr));
+    } else {
+      uint32_t idx = tensor_index(id);
+      if (idx >= tensors.size()) {
+        throw std::out_of_range("set_tensor: tensor idx out of range");
+      }
+      tensors[idx] = std::move(arr);
     }
-    tensors[off] = std::move(arr);
   }
 
   // --------------------------
@@ -459,41 +523,37 @@ struct ExecutionState {
 // Dtype conversion
 // =============================================================================
 
-inline runtime::Result<::mlx::core::Dtype> to_mlx_dtype(DTypeId d) {
+inline ::mlx::core::Dtype resolve_dtype(ScalarType d) {
   using namespace ::mlx::core;
   switch (d) {
-    case DTypeId::f16:
+    case ScalarType::Half:
       return float16;
-    case DTypeId::f32:
+    case ScalarType::Float:
       return float32;
-    case DTypeId::bf16:
+    case ScalarType::BFloat16:
       return bfloat16;
-    case DTypeId::i32:
+    case ScalarType::Int:
       return int32;
-    case DTypeId::i64:
+    case ScalarType::Short:
+      return int16;
+    case ScalarType::Long:
       return int64;
-    case DTypeId::u32:
+    case ScalarType::UInt32:
       return uint32;
-    case DTypeId::u8:
+    case ScalarType::Byte:
       return uint8;
-    case DTypeId::boolean:
+    case ScalarType::Bool:
       return bool_;
-    case DTypeId::i8:
+    case ScalarType::Char:
       return int8;
     default:
-      ET_LOG(Error, "Unsupported DTypeId %d", static_cast<int>(d));
-      return runtime::Error::NotSupported;
+      throw std::runtime_error(
+          "Unsupported ScalarType: " + std::to_string(static_cast<int>(d)));
   }
 }
 
-// Helper to resolve DTypeId to MLX Dtype, throwing on unsupported dtype
-inline ::mlx::core::Dtype resolve_dtype(DTypeId d) {
-  auto result = to_mlx_dtype(d);
-  if (!result.ok()) {
-    throw std::runtime_error(
-        "Unsupported dtype: " + std::to_string(static_cast<int>(d)));
-  }
-  return result.get();
+inline ::mlx::core::Dtype resolve_dtype(int8_t d) {
+  return resolve_dtype(static_cast<ScalarType>(d));
 }
 
 // =============================================================================
@@ -572,182 +632,101 @@ inline ::mlx::core::Shape to_shape(
 }
 
 // =============================================================================
-// Constant loading from raw bytes
+// Constant loading from NamedDataMap
 // =============================================================================
 
-// Load constants with zero-copy (when enabled)
-// On Apple Silicon unified memory, MLX can wrap pointers directly
-// If MLX falls back to copying, there may be temporary memory overhead (~2x)
-// Helper struct to hold constant tensor metadata
-struct ConstantTensorInfo {
-  ::mlx::core::Shape shape;
-  ::mlx::core::Dtype dtype;
-  size_t nbytes;
-  const void* data_ptr;
-};
-
-// Helper to compute constant tensor metadata and advance offset
-inline ConstantTensorInfo get_constant_tensor_info(
+// Load constants from ExecuTorch's NamedDataMap.
+// Constants are stored by name in the .pte file and loaded via the
+// named_data_map interface. This allows ExecuTorch to own the constant data and
+// enables zero-copy on Apple Silicon unified memory.
+//
+// Parameters:
+//   program: The loaded MLXProgram containing tensor metadata and named_slots
+//   named_data_map: ExecuTorch's interface for accessing named data
+//   store: Output storage for loaded constant tensors
+//   constant_buffers: Vector to store FreeableBuffers (must outlive store for
+//   zero-copy)
+inline void load_constants(
     const MLXProgram& program,
-    uint32_t tensor_id,
-    const uint8_t* base,
-    size_t& offset) {
-  using namespace ::mlx::core;
-
-  // Validate metadata exists
-  if (tensor_id >= program.tensor_meta.size() ||
-      !program.tensor_meta[tensor_id]) {
-    throw std::runtime_error(
-        "get_constant_tensor_info: missing metadata for constant " +
-        std::to_string(tensor_id));
-  }
-
-  const auto& meta = *program.tensor_meta[tensor_id];
-  Shape shape = to_shape(meta.shape);
-  Dtype dtype = resolve_dtype(meta.dtype);
-
-  // Align to 16 bytes
-  offset = (offset + 15) & ~15ULL;
-
-  // Calculate size
-  size_t num_elements = 1;
-  for (auto s : shape) {
-    num_elements *= s;
-  }
-  size_t elem_size = size_of(dtype);
-  size_t nbytes = num_elements * elem_size;
-
-  const void* data_ptr = static_cast<const void*>(base + offset);
-
-  return ConstantTensorInfo{shape, dtype, nbytes, data_ptr};
-}
-
-// Load constants with zero-copy by wrapping the constant buffer directly
-inline void load_constants_zero_copy(
-    const MLXProgram& program,
-    ConstantData& store) {
+    const runtime::NamedDataMap* named_data_map,
+    ConstantData& store,
+    std::vector<runtime::FreeableBuffer>& constant_buffers) {
   using namespace ::mlx::core;
 
   store.tensors.clear();
+  constant_buffers.clear();
 
-  if (program.num_constant_tensors == 0 || !program.constant_data) {
+  if (program.num_constant_tensors == 0) {
     return;
   }
 
   store.tensors.reserve(program.num_constant_tensors);
+  constant_buffers.reserve(program.num_constant_tensors);
 
-  const uint8_t* base = program.constant_data;
-  size_t offset = 0;
-
+  // Load each constant tensor by name
   for (uint32_t tid = 0; tid < program.num_constant_tensors; ++tid) {
-    ConstantTensorInfo info =
-        get_constant_tensor_info(program, tid, base, offset);
+    // Get tensor metadata
+    if (tid >= program.tensor_meta.size() || !program.tensor_meta[tid]) {
+      throw std::runtime_error(
+          "load_constants: missing metadata for constant " +
+          std::to_string(tid));
+    }
 
-    // Zero-copy: wrap pointer directly with no-op deleter
-    void* data_ptr = const_cast<void*>(info.data_ptr);
-    auto deleter = [](void*) {
-      // Buffer will be freed when MLXHandle is destroyed
-    };
-
-    array arr = array(data_ptr, info.shape, info.dtype, deleter);
-    store.add(std::move(arr));
-    offset += info.nbytes;
-  }
-}
-
-// Load constants with explicit copying
-inline void load_constants_with_copy(
-    const MLXProgram& program,
-    ConstantData& store) {
-  using namespace ::mlx::core;
-
-  store.tensors.clear();
-
-  if (program.num_constant_tensors == 0 || !program.constant_data) {
-    return;
-  }
-
-  store.tensors.reserve(program.num_constant_tensors);
-
-  const uint8_t* base = program.constant_data;
-  size_t offset = 0;
-
-  for (uint32_t tid = 0; tid < program.num_constant_tensors; ++tid) {
-    ConstantTensorInfo info =
-        get_constant_tensor_info(program, tid, base, offset);
-
-    // Create array by copying data using typed constructor
-    auto create_array = [&]() -> array {
-      switch (info.dtype) {
-        case float32:
-          return array(
-              static_cast<const float*>(info.data_ptr), info.shape, info.dtype);
-        case float16:
-          return array(
-              static_cast<const float16_t*>(info.data_ptr),
-              info.shape,
-              info.dtype);
-        case bfloat16:
-          return array(
-              static_cast<const bfloat16_t*>(info.data_ptr),
-              info.shape,
-              info.dtype);
-        case int32:
-          return array(
-              static_cast<const int32_t*>(info.data_ptr),
-              info.shape,
-              info.dtype);
-        case int64:
-          return array(
-              static_cast<const int64_t*>(info.data_ptr),
-              info.shape,
-              info.dtype);
-        case int16:
-          return array(
-              static_cast<const int16_t*>(info.data_ptr),
-              info.shape,
-              info.dtype);
-        case int8:
-          return array(
-              static_cast<const int8_t*>(info.data_ptr),
-              info.shape,
-              info.dtype);
-        case uint32:
-          return array(
-              static_cast<const uint32_t*>(info.data_ptr),
-              info.shape,
-              info.dtype);
-        case uint8:
-          return array(
-              static_cast<const uint8_t*>(info.data_ptr),
-              info.shape,
-              info.dtype);
-        case bool_:
-          return array(
-              static_cast<const bool*>(info.data_ptr), info.shape, info.dtype);
-        default:
-          throw std::runtime_error(
-              "load_constants_with_copy: unsupported dtype " +
-              std::to_string(static_cast<int>(info.dtype.val())));
+    // Find the name for this tensor ID from named_slots
+    const std::string* name = nullptr;
+    for (const auto& ns : program.named_slots) {
+      if (ns.slot.slot_type == SlotType::TensorSlot && ns.slot.idx == tid) {
+        name = &ns.name;
+        break;
       }
-    };
+    }
+    if (!name) {
+      throw std::runtime_error(
+          "load_constants: no name found for constant tensor " +
+          std::to_string(tid));
+    }
 
-    store.add(create_array());
-    offset += info.nbytes;
-  }
-}
+    // Get data from named_data_map
+    if (named_data_map == nullptr) {
+      throw std::runtime_error(
+          "load_constants: named_data_map is null but program has constants");
+    }
 
-// Public interface: dispatch based on compile-time flag
-inline void load_constants(const MLXProgram& program, ConstantData& store) {
-  if constexpr (kEnableConstantZeroCopy) {
-    load_constants_zero_copy(program, store);
-  } else {
-    load_constants_with_copy(program, store);
+    auto data_result = named_data_map->get_data(name->c_str());
+    if (!data_result.ok()) {
+      throw std::runtime_error(
+          "load_constants: failed to get data for constant '" + *name +
+          "': error " + std::to_string(static_cast<int>(data_result.error())));
+    }
+
+    // Move the buffer into our storage (keeps it alive for zero-copy)
+    constant_buffers.push_back(std::move(data_result.get()));
+    runtime::FreeableBuffer& buffer = constant_buffers.back();
+
+    const auto& meta = *program.tensor_meta[tid];
+    Shape shape = to_shape(meta.shape);
+    Dtype dtype = resolve_dtype(meta.scalar_type);
+
+    // Create MLX array with zero-copy when enabled
+    void* data_ptr = const_cast<void*>(buffer.data());
+
+    if constexpr (kEnableConstantZeroCopy) {
+      // Zero-copy: wrap pointer directly with no-op deleter
+      // The FreeableBuffer in constant_buffers keeps the data alive
+      auto deleter = [](void*) {
+        // Data lifetime managed by FreeableBuffer in
+        // MLXHandle::constant_buffers
+      };
+      array arr = array(data_ptr, shape, dtype, deleter);
+      store.add(std::move(arr));
+    } else {
+      // No deleter = MLX copies the data into its own memory
+      store.add(array(static_cast<const char*>(data_ptr), shape, dtype));
+    }
   }
 
   // Evaluate all constants immediately to prepare Metal buffers
   // This trades init time for faster first inference
-  using namespace ::mlx::core;
   eval(store.tensors);
 }
 
@@ -768,9 +747,21 @@ inline void load_mutable_buffers(
     return;
   }
 
+  // Pre-size the storage to fit all tensor IDs
+  // Mutable buffer IDs are in the global tensor ID space
+  uint32_t max_tid = 0;
+  for (const auto& slot : program.mutable_buffer_map) {
+    if (slot.idx > max_tid) {
+      max_tid = slot.idx;
+    }
+  }
+  store.resize(max_tid + 1);
+
   for (const auto& slot : program.mutable_buffer_map) {
     if (slot.slot_type != SlotType::TensorSlot) {
-      continue;
+      throw std::runtime_error(
+          "load_mutable_buffers: unexpected slot type " +
+          std::to_string(static_cast<int>(slot.slot_type)));
     }
 
     Tid tid{slot.idx};
@@ -799,7 +790,7 @@ inline void load_mutable_buffers(
 
     const auto& meta = *program.tensor_meta[tid.idx];
     auto shape = to_shape(meta.shape);
-    auto dtype = resolve_dtype(meta.dtype);
+    auto dtype = resolve_dtype(meta.scalar_type);
 
     // Initialize mutable buffer to zeros
     // This matches the typical initialization of KV cache buffers

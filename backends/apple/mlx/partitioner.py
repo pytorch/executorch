@@ -318,7 +318,7 @@ class MLXPartitioner(Partitioner):
 #
 # Normalization:
 #   - aten.layer_norm
-#   - mlx.rms_norm (custom op)
+#   - aten.rms_norm
 #
 # Attention:
 #   - aten.scaled_dot_product_attention (via SDPA pattern)

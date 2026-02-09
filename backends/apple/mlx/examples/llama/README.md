@@ -7,7 +7,7 @@ This example demonstrates how to export and run Llama models using the MLX deleg
 - **Export**: Convert HuggingFace Llama models to ExecutorCh format with MLX delegate
 - **Quantization**: Optional INT4/INT8 weight quantization via TorchAO
 - **KV Cache**: Efficient KV cache implementation for autoregressive generation
-- **Custom Ops**: Uses `mlx::rms_norm` and `mlx::apply_rope` for optimal MLX execution
+- **Custom Ops**: Uses `mlx::apply_rope` for optimal MLX execution
 - **Pybindings**: Run inference using ExecutorCh Python bindings
 
 ## Requirements
@@ -89,7 +89,7 @@ python -m executorch.backends.apple.mlx.examples.llama.run_llama \
 
 The example uses a custom model wrapper (`LlamaWithFunctionalKV`) that:
 
-1. **Replaces RMSNorm** with `torch.ops.mlx.rms_norm` - a custom op that maps directly to MLX's efficient RMSNorm implementation
+1. **Replaces RMSNorm** with `torch.nn.functional.rms_norm` - which maps to MLX's efficient RMSNorm implementation via the aten.rms_norm handler
 
 2. **Replaces Attention** with `KVCacheAttention` which:
    - Uses `torch.ops.mlx.apply_rope` for rotary position embeddings
