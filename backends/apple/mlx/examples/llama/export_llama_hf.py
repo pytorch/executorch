@@ -36,7 +36,7 @@ def export_llama_hf(
     model_id: str,
     output_path: str,
     max_seq_len: int = 1024,
-    dtype: str = "fp32",
+    dtype: str = "bf16",
     quantize_linear: Optional[str] = None,
     quantize_embeddings: Optional[str] = None,
 ) -> None:
@@ -57,7 +57,7 @@ def export_llama_hf(
 
     # Map dtype string to proper format for optimum-executorch
     dtype_map = {"fp32": "float32", "fp16": "float16", "bf16": "bfloat16"}
-    dtype_str = dtype_map.get(dtype, "float32")
+    dtype_str = dtype_map.get(dtype, "bfloat16")
 
     # Load using optimum-executorch's task which handles all the necessary setup
     exportable = load_causal_lm_model(

@@ -7,6 +7,7 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -349,6 +350,7 @@ int main(int argc, char** argv) {
 
   // Load model (which includes the bundled preprocessor)
   ET_LOG(Info, "Loading model from: %s", FLAGS_model_path.c_str());
+  auto model_load_start = std::chrono::high_resolution_clock::now();
   std::unique_ptr<Module> model;
   if (!FLAGS_data_path.empty()) {
     ET_LOG(Info, "Loading data from: %s", FLAGS_data_path.c_str());
@@ -362,6 +364,13 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Failed to load model.");
     return 1;
   }
+  auto model_load_end = std::chrono::high_resolution_clock::now();
+  double model_load_ms = std::chrono::duration<double, std::milli>(
+                             model_load_end - model_load_start)
+                             .count();
+  ET_LOG(Info, "Model load time: %.1f ms", model_load_ms);
+
+  auto total_start = std::chrono::high_resolution_clock::now();
 
   // Load audio
   ET_LOG(Info, "Loading audio from: %s", FLAGS_audio_path.c_str());
@@ -379,6 +388,7 @@ int main(int argc, char** argv) {
       audio_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
 
   ET_LOG(Info, "Running preprocessor...");
+  auto preprocessor_start = std::chrono::high_resolution_clock::now();
   auto proc_result = model->execute(
       "preprocessor",
       std::vector<::executorch::runtime::EValue>{
@@ -387,6 +397,11 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Preprocessor forward failed.");
     return 1;
   }
+  auto preprocessor_end = std::chrono::high_resolution_clock::now();
+  double preprocessor_ms = std::chrono::duration<double, std::milli>(
+                               preprocessor_end - preprocessor_start)
+                               .count();
+  ET_LOG(Info, "Preprocessor time: %.1f ms", preprocessor_ms);
   auto& proc_outputs = proc_result.get();
   auto mel = proc_outputs[0].toTensor();
   auto mel_len_tensor_out = proc_outputs[1].toTensor();
@@ -406,12 +421,18 @@ int main(int argc, char** argv) {
       static_cast<long long>(mel_len_value));
 
   ET_LOG(Info, "Running encoder...");
+  auto encoder_start = std::chrono::high_resolution_clock::now();
   auto enc_result = model->execute(
       "encoder", std::vector<::executorch::runtime::EValue>{mel, mel_len});
   if (!enc_result.ok()) {
     ET_LOG(Error, "Encoder forward failed.");
     return 1;
   }
+  auto encoder_end = std::chrono::high_resolution_clock::now();
+  double encoder_ms =
+      std::chrono::duration<double, std::milli>(encoder_end - encoder_start)
+          .count();
+  ET_LOG(Info, "Encoder time: %.1f ms", encoder_ms);
   auto& enc_outputs = enc_result.get();
   auto f_proj = enc_outputs[0].toTensor(); // [B, T, joint_hidden]
   int64_t encoded_len = enc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
@@ -466,8 +487,14 @@ int main(int argc, char** argv) {
       encoder_subsampling_factor);
 
   ET_LOG(Info, "Running TDT greedy decode...");
+  auto decoder_start = std::chrono::high_resolution_clock::now();
   auto decoded_tokens = greedy_decode_executorch(
       *model, f_proj, encoded_len, blank_id, num_rnn_layers, pred_hidden);
+  auto decoder_end = std::chrono::high_resolution_clock::now();
+  double decoder_ms =
+      std::chrono::duration<double, std::milli>(decoder_end - decoder_start)
+          .count();
+  ET_LOG(Info, "Decoder time: %.1f ms", decoder_ms);
 
   ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
 
@@ -487,6 +514,25 @@ int main(int argc, char** argv) {
   std::string text = parakeet::tokenizer_utils::decode_token_sequence(
       decoded_tokens, *tokenizer);
   std::cout << "Transcribed text: " << text << std::endl;
+
+  auto total_end = std::chrono::high_resolution_clock::now();
+  double total_ms =
+      std::chrono::duration<double, std::milli>(total_end - total_start)
+          .count();
+  double audio_duration_s =
+      static_cast<double>(audio_data.size()) / static_cast<double>(sample_rate);
+
+  std::cout << "\nTiming summary:" << std::endl;
+  std::cout << "  Model load:    " << model_load_ms << " ms" << std::endl;
+  std::cout << "  Preprocessor:  " << preprocessor_ms << " ms" << std::endl;
+  std::cout << "  Encoder:       " << encoder_ms << " ms" << std::endl;
+  std::cout << "  Decoder:       " << decoder_ms << " ms" << std::endl;
+  std::cout << "  Total:         " << total_ms << " ms" << std::endl;
+  std::cout << "  Audio duration: " << audio_duration_s << " s" << std::endl;
+  std::cout << "  Real-time factor (excl. load): "
+            << (preprocessor_ms + encoder_ms + decoder_ms) /
+                   (audio_duration_s * 1000.0)
+            << "x" << std::endl;
 
 #ifdef ET_BUILD_METAL
   executorch::backends::metal::print_metal_backend_stats();
