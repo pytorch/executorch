@@ -18,6 +18,8 @@ inline constexpr auto kMaxContextLen = "get_max_context_len";
 inline constexpr auto kVocabSize = "get_vocab_size";
 inline constexpr auto kUseKVCache = "use_kv_cache";
 inline constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
+inline constexpr auto kAttentionSinkSize = "get_attention_sink_size";
+inline constexpr auto kAttentionWindowSize = "get_attention_window_size";
 
 // Multimodal method name conventions
 inline constexpr auto kVisionEncoderMethod = "vision_encoder";

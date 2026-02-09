@@ -42,7 +42,7 @@ class RopeWithAttentionSink(Rope):
         else:
             self.apply_rotary_emb_to_k = apply_rotary_emb_to_k
         self.max_context_length = window_size + sink_size
-        assert self.max_context_length == self.params.max_context_len
+        assert self.max_context_length == self.params.max_seq_len
         self.eviction_batch_size = eviction_batch_size
         self.position_shift = 0
 

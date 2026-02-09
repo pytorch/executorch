@@ -1277,6 +1277,8 @@ def _load_llama_model_metadata(
     n_layers: int,
     vocab_size: int,
     metadata_str: Optional[str] = None,
+    attention_sink_size: int = 0,
+    attention_window_size: int = 0,
 ):
     metadata = {
         "get_max_seq_len": max_seq_len,
@@ -1287,6 +1289,9 @@ def _load_llama_model_metadata(
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
     }
+    if attention_sink_size > 0:
+        metadata["get_attention_sink_size"] = attention_sink_size
+        metadata["get_attention_window_size"] = attention_window_size
     if metadata_str:
         try:
             extra = json.loads(metadata_str)
@@ -1366,6 +1371,8 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
             #  Module]`.
             model.vocab_size,
             llm_config.base.metadata,
+            attention_sink_size=int(llm_config.model.use_attention_sink.split(",")[0]) if llm_config.model.use_attention_sink else 0,
+            attention_window_size=int(llm_config.model.use_attention_sink.split(",")[1]) if llm_config.model.use_attention_sink else 0,
         ),
     )
 
