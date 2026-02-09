@@ -39,10 +39,10 @@ class RopeWithAttentionSink(Rope):
 
     For torch.export compatibility, this just passes through the position - the
     actual position adjustment is handled by the cache update logic.
-    
+
     Note: This class uses the model's max_context_len (params.max_context_len) for
     RoPE frequency table size, which should be large enough to support generation
-    beyond the sliding window. The actual KV cache size is sink_size + window_size * 2.
+    beyond the sliding window. The actual KV cache size is sink_size + window_size.
     """
 
     def __init__(
@@ -57,8 +57,8 @@ class RopeWithAttentionSink(Rope):
             self.apply_rotary_emb_to_k = hf_apply_rotary_emb_to_k
         else:
             self.apply_rotary_emb_to_k = apply_rotary_emb_to_k
-        # The KV cache size is sink_size + window_size * 2 (ring buffer needs 2x)
-        self.kv_cache_size = sink_size + window_size * 2
+        # The KV cache size is sink_size + window_size = max_seq_length
+        self.kv_cache_size = sink_size + window_size
         self.window_size = window_size
         self.sink_size = sink_size
         # max_context_len from params is used for RoPE frequencies (should be large)
@@ -104,11 +104,11 @@ def _create_causal_mask_for_attention_sink(
 ):
     """
     Create causal mask for attention sink.
-    
+
     Unlike regular ring buffer mask, this mask:
     1. ALWAYS allows attending to sink tokens (positions 0 to sink_size-1)
     2. Uses sliding window for other tokens
-    
+
     Args:
         cache_positions: Tensor of actual positions stored at each cache index
         window_size: Size of the sliding window
@@ -118,20 +118,20 @@ def _create_causal_mask_for_attention_sink(
     """
     pos_q = start_pos + torch.arange(seq_len, dtype=torch.long).view(-1, 1)
     delta = pos_q - cache_positions
-    
+
     # Valid if position is filled (>= 0) and causal (delta >= 0)
     is_valid = (cache_positions >= 0) & (delta >= 0)
-    
+
     # Sink tokens (original positions 0 to sink_size-1) are always visible
     is_sink = cache_positions < sink_size
-    
+
     # Window tokens must be within sliding window
     # Use <= to include the boundary token. For window_size=124, we want to attend
     # to the last 124 tokens BEFORE the current position (delta 1 to 124), plus
     # position 4 (first non-sink token) which has delta exactly = window_size.
     # This ensures sink_size + window_size tokens are visible when cache is full.
     is_in_window = delta <= window_size
-    
+
     # Final mask: valid AND (is_sink OR is_in_window)
     attn_mask = is_valid & (is_sink | is_in_window)
     attn_mask = torch.where(attn_mask == True, 0, float("-inf"))  # noqa E712
@@ -141,11 +141,11 @@ def _create_causal_mask_for_attention_sink(
 class CachePositionsManagerWithSink(nn.Module):
     """
     Manages cache positions for attention sink + sliding window.
-    
+
     For sink_size=0: behaves exactly like original CachePositionsManager (simple ring buffer).
     For sink_size>0: sink tokens (indices 0 to sink_size-1) are NEVER overwritten.
                      Ring buffer only cycles through indices sink_size to cache_size-1.
-    
+
     IMPORTANT: cache_size should be the actual cache dimension size (sink_size + 2*window_size).
     """
 
@@ -167,11 +167,11 @@ class CachePositionsManagerWithSink(nn.Module):
     ) -> torch.Tensor:
         """
         Calculate indices into k_cache, v_cache for placing k_val, v_val.
-        
+
         Index calculation:
         - Position < sink_size: index = position (sink tokens at fixed indices)
         - Position >= sink_size: index = sink_size + (position - sink_size) % ring_size
-        
+
         This ensures sink tokens (indices 0 to sink_size-1) are NEVER overwritten.
         """
         start_pos = input_pos[0].item()
@@ -179,7 +179,7 @@ class CachePositionsManagerWithSink(nn.Module):
 
         # Original positions for the sequence
         orig_positions = torch.arange(seq_len, dtype=torch.long) + start_pos
-        
+
         if self.sink_size == 0:
             # Simple ring buffer: just mod by cache size
             indices = orig_positions % self.max_context_length
@@ -221,12 +221,10 @@ class KVCacheWithAttentionSink(KVCache):
         max_context_len: Optional[int] = None,
         dtype=torch.float32,
     ):
-        # Total cache size is max_context_len if provided, else sink_size + window_size * 2
-        if max_context_len is None:
-            total_cache_size = sink_size + window_size * 2
-        else:
-            total_cache_size = max_context_len
-        
+        # Total cache size (KV cache) = sink_size + window_size = max_seq_length
+        # max_context_len is for RoPE position encoding limit, NOT cache size
+        total_cache_size = sink_size + window_size
+
         super().__init__(
             max_batch_size=max_batch_size,
             max_context_length=total_cache_size,
@@ -314,10 +312,10 @@ def attention_sink_forward(
     Uses ring buffer masking for proper attention patterns.
     """
     assert self.use_kv_cache
-    
+
     input_pos = kwargs.get("input_pos")
     assert input_pos is not None
-    
+
     # Extract cache_indices if provided (injected by Transformer forward)
     cache_indices = kwargs.get("cache_indices")
 
@@ -345,8 +343,17 @@ def attention_sink_forward(
     torch._check_is_size(start_pos)
     attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(start_pos, seqlen)
 
+    # For SDPA, we need to pass a cache-relative position, not the absolute sequence position.
+    # The cache position determines how many KV entries to attend to.
+    # With a ring buffer, after filling up, we always have a full cache.
+    cache_size = self.kv_cache.max_context_length
+    # Effective cache position: min(start_pos, cache_size - 1) so SDPA knows how many entries exist
+    # Once cache is full (start_pos >= cache_size), we always have cache_size entries filled
+    effective_cache_pos = min(start_pos, cache_size - 1)
+    cache_input_pos = torch.tensor([effective_cache_pos], dtype=input_pos.dtype, device=input_pos.device)
+
     # SDPA
-    output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
+    output = self.SDPA(cache_input_pos, q, k, v, bsz, seqlen, attn_mask)
 
     # Return tuple like original AttentionMHA.forward
     return self.wo(output), None
@@ -428,8 +435,10 @@ def enable_attention_sink(
     - Replace Attention's forward with attention_sink_forward
     """
     if max_context_len is None:
-        max_context_len = sink_size + window_size * 2
-    
+        # max_context_len is for RoPE position encoding limit
+        # Default to kv_cache_size if not specified, but typically should be larger (e.g., 8192)
+        max_context_len = sink_size + window_size
+
     # We update params.max_context_len to reflect the actual buffer size
     # This ensures export captures the correct cache size in metadata
     params.max_context_len = max_context_len
@@ -449,14 +458,14 @@ def enable_attention_sink(
         eviction_batch_size=eviction_batch_size,
         max_context_len=max_context_len,
     )
-    
+
     # Add metadata methods for IOManager
     def get_sink_size(self):
         return sink_size
-    
+
     def get_window_size(self):
         return window_size
-        
+
     # Bind methods to module
     # Note: For torch.export, we might need these to be part of the class or properly bound.
     # Monkey patching instance methods works for some cases but let's verify.
@@ -465,35 +474,35 @@ def enable_attention_sink(
     module.get_window_size = types.MethodType(get_window_size, module)
 
     # Monkey patch Transformer methods to handle cache_indices input
-    
+
     # 1. New get_example_inputs that includes cache_indices
     def get_example_inputs_with_sink(self):
         # Create inputs manually to avoid relying on Llama2Model helper methods
         # that might not be available on the Transformer module.
-        
+
         # Use a small sequence length for example
         seq_len = 3
         # Use simple tokens
         tokens = torch.tensor([[2, 3, 4]], dtype=torch.long)
         # Use corresponding input_pos matching seq_len
         input_pos = torch.arange(seq_len, dtype=torch.long)
-        
+
         # cache_indices matches input_pos/tokens length logic
         # For export example, we can use simple indices
         cache_indices = torch.arange(seq_len, dtype=torch.long)
-        
+
         # Note: The original generic get_example_inputs usually returns ({tokens}, {input_pos})
         # input_pos shape depends on dynamic shape setting.
         # But for export purposes, providing valid tensors is key.
         # If dynamic shapes are enabled, input_pos might be expected to be 1D.
-        
+
         return (tokens, {"input_pos": input_pos}, cache_indices)
 
     module.get_example_inputs = types.MethodType(get_example_inputs_with_sink, module)
 
     # 2. New forward that accepts cache_indices and passes it in attn_options
     original_forward = module.forward
-    
+
     def forward_with_sink(
         self,
         tokens: Optional[torch.LongTensor] = None,
@@ -504,13 +513,13 @@ def enable_attention_sink(
         # Note: top level export might pass inputs positionally if we aren't careful?
         # LlamaTransformer.forward has (tokens, attn_options, h)
         # We replace it.
-        
+
         if attn_options is None:
             attn_options = {}
-            
+
         if cache_indices is not None:
             attn_options["cache_indices"] = cache_indices
-            
+
         return original_forward(tokens=tokens, attn_options=attn_options)
 
     module.forward = types.MethodType(forward_with_sink, module)

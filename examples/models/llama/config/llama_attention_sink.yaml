@@ -2,23 +2,24 @@ base:
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 
 model:
-  use_sdpa_with_kv_cache: True  # Now supported! We set use_attention_mask=True on SDPACustom
+  use_sdpa_with_kv_cache: True
   use_kv_cache: True
   dtype_override: fp32
   enable_dynamic_shape: True
   # Attention Sink: "sink_size,window_size,eviction_batch_size"
-  # sink_size=4: Keep first 4 tokens (e.g., BOS + system prompt)
-  # window_size=124: 滑动窗口大小
-  # eviction_batch_size=1: 每次驱逐 1 个 token
-  # KV cache size = sink_size + window_size * 2 = 4 + 124*2 = 252
+  # sink_size=4: Keep first 4 tokens (attention sink)
+  # window_size=124: Sliding window size
+  # eviction_batch_size=1: Evict 1 token each time
+  # KV cache size = sink_size + window_size = 4 + 124 = 128 = max_seq_length
   use_attention_sink: "4,124,1"
 
 export:
-  # max_context_length controls the RoPE frequency table size.
-  # It must be >= sink_size + window_size (128), but larger values are
-  # recommended to support generation beyond the sliding window.
-  # The model default (e.g., 8192 or 131072) is typically used if not specified.
-  # For testing, we use the model's default by not setting this explicitly.
+  # max_seq_length = KV cache size = sink + window
+  max_seq_length: 128
+  # max_context_length = RoPE position encoding limit
+  # pos_ can exceed max_seq_length but not max_context_length
+  max_context_length: 8192
+  enable_dynamic_shape: True
 
 quantization:
   qmode: 8da4w
