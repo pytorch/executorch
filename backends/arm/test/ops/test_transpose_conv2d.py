@@ -31,10 +31,11 @@ input_t = Tuple[torch.Tensor]
 class TransposeConv2d(torch.nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
+        self.dtype = kwargs.get("dtype", torch.float32)
         self.deconv = torch.nn.ConvTranspose2d(**kwargs)
 
     def get_inputs(self):
-        return (torch.randn(1, self.deconv.in_channels, 10, 10),)
+        return (torch.randn(1, self.deconv.in_channels, 10, 10, dtype=self.dtype),)
 
     def forward(self, x):
         return self.deconv(x)
@@ -96,9 +97,19 @@ reject_suite = {
 test_data_INT16 = {
     "basic": test_data_FP["basic"],
 }
+test_data_BF16 = {
+    "basic_bf16": lambda: TransposeConv2d(
+        in_channels=16,
+        out_channels=8,
+        kernel_size=4,
+        stride=2,
+        padding=1,
+        dtype=torch.bfloat16,
+    ),
+}
 
 
-@common.parametrize("test_data", test_data_FP)
+@common.parametrize("test_data", test_data_FP | test_data_BF16)
 def test_conv_transpose2d_tosa_FP(test_data):
     model = test_data()
     pipeline = TosaPipelineFP[input_t](
@@ -107,6 +118,7 @@ def test_conv_transpose2d_tosa_FP(test_data):
         aten_op,
         exir_op,
         run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 

@@ -13,6 +13,7 @@ from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_dir
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
 )
+from torch._subclasses import FakeTensor
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
 from torch.fx import Node
@@ -41,12 +42,14 @@ functions_converters = {
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
+    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
     exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
     exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.tanh.default: TanhConverter,  # noqa F405
+    exir_ops.edge.aten.upsample_bilinear2d.vec: UpsampleBilinear2DConverter,  # noqa F405
+    exir_ops.edge.aten.upsample_nearest2d.vec: UpsampleNearest2DConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
-    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
 }
 
 
@@ -161,20 +164,49 @@ class EdgeProgramToIRConverter:
                     )
 
     @staticmethod
-    def map_inputs_to_parameters(edge_program: ExportedProgram) -> dict[str, Parameter]:
+    def map_inputs_to_parameters(
+        edge_program: ExportedProgram,
+        post_quantization_state_dict: dict[str, Parameter] | None = None,
+    ) -> dict[str, Parameter]:
         """
         Create mapping between program parameters (input nodes & static data nodes) and their names.
 
         :param edge_program: EdgeProgram instance.
+        :param post_quantization_state_dict: State-dict of the model right after quantization. During partitioning, the
+                                              `edge_program` only contains fake tensors without any data. In this case,
+                                              this state dict is used instead (if provided). Notice: It may potentially
+                                              contain outdated data,
         :return: Mapping from parameter name to parameter instance.
         """
         result_map = {}
 
         for input_spec in edge_program.graph_signature.input_specs:
             if input_spec.kind in [InputKind.PARAMETER, InputKind.BUFFER]:
-                result_map[input_spec.arg.name] = edge_program.state_dict[
-                    input_spec.target
-                ]
+
+                # First, try to load the static data from the model.
+                param = edge_program.state_dict[input_spec.target]
+
+                if not isinstance(param, FakeTensor):
+                    # Use the data from the model.
+                    result_map[input_spec.arg.name] = param
+
+                else:
+                    # It is the partitioning stage, which uses a FakeModel with FakeTensors (without the actual data).
+                    # Try to load the data from the post-quantization state dict.
+                    if (
+                        post_quantization_state_dict is not None
+                        and (
+                            param := post_quantization_state_dict.get(
+                                input_spec.target, None
+                            )
+                        )
+                        is not None
+                    ):
+                        result_map[input_spec.arg.name] = param
+
+                    else:
+                        # There is no data available.
+                        continue
 
         return result_map
 
