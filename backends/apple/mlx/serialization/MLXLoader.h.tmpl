@@ -1,0 +1,285 @@
+// -*- c++ -*-
+
+#pragma once
+
+#include <cstdint>
+#include <cstring>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <variant>
+#include <vector>
+
+#include "schema_generated.h"
+
+// ExecuTorch scalar type for dtype representation
+#include <executorch/runtime/core/portable_type/scalar_type.h>
+
+namespace executorch {
+namespace backends {
+namespace mlx {
+
+// =============================================================================
+// Core types matching the Python side
+// =============================================================================
+
+struct Tid {
+  uint32_t idx{};
+};
+
+template <typename T>
+struct Vid {
+  uint32_t idx{};
+};
+
+// =============================================================================
+// Tensor metadata
+// =============================================================================
+
+// Import ScalarType from ExecuTorch
+using ScalarType = ::executorch::runtime::etensor::ScalarType;
+
+struct TensorMeta {
+  std::vector<std::variant<int64_t, Vid<int32_t>>> shape;
+  ScalarType scalar_type{ScalarType::Float};  // ET ScalarType
+  std::vector<uint8_t> dim_order;
+};
+
+// TidOrVid: either a tensor (Tid) or a scalar value (Vid)
+struct TidOrVid {
+  Tid tid{};
+  Vid<int32_t> vid{};
+  bool is_vid{false};  // false = use tid, true = use vid
+};
+
+// =============================================================================
+// Op node types (AUTO-GENERATED from schema.fbs)
+// =============================================================================
+
+{{OP_NODE_STRUCTS}}
+
+// =============================================================================
+// OpCode enum (AUTO-GENERATED from schema.fbs)
+// =============================================================================
+
+enum class OpCode : uint8_t {
+{{OPCODE_ENUM_VALUES}}
+  SENTINEL
+};
+
+// OpCode to string conversion (for logging)
+inline const char* op_name(OpCode op) {
+  switch (op) {
+{{OP_NAME_CASES}}
+    case OpCode::SENTINEL:
+      return "SENTINEL";
+  }
+  return "UNKNOWN";
+}
+
+// =============================================================================
+// NodeVariant for type-erased op storage (AUTO-GENERATED)
+// =============================================================================
+
+using NodeVariant = std::variant<
+{{NODE_VARIANT_TYPES}}
+>;
+
+// =============================================================================
+// Instruction
+// =============================================================================
+
+struct Instruction {
+  OpCode op{OpCode::NOOP};
+  NodeVariant node;
+
+  template <typename T>
+  T& get() {
+    return std::get<T>(node);
+  }
+
+  template <typename T>
+  const T& get() const {
+    return std::get<T>(node);
+  }
+};
+
+// =============================================================================
+// SlotVariant for I/O mapping
+// =============================================================================
+
+enum class SlotType : uint8_t {
+  TensorSlot = 0,
+  IntValueSlot = 1,
+  FloatValueSlot = 2,
+  BoolValueSlot = 3,
+};
+
+struct SlotVariant {
+  uint32_t idx;
+  SlotType slot_type;
+};
+
+// =============================================================================
+// Named slot (name -> slot mapping)
+// =============================================================================
+
+struct NamedSlot {
+  std::string name;
+  SlotVariant slot;
+};
+
+// =============================================================================
+// MLXProgram - the loaded program ready for execution
+// =============================================================================
+
+struct MLXProgram {
+  std::string version;
+
+  // Tensor/value slot counts (in Tid assignment order)
+  uint32_t num_constant_tensors{0};
+  uint32_t num_input_tensors{0};
+  uint32_t num_output_tensors{0};
+  uint32_t num_mutable_buffer_tensors{0};
+  uint32_t num_temp_tensors{0};
+  uint32_t num_values{0};
+
+  // Instructions
+  std::vector<Instruction> instructions;
+  std::vector<Instruction> init_instructions;
+
+  // I/O mappings
+  std::vector<SlotVariant> input_map;
+  std::vector<SlotVariant> output_map;
+  std::vector<SlotVariant> mutable_buffer_map;
+
+  // Name to slot lookup
+  std::vector<NamedSlot> named_slots;
+
+  // Tensor metadata
+  std::vector<std::optional<TensorMeta>> tensor_meta;
+
+  // Helper methods
+  inline uint32_t num_tensors() const {
+    return num_constant_tensors + num_input_tensors + num_output_tensors + num_mutable_buffer_tensors + num_temp_tensors;
+  }
+
+  inline bool is_constant_tensor(Tid id) const {
+    return id.idx < num_constant_tensors;
+  }
+
+  inline size_t num_inputs() const {
+    return input_map.size();
+  }
+
+  inline size_t num_outputs() const {
+    return output_map.size();
+  }
+};
+
+// =============================================================================
+// FlatBuffer loading functions
+// =============================================================================
+
+namespace loader {
+
+// Convert FlatBuffer SlotType to our SlotType
+inline SlotType convert_slot_type(mlx_delegate::SlotType fb_type) {
+  switch (fb_type) {
+    case mlx_delegate::SlotType_TensorSlot:
+      return SlotType::TensorSlot;
+    case mlx_delegate::SlotType_IntValueSlot:
+      return SlotType::IntValueSlot;
+    case mlx_delegate::SlotType_FloatValueSlot:
+      return SlotType::FloatValueSlot;
+    case mlx_delegate::SlotType_BoolValueSlot:
+      return SlotType::BoolValueSlot;
+    default:
+      return SlotType::TensorSlot;
+  }
+}
+
+// Convert FlatBuffer Tid
+inline Tid convert_tid(const mlx_delegate::Tid* fb_tid) {
+  if (!fb_tid) {
+    return Tid{0};
+  }
+  return Tid{fb_tid->idx()};
+}
+
+// Convert FlatBuffer Vid
+inline Vid<int32_t> convert_vid(const mlx_delegate::Vid* fb_vid) {
+  if (!fb_vid) {
+    return Vid<int32_t>{0};
+  }
+  return Vid<int32_t>{fb_vid->idx()};
+}
+
+// Convert FlatBuffer IntOrVid
+inline std::variant<int64_t, Vid<int32_t>> convert_int_or_vid(
+    const mlx_delegate::IntOrVid* fb) {
+  if (!fb) {
+    return int64_t{0};
+  }
+  if (!fb->is_vid()) {
+    return fb->literal();
+  }
+  const auto* vid_ptr = fb->vid();
+  if (!vid_ptr) {
+    return int64_t{0};
+  }
+  return Vid<int32_t>{vid_ptr->idx()};
+}
+
+// Convert FlatBuffer FloatOrVid
+inline std::variant<double, Vid<int32_t>> convert_float_or_vid(
+    const mlx_delegate::FloatOrVid* fb) {
+  if (!fb) {
+    return double{0.0};
+  }
+  if (!fb->is_vid()) {
+    return fb->literal();
+  }
+  const auto* vid_ptr = fb->vid();
+  if (!vid_ptr) {
+    return double{0.0};
+  }
+  return Vid<int32_t>{vid_ptr->idx()};
+}
+
+// Convert FlatBuffer TidOrVid (tensor or scalar value)
+inline TidOrVid convert_tid_or_vid(
+    const mlx_delegate::TidOrVid* fb) {
+  if (!fb) {
+    return TidOrVid{Tid{0}, Vid<int32_t>{0}, false};
+  }
+  TidOrVid result;
+  result.is_vid = fb->is_vid();
+  if (fb->tid()) {
+    result.tid = Tid{fb->tid()->idx()};
+  }
+  if (fb->vid()) {
+    result.vid = Vid<int32_t>{fb->vid()->idx()};
+  }
+  return result;
+}
+
+// Convert FlatBuffer SlotVariant
+inline SlotVariant convert_slot_variant(const mlx_delegate::SlotVariant* fb) {
+  if (!fb) {
+    return SlotVariant{0, SlotType::TensorSlot};
+  }
+  return SlotVariant{fb->idx(), convert_slot_type(fb->slot_type())};
+}
+
+// Load an instruction from FlatBuffer
+Instruction load_instruction(const mlx_delegate::Instruction* fb_instr);
+
+// Load the full MLXProgram from FlatBuffer data
+MLXProgram load_program(const void* data, size_t size);
+
+} // namespace loader
+
+} // namespace mlx
+} // namespace backends
+} // namespace executorch

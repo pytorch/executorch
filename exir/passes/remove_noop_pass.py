@@ -77,14 +77,22 @@ class RemoveNoopPass(ExportPass):
                 continue
 
             if node.target == torch.ops.aten.slice_copy.Tensor:
-                # Only do this check if all the dims are static.
-                if all(isinstance(dim, int) for dim in orig_tensor.size()):
+                # Check if shapes match (slice is a no-op if input and output shapes are same)
+                # This comparison can fail with data-dependent symbols (e.g., from .item())
+                # In that case, conservatively keep the node
+                try:
                     if orig_tensor.shape == node.meta["val"].shape:
                         # If the graph is quantized, we must remove the entire pattern consisting of dq->op->q.
                         # Otherwise, removing only the op will suffice.
                         if node.args[0].target in _DEQUANT_OPS:
                             dequant_nodes += [node.args[0]]
                         node.replace_all_uses_with(node.args[0])
+                except (
+                    torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode
+                ):
+                    # Cannot determine if shapes match due to data-dependent symbols
+                    # Conservatively keep the node (don't remove it)
+                    pass
 
         graph_module.graph.eliminate_dead_code()
         eliminate_dq_q(graph_module, dequant_nodes)

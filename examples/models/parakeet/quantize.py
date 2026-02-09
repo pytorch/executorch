@@ -109,6 +109,7 @@ def quantize_model_(  # noqa: C901
                 config = IntxWeightOnlyConfig(
                     weight_dtype=torch.int4,
                     granularity=granularity,
+                    intx_choose_qparams_algorithm="hqq_scale_only",
                 )
         elif qlinear_config == "8w":
             config = IntxWeightOnlyConfig(
