@@ -1277,11 +1277,10 @@ def _unsqueeze_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 @REGISTRY.register(
     target=[torch.ops.aten.squeeze.dims, torch.ops.aten.squeeze_copy.dims]
 )
-def _squeeze_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+def _squeeze_dims_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle squeeze operation for specific dimensions.
 
     Removes dimensions of size 1 from the tensor at specified positions.
-    If dims is empty, removes all dimensions of size 1.
     """
     args = P.args(n)
     require_args(args, 2, 2, "aten.squeeze.dims")
@@ -1289,14 +1288,37 @@ def _squeeze_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     x, dims = args
     out = P.make_or_get_slot(n)
 
-    # dims is typically a list of ints
-    dims_list = list(dims) if dims is not None else []
+    dims_list = list(dims) if dims is not None else None
 
     P.emit(
         SqueezeNode(
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
             dims=dims_list,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(
+    target=[torch.ops.aten.squeeze.default, torch.ops.aten.squeeze_copy.default]
+)
+def _squeeze_default_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle squeeze operation without specified dimensions.
+
+    Removes all dimensions of size 1 from the tensor.
+    """
+    args = P.args(n)
+    require_args(args, 1, 1, "aten.squeeze.default")
+    require_kwargs(P.kwargs(n), set(), "aten.squeeze.default")
+    (x,) = args
+    out = P.make_or_get_slot(n)
+
+    P.emit(
+        SqueezeNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            dims=None,
         )
     )
     return out
