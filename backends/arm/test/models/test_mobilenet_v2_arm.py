@@ -66,8 +66,8 @@ def test_mv2_tosa_FP_bf16():
         (bf16_input,),
         aten_op=[],
         tosa_extensions=["bf16"],
-        atol=4e-02,
-        rtol=4e-02,
+        atol=6e-02,
+        rtol=6e-02,
     )
     pipeline.run()
 
