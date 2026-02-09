@@ -461,6 +461,7 @@ def export_all(
 def _create_xnnpack_partitioners(programs):
     """Create XNNPACK partitioners for all programs except preprocessor."""
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+        XnnpackDynamicallyQuantizedPartitioner,
         XnnpackPartitioner,
     )
 
@@ -470,7 +471,13 @@ def _create_xnnpack_partitioners(programs):
         if key == "preprocessor":
             partitioner[key] = []
         else:
-            partitioner[key] = [XnnpackPartitioner()]
+            # Use both partitioners:
+            # 1. XnnpackDynamicallyQuantizedPartitioner for dynamic quantization (8da4w)
+            # 2. XnnpackPartitioner for remaining ops
+            partitioner[key] = [
+                XnnpackDynamicallyQuantizedPartitioner(),
+                XnnpackPartitioner(),
+            ]
     return partitioner, programs
 
 
@@ -584,6 +591,7 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            do_quant_fusion_and_const_prop=True,
         ),
     )
 
@@ -598,9 +606,9 @@ def main():
     parser.add_argument(
         "--backend",
         type=str,
-        default="portable",
+        default="xnnpack",
         choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
-        help="Backend for acceleration (default: portable)",
+        help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
         "--dtype",
@@ -614,7 +622,7 @@ def main():
     parser.add_argument(
         "--qlinear",
         type=str,
-        choices=["4w", "8w", "8da4w", "8da8w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
         help="Quantization config for decoder linear layers",
     )
     parser.add_argument(
@@ -634,7 +642,7 @@ def main():
     parser.add_argument(
         "--qlinear_encoder",
         type=str,
-        choices=["4w", "8w", "8da4w", "8da8w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
         help="Quantization config for encoder linear layers",
     )
     parser.add_argument(
@@ -669,6 +677,12 @@ def main():
     # Validate dtype
     if args.dtype == "fp16":
         parser.error("fp16 is not yet supported")
+
+    # Validate fpa4w quantization requires Metal backend
+    if args.qlinear == "fpa4w" and args.backend != "metal":
+        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
+    if args.qlinear_encoder == "fpa4w" and args.backend != "metal":
+        parser.error("--qlinear_encoder=fpa4w can only be used with --backend=metal")
 
     os.makedirs(args.output_dir, exist_ok=True)
 

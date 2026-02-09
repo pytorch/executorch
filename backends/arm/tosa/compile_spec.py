@@ -16,6 +16,7 @@ class TosaCompileSpec(ArmCompileSpec):
     Args:
         tosa_spec (TosaSpecification | str): Target spec object or version
             string supported by ``TosaSpecification.create_from_string``.
+
     """
 
     def __init__(self, tosa_spec: TosaSpecification | str):
