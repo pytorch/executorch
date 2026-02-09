@@ -13,13 +13,6 @@ model:
   # KV cache size = sink_size + window_size * 2 = 4 + 124*2 = 252
   use_attention_sink: "4,124,1"
 
-export:
-  # max_context_length controls the RoPE frequency table size.
-  # It must be >= sink_size + window_size (128), but larger values are
-  # recommended to support generation beyond the sliding window.
-  # The model default (e.g., 8192 or 131072) is typically used if not specified.
-  # For testing, we use the model's default by not setting this explicitly.
-
 quantization:
   qmode: 8da4w
   group_size: 128
