@@ -256,6 +256,9 @@ class SharedQspecQuantizer(Quantizer):
         torch.ops.aten._unsafe_view.default,
         torch.ops.aten.unflatten.int,
         torch.ops.aten.flatten.using_ints,
+        # Padding
+        torch.ops.aten.pad.default,
+        torch.ops.aten.constant_pad_nd.default,
     ]
 
     def __init__(self, targets: Optional[List[OpOverload]] = None) -> None:
