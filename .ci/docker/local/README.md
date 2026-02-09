@@ -1,7 +1,11 @@
 # Local Docker Build for ExecuTorch
 
 This directory contains scripts for building ExecuTorch Docker images locally,
-without requiring access to Meta's CI infrastructure (S3 sccache).
+without requiring access to Meta's CI infrastructure.
+
+The CI Docker images use sccache with S3 for build caching, which only works
+in Meta's CI environment. This local build script skips sccache entirely
+since it's not needed for one-off local builds.
 
 ## Usage
 
@@ -38,7 +42,7 @@ The built image includes:
 ## Differences from CI Build
 
 This local build script:
-1. Uses local sccache instead of S3 (no AWS credentials needed)
+1. Skips sccache entirely (no S3/AWS credentials needed)
 2. Removes `--no-cache` flag for faster rebuilds
 3. Patches the Dockerfile and install scripts on-the-fly
 
