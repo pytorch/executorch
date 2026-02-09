@@ -64,6 +64,8 @@ class ET_EXPERIMENTAL AsrRunner {
       std::optional<std::string> data_path,
       const std::string& tokenizer_path);
 
+  ~AsrRunner();
+
   /**
    * Returns true when the module and tokenizer are ready for inference.
    */
@@ -110,6 +112,10 @@ class ET_EXPERIMENTAL AsrRunner {
   bool decoder_method_loaded_ = false;
   bool sampler_method_loaded_ = false;
   bool sampler_method_present_ = false;
+
+#ifdef CUDA_AVAILABLE
+  void* cuda_stream_ = nullptr; // Shared CUDA stream for all methods
+#endif
 
   Stats stats_;
 };

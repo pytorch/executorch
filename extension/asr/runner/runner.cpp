@@ -22,6 +22,10 @@
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
 
+#ifdef CUDA_AVAILABLE
+#include <cuda_runtime.h>
+#endif
+
 namespace executorch::extension::asr {
 namespace {
 
@@ -44,6 +48,23 @@ AsrRunner::AsrRunner(
     module_ = std::make_unique<Module>(
         module_path_, data_path_, Module::LoadMode::Mmap);
   }
+}
+
+AsrRunner::~AsrRunner() {
+#ifdef CUDA_AVAILABLE
+  // Destroy the shared CUDA stream if it was created
+  if (cuda_stream_ != nullptr) {
+    cudaStream_t stream = static_cast<cudaStream_t>(cuda_stream_);
+    cudaError_t err = cudaStreamDestroy(stream);
+    if (err != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "Failed to destroy shared CUDA stream: %s",
+          cudaGetErrorString(err));
+    }
+    cuda_stream_ = nullptr;
+  }
+#endif
 }
 
 bool AsrRunner::is_loaded() const {
@@ -119,15 +140,41 @@ Error AsrRunner::load() {
     sampler_method_loaded_ = true;
   }
 #ifdef CUDA_AVAILABLE
+  // Create a shared CUDA stream for all methods. This ensures proper ordering
+  // when skip-copy optimization is enabled, as outputs from one method
+  // (e.g., encoder) may be used as inputs to another (e.g., decoder).
+  cudaStream_t shared_cuda_stream;
+  cudaError_t stream_err = cudaStreamCreate(&shared_cuda_stream);
+  if (stream_err != cudaSuccess) {
+    ET_LOG(
+        Error,
+        "Failed to create shared CUDA stream: %s",
+        cudaGetErrorString(stream_err));
+    return Error::Internal;
+  }
+  cuda_stream_ = shared_cuda_stream;
+
+  // Format the stream pointer as a string for passing via BackendOptions.
+  char stream_str[32];
+  std::snprintf(
+      stream_str,
+      sizeof(stream_str),
+      "%llu",
+      static_cast<unsigned long long>(
+          reinterpret_cast<uintptr_t>(shared_cuda_stream)));
+
   // Skip copying outputs to CPU. When a sampler exists, keep both encoder and
   // decoder outputs on device and pass decoder logits directly into sampler.
-  executorch::runtime::BackendOptions<1> backend_options;
+  executorch::runtime::BackendOptions<2> backend_options;
   std::string skip_methods = kEncoderMethodName;
   if (sampler_method_present_) {
     skip_methods.append(",").append(kDecoderMethodName);
   }
   ET_CHECK_OK_OR_RETURN_ERROR(backend_options.set_option(
       "skip_copy_output_to_cpu_for_method", skip_methods.c_str()));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      backend_options.set_option("cuda_stream", stream_str));
+
   const auto opt_err =
       executorch::runtime::set_option("CudaBackend", backend_options.view());
   if (opt_err != ::executorch::runtime::Error::Ok) {
