@@ -731,9 +731,16 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             calibration_limit=llm_config.quantization.calibration_limit,
             calibration_seq_length=llm_config.quantization.calibration_seq_length,
             expand_rope_table=llm_config.model.expand_rope_table,
+            # Attention sink models need attention mask for custom SDPA because:
+            # 1. The ring buffer creates a dynamic mask based on cache_positions
+            # 2. Without mask, custom_sdpa uses is_causal=True with start_pos, which
+            #    fails when start_pos exceeds the cache size (positions keep growing)
+            # 3. With mask, custom_sdpa uses is_causal=False and the mask handles
+            #    all masking logic including sliding window and attention sink
             use_custom_sdpa_with_attention_mask=getattr(
                 llm_config.model, "use_custom_sdpa_with_attention_mask", False
-            ),
+            )
+            or bool(llm_config.model.use_attention_sink),
             use_sdpa_with_kv_cache=llm_config.model.use_sdpa_with_kv_cache,
             quantize_kv_cache=llm_config.model.quantize_kv_cache,
             use_kv_cache=llm_config.model.use_kv_cache,
@@ -1152,6 +1159,15 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
+    # For attention sink models, the cache_positions buffer must be initialized
+    # to -1 (sentinel for "empty slot"). Without this pass, ExecuTorch only
+    # serializes shape+dtype for mutated buffers, leaving them uninitialized
+    # at runtime, which corrupts the attention mask computation.
+    if llm_config.model.use_attention_sink:
+        additional_passes.append(
+            InitializedMutableBufferPass(["cache_positions"])
+        )
+
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)
     if llm_config.backend.tosa.enabled:
@@ -1516,7 +1532,6 @@ def _get_source_transforms(  # noqa
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
     use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask
-
     if use_sdpa_with_kv_cache:
         transforms.append(replace_kv_cache_with_custom_kv_cache)
         # todo: do this optionally

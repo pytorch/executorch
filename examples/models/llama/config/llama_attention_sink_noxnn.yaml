@@ -1,0 +1,29 @@
+base:
+  metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+
+model:
+  use_sdpa_with_kv_cache: True  # Now supported! We set use_attention_mask=True on SDPACustom
+  use_kv_cache: True
+  dtype_override: fp32
+  enable_dynamic_shape: True
+  # Attention Sink: "sink_size,window_size,eviction_batch_size"
+  # sink_size=4: Keep first 4 tokens (e.g., BOS + system prompt)
+  # window_size=124: 滑动窗口大小
+  # eviction_batch_size=1: 每次驱逐 1 个 token
+  # KV cache size = sink_size + window_size * 2 = 4 + 124*2 = 252
+  use_attention_sink: "4,124,1"
+
+export:
+  max_seq_length: 252
+  max_context_length: 512
+
+# Quantization enabled for this test
+quantization:
+  qmode: 8da4w
+  group_size: 128
+  embedding_quantize: 4,32
+
+# No XNNPACK for this test
+backend:
+  xnnpack:
+    enabled: False
