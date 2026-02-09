@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <string>
 
 #include <gflags/gflags.h>
 
@@ -44,11 +45,20 @@ DEFINE_string(tokenizer_path, "tokenizer.json", "Tokenizer stuff.");
 DEFINE_string(prompt, "What is in this image?", "Text prompt.");
 
 DEFINE_string(image_path, "", "Path to input image file.");
+DEFINE_string(
+    stop_sequence,
+    "<end_of_turn>",
+    "Stop generation when this substring appears in the output. Empty disables stopping.");
 
 DEFINE_double(
     temperature,
     0.0f,
     "Temperature; Default is 0. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
+
+DEFINE_int32(
+    max_new_tokens,
+    100,
+    "Maximum number of tokens to generate (default: 100).");
 
 DEFINE_int32(
     cpu_threads,
@@ -167,7 +177,9 @@ int32_t main(int32_t argc, char** argv) {
   const char* prompt = FLAGS_prompt.c_str();
   const char* image_path = FLAGS_image_path.c_str();
   const char* data_path = FLAGS_data_path.c_str();
+  const std::string stop_sequence = FLAGS_stop_sequence;
   float temperature = FLAGS_temperature;
+  int32_t max_new_tokens = FLAGS_max_new_tokens;
   int32_t cpu_threads = FLAGS_cpu_threads;
   bool warmup = FLAGS_warmup;
 
@@ -216,7 +228,7 @@ int32_t main(int32_t argc, char** argv) {
   };
 
   ::executorch::extension::llm::GenerationConfig config;
-  config.max_new_tokens = 100;
+  config.max_new_tokens = max_new_tokens;
   config.temperature = temperature;
 
   // Run warmup if requested
@@ -230,7 +242,25 @@ int32_t main(int32_t argc, char** argv) {
     runner->reset();
   }
 
-  auto error = runner->generate(inputs, config);
+  std::string stop_buffer;
+  bool stop_triggered = false;
+  auto error = runner->generate(
+      inputs,
+      config,
+      [&](const std::string& piece) {
+        if (stop_sequence.empty() || stop_triggered) {
+          return;
+        }
+        stop_buffer.append(piece);
+        if (stop_buffer.size() > stop_sequence.size() * 4) {
+          stop_buffer.erase(
+              0, stop_buffer.size() - stop_sequence.size() * 2);
+        }
+        if (stop_buffer.find(stop_sequence) != std::string::npos) {
+          stop_triggered = true;
+          runner->stop();
+        }
+      });
 
   if (error != ::executorch::runtime::Error::Ok) {
     ET_LOG(Error, "Failed to generate with multimodal runner\n");

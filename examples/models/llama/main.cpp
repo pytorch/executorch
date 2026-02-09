@@ -9,6 +9,7 @@
 
 #include <executorch/examples/models/llama/runner/runner.h>
 #include <gflags/gflags.h>
+#include <fstream>
 #include <sstream>
 #include <vector>
 
@@ -31,9 +32,18 @@ DEFINE_string(
     "",
     "Data files for the model. If multiple files are provided, they should be comma separated.");
 
+DEFINE_string(
+    data_path,
+    "",
+    "Optional path to model weights (.ptd). If set, do not use --data_paths.");
+
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
+DEFINE_string(
+    prompt_file,
+    "",
+    "Optional path to a file containing the prompt. If set, this overrides --prompt.");
 
 DEFINE_double(
     temperature,
@@ -97,6 +107,17 @@ std::vector<std::string> parseStringList(const std::string& input) {
   return result;
 }
 
+bool readFileToString(const std::string& path, std::string& out) {
+  std::ifstream file(path, std::ios::in | std::ios::binary);
+  if (!file) {
+    return false;
+  }
+  std::ostringstream ss;
+  ss << file.rdbuf();
+  out = ss.str();
+  return true;
+}
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -106,10 +127,30 @@ int32_t main(int32_t argc, char** argv) {
   const char* model_path = FLAGS_model_path.c_str();
 
   std::vector<std::string> data_paths = parseStringList(FLAGS_data_paths);
+  if (!FLAGS_data_path.empty()) {
+    if (!data_paths.empty()) {
+      ET_LOG(
+          Error,
+          "Both --data_path and --data_paths are set. Please use only one.");
+      return 1;
+    }
+    data_paths.push_back(FLAGS_data_path);
+  }
 
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
 
+  std::string prompt_storage;
   const char* prompt = FLAGS_prompt.c_str();
+  if (!FLAGS_prompt_file.empty()) {
+    if (!readFileToString(FLAGS_prompt_file, prompt_storage)) {
+      ET_LOG(
+          Error,
+          "Failed to read prompt file at path: %s",
+          FLAGS_prompt_file.c_str());
+      return 1;
+    }
+    prompt = prompt_storage.c_str();
+  }
 
   float temperature = FLAGS_temperature;
 

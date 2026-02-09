@@ -163,6 +163,15 @@ if(TARGET xnnpack_backend)
   executorch_target_link_options_shared_lib(xnnpack_backend)
 endif()
 
+# CUDA backend
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  list(APPEND link_libraries aoti_cuda_backend)
+  if(NOT MSVC)
+    executorch_target_link_options_shared_lib(aoti_cuda_backend)
+  endif()
+endif()
+
 # Vulkan backend
 if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
