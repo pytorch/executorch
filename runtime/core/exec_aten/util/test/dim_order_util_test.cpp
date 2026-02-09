@@ -12,6 +12,7 @@
 #include <numeric>
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/platform/runtime.h>
 
 #include <gtest/gtest.h>
 
@@ -20,6 +21,15 @@ using executorch::runtime::Error;
 using executorch::runtime::is_channels_last_dim_order;
 using executorch::runtime::is_contiguous_dim_order;
 using executorch::runtime::stride_to_dim_order;
+
+class DimOrderUtilTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // As some of these tests cause ET_LOG to be called, the PAL must be
+    // initialized first by calling runtime_init();
+    executorch::runtime::runtime_init();
+  }
+};
 
 namespace {
 void check_strides_eq(
@@ -39,7 +49,7 @@ void check_dim_order_eq(
 }
 } // namespace
 
-TEST(DimOrderUtilTest, DimOrderToStride) {
+TEST_F(DimOrderUtilTest, DimOrderToStride) {
   executorch::aten::SizesType sizes_1[1] = {5};
   executorch::aten::SizesType dim_order_1[1] = {0};
   executorch::aten::SizesType strides_1[1] = {0};
@@ -204,7 +214,7 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   check_strides_eq({strides_3_zero, 3}, {expected_strides_3_zero, 3});
 }
 
-TEST(DimOrderUtilTest, StrideToDimOrder) {
+TEST_F(DimOrderUtilTest, StrideToDimOrder) {
   executorch::aten::SizesType strides[3] = {5, 1, 15};
   executorch::aten::DimOrderType dim_order[3] = {0, 0, 0};
 
@@ -216,7 +226,7 @@ TEST(DimOrderUtilTest, StrideToDimOrder) {
   check_dim_order_eq(dim_order, expected_dim_order);
 }
 
-TEST(DimOrderUtilTest, StrideToDimOrderSameStrides) {
+TEST_F(DimOrderUtilTest, StrideToDimOrderSameStrides) {
   executorch::aten::SizesType strides[4] = {4, 3, 1, 1};
   executorch::aten::DimOrderType dim_order[4] = {0, 0, 0, 0};
 
@@ -227,7 +237,7 @@ TEST(DimOrderUtilTest, StrideToDimOrderSameStrides) {
   check_dim_order_eq(dim_order, expected_dim_order);
 }
 
-TEST(DimOrderUtilTest, IsDefaultDimOrderTest) {
+TEST_F(DimOrderUtilTest, IsDefaultDimOrderTest) {
   for (const auto i : c10::irange(1, 7)) {
     std::vector<executorch::aten::DimOrderType> dim_order(i);
     std::iota(dim_order.begin(), dim_order.end(), 0);
@@ -240,7 +250,7 @@ TEST(DimOrderUtilTest, IsDefaultDimOrderTest) {
   }
 }
 
-TEST(DimOrderUtilTest, IsDefaultDimOrderFailCasesTest) {
+TEST_F(DimOrderUtilTest, IsDefaultDimOrderFailCasesTest) {
   // Dims is default order but have two elements swapped
   for (const auto i : c10::irange(3, 8)) {
     std::vector<executorch::aten::DimOrderType> dim_order(i);
@@ -261,7 +271,7 @@ TEST(DimOrderUtilTest, IsDefaultDimOrderFailCasesTest) {
   }
 }
 
-TEST(DimOrderUtilTest, IsChannelsLastDimOrderTest) {
+TEST_F(DimOrderUtilTest, IsChannelsLastDimOrderTest) {
   executorch::aten::DimOrderType dim_order_4d[4] = {0, 2, 3, 1};
   executorch::aten::DimOrderType dim_order_5d[5] = {0, 2, 3, 4, 1};
 
@@ -273,7 +283,7 @@ TEST(DimOrderUtilTest, IsChannelsLastDimOrderTest) {
   EXPECT_FALSE(is_contiguous_dim_order(dim_order_5d, 5));
 }
 
-TEST(DimOrderUtilTest, IsChannelsLastDimOrderFailCasesTest) {
+TEST_F(DimOrderUtilTest, IsChannelsLastDimOrderFailCasesTest) {
   // Non 4D and 5D dim order returns false
   executorch::aten::DimOrderType dim_order_3d[4] = {1, 2, 0};
   executorch::aten::DimOrderType dim_order_6d[6] = {0, 2, 3, 4, 5, 1};
@@ -286,4 +296,52 @@ TEST(DimOrderUtilTest, IsChannelsLastDimOrderFailCasesTest) {
 
   EXPECT_FALSE(is_channels_last_dim_order(dim_order_4d, 4));
   EXPECT_FALSE(is_channels_last_dim_order(dim_order_5d, 5));
+}
+
+TEST_F(DimOrderUtilTest, DimOrderWithAllDuplicatesReturnsError) {
+  executorch::aten::SizesType sizes[3] = {2, 3, 4};
+  executorch::aten::SizesType dim_order[3] = {0, 0, 0};
+  executorch::aten::SizesType strides[3] = {0, 0, 0};
+
+  auto error = dim_order_to_stride(sizes, dim_order, 3, strides);
+  EXPECT_EQ(error, Error::InvalidArgument);
+}
+
+TEST_F(DimOrderUtilTest, DimOrderWithPartialDuplicateReturnsError) {
+  executorch::aten::SizesType sizes[3] = {2, 3, 4};
+  executorch::aten::SizesType dim_order[3] = {0, 1, 1};
+  executorch::aten::SizesType strides[3] = {0, 0, 0};
+
+  auto error = dim_order_to_stride(sizes, dim_order, 3, strides);
+  EXPECT_EQ(error, Error::InvalidArgument);
+}
+
+TEST_F(DimOrderUtilTest, DimOrderWithMissingValueReturnsError) {
+  executorch::aten::SizesType sizes[3] = {2, 3, 4};
+  executorch::aten::SizesType dim_order[3] = {1, 2, 2};
+  executorch::aten::SizesType strides[3] = {0, 0, 0};
+
+  auto error = dim_order_to_stride(sizes, dim_order, 3, strides);
+  EXPECT_EQ(error, Error::InvalidArgument);
+}
+
+TEST_F(DimOrderUtilTest, DimOrderWithOutOfBoundsValueReturnsError) {
+  executorch::aten::SizesType sizes[3] = {2, 3, 4};
+  executorch::aten::SizesType dim_order[3] = {0, 1, 5};
+  executorch::aten::SizesType strides[3] = {0, 0, 0};
+
+  auto error = dim_order_to_stride(sizes, dim_order, 3, strides);
+  EXPECT_EQ(error, Error::InvalidArgument);
+}
+
+TEST_F(DimOrderUtilTest, TooManyDimsReturnsError) {
+  constexpr size_t kTooManyDims = executorch::runtime::kTensorDimensionLimit + 1;
+  std::vector<executorch::aten::SizesType> sizes(kTooManyDims, 1);
+  std::vector<executorch::aten::SizesType> dim_order(kTooManyDims);
+  std::iota(dim_order.begin(), dim_order.end(), 0);
+  std::vector<executorch::aten::SizesType> strides(kTooManyDims, 0);
+
+  auto error = dim_order_to_stride(
+      sizes.data(), dim_order.data(), kTooManyDims, strides.data());
+  EXPECT_EQ(error, Error::InvalidArgument);
 }
