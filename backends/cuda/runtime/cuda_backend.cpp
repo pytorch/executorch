@@ -423,17 +423,17 @@ class ET_EXPERIMENTAL CudaBackend final
 
     const bool copy_outputs = !should_skip_copy_for_method(handle->method_name);
 
-    // Synchronize CUDA stream to ensure kernel execution is complete
-    // before accessing output data (either for copy or skip-copy path)
-    cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
-    cudaError_t sync_err = cudaStreamSynchronize(cuda_stream);
-    ET_CHECK_OR_RETURN_ERROR(
-        sync_err == cudaSuccess,
-        Internal,
-        "cudaStreamSynchronize failed: %s",
-        cudaGetErrorString(sync_err));
-
     if (copy_outputs) {
+      // Synchronize CUDA stream before D2H copy. This is required because
+      // cudaMemcpy is not stream-ordered and needs the kernel to complete.
+      cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
+      cudaError_t sync_err = cudaStreamSynchronize(cuda_stream);
+      ET_CHECK_OR_RETURN_ERROR(
+          sync_err == cudaSuccess,
+          Internal,
+          "cudaStreamSynchronize failed: %s",
+          cudaGetErrorString(sync_err));
+
       // Deep copy GPU SlimTensor results back to CPU ETensors
       for (size_t i = 0; i < n_outputs; i++) {
         auto* cpu_output_tensor = &(args[i + n_inputs]->toTensor());
@@ -447,6 +447,12 @@ class ET_EXPERIMENTAL CudaBackend final
     } else {
       // Skip-copy optimization: point ETensor directly to GPU data.
       // The caller is responsible for handling GPU data directly.
+      //
+      // No cudaStreamSynchronize needed here because:
+      // 1. All operations (kernel, allocations, frees) are on the same stream
+      // 2. cudaFreeAsync is stream-ordered, so CUDA guarantees the kernel
+      //    completes before any memory is freed
+      // 3. The next execution's operations will also be ordered on this stream
       //
       // Lifetime management: We cache the newly created GPU tensors and delete
       // the previous round's tensors, since they are no longer needed.
