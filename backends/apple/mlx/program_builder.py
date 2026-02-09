@@ -93,6 +93,7 @@ _COPY_TO_NON_COPY = {
     torch.ops.aten.unsqueeze_copy.default: torch.ops.aten.unsqueeze.default,
     torch.ops.aten.squeeze_copy.dim: torch.ops.aten.squeeze.dim,
     torch.ops.aten.squeeze_copy.dims: torch.ops.aten.squeeze.dims,
+    torch.ops.aten.squeeze_copy.default: torch.ops.aten.squeeze.default,
     torch.ops.aten.expand_copy.default: torch.ops.aten.expand.default,
     torch.ops.aten.alias_copy.default: torch.ops.aten.alias.default,
 }

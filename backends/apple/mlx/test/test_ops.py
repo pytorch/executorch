@@ -475,12 +475,12 @@ class LogSoftmaxTest(OpTestCase):
 class SqueezeModel(nn.Module):
     """Model that squeezes a tensor at specified dimensions."""
 
-    def __init__(self, dims: Tuple[int, ...]):
+    def __init__(self, dims: Optional[Tuple[int, ...]] = None):
         super().__init__()
         self.dims = dims
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if len(self.dims) == 0:
+        if self.dims is None:
             return torch.squeeze(x)
         else:
             return torch.squeeze(x, dim=self.dims)
@@ -495,12 +495,19 @@ class SqueezeTest(OpTestCase):
     atol = 1e-5
 
     def __init__(
-        self, shape: Tuple[int, ...] = (1, 3, 1, 4), dims: Tuple[int, ...] = (0, 2)
+        self,
+        shape: Tuple[int, ...] = (1, 3, 1, 4),
+        dims: Optional[Tuple[int, ...]] = (0, 2),
     ):
         self.shape = shape
         self.dims = dims
         shape_str = "x".join(str(s) for s in shape)
-        dims_str = "_".join(str(d) for d in dims) if dims else "all"
+        if dims is None:
+            dims_str = "all"
+        elif len(dims) == 0:
+            dims_str = "empty"
+        else:
+            dims_str = "_".join(str(d) for d in dims)
         self.name = f"squeeze_{shape_str}_dims{dims_str}"
 
     @classmethod
@@ -511,6 +518,10 @@ class SqueezeTest(OpTestCase):
             cls(shape=(3, 1, 4), dims=(1,)),
             cls(shape=(1, 1, 8), dims=(0, 1)),
             cls(shape=(2, 1, 3, 1), dims=(1, 3)),
+            # Squeeze all singleton dims (no dims specified)
+            cls(shape=(1, 3, 1, 4), dims=None),
+            # Dims include non-size-1 axes (should be no-op for those axes)
+            cls(shape=(1, 1, 1, 8198), dims=(0, 1, 2, 3)),
         ]
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:

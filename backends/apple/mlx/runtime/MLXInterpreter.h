@@ -464,15 +464,24 @@ inline void exec_tanh(const TanhNode& n, ExecutionState& st, StreamOrDevice s) {
 inline void
 exec_squeeze(const SqueezeNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
-  auto dims_fb = n.dims;
+  const auto& dims_fb = n.dims;
 
   if (dims_fb.size() > 0) {
-    // Squeeze specific dimensions
+    // Squeeze specific dimensions, filtering out non-size-1 dims to match
+    // PyTorch semantics where squeeze on a non-size-1 dim is a no-op.
     std::vector<int> dims;
     for (auto d : dims_fb) {
-      dims.push_back(d);
+      int axis = d < 0 ? d + static_cast<int>(x.ndim()) : d;
+      if (axis >= 0 && axis < static_cast<int>(x.ndim()) &&
+          x.shape(axis) == 1) {
+        dims.push_back(d);
+      }
     }
-    st.set_tensor(n.out, squeeze(x, dims, s));
+    if (dims.size() > 0) {
+      st.set_tensor(n.out, squeeze(x, dims, s));
+    } else {
+      st.set_tensor(n.out, x);
+    }
   } else {
     // Squeeze all dimensions of size 1
     st.set_tensor(n.out, squeeze(x, s));
