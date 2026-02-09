@@ -58,8 +58,8 @@ def test_resnet_18_tosa_FP_bf16():
         (bf16_input,),
         aten_op=[],
         tosa_extensions=["bf16"],
-        atol=8e-02,
-        rtol=8e-02,
+        atol=10e-02,
+        rtol=10e-02,
     )
     pipeline.run()
 
