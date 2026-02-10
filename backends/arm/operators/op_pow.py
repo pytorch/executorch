@@ -3,59 +3,28 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
-from typing import Any, List
-
 import tosa_serializer as ts
 
-from executorch.backends.arm.operators.node_visitor import (
-    NodeVisitor,
-    register_node_visitor,
-)
-from executorch.backends.arm.operators.operator_validation_utils import (
-    validate_num_inputs,
-    validate_same_dtype,
-    validate_valid_dtype,
+from executorch.backends.arm.operators.node_visitor import register_node_visitor
+from executorch.backends.arm.operators.simple_node_visitor import (
+    SimpleNodeVisitor,
+    SimpleNodeVisitorConfig,
 )
 from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.arm.tosa.mapping import TosaArg
-from torch.fx import Node
+
+FP_SPECS = TosaSpecification.all_versions_for_profile("FP")
 
 
 @register_node_visitor
-class PowVisitor(NodeVisitor):
+class PowVisitor(SimpleNodeVisitor):
     target = "aten.pow.Tensor_Tensor"
+    tosa_specs = FP_SPECS
 
-    tosa_specs = TosaSpecification.all_versions_for_profile("FP")
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output], ts)
-        validate_valid_dtype(
-            self.target,
-            [*inputs, output],
-            [ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
-            self.tosa_spec,
-        )
-        attr = ts.TosaSerializerAttribute()
-        attr.PowAttribute()
-        self._serialize_operator(
-            node,
-            tosa_graph,
-            ts.Op.POW,
-            [
-                inputs[0].name,
-                inputs[1].name,
-            ],
-            [output.name],
-            attr,
+    @classmethod
+    def get_config(cls) -> SimpleNodeVisitorConfig:
+        return SimpleNodeVisitorConfig(
+            tosa_op=ts.Op.POW,
+            attr_method="PowAttribute",
+            num_inputs=2,
+            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
         )
