@@ -15,6 +15,7 @@ class ScalarType(object):
     QINT8 = 12
     QUINT8 = 13
     QINT32 = 14
+    BFLOAT16 = 15
     QUINT4X2 = 16
     QUINT2X4 = 17
     BITS16 = 22
