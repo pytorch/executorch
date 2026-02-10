@@ -8,7 +8,7 @@ import logging
 import sys
 
 import torch
-from executorch.examples.models.llava.image_util import prepare_image
+from executorch.examples.models.llava.model import prepare_image
 from executorch.examples.models.llava.model import LlavaModel
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
 from PIL import Image
