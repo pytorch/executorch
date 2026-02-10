@@ -18,8 +18,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-#include <iostream>
-
 namespace vkcompute {
 
 enum class Conv2dMethod : uint8_t {
@@ -618,34 +616,6 @@ void add_conv2d_node(
         graph.create_params_buffer(out_params),
     };
   }
-
-  // Diagnostic logging for PowerVR devices to help debug conv2d issues
-#ifndef NDEBUG
-  if (graph.device_is_powervr()) {
-    const auto weight_sizes = graph.sizes_of(weight_data);
-    const auto out_sizes = graph.sizes_of(out);
-    const auto in_sizes_dbg = graph.sizes_of(in);
-    const char* method_str =
-        method == Conv2dMethod::Depthwise    ? "Depthwise"
-        : method == Conv2dMethod::Pointwise  ? "Pointwise"
-        : method == Conv2dMethod::Transposed ? "Transposed"
-                                             : "SlidingWindow";
-    std::cerr << "[PowerVR conv2d] method=" << method_str
-              << " shader=" << shader.kernel_name
-              << " in=[" << in_sizes_dbg[0] << "," << in_sizes_dbg[1] << ","
-              << in_sizes_dbg[2] << "," << in_sizes_dbg[3] << "]"
-              << " weight=[" << weight_sizes[0] << "," << weight_sizes[1] << ","
-              << weight_sizes[2] << "," << weight_sizes[3] << "]"
-              << " out=[" << out_sizes[0] << "," << out_sizes[1] << ","
-              << out_sizes[2] << "," << out_sizes[3] << "]"
-              << " groups=" << groups_val
-              << " global_wg=[" << wg_size[0] << "," << wg_size[1] << ","
-              << wg_size[2] << "]"
-              << " local_wg=[" << local_wg_size[0] << "," << local_wg_size[1]
-              << "," << local_wg_size[2] << "]"
-              << std::endl;
-  }
-#endif
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
