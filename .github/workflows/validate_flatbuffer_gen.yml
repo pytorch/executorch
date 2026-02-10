@@ -14,19 +14,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install flatc
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatbuffers-compiler
-          flatc --version
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: install executorch  (with flatc)
+        run: ./install_executorch.sh -e
 
       - name: Generate flatbuffer Python
         run: python exir/_serialize/generate_program.py
 
       - name: Validate executorch_flatbuffer is unchanged
         run: |
-          git add -A executorch_flatbuffer
-          if ! git diff --cached --quiet -- executorch_flatbuffer; then
+          git add -A exir/_serialize/generated/executorch_flatbuffer
+          if ! git diff --cached --quiet -- exir/_serialize/generated/executorch_flatbuffer; then
             echo "Error: executorch_flatbuffer has uncommitted changes."
             echo "Please run 'python exir/_serialize/generate_program.py' to regenerate the files and commit the changes."
             exit 1
