@@ -668,6 +668,16 @@ if(EXECUTORCH_BUILD_CORTEX_M)
   list(APPEND _executorch_backends coretex_m_backend)
 endif()
 
+# If CUDA, Metal, or pybind will need Torch, find it at root scope first so that
+# imported targets (e.g. MKL::MKL) aren't created in child directory scopes and
+# then duplicated when found again at root scope.
+if(EXECUTORCH_BUILD_CUDA
+   OR EXECUTORCH_BUILD_METAL
+   OR EXECUTORCH_BUILD_PYBIND
+)
+  find_package_torch()
+endif()
+
 # Build common AOTI functionality if needed by CUDA or Metal backends
 if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_METAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/aoti)
@@ -885,6 +895,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       util
       torch
   )
+
+  # Build common AOTI functionality if needed by CUDA or Metal backends
+  if(EXECUTORCH_BUILD_CUDA)
+    # CUDA uses SlimTensor-based shims
+    list(APPEND _dep_libs aoti_cuda_backend)
+  elseif(EXECUTORCH_BUILD_METAL)
+    # Metal still uses ETensor-based shims (for now)
+    list(APPEND _dep_libs aoti_common)
+  endif()
 
   # RPATH for _portable_lib.so
   set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
