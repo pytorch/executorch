@@ -531,7 +531,7 @@ int main(int argc, char** argv) {
   std::cout << "  Audio duration: " << audio_duration_s << " s" << std::endl;
   std::cout << "  Real-time factor (excl. load): "
             << (preprocessor_ms + encoder_ms + decoder_ms) /
-                   (audio_duration_s * 1000.0)
+          (audio_duration_s * 1000.0)
             << "x" << std::endl;
 
 #ifdef ET_BUILD_METAL
