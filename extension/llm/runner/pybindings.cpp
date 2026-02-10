@@ -34,13 +34,13 @@ using namespace executorch::runtime;
 
 // Helper macro for error handling
 #define THROW_IF_ERROR(error, message, ...)                       \
-  ({                                                              \
+  do {                                                            \
     if ((error) != Error::Ok) {                                   \
       char msg_buf[256];                                          \
       snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
       throw std::runtime_error(msg_buf);                          \
     }                                                             \
-  })
+  } while (0)
 
 // Python wrapper class for MultimodalRunner
 class PyMultimodalRunner {
