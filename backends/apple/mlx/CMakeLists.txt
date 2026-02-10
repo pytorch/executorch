@@ -117,6 +117,14 @@ set(MLX_BUILD_BENCHMARKS
     OFF
     CACHE BOOL "" FORCE
 )
+set(MLX_BUILD_PYTHON_STUBS
+    OFF
+    CACHE BOOL "" FORCE
+)
+set(MLX_BUILD_CUDA
+    OFF
+    CACHE BOOL "" FORCE
+)
 set(MLX_BUILD_CPU
     OFF
     CACHE BOOL "" FORCE
@@ -138,8 +146,8 @@ set(MLX_BUILD_SAFETENSORS
     CACHE BOOL "" FORCE
 )
 set(MLX_METAL_JIT
-    OFF
-    CACHE BOOL "" FORCE
+    ON
+    CACHE BOOL "Use JIT compiled Metal kernels"
 )
 
 # MLX uses FetchContent for json. When FetchContent_MakeAvailable(json) is
