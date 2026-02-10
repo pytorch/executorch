@@ -11,6 +11,7 @@ from typing import Dict, Sequence
 import torch
 from executorch.backends.cortex_m.passes.passes_utils import (
     quantize_multiplier_aot,
+    quantize_val,
     SHIFT_INT8,
 )
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
@@ -386,8 +387,8 @@ class QuantizedOpFusionPass(ExportPass):
         pad_value_raw = self._unwrap_argument(args[2]) if len(args) > 2 else 0
         pad_value_float = float(pad_value_raw)
 
-        quantized_pad_value = max(
-            -128, min(127, round(pad_value_float / scale + zero_point))
+        quantized_pad_value = int(
+            quantize_val(pad_value_float, scale, zero_point, -128, 127)
         )
 
         rank = len(args[0].data.shape)

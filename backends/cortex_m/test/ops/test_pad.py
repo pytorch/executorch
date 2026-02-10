@@ -1,4 +1,5 @@
-# Copyright 2025-2026 Arm Limited and/or its affiliates.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -77,11 +78,11 @@ def test_dialect_pad(test_case):
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
-        qtol=1,
+        qtol=0,
     )
 
 
 @parametrize("test_case", test_cases)
 def test_implementation_pad(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
-    tester.test_implementation(qtol=1)
+    tester.test_implementation(qtol=0)
