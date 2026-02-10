@@ -1,0 +1,61 @@
+# Test Parakeet CPU build on Windows (MSVC)
+# This workflow ensures the Parakeet speech recognition runner builds
+# successfully on Windows with the CPU backend, preventing MSVC regressions.
+
+name: Parakeet CPU Windows
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/parakeet-cpu-windows.yml
+      - examples/models/parakeet/**
+      - extension/llm/**
+      - CMakePresets.json
+      - CMakeLists.txt
+  push:
+    branches:
+      - main
+      - release/*
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  build-parakeet-cpu-windows:
+    name: build-parakeet-cpu-windows
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    with:
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+        conda init powershell
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
+
+          conda create --yes --quiet -n et python=3.12
+          conda activate et
+          python install_requirements.py
+
+          echo '==> Building and installing ExecuTorch...'
+          cmake --workflow --preset llm-release
+          if (\$LASTEXITCODE -ne 0) {
+            Write-Host 'ExecuTorch build failed. Exit code: ' \$LASTEXITCODE
+            exit \$LASTEXITCODE
+          }
+
+          echo '==> Building Parakeet runner (CPU)...'
+          cd examples/models/parakeet
+          cmake --workflow --preset parakeet-cpu
+          if (\$LASTEXITCODE -ne 0) {
+            Write-Host 'Parakeet CPU build failed. Exit code: ' \$LASTEXITCODE
+            exit \$LASTEXITCODE
+          }
+
+          echo 'Parakeet CPU Windows build succeeded.'
+        }"
