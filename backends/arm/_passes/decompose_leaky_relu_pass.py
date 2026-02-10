@@ -20,15 +20,13 @@ def _get_leaky_relu_ops(op) -> tuple:
     if op in edge_ops:
         return (
             exir_ops.edge.aten.clamp.default,
-            exir_ops.edge.aten.full.default,
-            exir_ops.edge.aten.mul.Tensor,
+            exir_ops.edge.aten.mul.Scalar,
             exir_ops.edge.aten.add.Tensor,
         )
     elif op in torch_ops:
         return (
             torch.ops.aten.clamp.default,
-            torch.ops.aten.full.default,
-            torch.ops.aten.mul.Tensor,
+            torch.ops.aten.mul.Scalar,
             torch.ops.aten.add.Tensor,
         )
     else:
@@ -43,9 +41,8 @@ class DecomposeLeakyReLUPass(ArmPass):
     Example:
         %op1 = clamp(x,0,None) (equivalent to max(0,x))
         %op2 = clamp(x,None,0) (equivalent to min(0,x))
-        %op3 = full(x.shape,slope)
-        %op4 = mul(%op3,%op2)
-        %op5 = add(%op1,%op4)
+        %op3 = mul(%op2, slope)
+        %op4 = add(%op1,%op3)
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -56,21 +53,13 @@ class DecomposeLeakyReLUPass(ArmPass):
 
         x = args[0]
         slope = args[1] if len(args) > 1 else 0.01
-        dtype = x.node.meta["val"].dtype
-        device = x.node.meta["val"].device
-        clamp, full, mul, add = _get_leaky_relu_ops(op)
+        clamp, mul, add = _get_leaky_relu_ops(op)
         op1 = super().call_operator(
             op=clamp, args=(x, 0, None), kwargs=kwargs, meta=meta
         )
         op2 = super().call_operator(
             op=clamp, args=(x, None, 0), kwargs=kwargs, meta=meta
         )
-        op3 = super().call_operator(
-            op=full,
-            args=(x.node.meta["val"].shape, slope),
-            kwargs={"dtype": dtype, "device": device},
-            meta=meta,
-        )
-        op4 = super().call_operator(op=mul, args=(op3, op2), kwargs=kwargs, meta=meta)
-        op5 = super().call_operator(op=add, args=(op1, op4), kwargs=kwargs, meta=meta)
-        return op5
+        op3 = super().call_operator(op=mul, args=(op2, slope), kwargs=kwargs, meta=meta)
+        op4 = super().call_operator(op=add, args=(op1, op3), kwargs=kwargs, meta=meta)
+        return op4
