@@ -154,6 +154,9 @@ class MethodMeta:
 
     def __repr__(self) -> str: ...
 
+# Re-export PyDataLoader from the shared module for backward compatibility.
+from executorch.extension.pybindings.data_loader import PyDataLoader as PyDataLoader
+
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch(
     program_path: str,
@@ -212,6 +215,33 @@ def _load_for_executorch_from_bundled_program(
     .. warning::
 
         This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _load_for_executorch_from_data_loader(
+    loader: PyDataLoader,
+    data_path: Optional[str] = None,
+    enable_etdump: bool = False,
+    debug_buffer_size: int = 0,
+) -> ExecuTorchModule:
+    """Load an ExecuTorch Program from a PyDataLoader.
+
+    This function allows external libraries to provide custom data loaders
+    (e.g., for compressed files) and load programs using them.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+
+    Args:
+        loader: A PyDataLoader wrapping a custom DataLoader implementation.
+        data_path: Optional path to a data file (e.g., for external weights).
+        enable_etdump: If true, enables an ETDump which can store profiling information.
+        debug_buffer_size: If non-zero, enables a debug buffer for intermediate results.
+
+    Returns:
+        An ExecuTorchModule ready for execution.
     """
     ...
 

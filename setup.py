@@ -827,6 +827,13 @@ setup(
             modpath="executorch.extension.pybindings._portable_lib",
             dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
         ),
+        # Install the data_loader pybindings extension which provides the
+        # PyDataLoader type for external pybinding extensions.
+        BuiltExtension(
+            src="data_loader.cp*" if _is_windows() else "data_loader.*",
+            modpath="executorch.extension.pybindings.data_loader",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+        ),
         BuiltExtension(
             src="extension/training/_training_lib.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
             modpath="executorch.extension.training.pybindings._training_lib",
