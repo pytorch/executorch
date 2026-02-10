@@ -388,6 +388,7 @@ _one_to_one = [
     torch.ops.aten.zeros_like.default,
     torch.ops.aten.pow.Tensor_Scalar,
     torch.ops.aten.gelu.default,
+    torch.ops.aten.silu.default,
     torch.ops.aten.sinh.default,
     torch.ops.aten.atan.default,
     torch.ops.aten.log1p.default,
@@ -459,6 +460,7 @@ _one_to_one_shared_input_qspec = [
     # That is why we force it to use the same qparams and avoid
     # dequant -> neg -> requant chain.
     torch.ops.aten.neg.default,
+    torch.ops.aten.detach_copy.default,
 ]
 
 _one_to_one_shared_input_or_input_act_qspec = [
@@ -468,6 +470,7 @@ _one_to_one_shared_input_or_input_act_qspec = [
     torch.ops.aten.hardtanh_.default,
     torch.ops.aten.relu.default,
     torch.ops.aten.relu_.default,
+    torch.ops.aten.silu_.default,
     torch.ops.aten.mean.default,
     torch.ops.aten.mean.dim,
     torch.ops.aten.permute.default,
