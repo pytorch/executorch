@@ -9,18 +9,12 @@ import torch
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
     _unwrap_if_fq,
 )
+from executorch.backends.nxp.backend.graph_utils import is_batch_norm, is_op_node
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torchao.quantization.pt2e.export_utils import WrapperModule
 from torchao.quantization.pt2e.prepare import _is_activation_post_process_node
 from torchao.quantization.pt2e.qat_utils import _get_aten_graph_module_for_pattern
-
-
-_bn_ops = [
-    torch.ops.aten.batch_norm.default,
-    torch.ops.aten.native_batch_norm.default,
-    torch.ops.aten._native_batch_norm_legit_no_training.default,
-]
 
 
 def _get_linear_weight_preprocess_pattern() -> Callable:
@@ -46,26 +40,6 @@ def _get_compute_scale_factor_pattern(bn_eps: float = 1e-5) -> Callable:
         return scale_factor
 
     return WrapperModule(_compute_scale)
-
-
-def _is_batch_norm(node: Node) -> bool:
-    return (
-        node is not None
-        and hasattr(node, "op")
-        and node.op == "call_function"
-        and hasattr(node, "target")
-        and node.target in _bn_ops
-    )
-
-
-def _is_linear(node: Node) -> bool:
-    return (
-        node is not None
-        and hasattr(node, "op")
-        and node.op == "call_function"
-        and hasattr(node, "target")
-        and node.target == torch.ops.aten.linear.default
-    )
 
 
 def _get_input_nodes(graph_module: GraphModule) -> tuple[Node]:
@@ -276,13 +250,13 @@ class AddSimulatedLinearBatchNormFusionQATPass(PassBase):
         named_modules = dict(graph_module.named_modules(remove_duplicate=False))
 
         for node in graph_module.graph.nodes:
-            if not _is_batch_norm(node):
+            if not is_batch_norm(node):
                 continue
 
             bn_node = node
             bn_in = bn_node.args[0]
 
-            if not _is_linear(bn_in):
+            if not is_op_node(bn_in, torch.ops.aten.linear.default):
                 continue
 
             linear_node = bn_in
