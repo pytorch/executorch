@@ -23,26 +23,14 @@ using namespace vkcompute;
 
 static constexpr int64_t kRefDimSizeLimit = 100;
 
-// Utility function to create a test case from a Conv2dConfig for depthwise
-// convolution
-TestCase create_test_case_from_config(
+// Utility function to create a test case from a Conv2dConfig
+static TestCase create_test_case_from_config(
     const Conv2dConfig& config,
     vkapi::ScalarType input_dtype,
     utils::StorageType fp_storage_type,
-    utils::StorageType int8_storage_type) {
+    utils::GPUMemoryLayout int8_memory_layout,
+    const std::string& impl_selector = "") {
   TestCase test_case;
-  test_case.set_name(config.test_case_name);
-
-  std::string operator_suffix = ".test";
-  if (int8_storage_type == utils::kTexture3D) {
-    operator_suffix += "_texture";
-  } else {
-    operator_suffix += "_buffer";
-  }
-
-  // Set the operator name for the test case
-  std::string operator_name = "etvk." + config.op_name + operator_suffix;
-  test_case.set_operator_name(operator_name);
 
   // Calculate output dimensions
   int64_t H_out = config.get_output_height();
@@ -56,15 +44,41 @@ TestCase create_test_case_from_config(
       ? utils::kWidthPacked
       : utils::kChannelsPacked;
 
+  // Create test case name
+  // Format: ACCU/PERF  OC->IC  I=H,W  g=groups  k=kernel  Tex(CP)->Buf(4C1W)
+  std::string prefix = config.test_case_name.substr(0, 4); // "ACCU" or "PERF"
+  std::string test_name = prefix + "  " + std::to_string(config.channels.out) +
+      "->" + std::to_string(config.channels.in) + "  " +
+      "I=" + std::to_string(config.input_size.h) + "," +
+      std::to_string(config.input_size.w) + "  " +
+      "g=" + std::to_string(config.groups) + "  " +
+      "k=" + std::to_string(config.kernel.h) + "  " +
+      repr_str(fp_storage_type, fp_memory_layout) + "->" +
+      repr_str(utils::kBuffer, int8_memory_layout);
+  if (!impl_selector.empty()) {
+    test_name += " [" + impl_selector + "]";
+  }
+  test_case.set_name(test_name);
+
+  // Set the operator name for the test case - use the dedicated pointwise test
+  // operator
+  std::string operator_name = "test_etvk.test_q8ta_conv2d_pw.default";
+  test_case.set_operator_name(operator_name);
+
   ValueSpec input_tensor(
       input_size,
       input_dtype,
       fp_storage_type,
       fp_memory_layout,
-      DataGenType::RANDOM);
+#ifdef DEBUG_MODE
+      DataGenType::RANDOM
+#else
+      DataGenType::RANDOM
+#endif
+  );
 
   if (debugging()) {
-    print_valuespec_data(input_tensor, "input_tensor", false, 64);
+    print_valuespec_data(input_tensor, "input_tensor");
   }
 
   float input_scale_val = 0.008123;
@@ -73,11 +87,13 @@ TestCase create_test_case_from_config(
   int32_t input_zero_point_val = 2;
   ValueSpec input_zero_point(input_zero_point_val);
 
-  // Quantized weight tensor (int8) for depthwise convolution
-  // Memory layout: [K_h, K_w, OC]
-  // For depthwise conv: groups = channels.out, in_channels_per_group = 1
-  std::vector<int64_t> weight_size = {
-      config.kernel.h, config.kernel.w, config.channels.out};
+  // Quantized weight tensor (int8) - [C_out, C_in_per_group * K_h * K_w]
+  // Memory layout: height, width, then channels - in_c is innermost (stride 1)
+  // in the second dimension
+  const int64_t in_channels_per_group = config.channels.in / config.groups;
+  const int64_t in_features = utils::align_up_4(
+      in_channels_per_group * config.kernel.h * config.kernel.w);
+  std::vector<int64_t> weight_size = {config.channels.out, in_features};
   ValueSpec quantized_weight(
       weight_size,
       vkapi::kChar, // int8 for quantized weights
@@ -87,12 +103,14 @@ TestCase create_test_case_from_config(
   quantized_weight.set_constant(true);
 
   if (debugging()) {
-    print_valuespec_data(quantized_weight, "weight_tensor", false, 64);
+    print_valuespec_data(quantized_weight, "weight_tensor");
   }
+
+  const int64_t aligned_out_channels = utils::align_up_4(config.channels.out);
 
   // Weight quantization scales (float/half, per-channel)
   ValueSpec weight_scales(
-      {config.channels.out}, // Per output channel
+      {aligned_out_channels}, // Per output channel
       input_dtype,
       fp_storage_type,
       utils::kWidthPacked,
@@ -100,41 +118,24 @@ TestCase create_test_case_from_config(
   weight_scales.set_constant(true);
 
   ValueSpec weight_sums(
-      {config.channels.out}, // Per output channel
+      {aligned_out_channels}, // Per output channel
       vkapi::kInt,
       fp_storage_type,
       utils::kWidthPacked,
       DataGenType::ZEROS);
   weight_sums.set_constant(true);
 
-  // Compute weight_sums data based on quantized weights for depthwise layout
-  // For depthwise conv: each output channel has K_h * K_w weights
-  // Custom computation for depthwise layout [K_h, K_w, OC]
-  auto& weight_sums_data = weight_sums.get_int32_data();
-  auto& quantized_weight_data = quantized_weight.get_int8_data();
-
-  weight_sums_data.resize(config.channels.out);
-
-  for (int64_t out_c = 0; out_c < config.channels.out; ++out_c) {
-    int32_t sum = 0;
-    for (int64_t kh = 0; kh < config.kernel.h; ++kh) {
-      for (int64_t kw = 0; kw < config.kernel.w; ++kw) {
-        // Weight indexing for depthwise layout [K_h, K_w, OC]
-        int64_t weight_idx = kh * (config.kernel.w * config.channels.out) +
-            kw * config.channels.out + out_c;
-        sum += static_cast<int32_t>(quantized_weight_data[weight_idx]);
-      }
-    }
-    weight_sums_data[out_c] = sum;
-  }
+  // Compute weight_sums data based on quantized weights
+  compute_weight_sums(
+      weight_sums, quantized_weight, config.channels.out, in_features);
 
   // Bias (optional, float/half) - [C_out]
   ValueSpec bias(
-      {config.channels.out}, // Per output channel
+      {aligned_out_channels}, // Per output channel
       input_dtype,
       fp_storage_type,
       utils::kWidthPacked,
-      DataGenType::RANDOM);
+      DataGenType::ZEROS);
   bias.set_constant(true);
 
   // Output quantization parameters
@@ -163,7 +164,7 @@ TestCase create_test_case_from_config(
       fp_memory_layout,
       DataGenType::ZEROS);
 
-  // Add all specs to test case for q8ta_q8csw_q8to operation
+  // Add all specs to test case for q8ta_conv2d_pw operation
   test_case.add_input_spec(input_tensor);
   test_case.add_input_spec(input_scale);
   test_case.add_input_spec(input_zero_point);
@@ -179,139 +180,119 @@ TestCase create_test_case_from_config(
   test_case.add_input_spec(dilation);
   test_case.add_input_spec(groups);
 
+  // Add memory layout parameter for the quantized tensors
+  ValueSpec layout_int(static_cast<int32_t>(int8_memory_layout));
+  test_case.add_input_spec(layout_int);
+
+  // Add impl_selector string
+  ValueSpec impl_selector_spec = ValueSpec::make_string(impl_selector);
+  test_case.add_input_spec(impl_selector_spec);
+
   test_case.add_output_spec(output);
 
   test_case.set_abs_tolerance(output_scale_val + 1e-4f);
 
+  // Filter out quantize/dequantize shaders from timing measurements
+  test_case.set_shader_filter({
+      "nchw_to",
+      "to_nchw",
+      "q8ta_quantize",
+      "q8ta_dequantize",
+  });
+
   return test_case;
 }
 
-// Generate easy test cases for quantized depthwise conv2d operation (for
-// debugging)
-std::vector<TestCase> generate_quantized_conv2d_dw_easy_cases() {
-  std::vector<TestCase> test_cases;
-
-  // Single simple configuration for debugging - depthwise convolution
-  Conv2dConfig config = {
-      OutInChannels(8, 8), // channels (out, in) - equal for depthwise
-      InputSize2D(8, 8), // input_size (h, w)
-      KernelSize(3, 3), // kernel
-      Stride(1, 1), // stride
-      Padding(1, 1), // padding
-      Dilation(1, 1), // dilation
-      8, // groups = channels.out for depthwise
-  };
-  config.op_name = "conv2d_q8ta_q8csw_q8to";
-
-  std::vector<utils::StorageType> storage_types = {
-      utils::kTexture3D, utils::kBuffer};
-
-  // Generate test cases for each combination
-  for (const utils::StorageType fp_storage_type : storage_types) {
-    for (const utils::StorageType int8_storage_type : storage_types) {
-      config.test_case_name = make_test_case_name(
-          config, false, fp_storage_type, int8_storage_type);
-      test_cases.push_back(create_test_case_from_config(
-          config, vkapi::kFloat, fp_storage_type, int8_storage_type));
-    }
-  }
-
-  return test_cases;
-}
-
-// Generate test cases for quantized depthwise conv2d operation
-std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
+// Generate test cases for quantized pointwise conv2d operation
+static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases() {
   std::vector<TestCase> test_cases;
   if (!vkcompute::api::context()->adapter_ptr()->supports_int8_dot_product()) {
     return test_cases;
   }
 
   std::vector<Conv2dConfig> configs = {
-      // Depthwise convolutions: groups = channels.out, channels.in =
-      // channels.out
-      {OutInChannels(32, 32),
+      // Pointwise convolutions: kernel size 1x1
+      {OutInChannels(32, 3),
        InputSize2D(64, 64),
-       KernelSize(3, 3),
+       KernelSize(1, 1),
        Stride(1, 1),
-       Padding(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
-       32},
-      {OutInChannels(64, 64),
+       1},
+      {OutInChannels(64, 32),
        InputSize2D(32, 32),
-       KernelSize(3, 3),
-       Stride(2, 2),
-       Padding(2, 2),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
-       64},
-      {OutInChannels(64, 64),
-       InputSize2D(32, 32),
-       KernelSize(3, 3),
-       Stride(2, 2),
-       Padding(1, 1),
-       Dilation(1, 1),
-       64},
-      {OutInChannels(80, 80),
+       1},
+      {OutInChannels(96, 64),
        InputSize2D(16, 16),
-       KernelSize(3, 3),
+       KernelSize(1, 1),
        Stride(1, 1),
-       Padding(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
-       80},
-      {OutInChannels(16, 16),
+       1},
+      {OutInChannels(13, 7),
        InputSize2D(57, 33),
-       KernelSize(3, 3),
+       KernelSize(1, 1),
        Stride(1, 1),
-       Padding(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
-       16},
-      // Different kernel sizes for depthwise
-      {OutInChannels(32, 32),
+       1},
+      {OutInChannels(80, 40),
        InputSize2D(64, 64),
-       KernelSize(5, 5),
+       KernelSize(1, 1),
        Stride(1, 1),
-       Padding(2, 2),
+       Padding(0, 0),
        Dilation(1, 1),
-       32},
-      {OutInChannels(96, 96),
-       InputSize2D(64, 64),
-       KernelSize(5, 5),
-       Stride(2, 2),
-       Padding(2, 2),
+       1},
+      // Performance cases (pointwise - will use im2col)
+      {OutInChannels(160, 480),
+       InputSize2D(8, 8),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
-       96},
-      // Performance cases
+       1},
+      {OutInChannels(22, 48),
+       InputSize2D(256, 256),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(48, 48),
+       InputSize2D(128, 128),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
       {OutInChannels(128, 128),
        InputSize2D(128, 128),
-       KernelSize(3, 3),
+       KernelSize(1, 1),
        Stride(1, 1),
-       Padding(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
-       128},
-      {OutInChannels(64, 64),
-       InputSize2D(256, 256),
-       KernelSize(3, 3),
-       Stride(1, 1),
-       Padding(1, 1),
-       Dilation(1, 1),
-       64},
-      {OutInChannels(288, 288),
-       InputSize2D(16, 16),
-       KernelSize(3, 3),
-       Stride(1, 1),
-       Padding(1, 1),
-       Dilation(1, 1),
-       288},
-      {OutInChannels(32, 32),
+       1},
+      {OutInChannels(64, 576),
        InputSize2D(128, 128),
-       KernelSize(3, 3),
+       KernelSize(1, 1),
        Stride(1, 1),
-       Padding(2, 2),
+       Padding(0, 0),
        Dilation(1, 1),
-       32}};
+       1},
+  };
 
-  // Test with different storage types and data types
-  std::vector<utils::StorageType> storage_types = {
+  // Test with different storage types and memory layouts
+  std::vector<utils::StorageType> fp_storage_types = {
       utils::kTexture3D, utils::kBuffer};
+
+  // Memory layouts for int8 tensors - test both optimized (4W4C) and general
+  // paths
+  std::vector<utils::GPUMemoryLayout> int8_memory_layouts = {
+      utils::kPackedInt8_4C1W, utils::kPackedInt8_4W4C, utils::kPackedInt8_4C};
 
   // Generate test cases for each combination
   for (auto& config : configs) {
@@ -322,12 +303,23 @@ std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
 
     config.op_name = "conv2d_q8ta_q8csw_q8to";
 
-    for (const utils::StorageType fp_storage_type : storage_types) {
-      for (const utils::StorageType int8_storage_type : storage_types) {
+    for (const utils::StorageType fp_storage_type : fp_storage_types) {
+      for (const utils::GPUMemoryLayout int8_memory_layout :
+           int8_memory_layouts) {
         config.test_case_name = make_test_case_name(
             config, is_performance, fp_storage_type, utils::kBuffer);
         test_cases.push_back(create_test_case_from_config(
-            config, vkapi::kFloat, fp_storage_type, int8_storage_type));
+            config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
+
+        // For 4W4C layout, also test the legacy implementation
+        if (int8_memory_layout == utils::kPackedInt8_4W4C) {
+          test_cases.push_back(create_test_case_from_config(
+              config,
+              vkapi::kFloat,
+              fp_storage_type,
+              int8_memory_layout,
+              /*impl_selector=*/"legacy_4w4c"));
+        }
       }
     }
   }
@@ -335,9 +327,8 @@ std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
   return test_cases;
 }
 
-// Reference implementation for activation, weight, and output quantized
-// depthwise conv2d
-void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
+// Reference implementation for activation, weight, and output quantized conv2d
+static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   // Extract input specifications
   int32_t idx = 0;
   const ValueSpec& input_spec = test_case.inputs()[idx++];
@@ -355,6 +346,10 @@ void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
   const ValueSpec& padding_spec = test_case.inputs()[idx++];
   const ValueSpec& dilation_spec = test_case.inputs()[idx++];
   const ValueSpec& groups_spec = test_case.inputs()[idx++];
+  const ValueSpec& layout_spec = test_case.inputs()[idx++];
+  (void)layout_spec; // Not used in reference implementation
+  const ValueSpec& impl_selector_spec = test_case.inputs()[idx++];
+  (void)impl_selector_spec; // Not used in reference implementation
 
   // Extract output specification (mutable reference)
   ValueSpec& output_spec = test_case.outputs()[0];
@@ -362,7 +357,7 @@ void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
   // Get tensor dimensions
   auto input_sizes = input_spec.get_tensor_sizes(); // [N, C_in, H_in, W_in]
   auto weight_sizes =
-      weight_spec.get_tensor_sizes(); // [K_h, align_up_4(K_w), OC]
+      weight_spec.get_tensor_sizes(); // [C_out, C_in_per_group * K_h * K_w]
   auto output_sizes =
       output_spec.get_tensor_sizes(); // [N, C_out, H_out, W_out]
 
@@ -397,16 +392,13 @@ void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
       C_out > kRefDimSizeLimit) {
     throw std::invalid_argument(
         "One or more dimensions exceed the allowed limit for reference implementation.");
+    std::cout
+        << "Reference implementation: computation may take some time for large tensors..."
+        << std::endl;
   }
 
   if (input_spec.dtype != vkapi::kFloat) {
     throw std::invalid_argument("Unsupported dtype");
-  }
-
-  // Verify this is a depthwise convolution
-  if (groups != C_out || C_in != C_out) {
-    throw std::invalid_argument(
-        "This is not a depthwise convolution configuration");
   }
 
   // Get raw data pointers
@@ -421,13 +413,19 @@ void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
   const float output_scale = output_scale_spec.get_float_value();
   const int32_t output_zero_point = output_zeros_spec.get_int_value();
 
+  // Calculate channels per group for grouped convolution
+  int64_t C_in_per_group = C_in / groups;
+  int64_t C_out_per_group = C_out / groups;
+
   // Calculate number of output elements
   int64_t num_output_elements = N * C_out * H_out * W_out;
 
   auto& ref_data = output_spec.get_ref_float_data();
   ref_data.resize(num_output_elements);
 
-  // Perform activation, weight, and output quantized depthwise conv2d operation
+  const int in_features = utils::align_up_4(C_in_per_group * K_h * K_w);
+
+  // Perform activation, weight, and output quantized conv2d operation
   for (int64_t n = 0; n < N; ++n) {
     for (int64_t out_c = 0; out_c < C_out; ++out_c) {
       for (int64_t out_h = 0; out_h < H_out; ++out_h) {
@@ -435,61 +433,62 @@ void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
           int32_t int_sum = 0;
           int32_t weight_sum = 0; // Track weight sum on the fly
 
-          // For depthwise convolution, each output channel corresponds to one
-          // input channel
-          int64_t in_c = out_c;
+          // Determine which group this output channel belongs to
+          int64_t group_idx = out_c / C_out_per_group;
+          int64_t in_c_start = group_idx * C_in_per_group;
+          int64_t in_c_end = (group_idx + 1) * C_in_per_group;
 
           // Convolution operation with integer accumulation
-          for (int64_t kh = 0; kh < K_h; ++kh) {
-            for (int64_t kw = 0; kw < K_w; ++kw) {
-              // Calculate input position with dilation
-              int64_t in_h = out_h * stride_h - pad_h + kh * dilation_h;
-              int64_t in_w = out_w * stride_w - pad_w + kw * dilation_w;
+          for (int64_t in_c = in_c_start; in_c < in_c_end; ++in_c) {
+            for (int64_t kh = 0; kh < K_h; ++kh) {
+              for (int64_t kw = 0; kw < K_w; ++kw) {
+                // Calculate input position with dilation
+                int64_t in_h = out_h * stride_h - pad_h + kh * dilation_h;
+                int64_t in_w = out_w * stride_w - pad_w + kw * dilation_w;
 
-              // Check bounds (zero padding)
-              if (in_h >= 0 && in_h < H_in && in_w >= 0 && in_w < W_in) {
-                // Get input value and quantize to int8
-                int64_t input_idx = n * (C_in * H_in * W_in) +
-                    in_c * (H_in * W_in) + in_h * W_in + in_w;
+                // Check bounds (zero padding)
+                if (in_h >= 0 && in_h < H_in && in_w >= 0 && in_w < W_in) {
+                  // Get input value and quantize to int8
+                  int64_t input_idx = n * (C_in * H_in * W_in) +
+                      in_c * (H_in * W_in) + in_h * W_in + in_w;
 
-                float quant_input_f =
-                    std::round(input_data[input_idx] / input_scale) +
-                    input_zero_point;
-                quant_input_f =
-                    std::min(std::max(quant_input_f, -128.0f), 127.0f);
-                int8_t quantized_input = static_cast<int8_t>(quant_input_f);
+                  float quant_input_f =
+                      std::round(input_data[input_idx] / input_scale) +
+                      input_zero_point;
+                  quant_input_f =
+                      std::min(std::max(quant_input_f, -128.0f), 127.0f);
+                  int8_t quantized_input = static_cast<int8_t>(quant_input_f);
 
-                // Get quantized weight using depthwise layout [K_h, K_w, OC]
-                int64_t weight_idx = kh * (K_w * C_out) + kw * C_out + out_c;
-                int8_t quantized_weight = weight_data[weight_idx];
+                  // Get quantized weight (already int8)
+                  // Weight layout: [C_out, C_in_per_group * K_h * K_w]
+                  int64_t weight_idx = out_c * in_features +
+                      (kh * (K_w * C_in_per_group) + kw * C_in_per_group +
+                       (in_c % C_in_per_group));
+                  int8_t quantized_weight = weight_data[weight_idx];
 
-                if (false && in_w == 0 && in_h == 0 && out_c == 0) {
-                  std::cout << "input: " << input_data[input_idx] << std::endl;
-                  std::cout << "quantized_input: " << (int)quantized_input
-                            << std::endl;
-                  std::cout << "quantized_weight: " << (int)quantized_weight
-                            << std::endl;
+                  // Integer multiplication and accumulation
+                  int_sum += static_cast<int32_t>(quantized_input) *
+                      static_cast<int32_t>(quantized_weight);
+
+                  // Track weight sum for this output channel on the fly
+                  weight_sum += static_cast<int32_t>(quantized_weight);
+                } else {
+                  // For zero padding, we still need to account for the weight
+                  // in weight_sum when input is effectively 0 (but quantized 0
+                  // is input_zero_point)
+                  int64_t weight_idx = out_c * in_features +
+                      (kh * (K_w * C_in_per_group) + kw * C_in_per_group +
+                       (in_c % C_in_per_group));
+                  int8_t quantized_weight = weight_data[weight_idx];
+
+                  // Add contribution from zero-padded input (quantized zero =
+                  // input_zero_point)
+                  int_sum += static_cast<int32_t>(input_zero_point) *
+                      static_cast<int32_t>(quantized_weight);
+
+                  // Track weight sum for this output channel on the fly
+                  weight_sum += static_cast<int32_t>(quantized_weight);
                 }
-                // Integer multiplication and accumulation
-                int_sum += static_cast<int32_t>(quantized_input) *
-                    static_cast<int32_t>(quantized_weight);
-
-                // Track weight sum for this output channel on the fly
-                weight_sum += static_cast<int32_t>(quantized_weight);
-              } else {
-                // For zero padding, we still need to account for the weight
-                // in weight_sum when input is effectively 0 (but quantized 0
-                // is input_zero_point)
-                int64_t weight_idx = kh * (K_w * C_out) + kw * C_out + out_c;
-                int8_t quantized_weight = weight_data[weight_idx];
-
-                // Add contribution from zero-padded input (quantized zero =
-                // input_zero_point)
-                int_sum += static_cast<int32_t>(input_zero_point) *
-                    static_cast<int32_t>(quantized_weight);
-
-                // Track weight sum for this output channel on the fly
-                weight_sum += static_cast<int32_t>(quantized_weight);
               }
             }
           }
@@ -512,12 +511,6 @@ void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
           quant_output_f = std::min(std::max(quant_output_f, -128.0f), 127.0f);
           int8_t quantized_output = static_cast<int8_t>(quant_output_f);
 
-          if (false && out_c < 4 && out_h < 1 && out_w < 4) {
-            std::cout << "int_sum[" << out_c << ", " << out_h << ", " << out_w
-                      << "] = " << int_sum << ", " << float_result << ", "
-                      << output_scale << ", " << quant_output_f << std::endl;
-          }
-
           // Dequantize back to float
           float dequant_output =
               (static_cast<float>(quantized_output) - output_zero_point) *
@@ -532,12 +525,12 @@ void conv2d_q8ta_q8csw_q8to_dw_reference_impl(TestCase& test_case) {
   }
 }
 
-void reference_impl(TestCase& test_case) {
-  conv2d_q8ta_q8csw_q8to_dw_reference_impl(test_case);
+static void reference_impl(TestCase& test_case) {
+  conv2d_q8ta_q8csw_q8to_reference_impl(test_case);
 }
 
-// Custom FLOP calculator for quantized depthwise conv2d operation
-int64_t quantized_conv2d_dw_flop_calculator(const TestCase& test_case) {
+// Custom FLOP calculator for quantized pointwise conv2d operation
+static int64_t quantized_conv2d_flop_calculator(const TestCase& test_case) {
   int kernel_idx = 9; // kernel_size is at index 9 for q8ta_q8csw_q8to
 
   // Get input and weight dimensions
@@ -547,21 +540,21 @@ int64_t quantized_conv2d_dw_flop_calculator(const TestCase& test_case) {
   const auto& kernel_sizes = test_case.inputs()[kernel_idx].get_int32_data();
 
   int64_t N = input_sizes[0];
+  int64_t C_in = input_sizes[1];
   int64_t C_out = output_sizes[1];
   int64_t K_h = kernel_sizes[0];
   int64_t K_w = kernel_sizes[1];
   int64_t H_out = output_sizes[2];
   int64_t W_out = output_sizes[3];
 
-  // Calculate FLOPs for quantized depthwise conv2d operation
+  // Calculate FLOPs for quantized conv2d operation
   // Each output element requires:
-  // - K_h * K_w multiply-accumulate operations (only one input channel per
-  // output channel)
+  // - C_in * K_h * K_w multiply-accumulate operations
   // - Additional operations for quantization/dequantization
   int64_t output_elements = N * C_out * H_out * W_out;
-  int64_t ops_per_output = K_h * K_w;
+  int64_t ops_per_output = C_in * K_h * K_w;
 
-  int64_t flop = output_elements * ops_per_output;
+  int64_t flop = output_elements * (ops_per_output);
 
   return flop;
 }
@@ -569,12 +562,16 @@ int64_t quantized_conv2d_dw_flop_calculator(const TestCase& test_case) {
 int main(int argc, char* argv[]) {
   set_debugging(false);
   set_print_output(false);
+#ifdef DEBUG_MODE
+  set_print_latencies(true);
+#else
   set_print_latencies(false);
+#endif
   set_use_gpu_timestamps(true);
 
   print_performance_header();
   std::cout
-      << "Quantized Depthwise Conv2d Operation with Output Quantization Prototyping Framework"
+      << "Quantized Pointwise Conv2d (1x1) Operation Prototyping Framework"
       << std::endl;
   print_separator();
 
@@ -583,18 +580,18 @@ int main(int argc, char* argv[]) {
   // Execute test cases using the new framework with custom FLOP calculator
   auto results = execute_test_cases(
 #ifdef DEBUG_MODE
-      generate_quantized_conv2d_dw_easy_cases,
+      generate_quantized_conv2d_pw_test_cases,
 #else
-      generate_quantized_conv2d_dw_test_cases,
+      generate_quantized_conv2d_pw_test_cases,
 #endif
-      quantized_conv2d_dw_flop_calculator,
-      "QuantizedDepthwiseInt8Conv2d",
+      quantized_conv2d_flop_calculator,
+      "QuantizedConv2dPW",
 #ifdef DEBUG_MODE
       0,
       1,
 #else
-      3,
-      10,
+      5,
+      25,
 #endif
       ref_fn);
 
