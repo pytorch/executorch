@@ -1685,6 +1685,9 @@ class Interpreter {
         break;
       case OpCode::SENTINEL:
         break;
+      default:
+        throw std::runtime_error(
+            "Unknown opcode: " + std::to_string(static_cast<int>(instr.op)));
     }
   }
 };

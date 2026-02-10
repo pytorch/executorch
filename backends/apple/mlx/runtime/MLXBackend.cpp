@@ -80,20 +80,27 @@ array tensor_to_mlx(
   return array(data_ptr, shape, dtype, deleter);
 }
 
-void mlx_to_tensor(const array& arr, ETTensor& out) {
-  array contiguous_arr = ::mlx::core::contiguous(arr);
-
-  Dtype expected_dtype = resolve_dtype(
-      static_cast<executorch::aten::ScalarType>(out.scalar_type()));
-
-  if (contiguous_arr.dtype() != expected_dtype) {
-    contiguous_arr = ::mlx::core::astype(contiguous_arr, expected_dtype);
+// Build the contiguous + dtype conversion pipeline for an output array.
+// Returns a lazy array (not yet evaluated) ready for async_eval.
+array prepare_output(
+    const array& arr,
+    Dtype expected_dtype,
+    const ::mlx::core::Stream& stream) {
+  array result =
+      ::mlx::core::contiguous(arr, /*allow_col_major=*/false, stream);
+  if (result.dtype() != expected_dtype) {
+    result = ::mlx::core::astype(result, expected_dtype, stream);
   }
+  return result;
+}
 
-  eval(contiguous_arr);
+// Wait for a prepared output array and copy its data to an ET tensor.
+// The array must have been submitted via async_eval before calling this.
+void write_output(array& arr, ETTensor& out) {
+  arr.wait();
 
   // Resize output tensor if shape doesn't match (dynamic shapes)
-  const auto& mlx_shape = contiguous_arr.shape();
+  const auto& mlx_shape = arr.shape();
   auto out_sizes = out.sizes();
 
   bool shape_matches = (mlx_shape.size() == static_cast<size_t>(out.dim()));
@@ -115,19 +122,19 @@ void mlx_to_tensor(const array& arr, ETTensor& out) {
         ArrayRef<executorch::aten::SizesType>(
             new_sizes.data(), new_sizes.size()));
     if (err != Error::Ok) {
-      throw std::runtime_error("mlx_to_tensor: failed to resize output tensor");
+      throw std::runtime_error("write_output: failed to resize output tensor");
     }
   }
 
-  size_t mlx_nbytes = contiguous_arr.nbytes();
+  size_t mlx_nbytes = arr.nbytes();
   size_t out_nbytes = out.nbytes();
   if (mlx_nbytes != out_nbytes) {
     throw std::runtime_error(
-        "mlx_to_tensor: size mismatch - MLX has " + std::to_string(mlx_nbytes) +
+        "write_output: size mismatch - MLX has " + std::to_string(mlx_nbytes) +
         " bytes, output has " + std::to_string(out_nbytes) + " bytes");
   }
 
-  std::memcpy(out.mutable_data_ptr(), contiguous_arr.data<void>(), out_nbytes);
+  std::memcpy(out.mutable_data_ptr(), arr.data<void>(), out_nbytes);
 }
 
 } // namespace
@@ -152,7 +159,9 @@ struct MLXHandle {
 };
 
 // MLX is not thread-safe: its computation graph is global shared state.
-// A global mutex serializes all MLX operations across all handles.
+// A global mutex serializes graph construction and command submission
+// across all handles. GPU execution and output copies can proceed
+// without the lock (see execute() for the async pipeline design).
 static std::mutex& mlx_global_mutex() {
   static std::mutex m;
   return m;
@@ -221,85 +230,138 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
-    std::lock_guard<std::mutex> lock(mlx_global_mutex());
+    // Async eval pipeline: three-phase execution to reduce lock contention.
+    //
+    // Phase 1 (LOCKED): Bind inputs, run interpreter (builds lazy graph),
+    //   prepare output pipeline (contiguous + astype), and submit all work
+    //   to GPU via async_eval. The lock is held during graph construction
+    //   and command submission because MLX's computation graph and eval_impl
+    //   are not thread-safe.
+    //
+    // Phase 2 (UNLOCKED): GPU executes commands on this handle's dedicated
+    //   Metal command queue. Another thread can acquire the lock and start
+    //   its own Phase 1 (graph construction + submission on a different
+    //   stream), overlapping with this handle's GPU work.
+    //
+    // Phase 3 (UNLOCKED): Wait for GPU completion via Metal shared events
+    //   (thread-safe), then memcpy results to ET output tensors. No MLX
+    //   graph state is accessed.
+
+    std::vector<array> prepared_outputs;
+    // Track output slot info needed for Phase 3
+    struct OutputInfo {
+      size_t arg_idx;
+      size_t prepared_idx;
+    };
+    std::vector<OutputInfo> tensor_output_info;
+    size_t arg_idx = 0;
+
     try {
       auto* h = static_cast<MLXHandle*>(handle);
       const auto& program = h->program;
 
-      // Reset per-execution state (clears inputs/outputs/temps, keeps mutable
-      // buffers)
-      h->state.reset();
+      // ================================================================
+      // Phase 1: Graph construction + async GPU dispatch (LOCKED)
+      // ================================================================
+      {
+        std::lock_guard<std::mutex> lock(mlx_global_mutex());
 
-      // Walk args in lockstep with input_map, then output_map.
-      // Since mutable buffers are not in the maps, args correspond 1:1 with map
-      // entries.
-      size_t arg_idx = 0;
-      const size_t expected_args =
-          program.input_map.size() + program.output_map.size();
-      if (args.size() != expected_args) {
-        ET_LOG(Error, "Expected %zu args, got %zu", expected_args, args.size());
-        return Error::InvalidArgument;
-      }
+        h->state.reset();
 
-      // --- Bind inputs ---
-      for (const auto& slot : program.input_map) {
-        if (slot.slot_type == SlotType::TensorSlot) {
-          const ETTensor& tensor = args[arg_idx++]->toTensor();
-          Tid tid{slot.idx};
-          std::optional<TensorMeta> expected_meta = std::nullopt;
-          if (tid.idx < program.tensor_meta.size()) {
-            expected_meta = program.tensor_meta[tid.idx];
+        const size_t expected_args =
+            program.input_map.size() + program.output_map.size();
+        if (args.size() != expected_args) {
+          ET_LOG(
+              Error, "Expected %zu args, got %zu", expected_args, args.size());
+          return Error::InvalidArgument;
+        }
+
+        // --- Bind inputs ---
+        for (const auto& slot : program.input_map) {
+          if (slot.slot_type == SlotType::TensorSlot) {
+            const ETTensor& tensor = args[arg_idx++]->toTensor();
+            Tid tid{slot.idx};
+            std::optional<TensorMeta> expected_meta = std::nullopt;
+            if (tid.idx < program.tensor_meta.size()) {
+              expected_meta = program.tensor_meta[tid.idx];
+            }
+            h->state.set_tensor(tid, tensor_to_mlx(tensor, expected_meta));
+          } else if (slot.slot_type == SlotType::IntValueSlot) {
+            int64_t val = args[arg_idx]->toInt();
+            arg_idx++;
+            if (val > std::numeric_limits<int32_t>::max() ||
+                val < std::numeric_limits<int32_t>::min()) {
+              ET_LOG(
+                  Error,
+                  "Int input value %lld exceeds int32 range",
+                  static_cast<long long>(val));
+              return Error::InvalidArgument;
+            }
+            h->state.set_value(
+                Vid<int32_t>{slot.idx}, static_cast<int32_t>(val));
+          } else {
+            throw std::runtime_error(
+                "Unhandled input slot type: " +
+                std::to_string(static_cast<int>(slot.slot_type)));
           }
-          h->state.set_tensor(tid, tensor_to_mlx(tensor, expected_meta));
-        } else if (slot.slot_type == SlotType::IntValueSlot) {
-          int64_t val = args[arg_idx]->toInt();
-          arg_idx++;
-          if (val > std::numeric_limits<int32_t>::max() ||
-              val < std::numeric_limits<int32_t>::min()) {
-            ET_LOG(
-                Error,
-                "Int input value %lld exceeds int32 range",
-                static_cast<long long>(val));
-            return Error::InvalidArgument;
+        }
+
+        // --- Run the MLX program (builds lazy computation graph) ---
+        h->interpreter.run(program, h->state, h->stream);
+
+        // --- Prepare output pipeline and collect int outputs ---
+        // Build contiguous + dtype conversion lazily for each tensor output,
+        // and extract int outputs (which don't need GPU) while still locked.
+        prepared_outputs.reserve(program.num_output_tensors);
+
+        for (const auto& slot : program.output_map) {
+          if (slot.slot_type == SlotType::TensorSlot) {
+            ETTensor& out_tensor = args[arg_idx]->toTensor();
+            Dtype expected_dtype =
+                resolve_dtype(static_cast<executorch::aten::ScalarType>(
+                    out_tensor.scalar_type()));
+            array out_arr = prepare_output(
+                h->state.const_tensor_ref(Tid{slot.idx}),
+                expected_dtype,
+                h->stream);
+            tensor_output_info.push_back({arg_idx, prepared_outputs.size()});
+            prepared_outputs.push_back(std::move(out_arr));
+            arg_idx++;
+          } else if (slot.slot_type == SlotType::IntValueSlot) {
+            Vid<int32_t> vid{slot.idx};
+            int64_t int_val =
+                static_cast<int64_t>(h->state.const_value_ref<int32_t>(vid));
+            *args[arg_idx] = EValue(int_val);
+            arg_idx++;
+          } else {
+            throw std::runtime_error(
+                "Unhandled output slot type: " +
+                std::to_string(static_cast<int>(slot.slot_type)));
           }
-          h->state.set_value(Vid<int32_t>{slot.idx}, static_cast<int32_t>(val));
-        } else {
-          throw std::runtime_error(
-              "Unhandled input slot type: " +
-              std::to_string(static_cast<int>(slot.slot_type)));
         }
-      }
 
-      // --- Run the MLX program ---
-      h->interpreter.run(program, h->state, h->stream);
-
-      // --- Collect tensor outputs for batch eval ---
-      std::vector<array> tensor_arrays;
-      tensor_arrays.reserve(program.num_output_tensors);
-      for (const auto& slot : program.output_map) {
-        if (slot.slot_type == SlotType::TensorSlot) {
-          tensor_arrays.push_back(h->state.const_tensor_ref(Tid{slot.idx}));
+        // --- Submit all output work to GPU asynchronously ---
+        // async_eval encodes Metal commands and returns immediately.
+        // The GPU will signal events on completion.
+        if (!prepared_outputs.empty()) {
+          ::mlx::core::async_eval(prepared_outputs);
         }
-      }
-      eval(tensor_arrays);
 
-      // --- Write outputs back to args ---
-      size_t tensor_out_idx = 0;
-      for (const auto& slot : program.output_map) {
-        if (slot.slot_type == SlotType::TensorSlot) {
-          ETTensor& out_tensor = args[arg_idx++]->toTensor();
-          mlx_to_tensor(tensor_arrays[tensor_out_idx++], out_tensor);
-        } else if (slot.slot_type == SlotType::IntValueSlot) {
-          Vid<int32_t> vid{slot.idx};
-          int64_t int_val =
-              static_cast<int64_t>(h->state.const_value_ref<int32_t>(vid));
-          *args[arg_idx] = EValue(int_val);
-          arg_idx++;
-        } else {
-          throw std::runtime_error(
-              "Unhandled output slot type: " +
-              std::to_string(static_cast<int>(slot.slot_type)));
-        }
+      } // Lock released — GPU is still executing
+
+      // ================================================================
+      // Phase 2: GPU executes (UNLOCKED)
+      // Another thread can now acquire the lock for its own Phase 1.
+      // ================================================================
+
+      // ================================================================
+      // Phase 3: Wait for GPU + copy results (UNLOCKED)
+      // array::wait() blocks on Metal shared events (thread-safe).
+      // memcpy reads from materialized GPU buffers.
+      // ================================================================
+      for (auto& info : tensor_output_info) {
+        ETTensor& out_tensor = args[info.arg_idx]->toTensor();
+        write_output(prepared_outputs[info.prepared_idx], out_tensor);
       }
 
       return Error::Ok;
