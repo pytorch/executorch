@@ -75,7 +75,6 @@ from .decompose_sdpa_pass import DecomposeScaledDotProductAttentionPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_select_scatter_pass import DecomposeSelectScatterPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
-from .decompose_silu_pass import DecomposeSiluPass  # noqa
 from .decompose_sinh_pass import DecomposeSinhPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
@@ -85,6 +84,7 @@ from .decompose_tan_pass import DecomposeTanPass  # noqa
 from .decompose_tosa_unsupported_clamp_pass import (  # noqa
     DecomposeTOSAUnsupportedClampPass,
 )
+from .decompose_tril_pass import DecomposeTrilPass  # noqa
 from .decompose_unfold_to_gather_pass import DecomposeUnfoldToGatherPass  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa

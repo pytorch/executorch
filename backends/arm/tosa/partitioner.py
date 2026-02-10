@@ -46,47 +46,19 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 logger = logging.getLogger(__name__)
 
 
-def is_noop_clone(node: torch.fx.node.Node) -> bool:
-    """Return True if the node is a no-op ``dim_order_ops._clone_dim_order``.
-
-    Args:
-        node (torch.fx.Node): FX node to inspect.
-
-    Returns:
-        bool: True if the node targets ``dim_order_ops._clone_dim_order.default``
-        in the Edge dialect; otherwise, False.
-
-    """
+def _is_noop_clone(node: torch.fx.node.Node) -> bool:
     return node.target == exir_ops.edge.dim_order_ops._clone_dim_order.default
 
 
-def is_noop_alias_copy(node: torch.fx.Node) -> bool:
-    """Return True if the node is a no-op ``aten.alias_copy``.
-
-    Args:
-        node (torch.fx.Node): FX node to inspect.
-
-    Returns:
-        bool: True if the node targets ``aten.alias_copy.default``; otherwise,
-        False.
-
-    """
+def _is_noop_alias_copy(node: torch.fx.Node) -> bool:
     return node.target == exir_ops.edge.aten.alias_copy.default
 
 
-def is_noop_to_dim_order_copy(node: torch.fx.node.Node) -> bool:
-    """Return True if node is a no-op ``dim_order_ops._to_dim_order_copy``.
+def _is_noop_detach_copy(node: torch.fx.Node) -> bool:
+    return node.target == exir_ops.edge.aten.detach_copy.default
 
-    Consider the op a no-op when the output dtype equals the input's dtype.
 
-    Args:
-        node (torch.fx.Node): FX node to inspect.
-
-    Returns:
-        bool: True if it targets ``_to_dim_order_copy.default`` and preserves
-        dtype; otherwise, False.
-
-    """
+def _is_noop_to_dim_order_copy(node: torch.fx.node.Node) -> bool:
     if node.target != exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
         return False
     else:
@@ -94,20 +66,7 @@ def is_noop_to_dim_order_copy(node: torch.fx.node.Node) -> bool:
         return node.meta.get("dtype") == get_first_fake_tensor(input_node).dtype
 
 
-def is_noop_expand(node: torch.fx.node.Node) -> bool:
-    """Return True if the node is an ``expand_copy`` with all-ones multiples.
-
-    This corresponds to a semantic no-op, since expanding by 1 along every
-    dimension leaves the tensor unchanged.
-
-    Args:
-        node (torch.fx.Node): FX node to inspect.
-
-    Returns:
-        bool: True if the node targets ``aten.expand_copy.default`` and all
-        computed multiples are 1; otherwise, False.
-
-    """
+def _is_noop_expand(node: torch.fx.node.Node) -> bool:
     if node.target != exir_ops.edge.aten.expand_copy.default:
         return False
     else:
@@ -291,10 +250,11 @@ class TOSAPartitioner(Partitioner):
                 )
 
             is_noop_partition = all(
-                is_noop_clone(node)
-                or is_noop_alias_copy(node)
-                or is_noop_expand(node)
-                or is_noop_to_dim_order_copy(node)
+                _is_noop_clone(node)
+                or _is_noop_alias_copy(node)
+                or _is_noop_detach_copy(node)
+                or _is_noop_expand(node)
+                or _is_noop_to_dim_order_copy(node)
                 or node.target in Q_OPS
                 or node.target in DQ_OPS
                 for node in partition.nodes
@@ -369,6 +329,8 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.hardswish.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.silu.default,
+            torch.ops.aten.silu_.default,
         }
         ops_to_not_decompose_if_fp = {
             torch.ops.aten.eye.default,
@@ -382,6 +344,8 @@ class TOSAPartitioner(Partitioner):
         ops_to_not_decompose_if_integer = {
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.silu.default,
+            torch.ops.aten.silu_.default,
         }
 
         def filter_fn(node: torch.fx.Node) -> bool:
