@@ -8,7 +8,6 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
 // Implementation of helper utilities for creating and configuring LLM runners
 
-#include <executorch/extension/llm/runner/image_prefiller.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/multimodal_decoder_runner.h>
 #include <executorch/extension/llm/runner/multimodal_prefiller.h>
@@ -154,7 +153,9 @@ std::unordered_set<uint64_t> get_eos_ids(
     tokenizers::Tokenizer* tokenizer,
     Module* module) {
   std::unordered_set<uint64_t> eos_ids = {tokenizer->eos_tok()};
-  // Get EOS IDs if available
+  ET_LOG(Info, "Primary eos_tok = %" PRIu64, tokenizer->eos_tok());
+
+  // Get EOS IDs from model metadata if available
   auto method_names_result = module->method_names();
   if (method_names_result.error() != Error::Ok) {
     ET_LOG(Error, "Failed reading method names");
@@ -163,7 +164,6 @@ std::unordered_set<uint64_t> get_eos_ids(
   const auto& method_names = method_names_result.get();
 
   if (method_names.count(llm::kEosIds)) {
-    eos_ids.clear();
     auto execute_result = module->execute(llm::kEosIds);
     if (execute_result.error() != Error::Ok) {
       ET_LOG(Error, "Failed to execute %s", llm::kEosIds);
@@ -171,8 +171,10 @@ std::unordered_set<uint64_t> get_eos_ids(
     }
     for (const auto& eos_id : execute_result.get()) {
       auto value = eos_id.toScalar().to<int64_t>();
-      eos_ids.emplace(value);
-      ET_LOG(Info, "eos_id = %" PRId64, value);
+      auto [_, inserted] = eos_ids.emplace(value);
+      if (inserted) {
+        ET_LOG(Info, "Added eos_id from model metadata: %" PRId64, value);
+      }
     }
   }
   return eos_ids;

@@ -53,6 +53,7 @@ set(llama_runner_deps
 
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
 target_link_libraries(llama_runner PUBLIC tokenizers::tokenizers)
+target_link_libraries(llama_runner PRIVATE jinja2cpp)
 
 target_include_directories(
   llama_runner PUBLIC ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include

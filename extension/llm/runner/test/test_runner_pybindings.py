@@ -18,8 +18,12 @@ import unittest
 
 import torch
 from executorch.extension.llm.runner import (
+    ChatConversation,
+    ChatMessage,
+    ChatTemplateType,
     GenerationConfig,
     Image,
+    JinjaChatFormatter,
     make_image_input,
     make_text_input,
     MultimodalInput,
@@ -256,3 +260,82 @@ class TestHelperFunctions(unittest.TestCase):
         img_tensor_rgba = torch.ones((4, 50, 50), dtype=torch.uint8) * 128
         image_input_rgba = make_image_input(img_tensor_rgba)
         self.assertTrue(image_input_rgba.is_image())
+
+
+class TestChatTemplateBindings(unittest.TestCase):
+    """Test Jinja chat template bindings."""
+
+    def test_format_llama3(self):
+        formatter = JinjaChatFormatter.from_template(ChatTemplateType.Llama3)
+        result = formatter.format("Hello!", "System prompt")
+        self.assertIn("<|begin_of_text|>", result)
+        self.assertIn("System prompt", result)
+        self.assertIn("Hello!", result)
+        self.assertIn("<|start_header_id|>assistant", result)
+
+    def test_format_conversation(self):
+        formatter = JinjaChatFormatter.from_template(ChatTemplateType.Gemma3)
+        conversation = ChatConversation()
+        conversation.bos_token = "<bos>"
+        conversation.eos_token = "<end_of_turn>"
+        conversation.add_generation_prompt = True
+        conversation.messages = [
+            ChatMessage("user", "Hi"),
+            ChatMessage("assistant", "Hello"),
+        ]
+        result = formatter.format_conversation(conversation)
+        self.assertIn("<start_of_turn>user", result)
+        self.assertIn("Hi", result)
+        self.assertIn("<start_of_turn>model", result)
+
+    def test_format_llama3_without_system_prompt(self):
+        formatter = JinjaChatFormatter.from_template(ChatTemplateType.Llama3)
+        result = formatter.format("Hello!")
+        self.assertIn("<|begin_of_text|>", result)
+        self.assertIn("Hello!", result)
+        self.assertIn("<|start_header_id|>user", result)
+        # Should not contain system when no system prompt provided
+        self.assertNotIn("<|start_header_id|>system", result)
+
+    def test_format_gemma3(self):
+        formatter = JinjaChatFormatter.from_template(ChatTemplateType.Gemma3)
+        result = formatter.format("Test message", "Be helpful")
+        self.assertIn("<bos>", result)
+        self.assertIn("Test message", result)
+        self.assertIn("<start_of_turn>model", result)
+
+    def test_includes_bos_llama3(self):
+        formatter = JinjaChatFormatter.from_template(ChatTemplateType.Llama3)
+        self.assertTrue(formatter.includes_bos())
+
+    def test_includes_bos_gemma3(self):
+        formatter = JinjaChatFormatter.from_template(ChatTemplateType.Gemma3)
+        self.assertTrue(formatter.includes_bos())
+
+    def test_from_string_llama_template(self):
+        template = "{{ bos_token }}<|start_header_id|>user<|end_header_id|>\n\n{{ messages[0].content }}<|eot_id|>"
+        formatter = JinjaChatFormatter.from_string(template)
+        result = formatter.format("Test")
+        self.assertIn("Test", result)
+
+    def test_from_string_gemma_template(self):
+        template = "{{ bos_token }}<start_of_turn>user\n{{ messages[0].content }}<end_of_turn>"
+        formatter = JinjaChatFormatter.from_string(template)
+        result = formatter.format("Test")
+        self.assertIn("Test", result)
+
+    def test_chat_message_creation(self):
+        msg = ChatMessage("user", "Hello world")
+        self.assertEqual(msg.role, "user")
+        self.assertEqual(msg.content, "Hello world")
+
+    def test_chat_conversation_creation(self):
+        conv = ChatConversation()
+        conv.bos_token = "<bos>"
+        conv.eos_token = "<eos>"
+        conv.add_generation_prompt = False
+        conv.messages = [ChatMessage("user", "Hi")]
+        self.assertEqual(conv.bos_token, "<bos>")
+        self.assertEqual(conv.eos_token, "<eos>")
+        self.assertFalse(conv.add_generation_prompt)
+        self.assertEqual(len(conv.messages), 1)

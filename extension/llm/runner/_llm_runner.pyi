@@ -4,6 +4,7 @@ Type stubs for _llm_runner module.
 This file provides type annotations for the ExecuTorch LLM Runner Python bindings.
 """
 
+from enum import Enum
 from typing import Callable, List, Optional, overload
 
 import torch
@@ -62,6 +63,45 @@ class GenerationConfig:
         ...
 
     def __repr__(self) -> str: ...
+
+class ChatTemplateType(Enum):
+    None_ = 0
+    Llama3 = 1
+    Llama32 = 2
+    Gemma3 = 3
+    Custom = 4
+
+class ChatMessage:
+    role: str
+    content: str
+
+    def __init__(self, role: str, content: str) -> None: ...
+
+    def __repr__(self) -> str: ...
+
+class ChatConversation:
+    messages: List[ChatMessage]
+    bos_token: str
+    eos_token: str
+    add_generation_prompt: bool
+
+    def __init__(self) -> None: ...
+
+class JinjaChatFormatter:
+    @staticmethod
+    def from_template(template_type: ChatTemplateType) -> "JinjaChatFormatter": ...
+
+    @staticmethod
+    def from_string(template_str: str) -> "JinjaChatFormatter": ...
+
+    @staticmethod
+    def from_file(path: str) -> "JinjaChatFormatter": ...
+
+    def format(self, prompt: str, system_prompt: str = "") -> str: ...
+
+    def format_conversation(self, conversation: ChatConversation) -> str: ...
+
+    def includes_bos(self) -> bool: ...
 
 class Stats:
     """Statistics for LLM generation performance."""

@@ -26,6 +26,7 @@ def define_common_targets():
                 "runner.cpp",
             ],
             exported_headers = [
+                "chat_formatter.h",
                 "runner.h",
             ],
             deps = [
