@@ -637,9 +637,9 @@ exec_where(const WhereNode& n, ExecutionState& st, StreamOrDevice s) {
 
 // ----- Reshape -----
 inline void
-exec_reshape(const ReshapeNode& n, ExecutionState& st, StreamOrDevice) {
+exec_reshape(const ReshapeNode& n, ExecutionState& st, StreamOrDevice s) {
   auto new_shape = to_shape(n.shape, st);
-  st.set_tensor(n.out, reshape(st.const_tensor_ref(n.x), new_shape));
+  st.set_tensor(n.out, reshape(st.const_tensor_ref(n.x), new_shape, s));
 }
 
 // ----- Transpose -----
