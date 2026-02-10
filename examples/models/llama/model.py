@@ -32,7 +32,7 @@ class Llama2Model(EagerModelBase):
         params_path = self.llm_config.base.params
 
         # LoRA adapter configuration.
-        lora_config = self.llm_config.base.lora
+        lora_config = self.llm_config.base.lora_config
 
         self.use_kv_cache = self.llm_config.model.use_kv_cache
         self.use_sdpa_with_kv_cache_op = self.llm_config.model.use_sdpa_with_kv_cache
@@ -338,9 +338,10 @@ class Llama2Model(EagerModelBase):
 
         embedding_bit_width, embedding_group_size = None, None
         if self.llm_config.base.preq_embedding_quantize:
-            embedding_bit_width, embedding_group_size = (
-                self.llm_config.base.preq_embedding_quantize.split(",")
-            )
+            (
+                embedding_bit_width,
+                embedding_group_size,
+            ) = self.llm_config.base.preq_embedding_quantize.split(",")
             from .source_transformation.pre_quantization import (
                 transform_embedding_for_pre_quantization,
             )

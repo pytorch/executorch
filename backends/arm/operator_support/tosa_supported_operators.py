@@ -184,6 +184,7 @@ def is_quantized(node: torch.fx.Node) -> bool:
 
     Returns:
         bool: True if the node is quantized, False otherwise.
+
     """
 
     try:
@@ -371,10 +372,11 @@ class TOSAProINTFPSupportList(OperatorSupportBase):
 
 
 class CheckArmQuantized(OperatorSupportBase):
-    """
-    Check if the node was marked as quantized in the Arm backend.
-    This is used to ensure that nodes that were quantized in the Arm backend
-    are only partitioned if they are supported by the TOSA backend.
+    """Check if the node was marked as quantized in the Arm backend.
+
+    This is used to ensure that nodes that were quantized in the Arm backend are
+    only partitioned if they are supported by the TOSA backend.
+
     """
 
     def __init__(self, reporter: WhyNoPartitionReporter):
@@ -610,7 +612,9 @@ class CheckDtypeInputsAndOutputs(OperatorSupportBase):
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        """Return True if no disallowed dtypes are present on inputs or outputs."""
+        """Return True if no disallowed dtypes are present on inputs or
+        outputs.
+        """
         if is_submodule_node(node):
             return True
         for input_node in (
