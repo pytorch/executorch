@@ -86,6 +86,15 @@ QUANT_CONFIG_DICT = {
         ),
         None,
     ),
+    (QuantDtype.use_16a8w, True): (
+        get_16a8w_qnn_qat_config,
+        partial(
+            get_qat_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int8,
+        ),
+        None,
+    ),
     (QuantDtype.use_16a4w, False): (
         get_16a4w_qnn_ptq_config,
         partial(
@@ -104,6 +113,19 @@ QUANT_CONFIG_DICT = {
         ),
         partial(
             get_ptq_per_block_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int4,
+        ),
+    ),
+    (QuantDtype.use_16a4w_block, True): (
+        get_16a4w_qnn_qat_config,
+        partial(
+            get_qat_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int4,
+        ),
+        partial(
+            get_qat_per_block_quant_config,
             act_dtype=torch.uint16,
             weight_dtype=torch.int4,
         ),
