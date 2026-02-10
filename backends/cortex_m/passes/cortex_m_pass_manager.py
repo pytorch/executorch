@@ -10,6 +10,12 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     ScalarsToAttributePass,
 )
+from executorch.backends.arm._passes.decompose_adaptive_avg_pool2d_pass import (
+    DecomposeAdaptiveAvgPool2dPass,
+)
+from executorch.backends.cortex_m.passes.propagate_qparams_pass import (
+    PropagateQParamsPass,
+)
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
@@ -34,9 +40,11 @@ class CortexMPassManager(PassManager):
         # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
         RemoveGetItemPass,
         FoldAndAnnotateQParamsPass,
+        PropagateQParamsPass,
         ReplaceScalarWithTensorArgPass,
         ReplaceQuantNodesPass,
         ActivationFusionPass,
+        DecomposeAdaptiveAvgPool2dPass,
         DecomposeHardswishPass,
         QuantizedOpFusionPass,
         ConvertToCortexMPass,
@@ -49,12 +57,22 @@ class CortexMPassManager(PassManager):
         DecomposeMeanPass,
     ]
 
-    def __init__(self, exported_program, passes=None):
+    def __init__(self, exported_program, passes=None, skip_passes=None):
+        """
+        Initialize CortexMPassManager.
+
+        Args:
+            exported_program: The ExportedProgram to transform.
+            passes: Optional custom pass list. Uses default pass_list if None.
+            skip_passes: Optional list of pass classes to skip.
+        """
         self.exported_program = exported_program
         if passes is not None:
             self.passes = passes
         else:
-            self.passes = self.pass_list
+            self.passes = list(self.pass_list)
+        if skip_passes:
+            self.passes = [p for p in self.passes if p not in skip_passes]
 
     def transform_for_annotation(self, model):
         passes = self.pass_list_transform_for_annotation
