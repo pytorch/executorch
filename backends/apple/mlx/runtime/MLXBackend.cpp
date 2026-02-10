@@ -22,6 +22,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 
 namespace executorch {
 namespace backends {
@@ -137,17 +138,25 @@ struct MLXHandle {
   MutableBufferData mutable_buffers;
   ExecutionState state; // Reusable execution state
   Interpreter interpreter;
+  ::mlx::core::Stream stream; // Dedicated GPU stream for this handle
 
   // Keep the constant buffers alive for zero-copy constants
   // Each FreeableBuffer must outlive the MLX arrays that reference it
   std::vector<FreeableBuffer> constant_buffers;
 
-  MLXHandle() = default;
+  MLXHandle() : stream(::mlx::core::new_stream(::mlx::core::Device::gpu)) {}
   ~MLXHandle() = default;
 
   MLXHandle(const MLXHandle&) = delete;
   MLXHandle& operator=(const MLXHandle&) = delete;
 };
+
+// MLX is not thread-safe: its computation graph is global shared state.
+// A global mutex serializes all MLX operations across all handles.
+static std::mutex& mlx_global_mutex() {
+  static std::mutex m;
+  return m;
+}
 
 class MLXBackend final : public ::executorch::runtime::BackendInterface {
  public:
@@ -161,6 +170,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
+    std::lock_guard<std::mutex> lock(mlx_global_mutex());
     auto* handle =
         context.get_runtime_allocator()->allocateInstance<MLXHandle>();
     if (handle == nullptr) {
@@ -211,6 +221,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
+    std::lock_guard<std::mutex> lock(mlx_global_mutex());
     try {
       auto* h = static_cast<MLXHandle*>(handle);
       const auto& program = h->program;
@@ -260,7 +271,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       }
 
       // --- Run the MLX program ---
-      h->interpreter.run(program, h->state);
+      h->interpreter.run(program, h->state, h->stream);
 
       // --- Collect tensor outputs for batch eval ---
       std::vector<array> tensor_arrays;
@@ -299,6 +310,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
   }
 
   void destroy(DelegateHandle* handle) const override {
+    std::lock_guard<std::mutex> lock(mlx_global_mutex());
     if (handle != nullptr) {
       auto* mlx_handle = static_cast<MLXHandle*>(handle);
       mlx_handle->~MLXHandle();
