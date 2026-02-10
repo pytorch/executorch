@@ -17,13 +17,17 @@ namespace api {
 PackedDimInfo::PackedDimInfo(
     const int32_t dim,
     const int32_t dim_block_size,
+    const int32_t dim_align,
     const int32_t outer_dim,
     const int32_t outer_dim_block_size,
+    const int32_t outer_dim_align,
     const bool is_block_transposed)
     : packed_dim(dim),
       packed_dim_block_size(dim_block_size),
+      packed_dim_align(dim_align),
       outer_packed_dim(outer_dim),
       outer_packed_dim_block_size(outer_dim_block_size),
+      outer_packed_dim_align(outer_dim_align),
       block_transposed(is_block_transposed),
       block_numel(packed_dim_block_size * outer_packed_dim_block_size) {
   // Packed dims must be different
@@ -33,19 +37,97 @@ PackedDimInfo::PackedDimInfo(
 PackedDimInfo calculate_packed_dim_info(
     const utils::GPUMemoryLayout memory_layout,
     const utils::StorageType storage_type) {
-  const int32_t packed_dim = utils::to_packed_dim<int32_t>(memory_layout);
-  const int32_t outer_packed_dim =
-      utils::to_outer_packed_dim<int32_t>(memory_layout);
-  const int32_t packed_dim_block_size =
-      utils::to_packed_dim_block_size<int32_t>(memory_layout, storage_type);
-  const int32_t outer_packed_dim_block_size =
-      utils::to_outer_packed_dim_block_size<int32_t>(memory_layout);
-  const bool is_block_transposed =
-      utils::is_block_transposed_layout(memory_layout);
+  const bool is_buffer = storage_type == utils::kBuffer;
 
-  const int32_t block_numel =
-      packed_dim_block_size * outer_packed_dim_block_size;
-  if (storage_type != utils::kBuffer) {
+  PackedDimInfo packed_dim_info(0, 1, 1, 1, 1, 1, false);
+  switch (memory_layout) {
+    case utils::kWidthPacked:
+      packed_dim_info = PackedDimInfo(
+          /*dim=*/0,
+          /*dim_block_size=*/is_buffer ? 1 : 4,
+          /*dim_align=*/is_buffer ? 1 : 4,
+          /*outer_dim=*/1,
+          /*outer_dim_block_size=*/1,
+          /*outer_dim_align=*/1,
+          /*is_block_transposed=*/false);
+      break;
+    case utils::kHeightPacked:
+      packed_dim_info = PackedDimInfo(
+          /*dim=*/1,
+          /*dim_block_size=*/is_buffer ? 1 : 4,
+          /*dim_align=*/is_buffer ? 1 : 4,
+          /*outer_dim=*/0,
+          /*outer_dim_block_size=*/1,
+          /*outer_dim_align=*/1,
+          /*is_block_transposed=*/false);
+      break;
+    case utils::kChannelsPacked:
+      packed_dim_info = PackedDimInfo(
+          /*dim=*/2,
+          /*dim_block_size=*/is_buffer ? 1 : 4,
+          /*dim_align=*/is_buffer ? 1 : 4,
+          /*outer_dim=*/0,
+          /*outer_dim_block_size=*/1,
+          /*outer_dim_align=*/1,
+          /*is_block_transposed=*/false);
+      break;
+    case utils::kPackedInt8_4W:
+      packed_dim_info = PackedDimInfo(
+          /*dim=*/0,
+          /*dim_block_size=*/is_buffer ? 4 : 16,
+          /*dim_align=*/is_buffer ? 4 : 16,
+          /*outer_dim=*/1,
+          /*outer_dim_block_size=*/1,
+          /*outer_dim_align=*/1,
+          /*is_block_transposed=*/false);
+      break;
+    case utils::kPackedInt8_4C:
+      packed_dim_info = PackedDimInfo(
+          /*dim=*/2,
+          /*dim_block_size=*/is_buffer ? 4 : 16,
+          /*dim_align=*/is_buffer ? 4 : 16,
+          /*outer_dim=*/0,
+          /*outer_dim_block_size=*/1,
+          /*outer_dim_align=*/1,
+          /*is_block_transposed=*/false);
+      break;
+    case utils::kPackedInt8_4W4C:
+      packed_dim_info = PackedDimInfo(
+          /*dim=*/2,
+          /*dim_block_size=*/4,
+          /*dim_align=*/4,
+          /*outer_dim=*/0,
+          /*outer_dim_block_size=*/4,
+          /*outer_dim_align=*/4,
+          /*is_block_transposed=*/false);
+      break;
+    case utils::kPackedInt8_4H4W:
+      packed_dim_info = PackedDimInfo(
+          /*dim=*/0,
+          /*dim_block_size=*/4,
+          /*dim_align=*/4,
+          /*outer_dim=*/1,
+          /*outer_dim_block_size=*/4,
+          /*outer_dim_align=*/4,
+          /*is_block_transposed=*/false);
+      break;
+    case utils::kPackedInt8_4C1W:
+      packed_dim_info = PackedDimInfo(
+          /*dim=*/2,
+          /*dim_block_size=*/is_buffer ? 4 : 16,
+          /*dim_align=*/is_buffer ? 4 : 16,
+          /*outer_dim=*/0,
+          /*outer_dim_block_size=*/1,
+          /*outer_dim_align=*/1,
+          /*is_block_transposed=*/true);
+      break;
+    default:
+      VK_THROW("Unknown GPUMemoryLayout");
+  }
+
+  if (!is_buffer) {
+    const int32_t block_numel = packed_dim_info.packed_dim_block_size *
+        packed_dim_info.outer_packed_dim_block_size;
     if (is_packed_int8_layout(memory_layout)) {
       VK_CHECK_COND(block_numel == 16);
     } else {
@@ -53,12 +135,7 @@ PackedDimInfo calculate_packed_dim_info(
     }
   }
 
-  return PackedDimInfo(
-      packed_dim,
-      packed_dim_block_size,
-      outer_packed_dim,
-      outer_packed_dim_block_size,
-      is_block_transposed);
+  return packed_dim_info;
 }
 
 /*
@@ -297,7 +374,8 @@ utils::ivec4 flip_and_unsqueeze_ivec4(
  * for GPU storage in the following ways:
  *
  *   1. The dimensionality of the tensor will be padded to a multiple of 4.
- *   2. The size of the packed dimension will be padded to a multiple of 4.
+ *   2. The size of the packed dimension will be padded to a multiple of the
+ *      packed dimension's alignment value.
  *
  * The "packed dimension" is determined based on the utils::GPUMemoryLayout
  * argument.
@@ -317,23 +395,23 @@ std::vector<int64_t> calculate_padded_sizes(
     padded_sizes.at(i) = utils::val_at(i - ndim_up4, sizes);
   }
 
-  // Pad the packed dim to the block size
-  if (packed_dim_info.packed_dim_block_size > 1) {
+  // Pad the packed dim to the alignment
+  if (packed_dim_info.packed_dim_align > 1) {
     const int64_t dim_offset = packed_dim_info.packed_dim + 1;
     const int64_t padded_dim_size = utils::val_at(-dim_offset, sizes);
     padded_sizes.at(ndim_up4 - dim_offset) = utils::align_up(
         padded_dim_size,
-        static_cast<int64_t>(packed_dim_info.packed_dim_block_size));
+        static_cast<int64_t>(packed_dim_info.packed_dim_align));
   }
 
-  // Also pad the outer packed dimension if it's different from the inner packed
-  // dimension and is marked as padded.
-  if (packed_dim_info.outer_packed_dim_block_size > 1) {
+  // Also pad the outer packed dimension if it has alignment > 1.
+  if (packed_dim_info.outer_packed_dim_align > 1) {
     const int64_t outer_dim_offset = packed_dim_info.outer_packed_dim + 1;
     const int64_t outer_padded_dim_size =
         utils::val_at(-outer_dim_offset, sizes);
-    padded_sizes.at(ndim_up4 - outer_dim_offset) =
-        utils::align_up_4(outer_padded_dim_size);
+    padded_sizes.at(ndim_up4 - outer_dim_offset) = utils::align_up(
+        outer_padded_dim_size,
+        static_cast<int64_t>(packed_dim_info.outer_packed_dim_align));
   }
 
   return padded_sizes;

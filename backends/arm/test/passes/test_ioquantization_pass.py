@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -37,7 +37,7 @@ def test_quantize_io_u55_INT(test_data: input_t):
         test_data,
         aten_ops=[],
         exir_ops=[],
-        use_to_edge_transform_and_lower=False,
+        use_to_edge_transform_and_lower=True,
         run_on_fvp=False,
     )
     pipeline.pop_stage(-1)
