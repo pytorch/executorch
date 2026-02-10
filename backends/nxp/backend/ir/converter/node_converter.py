@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -75,7 +75,10 @@ class NodeConverter(ABC):
             Classes which implement conversion for individual operators must overwrite this method.
 
         :param node: torch.Node to check.
-        :param parameters_mapping: Dictionary mapping tensor names to their static data (if they have it).
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :param custom_delegation_options: Custom options which affect delegation.
         """
         pass
@@ -93,7 +96,10 @@ class NodeConverter(ABC):
 
         :param node: The node (edge operator) to check.
         :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
-        :param parameters_mapping: Dictionary mapping tensor names to their static data (if they have it).
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :param custom_delegation_options: Custom options which affect delegation.
         """
         return True
@@ -110,7 +116,10 @@ class NodeConverter(ABC):
 
         :param node: torch.Node to check.
         :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
-        :param parameters_mapping: Dict mapping tensor names to their data.
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :param custom_delegation_options: Custom user options which affect node delegation.
         """
         return cls._is_supported_in_IR(
@@ -136,7 +145,10 @@ class NodeConverter(ABC):
         :param partition_list: List of proposed partitions.
         :param custom_delegation_options: Custom user options which affect node delegation.
         :param neutron_target_spec: NeutronTargetSpec instance.
-        :param parameters_mapping: Dictionary mapping tensor names to their static data.
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :return: Boolean indicating whether the node supports the current partitioning.
         """
         return True
@@ -170,16 +182,25 @@ class NodeConverter(ABC):
         return True
 
     def assert_convertible(self, node):
-        """Assert that the call `_is_supported_in_IR()` returns `True`. Otherwise, raise an exception and print an
+        """Assert that the call `is_supported()` returns `True`. Otherwise, raise an exception and print an
         error message.
         """
-        assert self._is_supported_in_IR(
+        supported_in_ir = self._is_supported_in_IR(
             node,
             self.context.parameters_mapping,
             self.context.custom_delegation_options,
-        ), (
-            f"Node `{node}` is not convertible to the intermediate representation. "
-            "There is an error in the partitioner."
+        )
+
+        supported_on_target = self._is_supported_on_target(
+            node,
+            self.neutron_target_spec,
+            self.context.parameters_mapping,
+            self.context.custom_delegation_options,
+        )
+
+        assert supported_in_ir and supported_on_target, (
+            f"Node `{node}` was selected for delegation to Neutron, but it is not convertible to the intermediate "
+            "representation. There is an error in the Neutron partitioner. Please report this."
         )
 
     @property

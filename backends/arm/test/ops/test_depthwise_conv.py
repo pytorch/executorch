@@ -322,6 +322,22 @@ def test_convolution_2d_vgf_quant_depthwise(test_data):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_conv1d_INT | test_data_conv2d_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_quant_a8w4_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
 @common.XfailIfNoCorstone300
 @common.parametrize("test_data", test_data_conv2d_INT)
 def test_convolution_2d_u55_INT_depthwise(test_data):

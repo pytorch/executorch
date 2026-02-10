@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,7 +20,6 @@ for more information.
 
 import argparse
 import json
-import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -69,60 +69,56 @@ class LoraConfig:
 
     Can be created in two ways:
 
-    1. Direct specification (all fields required):
+    1. From an adapter_config JSON file:
+        LoraConfig(
+            adapter_checkpoint="/path/to/adapter.safetensors",
+            adapter_config="/path/to/adapter_config.json",
+        )
+
+    2. With explicit values:
         LoraConfig(
             adapter_checkpoint="/path/to/adapter.safetensors",
             r=16,
             lora_alpha=32,
             target_modules=["q_proj", "v_proj"],
         )
-
-    2. Parse from adapter_config.json (r, lora_alpha, target_modules auto-loaded):
-        LoraConfig(
-            adapter_checkpoint="/path/to/adapter.safetensors",
-            adapter_config="/path/to/adapter_config.json",
-        )
     """
 
-    adapter_checkpoint: str  # Path to adapter weights (.safetensors or .pt)
-    r: Optional[int] = None  # LoRA rank
-    lora_alpha: Optional[int] = None  # LoRA alpha scaling
-    # Modules to apply LoRA to:
-    # attention: ["q_proj", "v_proj", "k_proj", "output_proj"/"o_proj"]
-    # feed-forward: ["gate_proj", "up_proj", "down_proj"]
-    target_modules: Optional[List[str]] = None
-    adapter_config: Optional[str] = None  # Path to adapter_config.json
+    adapter_checkpoint: str
+    adapter_config: Optional[str] = None
+    r: int = 0
+    lora_alpha: int = 0
+    target_modules: List[str] = field(default_factory=list)
 
     def __post_init__(self):
-        """Parse adapter_config.json if provided and validate required fields."""
-        if self.adapter_config is not None:
-            self._parse_and_fill_from_config(self.adapter_config)
+        has_explicit = (
+            self.r != 0 or self.lora_alpha != 0 or len(self.target_modules) > 0
+        )
 
-        # Validate required fields
-        required = ["r", "lora_alpha", "target_modules"]
-        missing = [f for f in required if getattr(self, f) is None]
-        if missing:
+        if self.adapter_config and has_explicit:
             raise ValueError(
-                f"LoraConfig missing required fields: {missing}. "
-                "Provide them directly or via adapter_config."
+                "Cannot specify both adapter_config and individual LoRA "
+                "parameters (r, lora_alpha, target_modules). Use one or the other."
             )
 
-    def _parse_and_fill_from_config(self, config_path: str) -> None:
-        """Parse adapter_config.json and fill missing fields."""
-        import json
-        import os
+        if self.adapter_config:
+            with open(self.adapter_config, "r") as f:
+                cfg = json.load(f)
+            for key in ("r", "lora_alpha", "target_modules"):
+                if key not in cfg:
+                    raise ValueError(
+                        f"adapter_config JSON is missing required key '{key}'"
+                    )
+            self.r = cfg["r"]
+            self.lora_alpha = cfg["lora_alpha"]
+            self.target_modules = cfg["target_modules"]
 
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"LoRA config not found: {config_path}")
-
-        with open(config_path, "r") as f:
-            config = json.load(f)
-
-        for field in ["r", "lora_alpha", "target_modules"]:
-            if getattr(self, field) is None:
-                if field not in config:
-                    raise ValueError(f"adapter_config.json must contain '{field}'")
-                setattr(self, field, config[field])
+        if self.r <= 0:
+            raise ValueError(f"LoRA rank (r) must be positive, got {self.r}")
+        if self.lora_alpha <= 0:
+            raise ValueError(f"lora_alpha must be positive, got {self.lora_alpha}")
+        if not self.target_modules:
+            raise ValueError("target_modules must be non-empty")
 
 
 @dataclass
@@ -140,7 +136,7 @@ class BaseConfig:
             If left empty, the model will either be initialized with random weights
             if it is a Llama model or the weights will be downloaded from HuggingFace
             if it is a non-Llama model.
-        lora: LoRA adapter configuration.
+        lora_config: LoRA adapter configuration.
         tokenizer_path: Path to the tokenizer file.
         metadata: Json string containing metadata information.
             e.g. '"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
@@ -157,7 +153,7 @@ class BaseConfig:
     model_class: ModelType = ModelType.llama3
     params: Optional[str] = None
     checkpoint: Optional[str] = None
-    lora: Optional[LoraConfig] = None
+    lora_config: Optional[LoraConfig] = None
     tokenizer_path: Optional[str] = None
     metadata: Optional[str] = None
     use_lora: int = 0
@@ -378,6 +374,7 @@ class Pt2eQuantize(str, Enum):
     coreml_baseline_8a_c8w = "coreml_baseline_8a_c8w"
     coreml_baseline_8a_c4w = "coreml_baseline_8a_c4w"
     vulkan_8w = "vulkan_8w"
+    tosa_8a8w = "tosa_8a8w"
 
 
 class SpinQuant(str, Enum):
@@ -565,6 +562,16 @@ class TorchAOKernelsConfig:
 
 
 @dataclass
+class TosaConfig:
+    """
+    Configures the TOSA backend.
+    """
+
+    enabled: bool = False
+    version: str = "TOSA-1.0+INT"
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -578,6 +585,7 @@ class BackendConfig:
     mps: MPSConfig = field(default_factory=MPSConfig)
     openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
+    tosa: TosaConfig = field(default_factory=TosaConfig)
 
 
 ################################################################################
@@ -617,7 +625,7 @@ class LlmConfig:
         if hasattr(args, "adapter_checkpoint") and args.adapter_checkpoint:
             if not hasattr(args, "adapter_config") or not args.adapter_config:
                 raise ValueError("--adapter_checkpoint requires --adapter_config")
-            llm_config.base.lora = LoraConfig(
+            llm_config.base.lora_config = LoraConfig(
                 adapter_checkpoint=args.adapter_checkpoint,
                 adapter_config=args.adapter_config,
             )

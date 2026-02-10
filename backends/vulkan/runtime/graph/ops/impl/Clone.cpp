@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/graph/Logging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taClone.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/View.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
@@ -132,6 +133,13 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   const utils::StorageType src_storage = graph.storage_type_of(src);
   const utils::StorageType dst_storage = graph.storage_type_of(dst);
+
+  // Handle int8x4 (quantized) tensors with block-based clone
+  if (graph.dtype_of(src) == vkapi::kInt8x4 &&
+      graph.dtype_of(dst) == vkapi::kInt8x4) {
+    return add_q8ta_clone_node(graph, src, dst);
+  }
+
   if (src_storage == utils::kTexture3D && dst_storage == utils::kTexture3D) {
     if (graph.hashed_layout_of(src) == graph.hashed_layout_of(dst)) {
       return add_clone_node(graph, src, dst);
