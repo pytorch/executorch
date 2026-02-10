@@ -94,10 +94,7 @@ class CortexMAddMulCheck(PatternCheck):
         is_per_tensor = PatternCheck.is_per_tensor(
             quantization_config.input_activation
         ) and PatternCheck.is_per_tensor(quantization_config.output_activation)
-        is_int8 = (
-            quantization_config.input_activation.dtype == torch.int8
-            and quantization_config.output_activation.dtype == torch.int8
-        )
+        is_int8 = cls.is_int8_activations(quantization_config)
         return is_per_tensor and is_int8
 
 
@@ -128,10 +125,7 @@ class CortexMLinearCheck(PatternCheck):
         """
         Checks that the quantization config uses per-tensor int8 quantization.
         """
-        is_int8 = (
-            quantization_config.input_activation.dtype == torch.int8
-            and quantization_config.output_activation.dtype == torch.int8
-        )
+        is_int8 = cls.is_int8_activations(quantization_config)
         return is_int8
 
 
