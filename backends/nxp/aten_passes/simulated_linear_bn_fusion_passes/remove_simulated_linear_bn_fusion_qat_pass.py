@@ -6,12 +6,12 @@
 from functools import partial
 
 import torch
-from executorch.backends.nxp.aten_passes.add_simulated_linear_bn_fusion_qat_pass import (
-    _get_compute_scale_factor_pattern,
-    _get_linear_weight_preprocess_pattern,
-)
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
     _unwrap_if_fq,
+)
+from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes.add_simulated_linear_bn_fusion_qat_pass import (
+    _get_compute_scale_factor_pattern,
+    _get_linear_weight_preprocess_pattern,
 )
 from executorch.backends.nxp.backend.graph_utils import is_op_node
 from torch.fx import GraphModule, Node

@@ -237,7 +237,7 @@ class AddSimulatedLinearBatchNormFusionQATPass(PassBase):
         The normalization follows this equation:
         linear_w_fused = linear_w * (gamma / sqrt(var + eps))
 
-        while `gamma` being the batch norm weights.
+        where `gamma` is the batch norm weight.
 
         The denormalization is done by dividing the linear layer output by the scale factor:
         y_denorm = y / (gamma / sqrt(var + eps))
