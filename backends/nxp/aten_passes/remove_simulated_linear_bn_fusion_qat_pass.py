@@ -9,31 +9,22 @@ import torch
 from executorch.backends.nxp.aten_passes.add_simulated_linear_bn_fusion_qat_pass import (
     _get_compute_scale_factor_pattern,
     _get_linear_weight_preprocess_pattern,
-    _is_linear,
 )
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
     _unwrap_if_fq,
 )
+from executorch.backends.nxp.backend.graph_utils import is_op_node
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.fx.passes.utils.matcher_utils import InternalMatch, SubgraphMatcher
 from torchao.quantization.pt2e.qat_utils import _get_aten_graph_module_for_pattern
 
 
-def _is_op_node(node: Node, op) -> bool:
-    return (
-        node is not None
-        and hasattr(node, "op")
-        and node.op == "call_function"
-        and hasattr(node, "target")
-        and node.target == op
-    )
-
-
-_is_div = partial(_is_op_node, op=torch.ops.aten.div.Tensor)
-_is_add = partial(_is_op_node, op=torch.ops.aten.add.Tensor)
-_is_zeros_like = partial(_is_op_node, op=torch.ops.aten.zeros_like)
-_is_reshape = partial(_is_op_node, op=torch.ops.aten.reshape)
+_is_add = partial(is_op_node, target_op=torch.ops.aten.add.Tensor)
+_is_div = partial(is_op_node, target_op=torch.ops.aten.div.Tensor)
+_is_linear = partial(is_op_node, target_op=torch.ops.aten.linear.default)
+_is_reshape = partial(is_op_node, target_op=torch.ops.aten.reshape)
+_is_zeros_like = partial(is_op_node, target_op=torch.ops.aten.zeros_like)
 
 
 def _is_denorm_pattern(node: Node) -> bool:

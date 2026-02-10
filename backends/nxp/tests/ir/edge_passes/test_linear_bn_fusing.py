@@ -15,6 +15,7 @@ from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import
 from executorch.backends.nxp.aten_passes.remove_simulated_linear_bn_fusion_qat_pass import (
     RemoveSimulatedLinearBatchNormFusionQATPass,
 )
+from executorch.backends.nxp.backend.graph_utils import is_batch_norm
 
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.tests.executorch_pipeline import (
@@ -23,7 +24,6 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
     to_model_input_spec,
 )
 from torch.export import export
-from torch.fx import Node
 from torchao.quantization.pt2e.prepare import _is_activation_post_process_node
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
@@ -125,15 +125,9 @@ def test_full_linear_bn_fusing(input_shape, linear_bias):
     graph_nodes = list(converted_model.graph.nodes)
     linear_node = graph_nodes[-4]
 
-    def _is_bn(node_: Node) -> bool:
-        return (
-            hasattr(node_, "target")
-            and node_.target == torch.ops.aten.batch_norm.default
-        )
-
     assert len(graph_nodes) == 11
 
-    assert not any(_is_bn(node) for node in graph_nodes)
+    assert not any(is_batch_norm(node) for node in graph_nodes)
 
     # Assert linear inputs being quantized
     assert linear_node.target == torch.ops.aten.linear.default
