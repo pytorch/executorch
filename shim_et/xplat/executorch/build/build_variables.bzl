@@ -354,6 +354,7 @@ EXTENSION_RUNNER_UTIL_SRCS = [
 ]
 
 EXTENSION_LLM_RUNNER_SRCS = [
+    "extension/llm/runner/io_manager/attention_sink_io_manager.cpp",
     "extension/llm/runner/llm_runner_helper.cpp",
     "extension/llm/runner/multimodal_prefiller.cpp",
     "extension/llm/runner/multimodal_runner.cpp",
