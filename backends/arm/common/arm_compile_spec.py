@@ -212,21 +212,23 @@ class ArmCompileSpec(ABC):
         return compile_spec
 
     def get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
-        """
-        Returns configuration that controls how the Arm pass pipeline should behave.
+        """Returns configuration that controls how the Arm pass pipeline should
+        behave.
+
         Subclasses may override to tweak defaults for specific targets.
+
         """
         if self._pipeline_config is None:
             self._pipeline_config = self._create_default_pipeline_config()
         return self._pipeline_config
 
     def set_pass_pipeline_config(self, config: ArmPassPipelineConfig) -> None:
-        """
-        Sets the configuration that controls how the Arm pass pipeline should behave.
-        Subclasses may override to tweak defaults for specific targets.
+        """Sets the configuration that controls how the Arm pass pipeline should
+        behave. Subclasses may override to tweak defaults for specific targets.
 
         Args:
             config: The custom ArmPassPipelineConfig to set.
+
         """
         self._pipeline_config = config
 
@@ -237,48 +239,48 @@ class ArmCompileSpec(ABC):
         return config
 
     def get_intermediate_path(self) -> str | None:
-        """
-        Gets the path used for dumping intermediate results such as tosa and pte.
+        """Gets the path used for dumping intermediate results such as tosa and
+        pte.
 
         Returns:
             Path where intermediate results are saved.
+
         """
         return self.path_for_intermediates
 
     def dump_intermediate_artifacts_to(self, output_path: str | None):
-        """
-        Sets a path for dumping intermediate results during such as tosa and pte.
+        """Sets a path for dumping intermediate results during such as tosa and
+        pte.
 
         Args:
             output_path: Path to dump intermediate results to.
+
         """
         self.path_for_intermediates = output_path
         return self
 
     def dump_debug_info(self, debug_mode: DebugMode | None):
-        """
-        Dump debugging information into the intermediates path.
+        """Dump debugging information into the intermediates path.
 
         Args:
             debug_mode: The debug mode to use for dumping debug information.
+
         """
         self.tosa_debug_mode = debug_mode
         return self
 
     def set_output_order_workaround(self, output_order_workaround: bool):
-        """
-        Sets whether to apply the output order workaround.
+        """Sets whether to apply the output order workaround.
 
         Args:
             output_order_workaround: Boolean indicating whether to apply the workaround.
+
         """
         self.output_order_workaround = output_order_workaround
         return self
 
     def get_output_order_workaround(self) -> bool:
-        """
-        Gets whether the output order workaround is being applied.
-        """
+        """Gets whether the output order workaround is being applied."""
         return self.output_order_workaround
 
     @classmethod

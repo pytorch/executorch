@@ -284,6 +284,15 @@ class SharedQspecCompetingQspecs(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = torch.nn.Conv2d(3, 3, 1)
+        self.conv.weight.data = torch.tensor(
+            [
+                [[[0.1]], [[-0.2]], [[0.3]]],
+                [[[-0.1]], [[0.2]], [[-0.3]]],
+                [[[0.05]], [[-0.05]], [[0.15]]],
+            ],
+            dtype=self.conv.weight.dtype,
+        )
+        self.conv.bias.data = torch.tensor([0.0, 0.1, -0.1], dtype=self.conv.bias.dtype)
 
     def forward(self, x):
         return torch.cat([self.conv(x), x], dim=1)
