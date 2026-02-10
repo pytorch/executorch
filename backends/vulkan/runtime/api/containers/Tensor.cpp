@@ -564,14 +564,19 @@ size_t calculate_max_ubo_nbytes(
     const size_t min_nbytes_per_ubo,
     const utils::StorageType storage_type) {
   size_t ivec4_ubo_nbytes = utils::align_up(size_t(16), min_nbytes_per_ubo);
-  size_t uvec3_ubo_nbytes = utils::align_up(size_t(12), min_nbytes_per_ubo);
+  // TextureLimits has alignas(16) so sizeof(TextureLimits) == 16, not 12.
+  // Use 16 to match the actual sizeof used by metadata_ubo_impl().
+  size_t uvec3_ubo_nbytes = utils::align_up(size_t(16), min_nbytes_per_ubo);
   size_t int32_ubo_nbytes = utils::align_up(size_t(4), min_nbytes_per_ubo);
   if (storage_type == utils::kBuffer) {
     // sizes, strides, dim order, numel
     return 3 * ivec4_ubo_nbytes + int32_ubo_nbytes;
   }
-  // sizes, logical limits
-  return ivec4_ubo_nbytes + uvec3_ubo_nbytes;
+  // sizes, strides, dim_order, numel, logical_limits
+  // Ops like Linear and MatMul unconditionally request strides/numel UBOs on
+  // all tensors regardless of storage type, so texture tensors need the same
+  // metadata budget as buffer tensors plus logical_limits.
+  return 3 * ivec4_ubo_nbytes + int32_ubo_nbytes + uvec3_ubo_nbytes;
 }
 
 //
@@ -1161,9 +1166,10 @@ bool vTensor::is_contiguous() const {
 }
 
 size_t vTensor::get_max_ubo_nbytes(const size_t nbytes_per_ubo) const {
-  // For texture backed tensors, the metadata fields needed are:
-  // sizes, logical limits
-  size_t max_metadata_field_count = 2u;
+  // Ops like Linear and MatMul unconditionally request strides/numel UBOs on
+  // all tensors regardless of storage type, so texture tensors need the same
+  // metadata budget as buffer tensors plus logical_limits (5 fields total).
+  size_t max_metadata_field_count = 5u;
   if (storage_type() == utils::kBuffer) {
     // sizes, strides, dim order, numel
     max_metadata_field_count = 4u;
