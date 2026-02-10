@@ -335,7 +335,8 @@ TEST_F(DimOrderUtilTest, DimOrderWithOutOfBoundsValueReturnsError) {
 }
 
 TEST_F(DimOrderUtilTest, TooManyDimsReturnsError) {
-  constexpr size_t kTooManyDims = executorch::runtime::kTensorDimensionLimit + 1;
+  constexpr size_t kTooManyDims =
+      executorch::runtime::kTensorDimensionLimit + 1;
   std::vector<executorch::aten::SizesType> sizes(kTooManyDims, 1);
   std::vector<executorch::aten::SizesType> dim_order(kTooManyDims);
   std::iota(dim_order.begin(), dim_order.end(), 0);
