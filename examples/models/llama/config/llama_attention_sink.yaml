@@ -19,7 +19,6 @@ export:
   # max_context_length = RoPE position encoding limit
   # pos_ can exceed max_seq_length but not max_context_length
   max_context_length: 8192
-  enable_dynamic_shape: True
 
 quantization:
   qmode: 8da4w
