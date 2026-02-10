@@ -56,6 +56,19 @@ class Amax(torch.nn.Module):
         ),
     }
 
+    test_data_bf16: Dict[str, input_t] = {
+        "rank_1_dim_0_bf16": lambda: (
+            (torch.rand([10], dtype=torch.bfloat16),),
+            0,
+            False,
+        ),
+        "rank_2_dim_1_keep_dims_bf16": lambda: (
+            (torch.rand([2, 2], dtype=torch.bfloat16),),
+            (1,),
+            True,
+        ),
+    }
+
 
 class Max(torch.nn.Module):
     input_t = Tuple[Tuple[torch.Tensor], int]
@@ -80,6 +93,11 @@ class Max(torch.nn.Module):
         "rank_2_dim_1_fp16": lambda: ((torch.rand([2, 2], dtype=torch.float16),), 1),
     }
 
+    test_data_bf16: Dict[str, input_t] = {
+        "rank_1_dim_0_bf16": lambda: ((torch.rand([10], dtype=torch.bfloat16),), 0),
+        "rank_2_dim_1_bf16": lambda: ((torch.rand([2, 2], dtype=torch.bfloat16),), 1),
+    }
+
 
 class MaxWithIndex(torch.nn.Module):
     input_t = Tuple[Tuple[torch.Tensor], int]
@@ -93,17 +111,20 @@ class MaxWithIndex(torch.nn.Module):
         return x, i
 
     test_data: Dict[str, input_t] = Max.test_data
-
     test_data_fp16: Dict[str, input_t] = Max.test_data_fp16
+    test_data_bf16: Dict[str, input_t] = Max.test_data_bf16
 
 
-@common.parametrize("test_data", Amax.test_data | Amax.test_data_fp16)
+@common.parametrize(
+    "test_data", Amax.test_data | Amax.test_data_fp16 | Amax.test_data_bf16
+)
 def test_amax_tosa_FP(test_data: Amax.input_t):
     data, dim, keep_dims = test_data()
     pipeline = TosaPipelineFP[Amax.input_t](
         Amax(dim, keep_dims),
         data,
         amax_aten_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -139,13 +160,16 @@ def test_amax_u85_INT(test_data: Amax.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Max.test_data | Max.test_data_fp16)
+@common.parametrize(
+    "test_data", Max.test_data | Max.test_data_fp16 | Max.test_data_bf16
+)
 def test_max_dim_tosa_FP_to_amax(test_data: Max.input_t):
     data, dim = test_data()
     pipeline = TosaPipelineFP[Max.input_t](
         Max(dim),
         data,
         max_aten_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 

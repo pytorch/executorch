@@ -61,6 +61,19 @@ class Amin(torch.nn.Module):
         ),
     }
 
+    test_data_bf16: Dict = {
+        "rank_2_dim_1_keep_dims_bf16": lambda: (
+            (torch.rand([2, 2], dtype=torch.bfloat16),),
+            (1,),
+            True,
+        ),
+        "rank_4_no_dim_bf16": lambda: (
+            (torch.rand([1, 2, 5, 5], dtype=torch.bfloat16),),
+            None,
+            False,
+        ),
+    }
+
 
 class Min(torch.nn.Module):
     input_t = Tuple[Tuple[torch.Tensor], int]
@@ -85,6 +98,11 @@ class Min(torch.nn.Module):
         "rank_2_dim_1_fp16": lambda: ((torch.rand([2, 2], dtype=torch.float16),), 1),
     }
 
+    test_data_bf16: Dict = {
+        "rank_1_dim_0_bf16": lambda: ((torch.rand([10], dtype=torch.bfloat16),), 0),
+        "rank_2_dim_1_bf16": lambda: ((torch.rand([2, 2], dtype=torch.bfloat16),), 1),
+    }
+
 
 class MinWithIndex(torch.nn.Module):
     def __init__(self, dim):
@@ -96,17 +114,20 @@ class MinWithIndex(torch.nn.Module):
         return x, i
 
     test_data = Min.test_data
-
     test_data_fp16 = Min.test_data_fp16
+    test_data_bf16 = Min.test_data_bf16
 
 
-@common.parametrize("test_data", Amin.test_data | Amin.test_data_fp16)
+@common.parametrize(
+    "test_data", Amin.test_data | Amin.test_data_fp16 | Amin.test_data_bf16
+)
 def test_amin_tosa_FP(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
     pipeline = TosaPipelineFP[Amin.input_t](
         Amin(dim, keep_dims),
         data,
         amin_aten_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -146,13 +167,16 @@ def test_amin_u85_INT(test_data: Amin.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Min.test_data | Min.test_data_fp16)
+@common.parametrize(
+    "test_data", Min.test_data | Min.test_data_fp16 | Min.test_data_bf16
+)
 def test_min_dim_tosa_FP_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = TosaPipelineFP[Min.input_t](
         Min(dim),
         data,
         min_aten_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
