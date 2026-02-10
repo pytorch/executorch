@@ -6,7 +6,8 @@
 
 # pyre-strict
 
-from typing import Callable, Protocol, TypeVar
+from pathlib import Path
+from typing import Callable, Optional, Protocol, TypeVar
 
 import torch
 import torch.nn as nn
@@ -19,8 +20,6 @@ m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
 try:
     torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
 except (OSError, RuntimeError):
-    # Fall back to path-based loading for CMake/OSS builds
-    from pathlib import Path
 
     custom_libs: list[Path] = list(
         Path(__file__)
@@ -1020,11 +1019,13 @@ def quantized_w8a32_gru(
     assert inputs.dtype == torch.float32
     assert hidden.dtype == torch.float32
 
-    if len(hidden.shape) > 2:
-        raise ValueError("Hidden state must be 2D or 1D")
-
-    if len(hidden.shape) == 2 and hidden.shape[0] != 1:
-        raise ValueError("Leading dimension of hidden state must be 1")
+    # Hidden state can be 1D, 2D (1, hidden_dim), or 3D (1, 1, hidden_dim).
+    # All leading dimensions must be 1.
+    for d in range(len(hidden.shape) - 1):
+        if hidden.shape[d] != 1:
+            raise ValueError(
+                f"Leading dimension {d} of hidden state must be 1, got {hidden.shape[d]}"
+            )
 
     original_hidden_shape = hidden.shape
     hidden = hidden.view(-1)
@@ -1060,7 +1061,7 @@ def quantized_w8a32_gru(
 
     assert new_hidden.shape == original_hidden_shape
 
-    new_hidden = new_hidden.view(-1)
+    new_hidden = new_hidden.view(original_hidden_shape)
     return torch.stack([new_hidden, new_hidden], dim=0)
 
 
@@ -2290,3 +2291,16 @@ def sdpa_bitwise_mask_gen(mask: torch.Tensor, threshold: float) -> torch.Tensor:
         packed_last = last_dim // 8
         # Reshape packed to match mask shape, with last dim packed to bytes
         return packed.view(*original_shape[:-1], packed_last)
+
+
+@impl_tracked(m, "slice_scatter_")
+def slice_scatter_impl(
+    self: torch.Tensor,
+    src: torch.Tensor,
+    dim: int = 0,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+    step: int = 1,
+) -> torch.Tensor:
+    self[:] = torch.ops.aten.slice_scatter.default(self, src, dim, start, end, step)
+    return self

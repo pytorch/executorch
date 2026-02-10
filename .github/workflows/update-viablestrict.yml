@@ -34,12 +34,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -x  # Show commands in logs
           echo "## ❌ No green commit found" >> $GITHUB_STEP_SUMMARY
           echo "No green commit found"
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "viable/strict branch was not updated because no commit passed all required checks." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Pattern matching required workflows (must match 'requires' input above)
+          # Uses exact matching with anchors and case-insensitive matching
+          REQUIRED_PATTERN="^pull$|^lint$|^trunk$|^Build documentation$|^Apple$"
 
           echo "### Failures by commit (recent)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -57,8 +60,8 @@ jobs:
               --jq '.commits | reverse | .[:20] | .[] | "\(.sha)\u001f\(.commit.message | split("\n")[0] | .[:50])"' 2>/dev/null || echo "")
 
             if [ -n "$COMMITS" ]; then
-              echo "| Commit | Title | Failed Job |" >> $GITHUB_STEP_SUMMARY
-              echo "|--------|-------|------------|" >> $GITHUB_STEP_SUMMARY
+              echo "| Commit | Title | Failed Job (up to 5 jobs) |" >> $GITHUB_STEP_SUMMARY
+              echo "|--------|-------|---------------------------|" >> $GITHUB_STEP_SUMMARY
 
               while IFS=$'\x1f' read -r sha title; do
                 [ -z "$sha" ] && continue
@@ -67,19 +70,42 @@ jobs:
                 title=$(echo "$title" | tr '|' '-')
 
                 # Get workflow runs for this commit (use unit separator)
-                failed_run=$(gh api "repos/pytorch/executorch/actions/runs?head_sha=${sha}&per_page=100" \
-                  --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)\u001f\(.name)"' 2>/dev/null | head -1)
+                # Only include workflows that match the requires patterns (case-insensitive)
+                # Show up to 5 failed workflows per commit
+                failed_runs=$(gh api "repos/pytorch/executorch/actions/runs?head_sha=${sha}&per_page=100" \
+                  --jq ".workflow_runs[] | select(.conclusion == \"failure\" and (.name | test(\"${REQUIRED_PATTERN}\"; \"i\"))) | \"\(.id)\u001f\(.name)\"" 2>/dev/null | head -5)
 
-                if [ -n "$failed_run" ]; then
-                  IFS=$'\x1f' read -r run_id workflow_name <<< "$failed_run"
-                  # Sanitize workflow name for markdown table
-                  workflow_name=$(echo "$workflow_name" | tr '|' '-')
+                if [ -n "$failed_runs" ]; then
+                  # Collect all failed jobs for this commit
+                  all_failed_jobs=""
+                  while IFS=$'\x1f' read -r run_id workflow_name; do
+                    [ -z "$run_id" ] && continue
+                    workflow_name=$(echo "$workflow_name" | tr '|' '-')
 
-                  # Get failed job name
-                  failed_job=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs?per_page=100" \
-                    --jq '.jobs[] | select(.conclusion == "failure") | .name' 2>/dev/null | head -1 | tr '|' '-')
+                    # Get failed job names (up to 5 per workflow)
+                    failed_jobs=$(gh api "repos/pytorch/executorch/actions/runs/${run_id}/jobs?per_page=100" \
+                      --jq '.jobs[] | select(.conclusion == "failure") | .name' 2>/dev/null | head -5)
 
-                  echo "| ${short_sha} | ${title} | ${workflow_name} / ${failed_job:-unknown} |" >> $GITHUB_STEP_SUMMARY
+                    if [ -n "$failed_jobs" ]; then
+                      while read -r failed_job; do
+                        [ -z "$failed_job" ] && continue
+                        failed_job=$(echo "$failed_job" | tr '|' '-')
+                        if [ -n "$all_failed_jobs" ]; then
+                          all_failed_jobs="${all_failed_jobs}<br>${workflow_name} / ${failed_job}"
+                        else
+                          all_failed_jobs="${workflow_name} / ${failed_job}"
+                        fi
+                      done <<< "$failed_jobs"
+                    else
+                      if [ -n "$all_failed_jobs" ]; then
+                        all_failed_jobs="${all_failed_jobs}<br>${workflow_name} / unknown"
+                      else
+                        all_failed_jobs="${workflow_name} / unknown"
+                      fi
+                    fi
+                  done <<< "$failed_runs"
+
+                  echo "| ${short_sha} | ${title} | ${all_failed_jobs} |" >> $GITHUB_STEP_SUMMARY
                   found_failures=true
                 fi
               done <<< "$COMMITS"
@@ -94,8 +120,9 @@ jobs:
             echo "|--------|-------|------------|" >> $GITHUB_STEP_SUMMARY
 
             # Filter by branch=main and use unit separator
+            # Only include workflows that match the requires patterns (case-insensitive)
             gh api "repos/pytorch/executorch/actions/runs?branch=main&per_page=20" \
-              --jq '.workflow_runs[] | select(.conclusion == "failure") | "\(.id)\u001f\(.head_sha | .[:7])\u001f\(.display_title | .[:50])\u001f\(.name)"' 2>/dev/null | \
+              --jq ".workflow_runs[] | select(.conclusion == \"failure\" and (.name | test(\"${REQUIRED_PATTERN}\"; \"i\"))) | \"\(.id)\u001f\(.head_sha | .[:7])\u001f\(.display_title | .[:50])\u001f\(.name)\"" 2>/dev/null | \
             while IFS=$'\x1f' read -r run_id sha title workflow; do
               # Sanitize for markdown table
               title=$(echo "$title" | tr '|' '-')
@@ -112,9 +139,10 @@ jobs:
           echo "### Summary by job (main branch, last 24h)" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           # Filter by main branch and created in last 24 hours (GNU date syntax for Ubuntu runner)
+          # Only include workflows that match the requires patterns (case-insensitive)
           yesterday=$(date -u -d '24 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
           gh api "repos/pytorch/executorch/actions/runs?branch=main&created=>${yesterday}&per_page=100" \
-            --jq '.workflow_runs[] | select(.conclusion == "failure") | .name' 2>/dev/null \
+            --jq ".workflow_runs[] | select(.conclusion == \"failure\" and (.name | test(\"${REQUIRED_PATTERN}\"; \"i\"))) | .name" 2>/dev/null \
             | sort | uniq -c | sort -rn | head -10 >> $GITHUB_STEP_SUMMARY || echo "Failed to fetch data" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 

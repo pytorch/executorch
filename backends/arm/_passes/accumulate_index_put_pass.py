@@ -29,7 +29,9 @@ def get_ops(op):
 
 
 class AccumulateIndexPutPass(ArmPass):
-    """This pass adjusts the values arg when the accumulate arg is set to true for the index_put op"""
+    """This pass adjusts the values arg when the accumulate arg is set to true
+    for the index_put op.
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 

@@ -76,7 +76,6 @@ from executorch.backends.arm._passes import (
     DecomposeSelectPass,
     DecomposeSelectScatterPass,
     DecomposeSignPass,
-    DecomposeSiluPass,
     DecomposeSinhPass,
     DecomposeSoftmaxPass,
     DecomposeSoftmaxUnstablePass,
@@ -84,6 +83,7 @@ from executorch.backends.arm._passes import (
     DecomposeSumPass,
     DecomposeTanPass,
     DecomposeTOSAUnsupportedClampPass,
+    DecomposeTrilPass,
     DecomposeUnfoldToGatherPass,
     DecomposeVarPass,
     DecorateFp32toInt32CastingPass,
@@ -155,9 +155,8 @@ class ArmPassManager(PassManager):
         self,
         override_config: ArmPassPipelineConfig | None = None,
     ) -> tuple[type, ...]:
-        """
-        Configures the pass manager to skip certain passes based on the ArmPassPipelineConfig class
-        found in the compile spec.
+        """Configures the pass manager to skip certain passes based on the
+        ArmPassPipelineConfig class found in the compile spec.
         """
         skip_set: set[type] = set()
 
@@ -181,11 +180,12 @@ class ArmPassManager(PassManager):
         return self._skip_pass_types
 
     def validate_constraints_mandatory(self):
-        """
-        Validates that necessary passes have run before transforming to backend.
+        """Validates that necessary passes have run before transforming to
+        backend.
 
-        Note that this differs from the original validate_constraints function, which
-        only checks the order of passes.
+        Note that this differs from the original validate_constraints function,
+        which only checks the order of passes.
+
         """
         passes_to_run = defaultdict(list)
 
@@ -374,7 +374,7 @@ class ArmPassManager(PassManager):
     def transform_to_backend_pipeline(
         self, exported_program: ExportedProgram, graph_module: GraphModule
     ):
-        """Apply passes before transforming program to backend"""
+        """Apply passes before transforming program to backend."""
 
         if not tosa_spec_in_set(
             self.tosa_spec,
@@ -403,6 +403,7 @@ class ArmPassManager(PassManager):
                 DecomposeLogitPass(tfa_pass=True),
                 PromoteBoolOperandsPass(tfa_pass=True),
                 DecomposeSignPass(tfa_pass=True),
+                DecomposeTrilPass(tfa_pass=True),
                 DecomposeAddmmPass(tfa_pass=True),
                 DecomposeRemainderPass(tfa_pass=True),
                 DecomposeFloorDividePass(tfa_pass=True),
@@ -434,7 +435,6 @@ class ArmPassManager(PassManager):
                 DecomposeLeakyReLUPass(tfa_pass=True),
                 DecomposeLinalgVectorNormPass(tfa_pass=True),
                 DecomposeSqrtPass(tfa_pass=True),
-                DecomposeSiluPass(tfa_pass=True),
                 DecomposeAvgPool2dPass(tfa_pass=True),
                 DecomposeSoftmaxUnstablePass(tfa_pass=True),
                 DecomposeSoftmaxPass(tfa_pass=True),
