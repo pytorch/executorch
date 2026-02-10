@@ -1,0 +1,173 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+def execuTorchVersion = System.properties['execuTorchVersion'] ?: '1.0.0-SNAPSHOT'
+
+group = 'org.pytorch'
+version = execuTorchVersion
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+
+    withSourcesJar()
+    withJavadocJar()
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.assertj:assertj-core:3.27.2'
+}
+
+// Configure where to find native libraries for JAR packaging
+def nativeLibDir = file("${rootDir}/build/native")
+
+// Task to copy native libraries into resources for JAR packaging
+task copyNativeLibs(type: Copy) {
+    from nativeLibDir
+    into "${buildDir}/resources/main/native"
+    // Only run if native libs exist
+    onlyIf { nativeLibDir.exists() }
+}
+
+processResources.dependsOn copyNativeLibs
+
+jar {
+    manifest {
+        attributes(
+            'Implementation-Title': 'ExecuTorch Java',
+            'Implementation-Version': version,
+            'Automatic-Module-Name': 'org.pytorch.executorch'
+        )
+    }
+
+    // Include native libraries if they exist
+    from("${buildDir}/resources/main/native") {
+        into 'native'
+    }
+}
+
+test {
+    useJUnit()
+
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+    }
+
+    // Set library path for native libraries during tests
+    systemProperty 'java.library.path', "${nativeLibDir}/${getOsArch()}"
+}
+
+// Helper function to determine OS/arch directory
+def getOsArch() {
+    def osName = System.getProperty('os.name', '').toLowerCase()
+    def arch = System.getProperty('os.arch', '').toLowerCase()
+
+    def os
+    if (osName.contains('mac') || osName.contains('darwin')) {
+        os = 'darwin'
+    } else if (osName.contains('win')) {
+        os = 'windows'
+    } else {
+        os = 'linux'
+    }
+
+    if (arch == 'amd64' || arch == 'x86_64') {
+        arch = 'x86_64'
+    } else if (arch == 'aarch64' || arch == 'arm64') {
+        arch = 'aarch64'
+    }
+
+    return "${os}-${arch}"
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+
+            pom {
+                name = 'ExecuTorch Java'
+                description = 'ExecuTorch Java API for desktop platforms (Linux, macOS, Windows)'
+                url = 'https://github.com/pytorch/executorch'
+
+                licenses {
+                    license {
+                        name = 'BSD 3-Clause'
+                        url = 'https://github.com/pytorch/executorch/blob/main/LICENSE'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'pytorch'
+                        name = 'PyTorch Team'
+                        url = 'https://github.com/pytorch/executorch'
+                    }
+                }
+
+                scm {
+                    url = 'https://github.com/pytorch/executorch.git'
+                    connection = 'scm:git:https://github.com/pytorch/executorch'
+                    developerConnection = 'scm:git:git@github.com:pytorch/executorch.git'
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = 'local'
+            url = "${buildDir}/repo"
+        }
+    }
+}
+
+// Custom task to build native libraries using CMake
+task buildNative(type: Exec) {
+    description = 'Build native JNI libraries using CMake'
+    workingDir rootDir
+
+    def cmakeBuildDir = "${project.rootDir}/../../cmake-out-java"
+    def executorchRoot = "${project.rootDir}/../.."
+
+    commandLine 'bash', '-c', """
+        mkdir -p ${cmakeBuildDir} && \\
+        cd ${cmakeBuildDir} && \\
+        cmake ${executorchRoot} \\
+            -DCMAKE_BUILD_TYPE=Release \\
+            -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \\
+            -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \\
+            -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \\
+            -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \\
+            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \\
+            -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \\
+            -DEXECUTORCH_BUILD_XNNPACK=ON \\
+            -DEXECUTORCH_BUILD_JAVA_JNI=ON && \\
+        cmake --build . -j\$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) && \\
+        mkdir -p ${nativeLibDir}/${getOsArch()} && \\
+        find ${cmakeBuildDir} -name 'libexecutorch_jni.*' -exec cp {} ${nativeLibDir}/${getOsArch()}/ \\;
+    """
+}
+
+// Convenience task to build everything
+task buildAll {
+    description = 'Build native libraries and Java JAR'
+    dependsOn buildNative
+    dependsOn jar
+}
