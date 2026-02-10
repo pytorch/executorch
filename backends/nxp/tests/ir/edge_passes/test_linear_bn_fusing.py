@@ -6,13 +6,11 @@
 import executorch.backends.nxp.tests.models as models
 import pytest
 import torch
-from executorch.backends.nxp.aten_passes.add_simulated_linear_bn_fusion_qat_pass import (
-    AddSimulatedLinearBatchNormFusionQATPass,
-)
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
     FuseBatchNormWithLinearPass,
 )
-from executorch.backends.nxp.aten_passes.remove_simulated_linear_bn_fusion_qat_pass import (
+from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes import (
+    AddSimulatedLinearBatchNormFusionQATPass,
     RemoveSimulatedLinearBatchNormFusionQATPass,
 )
 from executorch.backends.nxp.backend.graph_utils import is_batch_norm

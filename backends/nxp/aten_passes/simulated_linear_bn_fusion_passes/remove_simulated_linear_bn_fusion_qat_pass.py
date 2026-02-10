@@ -6,19 +6,18 @@
 from functools import partial
 
 import torch
-from executorch.backends.nxp.aten_passes.add_simulated_linear_bn_fusion_qat_pass import (
-    _get_compute_scale_factor_pattern,
-    _get_linear_weight_preprocess_pattern,
-)
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
     _unwrap_if_fq,
+)
+from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes.add_simulated_linear_bn_fusion_qat_pass import (
+    _get_compute_scale_factor_pattern,
+    _get_linear_weight_preprocess_pattern,
 )
 from executorch.backends.nxp.backend.graph_utils import is_op_node
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.fx.passes.utils.matcher_utils import InternalMatch, SubgraphMatcher
 from torchao.quantization.pt2e.qat_utils import _get_aten_graph_module_for_pattern
-
 
 _is_add = partial(is_op_node, target_op=torch.ops.aten.add.Tensor)
 _is_div = partial(is_op_node, target_op=torch.ops.aten.div.Tensor)
@@ -118,11 +117,12 @@ def _remove_denorm_and_late_bias(graph_module: GraphModule):
 
         linear_node = node
 
-        if len(linear_node.args) <= 2:
+        if len(linear_node.args) < 2:
             continue
 
+        maybe_linear_bias = linear_node.args[2] if len(linear_node.args) > 2 else None
         linear_bias_fq_or_zeros = _unwrap_if_fq(
-            linear_node.args[2], named_modules=named_modules
+            maybe_linear_bias, named_modules=named_modules
         )
         has_late_bias = _is_zeros_like(linear_bias_fq_or_zeros)
 
