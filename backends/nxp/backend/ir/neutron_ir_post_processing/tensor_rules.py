@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import executorch.backends.nxp.backend.ir.converter.builder.model_builder as model_builder
 
 import numpy as np
+from executorch.backends.nxp.backend.data_format import DataFormat
 from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
 from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.optimizations.base_optimization import (
     InputTensorToOpsMap,
@@ -18,7 +19,6 @@ from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.pattern_match
     NameToTensorMap,
     operator_is_type,
 )
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 
 
@@ -523,10 +523,10 @@ class TensorIsFormatless(TensorRule):
     ) -> bool:
         match tensor_map[self.tensor]:
             case tflite_model.Tensor():
-                return tensor_map[self.tensor].tensor_format == TensorFormat.FORMATLESS
+                return tensor_map[self.tensor].tensor_format == DataFormat.FORMATLESS
             case list():
                 return all(
-                    t.tensor_format == TensorFormat.FORMATLESS
+                    t.tensor_format == DataFormat.FORMATLESS
                     for t in tensor_map[self.tensor]
                 )
             case _:

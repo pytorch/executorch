@@ -1,0 +1,280 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef BLOCK_GLSLH
+#define BLOCK_GLSLH
+
+#include "block_int8x4_utils.glslh"
+#include "common.glslh"
+
+//
+// Block Layout Int Utils
+//
+
+// These macros extract fields from the packed int returned by
+// BlockConfig::as_packed_int(). See Common.h for the bit layout.
+//
+// Bit layout matches hashed layout format:
+//   bits  0- 3: block_dim_order[0] (inner_dim if not transposed, outer_dim if transposed)
+//   bits  4- 7: block_dim_order[1] (outer_dim if not transposed, inner_dim if transposed)
+//   bits  8-11: block_dim_order[2] (first_nonblock_dim)
+//   bits 12-15: block_dim_order[3] (second_nonblock_dim)
+//   bits 16-19: inner_dim
+//   bits 20-23: outer_dim
+//   bits 24-27: inner_dim_block_size
+//   bits 28-31: outer_dim_block_size
+
+// Extract block_dim_order elements (bits 0-15)
+#define get_block_dim_order_0(x) ((x) & 0xF)
+#define get_block_dim_order_1(x) (((x) >> 4) & 0xF)
+#define get_block_dim_order_2(x) (((x) >> 8) & 0xF)
+#define get_block_dim_order_3(x) (((x) >> 12) & 0xF)
+
+// Extract packed_dim_info (bits 16-31)
+#define get_block_inner_dim(x) (((x) >> 16) & 0xF)
+#define get_block_outer_dim(x) (((x) >> 20) & 0xF)
+#define get_block_inner_dim_block_size(x) (((x) >> 24) & 0xF)
+#define get_block_outer_dim_block_size(x) (((x) >> 28) & 0xF)
+
+/*
+ * Block-based programming utilities for compute shaders.
+ *
+ * A "block" is a 4x4 tile of tensor elements. The two dimensions of the block
+ * are called the "inner" dimension and the "outer" dimension. The inner dim is
+ * the one that is kept contiguous in memory (i.e. the packed dimension of the
+ * tensor), and the outer dim forms the other axis of the 2D block.
+ *
+ * For texel-packed tensors (single level of packing), a block is effectively a
+ * single texel repeated 4 times along the outer dimension. For block-packed
+ * tensors (two levels of packing), a block corresponds exactly to the 4x4
+ * packed unit.
+ *
+ * When dispatching a block-based shader:
+ * - gl_GlobalInvocationID.x = block index along inner dimension
+ * - gl_GlobalInvocationID.y = block index along outer dimension
+ * - gl_GlobalInvocationID.z = plane index (remaining dimensions flattened)
+ */
+
+//
+// Index Conversion Utilities (TensorIndex4D versions)
+//
+
+TensorIndex4D contiguous_block_idx_to_tensor4d_idx_with_block_config(
+    const BufferMetadata meta,
+    const uint block_idx,
+    const int block_config) {
+  TensorIndex4D tidx;
+
+  uint block_strides[4];
+
+  uint stride = 1;
+  // Inner block dim
+  const int packed_dim_1 = get_block_inner_dim(block_config);
+  block_strides[packed_dim_1] = 1;
+  const uint block_size_1 = uint(get_block_inner_dim_block_size(block_config));
+  stride = div_up(meta.sizes[0][packed_dim_1], block_size_1);
+  // Outer block dim
+  const int packed_dim_2 = get_block_outer_dim(block_config);
+  block_strides[packed_dim_2] = stride;
+  const uint block_size_2 =
+      uint(get_block_outer_dim_block_size(block_config));
+  stride *= div_up(meta.sizes[0][packed_dim_2], block_size_2);
+  // First non-block dim
+  const int outer_dim_1 = get_block_dim_order_2(block_config);
+  block_strides[outer_dim_1] = stride;
+  stride *= meta.sizes[0][outer_dim_1];
+  // Second non-block dim
+  const int outer_dim_2 = get_block_dim_order_3(block_config);
+  block_strides[outer_dim_2] = stride;
+
+  uint contig_idx = block_idx;
+  // Second non-block dim
+  tidx.data[outer_dim_2] = int(contig_idx / block_strides[outer_dim_2]);
+  contig_idx %= block_strides[outer_dim_2];
+  // First non-block dim (1; height)
+  tidx.data[outer_dim_1] = int(contig_idx / block_strides[outer_dim_1]);
+  contig_idx %= block_strides[outer_dim_1];
+  // Outer block dim (0; width)
+  tidx.data[packed_dim_2] =
+      int(mul_4(contig_idx / block_strides[packed_dim_2]));
+  contig_idx %= block_strides[packed_dim_2];
+  // Inner block dim (2; channels)
+  tidx.data[packed_dim_1] = int(mul_4(contig_idx));
+
+  return tidx;
+}
+
+//
+// TextureMetadata variants of block indexing
+//
+
+TensorIndex4D contiguous_block_idx_to_tensor4d_idx_with_block_config(
+    const TextureMetadata meta,
+    const uint block_idx,
+    const int block_config) {
+  TensorIndex4D tidx;
+
+  uint block_strides[4];
+
+  uint stride = 1;
+  // Inner block dim
+  const int packed_dim_1 = get_block_inner_dim(block_config);
+  block_strides[packed_dim_1] = 1;
+  const uint block_size_1 = uint(get_block_inner_dim_block_size(block_config));
+  stride = div_up(meta.sizes[packed_dim_1], block_size_1);
+  // Outer block dim
+  const int packed_dim_2 = get_block_outer_dim(block_config);
+  block_strides[packed_dim_2] = stride;
+  const uint block_size_2 =
+      uint(get_block_outer_dim_block_size(block_config));
+  stride *= div_up(meta.sizes[packed_dim_2], block_size_2);
+  // First non-block dim
+  const int outer_dim_1 = get_block_dim_order_2(block_config);
+  block_strides[outer_dim_1] = stride;
+  stride *= meta.sizes[outer_dim_1];
+  // Second non-block dim
+  const int outer_dim_2 = get_block_dim_order_3(block_config);
+  block_strides[outer_dim_2] = stride;
+
+  uint contig_idx = block_idx;
+  // Second non-block dim
+  tidx.data[outer_dim_2] = int(contig_idx / block_strides[outer_dim_2]);
+  contig_idx %= block_strides[outer_dim_2];
+  // First non-block dim
+  tidx.data[outer_dim_1] = int(contig_idx / block_strides[outer_dim_1]);
+  contig_idx %= block_strides[outer_dim_1];
+  // Outer block dim
+  tidx.data[packed_dim_2] =
+      int(mul_4(contig_idx / block_strides[packed_dim_2]));
+  contig_idx %= block_strides[packed_dim_2];
+  // Inner block dim
+  tidx.data[packed_dim_1] = int(mul_4(contig_idx));
+
+  return tidx;
+}
+
+//
+// 3D Block Index Conversion Utilities (WHCN Dispatch)
+//
+// These functions convert a 3D thread index (gl_GlobalInvocationID) to a
+// TensorIndex4D using a dispatch pattern:
+//   - thread_idx.x = W threads (divided by 4 if W is part of block)
+//   - thread_idx.y = H threads (divided by 4 if H is part of block)
+//   - thread_idx.z = C * N threads (C divided by 4 if C is part of block)
+//
+// Note: GLSL tensor metadata is in WHCN order (sizes[0]=W, sizes[1]=H,
+// sizes[2]=C, sizes[3]=N), while C++ uses NCHW order.
+//
+
+/*
+ * Convert a 3D block index to a TensorIndex4D using WHCN dispatch.
+ *
+ * Parameters:
+ *   meta: BufferMetadata with tensor sizes in WHCN order
+ *   thread_idx: 3D thread index (x=W, y=H, z=C*N)
+ *   block_config: Packed block configuration from BlockConfig::as_packed_int()
+ *
+ * Returns: TensorIndex4D with logical tensor coordinates
+ */
+TensorIndex4D block_idx_3d_to_tensor4d_idx_with_block_config(
+    const BufferMetadata meta,
+    const uvec3 thread_idx,
+    const int block_config) {
+  TensorIndex4D tidx;
+  const int inner_dim = get_block_inner_dim(block_config);
+  const int outer_dim = get_block_outer_dim(block_config);
+
+  // GLSL metadata is in WHCN order: sizes[0]=W, sizes[1]=H, sizes[2]=C, sizes[3]=N
+
+  // Compute C threads for decomposing thread_idx.z
+  // C is blocked (divided by 4) only if it's part of the block
+  uint C_size = uint(meta.sizes[0][2]);
+  uint num_C;
+  if (inner_dim == 2 || outer_dim == 2) {
+    num_C = div_up_4(C_size);
+  } else {
+    num_C = C_size;
+  }
+
+  // W (dim 0): blocked if inner or outer
+  if (inner_dim == 0 || outer_dim == 0) {
+    tidx.data[0] = int(thread_idx.x) * 4;  // Block-aligned
+  } else {
+    tidx.data[0] = int(thread_idx.x);  // Single value
+  }
+
+  // H (dim 1): blocked if inner or outer
+  if (inner_dim == 1 || outer_dim == 1) {
+    tidx.data[1] = int(thread_idx.y) * 4;  // Block-aligned
+  } else {
+    tidx.data[1] = int(thread_idx.y);  // Single value
+  }
+
+  // C (dim 2): blocked if inner or outer
+  if (inner_dim == 2 || outer_dim == 2) {
+    tidx.data[2] = int(thread_idx.z % num_C) * 4;  // Block-aligned
+  } else {
+    tidx.data[2] = int(thread_idx.z % num_C);  // Single value
+  }
+
+  // N (dim 3): never blocked
+  tidx.data[3] = int(thread_idx.z / num_C);
+
+  return tidx;
+}
+
+/*
+ * Convert a 3D block index to a TensorIndex4D (TextureMetadata variant).
+ */
+TensorIndex4D block_idx_3d_to_tensor4d_idx_with_block_config(
+    const TextureMetadata meta,
+    const uvec3 thread_idx,
+    const int block_config) {
+  TensorIndex4D tidx;
+  const int inner_dim = get_block_inner_dim(block_config);
+  const int outer_dim = get_block_outer_dim(block_config);
+
+  // GLSL metadata is in WHCN order: sizes[0]=W, sizes[1]=H, sizes[2]=C, sizes[3]=N
+
+  // Compute C threads for decomposing thread_idx.z
+  uint C_size = uint(meta.sizes[2]);
+  uint num_C;
+  if (inner_dim == 2 || outer_dim == 2) {
+    num_C = div_up_4(C_size);
+  } else {
+    num_C = C_size;
+  }
+
+  // W (dim 0): blocked if inner or outer
+  if (inner_dim == 0 || outer_dim == 0) {
+    tidx.data[0] = int(thread_idx.x) * 4;
+  } else {
+    tidx.data[0] = int(thread_idx.x);
+  }
+
+  // H (dim 1): blocked if inner or outer
+  if (inner_dim == 1 || outer_dim == 1) {
+    tidx.data[1] = int(thread_idx.y) * 4;
+  } else {
+    tidx.data[1] = int(thread_idx.y);
+  }
+
+  // C (dim 2): blocked if inner or outer
+  if (inner_dim == 2 || outer_dim == 2) {
+    tidx.data[2] = int(thread_idx.z % num_C) * 4;
+  } else {
+    tidx.data[2] = int(thread_idx.z % num_C);
+  }
+
+  // N (dim 3): never blocked
+  tidx.data[3] = int(thread_idx.z / num_C);
+
+  return tidx;
+}
+
+#endif // BLOCK_GLSLH

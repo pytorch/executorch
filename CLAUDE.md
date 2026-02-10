@@ -1,74 +1,48 @@
-# Repo and framework name
+# ExecuTorch
 
-Refer to the repo/framework/runtime "executorch" (in lower cases) or "ExecuTorch" (in
-camel cases), not "ExecutorTorch". With limited code or comment length, maybe refer
-to the framework "ET" but consider it as very unofficial and not recommended.
+## Skills
+- `/setup` - Set up environment
+- `/export` - Export model to .pte
+- `/building` - Build runners or C++ libs
+- `/profile` - Profile execution
 
-# fbcode vs xplat (internal builds only)
+Reference docs in `.claude/`: backends, runtime-api, quantization, llm-export, faq, tokenizers
 
-When building internally under fbsource, only edit files in `fbcode/executorch/`.
-The `xplat/executorch/` directory is automatically mirrored from fbcode.
+## Quick Reference
 
-This does not apply to OSS builds (i.e., the standalone executorch repository).
+**Install Python package:**
+```bash
+./install_executorch.sh        # first time (or .bat on Windows)
+pip install -e . --no-build-isolation  # subsequent installs
+```
 
-# Install
+**Build C++ libraries:** see `CMakeLists.txt`; for LLM/ASR runners use `Makefile` and `CMakePresets.json`
 
-## Python
+**Run tests:** `pytest -n auto` (Python), `ctest --output-on-failure` (C++)
 
-If the user is mostly importing `executorch` module and experimenting with Ahead-Of-Time
-export flow, installation means installing `executorch` python package.
+**Lint:** `lintrunner init && lintrunner -a`
 
-Python virtual environment or conda environment is highly recommended for installing
-executorch from source. Double check if the user wants to enable virtual enablement before
-building from source.
+Details: [docs/source/using-executorch-building-from-source.md](docs/source/using-executorch-building-from-source.md)
 
-First time install: run `install_executorch.sh` (or `install_executorch.bat` for Windows).
+## Naming
 
-This script handles dependencies properly (since `executorch` depends on nightly versions
-of `torch`, those packages won't be available in pip so need special index url).
+- Use "executorch" (lowercase) or "ExecuTorch" (camel case)
+- Never "ExecutorTorch"
+- "ET" only when space-constrained (unofficial)
 
-Subsequent install: run `pip install . -v --no-build-isolation` inside `executorch`
-directory.
+## Commits
 
-Editable mode is avilable (either through `install_executorch.sh` script or `pip install . -e`.
+- Only commit when explicitly asked
+- No bullet lists of changes; explain review order for large PRs, or omit for small ones
+- Disclose PR was authored with Claude
 
-Refer to more details in this [doc](docs/source/using-executorch-building-from-source.md).
+## Code Style
 
-## C++
-If the user is building basic executorch C++ libraries, refer to root level [CMakeLists.txt](CMakeLists.txt).
+- Minimal comments; code should be self-documenting
+- Comments only for non-obvious global context
+- No trivial (1-2 LOC) single-use helpers unless significantly improving readability
+- Explicit state management; no dynamic `setattr`/`getattr` patterns
+- Match existing style and architecture
+- Assume reader knows ExecuTorch/PyTorch basics
 
-If working with LLM/ASR runners, prefer to use [Makefile](Makefile) and cmake [presets](CMakePresets.json).
-
-Again refer to this [doc](docs/source/using-executorch-building-from-source.md#building-the-c-runtime)
-for more details.
-
-# Commit messages
-
-Don't commit unless the user explicitly asks you to.
-
-When writing a commit message, don't make a bullet list of the individual
-changes. Instead, if the PR is large, explain the order to review changes
-(e.g., the logical progression), or if it's short just omit the bullet list
-entirely.
-
-Disclose that the PR was authored with Claude.
-
-# Coding Style Guidelines
-
-Follow these rules for all code changes in this repository:
-
-- Minimize comments; be concise; code should be self-explanatory and self-documenting.
-- Comments should be useful, for example, comments that remind the reader about
-  some global context that is non-obvious and can't be inferred locally.
-- Don't make trivial (1-2 LOC) helper functions that are only used once unless
-  it significantly improves code readability.
-- Prefer clear abstractions. State management should be explicit.
-  For example, if managing state in a Python class: there should be a clear
-  class definition that has all of the members: don't dynamically `setattr`
-  a field on an object and then dynamically `getattr` the field on the object.
-- Match existing code style and architectural patterns.
-- Assume the reader has familiarity with ExecuTorch and PyTorch. They may not be the expert
-  on the code that is being read, but they should have some experience in the
-  area.
-
-If uncertain, choose the simpler, more concise implementation.
+**When uncertain: choose simpler, more concise.**

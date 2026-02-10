@@ -35,7 +35,7 @@ class GlobalNodeFinder(NodeFinder):
     """
 
     def find_nodes(self, model: GraphModule) -> Iterator[Node]:
-        return model.graph.nodes
+        return (n for n in model.graph.nodes)
 
 
 class InputNodeFinder(NodeFinder):
