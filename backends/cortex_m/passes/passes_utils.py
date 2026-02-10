@@ -105,6 +105,24 @@ def extract_scalar_value(node_arg) -> float:
         )
 
 
+def coerce_int_pair(raw, default: tuple[int, int]) -> tuple[int, int]:
+    if hasattr(raw, "meta"):
+        raw = raw.meta.get("val", raw)  # type: ignore[attr-defined]
+    if raw is None:
+        return default
+    if isinstance(raw, torch.Tensor):
+        raw = raw.flatten().tolist()
+    if isinstance(raw, (list, tuple, torch.Size)):
+        items = [int(v) for v in raw]
+    else:
+        items = [int(raw)]
+    if not items:
+        return default
+    if len(items) == 1:
+        return (items[0], items[0])
+    return (items[0], items[1])
+
+
 def is_qualified_int8_node(args) -> bool:
     try:
         if len(args) < 6:

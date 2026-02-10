@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -236,3 +237,12 @@ def get_qnn_partitioner(
         # TODO: if deprecated legacy export, skip_mutable_buffer can be set False
         skip_mutable_buffer=True,
     )
+
+
+def get_tosa_partitioner(version: str):
+    from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+    from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+
+    compile_spec = TosaCompileSpec(version)
+
+    return TOSAPartitioner(compile_spec)

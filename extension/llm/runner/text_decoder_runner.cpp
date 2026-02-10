@@ -49,7 +49,11 @@ TextDecoderRunner::TextDecoderRunner(
 
   if (use_kv_cache) {
     auto start_pos_tensor_result = populate_start_pos_or_cache_position(
-        module_, start_pos, cache_positions, tokens->numel(), method_name_.c_str());
+        module_,
+        start_pos,
+        cache_positions,
+        tokens->numel(),
+        method_name_.c_str());
     if (!start_pos_tensor_result.ok()) {
       return start_pos_tensor_result.error();
     }
@@ -63,7 +67,8 @@ TextDecoderRunner::TextDecoderRunner(
     auto outputs_res = module_->execute(method_name_, inputs);
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
 
-    auto update_err = io_manager_->update_decode(outputs_res.get(), method_name_);
+    auto update_err =
+        io_manager_->update_decode(outputs_res.get(), method_name_);
     ET_CHECK_OK_OR_RETURN_ERROR(update_err);
 
     ET_CHECK_MSG(

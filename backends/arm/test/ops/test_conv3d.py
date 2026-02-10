@@ -678,6 +678,22 @@ def test_convolution_3d_vgf_quant(test_data):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_3d_vgf_quant_a8w4(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
 @common.SkipIfNoModelConverter
 def test_convolution_3d_vgf_no_quant_multi_op():
     """Ensure mixed Conv3d/Conv2d graphs keep correct spatial annotations."""
