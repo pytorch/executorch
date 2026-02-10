@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,9 +19,8 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class ConvertMinMaxPass(ArmPass):
-    """
-    Converts min/max to amin/amax and unrolls multi-dimensional reduction and keep-dims arg to be
-    TOSA compliant.
+    """Converts min/max to amin/amax and unrolls multi-dimensional reduction and
+    keep-dims arg to be TOSA compliant.
 
     The difference between max/min and amax/amin is (from pytorch docs):
         - amax/amin supports reducing on multiple dimensions,
@@ -37,6 +36,7 @@ class ConvertMinMaxPass(ArmPass):
         amax(dim1, keepdim = True)
         amax(dim2, keepdim = True)
         squeeze(dim = [dim1, dim2])
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ConvertSqueezesToViewPass}
@@ -51,8 +51,8 @@ class ConvertMinMaxPass(ArmPass):
     }
 
     def check_argmax(self, node):
-        """
-        Raises a RuntimeError if the argmax value returned by the min/max op is used in the graph.
+        """Raises a RuntimeError if the argmax value returned by the min/max op
+        is used in the graph.
         """
         if node.target in [torch.ops.aten.max.dim, torch.ops.aten.min.dim]:
             no_argmax = len(node.users) == 1

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -42,8 +42,8 @@ def is_submodule_node(node: torch.fx.Node):
 
 
 def is_get_attr_node(node: torch.fx.Node) -> bool:
-    """
-    Returns true if the given node is a get attr node for a tensor of the model.
+    """Returns true if the given node is a get attr node for a tensor of the
+    model.
     """
     return (
         isinstance(node, torch.fx.Node)
@@ -107,9 +107,8 @@ def get_param_tensor(
 
 
 def expand_around_channel(param: Sequence[int] | int, spatial_rank: int) -> list[int]:
-    """
-    Expand a scalar or 1-D parameter around the channel dimension into a broadcastable
-    shape while preserving the channel location.
+    """Expand a scalar or 1-D parameter around the channel dimension into a
+    broadcastable shape while preserving the channel location.
     """
     if isinstance(param, int):
         return [param] * spatial_rank
@@ -130,9 +129,12 @@ def create_node(
     from_node: Optional[torch.fx.Node] = None,
     inherit_qparams: bool = False,
 ):
-    """
-    Adds a node to 'graph'. graph.inserting_before/after() should be used before the call to decide where to insert the node.
-    If quantize is true and q_params is not None, a q dq pair is inserted after the newly created node.
+    """Adds a node to 'graph'.
+
+    graph.inserting_before/after() should be used before the call to decide
+    where to insert the node. If quantize is true and q_params is not None, a q
+    dq pair is inserted after the newly created node.
+
     """
 
     node = graph.create_node(
@@ -170,9 +172,7 @@ def insert_q_dq_pair(
     q_params: tuple,
     from_node: Optional[torch.fx.Node] = None,
 ):
-    """
-    Inserts a q dq node pair after the node 'anchor'.
-    """
+    """Inserts a q dq node pair after the node 'anchor'."""
 
     with graph.inserting_after(anchor):
         q = create_node(
@@ -198,9 +198,10 @@ def insert_q_dq_pair(
 
 
 def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
-    """
-    Returns a FakeTensor from the meta field of 'node'.
+    """Returns a FakeTensor from the meta field of 'node'.
+
     If the node contains many fake tensors, return the first one.
+
     """
     if isinstance(
         node.meta["val"], (Sequence, torch.fx.immutable_collections.immutable_list)
@@ -220,11 +221,12 @@ def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
 
 
 def get_node_arg(args: list | dict, key: int | str | type, default_value=None):
-    """
-    Help-function for getting a value from node.args/ kwargs, three cases:
+    """Help-function for getting a value from node.args/ kwargs, three cases:
+
     1. By position in node.args - Returns arg at given position or default_value if index is one out of bounds
     2. By key in node.kwargs - Returns kwarg with given key or default_value if it deos not exist
     3. By type in node.args - Returns first arg of args of given type. Useful for cases where arg postions may differ but types are unique.
+
     """
     if isinstance(key, int):
         if 0 <= key < len(args):
@@ -253,8 +255,11 @@ def get_node_arg(args: list | dict, key: int | str | type, default_value=None):
 
 
 def set_node_arg(node: torch.fx.Node, i: int | str, value):
-    """
-    Help-function for setting a value in node.args/ kwargs. If the index is one larger than the list size, the value is instead appended to the list.
+    """Help-function for setting a value in node.args/ kwargs.
+
+    If the index is one larger than the list size, the value is instead appended
+    to the list.
+
     """
     if isinstance(i, int):
         if 0 <= i < len(node.args):
