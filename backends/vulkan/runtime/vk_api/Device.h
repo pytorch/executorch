@@ -24,6 +24,7 @@ enum class DeviceType : uint32_t {
   MALI,
   ADRENO,
   SWIFTSHADER,
+  POWERVR,
 };
 
 struct PhysicalDevice final {
