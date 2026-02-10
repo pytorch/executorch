@@ -109,6 +109,15 @@ DEFINE_int32(
     "This is a runtime option and will override the profile level set during AOT. "
     "Refer to QnnExecuTorchProfileLevel under qc_compiler_spec.fbs for more info.");
 
+DEFINE_bool(
+    dump_platform_info,
+    false,
+    "Dump platform information to json file.");
+DEFINE_string(
+    backend_lib_path,
+    "",
+    "Specify backend library path for dumping platform info.");
+
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
 using executorch::etdump::ETDumpGen;
@@ -176,6 +185,17 @@ int main(int argc, char** argv) {
     }
     ET_LOG(Error, "%s", msg.c_str());
     return 1;
+  }
+
+  if (FLAGS_dump_platform_info) {
+    ET_CHECK_MSG(
+        !FLAGS_backend_lib_path.empty(),
+        "Please specify backend library path for dumping platform info.",
+        QNN_RUNTIME_LOG_LEVEL);
+    std::string output_path = FLAGS_output_folder_path + "/platform_info.json";
+    QnnExecuTorchDumpPlatformInfo(
+        FLAGS_backend_lib_path.c_str(), output_path.c_str());
+    return 0;
   }
 
   // Set runtime options

@@ -50,6 +50,9 @@ class QnnInterface {
   DEFINE_SHIM_FUNCTION_INTERFACE(
       device_get_platform_info,
       deviceGetPlatformInfo);
+  DEFINE_SHIM_FUNCTION_INTERFACE(
+      device_free_platform_info,
+      deviceFreePlatformInfo);
   // DEFINE_SHIM_FUNCTION_INTERFACE(device_get_info, deviceGetInfo);
   // --------- QnnContext ---------
   DEFINE_SHIM_FUNCTION_INTERFACE(context_create, contextCreate);

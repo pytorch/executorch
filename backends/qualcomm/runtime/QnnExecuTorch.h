@@ -72,6 +72,11 @@ void QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem);
 /// Free the allocated shared memory.
 void QnnExecuTorchFreeCustomMem(void* buffer_ptr);
 
+/// Dump platform information
+void QnnExecuTorchDumpPlatformInfo(
+    const char* backend_lib_path,
+    const char* platform_info_path);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus

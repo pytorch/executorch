@@ -12,6 +12,7 @@
 #include <executorch/backends/qualcomm/runtime/Utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <algorithm>
@@ -20,6 +21,9 @@
 #include <fstream>
 #include <string>
 #include <unordered_map>
+
+// Third Party
+#include <nlohmann/json.hpp>
 
 namespace executorch {
 namespace backends {
@@ -635,4 +639,43 @@ void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
 void QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem) {
   executorch::backends::qnn::SharedBuffer::GetSharedBufferManager()
       .AddCusomMemTensorAddr(tensor_addr, custom_mem);
+}
+
+void QnnExecuTorchDumpPlatformInfo(
+    const char* backend_lib_path,
+    const char* platform_info_path) {
+  executorch::backends::qnn::QnnImplementation qnn_impl(backend_lib_path);
+  qnn_impl.Load(nullptr);
+  auto interface = qnn_impl.GetQnnInterface();
+
+  const QnnDevice_PlatformInfo_t* platform_info_ptr{nullptr};
+  auto ret =
+      interface.qnn_device_get_platform_info(nullptr, &platform_info_ptr);
+  ET_CHECK_MSG(
+      ret == QNN_SUCCESS,
+      "Failed to get platform info via QNN with error %lu",
+      QNN_GET_ERROR_CODE(ret));
+
+  // TODO: return more information for advanced use case
+  nlohmann::json j_platform;
+  std::vector<nlohmann::json> j_devices;
+  for (size_t i = 0; i < platform_info_ptr->v1.numHwDevices; ++i) {
+    nlohmann::json device;
+    auto hw_info = platform_info_ptr->v1.hwDevices[i].v1;
+    device["device_id"] = hw_info.deviceId;
+    std::vector<nlohmann::json> j_cores;
+    for (size_t j = 0; j < hw_info.numCores; ++j) {
+      nlohmann::json core;
+      auto core_info = hw_info.cores[j].v1;
+      core["core_id"] = core_info.coreId;
+      j_cores.emplace_back(core);
+    }
+    device["cores"] = j_cores;
+    j_devices.emplace_back(device);
+  }
+  j_platform["devices"] = j_devices;
+  std::ofstream output(platform_info_path);
+  output << std::setw(4) << j_platform << std::endl;
+
+  interface.qnn_device_free_platform_info(nullptr, platform_info_ptr);
 }
