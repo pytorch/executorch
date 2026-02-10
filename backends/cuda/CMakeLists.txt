@@ -98,9 +98,19 @@ install(
 )
 
 # CUDA-specific AOTI shim symbols (dynamically linked)
+#
+# Include aoti_common_shims_slim and slim/cuda/guard sources directly rather
+# than linking the aoti_common_shims_slim static library. On Windows (MSVC)
+# --whole-archive is not available, so linking a static lib into a DLL does not
+# pull unreferenced symbols. Including sources directly guarantees every symbol
+# ends up in the shared library on all platforms.
 set(_aoti_cuda_shim_sources
-    runtime/shims/memory.cpp runtime/shims/cuda_guard.cpp
+    runtime/shims/memory.cpp
+    runtime/shims/cuda_guard.cpp
+    runtime/shims/misc.cpp
     runtime/shims/int4mm.cu
+    ${EXECUTORCH_ROOT}/backends/aoti/common_shims_slim.cpp
+    ${EXECUTORCH_ROOT}/backends/aoti/slim/cuda/guard.cpp
 )
 
 add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
@@ -121,6 +131,7 @@ endif()
 target_include_directories(
   aoti_cuda_shims
   PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
          $<INSTALL_INTERFACE:include>
 )
 
@@ -135,15 +146,13 @@ target_link_options(
   aoti_cuda_shims PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
 )
 
-# Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and
-# platform utilities. Use --whole-archive for aoti_common_shims_slim to ensure
-# all symbols are exported from this shared library.
+# Link against CUDA::cudart, slimtensor (header-only), cuda_tensor_maker, and
+# platform utilities. Sources from aoti_common_shims_slim are compiled directly
+# into this target so no --whole-archive wrapper is needed.
 target_link_libraries(
   aoti_cuda_shims
   PRIVATE cuda_platform
-  PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--whole-archive>
-         aoti_common_shims_slim
-         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--no-whole-archive>
+  PUBLIC slimtensor
          cuda_tensor_maker
          CUDA::cudart
          ${CMAKE_DL_LIBS}
