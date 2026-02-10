@@ -73,7 +73,7 @@ class QnnBackendUnifiedRegistry {
 
   static constexpr const char* htp_library_name_ = "libQnnHtp.so";
   static constexpr const char* gpu_library_name_ = "libQnnGpu.so";
-  static constexpr const char* dsp_library_name_ = "libQnnDsp.so";
+  static constexpr const char* lpai_library_name_ = "libQnnLpai.so";
 
   std::unique_ptr<const QnnSaver_Config_t*[]> GetImplementationConfig(
       const QnnExecuTorchOptions* options) {

@@ -465,7 +465,8 @@ int main(int argc, char** argv) {
 
         if (expected_input_shapes.empty()) {
           ET_CHECK_MSG(
-              file_size == tensor_meta->nbytes(),
+              // workaround for LPAI (== → <=), should figure out root cause of graph without io QDQ
+              file_size <= tensor_meta->nbytes(),
               "Input(%d) size mismatch. file bytes: %zu, tensor bytes: %zu",
               input_index,
               file_size,

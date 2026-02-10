@@ -22,6 +22,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpContext.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpGraph.h>
+#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiContext.h>
+#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiGraph.h>
 
 #include <memory>
 namespace executorch {

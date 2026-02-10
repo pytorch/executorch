@@ -13,6 +13,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/gpu/GpuDevice.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpBackend.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpDevice.h>
+#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiBackend.h>
+#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiDevice.h>
 
 #include <string>
 
@@ -56,7 +58,10 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
         current_lib_path = gpu_library_name_;
         break;
       }
-      case QnnExecuTorchBackendType::kDspBackend:
+      case QnnExecuTorchBackendType::kLpaiBackend: {
+        current_lib_path = lpai_library_name_;
+        break;
+      }
       case QnnExecuTorchBackendType::kUndefinedBackend:
       default:
         QNN_EXECUTORCH_LOG_ERROR(
@@ -118,7 +123,12 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
       device = std::make_unique<GpuDevice>(implementation.get(), logger.get());
       break;
     }
-    case QnnExecuTorchBackendType::kDspBackend:
+    case QnnExecuTorchBackendType::kLpaiBackend: {
+      backend = std::make_unique<LpaiBackend>(
+          implementation.get(), logger.get(), options->soc_info());
+      device = std::make_unique<LpaiDevice>(implementation.get(), logger.get());
+      break;
+    }
     case QnnExecuTorchBackendType::kUndefinedBackend:
     default:
       return Error::NotFound;

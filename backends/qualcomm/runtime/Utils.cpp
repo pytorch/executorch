@@ -13,6 +13,7 @@ namespace backends {
 namespace qnn {
 
 void CreateDirectory(const std::string& path) {
+#ifndef __hexagon__
   // Create any recursive directory
   if (path.empty()) {
     QNN_EXECUTORCH_LOG_ERROR("Create folder shouldn't be empty");
@@ -29,6 +30,7 @@ void CreateDirectory(const std::string& path) {
     std::string err_msg = "Failed to create " + subdir + " folder\n";
     QNN_EXECUTORCH_LOG_ERROR(err_msg.c_str());
   }
+#endif
 }
 
 } // namespace qnn

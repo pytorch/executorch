@@ -5,9 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANTIZED_IO
-from executorch.exir.delegate import executorch_call_delegate
 
-from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.pass_base import ExportPass
 from executorch.exir.tensor import TensorSpec
 from torch.utils import _pytree as pytree
 
@@ -39,11 +38,17 @@ class BuildQuantIo(ExportPass):
         return super().call_getitem(value, key, meta)
 
     def call_delegate(self, lowered_module, args, kwargs, meta):
-        args_data, _ = pytree.tree_map_only(
-            ProxyValue, lambda x: x.data, (args, kwargs)
-        )
+        output_node = [
+            node
+            for node in lowered_module.original_module.graph.nodes
+            if node.target == "output"
+        ][0]
+        tensors = [
+            node.meta["val"].to(node.meta[QCOM_QUANTIZED_IO])
+            for node in output_node.args[0]
+        ]
         meta["spec"] = pytree.tree_map(
             self._make_spec,
-            executorch_call_delegate(lowered_module, *args_data),
+            tuple(tensors),
         )
         return super().call_delegate(lowered_module, args, kwargs, meta)

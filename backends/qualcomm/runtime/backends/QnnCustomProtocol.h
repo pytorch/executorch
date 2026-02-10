@@ -83,6 +83,7 @@ class QnnContextCustomProtocol : public QnnCustomProtocol {
   static constexpr uint32_t magic_number_ = 0x5678ABCD;
   int64_t signature_{0};
   uint64_t binary_size_{0};
+  uint32_t alignment_{256};
 };
 
 } // namespace qnn
