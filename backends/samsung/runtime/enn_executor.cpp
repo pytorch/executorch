@@ -8,6 +8,7 @@
  */
 #include <executorch/backends/samsung/runtime/enn_executor.h>
 #include <executorch/backends/samsung/runtime/logging.h>
+#include <executorch/backends/samsung/runtime/profile.hpp>
 #include <inttypes.h>
 
 #include <fstream>
@@ -19,6 +20,7 @@ namespace executor {
 namespace enn {
 
 Error EnnExecutor::initialize(const char* binary_buf_addr, size_t buf_size) {
+  EXYNOS_ATRACE_FUNCTION_LINE();
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
   auto ret = enn_api_inst->EnnInitialize();
   ET_CHECK_OR_RETURN_ERROR(
@@ -51,6 +53,7 @@ Error EnnExecutor::initialize(const char* binary_buf_addr, size_t buf_size) {
 Error EnnExecutor::eval(
     const std::vector<DataBuffer>& inputs,
     const std::vector<DataBuffer>& outputs) {
+  EXYNOS_ATRACE_FUNCTION_LINE();
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
   ET_CHECK_OR_RETURN_ERROR(
       inputs.size() == getInputSize(),
@@ -65,6 +68,7 @@ Error EnnExecutor::eval(
       getOutputSize(),
       outputs.size());
 
+  EXYNOS_ATRACE_BEGIN("ExynosExecutor: memcpy buffer");
   int relative_input_index = 0;
   for (const auto& input : inputs) {
     EnnBufferPtr* input_buffer_ptr = alloc_buffer_;
@@ -72,6 +76,7 @@ Error EnnExecutor::eval(
     memcpy(enn_buffer.va, input.buf_ptr_, input.size_);
     relative_input_index++;
   }
+  EXYNOS_ATRACE_END();
 
   ENN_LOG_DEBUG("Start to execute model.");
   auto ret = enn_api_inst->EnnExecuteModel(model_id_);
@@ -91,6 +96,7 @@ Error EnnExecutor::eval(
 }
 
 EnnExecutor::~EnnExecutor() {
+  EXYNOS_ATRACE_FUNCTION_LINE();
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
   NumberOfBuffersInfo buffers_info;
   if (enn_api_inst->EnnGetBuffersInfo(model_id_, &buffers_info) ==
