@@ -31,11 +31,16 @@ class InsertIOQDQ(ExportPass):
     """
 
     q_dq_map = {
-        # per tensor
+        # per tensor (quantize -> dequantize)
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-        # per channel
+        # per tensor (dequantize -> dequantize, for nodes with dequantize encoding)
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+        # per channel (quantize -> dequantize)
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        # per channel (dequantize -> dequantize, for nodes with dequantize encoding)
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     }
 
     def __init__(self, edge_program: torch.export.ExportedProgram):
