@@ -41,12 +41,14 @@ HF_ADAPTER_PATH=$(
     --files "adapter_config.json" "adapter_model.safetensors"
 )
 
+# Set environment variables for OmegaConf interpolation in yaml.
+export LORA_ADAPTER_CHECKPOINT="${HF_ADAPTER_PATH}/adapter_model.safetensors"
+export LORA_ADAPTER_CONFIG="${HF_ADAPTER_PATH}/adapter_config.json"
+
 ### SINGLE LORA PTE ###
 # Export LoRA PTE file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
-    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
-    +base.adapter_checkpoint="${HF_ADAPTER_PATH}/adapter_model.safetensors" \
-    +base.adapter_config="${HF_ADAPTER_PATH}/adapter_config.json" \
+    --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
     +export.output_name="qwen_lora_math_full.pte"
 
 # Capture the path of the downloaded qwen artifacts
@@ -93,9 +95,7 @@ fi
 ### PROGRAM DATA SEPARATION ###
 # Export LoRA PTE, LoRA PTD, foundation PTD file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
-    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
-    +base.adapter_checkpoint="${HF_ADAPTER_PATH}/adapter_model.safetensors" \
-    +base.adapter_config="${HF_ADAPTER_PATH}/adapter_config.json" \
+    --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
     +export.output_name="qwen_lora_math.pte" \
     +export.foundation_weights_file="qwen_foundation.ptd" \
     +export.lora_weights_file="qwen_lora_math.ptd"
@@ -152,9 +152,7 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
 
 # Export Quantized LoRA PTE, LoRA PTD, foundation PTD file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
-    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
-    +base.adapter_checkpoint="${HF_ADAPTER_PATH}/adapter_model.safetensors" \
-    +base.adapter_config="${HF_ADAPTER_PATH}/adapter_config.json" \
+    --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
     +export.output_name="qwen_lora_math_q.pte" \
     +export.foundation_weights_file="qwen_foundation_lora_q.ptd" \
     +export.lora_weights_file="qwen_lora_math_q.ptd" \
