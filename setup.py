@@ -830,6 +830,16 @@ setup(
             modpath="executorch.extension.pybindings._portable_lib",
             dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
         ),
+        # MLX metallib (Metal GPU kernels) must be colocated with _portable_lib.so
+        # because MLX uses dladdr() to find the directory containing the library,
+        # then looks for mlx.metallib in that directory at runtime.
+        # After submodule migration, the path is backends/apple/mlx/mlx/...
+        BuiltFile(
+            src_dir="%CMAKE_CACHE_DIR%/backends/apple/mlx/mlx/mlx/backend/metal/kernels/",
+            src_name="mlx.metallib",
+            dst="executorch/extension/pybindings/",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_MLX"],
+        ),
         BuiltExtension(
             src="extension/training/_training_lib.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
             modpath="executorch.extension.training.pybindings._training_lib",
