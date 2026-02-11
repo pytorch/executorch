@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -84,7 +84,7 @@ def _derive_bias_qparams_fn(
 
 def _get_int32_bias_qspec(node):
     return DerivedQuantizationSpec(
-        derived_from=[(node.args[0], node), (node.args[1], node)],  # type: ignore[list-item]
+        derived_from=((node.args[0], node), (node.args[1], node)),  # type: ignore[list-item]
         derive_qparams_fn=_derive_bias_qparams_fn,
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.int32).min,
@@ -94,7 +94,7 @@ def _get_int32_bias_qspec(node):
 
 def _get_int32_per_channel_bias_qspec(node):
     return DerivedQuantizationSpec(
-        derived_from=[(node.args[0], node), (node.args[1], node)],  # type: ignore[list-item]
+        derived_from=((node.args[0], node), (node.args[1], node)),  # type: ignore[list-item]
         derive_qparams_fn=_derive_bias_qparams_fn,
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.int32).min,
