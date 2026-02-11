@@ -18,9 +18,8 @@ from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 
 class ScalarsToAttributePass(ArmPass):
-    """
-    For ops in 'targeted_ops', convert inputs that are scalar values
-    to attribute Nodes that output the same value.
+    """For ops in 'targeted_ops', convert inputs that are scalar values to
+    attribute Nodes that output the same value.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {MatchArgRanksPass}

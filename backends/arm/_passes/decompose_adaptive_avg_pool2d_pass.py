@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -37,13 +37,13 @@ def _get_decomposition(op) -> tuple:
 
 
 class DecomposeAdaptiveAvgPool2dPass(ArmPass):
-    """
-    Decomposes AdaptiveAvgPool2d into AvgPool2d operations.
+    """Decomposes AdaptiveAvgPool2d into AvgPool2d operations.
 
     An input tensor of shape (N, C, H, W) is transformed into an output tensor
     of shape (N, C, output_size_h, output_size_w).
 
     The output is of size output_size_h x output_size_w for any input.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeAvgPool2dPass}
