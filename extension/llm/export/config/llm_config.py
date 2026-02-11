@@ -19,7 +19,6 @@ for more information.
 """
 
 import argparse
-import json
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -74,11 +73,13 @@ class LoraConfig:
             adapter_checkpoint="/path/to/adapter.safetensors",
             adapter_config="/path/to/adapter_config.json",
         )
+        Note: user is responsible for parsing the config and
+        ensure it doesn't conflict with any explicit values.
 
     2. With explicit values:
         LoraConfig(
             adapter_checkpoint="/path/to/adapter.safetensors",
-            r=16,
+            rank=16,
             lora_alpha=32,
             target_modules=["q_proj", "v_proj"],
         )
@@ -86,39 +87,9 @@ class LoraConfig:
 
     adapter_checkpoint: str
     adapter_config: Optional[str] = None
-    r: int = 0
+    rank: int = 0
     lora_alpha: int = 0
     target_modules: List[str] = field(default_factory=list)
-
-    def __post_init__(self):
-        has_explicit = (
-            self.r != 0 or self.lora_alpha != 0 or len(self.target_modules) > 0
-        )
-
-        if self.adapter_config and has_explicit:
-            raise ValueError(
-                "Cannot specify both adapter_config and individual LoRA "
-                "parameters (r, lora_alpha, target_modules). Use one or the other."
-            )
-
-        if self.adapter_config:
-            with open(self.adapter_config, "r") as f:
-                cfg = json.load(f)
-            for key in ("r", "lora_alpha", "target_modules"):
-                if key not in cfg:
-                    raise ValueError(
-                        f"adapter_config JSON is missing required key '{key}'"
-                    )
-            self.r = cfg["r"]
-            self.lora_alpha = cfg["lora_alpha"]
-            self.target_modules = cfg["target_modules"]
-
-        if self.r <= 0:
-            raise ValueError(f"LoRA rank (r) must be positive, got {self.r}")
-        if self.lora_alpha <= 0:
-            raise ValueError(f"lora_alpha must be positive, got {self.lora_alpha}")
-        if not self.target_modules:
-            raise ValueError("target_modules must be non-empty")
 
 
 @dataclass

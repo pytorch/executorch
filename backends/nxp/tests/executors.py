@@ -200,7 +200,7 @@ def compare_output_arrays(
 
     assert tfl_output.shape == edge_output.shape, "Output shapes don't match!"
 
-    if (max_diff := np.abs(np.max(tfl_output - edge_output))) > 0.0:
+    if (max_diff := np.max(np.abs(tfl_output - edge_output))) > 0.0:
         logger.w(
             f"Maximum absolute difference of the tensor '{output_name}': '{max_diff}'"
         )

@@ -68,6 +68,14 @@ class Llama2Model(EagerModelBase):
         # Get adapter checkpoint.
         adapter_checkpoint = {}
         if lora_config:
+            # Resolve LoRA params from adapter_config JSON if not already set.
+            if lora_config.adapter_config and lora_config.r == 0:
+                with open(lora_config.adapter_config, "rank") as f:
+                    cfg = json.load(f)
+                lora_config.rank = cfg["r"]
+                lora_config.lora_alpha = cfg["lora_alpha"]
+                lora_config.target_modules = cfg["target_modules"]
+
             adapter_checkpoint_path = lora_config.adapter_checkpoint
             if adapter_checkpoint_path.endswith(".pt"):
                 adapter_checkpoint = torch.load(
@@ -113,7 +121,7 @@ class Llama2Model(EagerModelBase):
             input_prune_map=input_prune_map,
             output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
-            r=lora_config.r if lora_config else None,
+            r=lora_config.rank if lora_config else None,
             lora_alpha=lora_config.lora_alpha if lora_config else None,
             target_modules=lora_config.target_modules if lora_config else None,
             **params,
