@@ -187,7 +187,10 @@ class NeutronBackend(BackendDetails):
             edge_program._verifiers = [
                 EXIREdgeDialectVerifier(
                     class_only=True,
-                    core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
+                    core_aten_ops_exception_list=[
+                        torch.ops.aten.max_pool2d.default,
+                        torch.ops.aten.prelu.default,
+                    ],
                 )
             ]
 
