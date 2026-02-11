@@ -28,7 +28,7 @@ using namespace torch::executor;
 
 namespace executorch::extension {
 
-// Forward declarations from jni_layer.cpp
+// Forward declarations from jni_module.cpp
 class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
  public:
   constexpr static const char* kJavaDescriptor =
