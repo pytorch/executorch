@@ -13,7 +13,7 @@ from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes.add_s
     _get_compute_scale_factor_pattern,
     _get_linear_weight_preprocess_pattern,
 )
-from executorch.backends.nxp.backend.graph_utils import is_op_node
+from executorch.backends.nxp.backend.graph_utils import is_batch_norm, is_op_node
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.fx.passes.utils.matcher_utils import InternalMatch, SubgraphMatcher
@@ -33,13 +33,11 @@ def _is_denorm_pattern(node: Node) -> bool:
     if not hasattr(node, "users"):
         return False
 
-    div_user_ops = [
-        user.target for user in node.users.keys() if hasattr(user, "target")
-    ]
-    if len(list(div_user_ops)) < 1:
+    div_users = node.users.keys()
+    if len(list(div_users)) < 1:
         return False
 
-    if torch.ops.aten.batch_norm.default in div_user_ops:
+    if any(is_batch_norm(user) for user in div_users):
         return True
 
     return False
@@ -133,9 +131,7 @@ def _remove_denorm_and_late_bias(graph_module: GraphModule):
 
         for user_node in linear_node.users:
             if _is_denorm_pattern(user_node):
-                users_ops = [user.target for user in user_node.users.keys()]
-
-                if torch.ops.aten.batch_norm.default in users_ops:
+                if any(is_batch_norm(user) for user in user_node.users.keys()):
                     user_node.replace_all_uses_with(node)
                     graph_module.graph.erase_node(user_node)
                     break
