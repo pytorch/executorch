@@ -422,7 +422,7 @@ void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(etvk.q8ta_conv2d.default, q8ta_conv2d);
+  VK_REGISTER_OP(et_vk.q8ta_conv2d.default, q8ta_conv2d);
   VK_REGISTER_OP(etvk.q8ta_conv2d_general.default, q8ta_conv2d_general);
 }
 
