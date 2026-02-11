@@ -91,13 +91,13 @@ class QuantizationParams:
 
 
 def get_input_names(program: ExportedProgram) -> list[str]:
-    """
-    Get a list[str] with the names of the inputs to this model.
+    """Get a list[str] with the names of the inputs to this model.
 
     Args:
         program (ExportedProgram): The program to get input names from.
     Returns:
         A list of strings with the names of the model input.
+
     """
     return [spec.arg.name for spec in program.graph_signature.input_specs]
 
@@ -105,12 +105,14 @@ def get_input_names(program: ExportedProgram) -> list[str]:
 def get_input_quantization_params(
     program: ExportedProgram,
 ) -> list[QuantizationParams]:
-    """
-    Get input QuantizationParams in a program, maximum one per input to the program.
+    """Get input QuantizationParams in a program, maximum one per input to the
+    program.
+
     Args:
         program (ExportedProgram): The program to get input quantization parameters from.
     Returns:
         list[QuantizationParams]: The found quantization parameters.
+
     """
 
     quant_params = []
@@ -142,8 +144,8 @@ def get_input_quantization_params(
 def get_output_quantization_params(
     output_node: Node,
 ) -> dict[Node, QuantizationParams | None]:
-    """
-    Get output QuantizationParams from a program.
+    """Get output QuantizationParams from a program.
+
     Args:
         output_nodes (list(Node)): A list of output nodes to get output quantization parameters from.
     Returns:
@@ -151,6 +153,7 @@ def get_output_quantization_params(
         If no quantization parameters were found, the entry is None.
     Raises:
         RuntimeError if no output quantization parameters are found.
+
     """
     quant_params: dict[Node, QuantizationParams | None] = {}
     for node in output_node.args[0]:  # type: ignore[union-attr]
@@ -207,7 +210,9 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
 
 
 class TosaReferenceModelDispatch(TorchFunctionMode):
-    """A context manager for executing call_delegate nodes using the reference model"""
+    """A context manager for executing call_delegate nodes using the reference
+    model.
+    """
 
     def __init__(self):
         self.ran_tosa_dispatch = False
@@ -376,6 +381,7 @@ def run_corstone(
     timeout: int = 120,  # s
 ) -> list[torch.Tensor]:
     """Executes an inference of the exported_program on FVP.
+
     Returns a list of tensors with the output.
     Args:
         `executorch_program_manager`: The executorch program to run.
@@ -392,6 +398,7 @@ def run_corstone(
         Relies on the output tensors from the exported program
         to figure out the shape and dtype of the buffer that was
         output from the FVP.
+
     """
     exported_program = executorch_program_manager.exported_program()
     intermediate_path = Path(intermediate_path)
@@ -552,7 +559,8 @@ def save_bytes(
     input_name: str,
     quant_param: Optional[QuantizationParams] = None,
 ) -> str:
-    """Serializes and saves 'data' in byte format, possibly quantizing it before.
+    """Serializes and saves 'data' in byte format, possibly quantizing it
+    before.
 
     Parameters:
         path: the directory where to save the data.
@@ -561,6 +569,7 @@ def save_bytes(
         quant_param: the parameters to use for quantization.
     Returns:
         the full file path of the output.
+
     """
     data_np = prep_data_for_save(data, input_name, quant_param)
     file_path = os.path.join(path, input_name + ".bin")
@@ -572,11 +581,11 @@ def save_bytes(
 
 
 def _run_cmd(cmd: List[str], check=True) -> subprocess.CompletedProcess[bytes]:
-    """
-    Run a command and check for errors.
+    """Run a command and check for errors.
 
     Args:
     cmd (List[str]): The command to run as a list.
+
     """
     try:
         result = subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
@@ -599,6 +608,7 @@ def _run_flatc(args: List[str]) -> None:
 
     If a resource matching _FLATC_RESOURCE_NAME exists, uses that executable.
     Otherwise, expects the `flatc` tool to be available on the system path.
+
     """
     flatc_resource = _resources.files(arm_test_package).joinpath(_FLATC_RESOURCE_NAME)
     if flatc_resource.is_file():
@@ -623,9 +633,11 @@ def _run_flatc(args: List[str]) -> None:
 
 
 def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
-    """
-    This function is used to dump the TOSA flatbuffer to a human readable
-    format, using flatc. It is used for debugging purposes.
+    """This function is used to dump the TOSA flatbuffer to a human readable
+    format, using flatc.
+
+    It is used for debugging purposes.
+
     """
 
     tmp = tempfile.mkdtemp()
