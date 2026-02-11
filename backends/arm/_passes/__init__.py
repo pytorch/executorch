@@ -139,4 +139,13 @@ from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass 
 from .replace_inf_and_limit_values_pass import (  # noqa  # usort: skip
     ReplaceInfAndLimitValuesPass,
 )
-from .arm_pass_manager import ArmPassManager  # noqa  # usort: skip
+
+# Import all subpackages to allow extensions to patch classes
+import importlib  # noqa: E402
+import pkgutil  # noqa: E402
+
+for _, _modname, _ispkg in pkgutil.iter_modules(__path__, __name__ + "."):
+    if _ispkg:
+        importlib.import_module(_modname)
+
+from .arm_pass_manager import ArmPassManager  # noqa

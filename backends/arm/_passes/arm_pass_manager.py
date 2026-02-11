@@ -8,6 +8,7 @@
 import logging
 from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 
 import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
@@ -143,11 +144,21 @@ from torch.nn.modules import Module
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class PassInsertions:
+    """Holds lists of passes to be inserted before and after a target pass."""
+
+    before_passes: list = field(default_factory=list)
+    after_passes: list = field(default_factory=list)
+
+
 class ArmPassManager(PassManager):
     def __init__(self, compile_spec: ArmCompileSpec) -> None:
         self.compile_spec = compile_spec
         self.tosa_spec = compile_spec.tosa_spec
         self._skip_pass_types: tuple[type, ...] = ()
+        self._pass_insertions: dict[type, PassInsertions] = {}
+        self._insertions_applied = False
         super().__init__()
         self.configure_skip_passes()
 
@@ -206,6 +217,84 @@ class ArmPassManager(PassManager):
 
             raise RuntimeError(error_msg)
 
+    def insert_passes_before(
+        self, target_pass_type: type, passes: list[ExportPass]
+    ) -> None:
+        """
+        Register passes to be inserted before instances of target_pass_type.
+        Insertions are deferred and applied via _apply_pass_insertions().
+
+        Args:
+            target_pass_type: The pass class to insert before (e.g., InsertTableOpsPass)
+            passes: List of pass instances to insert
+        """
+        if target_pass_type not in self._pass_insertions:
+            self._pass_insertions[target_pass_type] = PassInsertions()
+        self._pass_insertions[target_pass_type].before_passes.extend(passes)
+
+    def insert_passes_after(
+        self, target_pass_type: type, passes: list[ExportPass]
+    ) -> None:
+        """
+        Register passes to be inserted after instances of target_pass_type.
+        Insertions are deferred and applied via _apply_pass_insertions().
+
+        Args:
+            target_pass_type: The pass class to insert after
+            passes: List of pass instances to insert
+        """
+        if target_pass_type not in self._pass_insertions:
+            self._pass_insertions[target_pass_type] = PassInsertions()
+        self._pass_insertions[target_pass_type].after_passes.extend(passes)
+
+    def _apply_pass_insertions(self) -> None:
+        """
+        Apply all registered pass insertions to the collected passes.
+        Called ONCE after all add_passes() calls are complete, before execution.
+        """
+        if self._insertions_applied or not self._pass_insertions:
+            return
+
+        # Build new pass list with insertions applied
+        new_passes = []
+        for pass_obj in self.passes:
+            pass_type = type(pass_obj)
+
+            # Insert passes BEFORE this pass
+            if pass_type in self._pass_insertions:
+                insertions = self._pass_insertions[pass_type]
+                for before_pass in insertions.before_passes:
+                    # Check if we should skip this inserted pass
+                    if type(before_pass) not in self._skip_pass_types:
+                        new_passes.append(before_pass)
+
+            # Add the original pass
+            new_passes.append(pass_obj)
+
+            # Insert passes AFTER this pass
+            if pass_type in self._pass_insertions:
+                insertions = self._pass_insertions[pass_type]
+                for after_pass in insertions.after_passes:
+                    # Check if we should skip this inserted pass
+                    if type(after_pass) not in self._skip_pass_types:
+                        new_passes.append(after_pass)
+
+        # Replace the passes list
+        self.passes = new_passes
+        self._insertions_applied = True
+
+    def _configure_pass_insertions(self, exported_program: ExportedProgram) -> None:
+        """
+        Hook for subclasses to configure pass insertions.
+        Called at the START of pipeline construction, before any passes are added.
+
+        Subclasses should override this to call insert_passes_before/after.
+
+        Args:
+            exported_program: The exported program being transformed
+        """
+        pass
+
     def add_passes(self, passes: Sequence[ExportPass | None]):
         for p in passes:
             if p is not None:
@@ -223,6 +312,9 @@ class ArmPassManager(PassManager):
     def _tosa_pipeline(
         self, exported_program: ExportedProgram, graph_module: GraphModule
     ) -> GraphModule:
+        # Allow subclasses to configure pass insertions before building pipeline
+        self._configure_pass_insertions(exported_program)
+
         # Preprocessing passes
         self.add_pass(AnnotateOutputDimOrderPass())
 
@@ -367,6 +459,9 @@ class ArmPassManager(PassManager):
                 InsertRescalePass(),
             ]
         )
+
+        # Apply all pass insertions once after all passes are collected
+        self._apply_pass_insertions()
 
         self.validate_constraints_mandatory()
         return self._transform(graph_module)
