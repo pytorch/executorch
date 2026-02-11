@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -84,8 +84,6 @@ else()
     "gen_oplist: No non delagated ops was found in ${ET_PTE_FILE_PATH} no ops added to build"
   )
 endif()
-
-set(CONF_FILE "${CMAKE_CURRENT_SOURCE_DIR}/prj.conf")
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(executorch_executor_runner)

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -268,17 +268,15 @@ test_run_vkml() {
 # ------------------------------------
 # -------- Miscelaneous tests --------
 # ------------------------------------
-test_model_smollm2-135M() {
+test_model_smollm2_135M() {
     echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
 
     # Build common libs once
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --build_libs
 
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=smollm2 --extra_flags="-DEXECUTORCH_SELECT_OPS_LIST=dim_order_ops::_to_dim_order_copy.out"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=smollm2 --extra_flags="-DEXECUTORCH_SELECT_OPS_LIST=dim_order_ops::_to_dim_order_copy.out" --specify_ethosu_scratch
 
     echo "${TEST_SUITE_NAME}: PASS"
-
-
 }
 
 test_smaller_stories_llama() {

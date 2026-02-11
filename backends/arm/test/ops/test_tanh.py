@@ -30,6 +30,10 @@ test_data_suite = {
     "ramp": lambda: torch.arange(-16, 16, 0.2),
 }
 
+test_data_suite_fp16 = {
+    "rand_fp16": lambda: torch.rand(4, 4, 2, 2, 2, dtype=torch.float16) - 0.5,
+}
+
 test_data_suite_bf16 = {
     "rand_bf16": lambda: torch.rand(4, 4, 2, 2, 2, dtype=torch.bfloat16) - 0.5,
 }
@@ -44,7 +48,9 @@ class Tanh(torch.nn.Module):
         return self.tanh(x)
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
+)
 def test_tanh_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Tanh(),
@@ -91,7 +97,7 @@ def test_tanh_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_tanh_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
