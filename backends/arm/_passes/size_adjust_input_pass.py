@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -27,16 +27,14 @@ valid_operators = [conv2d_op, max_pooling_op, avg_pooling_op]
 
 
 def conv_remainder(input_length, pad, dilation, weight, stride) -> int:
-    """
-    Returns the remainder of input_length; given the padding, dilation, stride,
-    and kernel size.
+    """Returns the remainder of input_length; given the padding, dilation,
+    stride, and kernel size.
     """
     return (input_length + 2 * pad - dilation * (weight - 1) - 1) % stride
 
 
 def pooling_remainder(input_size, pad, kernel_size, stride) -> int:
-    """
-    Returns the remainder of input_length; given the padding, stride, and
+    """Returns the remainder of input_length; given the padding, stride, and
     kernel size.
     """
     return (input_size + 2 * pad - kernel_size) % stride
@@ -98,9 +96,7 @@ def get_slices_pooling(pooling_node: torch.fx.Node) -> Slices:
 
 
 def get_slices(node: torch.fx.Node) -> Slices:
-    """
-    Returns the remainder of input_length; given graph Node.
-    """
+    """Returns the remainder of input_length; given graph Node."""
     if node.target == conv2d_op:
         return get_slices_convolution(node)
     elif node.target == max_pooling_op or node.target == avg_pooling_op:
@@ -142,12 +138,11 @@ def is_valid_operator(node: torch.fx.Node) -> bool:
 
 
 class SizeAdjustInputPass(ArmPass):
-    """
-    Adjusts the input size to Conv2D and Pooling operators. PyTorch allows
+    """Adjusts the input size to Conv2D and Pooling operators. PyTorch allows
     the input and kernel shape to not "match", in which case the remaining
-    rows/columns are truncated. However, matching the size is a requirement
-    in the TOSA specification. In case the input and kernel shape do not
-    match, the following is performed to meet the specification:
+    rows/columns are truncated. However, matching the size is a requirement in
+    the TOSA specification. In case the input and kernel shape do not match, the
+    following is performed to meet the specification:
 
       1) The padding is truncated (done in the node visitor)
       2) (if neccessary) The input is truncated (done in this pass)."
@@ -187,6 +182,7 @@ class SizeAdjustInputPass(ArmPass):
     To match the shape of the kernel (and all parameters) with the input, a
     slice op is inserted to remove the remaining edges (rows and columns) of the
     input.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
