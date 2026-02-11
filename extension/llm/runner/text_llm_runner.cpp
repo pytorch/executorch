@@ -14,16 +14,52 @@
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <pytorch/tokenizers/hf_tokenizer.h>
-#include <pytorch/tokenizers/llama2c_tokenizer.h>
-#include <pytorch/tokenizers/sentencepiece.h>
-#include <pytorch/tokenizers/tiktoken.h>
+
+#include <unordered_set>
 
 namespace executorch::extension::llm {
 
 using ::executorch::extension::Module;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
+
+namespace {
+// Known special tokens used by LLM chat templates
+const std::unordered_set<std::string> kKnownSpecialTokens = {
+    // Llama 3.x tokens
+    "<|begin_of_text|>",
+    "<|end_of_text|>",
+    "<|start_header_id|>",
+    "<|end_header_id|>",
+    "<|eot_id|>",
+    // Gemma tokens
+    "<bos>",
+    "<eos>",
+    "<start_of_turn>",
+    "<end_of_turn>",
+    // Common tokens
+    "</s>",
+    "<s>",
+    "<pad>",
+    "<unk>",
+};
+
+bool is_special_token(const std::string& text) {
+  if (text.empty()) {
+    return false;
+  }
+  // Check against known special tokens
+  if (kKnownSpecialTokens.count(text) > 0) {
+    return true;
+  }
+  // Match Llama-style tokens: <|...|>
+  if (text.size() >= 4 && text.front() == '<' && text[1] == '|' &&
+      text.back() == '>' && text[text.size() - 2] == '|') {
+    return true;
+  }
+  return false;
+}
+} // namespace
 
 TextLLMRunner::TextLLMRunner(
     std::unordered_map<std::string, int64_t> metadata,
@@ -98,8 +134,11 @@ Error TextLLMRunner::generate(
   std::function<void(const std::string&)> wrapped_callback =
       [token_callback, config](const std::string& piece) {
         if (!config.warming) {
-          llm::safe_printf(piece.c_str());
-          fflush(stdout);
+          // Filter out special tokens when not echoing or for cleaner output
+          if (!is_special_token(piece)) {
+            llm::safe_printf(piece.c_str());
+            fflush(stdout);
+          }
         }
         if (token_callback) {
           token_callback(piece);

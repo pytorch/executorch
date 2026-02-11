@@ -48,6 +48,31 @@ set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
+include(FetchContent)
+cmake_policy(SET CMP0077 NEW)
+FetchContent_Declare(
+  jinja2cpp
+  GIT_REPOSITORY https://github.com/jinja2cpp/Jinja2Cpp.git
+  GIT_TAG 1.3.2
+  GIT_SUBMODULES_RECURSE TRUE
+)
+set(JINJA2CPP_BUILD_TESTS
+    OFF
+    CACHE BOOL ""
+          FORCE
+)
+set(JINJA2CPP_BUILD_SHARED
+    OFF
+    CACHE BOOL ""
+          FORCE
+)
+set(JINJA2CPP_INSTALL
+    OFF
+    CACHE BOOL ""
+          FORCE
+)
+FetchContent_MakeAvailable(jinja2cpp)
+
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()

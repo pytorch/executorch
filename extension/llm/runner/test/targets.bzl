@@ -18,6 +18,14 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "test_jinja_chat_formatter",
+        srcs = ["test_jinja_chat_formatter.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner:runner_lib",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "test_text_llm_runner",
         srcs = ["test_text_llm_runner.cpp"],
         deps = [
