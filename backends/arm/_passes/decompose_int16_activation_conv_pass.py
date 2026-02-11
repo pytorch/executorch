@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,12 +16,14 @@ from executorch.exir.pass_base import ExportPass
 
 
 class DecomposeConvWithInt16ActivationPass(ArmPass):
-    """
-    This pass decomposes a convolution with input dtype int16 and bias
-    into a convolution without bias followed by an addition of the bias.
-    We also reshape the 1D bias to [1, C, 1, …] so it broadcasts along the channel
-    dimension. Since the TOSA op requires the bias to be int48 which is hard to represent
-    in torch. Instead rescale the int48 output to int16 and add the bias in int16.
+    """This pass decomposes a convolution with input dtype int16 and bias into a
+    convolution without bias followed by an addition of the bias.
+
+    We also reshape the 1D bias to [1, C, 1, …] so it broadcasts along the
+    channel dimension. Since the TOSA op requires the bias to be int48 which is
+    hard to represent in torch. Instead rescale the int48 output to int16 and
+    add the bias in int16.
+
     """
 
     def __init__(self) -> None:

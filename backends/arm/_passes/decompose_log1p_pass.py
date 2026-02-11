@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,7 +18,9 @@ from executorch.exir.pass_base import ExportPass
 
 
 class DecomposeLog1pPass(ArmPass):
-    """Decompose log1p into a small polynomial with a log fallback for larger inputs."""
+    """Decompose log1p into a small polynomial with a log fallback for larger
+    inputs.
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = {
         InsertTableOpsPass,
