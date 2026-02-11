@@ -182,26 +182,18 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     const std::string& model_path,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::optional<const std::string> data_path,
-    float temperature,
-    const std::string& method_name) {
+    float temperature) {
   if (data_path.has_value()) {
     std::vector<std::string> data_files;
     data_files.push_back(data_path.value());
     return create_text_llm_runner(
-        model_path,
-        std::move(tokenizer),
-        std::move(data_files),
-        temperature,
-        nullptr,
-        method_name);
+        model_path, std::move(tokenizer), std::move(data_files), temperature);
   }
   return create_text_llm_runner(
       model_path,
       std::move(tokenizer),
       std::vector<std::string>(),
-      temperature,
-      nullptr,
-      method_name);
+      temperature);
 }
 
 std::unique_ptr<TextLLMRunner> create_text_llm_runner(
@@ -209,8 +201,7 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::vector<std::string> data_files,
     float temperature,
-    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer,
-    const std::string& method_name) {
+    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer) {
   // Sanity check tokenizer
   if (!tokenizer || !tokenizer->is_loaded()) {
     ET_LOG(Error, "Tokenizer is null or not loaded");
@@ -245,10 +236,10 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   // Create IOManager
   std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>(*module);
 
-  // Create text_decoder_runner
-  ET_LOG(Info, "Using method: %s", method_name.c_str());
-  auto text_decoder_runner = std::make_unique<TextDecoderRunner>(
-      module.get(), io_manager.get(), method_name);
+  // Create text_decoder_runner. Use a shared_ptr so that it can be shared with
+  // TextPrefiller and TextTokenGenerator
+  auto text_decoder_runner =
+      std::make_unique<TextDecoderRunner>(module.get(), io_manager.get());
 
   // Create text_prefiller
   auto text_prefiller = std::make_unique<TextPrefiller>(
