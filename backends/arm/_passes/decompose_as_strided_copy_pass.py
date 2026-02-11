@@ -19,12 +19,12 @@ from executorch.exir.pass_base import ExportPass
 
 
 class DecomposeAsStridedCopyPass(ArmPass):
-    """
-    Replace contiguous `aten.as_strided_copy` with `aten.view_copy`.
+    """Replace contiguous `aten.as_strided_copy` with `aten.view_copy`.
 
     The TOSA backend only supports the contiguous-as-strided case where the stride matches
     row-major layout and the storage offset is zero. In that scenario the operator is
     equivalent to a reshape with copy semantics and can be lowered via `view_copy`.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -35,7 +35,9 @@ class DecomposeAsStridedCopyPass(ArmPass):
     def _extract_args(
         self, args: Tuple[object, ...], kwargs: dict
     ) -> Optional[Tuple[Tuple[int, ...], Tuple[int, ...], int]]:
-        """Return (size, stride, storage_offset) when they are statically known."""
+        """Return (size, stride, storage_offset) when they are statically
+        known.
+        """
         if len(args) < 3:
             return None
 
