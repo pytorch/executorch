@@ -327,6 +327,12 @@ class IndexTensor(torch.nn.Module):
             (torch.arange(2, dtype=torch.int32),),
         ),
     }
+    test_data_fp16: dict[input_params] = {
+        "test_2d_1_idx_fp16": (
+            torch.rand(3, 4, dtype=torch.float16),
+            (torch.arange(2, dtype=torch.int32),),
+        ),
+    }
 
     # xfail - None (unsqueeze) unsupported
     test_data_none: dict[input_params] = {
@@ -378,7 +384,10 @@ class IndexTensor(torch.nn.Module):
         return input_[indices]
 
 
-@common.parametrize("test_data", IndexTensor.test_data | IndexTensor.test_data_bf16)
+@common.parametrize(
+    "test_data",
+    IndexTensor.test_data | IndexTensor.test_data_bf16 | IndexTensor.test_data_fp16,
+)
 def test_index_tensor_tosa_FP(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
