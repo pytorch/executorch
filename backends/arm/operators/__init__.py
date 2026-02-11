@@ -69,5 +69,4 @@ from . import (  # noqa
     op_where,
     op_while,
     ops_binary,
-    ops_identity,
 )

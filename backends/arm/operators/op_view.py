@@ -45,6 +45,7 @@ class ViewVisitor(NodeVisitor):
                 ts.DType.INT8,
                 ts.DType.INT16,
                 ts.DType.INT32,
+                ts.DType.FP16,
                 ts.DType.FP32,
                 ts.DType.BF16,
                 ts.DType.BOOL,

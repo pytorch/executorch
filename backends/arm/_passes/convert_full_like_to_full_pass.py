@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,15 +15,23 @@ from executorch.exir.pass_base import ExportPass
 
 
 class ConvertFullLikeToFullPass(ArmPass):
-    """As per the full_like pytorch documentation,
-    `torch.full_like(input, fill_value)` is equivalent to
-    `torch.full(input.size(),
-                fill_value,
-                dtype=input.dtype,
-                layout=input.layout,
-                device=input.device
-                )`
+    """Convert edge aten full_like to full.
+
+    As per the full_like PyTorch documentation, `torch.full_like(input,
+    fill_value)` is equivalent to:
+
+    ```
+    torch.full(
+        input.size(),
+        fill_value,
+        dtype=input.dtype,
+        layout=input.layout,
+        device=input.device,
+    )
+    ```
+
     Skip layout and device since it's not relevant for our backend.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}

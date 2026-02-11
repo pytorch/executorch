@@ -256,6 +256,12 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         assert features is not None
 
+        # Check per-operator dtype constraints (fail fast before other checks)
+        dtype_valid, dtype_reason = features.check_dtypes(node)
+        if not dtype_valid:
+            self.log_skip(node, dtype_reason)
+            return False
+
         if not features.are_node_inputs_supported_fn(node):
             self.log_skip(node, "op args not supported")
             return False

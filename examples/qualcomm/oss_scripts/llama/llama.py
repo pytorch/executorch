@@ -27,6 +27,7 @@ from executorch.examples.qualcomm.oss_scripts.llama import (
 )
 from executorch.examples.qualcomm.oss_scripts.llama.dataset import DatasetBuilder
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
+    ATTENTION_SINK_EVICTOR,
     AUDIO_ENCODER,
     DECODE_QDQ_FILENAME,
     DECODER_GRAPH_NAMES,
@@ -48,6 +49,8 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_runtime_evaluator im
 
 from executorch.examples.qualcomm.oss_scripts.llama.tokenizer import TokenizerWrapper
 from executorch.examples.qualcomm.oss_scripts.llama.wrappers import (
+    HybridAttentionSinkEvictor,
+    is_attention_sink_config_equal,
     MultiModalManager,
     next_power_of_two,
 )
@@ -61,6 +64,28 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 logging.getLogger().setLevel(logging.INFO)
 # Avoid the error message "Could not initialize NNPACK! Reason: Unsupported hardware."
 torch.backends.nnpack.set_flags(False)
+
+
+def compile_attention_sink_evictor(
+    args,
+    decoder_model_config: LLMModelConfig,
+    text_decoder_pte_path: str,
+    attention_sink_evictor_pte_path: str,
+):
+    # For inference, we will check the attention sink configurations to determine if recompilation is needed.
+    # For compilation, the attention sink evictor will always be recompiled.
+    if (
+        args.pre_gen_pte
+        and os.path.exists(attention_sink_evictor_pte_path)
+        and is_attention_sink_config_equal(attention_sink_evictor_pte_path, args)
+    ):
+        logging.info("Attention sink evictor is already compiled, skipping...")
+        return
+    attention_sink_evictor = HybridAttentionSinkEvictor(
+        control_args=args, config=decoder_model_config
+    )
+    attention_sink_evictor.quantize(text_decoder_pte_path)
+    attention_sink_evictor.compile(attention_sink_evictor_pte_path)
 
 
 def compile(
@@ -141,10 +166,13 @@ def compile(
 def inference(
     args,
     decoder_model_config: LLMModelConfig,
-    pte_filenames: Dict[str, str],
     runtime_tokenizer_path,
     tokenizer,
     chat_template,
+    text_decoder_pte_path: str,
+    encoder_pte_path: str,
+    text_embedding_pte_path: str,
+    attention_sink_evictor_pte_path: str,
 ):
 
     assert args.model_mode in EVAL_MODE, f"Unknown model_mode: {args.model_mode}."
@@ -152,36 +180,31 @@ def inference(
     is_modality = hasattr(decoder_model_config, VISION_ENCODER) or hasattr(
         decoder_model_config, AUDIO_ENCODER
     )
-    decoder_pte_path = (
-        f"{args.pre_gen_pte}/{pte_filenames[TEXT_DECODER]}.pte"
-        if args.pre_gen_pte
-        else f"{args.artifact}/{pte_filenames[TEXT_DECODER]}.pte"
-    )
-    pte_paths = {TEXT_DECODER: decoder_pte_path}
+    pte_paths = {TEXT_DECODER: text_decoder_pte_path}
     eval_results = {
-        "pte_size": os.path.getsize(decoder_pte_path),
+        "pte_size": os.path.getsize(text_decoder_pte_path),
     }
 
-    if is_modality:
-        vision_encoder_pte_path = (
-            f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
-            if args.pre_gen_pte
-            else f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
-        )
-        text_embedding_pte_path = (
-            f"{args.pre_gen_pte}/{pte_filenames[TEXT_EMBEDDING]}.pte"
-            if args.pre_gen_pte
-            else f"{args.artifact}/{pte_filenames[TEXT_EMBEDDING]}.pte"
-        )
+    if args.use_attention_sink:
+        pte_paths.update({ATTENTION_SINK_EVICTOR: attention_sink_evictor_pte_path})
         eval_results.update(
             {
-                "encoder_pte_size": os.path.getsize(vision_encoder_pte_path),
+                "attention_sink_evictor_pte_size": os.path.getsize(
+                    attention_sink_evictor_pte_path
+                ),
+            }
+        )
+
+    if is_modality:
+        eval_results.update(
+            {
+                "encoder_pte_size": os.path.getsize(encoder_pte_path),
                 "text_embedding_pte_size": os.path.getsize(text_embedding_pte_path),
             }
         )
         pte_paths.update(
             {
-                VISION_ENCODER: vision_encoder_pte_path,
+                VISION_ENCODER: encoder_pte_path,
                 TEXT_EMBEDDING: text_embedding_pte_path,
             }
         )
@@ -376,15 +399,22 @@ def _build_parser():
 
     parser.add_argument(
         "--model_mode",
-        help="Export and inference kv mode, hybrid mode, or lookahead decoding mode",
+        help=f"Export and inference in {EVAL_MODE.keys()}",
         default="hybrid",
-        choices=["kv", "hybrid", "lookahead"],
+        choices=list(EVAL_MODE.keys()),
         type=str,
     )
 
     parser.add_argument(
+        "--max_context_len",
+        help="Maximum length of the model's memory/cache, including both prompt tokens and generated tokens.",
+        default=None,
+        type=int,
+    )
+
+    parser.add_argument(
         "--max_seq_len",
-        help="This refers to maximum number of tokens that the model can process & consider at once to generate predictions/responses.",
+        help="Maximum sequence length the model can generate.",
         default=512,
         type=int,
     )
@@ -423,6 +453,13 @@ def _build_parser():
         help="Represents the maximum number of speculations or candidate n-grams that the algorithm considers in each step for verification. It balances the trade-off between computation efficiency and exploring more possibilities.",
         default=8,
         type=int,
+    )
+    parser.add_argument(
+        "--use_attention_sink",
+        default=None,
+        type=str,
+        help="Use the attention sink feature to have fluent multi-round conversations. Specify the settings as '<sink_size>,<batch_eviction_size>', for example, '4,32'."
+        "This setting is for compilation. Once you compile with a chosen <sink_size> and <batch_eviction_size>, they cannot be changed at runtime. If you need to update them, you can recompile the attention sink module along with llama.py.",
     )
 
     parser.add_argument(
@@ -489,21 +526,28 @@ def export_llama(args) -> None:
     decoder_model_config = SUPPORTED_LLM_MODELS[args.decoder_model]
     logging.info(f"*** {args.decoder_model} ***\n%s", str(decoder_model_config))
 
+    if args.max_context_len is None:
+        args.max_context_len = args.max_seq_len
+    if args.use_attention_sink is None:
+        assert (
+            args.max_context_len >= args.max_seq_len
+        ), "Please ensure max_context_len is >= max_seq_len"
+
     # Specify pte filenames
     if args.model_mode == "kv":
         pte_filename = "kv_llama_qnn"
     elif args.model_mode == "hybrid":
         assert (
-            args.max_seq_len >= args.prefill_ar_len
-        ), "Please ensure max_seq_len is >= prefill_ar_len"
+            args.max_context_len >= args.prefill_ar_len
+        ), "Please ensure max_context_len is >= prefill_ar_len"
         pte_filename = "hybrid_llama_qnn"
     elif args.model_mode == "lookahead":
         assert (
-            args.max_seq_len >= args.prefill_ar_len
-        ), "Please ensure max_seq_len is >= prefill_ar_len"
-        assert args.max_seq_len > next_power_of_two(
+            args.max_context_len >= args.prefill_ar_len
+        ), "Please ensure max_context_len is >= prefill_ar_len"
+        assert args.max_context_len > next_power_of_two(
             (args.window + args.gcap) * (args.ngram - 1)
-        ), "Please ensure max_seq_len is > next_power_of_two((args.window + args.gcap) * (args.ngram - 1))"
+        ), "Please ensure max_context_len is > next_power_of_two((args.window + args.gcap) * (args.ngram - 1))"
         pte_filename = "lookahead_llama_qnn"
     else:
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
@@ -532,6 +576,20 @@ def export_llama(args) -> None:
     calibration_data = dataset_builder.prepare_calibration_dataset(
         args.prompt, chat_template
     )
+    text_decoder_pte_path = f"{args.artifact}/{pte_filenames[TEXT_DECODER]}.pte"
+    attention_sink_evictor_pte_path = f"{args.artifact}/{ATTENTION_SINK_EVICTOR}.pte"
+    encoder_pte_path = f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
+    text_embedding_pte_path = f"{args.artifact}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+
+    # TODO: Implement attention sink support for multimodal models (vision/audio).
+    assert (
+        not (
+            hasattr(decoder_model_config, VISION_ENCODER)
+            or hasattr(decoder_model_config, AUDIO_ENCODER)
+        )
+    ) or args.use_attention_sink is None, (
+        "Multimodal models currently do not support attention sink feature."
+    )
 
     # TODO: Implement multi-turn conversation support for multimodal models (vision/audio).
     assert (
@@ -545,26 +603,52 @@ def export_llama(args) -> None:
     )
 
     if args.pre_gen_pte:
+        text_decoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[TEXT_DECODER]}.pte"
+        attention_sink_evictor_pte_path = (
+            f"{args.pre_gen_pte}/{ATTENTION_SINK_EVICTOR}.pte"
+        )
+        encoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
+        text_embedding_pte_path = (
+            f"{args.pre_gen_pte}/{pte_filenames[TEXT_EMBEDDING]}.pte"
+        )
+
+        if args.use_attention_sink:
+            compile_attention_sink_evictor(
+                args,
+                decoder_model_config,
+                text_decoder_pte_path,
+                attention_sink_evictor_pte_path,
+            )
         inference(
             args,
             decoder_model_config,
-            pte_filenames,
             runtime_tokenizer_path,
             tokenizer,
             chat_template,
+            text_decoder_pte_path,
+            encoder_pte_path,
+            text_embedding_pte_path,
+            attention_sink_evictor_pte_path,
         )
         print(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
         return
 
-    if args.compile_only:
-        compile(
+    compile(
+        args,
+        decoder_model_config,
+        pte_filenames,
+        tokenizer,
+        calibration_data,
+    )
+    if args.use_attention_sink:
+        compile_attention_sink_evictor(
             args,
             decoder_model_config,
-            pte_filenames,
-            tokenizer,
-            calibration_data,
+            text_decoder_pte_path,
+            attention_sink_evictor_pte_path,
         )
 
+    if args.compile_only:
         if args.ip and args.port != -1:
             pte_path = f"{args.artifact}/{pte_filename}.pte"
             pte_size = os.path.getsize(pte_path)
@@ -579,20 +663,16 @@ def export_llama(args) -> None:
         print(f"Finish compile_only and save to {args.artifact}")
         return
 
-    compile(
-        args,
-        decoder_model_config,
-        pte_filenames,
-        tokenizer,
-        calibration_data,
-    )
     inference(
         args,
         decoder_model_config,
-        pte_filenames,
         runtime_tokenizer_path,
         tokenizer,
         chat_template,
+        text_decoder_pte_path,
+        encoder_pte_path,
+        text_embedding_pte_path,
+        attention_sink_evictor_pte_path,
     )
 
 

@@ -153,7 +153,9 @@ def validate_valid_dtype(
 
 
 def validate_cf_extension(op_name: str, tosa_spec: TosaSpecification) -> None:
-    """Ensure that the requested control-flow operator is supported by the active TOSA spec."""
+    """Ensure that the requested control-flow operator is supported by the
+    active TOSA spec.
+    """
     if not isinstance(tosa_spec, Tosa_1_00):
         raise ValueError(
             f"Got TOSA version {tosa_spec.version}, that does not support extensions."

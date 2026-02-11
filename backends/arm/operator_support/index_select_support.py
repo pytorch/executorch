@@ -12,6 +12,7 @@ Constraints:
 - args: exactly (input, dim, index)
 - input rank must be >= 1 and dtype compatible with the active TOSA spec
 - index must be rank-1 and dtype int32
+
 """
 
 import torch

@@ -266,7 +266,7 @@ Adapter::Adapter(
     const uint32_t num_queues,
     const std::string& cache_data_path)
     : queue_usage_mutex_{},
-      physical_device_(physical_device),
+      physical_device_(instance, physical_device),
       queues_{},
       queue_usage_{},
       queue_mutexes_{},

@@ -21,30 +21,40 @@
 namespace vkcompute {
 namespace vkapi {
 
-PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
-    : handle(physical_device_handle),
+PhysicalDevice::PhysicalDevice(
+    VkInstance instance_handle,
+    VkPhysicalDevice physical_device_handle)
+    : instance(instance_handle),
+      handle(physical_device_handle),
       properties{},
       memory_properties{},
 #ifdef VK_KHR_16bit_storage
       shader_16bit_storage{
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES},
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES,
+          nullptr},
 #endif /* VK_KHR_16bit_storage */
 #ifdef VK_KHR_8bit_storage
       shader_8bit_storage{
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES},
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES,
+          nullptr},
 #endif /* VK_KHR_8bit_storage */
 #ifdef VK_KHR_shader_float16_int8
       shader_float16_int8_types{
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR},
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR,
+          nullptr},
 #endif /* VK_KHR_shader_float16_int8 */
 #ifdef VK_KHR_shader_integer_dot_product
       shader_int_dot_product_features{
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES_KHR},
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES_KHR,
+          nullptr},
       shader_int_dot_product_properties{
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES_KHR},
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES_KHR,
+          nullptr},
 #endif
       queue_families{},
       num_compute_queues(0),
+      api_version_major(0),
+      api_version_minor(0),
       supports_int16_shader_types(false),
       supports_int64_shader_types(false),
       supports_float64_shader_types(false),
@@ -57,6 +67,9 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
   // Extract physical device properties
   vkGetPhysicalDeviceProperties(handle, &properties);
 
+  api_version_major = VK_VERSION_MAJOR(properties.apiVersion);
+  api_version_minor = VK_VERSION_MINOR(properties.apiVersion);
+
   // Extract fields of interest
   has_timestamps = properties.limits.timestampComputeAndGraphics;
   timestamp_period = properties.limits.timestampPeriod;
@@ -64,55 +77,18 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
 
   vkGetPhysicalDeviceMemoryProperties(handle, &memory_properties);
 
-  VkPhysicalDeviceFeatures2 features2{
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
-
-  // Create linked list to query availability of extensions
-
-  void* extension_list_top = nullptr;
-
-#ifdef VK_KHR_16bit_storage
-  shader_16bit_storage.pNext = extension_list_top;
-  extension_list_top = &shader_16bit_storage;
-#endif /* VK_KHR_16bit_storage */
-
-#ifdef VK_KHR_8bit_storage
-  shader_8bit_storage.pNext = extension_list_top;
-  extension_list_top = &shader_8bit_storage;
-#endif /* VK_KHR_8bit_storage */
-
-#ifdef VK_KHR_shader_float16_int8
-  shader_float16_int8_types.pNext = extension_list_top;
-  extension_list_top = &shader_float16_int8_types;
-#endif /* VK_KHR_shader_float16_int8 */
-
-#ifdef VK_KHR_shader_integer_dot_product
-  shader_int_dot_product_features.pNext = extension_list_top;
-  extension_list_top = &shader_int_dot_product_features;
-  shader_int_dot_product_properties.pNext = extension_list_top;
-  extension_list_top = &shader_int_dot_product_properties;
-#endif /* VK_KHR_shader_integer_dot_product */
-
-  features2.pNext = extension_list_top;
-
-  vkGetPhysicalDeviceFeatures2(handle, &features2);
-
-  if (features2.features.shaderInt16 == VK_TRUE) {
-    supports_int16_shader_types = true;
-  }
-  if (features2.features.shaderInt64 == VK_TRUE) {
-    supports_int64_shader_types = true;
-  }
-  if (features2.features.shaderFloat64 == VK_TRUE) {
-    supports_float64_shader_types = true;
+  if (properties.apiVersion >= VK_API_VERSION_1_1) {
+    query_extensions_vk_1_1();
+  } else {
+    query_extensions_vk_1_0();
   }
 
   // Check if there are any memory types have both the HOST_VISIBLE and the
   // DEVICE_LOCAL property flags
   const VkMemoryPropertyFlags unified_memory_flags =
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
   for (size_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
-    if (memory_properties.memoryTypes[i].propertyFlags | unified_memory_flags) {
+    if (memory_properties.memoryTypes[i].propertyFlags & unified_memory_flags) {
       has_unified_memory = true;
       break;
     }
@@ -151,6 +127,149 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
   } else if (device_name.find("mali") != std::string::npos) {
     device_type = DeviceType::MALI;
   }
+}
+
+void PhysicalDevice::query_extensions_vk_1_0() {
+  VkPhysicalDeviceFeatures features{};
+  vkGetPhysicalDeviceFeatures(handle, &features);
+
+  if (features.shaderInt16 == VK_TRUE) {
+    supports_int16_shader_types = true;
+  }
+  if (features.shaderInt64 == VK_TRUE) {
+    supports_int64_shader_types = true;
+  }
+  if (features.shaderFloat64 == VK_TRUE) {
+    supports_float64_shader_types = true;
+  }
+
+  // Try to query extension features using
+  // VK_KHR_get_physical_device_properties2
+  auto vkGetPhysicalDeviceFeatures2KHR =
+      (PFN_vkGetPhysicalDeviceFeatures2KHR)vkGetInstanceProcAddr(
+          instance, "vkGetPhysicalDeviceFeatures2KHR");
+
+  if (vkGetPhysicalDeviceFeatures2KHR == nullptr) {
+    // Manually set extension features to false if the function is not available
+#ifdef VK_KHR_16bit_storage
+    shader_16bit_storage.storageBuffer16BitAccess = VK_FALSE;
+    shader_16bit_storage.uniformAndStorageBuffer16BitAccess = VK_FALSE;
+    shader_16bit_storage.storagePushConstant16 = VK_FALSE;
+    shader_16bit_storage.storageInputOutput16 = VK_FALSE;
+#endif /* VK_KHR_16bit_storage */
+#ifdef VK_KHR_8bit_storage
+    shader_8bit_storage.storageBuffer8BitAccess = VK_FALSE;
+    shader_8bit_storage.uniformAndStorageBuffer8BitAccess = VK_FALSE;
+    shader_8bit_storage.storagePushConstant8 = VK_FALSE;
+#endif /* VK_KHR_8bit_storage */
+#ifdef VK_KHR_shader_float16_int8
+    shader_float16_int8_types.shaderFloat16 = VK_FALSE;
+    shader_float16_int8_types.shaderInt8 = VK_FALSE;
+#endif /* VK_KHR_shader_float16_int8 */
+#ifdef VK_KHR_shader_integer_dot_product
+    shader_int_dot_product_features.shaderIntegerDotProduct = VK_FALSE;
+#endif /* VK_KHR_shader_integer_dot_product */
+    return;
+  }
+
+  VkPhysicalDeviceFeatures2KHR features2{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR};
+
+  void* extension_list_top = nullptr;
+
+#ifdef VK_KHR_16bit_storage
+  shader_16bit_storage.pNext = extension_list_top;
+  extension_list_top = &shader_16bit_storage;
+#endif /* VK_KHR_16bit_storage */
+
+#ifdef VK_KHR_8bit_storage
+  shader_8bit_storage.pNext = extension_list_top;
+  extension_list_top = &shader_8bit_storage;
+#endif /* VK_KHR_8bit_storage */
+
+#ifdef VK_KHR_shader_float16_int8
+  shader_float16_int8_types.pNext = extension_list_top;
+  extension_list_top = &shader_float16_int8_types;
+#endif /* VK_KHR_shader_float16_int8 */
+
+#ifdef VK_KHR_shader_integer_dot_product
+  shader_int_dot_product_features.pNext = extension_list_top;
+  extension_list_top = &shader_int_dot_product_features;
+#endif /* VK_KHR_shader_integer_dot_product */
+
+  features2.pNext = extension_list_top;
+
+  vkGetPhysicalDeviceFeatures2KHR(handle, &features2);
+
+  // Query properties separately from features
+  auto vkGetPhysicalDeviceProperties2KHR =
+      (PFN_vkGetPhysicalDeviceProperties2KHR)vkGetInstanceProcAddr(
+          instance, "vkGetPhysicalDeviceProperties2KHR");
+
+  if (vkGetPhysicalDeviceProperties2KHR != nullptr) {
+    VkPhysicalDeviceProperties2KHR properties2{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR};
+
+#ifdef VK_KHR_shader_integer_dot_product
+    shader_int_dot_product_properties.pNext = nullptr;
+    properties2.pNext = &shader_int_dot_product_properties;
+#endif /* VK_KHR_shader_integer_dot_product */
+
+    vkGetPhysicalDeviceProperties2KHR(handle, &properties2);
+  }
+}
+
+void PhysicalDevice::query_extensions_vk_1_1() {
+  VkPhysicalDeviceFeatures2 features2{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+
+  // Create linked list to query availability of extensions
+  void* extension_list_top = nullptr;
+
+#ifdef VK_KHR_16bit_storage
+  shader_16bit_storage.pNext = extension_list_top;
+  extension_list_top = &shader_16bit_storage;
+#endif /* VK_KHR_16bit_storage */
+
+#ifdef VK_KHR_8bit_storage
+  shader_8bit_storage.pNext = extension_list_top;
+  extension_list_top = &shader_8bit_storage;
+#endif /* VK_KHR_8bit_storage */
+
+#ifdef VK_KHR_shader_float16_int8
+  shader_float16_int8_types.pNext = extension_list_top;
+  extension_list_top = &shader_float16_int8_types;
+#endif /* VK_KHR_shader_float16_int8 */
+
+#ifdef VK_KHR_shader_integer_dot_product
+  shader_int_dot_product_features.pNext = extension_list_top;
+  extension_list_top = &shader_int_dot_product_features;
+#endif /* VK_KHR_shader_integer_dot_product */
+
+  features2.pNext = extension_list_top;
+
+  vkGetPhysicalDeviceFeatures2(handle, &features2);
+
+  if (features2.features.shaderInt16 == VK_TRUE) {
+    supports_int16_shader_types = true;
+  }
+  if (features2.features.shaderInt64 == VK_TRUE) {
+    supports_int64_shader_types = true;
+  }
+  if (features2.features.shaderFloat64 == VK_TRUE) {
+    supports_float64_shader_types = true;
+  }
+
+  // Query properties separately from features
+  VkPhysicalDeviceProperties2 properties2{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+
+#ifdef VK_KHR_shader_integer_dot_product
+  shader_int_dot_product_properties.pNext = nullptr;
+  properties2.pNext = &shader_int_dot_product_properties;
+#endif /* VK_KHR_shader_integer_dot_product */
+
+  vkGetPhysicalDeviceProperties2(handle, &properties2);
 }
 
 //

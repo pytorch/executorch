@@ -442,10 +442,11 @@ class TOSAQuantizer(Quantizer):
     def _set_disallow_tfa_for_nodes(self, model: GraphModule) -> None:
         """Populate `disallow_tfa` metadata for each FX node.
 
-        Transform-for-annotation passes inspect this flag to decide whether
-        they may transform a node. Typically, a node should not be transformed
-        in case it is not to be quantized, which is relevant for partially
+        Transform-for-annotation passes inspect this flag to decide whether they
+        may transform a node. Typically, a node should not be transformed in
+        case it is not to be quantized, which is relevant for partially
         quantized models.
+
         """
 
         # First, set all nodes according to global config
@@ -644,7 +645,8 @@ class TOSAQuantizer(Quantizer):
         calibration_samples: list[tuple],
         is_qat: bool = False,
     ):
-        """Quantizes a GraphModule in a way such that conditional submodules are handled properly.
+        """Quantizes a GraphModule in a way such that conditional submodules are
+        handled properly.
 
         Args:
             model (GraphModule): The model to quantize.

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,8 +46,11 @@ def _fully_partitioned(submodule: fx.GraphModule) -> bool:
 def _submodules_fully_partitioned(
     node: fx.Node, exported_program: ExportedProgram
 ) -> bool:
-    """Returns whether the submodule arguments to a cond node were fully partitioned.
+    """Returns whether the submodule arguments to a cond node were fully
+    partitioned.
+
     Updates "val" meta of the submodules if they are.
+
     """
     match node.target:
         case torch.ops.higher_order.cond:
@@ -83,7 +86,10 @@ def _tosa_spec_supports_cf(tosa_spec: TosaSpecification) -> bool:
 
 class ControlFlowSubmoduleSupported(OperatorSupportBase):
     """Check whether control flow submodule args should be partitioned.
-    Applies control-flow extension constraints before allowing delegation."""
+
+    Applies control-flow extension constraints before allowing delegation.
+
+    """
 
     def __init__(
         self,
@@ -123,7 +129,10 @@ class ControlFlowSubmoduleSupported(OperatorSupportBase):
 
 class ControlFlowOpSupported(OperatorSupportBase):
     """Check whether control flow ops should be partitioned.
-    Applies control-flow extension constraints before allowing delegation."""
+
+    Applies control-flow extension constraints before allowing delegation.
+
+    """
 
     _targeted_ops = {
         torch.ops.higher_order.cond,

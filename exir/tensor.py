@@ -289,6 +289,7 @@ scalar_type_table: Dict[torch.dtype, ScalarType] = {
     torch.bfloat16: ScalarType.BFLOAT16,
     torch.quint4x2: ScalarType.QUINT4x2,
     torch.uint16: ScalarType.UINT16,
+    torch.uint32: ScalarType.UINT32,
 }
 
 

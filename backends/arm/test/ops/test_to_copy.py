@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -90,6 +90,29 @@ def test_to_tosa_FP(test_data: Tuple):
             },
         )
         pipeline.pop_stage("run_method_and_compare_outputs")
+    pipeline.run()
+
+
+def test_to_tosa_FP_bf16_requires_extension():
+    test_tensor = torch.rand((1, 2, 3, 4), dtype=torch.float32)
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Cast(torch.bfloat16),
+        (test_tensor,),
+        {
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1
+        },
+    )
+    pipeline.run()
+
+
+def test_to_tosa_FP_bf16_with_extension():
+    test_tensor = torch.rand((1, 2, 3, 4), dtype=torch.float32)
+    pipeline = TosaPipelineFP[input_t1](
+        Cast(torch.bfloat16),
+        (test_tensor,),
+        aten_op=[],
+        tosa_extensions=["bf16"],
+    )
     pipeline.run()
 
 

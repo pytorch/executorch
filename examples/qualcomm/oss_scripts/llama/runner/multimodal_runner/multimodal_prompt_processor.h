@@ -66,7 +66,8 @@ class MultimodalPromptProcessor : public example::PromptProcessor<T> {
   executorch::runtime::Result<uint64_t> prefill(
       const TensorStruct<float>& prompt_embedding,
       int64_t start_pos,
-      bool dump_logits);
+      bool dump_logits,
+      AttentionSinkRopeRunner* attention_sink_rope_runner);
 
   /**
    * @brief Get total I/O size in bytes (excluding the KV cache size)

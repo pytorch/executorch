@@ -43,6 +43,7 @@ from executorch.backends.arm.tosa.specification import (
 )
 
 from executorch.backends.arm.util._factory import create_quantizer
+from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
 from executorch.backends.test.harness.stages import StageType
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
@@ -1066,6 +1067,7 @@ class VgfPipeline(BasePipeline, Generic[T]):
        vgf_compiler_flags: Optional compiler flags.
 
        tosa_version: A string for identifying the TOSA version.
+       tosa_spec: Optional override for the TOSA specification.
 
        use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
@@ -1092,15 +1094,21 @@ class VgfPipeline(BasePipeline, Generic[T]):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
-        tosa_version: str = "TOSA-1.0+INT+FP",
+        tosa_version: str | None = None,
         tosa_extensions: Optional[List[str]] = None,
+        tosa_spec: TosaSpecification | str | None = None,
     ):
-        if tosa_extensions is None:
-            tosa_extensions = []
-
-        tosa_spec = TosaSpecification.create_from_string(
-            tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
-        )
+        if tosa_spec is None:
+            if tosa_version is None:
+                tosa_spec = VgfCompileSpec().tosa_spec
+            else:
+                if tosa_extensions is None:
+                    tosa_extensions = []
+                tosa_spec = TosaSpecification.create_from_string(
+                    tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
+                )
+        elif isinstance(tosa_spec, str):
+            tosa_spec = TosaSpecification.create_from_string(tosa_spec)
         compile_spec = common.get_vgf_compile_spec(
             tosa_spec,
             compiler_flags=vgf_compiler_flags,

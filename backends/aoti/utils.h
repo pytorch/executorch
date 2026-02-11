@@ -35,6 +35,8 @@ inline executorch::aten::ScalarType dtype_to_scalar_type(int32_t dtype) {
   // Convert based on known PyTorch dtype codes (without CUDA-specific
   // dependency)
   switch (dtype) {
+    case 0: // PyTorch's uint8 dtype code
+      return executorch::aten::ScalarType::Byte;
     case 1: // PyTorch's int8 dtype code
       return executorch::aten::ScalarType::Char;
     case 2: // PyTorch's int16 dtype code

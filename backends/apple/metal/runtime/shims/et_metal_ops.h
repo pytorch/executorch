@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 /**
- * ExecutorTorch implementation of aoti_torch_mps_mm_out.
+ * ExecuTorch implementation of aoti_torch_mps_mm_out.
  * Performs simple matrix multiplication: out = self @ mat2
  */
 AOTITorchError aoti_torch_mps_mm_out(
@@ -28,7 +28,7 @@ AOTITorchError aoti_torch_mps_mm_out(
     AOTITensorHandle mat2);
 
 /**
- * ExecutorTorch implementation of aoti_torch_mps_bmm_out.
+ * ExecuTorch implementation of aoti_torch_mps_bmm_out.
  * Performs batched matrix multiplication: out = self @ mat2
  * All tensors must be 3-D with matching batch dimensions.
  */
@@ -38,7 +38,7 @@ AOTITorchError aoti_torch_mps_bmm_out(
     AOTITensorHandle mat2);
 
 /**
- * ExecutorTorch implementation of aoti_torch_mps_convolution.
+ * ExecuTorch implementation of aoti_torch_mps_convolution.
  * Performs 2D convolution operation - matches PyTorch AOTI signature
  */
 AOTITorchError aoti_torch_mps_convolution(
@@ -58,7 +58,7 @@ AOTITorchError aoti_torch_mps_convolution(
     AOTITensorHandle* ret0);
 
 /**
- * ExecutorTorch implementation of
+ * ExecuTorch implementation of
  * aoti_torch_mps__scaled_dot_product_attention_math_for_mps. Performs scaled
  * dot product attention calculation - matches PyTorch AOTI signature
  */
@@ -73,6 +73,14 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
     double* scale,
     AOTITensorHandle* ret0,
     AOTITensorHandle* ret1);
+
+AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
+    AOTITensorHandle A,
+    AOTITensorHandle B,
+    int64_t group_size,
+    AOTITensorHandle S,
+    AOTITensorHandle Z,
+    AOTITensorHandle* ret);
 
 #ifdef __cplusplus
 } // extern "C"

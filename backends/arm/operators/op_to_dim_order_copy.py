@@ -21,13 +21,13 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 @register_node_visitor
 class ToDimOrderCopyVisitor(NodeVisitor):
-    """
-    Implement the type cast functionality of _to_dim_order_copy.
+    """Implement the type cast functionality of _to_dim_order_copy.
 
     Other features like setting of the dim_order or moving a tensor to a
     different device are not supported.
 
     Also note that the node should not be quantized.
+
     """
 
     target = "dim_order_ops._to_dim_order_copy.default"

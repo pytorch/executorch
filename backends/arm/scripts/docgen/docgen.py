@@ -23,9 +23,8 @@ class DocumentationJob:
 
 
 def get_docstring(obj) -> str:
-    """
-    Returns the docstring of an object, formatted in markdown to resemble pytorch-style
-    docs, e.g. an argument list like:
+    """Returns the docstring of an object, formatted in markdown to resemble
+    pytorch-style docs, e.g. an argument list like:
 
     Args:
         arg1: description
@@ -35,6 +34,7 @@ def get_docstring(obj) -> str:
     Args:
     - **arg1**: description
     - **arg2**: description
+
     """
 
     docstring = inspect.getdoc(obj)
@@ -56,16 +56,14 @@ def get_docstring(obj) -> str:
 
 
 def get_function_docstring(cls, func) -> str:
-    """
-    Returns a function's signature and docstring formatted in markdown.
-    """
+    """Returns a function's signature and docstring formatted in markdown."""
     return f"```python\ndef {cls.__name__}.{func.__name__}{inspect.signature(func)}:\n```\n{get_docstring(func)}\n\n"
 
 
 def get_class_docstring(cls, filter_funcs=()) -> str:
-    """
-    Returns a class signature and docstring, as well as documentation for all its public
-    methods with names not matching strings listed in filter_funcs.
+    """Returns a class signature and docstring, as well as documentation for all
+    its public methods with names not matching strings listed in
+    filter_funcs.
     """
     header = f"```python\nclass {cls.__name__}{inspect.signature(cls)}\n```\n{get_docstring(cls)}\n\n"
 
@@ -85,10 +83,12 @@ def get_class_docstring(cls, filter_funcs=()) -> str:
 
 
 def get_jupyter_code(path, get_bash, which_cells: list[int] | None = None) -> str:
-    """
-    Returns all code cells from the jupyter notebook at 'path'. If get_bash is True,
-    only bash cells are returned, otherwise only python cells are returned.
-    which_cells lets you supply a list of cell indicies to return.
+    """Returns all code cells from the jupyter notebook at 'path'.
+
+    If get_bash is True, only bash cells are returned, otherwise only python
+    cells are returned. which_cells lets you supply a list of cell indicies to
+    return.
+
     """
     output = f"```{'bash' if get_bash else 'python'}\n"
     with open(path, "r") as f:

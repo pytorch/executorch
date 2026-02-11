@@ -46,10 +46,14 @@ def RESIZE(
                 f"Context TOSA spec {tosa_spec} doesn't support int16", op="RESIZE"
             )
         output_dtype = x.dtype
-    elif x.dtype in (torch.float16, torch.float32):
+    elif x.dtype in (torch.float16, torch.float32, torch.bfloat16):
         if not tosa_spec.support_float():
             raise TosaValueError(
                 f"TOSA spec {tosa_spec} doesn't support float", op="RESIZE"
+            )
+        if x.dtype == torch.bfloat16 and not tosa_spec.support_extension("bf16"):
+            raise TosaValueError(
+                f"TOSA spec {tosa_spec} doesn't support bf16", op="RESIZE"
             )
         output_dtype = x.dtype
     else:

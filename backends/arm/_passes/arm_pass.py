@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,7 +15,7 @@ from torch.fx.passes.infra.pass_base import PassResult
 
 
 class ArmPass(ExportPass):
-    """Base class for Arm passes"""
+    """Base class for Arm passes."""
 
     def __init__(self, tfa_pass: bool = False, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -38,13 +38,13 @@ class ArmPass(ExportPass):
     @property
     @abstractmethod
     def _passes_required_after(self) -> Set[Type[ExportPass]]:
-        """The subclass defines passes that must run after it"""
+        """The subclass defines passes that must run after it."""
         pass
 
     @staticmethod
     def get_required_passes(pass_) -> List[str]:
-        """
-        Returns the list of passes that must be run after this pass, sorted by name.
+        """Returns the list of passes that must be run after this pass, sorted
+        by name.
         """
         if hasattr(pass_, "_passes_required_after"):
             return sorted([ArmPass.get_name(p) for p in pass_._passes_required_after])
@@ -53,9 +53,7 @@ class ArmPass(ExportPass):
 
     @staticmethod
     def get_name(pass_) -> str:
-        """
-        Returns the name of the pass.
-        """
+        """Returns the name of the pass."""
         if isinstance(pass_, ExportPass):
             return pass_.__class__.__name__
         elif hasattr(pass_, "__name__"):

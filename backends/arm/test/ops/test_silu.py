@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -43,7 +43,6 @@ class Silu(torch.nn.Module):
 
     aten_op_FP = "torch.ops.aten.silu.default"
     aten_op_inplace_FP = "torch.ops.aten.silu_.default"
-    aten_op_INT = ["torch.ops.aten.sigmoid.default", "torch.ops.aten.mul.Tensor"]
 
 
 @common.parametrize("test_data", Silu.test_data)
@@ -63,14 +62,22 @@ def test_silu_tosa_FP_inplace(test_data: input_t):
 @common.parametrize("test_data", Silu.test_data)
 def test_silu_tosa_INT(test_data: input_t):
     silu_data = (test_data(), False)
-    pipeline = TosaPipelineINT[input_t](Silu(), silu_data, Silu.aten_op_INT)
+    pipeline = TosaPipelineINT[input_t](
+        Silu(),
+        silu_data,
+        [],
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", Silu.test_data)
 def test_silu_tosa_INT_inplace(test_data: input_t):
     silu_data = (test_data(), True)
-    pipeline = TosaPipelineINT[input_t](Silu(), silu_data, Silu.aten_op_INT)
+    pipeline = TosaPipelineINT[input_t](
+        Silu(),
+        silu_data,
+        [],
+    )
     pipeline.run()
 
 
@@ -81,7 +88,7 @@ def test_silu_u55_INT(test_data: input_t):
     pipeline = EthosU55PipelineINT[input_t](
         Silu(),
         silu_data,
-        Silu.aten_op_INT,
+        [],
     )
     pipeline.run()
 
@@ -93,7 +100,7 @@ def test_silu_u55_INT_inplace(test_data: input_t):
     pipeline = EthosU55PipelineINT[input_t](
         Silu(),
         silu_data,
-        Silu.aten_op_INT,
+        [],
     )
     pipeline.run()
 
@@ -105,7 +112,7 @@ def test_silu_u85_INT(test_data: input_t):
     pipeline = EthosU85PipelineINT[input_t](
         Silu(),
         silu_data,
-        Silu.aten_op_INT,
+        [],
     )
     pipeline.run()
 
@@ -117,7 +124,7 @@ def test_silu_u85_INT_inplace(test_data: input_t):
     pipeline = EthosU85PipelineINT[input_t](
         Silu(),
         silu_data,
-        Silu.aten_op_INT,
+        [],
     )
     pipeline.run()
 
@@ -155,7 +162,7 @@ def test_silu_vgf_quant(test_data: input_t):
     pipeline = VgfPipeline[input_t](
         Silu(),
         silu_data,
-        Silu.aten_op_INT,
+        [],
         quantize=True,
     )
     pipeline.run()
@@ -168,7 +175,7 @@ def test_silu_vgf_quant_inplace(test_data: input_t):
     pipeline = VgfPipeline[input_t](
         Silu(),
         silu_data,
-        Silu.aten_op_INT,
+        [],
         quantize=True,
     )
     pipeline.run()

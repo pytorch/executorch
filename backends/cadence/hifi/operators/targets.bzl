@@ -53,6 +53,7 @@ OPERATORS = [
     "ge",
     "gt",
     "hardtanh",
+    "im2row_out",
     "le",
     "lt",
     "masked_fill",
@@ -103,6 +104,7 @@ OPERATORS = [
     "split_with_sizes_copy",
     "sub",
     "tanh",
+    "transpose_copy",
     "view_copy",
     "where"
 ]

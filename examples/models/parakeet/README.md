@@ -25,11 +25,91 @@ python export_parakeet_tdt.py --audio /path/to/audio.wav
 | Argument | Description |
 |----------|-------------|
 | `--output-dir` | Output directory for exports (default: `./parakeet_tdt_exports`) |
-| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `cuda`, `cuda-windows` (default: `portable`) |
+| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `cuda`, `cuda-windows` (default: `xnnpack`) |
 | `--dtype` | Data type: `fp32`, `bf16`, `fp16` (default: `fp32`). Metal backend supports `fp32` and `bf16` only (no `fp16`). |
 | `--audio` | Path to audio file for transcription test |
 
 **Note:** The preprocessor is always lowered with the portable backend regardless of the `--backend` setting.
+
+### Quantization
+
+The export script supports quantizing encoder and decoder linear layers using [torchao](https://github.com/pytorch/ao).
+
+#### Quantization Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `--qlinear_encoder` | Quantization config for encoder linear layers: `4w`, `8w`, `8da4w`, `8da8w`, `fpa4w` |
+| `--qlinear_encoder_group_size` | Group size for encoder linear quantization (default: 32) |
+| `--qlinear_encoder_packing_format` | Packing format for encoder: `tile_packed_to_4d` |
+| `--qlinear` | Quantization config for decoder linear layers: `4w`, `8w`, `8da4w`, `8da8w`, `fpa4w` |
+| `--qlinear_group_size` | Group size for decoder linear quantization (default: 32) |
+| `--qlinear_packing_format` | Packing format for decoder: `tile_packed_to_4d` |
+| `--qembedding` | Quantization config for decoder embedding layer: `4w`, `8w` |
+| `--qembedding_group_size` | Group size for embedding quantization (default: 0 = per-axis) |
+
+#### Quantization Configs
+
+| Config | Description | Backends |
+|--------|-------------|----------|
+| `4w` | 4-bit weight only quantization | CUDA |
+| `8w` | 8-bit weight only quantization | CUDA |
+| `8da4w` | 8-bit dynamic activation, 4-bit weight | CUDA |
+| `8da8w` | 8-bit dynamic activation, 8-bit weight | CUDA |
+| `fpa4w` | Floating point activation, 4-bit weight | Metal |
+
+#### Example: Dynamic Quantization for XNNPACK
+
+```bash
+python export_parakeet_tdt.py \
+    --backend xnnpack \
+    --qlinear_encoder 8da4w \
+    --qlinear_encoder_group_size 32 \
+    --qlinear 8da4w \
+    --qlinear_group_size 32 \
+    --output-dir ./parakeet_quantized_xnnpack
+```
+
+#### Example: 4-bit Weight Quantization with Tile Packing for CUDA
+
+```bash
+python export_parakeet_tdt.py \
+    --backend cuda \
+    --qlinear_encoder 4w \
+    --qlinear_encoder_group_size 32 \
+    --qlinear_encoder_packing_format tile_packed_to_4d \
+    --qlinear 4w \
+    --qlinear_group_size 32 \
+    --qlinear_packing_format tile_packed_to_4d \
+    --qembedding 8w \
+    --output-dir ./parakeet_quantized
+```
+
+**Note:** The `tile_packed_to_4d` packing format is optimized for CUDA.
+
+#### Example: Metal 4-bit Quantization
+
+```bash
+python export_parakeet_tdt.py \
+    --backend metal \
+    --qlinear_encoder fpa4w \
+    --qlinear_encoder_group_size 32 \
+    --qlinear fpa4w \
+    --qlinear_group_size 32 \
+    --output-dir ./parakeet_metal_quantized
+```
+
+**Note:** Metal 4-bit quantization requires torchao built with experimental MPS (Metal) ops.
+
+You can install torchao with Metal support from the `ao` repo:
+```bash
+USE_CPP=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 pip install . --no-build-isolation
+```
+
+Alternatively, you can build torchao with Metal support while installing ExecuTorch:
+```bash
+EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
+```
 
 ### Metal Export (macOS)
 

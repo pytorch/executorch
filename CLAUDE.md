@@ -1,36 +1,48 @@
-# Repo and framework name
+# ExecuTorch
 
-Refer to the repo/framework/runtime "executorch" (in lower cases) or "ExecuTorch" (in 
-camel cases), not "ExecutorTorch". With limited code or comment length, maybe refer
-to the framework "ET" but consider it as very unofficial and not recommended.
+## Skills
+- `/setup` - Set up environment
+- `/export` - Export model to .pte
+- `/building` - Build runners or C++ libs
+- `/profile` - Profile execution
 
-# Commit messages
+Reference docs in `.claude/`: backends, runtime-api, quantization, llm-export, faq, tokenizers
 
-Don't commit unless the user explicitly asks you to.
+## Quick Reference
 
-When writing a commit message, don't make a bullet list of the individual
-changes. Instead, if the PR is large, explain the order to review changes
-(e.g., the logical progression), or if it's short just omit the bullet list
-entirely.
+**Install Python package:**
+```bash
+./install_executorch.sh        # first time (or .bat on Windows)
+pip install -e . --no-build-isolation  # subsequent installs
+```
 
-Disclose that the PR was authored with Claude.
+**Build C++ libraries:** see `CMakeLists.txt`; for LLM/ASR runners use `Makefile` and `CMakePresets.json`
 
-# Coding Style Guidelines
+**Run tests:** `pytest -n auto` (Python), `ctest --output-on-failure` (C++)
 
-Follow these rules for all code changes in this repository:
+**Lint:** `lintrunner init && lintrunner -a`
 
-- Minimize comments; be concise; code should be self-explanatory and self-documenting.
-- Comments should be useful, for example, comments that remind the reader about
-  some global context that is non-obvious and can't be inferred locally.
-- Don't make trivial (1-2 LOC) helper functions that are only used once unless
-  it significantly improves code readability.
-- Prefer clear abstractions. State management should be explicit.
-  For example, if managing state in a Python class: there should be a clear
-  class definition that has all of the members: don't dynamically `setattr`
-  a field on an object and then dynamically `getattr` the field on the object.
-- Match existing code style and architectural patterns.
-- Assume the reader has familiarity with ExecuTorch and PyTorch. They may not be the expert
-  on the code that is being read, but they should have some experience in the
-  area.
+Details: [docs/source/using-executorch-building-from-source.md](docs/source/using-executorch-building-from-source.md)
 
-If uncertain, choose the simpler, more concise implementation.
+## Naming
+
+- Use "executorch" (lowercase) or "ExecuTorch" (camel case)
+- Never "ExecutorTorch"
+- "ET" only when space-constrained (unofficial)
+
+## Commits
+
+- Only commit when explicitly asked
+- No bullet lists of changes; explain review order for large PRs, or omit for small ones
+- Disclose PR was authored with Claude
+
+## Code Style
+
+- Minimal comments; code should be self-documenting
+- Comments only for non-obvious global context
+- No trivial (1-2 LOC) single-use helpers unless significantly improving readability
+- Explicit state management; no dynamic `setattr`/`getattr` patterns
+- Match existing style and architecture
+- Assume reader knows ExecuTorch/PyTorch basics
+
+**When uncertain: choose simpler, more concise.**

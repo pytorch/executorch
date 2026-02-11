@@ -230,3 +230,72 @@ class TestActivationFusion(unittest.TestCase):
             activation=torch.nn.Hardtanh(min_val=-1.0, max_val=1.0),
             activation_name="executorch_exir_dialects_edge__ops_aten_hardtanh_default",
         )
+
+    def _test_binary_op_activation_e2e(
+        self,
+        binary_op,
+        activation,
+        activation_check_not,
+    ):
+        class BinaryOpActivation(torch.nn.Module):
+            def __init__(self, op, act):
+                super().__init__()
+                self.op = op
+                self.activation = act
+
+            def forward(self, x, y):
+                return self.activation(self.op(x, y))
+
+        inputs = (torch.randn(1, 8, 8), torch.randn(1, 8, 8))
+
+        (
+            Tester(BinaryOpActivation(binary_op, activation).eval(), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_not([activation_check_not])
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_activation_fusion_add_relu_e2e(self):
+        self._test_binary_op_activation_e2e(
+            torch.add,
+            torch.nn.ReLU(),
+            "executorch_exir_dialects_edge__ops_aten_relu_default",
+        )
+
+    def test_activation_fusion_add_hardtanh_e2e(self):
+        self._test_binary_op_activation_e2e(
+            torch.add,
+            torch.nn.Hardtanh(min_val=-1.0, max_val=1.0),
+            "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
+        )
+
+    def test_activation_fusion_sub_relu_e2e(self):
+        self._test_binary_op_activation_e2e(
+            torch.sub,
+            torch.nn.ReLU(),
+            "executorch_exir_dialects_edge__ops_aten_relu_default",
+        )
+
+    def test_activation_fusion_sub_hardtanh_e2e(self):
+        self._test_binary_op_activation_e2e(
+            torch.sub,
+            torch.nn.Hardtanh(min_val=-1.0, max_val=1.0),
+            "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
+        )
+
+    def test_activation_fusion_mul_relu_e2e(self):
+        self._test_binary_op_activation_e2e(
+            torch.mul,
+            torch.nn.ReLU(),
+            "executorch_exir_dialects_edge__ops_aten_relu_default",
+        )
+
+    def test_activation_fusion_mul_hardtanh_e2e(self):
+        self._test_binary_op_activation_e2e(
+            torch.mul,
+            torch.nn.Hardtanh(min_val=-1.0, max_val=1.0),
+            "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
+        )

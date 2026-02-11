@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -44,7 +44,7 @@ class Where(torch.nn.Module):
                     self.shape,
                     dtype=self.dtype[i],
                 )
-            elif self.dtype[i] in [torch.float32]:
+            elif self.dtype[i] in [torch.float32, torch.bfloat16]:
                 inputs[i] = torch.randn(*self.shape).to(self.dtype[i])
             elif self.dtype[i] is torch.bool:
                 inputs[i] = torch.randint(0, 1, self.shape, dtype=torch.bool)
@@ -156,6 +156,12 @@ const_float32 = ConstWhere(
     dtype=torch.float32,
 )
 
+bf16_tensor_cond = Where(
+    1,
+    torch.bfloat16,
+    tensor_condition,
+)
+
 test_modules_common = {
     "two_dim_tensor_cond": lambda: two_dim_tensor_cond,
     "three_dim_tensor_cond": lambda: three_dim_tensor_cond,
@@ -171,6 +177,10 @@ test_modules_FP = {
     "float32_tensor_cond_tuple_dtype_bool": lambda: float32_tensor_cond_tuple_dtype_bool,
 }
 
+test_modules_FP_bf16 = {
+    "bf16_tensor_cond": lambda: bf16_tensor_cond,
+}
+
 test_modules_FP_unsupported_dtype = {
     "float32_tensor_cond_tuple_dtype": lambda: float32_tensor_cond_tuple_dtype,
     "int32_scalar_cond": lambda: int32_scalar_cond,
@@ -183,13 +193,15 @@ test_modules_INT = {
 input_t = Tuple[torch.Tensor]
 
 
-@common.parametrize("test_module", test_modules_FP)
+@common.parametrize("test_module", test_modules_FP | test_modules_FP_bf16)
 def test_where_self_tosa_FP(test_module):
+    module = test_module()
     pipeline = TosaPipelineFP[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        module,
+        module.get_inputs(),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -262,9 +274,10 @@ def test_where_self_u85_INT(test_module):
 @common.parametrize("test_module", test_modules_FP)
 @common.SkipIfNoModelConverter
 def test_where_self_vgf_no_quant(test_module):
+    module = test_module()
     pipeline = VgfPipeline[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        module,
+        module.get_inputs(),
         aten_op,
         exir_op,
         quantize=False,

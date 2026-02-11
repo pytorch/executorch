@@ -1,4 +1,37 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # add this empty BUCK file to unblock landing. Without this, we get land error:
 #   "No build file at xplat/executorch/exir/tests/BUCK when resolving target fbsource//xplat/executorch/exir/tests:."
 
-oncall("executorch")
+
+# !!!! fbcode/executorch/exir/emit/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+
+fbcode_target(_kind = python_unittest,
+    # @autodeps-skip pybindings don't work well with autodeps
+    name = "emit",
+    srcs = [
+        "test_emit.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/pytest:pytest",
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/exir:error",
+        "//executorch/exir:lib",
+        "//executorch/exir:print_program",
+        "//executorch/exir:schema",
+        "//executorch/exir/backend/test/demos/rpc:executor_backend_partitioner",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/emit:lib",
+        "//executorch/exir/passes:const_prop_pass",
+        "//executorch/exir/passes:constant_prop_pass",
+        "//executorch/exir/passes:init_mutable_pass",
+        "//executorch/exir/tests:lib",
+        "//executorch/exir/tests:models",
+        "//executorch/extension/pybindings:portable_lib",
+        "//executorch/runtime:runtime",
+    ],
+)

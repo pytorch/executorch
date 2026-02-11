@@ -205,7 +205,7 @@ def define_common_targets(is_fbcode = False):
             mac_deps = default_deps
             if link_moltenvk:
                 mac_deps = [
-                    "//third-party/khronos:moltenVK_static"
+                    "//third-party/khronos/version-selector:moltenVK_static_unexported"
                 ]
 
             if debug_mode:

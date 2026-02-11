@@ -44,7 +44,7 @@ class WhereVisitor(NodeVisitor):
                 ts.DType.INT32,
             ]
         if self.tosa_spec.support_float():
-            supported_dtypes += [ts.DType.FP16, ts.DType.FP32]
+            supported_dtypes += [ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]
 
         validate_num_inputs(self.target, inputs, 3)
         # Not first input, which is condition tensor.

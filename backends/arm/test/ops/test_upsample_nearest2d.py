@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -41,6 +41,20 @@ test_data_suite = {
     "rand_half_size": lambda: (torch.rand(2, 4, 8, 6), (4, 3), None, False),
     "rand_one_and_half_scale": lambda: (torch.rand(2, 4, 8, 3), None, 1.5, False),
     "rand_one_and_half_size": lambda: (torch.rand(2, 4, 8, 3), (12, 4), None, False),
+}
+test_data_suite_bf16 = {
+    "randn_double_scale_bf16": lambda: (
+        torch.randn(1, 2, 3, 2, dtype=torch.bfloat16),
+        None,
+        2.0,
+        True,
+    ),
+    "randn_double_size_bf16": lambda: (
+        torch.randn(1, 1, 2, 2, dtype=torch.bfloat16),
+        (4, 4),
+        None,
+        True,
+    ),
 }
 
 test_data_u55 = {
@@ -104,7 +118,7 @@ class Interpolate(torch.nn.Module):
         return self.upsample(x)
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_upsample_nearest2d_vec_tosa_FP(test_data: torch.Tensor):
     test_data, size, scale_factor, compare_outputs = test_data()
 
@@ -113,13 +127,14 @@ def test_upsample_nearest2d_vec_tosa_FP(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_op=[],
+        tosa_extensions=["bf16"],
     )
     if not compare_outputs:
         pipeline.pop_stage(-1)
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_upsample_nearest2d_vec_tosa_FP_nearest(test_data: torch.Tensor):
     test_data, size, scale_factor, compare_outputs = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -127,13 +142,14 @@ def test_upsample_nearest2d_vec_tosa_FP_nearest(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_op=[],
+        tosa_extensions=["bf16"],
     )
     if not compare_outputs:
         pipeline.pop_stage(-1)
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_upsample_nearest2d_vec_tosa_FP_interpolate(test_data: torch.Tensor):
     test_data, size, scale_factor, compare_outputs = test_data()
 
@@ -142,6 +158,7 @@ def test_upsample_nearest2d_vec_tosa_FP_interpolate(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_op=[],
+        tosa_extensions=["bf16"],
     )
     if not compare_outputs:
         pipeline.pop_stage(-1)

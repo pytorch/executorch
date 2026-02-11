@@ -35,7 +35,7 @@ void xa_opt_quantized_conv1d_ncl_asym8uxsym8u_asym8u(
     float output_scale,
     int32_t output_zero_point,
     Tensor& out) {
-  constexpr int kNnlibMaxDim = 3;
+  constexpr int kNnlibMaxDim = 5;
 
   UWORD8* __restrict__ p_out =
       (UWORD8* __restrict__)out.mutable_data_ptr<uint8_t>();
@@ -49,10 +49,13 @@ void xa_opt_quantized_conv1d_ncl_asym8uxsym8u_asym8u(
   WORD32 batches = input.size(0);
   WORD32 input_channels = input.size(1);
   WORD32 input_width = input.size(2);
+  WORD32 input_height = 1;
+  WORD32 kernel_height = 1;
   WORD32 out_channels = weight.size(0);
   WORD32 kernel_channels = weight.size(1);
   WORD32 kernel_width = weight.size(2);
   WORD32 out_width = out.size(2);
+  WORD32 out_height = 1;
   WORD32 x_stride = stride[1];
   WORD32 x_padding = padding[1];
   WORD32 input_zero_bias = -in_zero_point;
@@ -62,25 +65,37 @@ void xa_opt_quantized_conv1d_ncl_asym8uxsym8u_asym8u(
 
   WORD32 out_zero_bias = output_zero_point;
   WORD32 out_data_format = 1;
-  UWORD8* ptr1 = (UWORD8*)kernels::allocate_temp_memory(
-      ctx, ((batches * input_channels * input_width) + 8) * sizeof(UWORD8));
-  UWORD8* ptr2 = (UWORD8*)kernels::allocate_temp_memory(
+
+  WORD32 scratch_size =
+      xa_nn_conv1d_std_getsize(kernel_width, input_width, input_channels, 8);
+  scratch_size = scratch_size < 0 ? 0 : scratch_size;
+  WORD32* ptr_scratch =
+      (WORD32*)kernels::allocate_temp_memory(ctx, scratch_size);
+  pVOID p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
+
+  WORD8* ptr1 = (WORD8*)kernels::allocate_temp_memory(
+      ctx, ((batches * input_channels * input_width) + 8) * sizeof(WORD8));
+  WORD8* ptr2 = (WORD8*)kernels::allocate_temp_memory(
       ctx,
-      ((out_channels * kernel_channels * kernel_width) + 8) * sizeof(UWORD8));
-  UWORD8* pin = (UWORD8*)ALIGN_PTR(ptr1, 8);
-  UWORD8* pkernel = (UWORD8*)ALIGN_PTR(ptr2, 8);
+      ((out_channels * kernel_channels * kernel_width) + 8) * sizeof(WORD8));
+  WORD8* pin = (WORD8*)ALIGN_PTR(ptr1, 8);
+  WORD8* pkernel = (WORD8*)ALIGN_PTR(ptr2, 8);
 
   WORD32 p_inp_shape[kNnlibMaxDim];
-  p_inp_shape[0] = batches;
-  p_inp_shape[1] = input_channels;
-  p_inp_shape[2] = input_width;
+  p_inp_shape[0] = 1;
+  p_inp_shape[1] = 1;
+  p_inp_shape[2] = batches;
+  p_inp_shape[3] = input_channels;
+  p_inp_shape[4] = input_width;
 
   WORD32 p_out_shape[kNnlibMaxDim];
-  p_out_shape[0] = batches;
-  p_out_shape[1] = input_width;
-  p_out_shape[2] = input_channels;
+  p_out_shape[0] = 1;
+  p_out_shape[1] = 1;
+  p_out_shape[2] = batches;
+  p_out_shape[3] = input_width;
+  p_out_shape[4] = input_channels;
 
-  WORD32 p_permute_vec[kNnlibMaxDim] = {0, 2, 1};
+  WORD32 p_permute_vec[kNnlibMaxDim] = {0, 1, 2, 4, 3};
 
   xa_nn_transpose_8_8(
       (WORD8*)pin,
@@ -92,14 +107,18 @@ void xa_opt_quantized_conv1d_ncl_asym8uxsym8u_asym8u(
       kNnlibMaxDim);
 
   WORD32 p_inp_shape1[kNnlibMaxDim];
-  p_inp_shape1[0] = out_channels;
-  p_inp_shape1[1] = kernel_channels;
-  p_inp_shape1[2] = kernel_width;
+  p_inp_shape1[0] = 1;
+  p_inp_shape1[1] = 1;
+  p_inp_shape1[2] = out_channels;
+  p_inp_shape1[3] = kernel_channels;
+  p_inp_shape1[4] = kernel_width;
 
   WORD32 p_out_shape1[kNnlibMaxDim];
-  p_out_shape1[0] = out_channels;
-  p_out_shape1[1] = kernel_width;
-  p_out_shape1[2] = kernel_channels;
+  p_out_shape1[0] = 1;
+  p_out_shape1[1] = 1;
+  p_out_shape1[2] = out_channels;
+  p_out_shape1[3] = kernel_width;
+  p_out_shape1[4] = kernel_channels;
 
   xa_nn_transpose_8_8(
       (WORD8*)pkernel,
@@ -110,24 +129,17 @@ void xa_opt_quantized_conv1d_ncl_asym8uxsym8u_asym8u(
       kNnlibMaxDim,
       kNnlibMaxDim);
 
-  WORD32 scratch_size =
-      xa_nn_conv1d_std_getsize(kernel_width, input_width, input_channels, 8);
-  scratch_size = scratch_size < 0 ? 0 : scratch_size;
-  WORD32* ptr_scratch =
-      (WORD32*)kernels::allocate_temp_memory(ctx, scratch_size);
-  pVOID p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
-
   for (int _n = 0; _n < batches; _n++) {
-    UWORD8* in_batch = pin + _n * input_channels * input_width;
-    UWORD8* out_batch = p_out + _n * out_channels * out_width;
+    UWORD8* in_batch = (UWORD8*)(pin + _n * input_channels * input_width);
+    UWORD8* out_batch = (UWORD8*)(p_out + _n * out_channels * out_width);
 
     xa_nn_conv1d_std_asym8uxasym8u(
         out_batch,
         in_batch,
-        pkernel,
+        (UWORD8*)pkernel,
         p_bias,
-        1,
         input_width,
+        input_height,
         input_channels,
         kernel_width,
         out_channels,

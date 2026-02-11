@@ -264,6 +264,23 @@ def test_linear_vgf_quant(test_data: torch.Tensor):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+@common.SkipIfNoModelConverter
+def test_linear_vgf_quant_a8w4(test_data: torch.Tensor):
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+    pipeline = VgfPipeline[input_t1](
+        Linear(in_features=in_features, out_features=out_features, bias=has_bias),
+        (test_data,),
+        aten_op=aten_op,
+        exir_op=[],
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
 test_data_all_16a8w = test_data_rank1_INT | test_data_rank4_INT
 
 

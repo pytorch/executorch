@@ -26,51 +26,44 @@ Tensor& quantized_avg_pool2d_out(
     const int64_t multiplier,
     const int64_t shift,
     Tensor& out) {
-  if (input.dim() != 4 || out.dim() != 4) {
-    ET_LOG(Error, "quantized_avg_pool2d_out: tensors must be 4-D");
-    context.fail(Error::InvalidArgument);
+  constexpr int32_t activation_min = std::numeric_limits<int8_t>::min();
+  constexpr int32_t activation_max = std::numeric_limits<int8_t>::max();
+
+  const int64_t dilation_values[2] = {1, 1};
+  const Int64ArrayRef dilation(dilation_values, 2);
+  const bool ceil_mode = false;
+
+  CmsisPool2DConfig pool_config;
+  if (!prepare_cmsis_pool2d_config(
+          context,
+          "quantized_avg_pool2d_out",
+          input,
+          out,
+          kernel_size,
+          stride,
+          padding,
+          dilation,
+          ceil_mode,
+          activation_min,
+          activation_max,
+          pool_config)) {
     return out;
   }
-  int32_t batch = static_cast<int32_t>(input.size(0));
-  int32_t channels = static_cast<int32_t>(input.size(1));
-  int32_t input_h = static_cast<int32_t>(input.size(2));
-  int32_t input_w = static_cast<int32_t>(input.size(3));
-  int32_t kernel_h = static_cast<int32_t>(kernel_size[0]);
-  int32_t kernel_w = static_cast<int32_t>(kernel_size[1]);
-  int32_t stride_h = static_cast<int32_t>(stride[0]);
-  int32_t stride_w = static_cast<int32_t>(stride[1]);
-  int32_t pad_h = static_cast<int32_t>(padding[0]);
-  int32_t pad_w = static_cast<int32_t>(padding[1]);
-  int32_t output_h = static_cast<int32_t>(out.size(2));
-  int32_t output_w = static_cast<int32_t>(out.size(3));
-  const int32_t activation_min = std::numeric_limits<int8_t>::min();
-  const int32_t activation_max = std::numeric_limits<int8_t>::max();
-
-  const int8_t* input_data = input.const_data_ptr<int8_t>();
-  int8_t* output_data = out.mutable_data_ptr<int8_t>();
 
   cmsis_nn_context cmsis_ctx;
   cmsis_ctx.buf = nullptr;
   cmsis_ctx.size = 0;
-  cmsis_nn_pool_params pool_params;
-  pool_params.stride.h = stride_h;
-  pool_params.stride.w = stride_w;
-  pool_params.padding.h = pad_h;
-  pool_params.padding.w = pad_w;
-  pool_params.activation.min = activation_min;
-  pool_params.activation.max = activation_max;
 
-  cmsis_nn_dims input_dims{batch, input_h, input_w, channels};
-  cmsis_nn_dims filter_dims{1, kernel_h, kernel_w, 1};
-  cmsis_nn_dims output_dims{batch, output_h, output_w, channels};
+  const int8_t* input_data = input.const_data_ptr<int8_t>();
+  int8_t* output_data = out.mutable_data_ptr<int8_t>();
 
   arm_cmsis_nn_status status = arm_avgpool_s8(
       &cmsis_ctx,
-      &pool_params,
-      &input_dims,
+      &pool_config.pool_params,
+      &pool_config.input_dims,
       input_data,
-      &filter_dims,
-      &output_dims,
+      &pool_config.filter_dims,
+      &pool_config.output_dims,
       output_data);
   if (status != ARM_CMSIS_NN_SUCCESS) {
     ET_LOG(
@@ -79,6 +72,11 @@ Tensor& quantized_avg_pool2d_out(
         status);
     context.fail(Error::Internal);
   }
+
+  (void)zero_point;
+  (void)multiplier;
+  (void)shift;
+
   return out;
 }
 

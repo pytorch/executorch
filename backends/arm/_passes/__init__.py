@@ -7,7 +7,6 @@
 from . import arm_pass_utils  # noqa
 from .arm_pass import ArmPass  # noqa  # usort: skip
 from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
-from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
 from .annotate_output_dim_order_pass import AnnotateOutputDimOrderPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
@@ -65,6 +64,7 @@ from .decompose_linear_pass import DecomposeLinearPass  # noqa
 from .decompose_log1p_pass import DecomposeLog1pPass  # noqa
 from .decompose_logit_pass import DecomposeLogitPass  # noqa
 from .decompose_masked_fill_pass import DecomposeMaskedFillPass  # noqa
+from .decompose_matmul import DecomposeMatmulPass  # noqa
 from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
@@ -75,7 +75,6 @@ from .decompose_sdpa_pass import DecomposeScaledDotProductAttentionPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_select_scatter_pass import DecomposeSelectScatterPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
-from .decompose_silu_pass import DecomposeSiluPass  # noqa
 from .decompose_sinh_pass import DecomposeSinhPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
@@ -85,6 +84,7 @@ from .decompose_tan_pass import DecomposeTanPass  # noqa
 from .decompose_tosa_unsupported_clamp_pass import (  # noqa
     DecomposeTOSAUnsupportedClampPass,
 )
+from .decompose_tril_pass import DecomposeTrilPass  # noqa
 from .decompose_unfold_to_gather_pass import DecomposeUnfoldToGatherPass  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa

@@ -39,6 +39,9 @@ class AliasCopy(torch.nn.Module):
     test_data_bf16 = {
         "3d_rand_bf16": lambda: (torch.rand(3, 5, 2, dtype=torch.bfloat16),)
     }
+    test_data_fp16 = {
+        "3d_rand_fp16": lambda: (torch.rand(3, 5, 2, dtype=torch.float16),),
+    }
 
     def __init__(self):
         super().__init__()
@@ -49,7 +52,10 @@ class AliasCopy(torch.nn.Module):
         )  # Multiply by one to make sure it is partitioned.
 
 
-@common.parametrize("test_data", AliasCopy.test_data | AliasCopy.test_data_bf16)
+@common.parametrize(
+    "test_data",
+    AliasCopy.test_data | AliasCopy.test_data_bf16 | AliasCopy.test_data_fp16,
+)
 def test_alias_tosa_FP(test_data: input_t1):
     TosaPipelineFP[input_t1](
         AliasCopy(),
@@ -92,7 +98,7 @@ def test_alias_u85_INT(test_data: input_t1):
     ).run()
 
 
-@common.parametrize("test_data", AliasCopy.test_data)
+@common.parametrize("test_data", AliasCopy.test_data | AliasCopy.test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_alias_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
