@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,8 +21,7 @@ INT32_MAX = torch.iinfo(torch.int32).max
 
 
 class ConvertInt64ConstOpsToInt32Pass(ArmPass):
-    """
-    Rewrite constant ops that produce int64 to int32 where safe.
+    """Rewrite constant ops that produce int64 to int32 where safe.
 
     List of supported operatos:
       1. `torch.full`
@@ -30,6 +29,7 @@ class ConvertInt64ConstOpsToInt32Pass(ArmPass):
       3. `torch.eye`
       4. `torch.linspace`
       5. `torch.tensor`
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}

@@ -2858,7 +2858,7 @@ def quantized_w8a32_gru_meta(
     bias_hidden: torch.Tensor,
     b_h_scale: float,
 ) -> torch.Tensor:
-    return hidden.new_empty((2, hidden.shape[-1]), dtype=torch.float32)
+    return hidden.new_empty((2, *hidden.shape), dtype=torch.float32)
 
 
 @register_fake("cadence::slice_scatter_")
