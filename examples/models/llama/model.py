@@ -70,7 +70,7 @@ class Llama2Model(EagerModelBase):
         if lora_config:
             # Resolve LoRA params from adapter_config JSON if not already set.
             if lora_config.adapter_config and lora_config.rank == 0:
-                with open(lora_config.adapter_config, "rank") as f:
+                with open(lora_config.adapter_config, "r") as f:
                     cfg = json.load(f)
                 lora_config.rank = cfg["r"]
                 lora_config.lora_alpha = cfg["lora_alpha"]
