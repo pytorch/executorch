@@ -47,6 +47,41 @@ class TextDecoderRunnerTest : public Test {
   std::unique_ptr<IOManager> io_manager_;
 };
 
+// Test that method_name defaults to "forward"
+TEST_F(TextDecoderRunnerTest, MethodNameDefaultsToForward) {
+  EXPECT_EQ(runner_->method_name(), "forward");
+}
+
+// Test that method_name can be set to a custom value
+TEST_F(TextDecoderRunnerTest, MethodNameCustomValue) {
+  auto custom_runner = std::make_unique<TextDecoderRunner>(
+      mock_module_.get(), io_manager_.get(), "encode");
+  EXPECT_EQ(custom_runner->method_name(), "encode");
+}
+
+// Test that load() uses method_name (not hardcoded "forward")
+TEST_F(TextDecoderRunnerTest, LoadUsesMethodName) {
+  // Get an available model
+  const char* model_path = std::getenv("KVCACHE_CACHE_POS");
+  if (!model_path) {
+    GTEST_SKIP() << "No PTE model environment variable set";
+  }
+  auto module = std::make_unique<Module>(model_path);
+  auto load_result = module->load();
+  if (load_result != Error::Ok) {
+    GTEST_SKIP() << "Failed to load model";
+  }
+
+  auto io_mgr = std::make_unique<IOManager>(*module);
+
+  // Create runner with a method name that doesn't exist
+  TextDecoderRunner runner(module.get(), io_mgr.get(), "nonexistent_method");
+
+  // load() should fail because "nonexistent_method" doesn't exist
+  auto result = runner.load();
+  EXPECT_NE(result, Error::Ok);
+}
+
 // Test logits_to_token() method with Float tensor
 TEST_F(TextDecoderRunnerTest, LogitsToTokenFloat) {
   TensorFactory<executorch::aten::ScalarType::Float> tf_float;
