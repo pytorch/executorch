@@ -1,13 +1,13 @@
-# Test Parakeet CPU build on Windows (MSVC)
+# Test Parakeet CUDA build on Windows (MSVC)
 # This workflow ensures the Parakeet speech recognition runner builds
-# successfully on Windows with the CPU backend, preventing MSVC regressions.
+# successfully on Windows with the CUDA backend, preventing MSVC regressions.
 
-name: Parakeet CPU Windows
+name: Parakeet CUDA Windows
 
 on:
   pull_request:
     paths:
-      - .github/workflows/parakeet-cpu-windows.yml
+      - .github/workflows/parakeet-cuda-windows.yml
       - examples/models/parakeet/**
       - extension/llm/**
       - CMakePresets.json
@@ -23,10 +23,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-parakeet-cpu-windows:
-    name: build-parakeet-cpu-windows
+  build-parakeet-cuda-windows:
+    name: build-parakeet-cuda-windows
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     with:
+      runner: windows.g5.4xlarge.nvidia.gpu
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -42,20 +43,20 @@ jobs:
           conda activate et
           python install_requirements.py
 
-          echo '==> Building and installing ExecuTorch...'
-          cmake --workflow --preset llm-release
+          echo '==> Building and installing ExecuTorch with CUDA...'
+          cmake --workflow --preset llm-release-cuda
           if (\$LASTEXITCODE -ne 0) {
-            Write-Host 'ExecuTorch build failed. Exit code: ' \$LASTEXITCODE
+            Write-Host 'ExecuTorch CUDA build failed. Exit code: ' \$LASTEXITCODE
             exit \$LASTEXITCODE
           }
 
-          echo '==> Building Parakeet runner (CPU)...'
+          echo '==> Building Parakeet runner with CUDA...'
           cd examples/models/parakeet
-          cmake --workflow --preset parakeet-cpu
+          cmake --workflow --preset parakeet-cuda
           if (\$LASTEXITCODE -ne 0) {
-            Write-Host 'Parakeet CPU build failed. Exit code: ' \$LASTEXITCODE
+            Write-Host 'Parakeet CUDA build failed. Exit code: ' \$LASTEXITCODE
             exit \$LASTEXITCODE
           }
 
-          echo 'Parakeet CPU Windows build succeeded.'
+          echo 'Parakeet CUDA Windows build succeeded.'
         }"
