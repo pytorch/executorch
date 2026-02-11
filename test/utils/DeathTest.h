@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/platform.h>
 
 #ifndef ET_BUILD_MODE_COV
 #define ET_BUILD_MODE_COV 0
@@ -40,7 +41,12 @@
  * causes the process to terminate.
  */
 #define ET_EXPECT_DEATH(_statement, _matcher) \
-  EXPECT_DEATH_IF_SUPPORTED(_statement, "")
+  EXPECT_DEATH_IF_SUPPORTED(                  \
+      {                                       \
+        et_pal_init();                        \
+        _statement;                           \
+      },                                      \
+      "")
 
 #else // ET_BUILD_MODE_COV
 
@@ -52,6 +58,11 @@
  * the dying process. If this does not match, the test will fail.
  */
 #define ET_EXPECT_DEATH(_statement, _matcher) \
-  EXPECT_DEATH_IF_SUPPORTED(_statement, _matcher)
+  EXPECT_DEATH_IF_SUPPORTED(                  \
+      {                                       \
+        et_pal_init();                        \
+        _statement;                           \
+      },                                      \
+      _matcher)
 
 #endif // ET_BUILD_MODE_COV
