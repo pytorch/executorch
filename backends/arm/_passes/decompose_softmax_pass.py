@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -27,9 +27,8 @@ log_softmax = (torch.ops.aten.log_softmax.int, exir_ops.edge.aten._log_softmax.d
 
 
 def _get_logsoftmax_ops(op) -> tuple:
-    """
-    Returns the (log_op, sub_op, amax_op, expo_op, sum_op, reciprocal_op), where the ops depends on if
-    the softmax op is an aten or edge op.
+    """Returns the (log_op, sub_op, amax_op, expo_op, sum_op, reciprocal_op),
+    where the ops depends on if the softmax op is an aten or edge op.
     """
     if op in edge_softmax:
         return (
@@ -55,8 +54,8 @@ def _get_logsoftmax_ops(op) -> tuple:
 
 
 class DecomposeSoftmaxPass(ArmPass):
-    """
-    This pass decomposes log_softmax or softmax into more primitive ops.
+    """This pass decomposes log_softmax or softmax into more primitive ops.
+
     Example:
         %op1 = amax(x)
         %op2 = sub(x, %op1)
@@ -65,6 +64,7 @@ class DecomposeSoftmaxPass(ArmPass):
         %op5 = reciprocal(%op4)
         %op6 = mul(%op3, %op5)
         (in logsoftmax case: %op7 = log(%op6))
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
