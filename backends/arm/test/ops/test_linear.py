@@ -331,7 +331,9 @@ test_data_all_16a8w = test_data_rank1_INT | test_data_rank2_INT | test_data_rank
 
 @common.parametrize("test_data", test_data_all_16a8w)
 def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
-    """Test linear operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    """Test linear operation with 16A8W quantization (16-bit activations, 8-bit
+    weights)
+    """
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
 
@@ -357,7 +359,9 @@ def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_all_16a8w)
 @common.XfailIfNoCorstone300
 def test_linear_16a8w_u55_INT(test_data: torch.Tensor):
-    """Test linear operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test linear operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
 
@@ -381,7 +385,9 @@ def test_linear_16a8w_u55_INT(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_all_16a8w)
 @common.XfailIfNoCorstone320
 def test_linear_16a8w_u85_INT(test_data: torch.Tensor):
-    """Test linear operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test linear operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
 

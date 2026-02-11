@@ -252,7 +252,9 @@ def test_gt_scalar_u85_INT(test_module):
 @common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone320
 def test_gt_tensor_16a8w_u85_INT(test_module):
-    """Test gt operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test gt operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t](
@@ -270,7 +272,9 @@ def test_gt_tensor_16a8w_u85_INT(test_module):
 @common.parametrize("test_module", test_data_scalar)
 @common.XfailIfNoCorstone320
 def test_gt_scalar_16a8w_u85_INT(test_module):
-    """Test gt operation (scalar) with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test gt operation (scalar) with 16A8W quantization on U85 (16-bit
+    activations, 8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t](

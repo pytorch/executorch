@@ -28,7 +28,6 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
 from executorch.backends.arm.test.ops.test_conv1d import Conv1d
 from executorch.backends.arm.test.ops.test_conv2d import Conv2d
 
-
 """
 The configuration when
   groups == in_channels and
@@ -475,8 +474,10 @@ def test_convolution_2d_tosa_INT_a16w8_depthwise(test_data: input_t):
 
 @common.parametrize("test_data", test_data_conv2d_INT)
 @common.XfailIfNoCorstone300
-def test_convolution_2d_u85_INT_a16w8_depthwise(test_data: input_t):
-    """Test depthwise_conv with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+def test_convolution_2d_u55_INT_a16w8_depthwise(test_data: input_t):
+    """Test depthwise_conv with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -492,8 +493,10 @@ def test_convolution_2d_u85_INT_a16w8_depthwise(test_data: input_t):
 
 @common.parametrize("test_data", test_data_conv2d_INT)
 @common.XfailIfNoCorstone320
-def test_convolution_2d_u55_INT_a16w8_depthwise(test_data: input_t):
-    """Test depthwise_conv with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+def test_convolution_2d_u85_INT_a16w8_depthwise(test_data: input_t):
+    """Test depthwise_conv with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineINT[input_t](
         model,
