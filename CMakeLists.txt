@@ -49,17 +49,10 @@
 # https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
 cmake_minimum_required(VERSION 3.29)
 
-# Set minimum macOS deployment target for Apple platforms. This must be set
-# before the project() call and before any subdirectory processing. MLX requires
-# macOS >= 14.0, so we default to 14.0 if not set.
-if(APPLE AND (NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET
-                                                 STREQUAL "")
-)
-  set(CMAKE_OSX_DEPLOYMENT_TARGET
-      "14.0"
-      CACHE STRING "Minimum macOS version" FORCE
-  )
-endif()
+# Note: CMAKE_OSX_DEPLOYMENT_TARGET should be set by presets or user. MLX
+# requires 14.0+, other backends can target 12.0+. If not set, CMake will use
+# the SDK default.
+
 project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
@@ -1046,6 +1039,20 @@ if(EXECUTORCH_BUILD_PYBIND)
     EXPORT ExecuTorchTargets
     LIBRARY DESTINATION executorch/extension/pybindings
   )
+
+  # Copy MLX metallib next to _portable_lib.so for editable installs. MLX uses
+  # dladdr() to find the directory containing the library with MLX code, then
+  # looks for mlx.metallib in that directory. When MLX is statically linked into
+  # _portable_lib.so, we need the metallib colocated with it.
+  if(EXECUTORCH_BUILD_MLX AND DEFINED MLX_METALLIB_PATH)
+    add_custom_command(
+      TARGET portable_lib
+      POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MLX_METALLIB_PATH}"
+              "$<TARGET_FILE_DIR:portable_lib>/mlx.metallib"
+      COMMENT "Copying mlx.metallib next to _portable_lib.so for MLX runtime"
+    )
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_WASM)

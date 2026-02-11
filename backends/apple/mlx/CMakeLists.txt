@@ -95,12 +95,32 @@ target_include_directories(
 )
 
 # -----------------------------------------------------------------------------
-# MLX dependency (fetched via FetchContent)
+# MLX dependency (from submodule)
 # -----------------------------------------------------------------------------
 
-include(FetchContent)
+set(MLX_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third-party/mlx)
 
-# MLX build options - we only need the C++ library
+# Check that submodule is initialized
+if(NOT EXISTS "${MLX_SOURCE_DIR}/CMakeLists.txt")
+  message(
+    FATAL_ERROR
+      "MLX submodule not initialized.\n"
+      "Run: git submodule update --init backends/apple/mlx/third-party/mlx"
+  )
+endif()
+
+# Validate deployment target - MLX requires macOS 14.0+
+if(CMAKE_OSX_DEPLOYMENT_TARGET AND CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS
+                                   "14.0"
+)
+  message(
+    FATAL_ERROR
+      "MLX requires CMAKE_OSX_DEPLOYMENT_TARGET >= 14.0, got ${CMAKE_OSX_DEPLOYMENT_TARGET}.\n"
+      "Either set CMAKE_OSX_DEPLOYMENT_TARGET=14.0 or disable MLX with -DEXECUTORCH_BUILD_MLX=OFF"
+  )
+endif()
+
+# MLX build options - we only need the C++ library with Metal
 set(MLX_BUILD_PYTHON_BINDINGS
     OFF
     CACHE BOOL "" FORCE
@@ -150,33 +170,28 @@ set(MLX_METAL_JIT
     CACHE BOOL "Use JIT compiled Metal kernels"
 )
 
-# MLX uses FetchContent for json. When FetchContent_MakeAvailable(json) is
-# called, it will run add_subdirectory on the json source. ExecuTorch already
-# adds json via add_subdirectory(third-party/json) BEFORE this backend is
-# processed.
-#
-# To prevent the conflict, we patch MLX's CMakeLists.txt to wrap the json fetch
-# in a target check. The patch file is in backends/apple/mlx/patches/
-
-# Ensure CMAKE_OSX_DEPLOYMENT_TARGET is set for MLX's version check. MLX
-# requires macOS >= 14.0. If not set, default to 14.0.
-if(NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")
-  set(CMAKE_OSX_DEPLOYMENT_TARGET
-      "14.0"
-      CACHE STRING "Minimum macOS version" FORCE
+# Apply JSON patch to prevent conflict with ExecuTorch's nlohmann_json MLX uses
+# FetchContent for json; ExecuTorch already has it as submodule
+execute_process(
+  COMMAND git apply --check ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch
+  WORKING_DIRECTORY ${MLX_SOURCE_DIR}
+  RESULT_VARIABLE _patch_check_result
+  OUTPUT_QUIET ERROR_QUIET
+)
+if(_patch_check_result EQUAL 0)
+  execute_process(
+    COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch
+    WORKING_DIRECTORY ${MLX_SOURCE_DIR}
+    RESULT_VARIABLE _patch_result
   )
+  if(_patch_result EQUAL 0)
+    message(STATUS "Applied MLX JSON patch")
+  endif()
 endif()
 
-FetchContent_Declare(
-  mlx
-  GIT_REPOSITORY https://github.com/ml-explore/mlx.git
-  GIT_TAG v0.30.3
-  PATCH_COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch ||
-                true
-)
-
-message(STATUS "Fetching MLX...")
-FetchContent_MakeAvailable(mlx)
+# Add MLX subdirectory
+message(STATUS "Adding MLX from submodule: ${MLX_SOURCE_DIR}")
+add_subdirectory(${MLX_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/mlx)
 
 # -----------------------------------------------------------------------------
 # MLX Backend library
@@ -202,7 +217,7 @@ endif()
 
 target_include_directories(
   mlxdelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime
-                      ${_mlx_schema__include_dir} ${mlx_SOURCE_DIR}
+                      ${_mlx_schema__include_dir} ${MLX_SOURCE_DIR}
 )
 
 # Link against MLX and executorch mlx is only available at BUILD_INTERFACE -
@@ -220,24 +235,41 @@ install(
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-# Install mlx library (from FetchContent) for downstream consumers Since mlx is
-# a FetchContent dependency, we need to explicitly install it so that consumers
-# of mlxdelegate can link against it
+# Install mlx library for downstream consumers
 install(TARGETS mlx DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 # Install mlx headers for downstream consumers that may need mlx types
 install(
-  DIRECTORY ${mlx_SOURCE_DIR}/mlx/
+  DIRECTORY ${MLX_SOURCE_DIR}/mlx/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mlx
   FILES_MATCHING
   PATTERN "*.h"
 )
 
-# Install mlx.metallib (Metal GPU kernels) for runtime execution MLX searches
-# for this in: Resources/mlx/, Resources/default/, or a hardcoded build path We
-# install it to lib/ alongside libmlx.a and create a Resources symlink structure
-install(FILES ${mlx_BINARY_DIR}/mlx/backend/metal/kernels/mlx.metallib
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+# Install mlx.metallib (Metal GPU kernels) for runtime execution
+#
+# MLX searches for metallib in this order (see mlx/backend/metal/device.cpp): 1.
+# {binary_dir}/mlx.metallib        - colocated with the .so/.dylib 2.
+# {binary_dir}/Resources/mlx/      - Resources subdirectory 3. SwiftPM bundle -
+# not applicable for us 4. {binary_dir}/Resources/default/  - Resources
+# subdirectory 5. METAL_PATH (compile-time)        - hardcoded build path (won't
+# exist)
+#
+# where {binary_dir} is determined at runtime via dladdr() on the library
+# containing MLX code. When MLX is statically linked into _portable_lib.so, this
+# is the directory containing _portable_lib.so.
+#
+# For the installed library, we put metallib in lib/ alongside libmlx.a
+install(
+  FILES ${CMAKE_CURRENT_BINARY_DIR}/mlx/mlx/backend/metal/kernels/mlx.metallib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+# Cache the metallib path for pybindings to copy it next to _portable_lib.so
+# This enables editable installs to work correctly
+set(MLX_METALLIB_PATH
+    "${CMAKE_CURRENT_BINARY_DIR}/mlx/mlx/backend/metal/kernels/mlx.metallib"
+    CACHE INTERNAL "Path to mlx.metallib for pybindings"
 )
 
 # -----------------------------------------------------------------------------

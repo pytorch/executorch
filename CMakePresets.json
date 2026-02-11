@@ -322,6 +322,38 @@
         "ET_MLX_ENABLE_OP_LOGGING": "ON",
         "EXECUTORCH_LOG_LEVEL": "Debug"
       }
+    },
+    {
+      "name": "llm-mlx",
+      "displayName": "Build LLM libraries with MLX delegate",
+      "inherits": ["llm"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_MLX": "ON",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "llm-release-mlx",
+      "displayName": "LLM release build with MLX delegate",
+      "inherits": ["llm-mlx"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out"
+      }
+    },
+    {
+      "name": "llm-debug-mlx",
+      "displayName": "LLM debug build with MLX delegate",
+      "inherits": ["llm-mlx"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out"
+      }
     }
   ],
   "buildPresets": [
@@ -404,6 +436,24 @@
       "name": "mlx-debug-install",
       "displayName": "Build and install MLX delegate debug artifacts",
       "configurePreset": "mlx-debug",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-release-mlx-install",
+      "displayName": "Build and install LLM extension with MLX delegate",
+      "configurePreset": "llm-release-mlx",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-debug-mlx-install",
+      "displayName": "Build and install LLM extension with MLX delegate (Debug)",
+      "configurePreset": "llm-debug-mlx",
       "targets": [
         "install"
       ],
@@ -534,6 +584,34 @@
         {
           "type": "build",
           "name": "mlx-debug-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-release-mlx",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with MLX delegate",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-mlx"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-mlx-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-debug-mlx",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with MLX delegate (Debug)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-debug-mlx"
+        },
+        {
+          "type": "build",
+          "name": "llm-debug-mlx-install"
         }
       ]
     }

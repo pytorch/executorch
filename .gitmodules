@@ -67,3 +67,7 @@
 [submodule "third-party/json"]
 	path = third-party/json
 	url = https://github.com/nlohmann/json.git
+[submodule "backends/apple/mlx/third-party/mlx"]
+	path = backends/apple/mlx/third-party/mlx
+	url = https://github.com/ml-explore/mlx.git
+	shallow = true
