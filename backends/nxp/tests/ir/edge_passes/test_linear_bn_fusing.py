@@ -71,7 +71,7 @@ def test_add_simulated_linear_bn_fusing(input_shape, linear_bias):
     assert linear_node.args[1].args[0].target == torch.ops.aten.mul.Tensor
 
     # Assert BatchNorm input being "denormalized"
-    assert graph_nodes[-3].target == torch.ops.aten.batch_norm.default
+    assert is_batch_norm(graph_nodes[-3])
     if linear_bias:
         assert graph_nodes[-3].args[0].target == torch.ops.aten.add.Tensor
         add_arg_targets = (
