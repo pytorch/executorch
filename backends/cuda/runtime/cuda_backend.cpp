@@ -419,25 +419,28 @@ class ET_EXPERIMENTAL CudaBackend final
       SlimTensor* cached_tensor = find_cached_tensor_by_data_ptr(data_ptr);
       if (cached_tensor != nullptr) {
         // Data is already on GPU from a previous method's output.
-        // Wrap it directly without copy using from_blob.
+        // Use it directly without copy using from_blob and input etensor
+        // metadata. We do not direclty used cached_tensor here as gpu_input[i]
+        // because although the underlying data is the same, the shape and
+        // strides may be different between the cached tensor and the current
+        // input tensor.
         auto sizes = cpu_tensor->sizes();
         auto strides = cpu_tensor->strides();
         std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
         std::vector<int64_t> strides_vec(strides.begin(), strides.end());
         gpu_inputs[i] = new SlimTensor(slim::from_blob(
-              const_cast<void*>(data_ptr),
-              slim::makeArrayRef(sizes_vec),
-              slim::makeArrayRef(strides_vec),
-              static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
-              DEFAULT_CUDA_DEVICE,
-              0 // storage_offset
-              ));
+            const_cast<void*>(data_ptr),
+            slim::makeArrayRef(sizes_vec),
+            slim::makeArrayRef(strides_vec),
+            static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
+            DEFAULT_CUDA_DEVICE,
+            0 // storage_offset
+            ));
 
-          continue;
-        }
+        continue;
       }
 
-      // Data is on CPU - use from_etensor to copy to GPU
+      // Data is not cacheed -- it must on CPU - use from_etensor to copy to GPU
       gpu_inputs[i] = new SlimTensor(
           from_etensor(*cpu_tensor, CPU_DEVICE, DEFAULT_CUDA_DEVICE));
     }
