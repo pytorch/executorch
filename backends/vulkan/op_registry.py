@@ -240,6 +240,8 @@ def register_binary_scalar_op():
         exir_ops.edge.aten.exp.default,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.hardshrink.default,
+        exir_ops.edge.aten.hardsigmoid.default,
+        exir_ops.edge.aten.hardswish.default,
         exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.aten.neg.default,
         exir_ops.edge.aten.relu.default,
