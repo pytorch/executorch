@@ -24,7 +24,9 @@ EDGE_MAXPOOL2D = (
 def _pack_dimension(
     dilation: int, padding: int, original_size: int, kernel_size: int, stride: int
 ) -> tuple[int, int, int]:
-    """Compute packed dimension size, new padding, and final output size for a single spatial dimension."""
+    """Compute packed dimension size, new padding, and final output size for a
+    single spatial dimension.
+    """
 
     # Calculate extra padding needed to evenly pack the padded size into two dimensions for space-to-batch
     # The dimension will be reshaped into (packed_dim_size, dilation), so padded size needs to be divisible by dilation
@@ -46,8 +48,8 @@ def _pack_dimension(
 
 
 class DecomposeMaxPool2dPass(ArmPass):
-    """
-    Decompose dilated max_pool2d (EXIR edge ops) into space-to-batch -> maxpool -> batch-to-space.
+    """Decompose dilated max_pool2d (EXIR edge ops) into space-to-batch ->
+    maxpool -> batch-to-space.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
