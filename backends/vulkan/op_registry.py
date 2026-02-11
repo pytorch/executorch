@@ -913,6 +913,7 @@ def register_clone():
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
+        supports_highdim=True,
     )
 
 
@@ -922,6 +923,7 @@ def register_clone_dim_order():
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
+        supports_highdim=True,
     )
 
 

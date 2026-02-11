@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,9 +13,8 @@ edge_elu_ops = (exir_ops.edge.aten.elu.default,)
 
 
 def get_elu_decomposition(op) -> tuple:
-    """
-    Returns the decomposition of the given aten.elu operation into
-    its equivalent TOSA-supported operations
+    """Returns the decomposition of the given aten.elu operation into its
+    equivalent TOSA-supported operations.
 
     This handles both edge dialect ops and core PyTorch ops. The decomposition strategy
     is:
@@ -27,6 +26,7 @@ def get_elu_decomposition(op) -> tuple:
 
     Raises:
         RuntimeError: If the provided operator is not a supported elu variant.
+
     """
 
     if op in edge_elu_ops:
@@ -41,8 +41,7 @@ def get_elu_decomposition(op) -> tuple:
 
 
 class DecomposeEluPass(ArmPass):
-    """
-    A transformation pass that decomposes unsupported 'aten.elu' operations
+    """A transformation pass that decomposes unsupported 'aten.elu' operations
     into a combination of supported TOSA-equivalent operations.
 
     Since TOSA does not provide a native ELU operator, this pass rewrites:
@@ -56,6 +55,7 @@ class DecomposeEluPass(ArmPass):
         - exir_ops.edge.aten.ge.Scalar
         - exir_ops.edge.aten.where.self
         - exir_ops.edge.aten.mul.Scalar
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
