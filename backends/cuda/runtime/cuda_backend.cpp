@@ -489,11 +489,12 @@ class ET_EXPERIMENTAL CudaBackend final
     const bool copy_outputs = !should_skip_copy_for_method(handle->method_name);
 
     if (copy_outputs) {
-      // Deep copy GPU SlimTensor results back to CPU ETensors
+      // Deep copy GPU SlimTensor results back to CPU ETensors (async)
       for (size_t i = 0; i < n_outputs; i++) {
         auto* cpu_output_tensor = &(args[i + n_inputs]->toTensor());
         ET_CHECK_OK_OR_RETURN_ERROR(
-            copy_slimtensor_to_etensor(gpu_outputs[i], cpu_output_tensor),
+            copy_slimtensor_to_etensor_async(
+                gpu_outputs[i], cpu_output_tensor, cuda_stream),
             "Failed to copy GPU output %zu back to CPU ETensor",
             i);
       }
