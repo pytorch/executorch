@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -22,10 +22,11 @@ edge_asinh_op = (exir_ops.edge.aten.asinh.default,)
 
 
 class DecomposeAsinhPass(ArmPass):
-    """
-    Decomposes asinh to supported TOSA-operations.
+    """Decomposes asinh to supported TOSA-operations.
+
     This decomposition is based on the mathematical identity:
         asinh(x) = log(x + sqrt(x^2 + 1))
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {

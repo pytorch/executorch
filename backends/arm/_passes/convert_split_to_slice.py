@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,9 +17,7 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class ConvertSplitToSlicePass(ArmPass):
-    """
-    Replace a split operation with many slice operations.
-    """
+    """Replace a split operation with many slice operations."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
@@ -100,8 +98,7 @@ class ConvertSplitToSlicePass(ArmPass):
 def _copy_user_node_qparams(
     split_node: torch.fx.Node, output_node: torch.fx.Node, index: int
 ) -> dict:
-    """
-    Construct metadata for the slice node that will replace the split output.
+    """Construct metadata for the slice node that will replace the split output.
 
     Note that output quantization parameters are copied from the user nodes
     of the split node. The split node itself does not have output quantization
@@ -113,6 +110,7 @@ def _copy_user_node_qparams(
         index: The index of the output being processed.
     Returns:
         Updated metadata dictionary for the slice node.
+
     """
 
     def _select_index(value):
