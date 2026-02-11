@@ -62,8 +62,8 @@ sub2_test_data = {
 
 sub2_test_data_fp16 = {
     "rand_2D_pair_fp16": lambda: (
-        torch.rand(2, 3, 10, dtype=torch.float16),
-        torch.rand(2, 3, 10, dtype=torch.float16),
+        torch.rand(2, 3, dtype=torch.float16),
+        torch.rand(2, 3, dtype=torch.float16),
     ),
 }
 
