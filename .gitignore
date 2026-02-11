@@ -70,3 +70,4 @@ xcuserdata/
 # Windows
 *.dll
 *.pyd
+extension/pybindings/mlx.metallib
