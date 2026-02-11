@@ -21,7 +21,9 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class RewriteMatmulPass(ArmPass):
-    """Rewrites aten.bmm to tosa.MATMUL and inserts a tosa.RESCALE op if needed."""
+    """Rewrites aten.bmm to tosa.MATMUL and inserts a tosa.RESCALE op if
+    needed.
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 

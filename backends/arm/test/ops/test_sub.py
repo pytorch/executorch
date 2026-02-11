@@ -34,6 +34,14 @@ sub_test_data = {
     "zeros": lambda: (torch.zeros(10),),
 }
 
+sub_test_data_fp16 = {
+    "rand_2D_fp16": lambda: (torch.rand(4, 4, dtype=torch.float16),),
+}
+
+sub_test_data_bf16 = {
+    "rand_2D_bf16": lambda: (torch.rand(4, 4, dtype=torch.bfloat16),),
+}
+
 # Two-input subtraction (x - y)
 sub2_test_data = {
     "rand_2D_4x4": lambda: (torch.rand(4, 4), torch.rand(4, 4)),
@@ -52,8 +60,11 @@ sub2_test_data = {
     "rand_3d_Scalar": lambda: (torch.rand(1, 6, 2), 1),
 }
 
-sub_test_data_bf16 = {
-    "rand_2D_bf16": lambda: (torch.rand(4, 4, dtype=torch.bfloat16),),
+sub2_test_data_fp16 = {
+    "rand_2D_pair_fp16": lambda: (
+        torch.rand(2, 3, dtype=torch.float16),
+        torch.rand(2, 3, dtype=torch.float16),
+    ),
 }
 
 sub2_test_data_bf16 = {
@@ -101,7 +112,9 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 
-@common.parametrize("test_data", sub_test_data | sub_test_data_bf16)
+@common.parametrize(
+    "test_data", sub_test_data | sub_test_data_fp16 | sub_test_data_bf16
+)
 def test_sub_tensor_tosa_FP(test_data):
     """Test Subtraction (TOSA FP)"""
     pipeline = TosaPipelineFP[input_t1](
@@ -114,7 +127,9 @@ def test_sub_tensor_tosa_FP(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub2_test_data | sub2_test_data_bf16)
+@common.parametrize(
+    "test_data", sub2_test_data | sub2_test_data_fp16 | sub2_test_data_bf16
+)
 def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA FP)"""
     pipeline = TosaPipelineFP[input_t2](
@@ -123,7 +138,9 @@ def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub_tan_test_data | sub2_test_data_bf16)
+@common.parametrize(
+    "test_data", sub_tan_test_data | sub2_test_data_fp16 | sub2_test_data_bf16
+)
 def test_sub_tensor_tosa_FP_alpha(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction with alpha (TOSA FP)"""
     pipeline = TosaPipelineFP[input_t2](
@@ -217,7 +234,7 @@ def test_sub_tensor_u85_INT(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub_test_data)
+@common.parametrize("test_data", sub_test_data | sub_test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     """Test Subtraction (VGF FP)"""
@@ -231,7 +248,7 @@ def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub2_test_data)
+@common.parametrize("test_data", sub2_test_data | sub2_test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_sub_tensor_vgf_no_quant_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (VGF FP)"""

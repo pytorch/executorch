@@ -30,6 +30,10 @@ test_data_suite = {
     "ramp": torch.arange(-16, 16, 0.2),
 }
 
+test_data_suite_fp16 = {
+    "rand_fp16": torch.rand(10, 10, dtype=torch.float16),
+}
+
 test_data_suite_bf16 = {
     "rand_bf16": torch.rand(3, 3, dtype=torch.bfloat16),
 }
@@ -41,7 +45,9 @@ class Sin(torch.nn.Module):
         return torch.sin(x)
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
+)
 def test_sin_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Sin(),
@@ -88,7 +94,7 @@ def test_sin_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_sin_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](

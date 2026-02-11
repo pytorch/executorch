@@ -44,7 +44,7 @@ list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 
 # CPU-only builds need quantized and custom ops
-if(NOT EXECUTORCH_BUILD_CUDA AND MSVC)
+if(NOT EXECUTORCH_BUILD_CUDA)
   list(APPEND link_libraries quantized_ops_lib custom_ops)
   executorch_target_link_options_shared_lib(quantized_ops_lib)
   executorch_target_link_options_shared_lib(custom_ops)
