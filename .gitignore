@@ -74,5 +74,7 @@ xcuserdata/
 *.dll
 *.pyd
 
+
 # Agents
 .claude/*.local.*
+extension/pybindings/mlx.metallib
