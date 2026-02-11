@@ -31,6 +31,7 @@
  * tests.
  */
 #define ET_EXPECT_DEATH(_statement, _matcher) ((void)0)
+#define ET_EXPECT_DEATH_NO_PAL_INIT(_statement, _matcher) ((void)0)
 
 #elif defined(_WIN32) || !ET_LOG_ENABLED
 
@@ -48,6 +49,9 @@
       },                                      \
       "")
 
+#define ET_EXPECT_DEATH_NO_PAL_INIT(_statement, _matcher) \
+  EXPECT_DEATH_IF_SUPPORTED(_statement, "")
+
 #else // ET_BUILD_MODE_COV
 
 /**
@@ -64,5 +68,12 @@
         _statement;                           \
       },                                      \
       _matcher)
+
+/**
+ * Like ET_EXPECT_DEATH but without PAL initialization.
+ * Use this only for tests that specifically test uninitialized PAL behavior.
+ */
+#define ET_EXPECT_DEATH_NO_PAL_INIT(_statement, _matcher) \
+  EXPECT_DEATH_IF_SUPPORTED(_statement, _matcher)
 
 #endif // ET_BUILD_MODE_COV
