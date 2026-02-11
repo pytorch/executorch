@@ -69,7 +69,16 @@ test_data_tensor = {
     "gt_tensor_rank3_randn": lambda: op_gt_tensor_rank3_randn,
     "gt_tensor_rank4_randn": lambda: op_gt_tensor_rank4_randn,
 }
-
+test_data_tensor_fp16 = {
+    "gt_tensor_rank2_rand_fp16": lambda: Greater(
+        torch.rand(4, 5, dtype=torch.float16),
+        torch.rand(1, 5, dtype=torch.float16),
+    ),
+    "gt_tensor_rank3_randn_fp16": lambda: Greater(
+        torch.randn(2, 3, 4, dtype=torch.float16),
+        torch.randn(2, 3, 4, dtype=torch.float16),
+    ),
+}
 test_data_tensor_bf16 = {
     "gt_tensor_rank2_rand_bf16": lambda: Greater(
         torch.rand(4, 5, dtype=torch.bfloat16),
@@ -87,7 +96,14 @@ test_data_scalar = {
     "gt_scalar_rank3_randn": lambda: op_gt_scalar_rank3_randn,
     "gt_scalar_rank4_randn": lambda: op_gt_scalar_rank4_randn,
 }
-
+test_data_scalar_fp16 = {
+    "gt_scalar_rank2_rand_fp16": lambda: Greater(
+        torch.rand(4, 5, dtype=torch.float16), 0.2
+    ),
+    "gt_scalar_rank3_randn_fp16": lambda: Greater(
+        torch.randn(2, 3, 4, dtype=torch.float16), -0.1
+    ),
+}
 test_data_scalar_bf16 = {
     "gt_scalar_rank2_rand_bf16": lambda: Greater(
         torch.rand(4, 5, dtype=torch.bfloat16), 0.2
@@ -98,7 +114,9 @@ test_data_scalar_bf16 = {
 }
 
 
-@common.parametrize("test_module", test_data_tensor | test_data_tensor_bf16)
+@common.parametrize(
+    "test_module", test_data_tensor | test_data_tensor_bf16 | test_data_tensor_fp16
+)
 def test_gt_tensor_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
@@ -110,7 +128,9 @@ def test_gt_tensor_tosa_FP(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_scalar | test_data_scalar_bf16)
+@common.parametrize(
+    "test_module", test_data_scalar | test_data_scalar_bf16 | test_data_scalar_fp16
+)
 def test_gt_scalar_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
@@ -263,7 +283,7 @@ def test_gt_scalar_16a8w_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_tensor)
+@common.parametrize("test_module", test_data_tensor | test_data_tensor_fp16)
 @common.SkipIfNoModelConverter
 def test_gt_tensor_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
@@ -276,7 +296,7 @@ def test_gt_tensor_vgf_no_quant(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_scalar)
+@common.parametrize("test_module", test_data_scalar | test_data_scalar_fp16)
 @common.SkipIfNoModelConverter
 def test_gt_scalar_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
