@@ -97,20 +97,56 @@ install(
   DESTINATION lib
 )
 
+# CUDA guard implementation (CUDAGuard, CUDAStreamGuard, getCurrentCUDAStream).
+# This is a static library so that both aoti_cuda_shims (DLL) and
+# aoti_cuda_backend can link it. getCurrentCUDAStream is called inline from
+# DeviceTraits<CUDA>::allocate() in storage.h, so every translation unit that
+# instantiates that template needs the symbol at link time.
+add_library(
+  cuda_guard_impl STATIC ${EXECUTORCH_ROOT}/backends/aoti/slim/cuda/guard.cpp
+)
+target_compile_definitions(cuda_guard_impl PRIVATE CUDA_AVAILABLE=1)
+target_compile_options(
+  cuda_guard_impl
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+)
+target_include_directories(
+  cuda_guard_impl
+  PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+         $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(
+  cuda_guard_impl PUBLIC slimtensor CUDA::cudart executorch_core
+)
+
+install(
+  TARGETS cuda_guard_impl
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
+)
+
 # CUDA-specific AOTI shim symbols (dynamically linked)
 #
-# Include aoti_common_shims_slim and slim/cuda/guard sources directly rather
-# than linking the aoti_common_shims_slim static library. On Windows (MSVC)
-# --whole-archive is not available, so linking a static lib into a DLL does not
-# pull unreferenced symbols. Including sources directly guarantees every symbol
-# ends up in the shared library on all platforms.
+# common_shims_slim.cpp is compiled directly into the DLL rather than linked
+# from the aoti_common_shims_slim static library. On Windows (MSVC)
+# --whole-archive is not available, and the extern "C" shim symbols in that file
+# are not referenced by any code inside the DLL — they are only resolved at
+# runtime by the model .so. Including the source directly guarantees every
+# symbol ends up exported on all platforms.
+#
+# slim/cuda/guard.cpp is NOT compiled here; it lives in the cuda_guard_impl
+# static library instead. cuda_guard.cpp (the shim wrapper) calls
+# getCurrentCUDAStream directly, so the linker will pull it from the static lib
+# into the DLL. Keeping it in a static lib also lets aoti_cuda_backend link the
+# same symbol (needed by DeviceTraits<CUDA>::allocate in storage.h).
 set(_aoti_cuda_shim_sources
     runtime/shims/memory.cpp
     runtime/shims/cuda_guard.cpp
     runtime/shims/misc.cpp
     runtime/shims/int4mm.cu
     ${EXECUTORCH_ROOT}/backends/aoti/common_shims_slim.cpp
-    ${EXECUTORCH_ROOT}/backends/aoti/slim/cuda/guard.cpp
 )
 
 add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
@@ -146,13 +182,15 @@ target_link_options(
   aoti_cuda_shims PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
 )
 
-# Link against CUDA::cudart, slimtensor (header-only), cuda_tensor_maker, and
-# platform utilities. Sources from aoti_common_shims_slim are compiled directly
-# into this target so no --whole-archive wrapper is needed.
+# Link against CUDA::cudart, slimtensor (header-only), cuda_tensor_maker,
+# cuda_guard_impl (for getCurrentCUDAStream), and platform utilities.
+# Sources from common_shims_slim.cpp are compiled directly into this target
+# so no --whole-archive wrapper is needed.
 target_link_libraries(
   aoti_cuda_shims
   PRIVATE cuda_platform
   PUBLIC slimtensor
+         cuda_guard_impl
          cuda_tensor_maker
          CUDA::cudart
          ${CMAKE_DL_LIBS}
@@ -196,7 +234,7 @@ target_link_options(
 # consumers.
 target_link_libraries(
   aoti_cuda_backend PUBLIC cuda_platform extension_tensor cuda_tensor_maker
-                           CUDA::cudart ${CMAKE_DL_LIBS}
+                         cuda_guard_impl CUDA::cudart ${CMAKE_DL_LIBS}
 )
 
 if(MSVC)
