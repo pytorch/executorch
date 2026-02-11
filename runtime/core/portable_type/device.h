@@ -15,8 +15,8 @@ namespace executorch {
 namespace runtime {
 namespace etensor {
 
-/// Denotes the specific genre of compute device.
-/// Subset of https://github.com/pytorch/pytorch/blob/main/c10/core/Device.h
+/// Represents the type of compute device.
+/// Note: ExecuTorch Device is distinct from PyTorch Device.
 enum class DeviceType : int8_t {
   CPU = 0,
   CUDA = 1,
@@ -54,7 +54,7 @@ struct Device final {
     return type_ == DeviceType::CPU;
   }
 
-  /// Returns the optional device index. -1 means default/unspecified.
+  /// Returns the device index, or -1 if default/unspecified.
   DeviceIndex index() const noexcept {
     return index_;
   }
