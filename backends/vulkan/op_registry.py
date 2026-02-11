@@ -7,14 +7,13 @@
 # pyre-unsafe
 
 import operator
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import executorch.backends.vulkan.custom_ops_lib  # noqa
 import executorch.backends.vulkan.utils as utils
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
-from torch._subclasses.fake_tensor import FakeTensor
 
 ######################
 ## OpFeatures class ##
@@ -27,6 +26,10 @@ def allow_node(node: torch.fx.Node) -> bool:
 
 class OpFeatures:
     __slots__ = [
+        # Dtype-related slots:
+        "inputs_dtypes",  # DtypeSetList for input tensor dtype constraints
+        "outputs_dtypes",  # DtypeSetList for output tensor dtype constraints
+        # Storage-related slots:
         # Sets of possible (storage types, memory layouts) to use for the input tensor(s)
         "inputs_storage",
         # Sets of possible (storage types, memory layouts) to use for the output tensor(s)
@@ -48,6 +51,8 @@ class OpFeatures:
 
     def __init__(
         self,
+        inputs_dtypes: Optional[Union[utils.DtypeSet, List[utils.DtypeSet]]] = None,
+        outputs_dtypes: Optional[Union[utils.DtypeSet, List[utils.DtypeSet]]] = None,
         inputs_storage: Optional[
             Union[utils.TensorRepSet, List[utils.TensorRepSet]]
         ] = None,
@@ -59,6 +64,15 @@ class OpFeatures:
         are_node_inputs_supported_fn: Optional[Callable] = allow_node,
         pick_io_storage_fn: Optional[Callable] = None,
     ):
+        # Dtype initialization
+        self.inputs_dtypes: utils.DtypeSetList = utils.DtypeSetList(
+            inputs_dtypes if inputs_dtypes is not None else utils.ALL_T
+        )
+        self.outputs_dtypes: utils.DtypeSetList = utils.DtypeSetList(
+            outputs_dtypes if outputs_dtypes is not None else self.inputs_dtypes[0]
+        )
+
+        # Storage initialization
         self.inputs_storage: utils.TensorRepSetList = utils.TensorRepSetList(
             inputs_storage if inputs_storage is not None else []
         )
@@ -75,6 +89,17 @@ class OpFeatures:
 
         self.are_node_inputs_supported_fn = are_node_inputs_supported_fn
         self.pick_io_storage_fn = pick_io_storage_fn
+
+    def check_dtypes(self, node: torch.fx.Node) -> Tuple[bool, str]:
+        """
+        Check if all tensor inputs/outputs have dtypes supported by this operator.
+        Returns (is_valid, reason_string).
+        """
+        return utils.check_node_dtypes(
+            node,
+            self.inputs_dtypes,
+            self.outputs_dtypes,
+        )
 
     def make_op_repsets(
         self,
@@ -155,7 +180,6 @@ def register_ephemeral_ops():
 @update_features(
     [
         exir_ops.edge.aten.abs.default,
-        exir_ops.edge.aten.clamp.default,
         exir_ops.edge.aten.cos.default,
         exir_ops.edge.aten.exp.default,
         exir_ops.edge.aten.gelu.default,
@@ -175,6 +199,16 @@ def register_ephemeral_ops():
 def register_unaryop_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.clamp.default)
+def register_clamp():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
     )
 
@@ -203,6 +237,7 @@ def register_unaryop_cpp_ops():
 def register_binaryop_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
     )
 
@@ -216,6 +251,7 @@ def register_binaryop_cpp_ops():
 def register_pow_tensor_scalar():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
 
@@ -228,26 +264,13 @@ def register_pow_tensor_scalar():
 @update_features(exir_ops.edge.aten._to_copy.default)
 def register_to_copy():
     def check_to_copy_node(node: torch.fx.Node) -> bool:
-        float_dtypes = [torch.float16, torch.float32]
-
-        if len(node.args) != 1:
-            return False
-
-        in_arg = node.args[0]
-        if not isinstance(in_arg, torch.fx.Node):
-            return False
-
-        in_tensor = in_arg.meta.get("val", None)
-        out_tensor = node.meta.get("val", None)
-
-        if isinstance(in_tensor, FakeTensor) and isinstance(out_tensor, FakeTensor):
-            if out_tensor.dtype in float_dtypes and in_tensor.dtype in float_dtypes:
-                return True
-
-        return False
+        # Only single-arg _to_copy is supported
+        return len(node.args) == 1
 
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        outputs_dtypes=utils.FP_T,
         supports_resize=True,
         are_node_inputs_supported_fn=check_to_copy_node,
     )
@@ -267,6 +290,7 @@ def register_to_copy():
 def register_softmax_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
 
@@ -285,6 +309,7 @@ def register_softmax_cpp_ops():
 def register_matmul_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_prepacking=True,
     )
@@ -304,6 +329,7 @@ def register_matmul_cpp_ops():
 def register_linear_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_prepacking=True,
     )
@@ -323,6 +349,7 @@ def register_linear_cpp_ops():
 def register_quantizedlinearqcsnw_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_prepacking=True,
     )
@@ -342,6 +369,7 @@ def register_quantizedlinearqcsnw_cpp_ops():
 def register_quantizedlinear_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
     )
 
@@ -359,6 +387,7 @@ def register_linear_dq8ca_q4gsw():
             utils.NO_STORAGE,  # group_size (scalar)
             utils.NO_STORAGE,  # bias (prepacked)
         ],
+        inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
     )
 
@@ -599,6 +628,7 @@ def pick_storage_for_reduce(node: torch.fx.Node):
 def register_reduce_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         are_node_inputs_supported_fn=is_reduce_node_supported,
         pick_io_storage_fn=pick_storage_for_reduce,
@@ -619,6 +649,7 @@ def register_reduce_cpp_ops():
 def register_argreduce_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         are_node_inputs_supported_fn=is_reduce_node_supported,
         pick_io_storage_fn=pick_storage_for_reduce,
@@ -634,12 +665,22 @@ def register_argreduce_cpp_ops():
     [
         exir_ops.edge.aten.avg_pool2d.default,
         exir_ops.edge.aten.max_pool2d.default,
-        exir_ops.edge.aten.max_pool2d_with_indices.default,
     ]
 )
 def register_pool_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.max_pool2d_with_indices.default)
+def register_max_pool2d_with_indices():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        outputs_dtypes=[utils.FP_T, utils.INT_T],
         supports_resize=True,
     )
 
@@ -688,6 +729,7 @@ def register_convolution_cpp_ops():
             utils.NO_STORAGE,  # output_min (non tensor)
             utils.NO_STORAGE,  # output_max (non tensor)
         ],
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_prepacking=True,
         are_node_inputs_supported_fn=check_conv_node,
@@ -738,6 +780,7 @@ def register_quantizedconvolution_cpp_ops():
 def register_sdpa_with_kv_cache():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_prepacking=True,
     )
@@ -752,6 +795,7 @@ def register_sdpa_with_kv_cache():
 def register_sdpa_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
 
@@ -765,6 +809,7 @@ def register_sdpa_cpp_ops():
 def register_apply_rotary_emb():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
 
@@ -778,6 +823,7 @@ def register_apply_rotary_emb():
 def register_permute():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
@@ -786,6 +832,7 @@ def register_permute():
 def register_permute_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
@@ -799,6 +846,7 @@ def register_permute_copy():
 def register_view_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
@@ -807,6 +855,7 @@ def register_view_copy():
 def register_to_dim_order_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_BUFFER,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
@@ -820,6 +869,7 @@ def register_to_dim_order_copy():
 def register_squeeze_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
@@ -833,6 +883,7 @@ def register_squeeze_copy():
 def register_unsqueeze_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
@@ -846,33 +897,17 @@ def register_unsqueeze_copy():
 def register_clone():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
 
 @update_features(exir_ops.edge.dim_order_ops._clone_dim_order.default)
 def register_clone_dim_order():
-    # Similar to to_dim_order_copy, _clone_dim_order can be removed as long as the
-    # operator is not changing the dtype, i.e. the operator call is modifying the dim
-    # order only. Therefore, check that the input and output dtypes are the same, if so
-    # the operator is safe to remove.
-    def check_clone_dim_order_node(node: torch.fx.Node) -> bool:
-        in_arg = node.args[0]
-        if not isinstance(in_arg, torch.fx.Node):
-            return False
-
-        in_tensor = in_arg.meta.get("val", None)
-        out_tensor = node.meta.get("val", None)
-
-        if in_tensor.dtype != out_tensor.dtype:
-            return False
-
-        return True
-
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_clone_dim_order_node,
     )
 
 
@@ -885,6 +920,7 @@ def register_clone_dim_order():
 def register_gather():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
@@ -898,6 +934,7 @@ def register_gather():
 def register_expand_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_BUFFER,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=False,
     )
 
@@ -911,6 +948,7 @@ def register_expand_copy():
 def register_cat():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
     )
 
@@ -924,6 +962,7 @@ def register_cat():
 def register_select_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
@@ -937,6 +976,7 @@ def register_select_copy():
 def register_slice_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
@@ -950,6 +990,7 @@ def register_slice_copy():
 def register_split_with_sizes_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
@@ -963,6 +1004,7 @@ def register_split_with_sizes_copy():
 def register_t_copy():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
 
@@ -975,6 +1017,7 @@ def register_t_copy():
 def register_flip():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
 
@@ -987,6 +1030,7 @@ def register_flip():
 def register_index_select():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
 
@@ -999,6 +1043,7 @@ def register_index_select():
 def register_arange():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_T,
     )
 
 
@@ -1011,6 +1056,7 @@ def register_arange():
 def register_constant_pad_nd():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
 
@@ -1032,6 +1078,7 @@ def register_constant_pad_nd():
 def register_full_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
 
@@ -1044,6 +1091,7 @@ def register_full_cpp_ops():
 def register_scalar_tensor():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_T,
     )
 
 
@@ -1061,6 +1109,7 @@ def register_scalar_tensor():
 def register_upsample_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
     )
 
 
@@ -1073,6 +1122,7 @@ def register_upsample_cpp_ops():
 def register_grid_priors():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
     )
 
 
@@ -1085,6 +1135,7 @@ def register_grid_priors():
 def register_repeat():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
 
@@ -1097,6 +1148,7 @@ def register_repeat():
 def register_embedding():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=[utils.FP_T, utils.INT_T],
         supports_prepacking=True,
         supports_resize=True,
     )
@@ -1124,6 +1176,7 @@ def register_native_batch_norm_legit_no_training():
 
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
         are_node_inputs_supported_fn=check_batch_norm_node,
@@ -1139,6 +1192,7 @@ def register_native_batch_norm_legit_no_training():
 def register_native_group_norm():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
         outputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE,
             utils.CONTIGUOUS_BUFFER,
@@ -1157,6 +1211,7 @@ def register_native_group_norm():
 def register_native_layer_norm():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
     )
