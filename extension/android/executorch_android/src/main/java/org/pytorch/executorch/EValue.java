@@ -8,7 +8,6 @@
 
 package org.pytorch.executorch;
 
-import com.facebook.jni.annotations.DoNotStrip;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Locale;
@@ -33,7 +32,6 @@ import org.pytorch.executorch.annotations.Experimental;
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-@DoNotStrip
 public class EValue {
   private static final int TYPE_CODE_NONE = 0;
 
@@ -47,52 +45,50 @@ public class EValue {
     "None", "Tensor", "String", "Double", "Int", "Bool",
   };
 
-  @DoNotStrip private final int mTypeCode;
-  @DoNotStrip private Object mData;
+  final int mTypeCode;
+  Object mData;
 
-  @DoNotStrip
   private EValue(int typeCode) {
     this.mTypeCode = typeCode;
   }
 
-  @DoNotStrip
   public boolean isNone() {
     return TYPE_CODE_NONE == this.mTypeCode;
   }
 
-  @DoNotStrip
+  
   public boolean isTensor() {
     return TYPE_CODE_TENSOR == this.mTypeCode;
   }
 
-  @DoNotStrip
+  
   public boolean isBool() {
     return TYPE_CODE_BOOL == this.mTypeCode;
   }
 
-  @DoNotStrip
+  
   public boolean isInt() {
     return TYPE_CODE_INT == this.mTypeCode;
   }
 
-  @DoNotStrip
+  
   public boolean isDouble() {
     return TYPE_CODE_DOUBLE == this.mTypeCode;
   }
 
-  @DoNotStrip
+  
   public boolean isString() {
     return TYPE_CODE_STRING == this.mTypeCode;
   }
 
   /** Creates a new {@code EValue} of type {@code Optional} that contains no value. */
-  @DoNotStrip
+  
   public static EValue optionalNone() {
     return new EValue(TYPE_CODE_NONE);
   }
 
   /** Creates a new {@code EValue} of type {@code Tensor}. */
-  @DoNotStrip
+  
   public static EValue from(Tensor tensor) {
     final EValue iv = new EValue(TYPE_CODE_TENSOR);
     iv.mData = tensor;
@@ -100,7 +96,7 @@ public class EValue {
   }
 
   /** Creates a new {@code EValue} of type {@code bool}. */
-  @DoNotStrip
+  
   public static EValue from(boolean value) {
     final EValue iv = new EValue(TYPE_CODE_BOOL);
     iv.mData = value;
@@ -108,7 +104,7 @@ public class EValue {
   }
 
   /** Creates a new {@code EValue} of type {@code int}. */
-  @DoNotStrip
+  
   public static EValue from(long value) {
     final EValue iv = new EValue(TYPE_CODE_INT);
     iv.mData = value;
@@ -116,7 +112,7 @@ public class EValue {
   }
 
   /** Creates a new {@code EValue} of type {@code double}. */
-  @DoNotStrip
+  
   public static EValue from(double value) {
     final EValue iv = new EValue(TYPE_CODE_DOUBLE);
     iv.mData = value;
@@ -124,38 +120,38 @@ public class EValue {
   }
 
   /** Creates a new {@code EValue} of type {@code str}. */
-  @DoNotStrip
+  
   public static EValue from(String value) {
     final EValue iv = new EValue(TYPE_CODE_STRING);
     iv.mData = value;
     return iv;
   }
 
-  @DoNotStrip
+  
   public Tensor toTensor() {
     preconditionType(TYPE_CODE_TENSOR, mTypeCode);
     return (Tensor) mData;
   }
 
-  @DoNotStrip
+  
   public boolean toBool() {
     preconditionType(TYPE_CODE_BOOL, mTypeCode);
     return (boolean) mData;
   }
 
-  @DoNotStrip
+  
   public long toInt() {
     preconditionType(TYPE_CODE_INT, mTypeCode);
     return (long) mData;
   }
 
-  @DoNotStrip
+  
   public double toDouble() {
     preconditionType(TYPE_CODE_DOUBLE, mTypeCode);
     return (double) mData;
   }
 
-  @DoNotStrip
+  
   public String toStr() {
     preconditionType(TYPE_CODE_STRING, mTypeCode);
     return (String) mData;
