@@ -10,8 +10,9 @@ from typing import Any
 
 
 class SoftmaxDecompositionConfig(Enum):
-    MASKED = auto()
-    UNSTABLE = auto()
+    MASKED = auto()  # Stable softmax + masked fill decomposition
+    UNSTABLE = auto()  # Unstable softmax, no masked fill decomposition
+    STABLE = auto()  # Stable softmax, no masked fill decomposition
 
 
 class FuseDuplicateUsersConfig(Enum):
@@ -25,7 +26,7 @@ class ArmPassPipelineConfig:
     fuse_duplicate_users: FuseDuplicateUsersConfig = FuseDuplicateUsersConfig.ENABLED
 
     def disable_masked_softmax(self) -> None:
-        self.softmax = SoftmaxDecompositionConfig.UNSTABLE
+        self.softmax = SoftmaxDecompositionConfig.STABLE
 
     def disable_fuse_duplicate_users(self) -> None:
         self.fuse_duplicate_users = FuseDuplicateUsersConfig.DISABLED
