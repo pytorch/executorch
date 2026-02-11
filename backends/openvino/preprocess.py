@@ -15,6 +15,7 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
+from executorch.backends.openvino._passes import DecomposeFloorDividePass
 from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 from openvino.frontend.pytorch.torchdynamo.compile import (  # type: ignore[import-untyped]
     openvino_compile,
@@ -43,6 +44,10 @@ class OpenvinoBackend(BackendDetails):
         # Update the edge_program with the transformed graph
         if transformed_ep and transformed_ep.graph_module:
             edge_program._graph_module = transformed_ep.graph_module
+
+        # Decompose div(rounding_mode='floor') into div + floor for correct
+        # semantics.
+        DecomposeFloorDividePass()(edge_program.graph_module)
 
         input_names = edge_program.graph_signature.user_inputs
         args = []

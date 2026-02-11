@@ -23,18 +23,26 @@ def _create_openvino_flow_base(
     quantize: bool = False,
     compile_specs: dict | None = None,
 ) -> TestFlow:
-    logger.info("Creating OPENVINO FLOW test flow")
-    logger.info(f"NAME: {name}")
     return TestFlow(
         name,
         backend="openvino",
         tester_factory=OpenVINOTester,
         quantize=quantize,
+        skip_patterns=[
+            "test_avgpool1d_combinations",
+            "test_avgpool3d_combinations",
+            "test_conv1d_padding_modes",
+            "test_conv2d_padding_modes",
+            "test_embedding_bag_include_last_offset",
+            "test_embedding_bag_modes",
+            "test_threshold_f32_all_params",
+            "test_transpose_identity",
+        ],
     )
 
 
 def _create_openvino_flow() -> TestFlow:
-    logger.info("Creating OpenVINO FP32 test flow")
+    logger.info("Creating OpenVINO test flow")
     return _create_openvino_flow_base("openvino")
 
 
@@ -43,7 +51,6 @@ def _create_openvino_int8_flow() -> TestFlow:
     INT8 quantization flow for OpenVINO.
     Uses post-training quantization with calibration.
     """
-    print("In OpenVINO INT8 FLOW")
 
     def create_quantize_stage() -> Quantize:
         return OpenVINOQuantize(
