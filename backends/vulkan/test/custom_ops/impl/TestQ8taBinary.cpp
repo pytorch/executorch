@@ -10,13 +10,14 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taBinary.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taQuantizeDequantize.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 namespace vkcompute {
 
 void q8ta_add_test(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   int32_t idx = 0;
-  const ValueRef fp_input_a = args.at(idx++);
-  const ValueRef fp_input_b = args.at(idx++);
+  ValueRef fp_input_a = args.at(idx++);
+  ValueRef fp_input_b = args.at(idx++);
   const ValueRef input_a_scale = args.at(idx++);
   const ValueRef input_a_zp = args.at(idx++);
   const ValueRef input_b_scale = args.at(idx++);
@@ -26,6 +27,22 @@ void q8ta_add_test(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef alpha = args.at(idx++);
   const ValueRef quant_layout_int = args.at(idx++);
   const ValueRef fp_output = args.at(idx++);
+
+  // Prepack any TensorRef inputs to GPU tensors
+  if (graph.val_is_tref(fp_input_a)) {
+    fp_input_a = prepack_standard(
+        graph,
+        fp_input_a,
+        graph.storage_type_of(fp_output),
+        graph.estimate_memory_layout_of(fp_output));
+  }
+  if (graph.val_is_tref(fp_input_b)) {
+    fp_input_b = prepack_standard(
+        graph,
+        fp_input_b,
+        graph.storage_type_of(fp_output),
+        graph.estimate_memory_layout_of(fp_output));
+  }
 
   // Extract the layout parameter and cast to GPUMemoryLayout
   int32_t layout_value = graph.extract_scalar<int32_t>(quant_layout_int);

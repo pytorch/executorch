@@ -29,7 +29,8 @@ TestCase create_test_case_from_config(
     utils::StorageType storage_type,
     vkapi::ScalarType input_dtype,
     utils::GPUMemoryLayout fp_memory_layout,
-    utils::GPUMemoryLayout quant_layout) {
+    utils::GPUMemoryLayout quant_layout,
+    bool const_b = false) {
   TestCase test_case;
 
   // Create a descriptive name for the test case
@@ -37,6 +38,9 @@ TestCase create_test_case_from_config(
   std::string test_name = config.test_case_name + "  I=" + shape_str + "  " +
       repr_str(storage_type, fp_memory_layout) + "->" +
       repr_str(utils::kBuffer, quant_layout);
+  if (const_b) {
+    test_name += "  const_b";
+  }
   test_case.set_name(test_name);
 
   // Set the operator name for the test case
@@ -58,6 +62,9 @@ TestCase create_test_case_from_config(
       storage_type,
       fp_memory_layout,
       DataGenType::RANDOM);
+  if (const_b) {
+    input_b.set_constant(true);
+  }
 
   // Quantization parameters for input A
   float input_a_scale_val = 0.007843; // 2/255 approximately
@@ -158,6 +165,13 @@ std::vector<TestCase> generate_q8ta_add_easy_cases() {
         for (const auto& input_dtype : float_types) {
           test_cases.push_back(create_test_case_from_config(
               config, storage_type, input_dtype, fp_layout, quant_layout));
+          test_cases.push_back(create_test_case_from_config(
+              config,
+              storage_type,
+              input_dtype,
+              fp_layout,
+              quant_layout,
+              /*const_b=*/true));
         }
       }
     }
@@ -236,6 +250,13 @@ std::vector<TestCase> generate_q8ta_add_test_cases() {
 
           test_cases.push_back(create_test_case_from_config(
               config, storage_type, vkapi::kFloat, fp_layout, quant_layout));
+          test_cases.push_back(create_test_case_from_config(
+              config,
+              storage_type,
+              vkapi::kFloat,
+              fp_layout,
+              quant_layout,
+              /*const_b=*/true));
         }
       }
     }
