@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,10 +12,11 @@ from executorch.exir.pass_base import ExportPass
 
 
 class DecomposeIntPowPass(ArmPass):
-    """
-    Replaces pow with integer exponent with a series of multiplications.
-    Only handles pow.Tensor_Scalar and not pow.Tensor_Tensor.
-    Needs to be run before doing scalar to tensor conversion.
+    """Replaces pow with integer exponent with a series of multiplications.
+
+    Only handles pow.Tensor_Scalar and not pow.Tensor_Tensor. Needs to be run
+    before doing scalar to tensor conversion.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
