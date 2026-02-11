@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -45,8 +45,9 @@ def get_select_scatter_decomposition(op) -> tuple:
 
 
 class DecomposeSelectScatterPass(ArmPass):
-    """select_scatter is decomposed into other ops during export, however this is only
-    suppported for the fp profile and for the int profile we need to decompose it here.
+    """select_scatter is decomposed into other ops during export, however this
+    is only suppported for the fp profile and for the int profile we need to
+    decompose it here.
 
     The decomposition is as follows:
     - Build a boolean mask the size of x
@@ -57,6 +58,7 @@ class DecomposeSelectScatterPass(ArmPass):
         where(mask, expanded_source, x)
 
     This reflects the decomposition for the fp profile implemented in torch._refs
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {

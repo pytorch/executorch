@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -20,16 +20,20 @@ torch_cosine_similarity = (torch.ops.aten.cosine_similarity.default,)
 
 
 class DecomposeCosineSimilarityPass(ArmPass):
-    """
-    Decomposition of aten.cosine_similarity:
+    """Decomposition of aten.cosine_similarity.
 
-      dot    = sum(mul(x1, x2), dims, keepdim=False)
-      norm   = pow( sum(mul(x, x), dims, keepdim=False), 0.5 )
-      eps    = full( (), eps_scalar )
-      n1c    = max(norm1, eps)
-      n2c    = max(norm2, eps)
-      denom  = mul(n1c, n2c)
-      out    = div(dot, denom)
+    Example:
+        dot = sum(mul(x1, x2), dims, keepdim=False)
+        norm = pow(
+            sum(mul(x, x), dims, keepdim=False),
+            0.5,
+        )
+        eps = full((), eps_scalar)
+        n1c = max(norm1, eps)
+        n2c = max(norm2, eps)
+        denom = mul(n1c, n2c)
+        out = div(dot, denom)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
