@@ -21,6 +21,36 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
+# Apply pocketfft patch for ASAN-compatible aligned_alloc on POSIX systems. The
+# portable aligned_alloc in pocketfft stores metadata at ptr[-1], which
+# conflicts with ASAN's heap redzone and causes intermittent bus errors. This
+# patch uses posix_memalign instead, which is ASAN-compatible.
+set(POCKETFFT_DIR "${EXECUTORCH_ROOT}/third-party/pocketfft")
+set(POCKETFFT_PATCH
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/pocketfft_aligned_alloc.patch"
+)
+if(EXISTS "${POCKETFFT_PATCH}" AND EXISTS "${POCKETFFT_DIR}")
+  execute_process(
+    COMMAND git apply --check ${POCKETFFT_PATCH}
+    WORKING_DIRECTORY ${POCKETFFT_DIR}
+    RESULT_VARIABLE PATCH_CHECK_RESULT
+    ERROR_QUIET
+  )
+  if(PATCH_CHECK_RESULT EQUAL 0)
+    message(STATUS "Applying pocketfft aligned_alloc patch...")
+    execute_process(
+      COMMAND git apply ${POCKETFFT_PATCH}
+      WORKING_DIRECTORY ${POCKETFFT_DIR}
+      RESULT_VARIABLE PATCH_RESULT
+    )
+    if(NOT PATCH_RESULT EQUAL 0)
+      message(WARNING "Failed to apply pocketfft patch")
+    endif()
+  else()
+    message(STATUS "pocketfft patch already applied or not applicable")
+  endif()
+endif()
+
 set(_common_compile_options
     $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations>
