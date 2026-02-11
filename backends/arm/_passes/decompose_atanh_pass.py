@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -34,9 +34,10 @@ def _get_atanh_ops(op):
 
 
 class DecomposeAtanhPass(ArmPass):
-    """
-    Decomposes the atanh operator into primitive ops.
+    """Decomposes the atanh operator into primitive ops.
+
     atanh(x) = 0.5 * log((1 + x) / (1 - x))
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
