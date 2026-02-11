@@ -44,7 +44,7 @@ class Where(torch.nn.Module):
                     self.shape,
                     dtype=self.dtype[i],
                 )
-            elif self.dtype[i] in [torch.float32, torch.bfloat16]:
+            elif self.dtype[i] in [torch.float16, torch.float32, torch.bfloat16]:
                 inputs[i] = torch.randn(*self.shape).to(self.dtype[i])
             elif self.dtype[i] is torch.bool:
                 inputs[i] = torch.randint(0, 1, self.shape, dtype=torch.bool)
@@ -114,6 +114,12 @@ float32_tensor_cond = Where(
     tensor_condition,
 )
 
+float16_tensor_cond = Where(
+    1,
+    torch.float16,
+    tensor_condition,
+)
+
 float32_tensor_cond_tuple_dtype = Where(
     1,
     (torch.float32, torch.int8),
@@ -175,6 +181,7 @@ test_modules_common = {
 test_modules_FP = {
     **test_modules_common,
     "float32_tensor_cond_tuple_dtype_bool": lambda: float32_tensor_cond_tuple_dtype_bool,
+    "float16_tensor_cond": lambda: float16_tensor_cond,
 }
 
 test_modules_FP_bf16 = {

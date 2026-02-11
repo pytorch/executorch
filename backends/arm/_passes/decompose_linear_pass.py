@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,13 +18,15 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class DecomposeLinearPass(ArmPass):
-    """
-    This pass decomposes linear into a Conv2D with the required view operations.
-    linear(x, weights, bias) becomes:
-        x_reshaped       = view(x)
-        weights_reshaped = view(weights)
-        conv2d           = conv2d(x_reshaped, weights_reshaped, bias)
-        output           = view(conv2d)
+    """This pass decomposes linear into a Conv2D with view operations.
+
+    Example:
+        linear(x, weights, bias) becomes:
+            x_reshaped = view(x)
+            weights_reshaped = view(weights)
+            conv2d = conv2d(x_reshaped, weights_reshaped, bias)
+            output = view(conv2d)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {InsertRescaleInt32Pass}

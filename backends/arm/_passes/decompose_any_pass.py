@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,8 +18,7 @@ from executorch.exir.pass_base import (  # type: ignore[import-not-found]
 
 
 class DecomposeAnyPass(ArmPass):
-    """
-    Converts any.default, any.dim and any.dims to a sequence of any.dim by
+    """Converts any.default, any.dim and any.dims to a sequence of any.dim by
     unrolling multi-dimensional reductions with keepdim=True. If keepdim=False
     was requested, the final shape adjustment is implemented with a
     view_copy.default to the reduced shape.
@@ -48,6 +47,7 @@ class DecomposeAnyPass(ArmPass):
         any.dim(dim1, keepdim = True)
         any.dim(dim2, keepdim = True)
         view_copy(shape = squeezed_shape)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
