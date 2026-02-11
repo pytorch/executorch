@@ -147,12 +147,12 @@ class ET_EXPERIMENTAL CudaBackend final
 
   // Create the shared CUDA stream. Called when use_shared_cuda_stream option
   // is set to true. The presence of shared_cuda_stream_ indicates shared mode.
-  void create_shared_cuda_stream() {
+  void create_cuda_stream() {
     std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
     if (shared_cuda_stream_ != nullptr) {
       return; // Already created
     }
-    shared_cuda_stream_ = cuda::create_shared_cuda_stream();
+    shared_cuda_stream_ = cuda::create_cuda_stream();
     if (shared_cuda_stream_ == nullptr) {
       ET_LOG(Error, "Failed to create shared CUDA stream");
       return;
@@ -161,7 +161,7 @@ class ET_EXPERIMENTAL CudaBackend final
   }
 
   // Get the shared CUDA stream. Returns nullptr if not in shared mode.
-  cuda::SharedCudaStream get_shared_cuda_stream() const {
+  std::shared_ptr<cudaStream_t> get_shared_cuda_stream() const {
     std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
     return shared_cuda_stream_;
   }
@@ -233,7 +233,7 @@ class ET_EXPERIMENTAL CudaBackend final
       } else if (std::strcmp(option.key, kUseSharedCudaStream) == 0) {
         if (auto* val = std::get_if<bool>(&option.value)) {
           if (*val) {
-            create_shared_cuda_stream();
+            create_cuda_stream();
           }
         } else {
           ET_LOG(Error, "Option %s must be a boolean.", kUseSharedCudaStream);
@@ -365,7 +365,7 @@ class ET_EXPERIMENTAL CudaBackend final
           method_name.c_str());
     } else {
       // Per-handle stream mode: each handle owns its own stream.
-      handle->cuda_stream = cuda::create_shared_cuda_stream();
+      handle->cuda_stream = cuda::create_cuda_stream();
       if (handle->cuda_stream == nullptr) {
         delete handle;
         return Error::Internal;
@@ -593,7 +593,7 @@ class ET_EXPERIMENTAL CudaBackend final
   // Managed via shared_ptr so it's automatically cleaned up when last handle
   // is destroyed.
   mutable std::mutex cuda_stream_mutex_;
-  cuda::SharedCudaStream shared_cuda_stream_ = nullptr;
+  std::shared_ptr<cudaStream_t> shared_cuda_stream_ = nullptr;
 
   // Cached output tensors for skip-copy optimization.
   // When skip-copy is enabled, output SlimTensors are cached here to keep
