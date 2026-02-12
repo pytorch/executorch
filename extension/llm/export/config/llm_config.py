@@ -79,7 +79,7 @@ class LoraConfig:
     2. With explicit values:
         LoraConfig(
             adapter_checkpoint="/path/to/adapter.safetensors",
-            rank=16,
+            lora_rank=16,
             lora_alpha=32,
             target_modules=["q_proj", "v_proj"],
         )
@@ -87,7 +87,7 @@ class LoraConfig:
 
     adapter_checkpoint: str
     adapter_config: Optional[str] = None
-    rank: int = 0
+    lora_rank: int = 0
     lora_alpha: int = 0
     target_modules: List[str] = field(default_factory=list)
 
