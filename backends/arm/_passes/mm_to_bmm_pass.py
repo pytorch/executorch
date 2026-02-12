@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -22,13 +22,15 @@ from torch.fx import Node
 
 
 class ConvertMmToBmmPass(ArmPass):
-    """
-    This pass converts a MM node to a BMM one and turns input and output tensors
-    from rank 2 to rank 3. The TOSA specification requires rank 3. The graph is
+    """This pass converts a MM node to a BMM one and turns input and output
+    tensors from rank 2 to rank 3.
+
+    The TOSA specification requires rank 3. The graph is
     modified to do the following:
     1) Unsqueeze input tensors to rank 3.
     2) Convert MM node to BMM.
     3) Squeeze output tensor to rank 2.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {

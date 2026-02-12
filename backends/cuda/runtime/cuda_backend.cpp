@@ -393,6 +393,8 @@ class ET_EXPERIMENTAL CudaBackend final
     size_t n_outputs;
     handle->get_num_outputs(handle->container_handle, &n_outputs);
 
+    setCurrentCUDAStream(handle->get_cuda_stream(), 0);  // ADD THIS
+
     ET_CHECK_OR_RETURN_ERROR(
         n_inputs + n_outputs == args.size(),
         InvalidArgument,
@@ -490,6 +492,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
     if (copy_outputs) {
       // Deep copy GPU SlimTensor results back to CPU ETensors (async)
+      size_t total_output_bytes = 0;
       for (size_t i = 0; i < n_outputs; i++) {
         auto* cpu_output_tensor = &(args[i + n_inputs]->toTensor());
         ET_CHECK_OK_OR_RETURN_ERROR(
@@ -497,7 +500,20 @@ class ET_EXPERIMENTAL CudaBackend final
                 gpu_outputs[i], cpu_output_tensor, cuda_stream),
             "Failed to copy GPU output %zu back to CPU ETensor",
             i);
+        total_output_bytes += gpu_outputs[i]->nbytes();
       }
+
+      // Only sync for small outputs (like sampler's single int64).
+      // Large outputs (e.g., logits) have enough CPU processing time after
+      // execute() returns for the async copy to complete before the data
+      // is actually accessed.
+      // TODO(gasoonjia): Investigate root cause of perf regression with
+      // unconditional sync and remove this heuristic.
+      constexpr size_t kSyncThresholdBytes = 1024; // 1KB
+      if (total_output_bytes < kSyncThresholdBytes) {
+        cudaStreamSynchronize(cuda_stream);
+      }
+
       // Cleanup gpu_outputs after copying - they are no longer needed
       delete_slimtensor_vector(gpu_outputs);
     } else {

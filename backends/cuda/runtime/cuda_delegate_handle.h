@@ -16,27 +16,27 @@ namespace executorch {
 namespace backends {
 namespace cuda {
 
-// Shared CUDA stream wrapper with proper RAII cleanup.
-// This ensures the stream is destroyed when all handles using it are destroyed.
+// Shared CUDA stream wrapper.
+// Uses cudaStreamDefault (the legacy default stream) which provides implicit
+// synchronization semantics with all blocking streams. This matches the behavior
+// of the old ETensor-based backend and ensures proper ordering with stream-ordered
+// memory allocations (cudaMallocAsync).
 struct CudaStreamDeleter {
   void operator()(cudaStream_t* stream) const {
-    if (stream != nullptr && *stream != nullptr) {
-      cudaStreamDestroy(*stream);
-    }
+    // Don't destroy cudaStreamDefault - it's a special stream managed by CUDA runtime.
+    // We only need to free the pointer wrapper.
     delete stream;
   }
 };
 
-// Creates a new shared CUDA stream.
-// Returns nullptr on failure.
+// Returns the default CUDA stream wrapped in a shared_ptr.
+// Using cudaStreamDefault provides:
+// 1. Implicit synchronization with all blocking streams
+// 2. Proper ordering for cudaMallocAsync operations
+// 3. Consistent behavior with PyTorch's default stream semantics
 inline std::shared_ptr<cudaStream_t> create_cuda_stream() {
-  cudaStream_t stream;
-  cudaError_t err = cudaStreamCreate(&stream);
-  if (err != cudaSuccess) {
-    return nullptr;
-  }
   return std::shared_ptr<cudaStream_t>(
-      new cudaStream_t(stream), CudaStreamDeleter());
+      new cudaStream_t(cudaStreamDefault), CudaStreamDeleter());
 }
 
 // CUDA-specific delegate handle that extends AOTIDelegateHandle.

@@ -8,6 +8,7 @@
  */
 #include <executorch/backends/samsung/runtime/enn_executor.h>
 #include <executorch/backends/samsung/runtime/logging.h>
+#include <executorch/backends/samsung/runtime/profile.hpp>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -33,9 +34,9 @@ class EnnBackend final : public PyTorchBackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
+    EXYNOS_ATRACE_NAME_LINE("backend_init");
     MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
     auto executor = runtime_allocator->allocateInstance<enn::EnnExecutor>();
-
     const char* binary_buf_addr =
         reinterpret_cast<const char*>(processed->data());
     size_t buf_size = processed->size();
@@ -52,8 +53,8 @@ class EnnBackend final : public PyTorchBackendInterface {
       BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
+    EXYNOS_ATRACE_NAME_LINE("backend_execute");
     auto executor = static_cast<enn::EnnExecutor*>(handle);
-
     std::vector<enn::DataBuffer> inputs;
     std::vector<enn::DataBuffer> outputs;
     for (int32_t index = 0;
@@ -80,6 +81,7 @@ class EnnBackend final : public PyTorchBackendInterface {
   }
 
   void destroy(DelegateHandle* handle) const override {
+    EXYNOS_ATRACE_NAME_LINE("backend_destroy");
     if (handle != nullptr) {
       auto executor = static_cast<enn::EnnExecutor*>(handle);
       executor->~EnnExecutor();
