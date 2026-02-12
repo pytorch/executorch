@@ -266,7 +266,6 @@ class SimpleADB:
         method_index=0,
         output_callback: Optional[Callable[[str], None]] = None,
     ):
-        self._adb(["shell", f"rm -rf {self.output_folder}"])
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
