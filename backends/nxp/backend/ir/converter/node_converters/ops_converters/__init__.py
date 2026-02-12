@@ -40,6 +40,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mul_tensor_converter import (
     MulTensorConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.neg_converter import (
+    NegConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.permute_copy_converter import (
     PermuteCopyConverter,
 )
@@ -93,6 +96,7 @@ __all__ = [
     "MeanDimConverter",
     "MMConverter",
     "MulTensorConverter",
+    "NegConverter",
     "PermuteCopyConverter",
     "QDQPerChannelDequantizeConverter",
     "QDQPerTensorDequantizeConverter",
