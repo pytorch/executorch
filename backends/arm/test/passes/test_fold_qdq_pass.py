@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,12 +25,12 @@ class SimpleQuantizeModel(torch.nn.Module):
 
 @common.parametrize("test_data", SimpleQuantizeModel.test_data)
 def test_fold_and_annotate_q_params_tosa_INT(test_data: input_t) -> None:
-    """
-    Tests the FoldAndAnnotateQParamsPass which folds dq/q nodes into
-    the node and stores the quantization parameters in meta.
+    """Tests the FoldAndAnnotateQParamsPass which folds dq/q nodes into the node
+    and stores the quantization parameters in meta.
 
-    Check that the pass runs for add operation and that one q node and one dq node
-    is removed from the representation.
+    Check that the pass runs for add operation and that one q node and one dq
+    node is removed from the representation.
+
     """
     module = SimpleQuantizeModel()
     pipeline = PassPipeline[input_t](
