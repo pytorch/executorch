@@ -537,28 +537,8 @@ void add_conv2d_node(
   utils::uvec3 wg_size = create_conv2d_global_wg_size(
       graph, method, out, weight_data, stride_equals_dilation);
 
-  utils::uvec3 local_wg_size;
   if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
     wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
-  }
-
-  // Use smaller workgroup sizes on PowerVR to avoid potential hardware issues
-  const uint32_t max_local_size = graph.device_is_powervr() ? 32u : 64u;
-
-  if (method == Conv2dMethod::Pointwise) {
-    uint32_t local_wg_size_y = 1;
-    if (!graph.device_is_powervr() && wg_size[1] % 8 == 0) {
-      local_wg_size_y = 8;
-    } else if (wg_size[1] % 4 == 0) {
-      local_wg_size_y = 4;
-    } else if (wg_size[1] % 2 == 0) {
-      local_wg_size_y = 2;
-    }
-    local_wg_size = {max_local_size / local_wg_size_y, local_wg_size_y, 1};
-  } else if (method == Conv2dMethod::Depthwise) {
-    local_wg_size = {max_local_size, 1, 1};
-  } else {
-    local_wg_size = graph.create_local_wg_size(wg_size);
   }
 
   vkapi::ParamsBindList param_buffers;
