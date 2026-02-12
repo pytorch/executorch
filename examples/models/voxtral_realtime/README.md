@@ -69,7 +69,7 @@ This exports with XNNPACK backend acceleration and 8-bit dynamic activation /
 ## Build
 
 ```bash
-make voxtral-realtime-cpu
+make voxtral_realtime-cpu
 ```
 
 This builds ExecuTorch core libraries with XNNPACK, then the runner binary

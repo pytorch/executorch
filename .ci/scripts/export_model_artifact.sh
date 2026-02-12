@@ -19,6 +19,7 @@ Arguments:
   hf_model     HuggingFace model ID (required)
                Supported models:
                  - mistralai/Voxtral-Mini-3B-2507
+                 - mistralai/Voxtral-Mini-4B-Realtime-2602
                  - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                  - google/gemma-3-4b-it
                  - nvidia/parakeet-tdt
@@ -119,9 +120,17 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  mistralai/Voxtral-Mini-4B-Realtime-2602)
+    MODEL_NAME="voxtral_realtime"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, nvidia/parakeet-tdt"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, nvidia/parakeet-tdt"
     exit 1
     ;;
 esac
@@ -196,6 +205,41 @@ if [ "$MODEL_NAME" = "parakeet" ]; then
     test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
   fi
   test -f "${OUTPUT_DIR}/tokenizer.model"
+  ls -al "${OUTPUT_DIR}"
+  echo "::endgroup::"
+  exit 0
+fi
+
+# Voxtral Realtime uses a custom export script
+if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
+  pip install safetensors huggingface_hub
+
+  # Download model weights from HuggingFace (requires HF_TOKEN for gated model)
+  LOCAL_MODEL_DIR="${OUTPUT_DIR}/model_weights"
+  python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
+
+  # Voxtral Realtime has its own quantization flags (no --qlinear_encoder)
+  VR_QUANT_ARGS=""
+  if [ "$QUANT_NAME" = "quantized-8da4w" ]; then
+    VR_QUANT_ARGS="--qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
+  fi
+
+  python -m executorch.examples.models.voxtral_realtime.export_voxtral_rt \
+      --model-path "$LOCAL_MODEL_DIR" \
+      --backend xnnpack \
+      --output-dir "${OUTPUT_DIR}" \
+      ${VR_QUANT_ARGS}
+
+  # Export preprocessor
+  python -m executorch.extension.audio.mel_spectrogram \
+      --feature_size 128 \
+      --max_audio_len 300 \
+      --output_file "${OUTPUT_DIR}/preprocessor.pte"
+
+  test -f "${OUTPUT_DIR}/voxtral_realtime.pte"
+  test -f "${OUTPUT_DIR}/preprocessor.pte"
+  # Copy tokenizer from downloaded model weights
+  cp "$LOCAL_MODEL_DIR/tekken.json" "${OUTPUT_DIR}/tekken.json"
   ls -al "${OUTPUT_DIR}"
   echo "::endgroup::"
   exit 0

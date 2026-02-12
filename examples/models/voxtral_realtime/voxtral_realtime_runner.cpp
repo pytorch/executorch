@@ -209,7 +209,8 @@ int VoxtralRealtimeRunner::transcribe(
         logits_buf.data(),
         logits_data,
         static_cast<size_t>(vocab_size_) * sizeof(float));
-    int64_t next_token = static_cast<int64_t>(sampler.sample(logits_buf.data()));
+    int64_t next_token =
+        static_cast<int64_t>(sampler.sample(logits_buf.data()));
     num_generated++;
 
     // e. Decode token to text and emit via callback.
