@@ -143,7 +143,7 @@ def test_amax_u55_INT(test_data: Amax.input_t):
     pipeline = EthosU55PipelineINT[Amax.input_t](
         Amax(dim, keep_dims),
         data,
-        Amax.aten_op,
+        amax_aten_op,
     )
     pipeline.run()
 
