@@ -32,6 +32,8 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "nvidia"
+            name: "parakeet-tdt"
         quant:
             - "non-quantized"
             - "quantized-int4-weight-only"
