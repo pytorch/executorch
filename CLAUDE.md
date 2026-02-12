@@ -42,8 +42,12 @@ Details: [docs/source/using-executorch-building-from-source.md](docs/source/usin
 - Minimal comments; code should be self-documenting
 - Comments only for non-obvious global context
 - No trivial (1-2 LOC) single-use helpers unless significantly improving readability
-- Explicit state management; no dynamic `setattr`/`getattr` patterns
-- Match existing style and architecture
-- Assume reader knows ExecuTorch/PyTorch basics
 
 **When uncertain: choose simpler, more concise.**
+1
+2
+3
+4
+5
+6
+7
