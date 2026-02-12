@@ -46,6 +46,8 @@ AsrRunner::AsrRunner(
   }
 }
 
+AsrRunner::~AsrRunner() = default;
+
 bool AsrRunner::is_loaded() const {
   return module_ && encoder_method_loaded_ && decoder_method_loaded_ &&
       (!sampler_method_present_ || sampler_method_loaded_) && tokenizer_ &&
@@ -121,13 +123,20 @@ Error AsrRunner::load() {
 #ifdef CUDA_AVAILABLE
   // Skip copying outputs to CPU. When a sampler exists, keep both encoder and
   // decoder outputs on device and pass decoder logits directly into sampler.
-  executorch::runtime::BackendOptions<1> backend_options;
+  // The backend will automatically create a shared CUDA stream for all methods
+  // when skip-copy is enabled to ensure proper ordering.
+  executorch::runtime::BackendOptions<2> backend_options;
   std::string skip_methods = kEncoderMethodName;
   if (sampler_method_present_) {
     skip_methods.append(",").append(kDecoderMethodName);
   }
   ET_CHECK_OK_OR_RETURN_ERROR(backend_options.set_option(
       "skip_copy_output_to_cpu_for_method", skip_methods.c_str()));
+  // Enable shared CUDA stream for all methods when skip-copy is used.
+  // This ensures proper ordering between encoder/decoder/sampler outputs.
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      backend_options.set_option("use_shared_cuda_stream", true));
+
   const auto opt_err =
       executorch::runtime::set_option("CudaBackend", backend_options.view());
   if (opt_err != ::executorch::runtime::Error::Ok) {
