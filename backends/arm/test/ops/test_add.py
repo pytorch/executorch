@@ -41,6 +41,16 @@ class Add(torch.nn.Module):
         "4d_ones_2": lambda: (torch.ones(1, 3, 4, 2),),
     }
 
+    test_data_fp16 = {
+        "1d_ones_fp16": lambda: (torch.ones(8, dtype=torch.float16),),
+        "4d_ones_fp16": lambda: (torch.ones(1, 2, 3, 4, dtype=torch.float16),),
+    }
+
+    test_data_bf16 = {
+        "1d_ones_bf16": lambda: (torch.ones(8, dtype=torch.bfloat16),),
+        "4d_ones_bf16": lambda: (torch.ones(1, 2, 3, 4, dtype=torch.bfloat16),),
+    }
+
 
 input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
@@ -70,6 +80,14 @@ class Add2(torch.nn.Module):
             torch.randn(1, 10, 20, 30),
         ),
     }
+
+    test_data_fp16 = {
+        "4d_big_small_fp16": lambda: (
+            (10e10) * torch.randn(1, 10, 20, 30, dtype=torch.float16),
+            torch.randn(1, 10, 20, 30, dtype=torch.float16),
+        ),
+    }
+
     test_data_bf16 = {
         "4d_big_small_bf16": lambda: (
             (10e10) * torch.randn(1, 10, 20, 30, dtype=torch.bfloat16),
@@ -88,18 +106,27 @@ class Add3(torch.nn.Module):
         "4d_randn_diff_rank_2": lambda: (torch.randn(4, 1), torch.randn(1, 1, 4, 5)),
     }
 
+    test_data_fp16: list[input_t2] = {
+        "4d_randn_diff_rank_fp16": lambda: (
+            torch.randn(1, 1, 4, 4, dtype=torch.float16),
+            torch.randn(4, 1, dtype=torch.float16),
+        ),
+    }
 
-@common.parametrize("test_data", Add.test_data)
+    test_data_bf16: list[input_t2] = {
+        "4d_randn_diff_rank_bf16": lambda: (
+            torch.randn(1, 1, 4, 4, dtype=torch.bfloat16),
+            torch.randn(4, 1, dtype=torch.bfloat16),
+        ),
+    }
+
+
+@common.parametrize(
+    "test_data", Add.test_data | Add.test_data_fp16 | Add.test_data_bf16
+)
 def test_add_tensor_tosa_FP(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](Add(), test_data(), aten_op, exir_op)
-    pipeline.run()
-
-
-@common.parametrize("test_data", Add.test_data)
-def test_add_tensor_tosa_FP_bf16(test_data: input_t1):
-    x = test_data()[0].to(torch.bfloat16)
     pipeline = TosaPipelineFP[input_t1](
-        Add(), (x,), aten_op, exir_op, tosa_extensions=["bf16"]
+        Add(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
     )
     pipeline.run()
 
@@ -167,7 +194,9 @@ def test_add_tensor_u85_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add2.test_data | Add2.test_data_bf16)
+@common.parametrize(
+    "test_data", Add2.test_data | Add2.test_data_fp16 | Add2.test_data_bf16
+)
 def test_add_tensor_tosa_FP_2(test_data: input_t2):
     pipeline = TosaPipelineFP[input_t2](
         Add2(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
@@ -175,9 +204,13 @@ def test_add_tensor_tosa_FP_2(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add3.test_data)
+@common.parametrize(
+    "test_data", Add3.test_data | Add3.test_data_fp16 | Add3.test_data_bf16
+)
 def test_add_tensor_tosa_FP_3(test_data: input_t2):
-    pipeline = TosaPipelineFP[input_t2](Add3(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t2](
+        Add3(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
+    )
     pipeline.run()
 
 
@@ -217,7 +250,7 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add.test_data)
+@common.parametrize("test_data", Add.test_data | Add.test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
