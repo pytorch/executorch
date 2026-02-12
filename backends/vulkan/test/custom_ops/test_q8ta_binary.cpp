@@ -151,9 +151,9 @@ std::vector<TestCase> generate_q8ta_add_easy_cases() {
   for (const auto& quant_layout : quant_layouts) {
     test_cases.push_back(create_test_case_from_config(
         config,
-        /*fp_storage_type=*/utils::kBuffer,
+        /*storage_type=*/utils::kBuffer,
         /*input_dtype=*/vkapi::kFloat,
-        /*fp_layout=*/utils::kWidthPacked,
+        /*fp_memory_layout=*/utils::kWidthPacked,
         quant_layout));
     test_cases.push_back(create_test_case_from_config(
         config,
@@ -225,9 +225,9 @@ std::vector<TestCase> generate_q8ta_add_test_cases() {
     for (const auto& quant_layout : quant_layouts) {
       test_cases.push_back(create_test_case_from_config(
           config,
-          /*fp_storage_type=*/utils::kBuffer,
-          /*fp_input_dtype=*/vkapi::kFloat,
-          /*fp_layout=*/utils::kWidthPacked,
+          /*storage_type=*/utils::kBuffer,
+          /*input_dtype=*/vkapi::kFloat,
+          /*fp_memory_layout=*/utils::kWidthPacked,
           quant_layout));
       test_cases.push_back(create_test_case_from_config(
           config,

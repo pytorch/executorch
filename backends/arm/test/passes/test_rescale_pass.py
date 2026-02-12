@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -37,8 +37,12 @@ class RescaleNetwork(torch.nn.Module):
 
 @common.parametrize("test_data", RescaleNetwork.test_data)
 def test_insert_rescale_tosa_INT(test_data: tuple[torch.Tensor, torch.Tensor]):
-    """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
-    need the InsertRescalesPass, make sure that they play nicely together."""
+    """Tests a model with many ops that requires rescales.
+
+    As more ops are quantized to int32 and need the InsertRescalesPass, make
+    sure that they play nicely together.
+
+    """
     module = RescaleNetwork()
     pipeline = TosaPipelineINT(
         module=module,
@@ -54,8 +58,12 @@ def test_insert_rescale_tosa_INT(test_data: tuple[torch.Tensor, torch.Tensor]):
 @common.parametrize("test_data", RescaleNetwork.test_data)
 @common.XfailIfNoCorstone300
 def test_insert_rescale_u55_INT(test_data: input_t):
-    """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
-    need the InsertRescalesPass, make sure that they play nicely together."""
+    """Tests a model with many ops that requires rescales.
+
+    As more ops are quantized to int32 and need the InsertRescalesPass, make
+    sure that they play nicely together.
+
+    """
     module = RescaleNetwork()
     pipeline = EthosU55PipelineINT(
         module=module,
@@ -69,8 +77,12 @@ def test_insert_rescale_u55_INT(test_data: input_t):
 @common.parametrize("test_data", RescaleNetwork.test_data)
 @common.XfailIfNoCorstone320
 def test_insert_rescale_u85_INT(test_data: input_t):
-    """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
-    need the InsertRescalesPass, make sure that they play nicely together."""
+    """Tests a model with many ops that requires rescales.
+
+    As more ops are quantized to int32 and need the InsertRescalesPass, make
+    sure that they play nicely together.
+
+    """
     module = RescaleNetwork()
     pipeline = EthosU85PipelineINT(
         module=module,
