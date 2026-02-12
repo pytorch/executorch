@@ -5,7 +5,7 @@ on:
   pull_request:
     paths:
       - "schema/**"
-      - "executorch_flatbuffer/**"
+      - "exir/_serialize/generated/executorch_flatbuffer/**"
 
 jobs:
   exir-flatbuffer:

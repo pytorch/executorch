@@ -6,6 +6,7 @@
 # pyre-strict
 
 import enum
+import functools
 import importlib
 import tempfile
 
@@ -111,15 +112,12 @@ def _pack_backend_delegate_inline_data(self: Any, builder: Any) -> int:
     return _BackendDelegateInlineData.BackendDelegateInlineDataEnd(builder)
 
 
+@functools.lru_cache(maxsize=1)
 def _install_fast_packers() -> None:
-    global _PACKERS_INSTALLED
-    if _PACKERS_INSTALLED:
-        return
-    _Buffer.BufferT.Pack = _pack_buffer  # pyre-ignore[16]
-    _BackendDelegateInlineData.BackendDelegateInlineDataT.Pack = (  # pyre-ignore[16]
+    _Buffer.BufferT.Pack = _pack_buffer
+    _BackendDelegateInlineData.BackendDelegateInlineDataT.Pack = (
         _pack_backend_delegate_inline_data
     )
-    _PACKERS_INSTALLED = True
 
 
 def _set_pack_alignments(tensor_alignment: int, delegate_alignment: int) -> None:
