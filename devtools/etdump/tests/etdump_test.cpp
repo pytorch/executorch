@@ -247,7 +247,9 @@ TEST_F(ProfilerETDumpTest, AddAllocators) {
     // Add a profiling event and then try to add an allocator which should fail.
     EventTracerEntry entry = etdump_gen[i]->start_profiling("test_event", 0, 1);
     etdump_gen[i]->end_profiling(entry);
-    ET_EXPECT_DEATH(etdump_gen[i]->track_allocator("test_allocator"), "");
+    ET_EXPECT_DEATH(
+        etdump_gen[i]->track_allocator("test_allocator"),
+        "before any events are added");
   }
 }
 
