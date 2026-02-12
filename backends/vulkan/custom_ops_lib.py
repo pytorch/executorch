@@ -356,9 +356,9 @@ lib.define(
 lib.impl(name, linear_q8ta_q8csw, "CompositeExplicitAutograd")
 qa_q8csw_linear = getattr(getattr(torch.ops, namespace), name)
 
-############################
-## conv2d_q8ta_q8csw_q8to ##
-############################
+###################
+## q8ta_conv2d_* ##
+###################
 
 
 def q8ta_conv2d(

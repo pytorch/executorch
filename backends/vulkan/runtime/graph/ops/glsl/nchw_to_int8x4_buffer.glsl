@@ -37,30 +37,9 @@ void main() {
 
   const int inner_dim = get_packed_dim(outp_layout);
   const int outer_dim = get_outer_packed_dim(outp_layout);
-  const int inner_block_size = get_packed_dim_block_size(outp_layout);
-  const int outer_block_size = get_outer_packed_dim_block_size(outp_layout);
-  const uint texels_per_block = uint(inner_block_size * outer_block_size) >> 2;
 
-  // Decompose texel_idx into block_idx and intra-block texel position
-  const uint block_idx = texel_idx / texels_per_block;
-  const uint intra_texel = texel_idx % texels_per_block;
-
-  // Decompose block_idx into block-space tensor coordinates using strides
-  TensorIndex4D tidx;
-  uint remaining = block_idx;
-  [[unroll]] for (int d = 3; d >= 0; d--) {
-    const int dim = extract_4b(outp_layout, d);
-    const uint dim_stride = outp.strides[0][dim];
-    tidx.data[dim] = int(remaining / dim_stride);
-    remaining %= dim_stride;
-  }
-
-  // Convert from block-space to element-space
-  tidx.data[inner_dim] *= inner_block_size;
-  tidx.data[outer_dim] *= outer_block_size;
-
-  // Add intra-block offset for outer dimension (block-packed layouts)
-  tidx.data[outer_dim] += int(intra_texel);
+  const TensorIndex4D tidx =
+      texel_idx_to_tensor4d_idx(outp, texel_idx, outp_layout);
 
   // Bounds check on outer dimension
   if (tidx.data[outer_dim] >= int(outp.sizes[0][outer_dim])) {
