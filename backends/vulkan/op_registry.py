@@ -513,6 +513,11 @@ def register_q8ta_add():
     )
 
 
+# =============================================================================
+# Reduce.cpp
+# =============================================================================
+
+
 def get_dims_reduced(node: torch.fx.Node) -> Union[int, List[int]]:
     ndim = utils.ndim_of(node.args[0])
     assert ndim is not None
@@ -620,11 +625,6 @@ def pick_storage_for_reduce(node: torch.fx.Node):
             outputs_storage = utils.CHANNELS_PACKED_TEXTURE
 
     return inputs_storage, outputs_storage
-
-
-# =============================================================================
-# Reduce.cpp
-# =============================================================================
 
 
 @update_features(
@@ -749,7 +749,7 @@ def register_convolution_cpp_ops():
 
 
 # =============================================================================
-# Q8taConv2d.cpp, Q8taConv2dPW.cpp, Q8taConv2dDW.cpp
+# Q8taConv2d*.cpp
 # =============================================================================
 
 

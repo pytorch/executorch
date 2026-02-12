@@ -24,9 +24,11 @@ void add_staging_to_int8x4_buffer_node(
   vkapi::ParamsBindList param_buffers;
   param_buffers.append(graph.buffer_meta_ubo(tensor));
 
-  // One thread per texel (each texel = one int32 = 4 packed int8)
+  // One thread per texel (each texel = one int32 = 4 packed int8).
+  // Use padded_numel to account for dimension padding in packed int8 layouts
+  // (e.g., kPackedInt8_4C with C=3 pads to C=4).
   uint32_t num_texels =
-      utils::safe_downcast<uint32_t>(graph.numel_of(tensor) / 4);
+      utils::safe_downcast<uint32_t>(graph.padded_numel_of(tensor) / 4);
   utils::uvec3 global_wg_size = {num_texels, 1, 1};
   utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
 
