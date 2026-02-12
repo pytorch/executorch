@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -361,11 +361,13 @@ def test_convert_int64_const_ops_to_int32_tosa_FP_full(
 def test_convert_int64_const_ops_to_int32_tosa_INT_full(
     test_data: input_t2,
 ) -> None:
-    """
-    For INT profile, _lifted_tensor_constant0 is still int64 after applying ConvertInt64ConstOpsToInt32Pass().
+    """For INT profile, _lifted_tensor_constant0 is still int64 after applying
+    ConvertInt64ConstOpsToInt32Pass().
+
     And an int64->int32 cast is inserted at the beginning of the graph.
     TODO: Explore why _lifted_tensor_constant0 is handled in different ways in FP and INT profile.
         Find a way to optimize out the int64->int32 cast.
+
     """
     module = FullIncrementViewMulXLessThanY()
     aten_ops_checks = [
