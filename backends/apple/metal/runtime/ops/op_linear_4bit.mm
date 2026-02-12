@@ -16,227 +16,11 @@ namespace {
 // Helper function to get the Metal shader source for Int4MM
 static std::string get_int4_metal_source() {
   return R"(
-  /**
-  * common.metal
-  */
-
-    // Copyright (c) Meta Platforms, Inc. and affiliates.
-    // All rights reserved.
-    //
-    // This source code is licensed under the BSD 3-Clause license found in the
-    // LICENSE file in the root directory of this source tree.
-
-    template <typename T> struct Vec4Type {};
-
-    template <> struct Vec4Type<float> {
-      using type = float4;
-    };
-
-    template <> struct Vec4Type<half> {
-      using type = half4;
-    };
-
-    #if __METAL_VERSION__ >= 310
-    template <> struct Vec4Type<bfloat> {
-      using type = bfloat4;
-    };
-    #endif
-
-  /**
-  * int4mm_opt.metal
-  */
-
-    // Copyright (c) Meta Platforms, Inc. and affiliates.
-    // All rights reserved.
-    //
-    // This source code is licensed under the BSD 3-Clause license found in the
-    // LICENSE file in the root directory of this source tree.
     #include <metal_simdgroup>
     #include <metal_stdlib>
     using namespace metal;
 
-    /*
-      This code takes heavy inspiration from MLX:
-      https://github.com/ml-explore/mlx/blob/main/mlx/backend/metal/kernels/quantized.h
-      Specifically:
-        - Multiplying activation by inverse scaling factor to reduce compute
-      boundedness
-        - Handling zero point by accumulating act in separate sum term. Needed with
-      optimization done above. MLX MIT License:
-      https://github.com/ml-explore/mlx/blob/main/LICENSE
-    */
-
-    /*
-      A matrix is [M x K] (right now this kernel does not support M > 1 but this is
-      a very easy fix that will follow right after) B matrix is [N x K]. For 4 bit
-      2 of the k values are packed in one byte so you can think of B as [N x K/2]
-      matrix from layout perspective.
-
-      Since this kernel is optimizing for gemv case, we split work, along reduction
-      dim k, among the threads of same simdgroup. Ex: if K = 4096 and simdgroup
-      size is 32 (current algorithm should work as long as simdgroup size is > 32).
-      Then each thread will accumulate 4096/32 = 128 k values. However these 128
-      values, handled by each thread are not laid out contiguously. Each thread
-      handles 4 contiguous k values and then jumps 128 elements, k_jump =
-      thread_per_channel (32) * ks_per_thread (4). Take a simpler example where
-      simdgroup is of size 4. In this case threads_per_channel = 4. Assume K = 32
-          k                thread
-      [0, 1, 2, 3,          0
-        4, 5, 6, 7,          1
-        8, 9, 10, 11,        2
-        12, 13, 14, 15,      3
-        16, 17, 18, 19,      0
-        20, 21, 22, 23,      1
-        24, 25, 26, 27,      2
-        28, 29, 30, 31]      3
-      thread id in simd group that handle corresponding
-      ks
-      Thread 0 here is handling (0, 1, 2, 3) and then (16, 17, 18, 19). They are
-      apart by k_jump = 4 * 4 = 16 This is done to improve memory access locality
-      amonng threads that are working co-operatively. Once each thread has their
-      partial sums accumulated, we use tree reduction (Metal offers simd_sum but
-      not used so that we support simdgroup size = 64). In the
-      example above we will have 4 partial sums.
-
-      Each thread also handles 4 different output rows. Thus each simdgroup will be
-      responsible for (1x4) tile of the output. We haven't evaluated whether a
-      different tile size is better or not. We probably will do some auto-tuning
-      once initial work is done.
-    */
-
-    /*
-      @brief This shader implements 4-bit matrix-vector multiplication where A
-      matrix is fp16, bfloat or float and B matrix is a 4-bit groupwise-quantized weight
-      matrix.
-      @param [in] A is activation matrix of size M x K.
-      @param [in] B is weight matrix of size M x K. Each byte contains 2 4-bit
-      values, along K dim, packed together.
-      @param [in] scales_ptr is scales ptr corresponding each
-      output channel x groups. These are packed as [N, num_groups = ceil(K / group_size)]. N = output
-      channels.
-      @param [in] zeros_ptr is zero points corresponding each
-      output channel x groups. These are packed as [N, num_groups = ceil(K / group_size)]. N = output
-      channels.
-      @param [out] output_data is output matrix of size M x N.
-      @param [in] sizes array contains values of M, K and N.
-      @param [in] thread_index is global thread id.
-      @param [in] tid_in_simdgruop is thread id in simdgroup. e.g. in simdgroup of size 32 it can be in [0-31].
-    */
-    template <typename T, unsigned group_size>
-    kernel void int4pack_mm(constant T *A [[buffer(0)]],
-                            constant uchar *B [[buffer(1)]],
-                            constant T *scales_ptr [[buffer(2)]],
-                            constant T *zeros_ptr [[buffer(3)]],
-                            device T *output_data [[buffer(4)]],
-                            constant uint3 &sizes [[buffer(5)]], // M, K, N
-                            uint3 thread_index [[thread_position_in_grid]],
-                            uint tid_in_simdgroup [[thread_index_in_simdgroup]]) {
-      constexpr uint threads_per_channel = 32;
-      constexpr uint ks_per_thread = 4;
-      constexpr uint k_pack_factor = 2;
-      const uint K = sizes.y;
-      const uint N = sizes.z;
-      const uint num_groups = (K + group_size - 1) / group_size;
-      uint n = thread_index.x; // 0..N/4-1
-      uint m = thread_index.z; // 0..M
-      n = n / threads_per_channel;
-      n = n * 4;
-      // This is starting k for each thread. In the example above, for thread 1 this
-      // value will be 4.
-      uint k = (tid_in_simdgroup % threads_per_channel) * ks_per_thread;
-      constexpr int k_jump = threads_per_channel * ks_per_thread;
-
-      using vecT = typename Vec4Type<T>::type;
-      constant vecT *A_ptr = reinterpret_cast<constant vecT *>(A + m * K);
-      constant uchar *B_ptr = B + ((n * K) / k_pack_factor);
-
-      thread float4 result = float4(0.0);
-      // We multipy group of 4 channels with these scales.
-      // Because corresponding values from weight matrix are effectively left
-      // shifted. This is to avoid doing right shift on those values which ends up
-      // affecting performance. This is the trick applied in MLX kernels.
-      float4 act_div_scales = {1.f, 1 / 16.f, 1 / 256.f, 1 / 4096.f};
-
-      for (; k < K; k += k_jump) {
-        // Find specific group to which channels handled by this thread
-        // belong.
-        uint k_block_index = k / group_size;
-        uint scales_group_offset = (n * num_groups + k_block_index);
-
-        vecT scales =
-            vecT(scales_ptr[scales_group_offset],
-                scales_ptr[scales_group_offset + num_groups],
-                scales_ptr[scales_group_offset + 2 * num_groups],
-                scales_ptr[scales_group_offset + 3 * num_groups]);
-        // Adding zero point results in 10% perf penalty.
-        vecT zeros =
-            vecT(zeros_ptr[scales_group_offset],
-                zeros_ptr[scales_group_offset + num_groups],
-                zeros_ptr[scales_group_offset + 2 * num_groups],
-                zeros_ptr[scales_group_offset + 3 * num_groups]);
-        float4 zeros_float = float4(zeros);
-
-        float4 a_val = float4(A_ptr[k / 4]);
-        // We are gonna skip right-shifts of the weights and hence divide by corresponding factor.
-        float4 a_vec = a_val * act_div_scales;
-        float a_val_sum = a_val[0] + a_val[1] + a_val[2] + a_val[3];
-
-        float4x4 b_mat;
-        ushort b_val0 = (reinterpret_cast<constant ushort *>(
-            B_ptr + (k + 0 * K) / k_pack_factor))[0];
-        ushort b_val1 = (reinterpret_cast<constant ushort *>(
-            B_ptr + (k + 1 * K) / k_pack_factor))[0];
-        ushort b_val2 = (reinterpret_cast<constant ushort *>(
-            B_ptr + (k + 2 * K) / k_pack_factor))[0];
-        ushort b_val3 = (reinterpret_cast<constant ushort *>(
-            B_ptr + (k + 3 * K) / k_pack_factor))[0];
-        b_mat[0] = scales[0] * float4(float(b_val0 & 0x000f), float(b_val0 & 0x00f0),
-                                  float(b_val0 & 0x0f00), float(b_val0 & 0xf000));
-        b_mat[1] = scales[1] * float4(float(b_val1 & 0x000f), float(b_val1 & 0x00f0),
-                                  float(b_val1 & 0x0f00), float(b_val1 & 0xf000));
-        b_mat[2] = scales[2] * float4(float(b_val2 & 0x000f), float(b_val2 & 0x00f0),
-                                  float(b_val2 & 0x0f00), float(b_val2 & 0xf000));
-        b_mat[3] = scales[3] * float4(float(b_val3 & 0x000f), float(b_val3 & 0x00f0),
-                                  float(b_val3 & 0x0f00), float(b_val3 & 0xf000));
-
-        result += a_vec * b_mat;
-        result += a_val_sum * zeros_float;
-      }
-      result += simd_shuffle_down(result, 1);
-      result += simd_shuffle_down(result, 2);
-      result += simd_shuffle_down(result, 4);
-      result += simd_shuffle_down(result, 8);
-      result += simd_shuffle_down(result, 16);
-      if (tid_in_simdgroup % threads_per_channel == 0) {
-        reinterpret_cast<device vecT *>(output_data + m * N)[n / 4] = vecT(result);
-      }
-    }
-
-    #define INSTANTIATE_INT4MM(DTYPE, GSIZE)                                       \
-      template [[host_name("int4pack_mm_" #GSIZE "_" #DTYPE)]] kernel void         \
-      int4pack_mm<DTYPE, GSIZE>(                                                   \
-          constant DTYPE * A [[buffer(0)]], constant uchar * B [[buffer(1)]],      \
-          constant DTYPE * scales_ptr [[buffer(2)]],                               \
-          constant DTYPE * zeros_ptr [[buffer(3)]],                                \
-          device DTYPE * output_data [[buffer(4)]],                                \
-          constant uint3 & sizes [[buffer(5)]],                                    \
-          uint3 thread_index [[thread_position_in_grid]],                          \
-          uint tid_in_simdgroup [[thread_index_in_simdgroup]])
-
-    INSTANTIATE_INT4MM(float, 32);
-    INSTANTIATE_INT4MM(half, 32);
-    INSTANTIATE_INT4MM(float, 64);
-    INSTANTIATE_INT4MM(half, 64);
-    INSTANTIATE_INT4MM(float, 128);
-    INSTANTIATE_INT4MM(half, 128);
-    INSTANTIATE_INT4MM(float, 256);
-    INSTANTIATE_INT4MM(half, 256);
-    #if __METAL_VERSION__ >= 310
-    INSTANTIATE_INT4MM(bfloat, 32);
-    INSTANTIATE_INT4MM(bfloat, 64);
-    INSTANTIATE_INT4MM(bfloat, 128);
-    INSTANTIATE_INT4MM(bfloat, 256);
-    #endif
+    static constant constexpr const int SIMD_SIZE = 32;
 
   /**
   * qmv_fast.metal
@@ -254,11 +38,6 @@ static std::string get_int4_metal_source() {
       https://github.com/ml-explore/mlx/blob/481349495b8c3d094eb699e678077bbe1406392d/mlx/backend/metal/kernels/quantized.h#L1
       MLX MIT License: https://github.com/ml-explore/mlx/blob/main/LICENSE
     */
-
-    #include <metal_simdgroup>
-    #include <metal_stdlib>
-
-    static constant constexpr const int SIMD_SIZE = 32;
 
     template <typename T, typename U, int values_per_thread, int bits>
     inline U load_vector(constant T* x, thread U* x_thread) {
@@ -1052,6 +831,748 @@ static std::string get_int4_metal_source() {
     INSTANTIATE_QMV_IMPL_DTYPE(bfloat);
     #endif
 
+
+  /**
+   * ============================================================================
+   * Steel Library + Quantized GEMM Kernels (M > 1)
+   * Ported from MLX: https://github.com/ml-explore/mlx
+   * Copyright © 2024 Apple Inc. (MIT License)
+   * ============================================================================
+   */
+
+  /**
+   * steel/defines.h
+   */
+    #define STEEL_CONST static constant constexpr const
+
+    // Pragma macros - defined as empty to avoid raw string literal issues
+    // These are optimization hints that Metal compiler may apply automatically
+    #define STEEL_PRAGMA_UNROLL
+    #define STEEL_PRAGMA_NO_UNROLL
+
+  /**
+   * steel/utils/integral_constant.h
+   */
+
+    template <typename T, T v>
+    struct IntegralConstant {
+      STEEL_CONST T value = v;
+      using value_type = T;
+      using type = IntegralConstant;
+      constexpr operator value_type() const noexcept { return value; }
+      constexpr value_type operator()() const noexcept { return value; }
+    };
+
+    template <bool B>
+    using BoolConstant = IntegralConstant<bool, B>;
+    using TrueType = BoolConstant<true>;
+    using FalseType = BoolConstant<false>;
+
+    template <int v>
+    using Int = IntegralConstant<int, v>;
+    template <short v>
+    using Short = IntegralConstant<short, v>;
+
+  /**
+   * steel/gemm/transforms.h
+   */
+
+    template <typename OutT, typename InT>
+    struct TransformNone {
+      static METAL_FUNC OutT apply(InT x) { return static_cast<OutT>(x); }
+      static METAL_FUNC OutT apply(InT x, OutT) { return static_cast<OutT>(x); }
+    };
+
+    template <typename T>
+    struct AccumHelper { typedef float accum_type; };
+
+  /**
+   * steel/gemm/loader.h
+   */
+
+    template <
+        typename T,
+        short BROWS,
+        short BCOLS,
+        short dst_ld,
+        short reduction_dim,
+        short tgp_size,
+        short alignment = 1,
+        short n_reads = (BCOLS * BROWS) / (tgp_size),
+        short TCOLS = BCOLS / n_reads,
+        short TROWS = tgp_size / TCOLS>
+    struct BlockLoader {
+      STEEL_CONST short n_rows = (BROWS + TROWS - 1) / TROWS;
+      STEEL_CONST short vec_size = n_reads;
+      const int src_ld;
+      const int tile_stride;
+      const short thread_idx;
+      const short bi;
+      const short bj;
+      threadgroup T* dst;
+      const device T* src;
+
+      struct alignas(alignment * sizeof(T)) ReadVector {
+        uint8_t v[sizeof(T) * vec_size];
+      };
+
+      METAL_FUNC BlockLoader(
+          const device T* src_,
+          const int src_ld_,
+          threadgroup T* dst_,
+          ushort simd_group_id [[simdgroup_index_in_threadgroup]],
+          ushort simd_lane_id [[thread_index_in_simdgroup]])
+          : src_ld(src_ld_),
+            tile_stride(reduction_dim ? BCOLS : BROWS * src_ld),
+            thread_idx(simd_group_id * 32 + simd_lane_id),
+            bi(thread_idx / TCOLS),
+            bj(vec_size * (thread_idx % TCOLS)),
+            dst(dst_ + bi * dst_ld + bj),
+            src(src_ + bi * src_ld + bj) {}
+
+      METAL_FUNC void load_unsafe() const {
+        STEEL_PRAGMA_UNROLL
+        for (short i = 0; i < BROWS; i += TROWS) {
+          *((threadgroup ReadVector*)(&dst[i * dst_ld])) =
+              *((const device ReadVector*)(&src[i * src_ld]));
+        }
+      }
+
+      METAL_FUNC void load_safe(short2 src_tile_dim) const {
+        src_tile_dim = src_tile_dim - short2(bj, bi);
+        if (src_tile_dim.x <= 0 || src_tile_dim.y <= 0) {
+          STEEL_PRAGMA_UNROLL
+          for (short i = 0; i < BROWS; i += TROWS) {
+            STEEL_PRAGMA_UNROLL
+            for (short j = 0; j < vec_size; j++) {
+              dst[i * dst_ld + j] = T(0);
+            }
+          }
+          return;
+        }
+        bool tmp_idx[vec_size];
+        T tmp_val[vec_size];
+        STEEL_PRAGMA_UNROLL
+        for (short i = 0; i < BROWS; i += TROWS) {
+          STEEL_PRAGMA_UNROLL
+          for (short j = 0; j < vec_size; j++) {
+            tmp_idx[j] = (i < src_tile_dim.y) && (j < src_tile_dim.x);
+          }
+          STEEL_PRAGMA_UNROLL
+          for (short j = 0; j < vec_size; j++) {
+            tmp_val[j] = src[(tmp_idx[j] ? i * src_ld + j : 0)];
+          }
+          STEEL_PRAGMA_UNROLL
+          for (short j = 0; j < vec_size; j++) {
+            tmp_val[j] = tmp_idx[j] ? tmp_val[j] : T(0);
+          }
+          STEEL_PRAGMA_UNROLL
+          for (short j = 0; j < vec_size; j++) {
+            dst[i * dst_ld + j] = tmp_val[j];
+          }
+        }
+      }
+
+      METAL_FUNC void next() { src += tile_stride; }
+    };
+
+  /**
+   * Quantized utilities
+   */
+
+    template <int bits, int wsize = 8>
+    inline constexpr short get_pack_factor() {
+      return (bits == 3 || bits == 5) ? 8 : (bits == 6 ? 4 : wsize / bits);
+    }
+
+    template <int bits, int wsize = 8>
+    inline constexpr short get_bytes_per_pack() {
+      constexpr int power_of_2_bits = (bits & (bits - 1)) == 0;
+      return power_of_2_bits ? (wsize / 8) : (bits == 5 ? 5 : 3);
+    }
+
+    template <typename U, int N, int bits>
+    inline void dequantize(
+        const device uint8_t* w, U scale, U bias, threadgroup U* w_local) {
+      static_assert(bits == 4, "Only 4-bit quantization supported");
+
+      U s[2] = {scale, scale / static_cast<U>(16.0f)};
+      for (int i = 0; i < (N / 2); i++) {
+        w_local[2 * i] = s[0] * (w[i] & 0x0f) + bias;
+        w_local[2 * i + 1] = s[1] * (w[i] & 0xf0) + bias;
+      }
+    }
+
+  /**
+   * QuantizedBlockLoader
+   */
+
+    template <
+        typename T,
+        short BROWS,
+        short BCOLS,
+        short dst_ld,
+        short reduction_dim,
+        short tgp_size,
+        short group_size,
+        short bits>
+    struct QuantizedBlockLoader {
+      static_assert(BCOLS <= group_size, "group_size should be >= BCOLS");
+      static_assert(group_size % BCOLS == 0, "group_size should be divisible by BCOLS");
+      static_assert(bits == 4, "Only 4-bit quantization supported");
+
+      STEEL_CONST short pack_factor = ::get_pack_factor<bits, 8>();
+      STEEL_CONST short bytes_per_pack = ::get_bytes_per_pack<bits>();
+      STEEL_CONST short BCOLS_PACKED = BCOLS / pack_factor;
+      STEEL_CONST short n_reads =
+          (BCOLS_PACKED * BROWS < tgp_size) ? 1 : (BCOLS_PACKED * BROWS) / tgp_size;
+      STEEL_CONST short group_steps = group_size / BCOLS;
+
+      const int src_ld;
+      const int tile_stride;
+      short group_step_cnt;
+      const int group_stride;
+      const short thread_idx;
+      const short bi;
+      const short bj;
+      threadgroup T* dst;
+      const device uint8_t* src;
+      const device T* scales;
+      const device T* biases;
+
+      QuantizedBlockLoader(
+          const device uint8_t* src_,
+          const device T* scales_,
+          const device T* biases_,
+          const int src_ld_,
+          threadgroup T* dst_,
+          ushort simd_group_id [[simdgroup_index_in_threadgroup]],
+          ushort simd_lane_id [[thread_index_in_simdgroup]])
+          : src_ld(src_ld_),
+            tile_stride(
+                reduction_dim ? BCOLS_PACKED * bytes_per_pack
+                              : BROWS * src_ld * bytes_per_pack / pack_factor),
+            group_step_cnt(0),
+            group_stride(BROWS * src_ld / group_size),
+            thread_idx(simd_group_id * 32 + simd_lane_id),
+            bi(n_reads * thread_idx / BCOLS_PACKED),
+            bj((n_reads * thread_idx) % BCOLS_PACKED),
+            dst(dst_ + bi * dst_ld + bj * pack_factor),
+            src(src_ + bi * src_ld * bytes_per_pack / pack_factor +
+                bj * bytes_per_pack),
+            scales(scales_ + bi * src_ld / group_size),
+            biases(biases_ + bi * src_ld / group_size) {}
+
+      void load_unsafe() const {
+        if (BCOLS_PACKED * BROWS < tgp_size && bi >= BROWS) {
+          return;
+        }
+        T scale = *scales;
+        T bias = *biases;
+        for (int i = 0; i < n_reads; i++) {
+          dequantize<T, pack_factor, bits>(
+              src + i * bytes_per_pack, scale, bias, dst + i * pack_factor);
+        }
+      }
+
+      void load_safe(short2 src_tile_dim) const {
+        if (BCOLS_PACKED * BROWS < tgp_size && bi >= BROWS) {
+          return;
+        }
+        if (reduction_dim == 1 && bi >= src_tile_dim.x) {
+          for (int i = 0; i < n_reads * pack_factor; i++) {
+            dst[i] = T(0);
+          }
+          return;
+        }
+        if (reduction_dim == 0 && bi >= src_tile_dim.y) {
+          for (int i = 0; i < n_reads * pack_factor; i++) {
+            dst[i] = T(0);
+          }
+          return;
+        }
+        T scale = *scales;
+        T bias = *biases;
+        for (int i = 0; i < n_reads; i++) {
+          dequantize<T, pack_factor, bits>(
+              src + i * bytes_per_pack, scale, bias, dst + i * pack_factor);
+        }
+      }
+
+      void next() {
+        src += tile_stride;
+        if (reduction_dim == 1) {
+          if (group_steps > 1) {
+            group_step_cnt++;
+            if (group_step_cnt == group_steps) {
+              group_step_cnt = 0;
+              scales++;
+              biases++;
+            }
+          } else {
+            scales++;
+            biases++;
+          }
+        } else {
+          scales += group_stride;
+          biases += group_stride;
+        }
+      }
+    };
+
+  /**
+   * steel/gemm/mma.h - Matrix multiply-accumulate
+   */
+
+    template <typename T, int kFragRows_, int kFragCols_>
+    struct BaseMMAFrag {
+      static_assert(kFragRows_ == 8, "Only 8x8 fragments supported");
+      static_assert(kFragCols_ == 8, "Only 8x8 fragments supported");
+    };
+
+    template <typename T>
+    struct BaseMMAFrag<T, 8, 8> {
+      STEEL_CONST int kFragRows = 8;
+      STEEL_CONST int kFragCols = 8;
+      STEEL_CONST int kElemsPerFrag = 2;
+      typedef metal::simdgroup_matrix<T, kFragRows, kFragCols> mat_type;
+      typedef metal::vec<T, kElemsPerFrag> frag_type;
+
+      METAL_FUNC static constexpr short2 get_coord(ushort simd_lane_id) {
+        const short qid = simd_lane_id / 4;
+        const short fm = (qid & 4) + ((simd_lane_id / 2) % 4);
+        const short fn = (qid & 2) * 2 + (simd_lane_id % 2) * 2;
+        return short2{fn, fm};
+      }
+
+      template <typename SrcPtrType, typename StrX, typename StrY>
+      METAL_FUNC static constexpr void
+      load(thread frag_type& dst, SrcPtrType src, StrX str_x, StrY str_y) {
+        STEEL_PRAGMA_UNROLL
+        for (short i = 0; i < 1; i++) {
+          STEEL_PRAGMA_UNROLL
+          for (short j = 0; j < 2; j++) {
+            dst[i * 2 + j] = static_cast<T>(src[i * str_x + j * str_y]);
+          }
+        }
+      }
+
+      template <typename DstPtrType, typename StrX, typename StrY>
+      METAL_FUNC static constexpr void
+      store(const thread frag_type& src, DstPtrType dst, StrX str_x, StrY str_y) {
+        using U = typename metal::remove_pointer<DstPtrType>::type;
+        STEEL_PRAGMA_UNROLL
+        for (short i = 0; i < 1; i++) {
+          STEEL_PRAGMA_UNROLL
+          for (short j = 0; j < 2; j++) {
+            dst[i * str_x + j * str_y] = static_cast<U>(src[i * 2 + j]);
+          }
+        }
+      }
+
+      template <
+          typename DstPtrType,
+          typename StrX,
+          typename StrY,
+          typename LimX,
+          typename LimY,
+          typename OffX,
+          typename OffY>
+      METAL_FUNC static constexpr void store_safe(
+          const thread frag_type& src,
+          DstPtrType dst,
+          StrX str_x,
+          StrY str_y,
+          LimX lim_x,
+          LimY lim_y,
+          OffX off_x = Int<0>{},
+          OffY off_y = Int<0>{}) {
+        using U = typename metal::remove_pointer<DstPtrType>::type;
+        STEEL_PRAGMA_UNROLL
+        for (short i = 0; i < 1; i++) {
+          STEEL_PRAGMA_UNROLL
+          for (short j = 0; j < 2; j++) {
+            if ((off_x + i) < lim_x && (off_y + j) < lim_y) {
+              dst[(off_x + i) * str_x + (off_y + j) * str_y] =
+                  static_cast<U>(src[i * 2 + j]);
+            }
+          }
+        }
+      }
+
+      METAL_FUNC static constexpr void mma(
+          thread frag_type& D,
+          thread frag_type& A,
+          thread frag_type& B,
+          thread frag_type& C) {
+        mat_type D_mat, A_mat, B_mat, C_mat;
+        reinterpret_cast<thread frag_type&>(A_mat.thread_elements()) = A;
+        reinterpret_cast<thread frag_type&>(B_mat.thread_elements()) = B;
+        reinterpret_cast<thread frag_type&>(C_mat.thread_elements()) = C;
+        simdgroup_multiply_accumulate(D_mat, A_mat, B_mat, C_mat);
+        D = reinterpret_cast<thread frag_type&>(D_mat.thread_elements());
+      }
+    };
+
+    template <
+        typename T,
+        int kTileRows_,
+        int kTileCols_,
+        class MMAFrag_ = BaseMMAFrag<T, 8, 8>>
+    struct MMATile {
+      using MMAFrag_t = MMAFrag_;
+      using elem_type = T;
+      STEEL_CONST int kFragRows = MMAFrag_t::kFragRows;
+      STEEL_CONST int kFragCols = MMAFrag_t::kFragCols;
+      STEEL_CONST int kElemsPerFrag = MMAFrag_t::kElemsPerFrag;
+      STEEL_CONST int kTileRows = kTileRows_;
+      STEEL_CONST int kTileCols = kTileCols_;
+      STEEL_CONST int kRows = kTileRows * kFragRows;
+      STEEL_CONST int kCols = kTileCols * kFragCols;
+      STEEL_CONST int kNumFrags = kTileRows * kTileCols;
+      STEEL_CONST int kElemsPerTile = kNumFrags * kElemsPerFrag;
+
+      typedef typename MMAFrag_t::frag_type frag_type;
+      frag_type val_frags[kNumFrags] = {frag_type(0)};
+
+      METAL_FUNC MMATile() thread {}
+
+      METAL_FUNC constexpr thread frag_type& frag_at(const short i, const short j) {
+        return val_frags[i * kTileCols + j];
+      }
+
+      METAL_FUNC constexpr const thread frag_type& frag_at(
+          const short i, const short j) const {
+        return val_frags[i * kTileCols + j];
+      }
+
+      METAL_FUNC thread elem_type* elems() {
+        return reinterpret_cast<thread elem_type*>(val_frags);
+      }
+
+      template <typename U, int w_x, int w_y, int str_x, int str_y>
+      METAL_FUNC void load(const threadgroup U* src) {
+        STEEL_PRAGMA_UNROLL
+        for (short i = 0; i < kTileRows; ++i) {
+          STEEL_PRAGMA_UNROLL
+          for (short j = 0; j < kTileCols; ++j) {
+            MMAFrag_t::load(
+                frag_at(i, j),
+                &(src[(i * kFragRows) * w_x * str_x +
+                      (j * kFragCols) * w_y * str_y]),
+                Int<str_x>{},
+                Int<str_y>{});
+          }
+        }
+      }
+
+      template <typename U, int w_x, int w_y>
+      METAL_FUNC void store(device U* dst, const int ld) const {
+        STEEL_PRAGMA_UNROLL
+        for (short i = 0; i < kTileRows; ++i) {
+          STEEL_PRAGMA_UNROLL
+          for (short j = 0; j < kTileCols; ++j) {
+            MMAFrag_t::store(
+                frag_at(i, j),
+                &(dst[(i * kFragRows) * w_x * ld + (j * kFragCols) * w_y]),
+                ld,
+                Int<1>{});
+          }
+        }
+      }
+
+      template <typename U, int w_x, int w_y>
+      METAL_FUNC void
+      store_safe(device U* dst, const int ld, const short2 dst_tile_dims) const {
+        STEEL_PRAGMA_UNROLL
+        for (int i = 0; i < kTileRows; ++i) {
+          STEEL_PRAGMA_UNROLL
+          for (int j = 0; j < kTileCols; ++j) {
+            MMAFrag_t::store_safe(
+                frag_at(i, j),
+                dst,
+                ld,
+                Int<1>{},
+                dst_tile_dims.y,
+                dst_tile_dims.x,
+                (i * kFragRows) * w_x,
+                (j * kFragCols) * w_y);
+          }
+        }
+      }
+    };
+
+    template <typename T, typename U, int M, int N, int K>
+    METAL_FUNC void tile_matmad(
+        thread MMATile<T, M, N>& D,
+        thread MMATile<U, M, K>& A,
+        thread MMATile<U, K, N>& B,
+        thread MMATile<T, M, N>& C) {
+      STEEL_PRAGMA_UNROLL
+      for (short m = 0; m < M; ++m) {
+        STEEL_PRAGMA_UNROLL
+        for (short n = 0; n < N; ++n) {
+          short n_serp = (m % 2) ? (N - 1 - n) : n;
+          STEEL_PRAGMA_UNROLL
+          for (short k = 0; k < K; ++k) {
+            MMATile<T, M, N>::MMAFrag_t::mma(
+                D.frag_at(m, n_serp),
+                A.frag_at(m, k),
+                B.frag_at(k, n_serp),
+                C.frag_at(m, n_serp));
+          }
+        }
+      }
+    }
+
+    template <
+        typename T,
+        typename U,
+        int BM,
+        int BN,
+        int BK,
+        int WM,
+        int WN,
+        bool transpose_a,
+        bool transpose_b,
+        short lda_tgp,
+        short ldb_tgp,
+        typename AccumType = float,
+        typename Epilogue = TransformNone<U, AccumType>>
+    struct BlockMMA {
+      STEEL_CONST short kFragSize = 8;
+      using MMAFrag_acc_t = BaseMMAFrag<AccumType, kFragSize, kFragSize>;
+
+      STEEL_CONST short TM_stride = kFragSize * WM;
+      STEEL_CONST short TN_stride = kFragSize * WN;
+      STEEL_CONST short TM = BM / (kFragSize * WM);
+      STEEL_CONST short TN = BN / (kFragSize * WN);
+
+      STEEL_CONST short A_str_m = transpose_a ? 1 : lda_tgp;
+      STEEL_CONST short A_str_k = transpose_a ? lda_tgp : 1;
+      STEEL_CONST short B_str_k = transpose_b ? 1 : ldb_tgp;
+      STEEL_CONST short B_str_n = transpose_b ? ldb_tgp : 1;
+
+      STEEL_CONST short tile_stride_a = kFragSize * A_str_k;
+      STEEL_CONST short tile_stride_b = kFragSize * B_str_k;
+
+      MMATile<AccumType, TM, 1, MMAFrag_acc_t> Atile;
+      MMATile<AccumType, 1, TN, MMAFrag_acc_t> Btile;
+      MMATile<AccumType, TM, TN, MMAFrag_acc_t> Ctile;
+
+      short sm, sn;
+      short As_offset, Bs_offset;
+
+      METAL_FUNC BlockMMA(
+          ushort simd_group_id [[simdgroup_index_in_threadgroup]],
+          ushort simd_lane_id [[thread_index_in_simdgroup]]) {
+        short tm = kFragSize * (simd_group_id / WN);
+        short tn = kFragSize * (simd_group_id % WN);
+        short2 simd_coord = MMAFrag_acc_t::get_coord(simd_lane_id);
+        sm = simd_coord.y;
+        sn = simd_coord.x;
+        As_offset = (tm + sm) * A_str_m + (sn) * A_str_k;
+        Bs_offset = (sm) * B_str_k + (tn + sn) * B_str_n;
+        sm += tm;
+        sn += tn;
+      }
+
+      METAL_FUNC void mma(const threadgroup T* As, const threadgroup T* Bs) {
+        As += As_offset;
+        Bs += Bs_offset;
+        STEEL_PRAGMA_UNROLL
+        for (short kk = 0; kk < BK; kk += kFragSize) {
+          simdgroup_barrier(mem_flags::mem_none);
+          Atile.template load<T, WM, 1, A_str_m, A_str_k>(As);
+          simdgroup_barrier(mem_flags::mem_none);
+          Btile.template load<T, 1, WN, B_str_k, B_str_n>(Bs);
+          simdgroup_barrier(mem_flags::mem_none);
+          tile_matmad(Ctile, Atile, Btile, Ctile);
+          As += tile_stride_a;
+          Bs += tile_stride_b;
+        }
+      }
+
+      METAL_FUNC void store_result(device U* D, const int ldd) {
+        STEEL_PRAGMA_UNROLL
+        for (short i = 0; i < decltype(Ctile)::kElemsPerTile; i++) {
+          Ctile.elems()[i] = Epilogue::apply(Ctile.elems()[i]);
+        }
+        D += sm * ldd + sn;
+        Ctile.template store<U, WM, WN>(D, ldd);
+      }
+
+      METAL_FUNC void
+      store_result_safe(device U* D, const int ldd, short2 dst_tile_dims) {
+        STEEL_PRAGMA_UNROLL
+        for (short i = 0; i < decltype(Ctile)::kElemsPerTile; i++) {
+          Ctile.elems()[i] = Epilogue::apply(Ctile.elems()[i]);
+        }
+        D += sm * ldd + sn;
+        dst_tile_dims -= short2(sn, sm);
+        if (dst_tile_dims.x <= 0 || dst_tile_dims.y <= 0)
+          return;
+        Ctile.template store_safe<U, WM, WN>(D, ldd, dst_tile_dims);
+      }
+    };
+
+  /**
+   * Quantized GEMM implementation (transposed weights)
+   */
+    template <
+        typename T,
+        const int group_size,
+        const int BM = 32,
+        const int BK = 32,
+        const int BN = 32>
+    METAL_FUNC void qmm_t_impl(
+        const device uint8_t* w,
+        const device T* scales,
+        const device T* biases,
+        const device T* x,
+        device T* y,
+        threadgroup T* Xs,
+        threadgroup T* Ws,
+        const int K,
+        const int N,
+        const int M,
+        uint3 tid [[threadgroup_position_in_grid]],
+        uint simd_gid [[simdgroup_index_in_threadgroup]],
+        uint simd_lid [[thread_index_in_simdgroup]]) {
+
+      constexpr int WM = 2;
+      constexpr int WN = 2;
+      constexpr int bits = 4;
+      constexpr int BK_padded = (BK + 16 / sizeof(T));
+
+      using mma_t = BlockMMA<T, T, BM, BN, BK, WM, WN, false, true, BK_padded, BK_padded>;
+      using loader_x_t = BlockLoader<T, BM, BK, BK_padded, 1, WM * WN * SIMD_SIZE>;
+      using loader_w_t = QuantizedBlockLoader<
+          T, BN, BK, BK_padded, 1, WM * WN * SIMD_SIZE, group_size, bits>;
+
+      const int K_g = K / group_size;
+      const int y_row = tid.y * BM;
+      const int y_col = tid.x * BN;
+
+      x += y_row * static_cast<int64_t>(K);
+      w += y_col * (K / 2);  // 4-bit packing: K/2 bytes per row
+      scales += y_col * K_g;
+      biases += y_col * K_g;
+      y += y_row * static_cast<int64_t>(N) + y_col;
+
+      const short num_els = min(BM, M - y_row);
+      const short num_outs = min(BN, N - y_col);
+      loader_x_t loader_x(x, K, Xs, simd_gid, simd_lid);
+      loader_w_t loader_w(w, scales, biases, K, Ws, simd_gid, simd_lid);
+      mma_t mma_op(simd_gid, simd_lid);
+
+      if (num_els < BM) {
+        if (num_outs < BN) {
+          for (int k = 0; k < K; k += BK) {
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            loader_x.load_safe(short2(BK, num_els));
+            loader_w.load_safe(short2(BK, num_outs));
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            mma_op.mma(Xs, Ws);
+            loader_x.next();
+            loader_w.next();
+          }
+        } else {
+          for (int k = 0; k < K; k += BK) {
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            loader_x.load_safe(short2(BK, num_els));
+            loader_w.load_unsafe();
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            mma_op.mma(Xs, Ws);
+            loader_x.next();
+            loader_w.next();
+          }
+        }
+      } else {
+        if (num_outs < BN) {
+          for (int k = 0; k < K; k += BK) {
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            loader_x.load_unsafe();
+            loader_w.load_safe(short2(BK, num_outs));
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            mma_op.mma(Xs, Ws);
+            loader_x.next();
+            loader_w.next();
+          }
+        } else {
+          for (int k = 0; k < K; k += BK) {
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            loader_x.load_unsafe();
+            loader_w.load_unsafe();
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            mma_op.mma(Xs, Ws);
+            loader_x.next();
+            loader_w.next();
+          }
+        }
+      }
+
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (num_els < BM || num_outs < BN) {
+        mma_op.store_result_safe(y, N, short2(num_outs, num_els));
+      } else {
+        mma_op.store_result(y, N);
+      }
+    }
+
+  /**
+   * Quantized GEMM kernel wrappers
+   */
+    template <typename T, const int group_size, const int BM = 32, const int BK = 32, const int BN = 32>
+    [[kernel]] void affine_qmm_t(
+        const device uint8_t* w [[buffer(0)]],
+        const device T* scales [[buffer(1)]],
+        const device T* biases [[buffer(2)]],
+        const device T* x [[buffer(3)]],
+        device T* y [[buffer(4)]],
+        const constant int& K [[buffer(5)]],
+        const constant int& N [[buffer(6)]],
+        const constant int& M [[buffer(7)]],
+        uint3 tid [[threadgroup_position_in_grid]],
+        uint lid [[thread_index_in_threadgroup]],
+        uint simd_gid [[simdgroup_index_in_threadgroup]],
+        uint simd_lid [[thread_index_in_simdgroup]]) {
+      (void)lid;
+      constexpr int BK_padded = (BK + 16 / sizeof(T));
+      threadgroup T Xs[BM * BK_padded];
+      threadgroup T Ws[BN * BK_padded];
+      qmm_t_impl<T, group_size, BM, BK, BN>(
+          w, scales, biases, x, y, Xs, Ws, K, N, M, tid, simd_gid, simd_lid);
+    }
+
+    // Instantiate GEMM kernels
+    #define INSTANTIATE_QMM_T(DTYPE, GSIZE)                                    \
+      template [[host_name("affine_qmm_t_4bit_gs" #GSIZE "_" #DTYPE)]]         \
+      [[kernel]] void affine_qmm_t<DTYPE, GSIZE>(                             \
+          const device uint8_t* w [[buffer(0)]],                              \
+          const device DTYPE* scales [[buffer(1)]],                           \
+          const device DTYPE* biases [[buffer(2)]],                           \
+          const device DTYPE* x [[buffer(3)]],                                \
+          device DTYPE* y [[buffer(4)]],                                      \
+          const constant int& K [[buffer(5)]],                                \
+          const constant int& N [[buffer(6)]],                                \
+          const constant int& M [[buffer(7)]],                                \
+          uint3 tid [[threadgroup_position_in_grid]],                         \
+          uint lid [[thread_index_in_threadgroup]],                           \
+          uint simd_gid [[simdgroup_index_in_threadgroup]],                   \
+          uint simd_lid [[thread_index_in_simdgroup]])
+
+    INSTANTIATE_QMM_T(float, 32);
+    INSTANTIATE_QMM_T(float, 64);
+    INSTANTIATE_QMM_T(float, 128);
+    INSTANTIATE_QMM_T(float, 256);
+    #if __METAL_VERSION__ >= 310
+    INSTANTIATE_QMM_T(bfloat, 32);
+    INSTANTIATE_QMM_T(bfloat, 64);
+    INSTANTIATE_QMM_T(bfloat, 128);
+    INSTANTIATE_QMM_T(bfloat, 256);
+    #endif
+
   )";
 }
 
@@ -1244,10 +1765,11 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
         return Error::Internal;
       }
 
-      // Select kernel based on dimensions (matching torchao's get_shader_func_and_dispatch)
+      // Select kernel based on dimensions (following MLX dispatch strategy)
       std::string kernel_name;
       bool use_qmv_fast = (M == 1 && N % 8 == 0 && K % 512 == 0);
       bool use_qmv_impl = (M == 1 && !use_qmv_fast);
+      bool use_qmm = (M > 1);  // Use GEMM for M > 1
 
       if (use_qmv_fast) {
         // Use optimized qmv_fast kernel for M=1 case with aligned dimensions
@@ -1257,10 +1779,14 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
         // Use qmv_impl kernel for M=1 case with generic N (handles any even N)
         kernel_name = "qmv_impl_4bit_" + std::to_string(group_size) + "_" + type_str;
         ET_LOG(Debug, "aoti_torch_mps__linear_fp_act_4bit_weight: Using qmv_impl kernel: %s", kernel_name.c_str());
+      } else if (use_qmm) {
+        // Use steel-based GEMM kernel for M > 1 (affine_qmm_t with transposed weights)
+        kernel_name = "affine_qmm_t_4bit_gs" + std::to_string(group_size) + "_" + type_str;
+        ET_LOG(Debug, "aoti_torch_mps__linear_fp_act_4bit_weight: Using affine_qmm_t kernel: %s (M=%d, N=%d, K=%d)",
+               kernel_name.c_str(), M, N, K);
       } else {
-        // Use general int4pack_mm kernel
-        kernel_name = "int4pack_mm_" + std::to_string(group_size) + "_" + type_str;
-        ET_LOG(Debug, "aoti_torch_mps__linear_fp_act_4bit_weight: Using int4pack_mm kernel: %s", kernel_name.c_str());
+        ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: No suitable kernel found for M=%d, N=%d, K=%d", M, N, K);
+        return Error::Internal;
       }
 
       // Get kernel function
@@ -1323,26 +1849,48 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
 
         ET_LOG(Debug, "aoti_torch_mps__linear_fp_act_4bit_weight: Encoder started, setting arguments");
 
-        // Set buffer arguments
-        // Buffer 0: A (activation) [M, K]
-        kernel_func->setArg(0, *a_tensor);
-        // Buffer 1: B (weight, packed) [N, K/2]
-        kernel_func->setArg(1, *b_tensor);
-        // Buffer 2: scales [N, num_groups]
-        kernel_func->setArg(2, *s_tensor);
-        // Buffer 3: zeros [N, num_groups]
-        kernel_func->setArg(3, *z_tensor);
-        // Buffer 4: output [M, N]
-        kernel_func->setArg(4, *out_tensor);
-        // Buffer 5: sizes (M, K, N, 0)
-        kernel_func->setArg(5, sizes.data(), sizeof(uint32_t) * sizes.size());
+        // Set buffer arguments (layout differs between GEMV and GEMM)
+        if (use_qmm) {
+          // GEMM kernel (affine_qmm_t) buffer layout:
+          // Buffer 0: w (uint8_t*, quantized weights) [N, K/2]
+          // Buffer 1: scales (T*) [N, num_groups]
+          // Buffer 2: biases (T*) [N, num_groups]
+          // Buffer 3: x (T*, activations) [M, K]
+          // Buffer 4: y (T*, output) [M, N]
+          // Buffer 5: K (constant int&)
+          // Buffer 6: N (constant int&)
+          // Buffer 7: M (constant int&)
+          kernel_func->setArg(0, *b_tensor);     // w
+          kernel_func->setArg(1, *s_tensor);     // scales
+          kernel_func->setArg(2, *z_tensor);     // biases
+          kernel_func->setArg(3, *a_tensor);     // x
+          kernel_func->setArg(4, *out_tensor);   // y
+          int32_t K_val = K, N_val = N, M_val = M;
+          kernel_func->setArg(5, &K_val, sizeof(int32_t));
+          kernel_func->setArg(6, &N_val, sizeof(int32_t));
+          kernel_func->setArg(7, &M_val, sizeof(int32_t));
+        } else {
+          // GEMV kernel (qmv_*) buffer layout:
+          // Buffer 0: A (activation) [M, K]
+          // Buffer 1: B (weight, packed) [N, K/2]
+          // Buffer 2: scales [N, num_groups]
+          // Buffer 3: zeros [N, num_groups]
+          // Buffer 4: output [M, N]
+          // Buffer 5: sizes (M, K, N, 0)
+          kernel_func->setArg(0, *a_tensor);
+          kernel_func->setArg(1, *b_tensor);
+          kernel_func->setArg(2, *s_tensor);
+          kernel_func->setArg(3, *z_tensor);
+          kernel_func->setArg(4, *out_tensor);
+          kernel_func->setArg(5, sizes.data(), sizeof(uint32_t) * sizes.size());
+        }
 
         ET_LOG(Debug, "aoti_torch_mps__linear_fp_act_4bit_weight: All arguments set, dispatching");
 
-        // Dispatch based on kernel type (matching torchao dispatch patterns)
+        // Dispatch based on kernel type
         if (use_qmv_fast || use_qmv_impl) {
           // dispatch_qmv: dispatchThreadgroups with grid (M, (N+7)/8, 1), group (32, 2, 1)
-          ET_LOG(Debug, "aoti_torch_mps__linear_fp_act_4bit_weight: Dispatching kernel: %s", kernel_name.c_str());
+          ET_LOG(Debug, "aoti_torch_mps__linear_fp_act_4bit_weight: Dispatching GEMV kernel: %s", kernel_name.c_str());
           kernel_func->dispatchThreadgroups(
               M,                       // gridX
               (N + 7) / 8,             // gridY
@@ -1350,12 +1898,26 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
               32,                      // threadsX
               2,                       // threadsY
               1);                      // threadsZ
+        } else if (use_qmm) {
+          // dispatch GEMM (affine_qmm_t):
+          // Block size: BM=32, BN=32
+          // Threadgroup size: 128 threads (4 simdgroups)
+          // Grid: ((N+31)/32, (M+31)/32, 1)
+          constexpr int BM = 32;
+          constexpr int BN = 32;
+          uint32_t grid_n = (N + BN - 1) / BN;
+          uint32_t grid_m = (M + BM - 1) / BM;
+          ET_LOG(Debug, "aoti_torch_mps__linear_fp_act_4bit_weight: Dispatching GEMM kernel: %s (grid: %u x %u)",
+                 kernel_name.c_str(), grid_n, grid_m);
+          kernel_func->dispatchThreadgroups(
+              grid_n,                  // gridX: number of N blocks
+              grid_m,                  // gridY: number of M blocks
+              1,                       // gridZ
+              128,                     // threadsX: 4 simdgroups × 32 threads
+              1,                       // threadsY
+              1);                      // threadsZ
         } else {
-          // dispatch_mm_Mr1xNr4_per_TG: dispatchThreads with grid (N/4 * 32, 1, M), group (32, 1, 1)
-          ET_LOG(Debug, "aoti_torch_mps__linear_fp_act_4bit_weight: Dispatching kernel: %s", kernel_name.c_str());
-          uint64_t grid_dims[3] = {static_cast<uint64_t>(N / 4 * 32), 1, static_cast<uint64_t>(M)};
-          uint64_t group_dims[3] = {32, 1, 1};
-          kernel_func->dispatchArrayWithGroupSize(grid_dims, 3, group_dims, 3);
+          ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: Unknown kernel type");
         }
       });
 
