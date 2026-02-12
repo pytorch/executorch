@@ -15,6 +15,7 @@
 # SUPPORTED MODELS:
 # -----------------
 # - voxtral:  Multimodal voice + text model (CPU, CUDA, Metal)
+# - voxtral_realtime: Realtime speech-to-text model (CPU)
 # - whisper:  Speech recognition model (CPU, CUDA, Metal)
 # - parakeet: Speech recognition model (CPU, CUDA, Metal)
 # - sortformer: Speaker diarization model (CPU)
@@ -90,13 +91,14 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal sortformer-cpu silero-vad-cpu llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-realtime-cpu whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal sortformer-cpu silero-vad-cpu llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
 	@echo "  voxtral-cuda        - Build Voxtral runner with CUDA backend"
 	@echo "  voxtral-cpu         - Build Voxtral runner with CPU backend"
 	@echo "  voxtral-metal       - Build Voxtral runner with Metal backend (macOS only)"
+	@echo "  voxtral-realtime-cpu - Build Voxtral Realtime runner with CPU backend"
 	@echo "  whisper-cuda        - Build Whisper runner with CUDA backend"
 	@echo "  whisper-cuda-debug  - Build Whisper runner with CUDA backend (debug mode)"
 	@echo "  whisper-cpu         - Build Whisper runner with CPU backend"
@@ -220,6 +222,15 @@ sortformer-cpu:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/sortformer/sortformer_runner"
+
+voxtral-realtime-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Voxtral Realtime runner (CPU)..."
+	cd examples/models/voxtral_realtime && cmake --workflow --preset voxtral-realtime-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner"
 
 silero-vad-cpu:
 	@echo "==> Building and installing ExecuTorch..."
