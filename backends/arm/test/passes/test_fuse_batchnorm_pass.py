@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -150,8 +150,9 @@ modules: Dict[str, ModuleWithBatchNormAttrs] = {
 
 @common.parametrize("module", modules)
 def test_fuse_batch_norm2d_tosa_FP(module: ModuleWithBatchNormAttrs) -> None:
-    """Test various cases where the batchnorm should either be fused with a previous
-    conv, or converted to a new conv."""
+    """Test various cases where the batchnorm should either be fused with a
+    previous conv, or converted to a new conv.
+    """
     nn_module = cast(torch.nn.Module, module)
     pipeline = PassPipeline[input_t](
         nn_module,
