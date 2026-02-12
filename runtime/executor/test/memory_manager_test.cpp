@@ -79,7 +79,7 @@ TEST(MemoryManagerTest, DeprecatedCtorWithSameAllocator) {
           /*non_constant_allocator=*/&planned_memory,
           /*runtime_allocator=*/&method_allocator,
           /*temp_allocator=*/&method_allocator),
-      "");
+      "cannot be the same");
 }
 
 TEST(MemoryManagerTest, CtorWithSameAllocator) {
@@ -91,5 +91,5 @@ TEST(MemoryManagerTest, CtorWithSameAllocator) {
           /*runtime_allocator=*/&method_allocator,
           /*non_constant_allocator=*/&planned_memory,
           /*temp_allocator=*/&method_allocator),
-      "");
+      "cannot be the same");
 }
