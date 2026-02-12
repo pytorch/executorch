@@ -9,6 +9,7 @@ import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import GraphModule, Node
+from torch.fx.node import Argument
 from torch.nn import Parameter
 
 QUANTIZE_OPERATORS = [
@@ -362,3 +363,7 @@ def node_has_well_defined_shape(node: Node) -> bool:
         return False
 
     return all(isinstance(dim, int) and dim > 0 for dim in val.shape)
+
+
+def try_get_arg(node: Node, idx: int) -> Argument | None:
+    return node.args[idx] if idx < len(node.args) else None
