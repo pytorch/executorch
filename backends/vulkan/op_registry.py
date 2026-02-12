@@ -249,29 +249,8 @@ def register_binaryop_cpp_ops():
 # =============================================================================
 
 
-@update_features(
-    [
-        exir_ops.edge.aten.abs.default,
-        exir_ops.edge.aten.clamp.default,
-        exir_ops.edge.aten.cos.default,
-        exir_ops.edge.aten.exp.default,
-        exir_ops.edge.aten.gelu.default,
-        exir_ops.edge.aten.hardshrink.default,
-        exir_ops.edge.aten.hardsigmoid.default,
-        exir_ops.edge.aten.hardswish.default,
-        exir_ops.edge.aten.hardtanh.default,
-        exir_ops.edge.aten.neg.default,
-        exir_ops.edge.aten.relu.default,
-        exir_ops.edge.aten.sigmoid.default,
-        exir_ops.edge.aten.sin.default,
-        exir_ops.edge.aten.sqrt.default,
-        exir_ops.edge.aten.rsqrt.default,
-        exir_ops.edge.aten.tanh.default,
-        exir_ops.edge.aten.round.default,
-        exir_ops.edge.aten.leaky_relu.default,
-    ]
-)
-def register_unary_op():
+@update_features(exir_ops.edge.aten.pow.Tensor_Scalar)
+def register_pow_tensor_scalar():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
