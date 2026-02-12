@@ -108,7 +108,7 @@ cmake-out/examples/models/llama/llama_main --model_path=qwen_lora_math.pte --dat
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
-RESULT=$(cat result.txt)
+RESULT=$(cat result2.txt)
 if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
