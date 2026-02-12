@@ -8,7 +8,6 @@ import inspect
 
 from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
-    RemoveNoopPass,
     ScalarsToAttributePass,
 )
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
@@ -35,7 +34,6 @@ class CortexMPassManager(PassManager):
         # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
         RemoveGetItemPass,
         FoldAndAnnotateQParamsPass,
-        RemoveNoopPass,
         ReplaceScalarWithTensorArgPass,
         ReplaceQuantNodesPass,
         ActivationFusionPass,
