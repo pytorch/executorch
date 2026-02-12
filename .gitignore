@@ -70,3 +70,6 @@ xcuserdata/
 # Windows
 *.dll
 *.pyd
+
+# Agents
+.claude/*.local.*

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 cmake_minimum_required(VERSION 3.24)
-project(parakeet_runner)
+project(silero_vad_runner)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,13 +40,6 @@ if(TARGET optimized_native_cpu_ops_lib)
   endif()
 endif()
 
-# CPU-only builds need quantized and custom ops
-if(NOT EXECUTORCH_BUILD_CUDA)
-  list(APPEND link_libraries quantized_ops_lib custom_ops)
-  executorch_target_link_options_shared_lib(quantized_ops_lib)
-  executorch_target_link_options_shared_lib(custom_ops)
-endif()
-
 # XNNPACK
 if(TARGET xnnpack_backend)
   set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
@@ -74,44 +67,18 @@ list(
   extension_data_loader
   extension_tensor
   extension_flat_tensor
-  tokenizers::tokenizers
 )
 
-# Link CUDA backend
-if(EXECUTORCH_BUILD_CUDA)
-  find_package(CUDAToolkit REQUIRED)
-  list(APPEND link_libraries aoti_cuda_backend)
-  if(NOT MSVC)
-    executorch_target_link_options_shared_lib(aoti_cuda_backend)
-  endif()
-endif()
-
-if(EXECUTORCH_BUILD_METAL)
-  list(APPEND link_libraries metal_backend)
-  executorch_target_link_options_shared_lib(metal_backend)
-endif()
-
-add_executable(parakeet_runner main.cpp timestamp_utils.cpp tokenizer_utils.cpp)
+add_executable(silero_vad_runner main.cpp silero_vad_runner.cpp)
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_link_options_gc_sections(parakeet_runner)
+  target_link_options_gc_sections(silero_vad_runner)
   if(NOT APPLE AND NOT MSVC)
-    target_link_options(parakeet_runner PRIVATE "LINKER:-s")
+    target_link_options(silero_vad_runner PRIVATE "LINKER:-s")
   endif()
 endif()
 
 target_include_directories(
-  parakeet_runner PUBLIC ${_common_include_directories}
+  silero_vad_runner PUBLIC ${_common_include_directories}
 )
-target_link_libraries(parakeet_runner PUBLIC ${link_libraries})
-target_compile_options(parakeet_runner PUBLIC ${_common_compile_options})
-
-# On Windows, copy required DLLs to the executable directory
-if(MSVC AND EXECUTORCH_BUILD_CUDA)
-  add_custom_command(
-    TARGET parakeet_runner
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
-            $<TARGET_FILE_DIR:parakeet_runner>
-    COMMENT "Copying aoti_cuda_shims.dll to parakeet_runner directory"
-  )
-endif()
+target_link_libraries(silero_vad_runner PUBLIC ${link_libraries})
+target_compile_options(silero_vad_runner PUBLIC ${_common_compile_options})
