@@ -33,7 +33,6 @@ from executorch.exir.schema import Double, EValue, Instruction, Program
 
 _T_CLASS_CACHE: Dict[type, type] = {}
 _FIELD_NAME_CACHE: Dict[type, tuple[tuple[str, str], ...]] = {}
-_PACKERS_INSTALLED = False
 _BUFFER_ALIGNMENT: ContextVar[int] = ContextVar("_BUFFER_ALIGNMENT", default=1)
 _DELEGATE_ALIGNMENT: ContextVar[int] = ContextVar("_DELEGATE_ALIGNMENT", default=1)
 
