@@ -307,6 +307,16 @@ class ET_EXPERIMENTAL MetalBackend final
     // Free the buffer immediately after writing to disk
     aoti_metal_buffer->Free();
 
+    // Fix @rpath/libc++.1.dylib references in the .so before loading.
+    // The exported .so may reference libc++ via @rpath which doesn't resolve
+    // when loaded from a temp directory. Rewrite to the absolute path that
+    // dyld resolves from the shared cache.
+    std::string install_name_cmd =
+        "install_name_tool -change @rpath/libc++.1.dylib "
+        "/usr/lib/libc++.1.dylib " +
+        so_path.string() + " 2>/dev/null";
+    system(install_name_cmd.c_str());
+
     // Load the ELF using dlopen
     void* so_handle = dlopen(so_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
     ET_CHECK_OR_RETURN_ERROR(

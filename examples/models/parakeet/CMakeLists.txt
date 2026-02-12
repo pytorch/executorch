@@ -105,6 +105,83 @@ target_include_directories(
 target_link_libraries(parakeet_runner PUBLIC ${link_libraries})
 target_compile_options(parakeet_runner PUBLIC ${_common_compile_options})
 
+# Streaming runner with microphone support
+find_package(PkgConfig)
+if(PkgConfig_FOUND)
+  pkg_check_modules(PORTAUDIO IMPORTED_TARGET portaudio-2.0)
+endif()
+
+if(PORTAUDIO_FOUND)
+  add_executable(parakeet_streaming_runner
+    streaming_runner.cpp
+    audio_stream.cpp
+    tokenizer_utils.cpp)
+
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_options_gc_sections(parakeet_streaming_runner)
+    if(NOT APPLE AND NOT MSVC)
+      target_link_options(parakeet_streaming_runner PRIVATE "LINKER:-s")
+    endif()
+  endif()
+
+  target_include_directories(
+    parakeet_streaming_runner
+    PUBLIC ${_common_include_directories}
+  )
+
+  target_link_libraries(
+    parakeet_streaming_runner
+    PUBLIC ${link_libraries}
+    PUBLIC PkgConfig::PORTAUDIO
+  )
+
+  target_compile_options(parakeet_streaming_runner PUBLIC ${_common_compile_options})
+
+  message(STATUS "Building parakeet_streaming_runner with PortAudio support")
+else()
+  message(WARNING "PortAudio not found. Skipping parakeet_streaming_runner build. Install with: apt-get install portaudio19-dev (Linux) or brew install portaudio (macOS)")
+endif()
+
+# Multimodal runner with camera and microphone support
+find_package(OpenCV)
+
+if(PORTAUDIO_FOUND AND OpenCV_FOUND)
+  add_executable(parakeet_multimodal_runner
+    multimodal_runner.cpp
+    audio_stream.cpp
+    video_stream.cpp
+    yolo_detector.cpp
+    tokenizer_utils.cpp)
+
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_options_gc_sections(parakeet_multimodal_runner)
+    if(NOT APPLE AND NOT MSVC)
+      target_link_options(parakeet_multimodal_runner PRIVATE "LINKER:-s")
+    endif()
+  endif()
+
+  target_include_directories(
+    parakeet_multimodal_runner
+    PUBLIC ${_common_include_directories}
+    PUBLIC ${OpenCV_INCLUDE_DIRS}
+  )
+
+  target_link_libraries(
+    parakeet_multimodal_runner
+    PUBLIC ${link_libraries}
+    PUBLIC PkgConfig::PORTAUDIO
+    PUBLIC ${OpenCV_LIBS}
+  )
+
+  target_compile_options(parakeet_multimodal_runner PUBLIC ${_common_compile_options})
+
+  message(STATUS "Building parakeet_multimodal_runner with PortAudio and OpenCV support")
+elseif(NOT PORTAUDIO_FOUND)
+  message(WARNING "PortAudio not found. Skipping parakeet_multimodal_runner build.")
+elseif(NOT OpenCV_FOUND)
+  message(WARNING "OpenCV not found. Skipping parakeet_multimodal_runner build. Install with: apt-get install libopencv-dev (Linux) or brew install opencv (macOS)")
+endif()
+
 # On Windows, copy required DLLs to the executable directory
 if(MSVC AND EXECUTORCH_BUILD_CUDA)
   add_custom_command(

@@ -55,6 +55,20 @@
                 "type": "equals",
                 "rhs": "Darwin"
             }
+        },
+        {
+            "name": "parakeet-metal-debug",
+            "displayName": "Parakeet runner (Metal, Debug)",
+            "inherits": ["parakeet-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "EXECUTORCH_BUILD_METAL": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
@@ -80,6 +94,12 @@
             "name": "parakeet-metal",
             "displayName": "Build Parakeet runner (Metal)",
             "configurePreset": "parakeet-metal",
+            "targets": ["parakeet_runner"]
+        },
+        {
+            "name": "parakeet-metal-debug",
+            "displayName": "Build Parakeet runner (Metal, Debug)",
+            "configurePreset": "parakeet-metal-debug",
             "targets": ["parakeet_runner"]
         }
     ],
@@ -137,6 +157,20 @@
                 {
                     "type": "build",
                     "name": "parakeet-metal"
+                }
+            ]
+        },
+        {
+            "name": "parakeet-metal-debug",
+            "displayName": "Configure and build Parakeet runner (Metal, Debug)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "parakeet-metal-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "parakeet-metal-debug"
                 }
             ]
         }

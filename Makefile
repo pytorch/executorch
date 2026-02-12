@@ -90,7 +90,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal sortformer-cpu silero-vad-cpu llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-metal-debug sortformer-cpu silero-vad-cpu llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -105,6 +105,7 @@ help:
 	@echo "  parakeet-cuda-debug - Build Parakeet runner with CUDA backend (debug mode)"
 	@echo "  parakeet-cpu        - Build Parakeet runner with CPU backend"
 	@echo "  parakeet-metal      - Build Parakeet runner with Metal backend (macOS only)"
+	@echo "  parakeet-metal-debug - Build Parakeet runner with Metal backend (macOS, debug mode)"
 	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
 	@echo "  silero-vad-cpu      - Build Silero VAD runner with CPU backend"
 	@echo "  llama-cpu           - Build Llama runner with CPU backend"
@@ -208,6 +209,15 @@ parakeet-metal:
 	cmake --workflow --preset llm-metal-stats
 	@echo "==> Building Parakeet runner with Metal..."
 	cd examples/models/parakeet && cmake --workflow --preset parakeet-metal
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+parakeet-metal-debug:
+	@echo "==> Building and installing ExecuTorch with Metal (debug mode)..."
+	cmake --workflow --preset llm-debug-metal
+	@echo "==> Building Parakeet runner with Metal (debug mode)..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-metal-debug
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
