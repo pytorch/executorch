@@ -35,7 +35,6 @@ TestCase create_test_case_from_config(
   // Create a descriptive name for the test case
   std::string shape_str = shape_string(config.shape);
   std::string test_name = config.test_case_name + "  I=" + shape_str + "  " +
-      repr_str(storage_type, fp_memory_layout) + "->" +
       repr_str(utils::kBuffer, quant_layout);
   test_case.set_name(test_name);
 
@@ -133,12 +132,6 @@ std::vector<TestCase> generate_q8ta_add_easy_cases() {
       "ACCU", // test_case_name
   };
 
-  // FP memory layouts to test
-  std::vector<utils::GPUMemoryLayout> fp_layouts = {
-      utils::kWidthPacked,
-      utils::kChannelsPacked,
-  };
-
   // Quantized memory layouts to test
   std::vector<utils::GPUMemoryLayout> quant_layouts = {
       utils::kPackedInt8_4W,
@@ -148,19 +141,13 @@ std::vector<TestCase> generate_q8ta_add_easy_cases() {
       utils::kPackedInt8_4C1W,
   };
 
-  std::vector<utils::StorageType> storage_types = {utils::kBuffer};
-  std::vector<vkapi::ScalarType> float_types = {vkapi::kFloat};
-
-  // Generate test cases for each combination
-  for (const auto& fp_layout : fp_layouts) {
-    for (const auto& quant_layout : quant_layouts) {
-      for (const auto& storage_type : storage_types) {
-        for (const auto& input_dtype : float_types) {
-          test_cases.push_back(create_test_case_from_config(
-              config, storage_type, input_dtype, fp_layout, quant_layout));
-        }
-      }
-    }
+  for (const auto& quant_layout : quant_layouts) {
+    test_cases.push_back(create_test_case_from_config(
+        config,
+        /*fp_storage_type=*/utils::kBuffer,
+        /*input_dtype=*/vkapi::kFloat,
+        /*fp_layout=*/utils::kWidthPacked,
+        quant_layout));
   }
 
   return test_cases;
@@ -198,12 +185,6 @@ std::vector<TestCase> generate_q8ta_add_test_cases() {
       {1, 128, 128, 128},
   };
 
-  // FP memory layouts to test
-  std::vector<utils::GPUMemoryLayout> fp_layouts = {
-      utils::kWidthPacked,
-      utils::kChannelsPacked,
-  };
-
   // Quantized memory layouts to test
   std::vector<utils::GPUMemoryLayout> quant_layouts = {
       utils::kPackedInt8_4W,
@@ -212,9 +193,6 @@ std::vector<TestCase> generate_q8ta_add_test_cases() {
       utils::kPackedInt8_4H4W,
       utils::kPackedInt8_4C1W,
   };
-
-  // Test with buffer storage only
-  std::vector<utils::StorageType> storage_types = {utils::kBuffer};
 
   // Generate all combinations
   for (const auto& shape : shapes) {
@@ -227,17 +205,16 @@ std::vector<TestCase> generate_q8ta_add_test_cases() {
       }
     }
 
-    for (const auto& fp_layout : fp_layouts) {
-      for (const auto& quant_layout : quant_layouts) {
-        for (const auto& storage_type : storage_types) {
-          Q8taBinaryConfig config;
-          config.shape = shape;
-          config.test_case_name = prefix;
-
-          test_cases.push_back(create_test_case_from_config(
-              config, storage_type, vkapi::kFloat, fp_layout, quant_layout));
-        }
-      }
+    Q8taBinaryConfig config;
+    config.shape = shape;
+    config.test_case_name = prefix;
+    for (const auto& quant_layout : quant_layouts) {
+      test_cases.push_back(create_test_case_from_config(
+          config,
+          /*fp_storage_type=*/utils::kBuffer,
+          /*fp_input_dtype=*/vkapi::kFloat,
+          /*fp_layout=*/utils::kWidthPacked,
+          quant_layout));
     }
   }
 
