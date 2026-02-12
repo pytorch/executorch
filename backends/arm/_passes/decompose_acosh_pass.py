@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -22,10 +22,11 @@ edge_acosh_op = exir_ops.edge.aten.acosh.default
 
 
 class DecomposeAcoshPass(ArmPass):
-    """
-    Decomposes acosh to supported TOSA-operations.
+    """Decomposes acosh to supported TOSA-operations.
+
     This decomposition is based on the mathematical identity:
         acosh(x) = log(x + sqrt((x-1)(x+1))
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {

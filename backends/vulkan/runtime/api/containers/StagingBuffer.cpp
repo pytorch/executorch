@@ -159,6 +159,11 @@ void StagingBuffer::cast_half_to_float_and_copy_from(
   for (size_t i = 0; i < numel; ++i) {
     dst[i] = half_to_float(src[i]);
   }
+  vmaFlushAllocation(
+      vulkan_buffer_.vma_allocator(),
+      vulkan_buffer_.allocation(),
+      0u,
+      VK_WHOLE_SIZE);
 }
 
 void StagingBuffer::cast_float_to_half_and_copy_to(

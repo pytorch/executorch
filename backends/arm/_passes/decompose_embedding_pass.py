@@ -25,8 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class DecomposeEmbeddingPass(ArmPass):
-    """
-    This pass decomposes embedding into index_select.
+    """This pass decomposes embedding into index_select.
 
     Example:
           o = embedding(w, i)
@@ -36,6 +35,7 @@ class DecomposeEmbeddingPass(ArmPass):
           o = view_copy(o)  # reshape back output
     Note:
          i = indices is expected to be int32 before this pass
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
