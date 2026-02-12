@@ -3,6 +3,7 @@ aten.abs.default,int8,static int8,
 aten._adaptive_avg_pool2d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
 aten.addmm.default,int8,static int8,2D tensor only
 aten.add.Tensor,int8,static int8,"alpha = 1, input tensor of rame rank"
+aten.avg_pool1d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
 aten.avg_pool2d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
 aten.cat.default,int8,static int8,"input_channels % 8 = 0, output_channels %8 = 0"
 aten.clone.default,int8,static int8,

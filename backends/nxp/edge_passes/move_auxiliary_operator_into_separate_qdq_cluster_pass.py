@@ -13,15 +13,18 @@ from torch.fx.passes.infra.pass_base import PassResult
 
 # Operator aliases for better readability.
 AddMM = exir_ops.edge.aten.addmm.default
-ViewCopy = exir_ops.edge.aten.view_copy.default
-MM = exir_ops.edge.aten.mm.default
+AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
 Conv = exir_ops.edge.aten.convolution.default
-HardTanh = exir_ops.edge.aten.hardtanh.default
-Relu = exir_ops.edge.aten.relu.default
-Sigmoid = exir_ops.edge.aten.sigmoid.default
-Tanh = exir_ops.edge.aten.tanh.default
 Clone = exir_ops.edge.aten.clone.default
 CloneDimOrder = exir_ops.edge.dim_order_ops._clone_dim_order.default
+HardTanh = exir_ops.edge.aten.hardtanh.default
+MM = exir_ops.edge.aten.mm.default
+Relu = exir_ops.edge.aten.relu.default
+Sigmoid = exir_ops.edge.aten.sigmoid.default
+SqueezeCopy = exir_ops.edge.aten.squeeze_copy.dims
+Tanh = exir_ops.edge.aten.tanh.default
+UnsqueezeCopy = exir_ops.edge.aten.unsqueeze_copy.default
+ViewCopy = exir_ops.edge.aten.view_copy.default
 
 
 def insert_qdq_pair_after_node(
@@ -106,7 +109,11 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
         ],
         ViewCopy: [Clone, CloneDimOrder],
         Conv: [
-            ViewCopy,  # For 1D conv.
+            ViewCopy,  # For 1D conv
+        ],
+        AvgPool2D: [
+            ViewCopy,  # For 1D AvgPool
+            UnsqueezeCopy,
         ],
     }
 
@@ -206,6 +213,10 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             ViewCopy,  # For 1D conv.
         ],
         ViewCopy: [Clone, CloneDimOrder],
+        AvgPool2D: [
+            ViewCopy,
+            SqueezeCopy,
+        ],
     }
 
     def run(self, graph_module: torch.fx.GraphModule) -> PassResult:
