@@ -236,7 +236,7 @@ class ET_EXPERIMENTAL IOManager {
     return update_decode(model_outputs, "forward");
   }
 
- private:
+ protected:
   /**
    * @brief Reference to the Module used for method metadata and execution.
    */

@@ -284,6 +284,18 @@ fbcode_target(_kind = runtime.python_test,
 )
 
 fbcode_target(_kind = runtime.python_test,
+    name = "attention_sink_ring_buffer_test",
+    srcs = [
+        "source_transformation/test_attention_sink_ring_buffer.py",
+    ],
+    supports_static_listing = False,
+    deps = [
+        "//caffe2:torch",
+        ":export_library",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
     name = "quantized_sdpa_source_transform_test",
     srcs = [
         "source_transformation/test_quantized_sdpa.py",

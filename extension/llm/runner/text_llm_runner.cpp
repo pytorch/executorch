@@ -129,22 +129,27 @@ Error TextLLMRunner::generate(
   std::vector<uint64_t> prompt_tokens = encode_res.get();
   int num_prompt_tokens = prompt_tokens.size();
 
-  // Reduce max_context_len by pos_
-  int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;
+  // Get max_seq_len for single prefill chunk limit
+  int64_t max_seq_len = metadata_.at(kMaxSeqLen);
+  int64_t max_context_len = metadata_.at(kMaxContextLen);
+
   ET_CHECK_OR_RETURN_ERROR(
       num_prompt_tokens >= 1,
       InvalidArgument,
       "Expected at least 1 prompt token");
-  ET_CHECK_OR_RETURN_ERROR(
-      num_prompt_tokens < max_context_len,
-      InvalidArgument,
-      "num_prompt_tokens %d >= max_context_len %" PRId64
-      ", Max seq length exceeded - please increase max seq len value in your export script",
-      num_prompt_tokens,
-      max_context_len);
 
-  // Determine max_new_tokens using the GenerationConfig's resolve method,
-  // then subtract pos_ for max_new_tokens.
+  ET_CHECK_OR_RETURN_ERROR(
+      num_prompt_tokens <= max_seq_len,
+      InvalidArgument,
+      "num_prompt_tokens %d > max_seq_len %" PRId64
+      ", Single prefill chunk too large",
+      num_prompt_tokens,
+      max_seq_len);
+
+  // Determine max_new_tokens from GenerationConfig.
+  // For ring buffer / attention sink models, the model handles position
+  // wrapping internally so generation can continue past max_context_len.
+  // If user specified seq_len explicitly, use that as the overall token limit.
   int max_new_tokens =
       config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
 
