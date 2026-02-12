@@ -176,15 +176,16 @@ void xa_opt_quantized_conv2d_nhwc(
     WORD32* __restrict__ p_bias =
         (WORD32* __restrict__)bias.const_data_ptr<int32_t>();
 
-    WORD32 input_height = conv1d ? 1 : input.size(2);
-    WORD32 input_width = conv1d ? input.size(2) : input.size(3);
-    WORD32 input_channels = input.size(1);
-    WORD32 kernel_height = conv1d ? 1 : weight.size(2);
-    WORD32 kernel_width = conv1d ? weight.size(2) : weight.size(3);
-    WORD32 kernel_channels = weight.size(1);
+    // NHWC layout: 4D=[N,H,W,C], 3D=[N,W,C]
+    WORD32 input_height = conv1d ? 1 : input.size(1);
+    WORD32 input_width = conv1d ? input.size(1) : input.size(2);
+    WORD32 input_channels = conv1d ? input.size(2) : input.size(3);
+    WORD32 kernel_height = conv1d ? 1 : weight.size(1);
+    WORD32 kernel_width = conv1d ? weight.size(1) : weight.size(2);
+    WORD32 kernel_channels = conv1d ? weight.size(2) : weight.size(3);
     WORD32 out_channels = weight.size(0);
-    WORD32 out_height = conv1d ? 1 : out.size(2);
-    WORD32 out_width = conv1d ? out.size(2) : out.size(3);
+    WORD32 out_height = conv1d ? 1 : out.size(1);
+    WORD32 out_width = conv1d ? out.size(1) : out.size(2);
     WORD32 batches = input.size(0);
 
     WORD32 x_stride = stride[1];
@@ -285,6 +286,19 @@ void xa_opt_quantized_conv2d_nhwc(
     if (groups == input_channels) {
       WORD32 channels_multiplier = out_channels / input_channels;
 
+      // Rearrange weight from [OC, KH, KW, IC/G] (graph NHWC format) to
+      // [KH, KW, OC] (NNLib HWC format expected for inp_data_format=0).
+      WORD32 kernel_size_dw = kernel_height * kernel_width;
+      WORD32 weight_size_dw = out_channels * kernel_size_dw;
+      WORD8* p_kernel_hwc =
+          (WORD8*)kernels::allocate_temp_memory(ctx, weight_size_dw);
+      for (int oc = 0; oc < out_channels; oc++) {
+        for (int k = 0; k < kernel_size_dw; k++) {
+          p_kernel_hwc[k * out_channels + oc] =
+              p_kernel[oc * kernel_size_dw + k];
+        }
+      }
+
       scratch_size = xa_nn_conv2d_depthwise_getsize(
           input_height,
           input_width,
@@ -322,7 +336,7 @@ void xa_opt_quantized_conv2d_nhwc(
 
         xa_nn_conv2d_depthwise_per_chan_sym8sxasym8s(
             out_batch,
-            p_kernel,
+            p_kernel_hwc,
             in_batch,
             p_bias,
             input_height,
