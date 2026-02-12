@@ -106,7 +106,7 @@ class TestPartitioner(unittest.TestCase):
 
         with self.assertRaisesRegex(
             AttributeError,
-            "can't set attribute 'spec'",
+            "(can't set attribute 'spec'|has no setter)",
         ):
             my_partitioner.spec = {"new_key": "new_value"}
 
