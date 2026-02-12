@@ -334,19 +334,30 @@ TensorIndex linear_idx_to_tensor_idx(
 /*
  * Convert a linear texel index to a TensorIndex4D.
  *
- * This function is used for texel-based dispatch where each thread handles
- * one packed texel (4 elements along the packed dimension). The texel index
- * is decomposed using the dim_order and strides from the tensor's layout.
+ * This is the inverse of tensor4d_idx_to_texel_idx. It handles both
+ * single-packed layouts (outer_block_size == 1) and block-packed layouts
+ * (e.g., 4W4C where outer_block_size > 1).
  *
- * The strides in BufferMetadata should already be in texel space (with packed
- * dimension size divided by 4).
+ * The approach mirrors tensor4d_idx_to_texel_idx by decomposing the problem
+ * into two levels:
+ *   1. Decompose texel_idx into block_idx and intra-block texel offset
+ *   2. Decompose block_idx into block-space tensor coordinates using strides
+ *   3. Convert block-space coordinates to element-space by multiplying by
+ *      block sizes
+ *   4. Add the intra-block outer-dimension offset
+ *
+ * For single-packed layouts (outer_block_size == 1, inner_dim == outer_dim),
+ * texels_per_block == 1, so block_idx == texel_idx and intra_block_texel == 0.
+ * The only effective multiplication is tidx[inner_dim] *= inner_block_size
+ * (i.e., *= 4), matching the previous single-packed behavior.
  *
  * Parameters:
- *   meta: BufferMetadata with tensor sizes and texel-space strides
+ *   meta: BufferMetadata with block-space strides
  *   texel_idx: Linear index into packed texels (0 to num_texels-1)
  *   hashed_layout: Packed layout info containing dim_order and packed_dim
  *
- * Returns: TensorIndex4D with logical tensor coordinates (packed dim is base of 4-element block)
+ * Returns: TensorIndex4D with logical tensor coordinates (packed dims are
+ *          base of their respective blocks)
  */
 TensorIndex4D texel_idx_to_tensor4d_idx(
     const BufferMetadata meta,
@@ -354,25 +365,35 @@ TensorIndex4D texel_idx_to_tensor4d_idx(
     const int hashed_layout) {
   TensorIndex4D tidx;
 
-  const int packed_dim = get_packed_dim(hashed_layout);
+  const int inner_dim = get_packed_dim(hashed_layout);
+  const int outer_dim = get_outer_packed_dim(hashed_layout);
+  const int inner_block_size = get_packed_dim_block_size(hashed_layout);
+  const int outer_block_size = get_outer_packed_dim_block_size(hashed_layout);
 
-  // Decompose texel_idx using dim_order from hashed_layout and strides from meta
-  // Iterate from slowest-varying dimension (d=3) to fastest (d=0)
-  // This follows the pattern of linear_idx_to_tensor_idx in indexing.glslh
+  // Number of texels per block: each block has inner_block_size *
+  // outer_block_size elements, and each texel holds 4 elements
+  const int texels_per_block = (inner_block_size * outer_block_size) / 4;
+
+  // Decompose texel_idx into block_idx and intra-block texel offset
+  const uint block_idx = texel_idx / texels_per_block;
+  const int intra_block_texel = int(texel_idx % texels_per_block);
+
+  // Decompose block_idx into block-space tensor coordinates using dim_order
+  // and strides. Iterate from slowest-varying (d=3) to fastest (d=0).
+  uint remaining = block_idx;
   [[unroll]] for (int d = 3; d >= 0; d--) {
-    // Get dim index from hashed_layout's dim_order (bits 0-15)
     int dim_idx = extract_4b(hashed_layout, d);
-
-    // Get stride for this dimension from BufferMetadata
     uint dim_stride = meta.strides[0][dim_idx];
-
-    // Compute coordinate for this dimension
-    tidx.data[dim_idx] = int(texel_idx / dim_stride);
-    texel_idx = texel_idx % dim_stride;
+    tidx.data[dim_idx] = int(remaining / dim_stride);
+    remaining = remaining % dim_stride;
   }
 
-  // Convert packed dimension from texel index to element index
-  tidx.data[packed_dim] *= 4;
+  // Convert block-space coordinates to element-space
+  tidx.data[inner_dim] *= inner_block_size;
+  tidx.data[outer_dim] *= outer_block_size;
+
+  // Add intra-block outer-dimension offset
+  tidx.data[outer_dim] += intra_block_texel;
 
   return tidx;
 }

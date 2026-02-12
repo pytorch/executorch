@@ -30,6 +30,23 @@ void add_q8ta_binary_node(
     const ValueRef alpha,
     const ValueRef packed_int8_output,
     const std::string& op_name) {
+  // The implementation assumes that all participating tensors have the same
+  // packed dimension, and that they all have the same block size for the packed
+  // dimension
+  const api::PackedDimInfo& output_info =
+      graph.packed_dim_info_of(packed_int8_output);
+  const api::PackedDimInfo& input_a_info =
+      graph.packed_dim_info_of(packed_int8_input_a);
+  const api::PackedDimInfo& input_b_info =
+      graph.packed_dim_info_of(packed_int8_input_b);
+
+  VK_CHECK_COND(input_a_info.packed_dim == output_info.packed_dim);
+  VK_CHECK_COND(input_b_info.packed_dim == output_info.packed_dim);
+  VK_CHECK_COND(
+      input_a_info.packed_dim_block_size == output_info.packed_dim_block_size);
+  VK_CHECK_COND(
+      input_b_info.packed_dim_block_size == output_info.packed_dim_block_size);
+
   float input_a_scale_val = graph.extract_scalar<float>(input_a_scale);
   int32_t input_a_zp_val = graph.extract_scalar<int32_t>(input_a_zp);
   float input_b_scale_val = graph.extract_scalar<float>(input_b_scale);
