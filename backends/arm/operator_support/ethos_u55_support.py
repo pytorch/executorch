@@ -86,7 +86,7 @@ class EthosU55DtypeSupport(OperatorSupportBase):
         exir_ops.edge.aten.permute_copy.default,
     ]
 
-    target_ops_i8 = tuple(TableOps.included_ops())
+    target_ops_i8_i16 = (*TableOps.included_ops(), exir_ops.edge.aten.amax.default)
 
     def is_node_supported(  # noqa: C901
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
@@ -117,7 +117,7 @@ class EthosU55DtypeSupport(OperatorSupportBase):
                 )
                 return False
 
-        if node.target in self.target_ops_i8:
+        if node.target in self.target_ops_i8_i16:
             if dtype not in (torch.int8, torch.int16):
                 self.reporter.report_reject(
                     node, f"Unsupported dtype {dtype} (Supports i8, i16)."
@@ -187,7 +187,6 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.logical_or.default,
         exir_ops.edge.aten.logical_xor.default,
         exir_ops.edge.aten.logical_not.default,
-        exir_ops.edge.aten.amax.default,  # REDUCE_MAX
         exir_ops.edge.aten.amin.default,  # REDUCE_MIN
         exir_ops.edge.aten.conv3d.default,  # CONV3D
         exir_ops.edge.aten.conv3d.padding,  # CONV3D (deprecated alias)

@@ -16,14 +16,15 @@ TEST(ExecutorPalTest, UninitializedPalDeath) {
 
 #ifndef NDEBUG
 
-  ET_EXPECT_DEATH({ et_pal_current_ticks(); }, "");
+  ET_EXPECT_DEATH_NO_PAL_INIT(
+      { et_pal_current_ticks(); }, "PAL must be initialized");
 
-  ET_EXPECT_DEATH(
+  ET_EXPECT_DEATH_NO_PAL_INIT(
       {
         et_pal_emit_log_message(
             0, et_pal_log_level_t::kFatal, "", "", 0, "", 0);
       },
-      "");
+      "PAL must be initialized");
 
 #endif // !defined(NDEBUG)
 }
