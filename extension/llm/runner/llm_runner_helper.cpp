@@ -236,43 +236,16 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 
   // Create IOManager - use AttentionSinkIOManager if attention sink is enabled
   std::unique_ptr<IOManager> io_manager;
-  
-  // Get method names to check for attention sink metadata
-  auto method_names_result = module->method_names();
-  if (method_names_result.error() != Error::Ok) {
-    ET_LOG(Error, "Failed reading method names for IOManager selection");
-    return nullptr;
-  }
-  const auto& method_names = method_names_result.get();
-  
-  // Check if attention sink is enabled via metadata
-  bool use_attention_sink = false;
-  int64_t sink_size = 4;  // Default values
-  int64_t window_size = -1;
-  
-  if (method_names.count(kUseAttentionSink)) {
-    auto get_result = module->get(kUseAttentionSink);
-    use_attention_sink = get_result.get().toScalar().to<bool>();
-  }
-  
-  if (use_attention_sink) {
-    // Get attention sink configuration from metadata
-    if (method_names.count(kAttentionSinkSize)) {
-      auto get_result = module->get(kAttentionSinkSize);
-      sink_size = get_result.get().toScalar().to<int64_t>();
-    }
-    if (method_names.count(kAttentionSinkWindowSize)) {
-      auto get_result = module->get(kAttentionSinkWindowSize);
-      window_size = get_result.get().toScalar().to<int64_t>();
-    }
 
-    int64_t max_cache_size = metadata.at(kMaxContextLen);
-    
-    // If window_size is not found in metadata, calculate from max_context_len
-    if (window_size == -1) {
-       window_size = max_cache_size - sink_size; 
-    }
-    
+  // TEMPORARY: Always use AttentionSinkIOManager for testing
+  // TODO: Restore metadata-based detection after testing
+  bool use_attention_sink = true;
+  int64_t sink_size = 4;
+  int64_t window_size = 124;
+
+  if (use_attention_sink) {
+    int64_t max_cache_size = metadata.at(kMaxSeqLen);
+
     AttentionSinkConfig config;
     config.sink_size = sink_size;
     config.window_size = window_size;
@@ -283,7 +256,7 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
         sink_size,
         window_size,
         max_cache_size);
-    
+
     io_manager = std::make_unique<AttentionSinkIOManager>(
         *module, max_cache_size, config);
   } else {

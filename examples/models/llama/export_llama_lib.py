@@ -777,7 +777,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             # Clear kwargs since we provide everything positionally
             edge_manager.example_kwarg_inputs = {}
             print(f"Updated inputs: {len(new_inputs)} items")
-            
+
             # Update dynamic shapes if enabled
             if edge_manager.enable_dynamic_shape:
                 existing_shapes = edge_manager.dynamic_shapes
@@ -785,16 +785,16 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
                     # Extract the Dim object from the first input (tokens)
                     # tokens shape dict is {1: Dim(...)}
                     token_dim = existing_shapes[0][1]
-                    
+
                     # cache_indices is 1D tensor of size seq_len
                     # Spec should be {0: token_dim}
                     indices_spec = {0: token_dim}
-                    
+
                     # Relieve static constraint on input_pos
                     # input_pos spec in existing_shapes[1] is {"input_pos": {0: 1}}
                     # We change it to {"input_pos": {0: token_dim}}
                     input_pos_spec = {"input_pos": {0: token_dim}}
-                    
+
                     edge_manager.dynamic_shapes = (existing_shapes[0], input_pos_spec, indices_spec)
                     print("Updated dynamic_shapes for Attention Sink (patched input_pos)")
 
@@ -1531,7 +1531,12 @@ def _get_source_transforms(  # noqa
     if expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
-    use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask
+    # Attention sink requires attention mask for custom SDPA to handle ring buffer masking
+    use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask or bool(
+        use_attention_sink
+    )
+    if use_attention_sink:
+        logging.info(f"[Attention Sink] use_attention_mask_for_custom_sdpa = {use_attention_mask_for_custom_sdpa}")
     if use_sdpa_with_kv_cache:
         transforms.append(replace_kv_cache_with_custom_kv_cache)
         # todo: do this optionally
@@ -1609,18 +1614,18 @@ def _get_source_transforms(  # noqa
 
     if use_attention_sink:
         sink_params = [int(x) for x in use_attention_sink.split(",")]
-        
+
         # Load ModelArgs for attention sink
         if not params_path:
              raise ValueError("params_path is required for attention sink")
         with open(params_path, "r") as f:
              params_dict = json.load(f)
-        
+
         # Ensure use_kv_cache is propagated from config
         params_dict["use_kv_cache"] = True # Attention Sink requires KV Cache
         # ModelArgs might expect other fields usually handled by Llama2Model init
         # We try to pass minimal set needed for Rope/Attention
-        
+
         model_args = ModelArgs(**params_dict)
 
         transforms.append(

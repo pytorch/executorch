@@ -116,7 +116,7 @@ def _create_causal_mask_for_attention_sink(
         start_pos: Starting position of the current query
         seq_len: Length of the current query sequence
     """
-    pos_q = start_pos + torch.arange(seq_len, dtype=torch.long).view(-1, 1)
+    pos_q = start_pos + torch.arange(seq_len, dtype=torch.long, device=cache_positions.device).view(-1, 1)
     delta = pos_q - cache_positions
 
     # Valid if position is filled (>= 0) and causal (delta >= 0)
@@ -126,15 +126,12 @@ def _create_causal_mask_for_attention_sink(
     is_sink = cache_positions < sink_size
 
     # Window tokens must be within sliding window
-    # Use <= to include the boundary token. For window_size=124, we want to attend
-    # to the last 124 tokens BEFORE the current position (delta 1 to 124), plus
-    # position 4 (first non-sink token) which has delta exactly = window_size.
-    # This ensures sink_size + window_size tokens are visible when cache is full.
     is_in_window = delta <= window_size
 
     # Final mask: valid AND (is_sink OR is_in_window)
     attn_mask = is_valid & (is_sink | is_in_window)
-    attn_mask = torch.where(attn_mask == True, 0, float("-inf"))  # noqa E712
+    # IMPORTANT: Must use float32 for the mask - C++ SDPA expects ScalarType::Float
+    attn_mask = torch.where(attn_mask, torch.tensor(0.0, dtype=torch.float32), torch.tensor(float("-inf"), dtype=torch.float32))
     return attn_mask
 
 
@@ -343,17 +340,14 @@ def attention_sink_forward(
     torch._check_is_size(start_pos)
     attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(start_pos, seqlen)
 
-    # For SDPA, we need to pass a cache-relative position, not the absolute sequence position.
-    # The cache position determines how many KV entries to attend to.
-    # With a ring buffer, after filling up, we always have a full cache.
-    cache_size = self.kv_cache.max_context_length
-    # Effective cache position: min(start_pos, cache_size - 1) so SDPA knows how many entries exist
-    # Once cache is full (start_pos >= cache_size), we always have cache_size entries filled
-    effective_cache_pos = min(start_pos, cache_size - 1)
-    cache_input_pos = torch.tensor([effective_cache_pos], dtype=input_pos.dtype, device=input_pos.device)
+    # For SDPA with attention mask, we pass 0 as start_pos since:
+    # 1. The mask handles all masking logic (including ring buffer / attention sink)
+    # 2. is_causal=False so start_pos is not used for causal masking
+    # 3. This avoids issues with torch.export and data-dependent tensor creation
+    # The SDPACustom with use_attention_mask=True will use 0 anyway (see sdpa.py line 62)
 
     # SDPA
-    output = self.SDPA(cache_input_pos, q, k, v, bsz, seqlen, attn_mask)
+    output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
 
     # Return tuple like original AttentionMHA.forward
     return self.wo(output), None
@@ -459,69 +453,23 @@ def enable_attention_sink(
         max_context_len=max_context_len,
     )
 
-    # Add metadata methods for IOManager
-    def get_sink_size(self):
+    # Add metadata methods for IOManager detection
+    # These method names must match the constants in constants.h:
+    # kAttentionSinkSize = "attention_sink_size"
+    # kAttentionSinkWindowSize = "attention_sink_window_size"
+    def attention_sink_size(self):
         return sink_size
 
-    def get_window_size(self):
+    def attention_sink_window_size(self):
         return window_size
 
     # Bind methods to module
-    # Note: For torch.export, we might need these to be part of the class or properly bound.
-    # Monkey patching instance methods works for some cases but let's verify.
-    # Ideally we subclass or mixin. But here we modify in place.
-    module.get_sink_size = types.MethodType(get_sink_size, module)
-    module.get_window_size = types.MethodType(get_window_size, module)
+    module.attention_sink_size = types.MethodType(attention_sink_size, module)
+    module.attention_sink_window_size = types.MethodType(attention_sink_window_size, module)
 
-    # Monkey patch Transformer methods to handle cache_indices input
-
-    # 1. New get_example_inputs that includes cache_indices
-    def get_example_inputs_with_sink(self):
-        # Create inputs manually to avoid relying on Llama2Model helper methods
-        # that might not be available on the Transformer module.
-
-        # Use a small sequence length for example
-        seq_len = 3
-        # Use simple tokens
-        tokens = torch.tensor([[2, 3, 4]], dtype=torch.long)
-        # Use corresponding input_pos matching seq_len
-        input_pos = torch.arange(seq_len, dtype=torch.long)
-
-        # cache_indices matches input_pos/tokens length logic
-        # For export example, we can use simple indices
-        cache_indices = torch.arange(seq_len, dtype=torch.long)
-
-        # Note: The original generic get_example_inputs usually returns ({tokens}, {input_pos})
-        # input_pos shape depends on dynamic shape setting.
-        # But for export purposes, providing valid tensors is key.
-        # If dynamic shapes are enabled, input_pos might be expected to be 1D.
-
-        return (tokens, {"input_pos": input_pos}, cache_indices)
-
-    module.get_example_inputs = types.MethodType(get_example_inputs_with_sink, module)
-
-    # 2. New forward that accepts cache_indices and passes it in attn_options
-    original_forward = module.forward
-
-    def forward_with_sink(
-        self,
-        tokens: Optional[torch.LongTensor] = None,
-        attn_options: Optional[dict] = None,
-        cache_indices: Optional[torch.LongTensor] = None,
-    ):
-        # Allow cache_indices to be passed as positional or kwarg
-        # Note: top level export might pass inputs positionally if we aren't careful?
-        # LlamaTransformer.forward has (tokens, attn_options, h)
-        # We replace it.
-
-        if attn_options is None:
-            attn_options = {}
-
-        if cache_indices is not None:
-            attn_options["cache_indices"] = cache_indices
-
-        return original_forward(tokens=tokens, attn_options=attn_options)
-
-    module.forward = types.MethodType(forward_with_sink, module)
+    # Note: We do NOT modify get_example_inputs or forward signature.
+    # The ring buffer calculates cache indices internally from input_pos,
+    # so the model can use the standard 2-input signature (tokens, input_pos).
+    # This allows the standard IOManager to work without modification.
 
     return module

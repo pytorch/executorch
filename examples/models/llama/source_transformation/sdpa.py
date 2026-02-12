@@ -27,6 +27,7 @@ class SDPACustom(torch.nn.Module):
         super().__init__()
         self.dim = dim
         self.use_attention_mask = use_attention_mask
+        print(f"[SDPACustom] Created with use_attention_mask={use_attention_mask}")
 
     def forward(
         self,
