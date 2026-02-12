@@ -8,8 +8,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 try:
-    import test.python.outputs_dir as outputs_dir
+    import test.python.outputs_dir as outputs_dir  # noqa F401
+
     logger.debug("Importing from executorch-integration")
 except ImportError:
-    import executorch.backends.nxp.tests_models.outputs_dir as outputs_dir
+    import executorch.backends.nxp.tests_models.outputs_dir as outputs_dir  # noqa F401
+
     logger.debug("Importing from executorch")
