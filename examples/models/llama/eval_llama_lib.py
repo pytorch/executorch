@@ -338,6 +338,8 @@ def eval_llama_with_attention_sink(model_name: str, args: argparse.ArgumentParse
     Evaluate the model's perplexity when AttentionSink is enabled.
 
     This is mostly copied from https://github.com/mit-han-lab/streaming-llm/blob/main/examples/eval_long_ppl.py
+    
+    Updated for the ring-buffer based attention sink implementation.
     """
     # Convert args to LlmConfig
     from executorch.extension.llm.export.config.llm_config import LlmConfig
@@ -351,7 +353,13 @@ def eval_llama_with_attention_sink(model_name: str, args: argparse.ArgumentParse
     sink_size = int(attention_sink_params[0])
     window_size = int(attention_sink_params[1])
 
-    assert llm_config.export.max_seq_length == sink_size + window_size
+    # For the ring buffer implementation, the cache size is sink_size + window_size * 2
+    # max_context_length should be >= sink_size + window_size (for RoPE frequencies)
+    # but can be larger to support extended generation
+    assert llm_config.export.max_context_length >= sink_size + window_size, (
+        f"max_context_length ({llm_config.export.max_context_length}) must be >= "
+        f"sink_size + window_size ({sink_size + window_size})"
+    )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     manager: LLMEdgeManager = _prepare_for_llama_export(llm_config)

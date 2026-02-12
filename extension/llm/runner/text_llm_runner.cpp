@@ -129,24 +129,42 @@ Error TextLLMRunner::generate(
   std::vector<uint64_t> prompt_tokens = encode_res.get();
   int num_prompt_tokens = prompt_tokens.size();
 
-  // Reduce max_context_len by pos_
-  int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;
+  // Get max_seq_len for single prefill chunk limit
+  int64_t max_seq_len = metadata_.at(kMaxSeqLen);
+  int64_t max_context_len = metadata_.at(kMaxContextLen);
+  
   ET_CHECK_OR_RETURN_ERROR(
       num_prompt_tokens >= 1,
       InvalidArgument,
       "Expected at least 1 prompt token");
+  
+  // For models with sliding window (Ring Buffer / Attention Sink),
+  // we allow pos_ to exceed max_context_len. The model handles this
+  // internally via ring buffer indexing or token eviction.
+  // We only check that a single prefill chunk doesn't exceed max_seq_len.
   ET_CHECK_OR_RETURN_ERROR(
-      num_prompt_tokens < max_context_len,
+      num_prompt_tokens <= max_seq_len,
       InvalidArgument,
-      "num_prompt_tokens %d >= max_context_len %" PRId64
-      ", Max seq length exceeded - please increase max seq len value in your export script",
+      "num_prompt_tokens %d > max_seq_len %" PRId64
+      ", Single prefill chunk too large - please reduce prompt size or increase max_seq_len",
       num_prompt_tokens,
-      max_context_len);
+      max_seq_len);
 
-  // Determine max_new_tokens using the GenerationConfig's resolve method,
-  // then subtract pos_ for max_new_tokens.
+  // Determine max_new_tokens using the GenerationConfig's resolve method.
+  // For sliding window models, we use max_context_len directly (not reduced by pos_)
+  // because the model handles position wrapping internally via ring buffer.
   int max_new_tokens =
       config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
+  
+  // TEMPORARY: For sliding window / infinite context testing,
+  // override max_new_tokens to allow unlimited generation
+  if (max_new_tokens <= 0) {
+    max_new_tokens = 1000000;  // Effectively unlimited
+  }
+  // If user specified seq_len, use that instead
+  if (config.seq_len > 0 && config.seq_len > max_new_tokens) {
+    max_new_tokens = config.seq_len;
+  }
 
   ET_LOG(
       Info,
