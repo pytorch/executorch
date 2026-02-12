@@ -15,7 +15,7 @@ A website version of the tutorial is [here](https://pytorch.org/executorch/main/
 Please check `generate_qnn_executorch_compiler_spec()` in
 [utils.py](utils/utils.py) for supported SoC and inference type.
 
-### Supported Chipset
+### Supported Chipset ID list
 - Snapdragon 8 Gen 1
 - Snapdragon 8 Gen 1+
 - Snapdragon 8 Gen 2
