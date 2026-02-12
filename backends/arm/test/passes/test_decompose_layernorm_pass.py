@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,9 +16,7 @@ input_t = Tuple[torch.Tensor]  # Input x
 
 
 class LayerNorm(torch.nn.Module):
-    """
-    Basic layer_norm model using torch.nn.layer_norm layer
-    """
+    """Basic layer_norm model using torch.nn.layer_norm layer."""
 
     def __init__(self):
         super(LayerNorm, self).__init__()
