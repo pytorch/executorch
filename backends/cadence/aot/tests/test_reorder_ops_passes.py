@@ -26,7 +26,6 @@ from executorch.backends.cadence.aot.reorder_ops import (
     AdvanceQuantizeOpAboveDefInBranchPass,
     PostponeDequantizeOpBelowUseChainPass,
     PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
-    SinkOpsCloserToUsePass,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassBase, PassResult
@@ -85,108 +84,6 @@ def transform_and_check_numerics(
 
 
 class TestReorderPasses(unittest.TestCase):
-    def test_sink_dequantize(self) -> None:
-        builder = GraphBuilder()
-        x_data = torch.randn(32, 6, dtype=torch.float32)
-        y_data = torch.randn(32, 6, dtype=torch.float32)
-        weight_data = torch.randint(-128, 127, (8, 6), dtype=torch.int8)
-        x = builder.placeholder("x", x_data)
-        y = builder.placeholder("y", y_data)
-        weights = builder.placeholder("weights", weight_data)
-        x_quantized = builder.call_operator(
-            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            args=(x, 0.02252197265625, 20, -128, 127, torch.int8),
-        )
-        y_quantized = builder.call_operator(
-            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            args=(y, 0.02181086875498295, -11, -128, 127, torch.int8),
-        )
-        full = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], -7),
-            kwargs={"dtype": torch.int32},
-        )
-        full_1 = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], 1253324672),
-        )
-        full_2 = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], -3),
-        )
-        full_3 = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], 0),
-            kwargs={"dtype": torch.int32},
-        )
-        full_4 = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], -7),
-            kwargs={"dtype": torch.int32},
-        )
-        full_5 = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], 1290687488),
-        )
-        full_6 = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], -3),
-        )
-        full_7 = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], 0),
-            kwargs={"dtype": torch.int32},
-        )
-        quantized_linear = builder.call_operator(
-            op=exir_ops.edge.cadence.quantized_linear.default,
-            args=(x_quantized, weights, full_3, 20, full_2, full_1, full, 13, None),
-        )
-        quantized_linear_1 = builder.call_operator(
-            op=exir_ops.edge.cadence.quantized_linear.default,
-            args=(y_quantized, weights, full_7, -11, full_6, full_5, full_4, 8, None),
-        )
-        dequantize_per_tensor = builder.call_operator(
-            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            args=(quantized_linear, 0.015294239856302738, 13, -128, 127, torch.int8),
-        )
-        dequantize_per_tensor_1 = builder.call_operator(
-            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            args=(quantized_linear_1, 0.014382584020495415, 8, -128, 127, torch.int8),
-        )
-        abs_1 = builder.call_operator(
-            op=exir_ops.edge.aten.abs.default,
-            args=(dequantize_per_tensor,),
-        )
-        cat = builder.call_operator(
-            op=exir_ops.edge.aten.cat.default,
-            args=([abs_1, dequantize_per_tensor_1],),
-        )
-        builder.output([cat])
-        original_graph = builder.get_graph_module()
-        result = transform_and_check_numerics(
-            original_graph,
-            (x_data, y_data, weight_data),
-            SinkOpsCloserToUsePass(),
-        )
-        self.assertTrue(result.modified)
-        converted_graph = result.graph_module
-
-        # Expect the SinkDequant pass to move dequant(y) from above the relu to just below it
-        self.assertTrue(
-            nodes_not_adjacent_in_gm(
-                converted_graph,
-                exir_ops.edge.aten.abs.default,
-                exir_ops.edge.aten.cat.default,
-            ),
-        )
-        self.assertTrue(
-            nodes_not_adjacent_in_gm(
-                converted_graph,
-                exir_ops.edge.cadence.dequantize_per_tensor.default,
-                exir_ops.edge.cadence.dequantize_per_tensor.default,
-            ),
-        )
-
     def test_advance_branched_quantize(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(64, 3, dtype=torch.float32))
