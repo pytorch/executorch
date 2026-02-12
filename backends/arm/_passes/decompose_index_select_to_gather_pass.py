@@ -20,11 +20,11 @@ from executorch.exir.pass_base import ExportPass
 
 
 def _get_index_select_decomposition(op):
-    """
-    Return the operator overloads used to lower index_select via TOSA gather.
+    """Return the operator overloads used to lower index_select via TOSA gather.
 
     Raises:
         RuntimeError: If the provided operator is not supported by this pass.
+
     """
     if op is exir_ops.edge.aten.index_select.default:
         return (
@@ -39,8 +39,7 @@ def _get_index_select_decomposition(op):
 
 
 class DecomposeIndexSelectToGatherPass(ArmPass):
-    """
-    Decompose edge index_select into a single backend TOSA gather.
+    """Decompose edge index_select into a single backend TOSA gather.
 
     index_select(x, dim, index) semantics:
       - index is rank-1
@@ -60,6 +59,7 @@ class DecomposeIndexSelectToGatherPass(ArmPass):
     Notes:
       - indices must be int32 (TOSA gather requirement).
       - bool input is cast to int8 for gather and cast back afterwards.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
