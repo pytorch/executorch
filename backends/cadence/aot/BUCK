@@ -188,6 +188,20 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "to_out_var_pass",
+    srcs = [
+        "to_out_var_pass.py",
+    ],
+    typing = True,
+    deps = [
+        ":ops_registrations",
+        "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "graph_builder",
     srcs = [
         "graph_builder.py",
@@ -647,5 +661,22 @@ fbcode_target(_kind = python_unittest,
         "//executorch/backends/cadence/aot/quantizer:quantizer",
         "//executorch/exir:pass_base",
         "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_to_out_var_pass",
+    srcs = [
+        "tests/test_to_out_var_pass.py",
+    ],
+    typing = True,
+    deps = [
+        ":ops_registrations",
+        ":program_builder",
+        ":to_out_var_pass",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/dialects:lib",
+        "//later:lib",
     ],
 )

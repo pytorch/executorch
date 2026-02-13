@@ -156,7 +156,7 @@ def find_quantized_convolution_patterns(
 
 
 @register_pattern_replacement("quantized_convolution")
-def make_conv2d_q8ta_q8csw_custom_op(
+def make_q8ta_conv2d_custom_op(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
     match: QuantizedConvolutionMatch,
@@ -230,10 +230,20 @@ def make_conv2d_q8ta_q8csw_custom_op(
             data=sum_per_output_channel,
         )
 
+    is_pointwise_conv = (
+        H == 1
+        and W == 1
+        and list(match.stride) == [1, 1]
+        and list(match.dilation) == [1, 1]
+        and list(match.padding) == [0, 0]
+    )
+
     with graph_module.graph.inserting_before(match.output_node):
-        op_target = exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to.default
+        op_target = exir_ops.edge.et_vk.q8ta_conv2d.default
         if is_depthwise_conv:
-            op_target = exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to_dw.default
+            op_target = exir_ops.edge.et_vk.q8ta_conv2d_dw.default
+        elif is_pointwise_conv:
+            op_target = exir_ops.edge.et_vk.q8ta_conv2d_pw.default
 
         qconv_node = graph_module.graph.create_node(
             "call_function",

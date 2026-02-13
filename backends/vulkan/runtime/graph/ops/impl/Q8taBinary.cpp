@@ -9,38 +9,15 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
 
 //
-// Shader dispatch utilities
-//
-
-utils::uvec3 pick_q8ta_q8ta_q8to_binary_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef packed_int8_output = args.at(0).refs.at(0);
-
-  const uint32_t W = graph->size_at<uint32_t>(-1, packed_int8_output);
-  const uint32_t H = graph->size_at<uint32_t>(-2, packed_int8_output);
-  const uint32_t C = graph->size_at<uint32_t>(-3, packed_int8_output);
-
-  const uint32_t W4 = utils::div_up_4(W);
-  const uint32_t C4 = utils::div_up_4(C);
-
-  return {W4 * H * C4, 1, 1};
-}
-
-//
 // Dispatch nodes
 //
 
-void add_q8ta_q8ta_q8to_binary_node(
+void add_q8ta_binary_node(
     ComputeGraph& graph,
     const ValueRef packed_int8_input_a,
     const ValueRef packed_int8_input_b,
@@ -53,6 +30,23 @@ void add_q8ta_q8ta_q8to_binary_node(
     const ValueRef alpha,
     const ValueRef packed_int8_output,
     const std::string& op_name) {
+  // The implementation assumes that all participating tensors have the same
+  // packed dimension, and that they all have the same block size for the packed
+  // dimension
+  const api::PackedDimInfo& output_info =
+      graph.packed_dim_info_of(packed_int8_output);
+  const api::PackedDimInfo& input_a_info =
+      graph.packed_dim_info_of(packed_int8_input_a);
+  const api::PackedDimInfo& input_b_info =
+      graph.packed_dim_info_of(packed_int8_input_b);
+
+  VK_CHECK_COND(input_a_info.packed_dim == output_info.packed_dim);
+  VK_CHECK_COND(input_b_info.packed_dim == output_info.packed_dim);
+  VK_CHECK_COND(
+      input_a_info.packed_dim_block_size == output_info.packed_dim_block_size);
+  VK_CHECK_COND(
+      input_b_info.packed_dim_block_size == output_info.packed_dim_block_size);
+
   float input_a_scale_val = graph.extract_scalar<float>(input_a_scale);
   int32_t input_a_zp_val = graph.extract_scalar<int32_t>(input_a_zp);
   float input_b_scale_val = graph.extract_scalar<float>(input_b_scale);
@@ -68,11 +62,15 @@ void add_q8ta_q8ta_q8to_binary_node(
     alpha_val = graph.extract_scalar<float>(alpha);
   }
 
-  std::string kernel_name = op_name + "_q8ta_q8ta_q8to";
+  std::string kernel_name = "q8ta_" + op_name;
   add_storage_type_suffix(
       kernel_name, graph.storage_type_of(packed_int8_output));
 
-  vkapi::ParamsBindList param_buffers = {graph.sizes_ubo(packed_int8_output)};
+  // Pass metadata for output and input tensors
+  vkapi::ParamsBindList param_buffers;
+  param_buffers.append(graph.buffer_meta_ubo(packed_int8_output));
+  param_buffers.append(graph.buffer_meta_ubo(packed_int8_input_a));
+  param_buffers.append(graph.buffer_meta_ubo(packed_int8_input_b));
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&input_a_scale_val, sizeof(input_a_scale_val)),
@@ -84,11 +82,19 @@ void add_q8ta_q8ta_q8to_binary_node(
       PushConstantDataInfo(&alpha_val, sizeof(alpha_val)),
   };
 
+  // Create block config for output tensor: inner_dim = output's packed_dim
+  const BlockConfig block_config =
+      create_block_config_for_tensor(graph, packed_int8_output);
+
+  // Cast block config to ValueRef for pick_linear_global_wg_with_block_config
+  const ValueRef block_config_ref =
+      static_cast<ValueRef>(block_config.as_packed_int());
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_q8ta_q8to_binary_global_wg_size,
-      default_pick_local_wg_size,
+      pick_linear_global_wg_with_block_config,
+      pick_square_local_wg_with_block_config,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input_a, packed_int8_input_b}, vkapi::kRead}},
@@ -97,9 +103,11 @@ void add_q8ta_q8ta_q8to_binary_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(packed_int8_output),
+       graph.hashed_layout_of(packed_int8_input_a),
+       block_config.as_packed_int()},
       // Resize args
-      {},
+      {block_config_ref},
       // Resizing Logic
       nullptr));
 }
@@ -108,9 +116,7 @@ void add_q8ta_q8ta_q8to_binary_node(
 // High level operator impl
 //
 
-void add_q8ta_q8ta_q8to(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args) {
+void q8ta_add(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   int32_t idx = 0;
   const ValueRef packed_int8_input_a = args.at(idx++);
   const ValueRef packed_int8_input_b = args.at(idx++);
@@ -123,7 +129,7 @@ void add_q8ta_q8ta_q8to(
   const ValueRef alpha = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
 
-  add_q8ta_q8ta_q8to_binary_node(
+  add_q8ta_binary_node(
       graph,
       packed_int8_input_a,
       packed_int8_input_b,
@@ -138,73 +144,8 @@ void add_q8ta_q8ta_q8to(
       "add");
 }
 
-//
-// Test operators
-//
-
-void add_q8ta_q8ta_q8to_test(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args) {
-  int32_t idx = 0;
-  const ValueRef fp_input_a = args.at(idx++);
-  const ValueRef fp_input_b = args.at(idx++);
-  const ValueRef input_a_scale = args.at(idx++);
-  const ValueRef input_a_zp = args.at(idx++);
-  const ValueRef input_b_scale = args.at(idx++);
-  const ValueRef input_b_zp = args.at(idx++);
-  const ValueRef output_scale = args.at(idx++);
-  const ValueRef output_zp = args.at(idx++);
-  const ValueRef alpha = args.at(idx++);
-  const ValueRef fp_output = args.at(idx++);
-
-  TmpTensor packed_int8_input_a(
-      &graph,
-      graph.sizes_of(fp_input_a),
-      vkapi::kInt8x4,
-      utils::kBuffer,
-      utils::kPackedInt8_4W4C);
-
-  TmpTensor packed_int8_input_b(
-      &graph,
-      graph.sizes_of(fp_input_b),
-      vkapi::kInt8x4,
-      utils::kBuffer,
-      utils::kPackedInt8_4W4C);
-
-  TmpTensor packed_int8_output(
-      &graph,
-      graph.sizes_of(fp_output),
-      vkapi::kInt8x4,
-      utils::kBuffer,
-      utils::kPackedInt8_4W4C);
-
-  add_quantize_and_pack_4w4c_node(
-      graph, fp_input_a, input_a_scale, input_a_zp, packed_int8_input_a);
-
-  add_quantize_and_pack_4w4c_node(
-      graph, fp_input_b, input_b_scale, input_b_zp, packed_int8_input_b);
-
-  std::vector<ValueRef> add_args = {
-      packed_int8_input_a,
-      packed_int8_input_b,
-      input_a_scale,
-      input_a_zp,
-      input_b_scale,
-      input_b_zp,
-      output_scale,
-      output_zp,
-      alpha,
-      packed_int8_output};
-
-  add_q8ta_q8ta_q8to(graph, add_args);
-
-  add_unpack_4w4c_and_dequantize_node(
-      graph, packed_int8_output, output_scale, output_zp, fp_output);
-}
-
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(et_vk.add_q8ta_q8ta_q8to.default, add_q8ta_q8ta_q8to);
-  VK_REGISTER_OP(et_vk.add_q8ta_q8ta_q8to.test, add_q8ta_q8ta_q8to_test);
+  VK_REGISTER_OP(et_vk.q8ta_add.default, q8ta_add);
 }
 
 } // namespace vkcompute

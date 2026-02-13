@@ -113,4 +113,6 @@ void add_q8ta_conv2d_pw_node(
     const ValueRef packed_bias,
     const ValueRef packed_int8_output);
 
+void q8ta_conv2d_im2col(ComputeGraph& graph, const std::vector<ValueRef>& args);
+
 } // namespace vkcompute

@@ -32,6 +32,67 @@ class EthosUCompileSpec(ArmCompileSpec):
 
     _TARGET_KEY = "target"
 
+    @staticmethod
+    def _default_system_config_and_memory_mode(
+        target_lower: str,
+        system_config: str | None,
+        memory_mode: str | None,
+    ) -> tuple[str, str]:
+        if "ethos-u55" in target_lower:
+            resolved_system_config = (
+                "Ethos_U55_High_End_Embedded"
+                if system_config is None
+                else system_config
+            )
+            resolved_memory_mode = "Shared_Sram" if memory_mode is None else memory_mode
+            return resolved_system_config, resolved_memory_mode
+        if "ethos-u65" in target_lower:
+            resolved_system_config = (
+                "Ethos_U65_SYS_DRAM_Mid" if system_config is None else system_config
+            )
+            resolved_memory_mode = "Sram_Only" if memory_mode is None else memory_mode
+            return resolved_system_config, resolved_memory_mode
+        if "ethos-u85" in target_lower:
+            resolved_system_config = (
+                "Ethos_U85_SYS_DRAM_Mid" if system_config is None else system_config
+            )
+            resolved_memory_mode = "Sram_Only" if memory_mode is None else memory_mode
+            return resolved_system_config, resolved_memory_mode
+        raise RuntimeError(f"Unknown ethos target: {target_lower}")
+
+    @staticmethod
+    def _build_compiler_flags(
+        *,
+        target: str,
+        config_ini: str,
+        extra_flags: list[str] | None,
+        system_config: str,
+        memory_mode: str,
+    ) -> list[str]:
+        compiler_flags = [] if extra_flags is None else list(extra_flags)
+        compiler_flags.extend(
+            [
+                f"--accelerator-config={target}",
+                f"--config={config_ini}",
+                "--output-format=raw",
+                "--debug-force-regor",
+                f"--system-config={system_config}",
+                f"--memory-mode={memory_mode}",
+            ]
+        )
+        return compiler_flags
+
+    @staticmethod
+    def _tosa_spec_for_target(target_lower: str) -> TosaSpecification:
+        base_tosa_version = "TOSA-1.0+INT+int16+int4"
+        if "u55" in target_lower:
+            base_tosa_version += "+u55"
+        if "u65" in target_lower:
+            base_tosa_version += "+u55"
+        if "u85" in target_lower:
+            base_tosa_version += "+cf"
+        return TosaSpecification.create_from_string(base_tosa_version)
+
     def __init__(
         self,
         target: str,
@@ -41,45 +102,23 @@ class EthosUCompileSpec(ArmCompileSpec):
         config_ini: str | None = "Arm/vela.ini",
     ):
         self.target = target
-        # Set vela compiler flags
-        if config_ini is None:
-            config_ini = "Arm/vela.ini"
-        compiler_flags = [] if extra_flags is None else extra_flags
-        compiler_flags.extend(
-            [
-                f"--accelerator-config={target}",
-                f"--config={config_ini}",
-                "--output-format=raw",
-                "--debug-force-regor",
-            ]
-        )
-        # default system config and memory mode
         target_lower = self.target.lower()
-        if "ethos-u55" in target_lower:
-            if system_config is None:
-                system_config = "Ethos_U55_High_End_Embedded"
-            if memory_mode is None:
-                memory_mode = "Shared_Sram"
-        elif "ethos-u85" in target_lower:
-            if system_config is None:
-                system_config = "Ethos_U85_SYS_DRAM_Mid"
-            if memory_mode is None:
-                memory_mode = "Sram_Only"
-        else:
-            raise RuntimeError(f"Unknown ethos target: {target}")
-
-        compiler_flags.append(f"--system-config={system_config}")
-        compiler_flags.append(f"--memory-mode={memory_mode}")
-
-        # Set TOSA version.
-        base_tosa_version = "TOSA-1.0+INT+int16+int4"
-        if "u55" in target_lower:
-            # Add the Ethos-U55 extension marker
-            base_tosa_version += "+u55"
-        if "u85" in self.target:
-            base_tosa_version += "+cf"
-        tosa_spec = TosaSpecification.create_from_string(base_tosa_version)
-
+        resolved_config_ini = "Arm/vela.ini" if config_ini is None else config_ini
+        resolved_system_config, resolved_memory_mode = (
+            self._default_system_config_and_memory_mode(
+                target_lower=target_lower,
+                system_config=system_config,
+                memory_mode=memory_mode,
+            )
+        )
+        compiler_flags = self._build_compiler_flags(
+            target=self.target,
+            config_ini=resolved_config_ini,
+            extra_flags=extra_flags,
+            system_config=resolved_system_config,
+            memory_mode=resolved_memory_mode,
+        )
+        tosa_spec = self._tosa_spec_for_target(target_lower)
         self._set_compile_specs(tosa_spec, compiler_flags)
         self.validate()
 
@@ -100,7 +139,7 @@ class EthosUCompileSpec(ArmCompileSpec):
             raise ValueError(
                 "compile_flags are required in the CompileSpec list for EthosUBackend"
             )
-        if "u55" in self.target and not self.tosa_spec.is_U55_subset:
+        if "u55" in self.target.lower() and not self.tosa_spec.is_U55_subset:
             raise ValueError(
                 f"Target was {self.target} but tosa spec was not u55 subset."
             )

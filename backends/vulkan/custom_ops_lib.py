@@ -356,12 +356,12 @@ lib.define(
 lib.impl(name, linear_q8ta_q8csw, "CompositeExplicitAutograd")
 qa_q8csw_linear = getattr(getattr(torch.ops, namespace), name)
 
-############################
-## conv2d_q8ta_q8csw_q8to ##
-############################
+###################
+## q8ta_conv2d_* ##
+###################
 
 
-def conv2d_q8ta_q8csw_q8to(
+def q8ta_conv2d(
     x: torch.Tensor,
     input_scale: float,
     input_zero_point: int,
@@ -425,7 +425,7 @@ def conv2d_q8ta_q8csw_q8to(
     return out
 
 
-name = "conv2d_q8ta_q8csw_q8to"
+name = "q8ta_conv2d"
 lib.define(
     f"""
     {name}(
@@ -445,11 +445,35 @@ lib.define(
         SymInt groups) -> Tensor
     """
 )
-lib.impl(name, conv2d_q8ta_q8csw_q8to, "CompositeExplicitAutograd")
-conv2d_q8ta_q8csw_op = getattr(getattr(torch.ops, namespace), name)
+lib.impl(name, q8ta_conv2d, "CompositeExplicitAutograd")
+q8ta_conv2d_op = getattr(getattr(torch.ops, namespace), name)
 
 
-def conv2d_q8ta_q8csw_q8to_dw(
+name = "q8ta_conv2d_pw"
+lib.define(
+    f"""
+    {name}(
+        Tensor x,
+        float input_scale,
+        int input_zero_point,
+        Tensor weights,
+        Tensor weight_sums,
+        Tensor weight_scales,
+        float output_scale,
+        int output_zero_point,
+        Tensor? bias,
+        SymInt[] kernel_size,
+        SymInt[] stride,
+        SymInt[] padding,
+        SymInt[] dilation,
+        SymInt groups) -> Tensor
+    """
+)
+lib.impl(name, q8ta_conv2d, "CompositeExplicitAutograd")
+q8ta_conv2d_pw_op = getattr(getattr(torch.ops, namespace), name)
+
+
+def q8ta_conv2d_dw(
     x: torch.Tensor,
     input_scale: float,
     input_zero_point: int,
@@ -497,7 +521,7 @@ def conv2d_q8ta_q8csw_q8to_dw(
     return out
 
 
-name = "conv2d_q8ta_q8csw_q8to_dw"
+name = "q8ta_conv2d_dw"
 lib.define(
     f"""
     {name}(
@@ -517,7 +541,7 @@ lib.define(
         SymInt groups) -> Tensor
     """
 )
-lib.impl(name, conv2d_q8ta_q8csw_q8to_dw, "CompositeExplicitAutograd")
+lib.impl(name, q8ta_conv2d_dw, "CompositeExplicitAutograd")
 conv2d_q8ta_q8csw_dw_op = getattr(getattr(torch.ops, namespace), name)
 
 ######################
@@ -540,11 +564,11 @@ lib.impl(name, apply_rotary_emb_impl, "CompositeExplicitAutograd")
 apply_rotary_emb_op = getattr(getattr(torch.ops, namespace), name)
 
 ########################
-## add_q8ta_q8ta_q8to ##
+## q8ta_add ##
 ########################
 
 
-def add_q8ta_q8ta_q8to_impl(
+def q8ta_add_impl(
     input_a: torch.Tensor,
     input_b: torch.Tensor,
     input_a_scale: float,
@@ -574,12 +598,12 @@ def add_q8ta_q8ta_q8to_impl(
     return quantized_result
 
 
-name = "add_q8ta_q8ta_q8to"
+name = "q8ta_add"
 lib.define(
     f"{name}(Tensor input_a, Tensor input_b, float input_a_scale, int input_a_zero_point, float input_b_scale, int input_b_zero_point, float output_scale, int output_zero_point, float alpha) -> Tensor"
 )
-lib.impl(name, add_q8ta_q8ta_q8to_impl, "CompositeExplicitAutograd")
-add_q8ta_q8ta_q8to_op = getattr(getattr(torch.ops, namespace), name)
+lib.impl(name, q8ta_add_impl, "CompositeExplicitAutograd")
+q8ta_add_op = getattr(getattr(torch.ops, namespace), name)
 
 #############################
 ## select_as_symint ##

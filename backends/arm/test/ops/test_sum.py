@@ -37,6 +37,17 @@ class Sum(torch.nn.Module):
         "dim_None": lambda: (torch.rand(10), None, True),
         "dim_None_4d_tensor": lambda: (torch.rand(10, 3, 2, 1), None, True),
     }
+
+    test_parameters_fp16 = {
+        "1d_dim_0_keep_fp16": lambda: (torch.rand(12, dtype=torch.float16), 0, True),
+        "3d_dims_keep_fp16": lambda: (
+            torch.rand(4, 6, 3, dtype=torch.float16),
+            [0, -1],
+            True,
+        ),
+        "dim_None_fp16": lambda: (torch.rand(6, 2, dtype=torch.float16), None, False),
+    }
+
     test_parameters_bf16 = {
         "1d_dim_0_keep_bf16": lambda: (torch.rand(12, dtype=torch.bfloat16), 0, True),
         "3d_dims_keep_bf16": lambda: (
@@ -51,7 +62,10 @@ class Sum(torch.nn.Module):
         return x.sum(dim=dim, keepdim=keepdim)
 
 
-@common.parametrize("test_data", Sum.test_parameters | Sum.test_parameters_bf16)
+@common.parametrize(
+    "test_data",
+    Sum.test_parameters | Sum.test_parameters_bf16 | Sum.test_parameters_fp16,
+)
 def test_sum_dim_intlist_tosa_FP(test_data: input_t1):
     test_data = test_data()
     match test_data[0].dtype:
@@ -106,7 +120,7 @@ def test_view_u85_INT_1_0(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Sum.test_parameters)
+@common.parametrize("test_data", Sum.test_parameters | Sum.test_parameters_fp16)
 @common.SkipIfNoModelConverter
 def test_sum_dim_intlist_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
@@ -165,6 +179,10 @@ class SumDefault(torch.nn.Module):
         "rank1_bf16": lambda: (torch.rand(8, dtype=torch.bfloat16),),
         "rank3_bf16": lambda: (torch.rand(4, 3, 2, dtype=torch.bfloat16),),
     }
+    test_parameters_fp16 = {
+        "rank1_fp16": lambda: (torch.rand(8, dtype=torch.float16),),
+        "rank3_fp16": lambda: (torch.rand(4, 3, 2, dtype=torch.float16),),
+    }
     aten_op = "torch.ops.aten.sum.default"
 
     def forward(self, x: torch.Tensor):
@@ -172,7 +190,10 @@ class SumDefault(torch.nn.Module):
 
 
 @common.parametrize(
-    "test_data", SumDefault.test_parameters | SumDefault.test_parameters_bf16
+    "test_data",
+    SumDefault.test_parameters
+    | SumDefault.test_parameters_bf16
+    | SumDefault.test_parameters_fp16,
 )
 def test_sum_tosa_FP(test_data: Callable[[], input_t2]):
     test_vector = test_data()

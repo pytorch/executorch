@@ -436,7 +436,7 @@ void q8ta_conv2d_dw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(etvk.q8ta_conv2d_dw.default, q8ta_conv2d_dw);
+  VK_REGISTER_OP(et_vk.q8ta_conv2d_dw.default, q8ta_conv2d_dw);
 }
 
 } // namespace vkcompute

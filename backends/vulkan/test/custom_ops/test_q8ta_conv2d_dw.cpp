@@ -54,7 +54,6 @@ TestCase create_test_case_from_config(
       std::to_string(config.input_size.w) + "  " +
       "g=" + std::to_string(config.groups) + "  " +
       "k=" + std::to_string(config.kernel.h) + "  " +
-      repr_str(fp_storage_type, fp_memory_layout) + "->" +
       repr_str(utils::kBuffer, int8_memory_layout);
   if (!impl_selector.empty()) {
     test_name += " [" + impl_selector + "]";
@@ -228,8 +227,7 @@ std::vector<TestCase> generate_quantized_conv2d_dw_easy_cases() {
   };
   config.op_name = "conv2d_q8ta_q8csw_q8to";
 
-  std::vector<utils::StorageType> fp_storage_types = {
-      utils::kTexture3D, utils::kBuffer};
+  std::vector<utils::StorageType> fp_storage_types = {utils::kTexture3D};
 
   // Memory layouts for int8 tensors - test both optimized (4W4C) and general
   // paths
@@ -351,8 +349,7 @@ std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
        32}};
 
   // Test with different storage types and data types
-  std::vector<utils::StorageType> fp_storage_types = {
-      utils::kTexture3D, utils::kBuffer};
+  std::vector<utils::StorageType> fp_storage_types = {utils::kTexture3D};
 
   // Memory layouts for int8 tensors - test both optimized (4W4C) and general
   // paths

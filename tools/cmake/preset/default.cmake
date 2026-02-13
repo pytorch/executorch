@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -123,6 +124,13 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NXP_NEUTRON "Build the NXP eIQ Neutron backend" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NXP_NEUTRON_RUNNER "Build the NXP eIQ Neutron runner" BOOL
+  OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" BOOL OFF

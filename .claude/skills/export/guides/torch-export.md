@@ -470,6 +470,21 @@ def _(x):
 
 When the problematic code is in a module you can't modify:
 
+**Prefer fixing over splitting.** Always try to export the full model as a
+single graph first. Downstream compilers optimize better with the full graph
+visible — they can fuse operators, plan memory, and partition across backends
+more effectively when they see the entire computation. Only split into separate
+exported programs (one per component) as a last resort when an export blocker
+genuinely can't be fixed. In order of preference:
+
+1. **Fix the blocker** — no-op the updater, pre-compute state, disable
+   alignment logic, monkey-patch the method (see below).
+2. **Wrap the subgraph** but keep it within the full model export.
+3. **Split into separate exports** — when a blocker (e.g., a `//`-derived
+   guard) is structurally unfixable. The caller stitches the components
+   together at runtime, but each component is optimized independently with
+   no cross-component fusion.
+
 **Wrapper modules** — present a traceable `forward()` around a subgraph:
 
 ```python

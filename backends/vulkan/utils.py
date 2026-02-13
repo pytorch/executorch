@@ -468,6 +468,22 @@ def op_contains_bool_tensor(node: torch.fx.Node) -> bool:
     return False
 
 
+def op_contains_high_dim_tensor(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the operator used to compute the given node contains a tensor
+    with more than 4 dimensions
+    """
+    if is_tensor_node(node) and tensor_node_is_high_dim(node):
+        return True
+
+    for arg_node in node.args:
+        # pyre-ignore[6]
+        if is_tensor_node(arg_node) and tensor_node_is_high_dim(arg_node):
+            return True
+
+    return False
+
+
 def get_primary_arg_idx(self, node: torch.fx.Node) -> Optional[int]:
     primary_arg_idx: Optional[int] = None
     for i, arg_node in enumerate(node.args):
@@ -578,6 +594,7 @@ all_memory_layouts: Set[VkMemoryLayout] = {
 all_quantized_memory_layouts: Set[VkMemoryLayout] = {
     VkMemoryLayout.PACKED_INT8_4W4C,
     VkMemoryLayout.PACKED_INT8_4H4W,
+    VkMemoryLayout.PACKED_INT8_4C1W,
 }
 
 universal_memory_layout_set: Set[VkMemoryLayout] = {
@@ -967,7 +984,14 @@ ANY_STORAGE = TensorRepSet(all_memory_layouts, all_memory_layouts)
 
 # Only includes memory layouts that can be used by quantized tensors
 
+PACKED_INT8_BUFFER = TensorRepSet(all_quantized_memory_layouts, set())
 PACKED_INT8_4W4C_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W4C}, set())
+PACKED_INT8_4C1W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4C1W}, set())
+
+PACKED_INT8_CHANNELS_PACKED_BUFFER = TensorRepSet(
+    {VkMemoryLayout.PACKED_INT8_4W4C, VkMemoryLayout.PACKED_INT8_4C1W}, set()
+)
+
 
 # Special use RepSets
 

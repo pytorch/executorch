@@ -82,7 +82,7 @@ void test_q8ta_conv2d_dw(
     VK_GET_OP_FN("et_vk.conv2d_q8ta_q8csw_q8to.default")(graph, conv_args);
   } else {
     // Use the dedicated depthwise conv2d operator
-    VK_GET_OP_FN("etvk.q8ta_conv2d_dw.default")(graph, conv_args);
+    VK_GET_OP_FN("et_vk.q8ta_conv2d_dw.default")(graph, conv_args);
   }
 
   // Dequantize packed int8 output to floating point
@@ -156,10 +156,13 @@ void test_q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
     VK_GET_OP_FN("et_vk.conv2d_q8ta_q8csw_q8to.default")(graph, conv_args);
   } else if (impl_selector == "im2col") {
     // Use the im2col-based conv2d operator
-    VK_GET_OP_FN("etvk.q8ta_conv2d_im2col.default")(graph, conv_args);
+    VK_GET_OP_FN("et_vk.q8ta_conv2d_im2col.default")(graph, conv_args);
+  } else if (impl_selector == "general") {
+    // Use the general q8ta_conv2d operator (no im2col dispatch)
+    VK_GET_OP_FN("et_vk.q8ta_conv2d_general.default")(graph, conv_args);
   } else {
     // Use the new general q8ta_conv2d operator
-    VK_GET_OP_FN("etvk.q8ta_conv2d.default")(graph, conv_args);
+    VK_GET_OP_FN("et_vk.q8ta_conv2d.default")(graph, conv_args);
   }
 
   // Dequantize packed int8 output to floating point
@@ -237,7 +240,7 @@ void test_q8ta_conv2d_pw(
   if (impl_selector == "legacy_4w4c") {
     VK_GET_OP_FN("et_vk.conv2d_q8ta_q8csw_q8to.default")(graph, conv_args);
   } else {
-    VK_GET_OP_FN("etvk.q8ta_conv2d_pw.default")(graph, conv_args);
+    VK_GET_OP_FN("et_vk.q8ta_conv2d_pw.default")(graph, conv_args);
   }
 
   // Dequantize packed int8 output to floating point

@@ -2,6 +2,9 @@ base:
   model_class: "qwen3_0_6b"
   params: "examples/models/qwen3/config/0_6b_config.json"
   metadata: '{"get_bos_id": 151644, "get_eos_ids":[151645]}'
+  lora_config:
+    adapter_checkpoint: ${oc.env:LORA_ADAPTER_CHECKPOINT}
+    adapter_config: ${oc.env:LORA_ADAPTER_CONFIG}
 
 model:
   use_kv_cache: True
