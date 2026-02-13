@@ -1068,40 +1068,6 @@ def find_op_names(
     return result
 
 
-def compare_intermediate_outputs(a: Any, b: Any, comparator) -> List[float]:
-    """
-    Compare two outputs, handling both sequence and non-sequence cases,
-    and return a list of comparison results.
-    Parameters:
-    a: The first intermediate output to compare.
-    b: The second intermediate output to compare.
-    comparator: A comparator object with a `compare` method.
-    Returns:
-    List[float]: A list of comparison results.
-    Raises:
-    ValueError: If one input is a sequence and the other is not, or if sequences have different lengths.
-    """
-    is_a_sequence = isinstance(a, Sequence)
-    is_b_sequence = isinstance(b, Sequence)
-    if is_a_sequence and is_b_sequence:
-        # Ensure both sequences have the same length
-        if len(a) != len(b):
-            raise ValueError(
-                f"Sequences 'a' ({a}) and 'b' ({b}) must have the same length for comparison. len(a): {len(a)} len(b): {len(b)}."
-            )
-
-        # Compare each element in the sequences and return the list of results
-        return [comparator.compare(x, y) for x, y in zip(a, b)]
-    elif not is_a_sequence and not is_b_sequence:
-        # Compare non-sequence items and return the result in a list
-        return [comparator.compare(a, b)]
-    else:
-        # Raise an error if one is a sequence and the other is not
-        raise ValueError(
-            f"Both inputs 'a' ({a}) and 'b' ({b}) must be sequences or both must be non-sequences."
-        )
-
-
 def get_ancestor_node_identifiers(node: Node) -> List[str]:
     """Get the identifier of the ancestor node of the given node, with the graph id the ancestor node lives in.
 
