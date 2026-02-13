@@ -269,7 +269,7 @@ void q8ta_conv2d_im2col(
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(etvk.q8ta_conv2d_im2col.default, q8ta_conv2d_im2col);
+  VK_REGISTER_OP(et_vk.q8ta_conv2d_im2col.default, q8ta_conv2d_im2col);
 }
 
 } // namespace vkcompute
