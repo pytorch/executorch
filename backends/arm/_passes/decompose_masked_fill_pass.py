@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -35,10 +35,11 @@ def _get_decomposition(op) -> tuple:
 
 
 class DecomposeMaskedFillPass(ArmPass):
-    """
-    Masked fill takes in a boolean mask, a tensor and a scalar value.
+    """Masked fill takes in a boolean mask, a tensor and a scalar value.
+
     Fills the tensor with the scalar value according to the boolean mask.
     Decomposed to a where and a full_like operator.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ConvertFullLikeToFullPass}

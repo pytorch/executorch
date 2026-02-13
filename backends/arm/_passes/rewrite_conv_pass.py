@@ -31,7 +31,9 @@ from torch.export.graph_signature import InputKind
 
 
 class RewriteConvPass(ArmPass):
-    """Rewrites aten.convolution to TOSA conv ops (CONV2D/DEPTHWISE/TRANSPOSE/CONV3D)."""
+    """Rewrites aten.convolution to TOSA conv ops
+    (CONV2D/DEPTHWISE/TRANSPOSE/CONV3D).
+    """
 
     def __init__(self, exported_program: torch.export.ExportedProgram, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -111,9 +113,10 @@ class RewriteConvPass(ArmPass):
         return False
 
     def _reshape_weights(self, weight_node: torch.fx.Node, in_channels: int) -> None:
-        """Reshape the weights for depthwise convolution such that when serialized to TOSA,
-        the weights are in the format [H, W, in_channels, m_length] where
-        m_length is the number of output channels per input channel.
+        """Reshape the weights for depthwise convolution such that when
+        serialized to TOSA, the weights are in the format [H, W, in_channels,
+        m_length] where m_length is the number of output channels per input
+        channel.
         """
         weight_tensor = get_param_tensor(self.exported_program, weight_node)  # type: ignore[arg-type]
         if weight_tensor is None:

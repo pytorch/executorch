@@ -55,6 +55,52 @@ _VULKAN_DTYPES: Dict[torch.dtype, VkDataType] = {
 }
 
 ##
+## Dtype sets for per-operator dtype constraints
+##
+
+DtypeSet = Set[torch.dtype]
+
+FP_T: DtypeSet = {torch.float16, torch.float32}
+INT_T: DtypeSet = {torch.int32, torch.int64}
+QINT8_T: DtypeSet = {torch.int8}
+BOOL_T: DtypeSet = {torch.bool}
+ALL_T: DtypeSet = set(_VULKAN_DTYPES.keys())
+NONE_T: DtypeSet = set()  # Marker for non-tensor args (skip validation)
+
+# Composite dtype sets for specific operator requirements
+FP_INT_T: DtypeSet = FP_T | INT_T
+FP_INT_BOOL_T: DtypeSet = FP_T | INT_T | BOOL_T
+
+
+class DtypeSetList:
+    """
+    Wrapper around a list of DtypeSet with broadcasting semantics.
+    If only one DtypeSet is provided, it applies to all positions.
+    """
+
+    def __init__(self, dtype_sets: Union[DtypeSet, List[DtypeSet]]):
+        self.vals: List[DtypeSet] = (
+            dtype_sets if isinstance(dtype_sets, list) else [dtype_sets]
+        )
+
+    def __len__(self) -> int:
+        return len(self.vals)
+
+    def __getitem__(self, idx: int) -> DtypeSet:
+        # Broadcasting: single set applies to all positions
+        if idx > 0 and len(self.vals) == 1:
+            return self.vals[0]
+        return self.vals[idx]
+
+    def is_empty(self) -> bool:
+        return len(self.vals) == 0
+
+    def any_constrained(self) -> bool:
+        """Returns True if any position has dtype constraints."""
+        return any(len(s) > 0 for s in self.vals)
+
+
+##
 ## Node type determination
 ##
 
@@ -316,6 +362,57 @@ def io_dtypes_are_supported(node: torch.fx.Node) -> bool:
     return True
 
 
+def check_node_dtypes(  # noqa: C901
+    node: torch.fx.Node,
+    inputs_dtypes: DtypeSetList,
+    outputs_dtypes: DtypeSetList,
+) -> Tuple[bool, str]:
+    """
+    Check if all tensor inputs/outputs have dtypes in the allowed sets.
+    Returns (is_valid, reason_string) for better error reporting.
+    """
+    # Check input tensor dtypes
+    for i, arg in enumerate(node.args):
+        allowed_dtypes = inputs_dtypes[i]
+        # Skip non-constrained positions (NO_DTYPE = empty set)
+        if len(allowed_dtypes) == 0:
+            continue
+
+        if is_tensor_node(arg):
+            if isinstance(arg.meta["val"], (list, tuple)):
+                arg_dtype = arg.meta["val"][0].dtype
+            else:
+                arg_dtype = arg.meta["val"].dtype
+            if arg_dtype not in allowed_dtypes:
+                return False, f"input[{i}] dtype {arg_dtype} not in {allowed_dtypes}"
+
+        elif isinstance(arg, (list, tuple)):
+            # Handle tensor list inputs (e.g., cat)
+            for j, sub_arg in enumerate(arg):
+                if is_tensor_node(sub_arg):
+                    sub_dtype = sub_arg.meta["val"].dtype
+                    if sub_dtype not in allowed_dtypes:
+                        return (
+                            False,
+                            f"input[{i}][{j}] dtype {sub_dtype} not in {allowed_dtypes}",
+                        )
+
+    # Check output tensor dtypes
+    out_val = node.meta.get("val")
+    if isinstance(out_val, FakeTensor):
+        allowed_dtypes = outputs_dtypes[0]
+        if len(allowed_dtypes) > 0 and out_val.dtype not in allowed_dtypes:
+            return False, f"output dtype {out_val.dtype} not in {allowed_dtypes}"
+    elif isinstance(out_val, (list, tuple)):
+        for i, t in enumerate(out_val):
+            if isinstance(t, FakeTensor):
+                allowed_dtypes = outputs_dtypes[i]
+                if len(allowed_dtypes) > 0 and t.dtype not in allowed_dtypes:
+                    return False, f"output[{i}] dtype {t.dtype} not in {allowed_dtypes}"
+
+    return True, "dtypes valid"
+
+
 def tensor_node_is_bool(node: torch.fx.Node) -> bool:
     """
     Returns true if a given node contains a tensor with bool dtype
@@ -366,6 +463,22 @@ def op_contains_bool_tensor(node: torch.fx.Node) -> bool:
     for arg_node in node.args:
         # pyre-ignore[6]
         if is_tensor_node(arg_node) and tensor_node_is_bool(arg_node):
+            return True
+
+    return False
+
+
+def op_contains_high_dim_tensor(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the operator used to compute the given node contains a tensor
+    with more than 4 dimensions
+    """
+    if is_tensor_node(node) and tensor_node_is_high_dim(node):
+        return True
+
+    for arg_node in node.args:
+        # pyre-ignore[6]
+        if is_tensor_node(arg_node) and tensor_node_is_high_dim(arg_node):
             return True
 
     return False

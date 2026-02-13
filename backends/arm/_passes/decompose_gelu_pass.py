@@ -23,9 +23,7 @@ edge_gelu = (exir_ops.edge.aten.gelu.default,)
 
 
 def _get_gelu_ops(op) -> tuple:
-    """
-    Returns the operators needed to decompose GELU
-    """
+    """Returns the operators needed to decompose GELU."""
 
     if op in edge_gelu:
         return (
@@ -47,10 +45,9 @@ def _get_gelu_ops(op) -> tuple:
 
 
 class DecomposeGeluPass(ArmPass):
-    """
-    This pass decomposes the GELU operator into primitive ops.
-    Aiming to adhere closely to the reference implementations built into
-    ExecuTorch. Including using the same pre-calculated constants.
+    """This pass decomposes the GELU operator into primitive ops. Aiming to
+    adhere closely to the reference implementations built into ExecuTorch.
+    Including using the same pre-calculated constants.
 
     This operator has two formulae depending on the value of the
     approximate argument. Examples below include the added full
@@ -84,6 +81,7 @@ class DecomposeGeluPass(ArmPass):
         %op5 = add(%op4, %FULL_1)
         %op6 = mul(%x, %op5)
         %op7 = mul(%op6, %FULL_0_5)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
