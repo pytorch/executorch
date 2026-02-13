@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -62,6 +62,10 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_ARM_BAREMETAL
   "Build the Arm Baremetal flow for Cortex-M and Ethos-U" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
+  "Build the Arm Ethos-U backend for the Linux driver stack" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_KERNELS_LLM "Build the custom kernels" BOOL OFF
@@ -230,6 +234,11 @@ check_required_options_on(
 check_conflicting_options_on(
   IF_ON EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES CONFLICTS_WITH
   EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES
+)
+
+check_conflicting_options_on(
+  IF_ON EXECUTORCH_BUILD_ARM_ETHOSU_LINUX CONFLICTS_WITH
+  EXECUTORCH_BUILD_ARM_BAREMETAL
 )
 
 # TODO(jathu): move this to platform specific presets when created
