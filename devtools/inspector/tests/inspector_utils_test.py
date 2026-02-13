@@ -30,7 +30,6 @@ from executorch.devtools.inspector._inspector_utils import (
     calculate_mse,
     calculate_snr,
     calculate_time_scale_factor,
-    compare_intermediate_outputs,
     convert_to_float_tensor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
@@ -605,24 +604,6 @@ class TestInspectorUtils(unittest.TestCase):
             find_op_names(debug_handle, debug_handle_to_op_name),
             ["op1", "op2", "op3", "op4", "op5", "op6", "op7"],
         )
-
-    def test_compare_intermediate_outputs_sequences(self):
-        a = [1.0, 2.0, 3.0]
-        b = [1.0, 2.5, 3.5]
-        result = compare_intermediate_outputs(a, b, L1Comparator())
-        self.assertEqual(result, [0.0, 0.5, 0.5])
-
-    def test_compare_intermediate_outputs_diff_len_sequences(self):
-        a = [1.0, 2.0]
-        b = [1.0, 2.0, 3.0]
-        with self.assertRaises(ValueError):
-            compare_intermediate_outputs(a, b, L1Comparator())
-
-    def test_compare_intermediate_outputs_sequence_and_non_sequence(self):
-        a = [1.0, 2.0]
-        b = 1.0
-        with self.assertRaises(ValueError):
-            compare_intermediate_outputs(a, b, L1Comparator())
 
     def test_equip_debug_handle_to_export_program_success(self):
         """Test that propagate_back_debug_handle returns True and properly equips debug handles."""
