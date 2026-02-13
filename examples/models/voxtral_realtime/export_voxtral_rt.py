@@ -11,8 +11,14 @@ Produces a single .pte with three methods:
   - text_decoder:    embeds (1, seq_len, 3072) + cache_position -> logits
   - token_embedding: token_ids (1, seq_len) -> embeds (1, seq_len, 3072)
 
+With --streaming, produces a streaming .pte instead:
+  - encode_audio_chunk: mel_chunk (1,128,8) + conv states + enc_pos -> audio_embeds + new states
+  - text_decoder:       same as above
+  - token_embedding:    same as above
+
 Usage:
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --streaming
 """
 
 import argparse
@@ -85,37 +91,27 @@ class TokenEmbeddingExport(nn.Module):
 # ---------------------------------------------------------------------------
 
 
-def export_all(model, max_seq_len):
-    """Export all three model components."""
-    programs = {}
+def _export_decoder_and_embedding(
+    programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+):
+    """Export text_decoder and token_embedding into programs dict."""
+    from executorch.extension.llm.export.quantize import quantize_model_
 
-    # Infer dtype from model weights for sample inputs
     param_dtype = torch.float32
 
-    # 1. Audio encoder
-    print("\nExporting audio_encoder...")
-    audio_encoder = AudioEncoderExport(model)
-    audio_encoder.eval()
-
-    # T_mel must be a multiple of 8 (conv stride 2 + downsample 4)
-    _t_mel_base = Dim("_t_mel_base", min=1, max=3000)
-    t_mel_dim = 8 * _t_mel_base
-    sample_mel = torch.randn(1, model.config.num_mel_bins, 160, dtype=param_dtype)
-    programs["audio_encoder"] = export(
-        audio_encoder,
-        (sample_mel,),
-        dynamic_shapes={"mel": {2: t_mel_dim}},
-        strict=False,
-    )
-    print(f"  audio_encoder exported (sample input: {sample_mel.shape})")
-
-    # 2. Text decoder
     print("\nExporting text_decoder...")
     text_decoder = TextDecoderExport(model)
     text_decoder.eval()
 
+    if qlinear:
+        print(f"  Quantizing decoder ({qlinear})...")
+        quantize_model_(
+            text_decoder,
+            qlinear_config=qlinear,
+            qlinear_group_size=qlinear_group_size,
+        )
+
     seq_dim = Dim("seq_len", min=1, max=max_seq_len)
-    # Use seq_len > 1 to avoid torch.export specializing on constant 1
     sample_embeds = torch.randn(1, 4, model.config.dim, dtype=param_dtype)
     sample_pos = torch.arange(4, dtype=torch.long)
     programs["text_decoder"] = export(
@@ -129,10 +125,16 @@ def export_all(model, max_seq_len):
     )
     print(f"  text_decoder exported (sample input: {sample_embeds.shape})")
 
-    # 3. Token embedding
     print("\nExporting token_embedding...")
     tok_emb = TokenEmbeddingExport(model)
     tok_emb.eval()
+
+    if qembedding:
+        print(f"  Quantizing embedding ({qembedding})...")
+        quantize_model_(
+            tok_emb,
+            qembedding_config=qembedding,
+        )
 
     tok_seq_dim = Dim("tok_seq_len", min=1, max=max_seq_len)
     sample_ids = torch.tensor([[0, 1, 2, 3]], dtype=torch.long)
@@ -144,7 +146,51 @@ def export_all(model, max_seq_len):
     )
     print(f"  token_embedding exported (sample input: {sample_ids.shape})")
 
-    # Metadata
+
+def export_all(
+    model,
+    max_seq_len,
+    qlinear_encoder=None,
+    qlinear_encoder_group_size=32,
+    qlinear=None,
+    qlinear_group_size=32,
+    qembedding=None,
+):
+    """Export all three model components with per-component quantization."""
+    from executorch.extension.llm.export.quantize import quantize_model_
+
+    programs = {}
+    param_dtype = torch.float32
+
+    # 1. Audio encoder
+    print("\nExporting audio_encoder...")
+    audio_encoder = AudioEncoderExport(model)
+    audio_encoder.eval()
+
+    if qlinear_encoder:
+        print(f"  Quantizing encoder ({qlinear_encoder})...")
+        quantize_model_(
+            audio_encoder,
+            qlinear_config=qlinear_encoder,
+            qlinear_group_size=qlinear_encoder_group_size,
+        )
+
+    _t_mel_base = Dim("_t_mel_base", min=1, max=3000)
+    t_mel_dim = 8 * _t_mel_base
+    sample_mel = torch.randn(1, model.config.num_mel_bins, 160, dtype=param_dtype)
+    programs["audio_encoder"] = export(
+        audio_encoder,
+        (sample_mel,),
+        dynamic_shapes={"mel": {2: t_mel_dim}},
+        strict=False,
+    )
+    print(f"  audio_encoder exported (sample input: {sample_mel.shape})")
+
+    # 2-3. Text decoder + token embedding
+    _export_decoder_and_embedding(
+        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+    )
+
     metadata = {
         "sample_rate": 16000,
         "num_mel_bins": model.config.num_mel_bins,
@@ -154,6 +200,99 @@ def export_all(model, max_seq_len):
         "dim": model.config.dim,
         "vocab_size": model.config.vocab_size,
         "max_seq_len": max_seq_len,
+    }
+
+    return programs, metadata
+
+
+def export_streaming(
+    model,
+    max_seq_len,
+    max_enc_len=750,
+    qlinear_encoder=None,
+    qlinear_encoder_group_size=32,
+    qlinear=None,
+    qlinear_group_size=32,
+    qembedding=None,
+):
+    """Export streaming model components with per-component quantization."""
+    from executorch.extension.llm.export.quantize import quantize_model_
+
+    programs = {}
+    param_dtype = torch.float32
+
+    # 1. Streaming audio encoder
+    print("\nExporting encode_audio_chunk...")
+    from executorch.examples.models.voxtral_realtime.model import (
+        StreamingAudioEncoderExport,
+    )
+
+    streaming_enc = StreamingAudioEncoderExport(model, max_enc_len=max_enc_len)
+    streaming_enc.eval()
+
+    if qlinear_encoder:
+        print(f"  Quantizing encoder ({qlinear_encoder})...")
+        quantize_model_(
+            streaming_enc,
+            qlinear_config=qlinear_encoder,
+            qlinear_group_size=qlinear_encoder_group_size,
+        )
+
+    sample_mel_chunk = torch.randn(1, model.config.num_mel_bins, 8, dtype=param_dtype)
+    sample_conv1_state = torch.zeros(1, model.config.num_mel_bins, 2, dtype=param_dtype)
+    sample_conv2_state = torch.zeros(1, model.config.enc_dim, 2, dtype=param_dtype)
+    sample_enc_pos = torch.arange(4, dtype=torch.long)
+
+    programs["encode_audio_chunk"] = export(
+        streaming_enc,
+        (sample_mel_chunk, sample_conv1_state, sample_conv2_state, sample_enc_pos),
+        dynamic_shapes=None,
+        strict=False,
+    )
+    print(
+        f"  encode_audio_chunk exported (fixed shapes: mel_chunk={sample_mel_chunk.shape})"
+    )
+
+    # 2-3. Text decoder + token embedding
+    _export_decoder_and_embedding(
+        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+    )
+
+    # Derive STFT overlap from audio parameters.
+    # Left overlap: next multiple of hop_length >= n_fft/2
+    # Right look-ahead: how far the last mel frame extends past the step end
+    # mel_skip: number of overlap frames to skip at the start
+    hop_length = 160
+    n_fft = 400
+    sample_rate = 16000
+    frame_rate = 12.5
+    step_samples = int(sample_rate / frame_rate)
+    stft_left_overlap = ((n_fft // 2 + hop_length - 1) // hop_length) * hop_length
+    mel_skip_frames = stft_left_overlap // hop_length
+    chunk_mel_len = 8
+    stft_right_lookahead = (
+        (chunk_mel_len - 1) * hop_length + n_fft // 2 - chunk_mel_len * hop_length
+    )
+
+    metadata = {
+        "sample_rate": sample_rate,
+        "num_mel_bins": model.config.num_mel_bins,
+        "hop_length": hop_length,
+        "window_size": n_fft,
+        "downsample_factor": model.config.downsample_factor,
+        "dim": model.config.dim,
+        "enc_dim": model.config.enc_dim,
+        "vocab_size": model.config.vocab_size,
+        "max_seq_len": max_seq_len,
+        "streaming": 1,
+        "step_samples": step_samples,
+        "chunk_mel_len": chunk_mel_len,
+        "max_enc_len": max_enc_len,
+        "conv1_pad": 2,
+        "conv2_pad": 2,
+        "stft_left_overlap": stft_left_overlap,
+        "stft_right_lookahead": stft_right_lookahead,
+        "mel_skip_frames": mel_skip_frames,
     }
 
     return programs, metadata
@@ -236,19 +375,42 @@ def main():
         "--qlinear",
         default=None,
         choices=["4w", "8w", "8da4w", "8da8w"],
-        help="Quantize linear layers (e.g., 8da4w for 8-bit dynamic activation, 4-bit weight).",
+        help="Quantize decoder linear layers.",
     )
     parser.add_argument(
         "--qlinear-group-size",
         type=int,
         default=32,
-        help="Group size for linear quantization (default: 32).",
+        help="Group size for decoder linear quantization (default: 32).",
+    )
+    parser.add_argument(
+        "--qlinear-encoder",
+        default=None,
+        choices=["4w", "8w", "8da4w", "8da8w"],
+        help="Quantize encoder linear layers (separate from decoder).",
+    )
+    parser.add_argument(
+        "--qlinear-encoder-group-size",
+        type=int,
+        default=32,
+        help="Group size for encoder linear quantization (default: 32).",
     )
     parser.add_argument(
         "--qembedding",
         default=None,
         choices=["8w"],
         help="Quantize embedding layers (8-bit weight-only).",
+    )
+    parser.add_argument(
+        "--streaming",
+        action="store_true",
+        help="Export streaming encoder (encode_audio_chunk) instead of offline encoder.",
+    )
+    parser.add_argument(
+        "--max-enc-len",
+        type=int,
+        default=750,
+        help="Max encoder KV cache length for streaming (default: 750, ~60s audio).",
     )
     args = parser.parse_args()
 
@@ -269,19 +431,21 @@ def main():
             model.decoder.tok_embeddings.weight.clone()
         )
 
-        from executorch.extension.llm.export.quantize import quantize_model_
-
-        print("\nQuantizing...")
-        quantize_model_(
-            model,
-            qlinear_config=args.qlinear,
-            qlinear_group_size=args.qlinear_group_size,
-            qembedding_config=args.qembedding,
-        )
-
-    # Export
+    # Export (quantization is applied per-component inside export functions)
     print("\nExporting components...")
-    programs, metadata = export_all(model, args.max_seq_len)
+    quant_args = {
+        "qlinear_encoder": args.qlinear_encoder,
+        "qlinear_encoder_group_size": args.qlinear_encoder_group_size,
+        "qlinear": args.qlinear,
+        "qlinear_group_size": args.qlinear_group_size,
+        "qembedding": args.qembedding,
+    }
+    if args.streaming:
+        programs, metadata = export_streaming(
+            model, args.max_seq_len, args.max_enc_len, **quant_args
+        )
+    else:
+        programs, metadata = export_all(model, args.max_seq_len, **quant_args)
 
     # Lower
     et = lower_to_executorch(programs, metadata, backend=args.backend)

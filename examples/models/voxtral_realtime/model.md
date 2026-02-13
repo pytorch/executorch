@@ -146,9 +146,92 @@ The encoder has no KV cache (processes full mel at once in offline mode) and
 no GQA (n_heads == n_kv_heads). Uses `F.scaled_dot_product_attention` with
 `is_causal=True` and standard `[B, H, T, D]` layout. No custom ops needed.
 
-Uses full causal attention (no sliding window of 750) — acceptable for
-offline mode and simpler for export. Sliding window would be added for
-streaming (Phase 3).
+Uses full causal attention (no sliding window of 750). The model's
+`params.json` specifies `sliding_window: 750` but this is not enforced
+in the ExecuTorch implementation — the KV cache (streaming) or full
+attention (offline) provides equivalent or broader context.
+
+## Streaming Encoder (`StreamingAudioEncoderExport`)
+
+For streaming/live transcription, the encoder processes audio incrementally
+(8 mel frames = 80ms per step) instead of the full mel at once.
+
+### Architecture
+
+`StreamingAudioEncoderExport` shares all weights with the offline encoder
+but uses a different forward path:
+
+```
+mel_chunk (1, 128, 8)
+  + conv1_state (1, 128, 2) + conv2_state (1, 1280, 2)
+  -> cat(state, chunk) -> raw Conv1d (no CausalConv1d padding) -> GELU
+  -> cat(state, conv1_out) -> raw Conv1d -> GELU
+(1, 1280, 4) -> transpose -> (1, 4, 1280)
+  -> 32x streaming encoder layer (KV cache + custom_sdpa)
+  -> RMSNorm
+(1, 4, 1280)
+  -> Reshape downsample (1, 1, 5120) -> Adapter (1, 1, 3072)
+-> audio_embeds, new_conv1_state, new_conv2_state
+```
+
+### Conv state management
+
+The causal convolutions need left context across chunk boundaries.
+Instead of zero-padding (offline) or recompute-with-overlap (vLLM),
+explicit conv state carries the tail of the previous chunk:
+
+- **Conv1** (kernel=3, stride=1): state = last 2 mel frames from previous
+  chunk. `cat(state, chunk)` → (1, 128, 10) → Conv1d → (1, 1280, 8).
+- **Conv2** (kernel=3, stride=2): state = last 2 conv1 GELU output frames.
+  `cat(state, conv1_out)` → (1, 1280, 10) → Conv1d → (1, 1280, 4).
+
+The raw `nn.Conv1d` is called directly (bypassing `CausalConv1d.forward`
+which would zero-pad). This produces identical results to the offline
+encoder — verified to within fp32 precision (max diff < 2e-5).
+
+### Encoder KV cache
+
+Each of the 32 encoder transformer layers gets its own `KVCache` instance
+(reusing the same class as the decoder). The `SDPA` module handles causal
+attention via `start_pos`, accumulating encoder frames incrementally.
+
+- Cache shape: `(1, max_enc_len, 32, 64)` per layer
+- Default `max_enc_len=750` (~60s audio, matching the model's trained
+  sliding window). Configurable via `--max-enc-len`.
+- Memory: 32 layers × 2 × 750 × 32 × 64 × 4 bytes ≈ 393 MB (fp32)
+
+### STFT overlap for streaming mel
+
+The streaming preprocessor (`WhisperAudioProcessor(streaming=True)`)
+computes mel without 30-second chunk padding. To match offline mel values
+at chunk boundaries, the C++ runner uses overlapping audio windows:
+
+- **Left overlap**: 320 samples (2 × hop_length, ≥ n_fft/2 = 200)
+- **Right look-ahead**: 40 samples (2.5ms, matches vLLM's
+  `streaming_look_ahead_ms`)
+- **Total window**: 320 + 1280 + 40 = 1640 samples → 10 mel frames
+- **Frame extraction**: skip first 2 frames (overlap region), take
+  frames 2–9 (the 8 that align with offline mel frame positions)
+
+For the first step, the left overlap is zero-padded (matching the
+offline encoder's `center=True` STFT edge behavior). The 2.5ms
+look-ahead introduces negligible latency.
+
+### Per-component quantization
+
+Quantization is applied per-component after wrapping (following the
+Parakeet pattern), allowing different configs for encoder vs decoder:
+
+```bash
+--qlinear-encoder 8w      # encoder linear layers
+--qlinear 8da4w           # decoder linear layers
+--qembedding 8w           # embedding layer
+```
+
+The streaming encoder references the same module objects that
+`quantize_model_()` mutates in-place, so quantized weights are
+used transparently. Conv1d layers are not quantized (not targeted
+by `quantize_model_`). KV caches and SDPA have no trainable weights.
 
 ## Checkpoint Format
 
@@ -215,4 +298,14 @@ VoxtralRealtimeModel
       feed_forward: LMMLP (w1/w2/w3)
     norm: RMSNorm
     output: Linear (tied to tok_embeddings)
+
+StreamingAudioEncoderExport (export wrapper, shares weights with encoder + adapter)
+  conv1: nn.Conv1d (shared from encoder.conv_layers[0].conv)
+  conv2: nn.Conv1d (shared from encoder.conv_layers[1].conv)
+  layers: 32x CausalEncoderLayer (shared from encoder.layers)
+  enc_norm: RMSNorm (shared from encoder.norm)
+  adapter: AudioLanguageAdapter (shared from model.adapter)
+  kv_caches: 32x KVCache (owned, for streaming attention)
+  sdpa: SDPA (owned, for streaming attention)
+  freqs_cos/sin: RoPE buffers (owned, encoder dims)
 ```
