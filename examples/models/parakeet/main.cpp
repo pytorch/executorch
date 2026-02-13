@@ -7,6 +7,7 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -26,7 +27,6 @@
 #include "types.h"
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
-#include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/runner/wav_loader.h>
 #include <executorch/extension/llm/tokenizers/third-party/llama.cpp-unicode/include/unicode.h>
@@ -53,6 +53,7 @@ DEFINE_string(
     timestamps,
     "segment",
     "Timestamp output mode: none|token|word|segment|all");
+DEFINE_int32(warmup, 0, "Number of warmup iterations before the timed run.");
 
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
@@ -330,14 +331,155 @@ std::vector<Token> greedy_decode_executorch(
   return hypothesis;
 }
 
+struct ModelMetadata {
+  int64_t vocab_size;
+  int64_t blank_id;
+  int64_t num_rnn_layers;
+  int64_t pred_hidden;
+  int64_t sample_rate;
+  double window_stride;
+  int64_t encoder_subsampling_factor;
+};
+
+struct InferenceResult {
+  std::vector<Token> decoded_tokens;
+  double preprocessor_ms;
+  double encoder_ms;
+  double decoder_ms;
+  double total_ms;
+};
+
+bool load_model_metadata(Module& model, ModelMetadata& meta) {
+  std::vector<::executorch::runtime::EValue> empty_inputs;
+  auto num_rnn_layers_result = model.execute("num_rnn_layers", empty_inputs);
+  auto pred_hidden_result = model.execute("pred_hidden", empty_inputs);
+  auto vocab_size_result = model.execute("vocab_size", empty_inputs);
+  auto blank_id_result = model.execute("blank_id", empty_inputs);
+  auto sample_rate_result = model.execute("sample_rate", empty_inputs);
+  auto window_stride_result = model.execute("window_stride", empty_inputs);
+  auto encoder_subsampling_factor_result =
+      model.execute("encoder_subsampling_factor", empty_inputs);
+
+  if (!num_rnn_layers_result.ok() || !pred_hidden_result.ok() ||
+      !vocab_size_result.ok() || !blank_id_result.ok() ||
+      !sample_rate_result.ok() || !window_stride_result.ok() ||
+      !encoder_subsampling_factor_result.ok()) {
+    ET_LOG(
+        Error,
+        "Failed to query model metadata. Make sure the model was exported with constant_methods.");
+    return false;
+  }
+
+  meta.vocab_size = vocab_size_result.get()[0].toInt();
+  meta.blank_id = blank_id_result.get()[0].toInt();
+  meta.num_rnn_layers = num_rnn_layers_result.get()[0].toInt();
+  meta.pred_hidden = pred_hidden_result.get()[0].toInt();
+  meta.sample_rate = sample_rate_result.get()[0].toInt();
+  meta.window_stride = window_stride_result.get()[0].toDouble();
+  meta.encoder_subsampling_factor =
+      encoder_subsampling_factor_result.get()[0].toInt();
+  return true;
+}
+
+InferenceResult run_inference(
+    Module& model,
+    const std::vector<float>& audio_data,
+    const ModelMetadata& meta) {
+  InferenceResult result{};
+  auto total_start = std::chrono::high_resolution_clock::now();
+
+  auto audio_tensor = from_blob(
+      const_cast<float*>(audio_data.data()),
+      {static_cast<::executorch::aten::SizesType>(audio_data.size())},
+      ::executorch::aten::ScalarType::Float);
+  std::vector<int64_t> audio_len_data = {
+      static_cast<int64_t>(audio_data.size())};
+  auto audio_len_tensor = from_blob(
+      audio_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
+
+  // Preprocessor
+  auto preprocessor_start = std::chrono::high_resolution_clock::now();
+  auto proc_result = model.execute(
+      "preprocessor",
+      std::vector<::executorch::runtime::EValue>{
+          audio_tensor, audio_len_tensor});
+  if (!proc_result.ok()) {
+    ET_LOG(Error, "Preprocessor forward failed.");
+    return result;
+  }
+  auto preprocessor_end = std::chrono::high_resolution_clock::now();
+  result.preprocessor_ms = std::chrono::duration<double, std::milli>(
+                               preprocessor_end - preprocessor_start)
+                               .count();
+
+  auto& proc_outputs = proc_result.get();
+  auto mel = proc_outputs[0].toTensor();
+  int64_t mel_len_value =
+      proc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
+  std::vector<int64_t> mel_len_data = {mel_len_value};
+  auto mel_len =
+      from_blob(mel_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
+
+  ET_LOG(
+      Info,
+      "Mel spectrogram shape: [%ld, %ld, %ld], mel_len: %lld",
+      static_cast<long>(mel.sizes()[0]),
+      static_cast<long>(mel.sizes()[1]),
+      static_cast<long>(mel.sizes()[2]),
+      static_cast<long long>(mel_len_value));
+
+  // Encoder
+  auto encoder_start = std::chrono::high_resolution_clock::now();
+  auto enc_result = model.execute(
+      "encoder", std::vector<::executorch::runtime::EValue>{mel, mel_len});
+  if (!enc_result.ok()) {
+    ET_LOG(Error, "Encoder forward failed.");
+    return result;
+  }
+  auto encoder_end = std::chrono::high_resolution_clock::now();
+  result.encoder_ms =
+      std::chrono::duration<double, std::milli>(encoder_end - encoder_start)
+          .count();
+
+  auto& enc_outputs = enc_result.get();
+  auto f_proj = enc_outputs[0].toTensor();
+  int64_t encoded_len = enc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
+
+  ET_LOG(
+      Info,
+      "Encoder output (f_proj) shape: [%ld, %ld, %ld], len=%ld",
+      static_cast<long>(f_proj.sizes()[0]),
+      static_cast<long>(f_proj.sizes()[1]),
+      static_cast<long>(f_proj.sizes()[2]),
+      static_cast<long>(encoded_len));
+
+  // Decoder
+  auto decoder_start = std::chrono::high_resolution_clock::now();
+  result.decoded_tokens = greedy_decode_executorch(
+      model,
+      f_proj,
+      encoded_len,
+      meta.blank_id,
+      meta.num_rnn_layers,
+      meta.pred_hidden);
+  auto decoder_end = std::chrono::high_resolution_clock::now();
+  result.decoder_ms =
+      std::chrono::duration<double, std::milli>(decoder_end - decoder_start)
+          .count();
+
+  auto total_end = std::chrono::high_resolution_clock::now();
+  result.total_ms =
+      std::chrono::duration<double, std::milli>(total_end - total_start)
+          .count();
+
+  ET_LOG(Info, "Decoded %zu tokens", result.decoded_tokens.size());
+  return result;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
-
-  // Initialize stats for benchmarking
-  ::executorch::extension::llm::Stats stats;
-  stats.model_load_start_ms = ::executorch::extension::llm::time_in_ms();
 
   TimestampOutputMode timestamp_mode;
   try {
@@ -352,8 +494,9 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // Load model (which includes the bundled preprocessor)
+  // Load model
   ET_LOG(Info, "Loading model from: %s", FLAGS_model_path.c_str());
+  auto model_load_start = std::chrono::high_resolution_clock::now();
   std::unique_ptr<Module> model;
   if (!FLAGS_data_path.empty()) {
     ET_LOG(Info, "Loading data from: %s", FLAGS_data_path.c_str());
@@ -367,8 +510,27 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Failed to load model.");
     return 1;
   }
-  stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
-  stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
+  auto model_load_end = std::chrono::high_resolution_clock::now();
+  double model_load_ms = std::chrono::duration<double, std::milli>(
+                             model_load_end - model_load_start)
+                             .count();
+  ET_LOG(Info, "Model load time: %.1f ms", model_load_ms);
+
+  // Query model metadata once
+  ModelMetadata meta{};
+  if (!load_model_metadata(*model, meta)) {
+    return 1;
+  }
+  ET_LOG(
+      Info,
+      "Model metadata: vocab_size=%lld, blank_id=%lld, num_rnn_layers=%lld, pred_hidden=%lld, sample_rate=%lld, window_stride=%.6f, encoder_subsampling_factor=%lld",
+      static_cast<long long>(meta.vocab_size),
+      static_cast<long long>(meta.blank_id),
+      static_cast<long long>(meta.num_rnn_layers),
+      static_cast<long long>(meta.pred_hidden),
+      static_cast<long long>(meta.sample_rate),
+      meta.window_stride,
+      static_cast<long long>(meta.encoder_subsampling_factor));
 
   // Load audio
   ET_LOG(Info, "Loading audio from: %s", FLAGS_audio_path.c_str());
@@ -376,113 +538,17 @@ int main(int argc, char** argv) {
       ::executorch::extension::llm::load_wav_audio_data(FLAGS_audio_path);
   ET_LOG(Info, "Loaded %zu audio samples", audio_data.size());
 
-  auto audio_tensor = from_blob(
-      audio_data.data(),
-      {static_cast<::executorch::aten::SizesType>(audio_data.size())},
-      ::executorch::aten::ScalarType::Float);
-  std::vector<int64_t> audio_len_data = {
-      static_cast<int64_t>(audio_data.size())};
-  auto audio_len_tensor = from_blob(
-      audio_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
-
-  ET_LOG(Info, "Running preprocessor...");
-  auto proc_result = model->execute(
-      "preprocessor",
-      std::vector<::executorch::runtime::EValue>{
-          audio_tensor, audio_len_tensor});
-  if (!proc_result.ok()) {
-    ET_LOG(Error, "Preprocessor forward failed.");
-    return 1;
-  }
-  auto& proc_outputs = proc_result.get();
-  auto mel = proc_outputs[0].toTensor();
-  auto mel_len_tensor_out = proc_outputs[1].toTensor();
-  int64_t mel_len_value = mel_len_tensor_out.const_data_ptr<int64_t>()[0];
-
-  // Create mel_len tensor for encoder
-  std::vector<int64_t> mel_len_data = {mel_len_value};
-  auto mel_len =
-      from_blob(mel_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
-
-  ET_LOG(
-      Info,
-      "Mel spectrogram shape: [%ld, %ld, %ld], mel_len: %lld",
-      static_cast<long>(mel.sizes()[0]),
-      static_cast<long>(mel.sizes()[1]),
-      static_cast<long>(mel.sizes()[2]),
-      static_cast<long long>(mel_len_value));
-
-  ET_LOG(Info, "Running encoder...");
-  auto enc_result = model->execute(
-      "encoder", std::vector<::executorch::runtime::EValue>{mel, mel_len});
-  if (!enc_result.ok()) {
-    ET_LOG(Error, "Encoder forward failed.");
-    return 1;
-  }
-  stats.prompt_eval_end_ms = ::executorch::extension::llm::time_in_ms();
-  stats.first_token_ms =
-      stats.prompt_eval_end_ms; // For ASR, first token is at end of encoding
-
-  auto& enc_outputs = enc_result.get();
-  auto f_proj = enc_outputs[0].toTensor(); // [B, T, joint_hidden]
-  int64_t encoded_len = enc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
-
-  ET_LOG(
-      Info,
-      "Encoder output (f_proj) shape: [%ld, %ld, %ld], len=%ld",
-      static_cast<long>(f_proj.sizes()[0]),
-      static_cast<long>(f_proj.sizes()[1]),
-      static_cast<long>(f_proj.sizes()[2]),
-      static_cast<long>(encoded_len));
-
-  // Query model metadata from constant_methods
-  std::vector<::executorch::runtime::EValue> empty_inputs;
-  auto num_rnn_layers_result = model->execute("num_rnn_layers", empty_inputs);
-  auto pred_hidden_result = model->execute("pred_hidden", empty_inputs);
-  auto vocab_size_result = model->execute("vocab_size", empty_inputs);
-  auto blank_id_result = model->execute("blank_id", empty_inputs);
-  auto sample_rate_result = model->execute("sample_rate", empty_inputs);
-  auto window_stride_result = model->execute("window_stride", empty_inputs);
-  auto encoder_subsampling_factor_result =
-      model->execute("encoder_subsampling_factor", empty_inputs);
-
-  if (!num_rnn_layers_result.ok() || !pred_hidden_result.ok() ||
-      !vocab_size_result.ok() || !blank_id_result.ok() ||
-      !sample_rate_result.ok() || !window_stride_result.ok() ||
-      !encoder_subsampling_factor_result.ok()) {
-    ET_LOG(
-        Error,
-        "Failed to query model metadata. Make sure the model was exported with constant_methods.");
-    return 1;
+  // Warmup runs
+  for (int i = 0; i < FLAGS_warmup; i++) {
+    ET_LOG(Info, "Warmup run %d/%d...", i + 1, FLAGS_warmup);
+    run_inference(*model, audio_data, meta);
   }
 
-  int64_t vocab_size = vocab_size_result.get()[0].toInt();
-  int64_t blank_id = blank_id_result.get()[0].toInt();
-  int64_t num_rnn_layers = num_rnn_layers_result.get()[0].toInt();
-  int64_t pred_hidden = pred_hidden_result.get()[0].toInt();
-  int64_t sample_rate = sample_rate_result.get()[0].toInt();
-  double window_stride = window_stride_result.get()[0].toDouble();
-  int64_t encoder_subsampling_factor =
-      encoder_subsampling_factor_result.get()[0].toInt();
+  // Timed run
+  ET_LOG(Info, "Running inference...");
+  auto result = run_inference(*model, audio_data, meta);
 
-  ET_LOG(
-      Info,
-      "Model metadata: vocab_size=%lld, blank_id=%lld, num_rnn_layers=%lld, pred_hidden=%lld, sample_rate=%lld, window_stride=%.6f, encoder_subsampling_factor=%lld",
-      static_cast<long long>(vocab_size),
-      static_cast<long long>(blank_id),
-      static_cast<long long>(num_rnn_layers),
-      static_cast<long long>(pred_hidden),
-      static_cast<long long>(sample_rate),
-      window_stride,
-      encoder_subsampling_factor);
-
-  ET_LOG(Info, "Running TDT greedy decode...");
-  auto decoded_tokens = greedy_decode_executorch(
-      *model, f_proj, encoded_len, blank_id, num_rnn_layers, pred_hidden);
-
-  ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
-
-  // Load tokenizer
+  // Load tokenizer and decode
   ET_LOG(Info, "Loading tokenizer from: %s", FLAGS_tokenizer_path.c_str());
   auto tokenizer =
       ::executorch::extension::llm::load_tokenizer(FLAGS_tokenizer_path);
@@ -494,19 +560,26 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // Convert tokens to text
   std::string text = parakeet::tokenizer_utils::decode_token_sequence(
-      decoded_tokens, *tokenizer);
+      result.decoded_tokens, *tokenizer);
   std::cout << "Transcribed text: " << text << std::endl;
 
-  // Record inference end time and token counts
-  stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
-  stats.num_prompt_tokens =
-      encoded_len; // Use encoder output length as "prompt" tokens
-  stats.num_generated_tokens = static_cast<int64_t>(decoded_tokens.size());
+  double audio_duration_s = static_cast<double>(audio_data.size()) /
+      static_cast<double>(meta.sample_rate);
 
-  // Print PyTorchObserver stats for benchmarking
-  ::executorch::extension::llm::print_report(stats);
+  std::cout << "\nTiming summary:" << std::endl;
+  std::cout << "  Model load:    " << model_load_ms << " ms" << std::endl;
+  std::cout << "  Preprocessor:  " << result.preprocessor_ms << " ms"
+            << std::endl;
+  std::cout << "  Encoder:       " << result.encoder_ms << " ms" << std::endl;
+  std::cout << "  Decoder:       " << result.decoder_ms << " ms" << std::endl;
+  std::cout << "  Total:         " << result.total_ms << " ms" << std::endl;
+  std::cout << "  Audio duration: " << audio_duration_s << " s" << std::endl;
+  std::cout << "  Real-time factor (excl. load): "
+            << (result.preprocessor_ms + result.encoder_ms +
+                result.decoder_ms) /
+          (audio_duration_s * 1000.0)
+            << "x" << std::endl;
 
 #ifdef ET_BUILD_METAL
   executorch::backends::metal::print_metal_backend_stats();
@@ -524,12 +597,11 @@ int main(int argc, char** argv) {
       "Derived supported_punctuation size=%zu",
       supported_punctuation.size());
 
-  // for simplicity, compute all levels of timestamps regardless of mode
   std::vector<TokenWithTextInfo> tokens_with_text_info;
   try {
     tokens_with_text_info =
         parakeet::timestamp_utils::get_tokens_with_text_info(
-            decoded_tokens, *tokenizer, supported_punctuation);
+            result.decoded_tokens, *tokenizer, supported_punctuation);
   } catch (const std::exception& e) {
     ET_LOG(Error, "Failed to get tokens with text info: %s", e.what());
     return 1;
@@ -540,7 +612,7 @@ int main(int argc, char** argv) {
       parakeet::timestamp_utils::get_segment_offsets(word_offsets);
 
   const double frame_to_seconds =
-      window_stride * static_cast<double>(encoder_subsampling_factor);
+      meta.window_stride * static_cast<double>(meta.encoder_subsampling_factor);
 
   if (timestamp_mode.segment) {
     std::cout << "\nSegment timestamps:" << std::endl;
