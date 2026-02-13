@@ -29,13 +29,17 @@ TestCase create_test_case_from_config(
     utils::StorageType storage_type,
     vkapi::ScalarType input_dtype,
     utils::GPUMemoryLayout fp_memory_layout,
-    utils::GPUMemoryLayout quant_layout) {
+    utils::GPUMemoryLayout quant_layout,
+    bool const_b = false) {
   TestCase test_case;
 
   // Create a descriptive name for the test case
   std::string shape_str = shape_string(config.shape);
   std::string test_name = config.test_case_name + "  I=" + shape_str + "  " +
       repr_str(utils::kBuffer, quant_layout);
+  if (const_b) {
+    test_name += "  const_b";
+  }
   test_case.set_name(test_name);
 
   // Set the operator name for the test case
@@ -50,13 +54,16 @@ TestCase create_test_case_from_config(
       fp_memory_layout,
       DataGenType::RANDOM);
 
-  // Input tensor B (float/half)
+  // Input tensor B (float/half, or pre-quantized int8 for const_b)
   ValueSpec input_b(
       config.shape,
-      input_dtype,
+      const_b ? vkapi::kChar : input_dtype,
       storage_type,
       fp_memory_layout,
-      DataGenType::RANDOM);
+      const_b ? DataGenType::RANDINT8 : DataGenType::RANDOM);
+  if (const_b) {
+    input_b.set_constant(true);
+  }
 
   // Quantization parameters for input A
   float input_a_scale_val = 0.007843; // 2/255 approximately
@@ -148,6 +155,13 @@ std::vector<TestCase> generate_q8ta_add_easy_cases() {
         /*input_dtype=*/vkapi::kFloat,
         /*fp_memory_layout=*/utils::kWidthPacked,
         quant_layout));
+    test_cases.push_back(create_test_case_from_config(
+        config,
+        /*fp_storage_type=*/utils::kBuffer,
+        /*input_dtype=*/vkapi::kFloat,
+        /*fp_layout=*/utils::kWidthPacked,
+        quant_layout,
+        /*const_b=*/true));
   }
 
   return test_cases;
@@ -215,6 +229,13 @@ std::vector<TestCase> generate_q8ta_add_test_cases() {
           /*input_dtype=*/vkapi::kFloat,
           /*fp_memory_layout=*/utils::kWidthPacked,
           quant_layout));
+      test_cases.push_back(create_test_case_from_config(
+          config,
+          /*fp_storage_type=*/utils::kBuffer,
+          /*fp_input_dtype=*/vkapi::kFloat,
+          /*fp_layout=*/utils::kWidthPacked,
+          quant_layout,
+          /*const_b=*/true));
     }
   }
 
@@ -261,9 +282,10 @@ void q8ta_add_reference_impl(TestCase& test_case) {
     throw std::invalid_argument("Unsupported dtype");
   }
 
+  bool input_b_is_int8 = (input_b_spec.dtype == vkapi::kChar);
+
   // Get raw data pointers
   auto& input_a_data = input_a_spec.get_float_data();
-  auto& input_b_data = input_b_spec.get_float_data();
 
   const float input_a_scale = input_a_scale_spec.get_float_value();
   const int32_t input_a_zero_point = input_a_zero_point_spec.get_int_value();
@@ -284,11 +306,17 @@ void q8ta_add_reference_impl(TestCase& test_case) {
     quant_a_f = std::min(std::max(quant_a_f, -128.0f), 127.0f);
     int8_t quantized_a = static_cast<int8_t>(quant_a_f);
 
-    // Quantize input B to int8
-    float quant_b_f =
-        std::round(input_b_data[i] / input_b_scale) + input_b_zero_point;
-    quant_b_f = std::min(std::max(quant_b_f, -128.0f), 127.0f);
-    int8_t quantized_b = static_cast<int8_t>(quant_b_f);
+    // Get quantized input B (either from pre-quantized int8 or by quantizing)
+    int8_t quantized_b;
+    if (input_b_is_int8) {
+      quantized_b = input_b_spec.get_int8_data()[i];
+    } else {
+      float quant_b_f =
+          std::round(input_b_spec.get_float_data()[i] / input_b_scale) +
+          input_b_zero_point;
+      quant_b_f = std::min(std::max(quant_b_f, -128.0f), 127.0f);
+      quantized_b = static_cast<int8_t>(quant_b_f);
+    }
 
     // Dequantize both inputs to a common scale for addition
     float dequant_a =
