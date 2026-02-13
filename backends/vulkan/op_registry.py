@@ -510,7 +510,6 @@ def register_q8ta_add():
     return OpFeatures(
         inputs_storage=utils.PACKED_INT8_BUFFER,
         supports_resize=False,
-        supports_prepacking=True,
     )
 
 
