@@ -68,7 +68,6 @@ To calculate 15% of 80"
 
 EXPECTED_BASE_PREFIX="<|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant:
 <think>
-<think>
 Okay, so I need to calculate 15% of 80."
 
 ### TEST 1: Run lora_forward method ###
