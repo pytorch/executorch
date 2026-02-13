@@ -431,6 +431,11 @@ def register_torchao_quantize_dequantize():
     )
 
 
+# =============================================================================
+# Q8taQuantizeDequantize.cpp
+# =============================================================================
+
+
 @update_features(
     [
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
@@ -443,7 +448,7 @@ def register_quantize_per_tensor():
             utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
         outputs_storage=[
-            utils.PACKED_INT8_4W4C_BUFFER,
+            utils.PACKED_INT8_BUFFER,
         ],
     )
 
@@ -457,7 +462,7 @@ def register_quantize_per_tensor():
 def register_dequantize_per_tensor():
     return OpFeatures(
         inputs_storage=[
-            utils.PACKED_INT8_4W4C_BUFFER,
+            utils.PACKED_INT8_BUFFER,
         ],
         outputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
@@ -496,17 +501,21 @@ def register_torchao_choose_qparams_affine():
 
 
 # =============================================================================
-# QuantizedBinary.cpp
+# Q8taBinary.cpp
 # =============================================================================
 
 
-@update_features(exir_ops.edge.et_vk.add_q8ta_q8ta_q8to.default)
-def register_add_q8ta_q8ta_q8to():
+@update_features(exir_ops.edge.et_vk.q8ta_add.default)
+def register_q8ta_add():
     return OpFeatures(
-        inputs_storage=utils.PACKED_INT8_4W4C_BUFFER,
+        inputs_storage=utils.PACKED_INT8_BUFFER,
         supports_resize=False,
-        supports_prepacking=True,
     )
+
+
+# =============================================================================
+# Reduce.cpp
+# =============================================================================
 
 
 def get_dims_reduced(node: torch.fx.Node) -> Union[int, List[int]]:
@@ -616,11 +625,6 @@ def pick_storage_for_reduce(node: torch.fx.Node):
             outputs_storage = utils.CHANNELS_PACKED_TEXTURE
 
     return inputs_storage, outputs_storage
-
-
-# =============================================================================
-# Reduce.cpp
-# =============================================================================
 
 
 @update_features(
@@ -745,17 +749,16 @@ def register_convolution_cpp_ops():
 
 
 # =============================================================================
-# QuantizedConvolution.cpp
+# Q8taConv2d*.cpp
 # =============================================================================
 
 
 @update_features(
     [
-        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to.default,
-        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to_dw.default,
+        exir_ops.edge.et_vk.q8ta_conv2d_pw.default,
     ]
 )
-def register_quantizedconvolution_cpp_ops():
+def register_q8ta_conv_pw_op():
     return OpFeatures(
         inputs_storage=[
             utils.PACKED_INT8_4W4C_BUFFER,  # input
@@ -773,6 +776,42 @@ def register_quantizedconvolution_cpp_ops():
             utils.NO_STORAGE,  # dilation (non tensor)
             utils.NO_STORAGE,  # groups (non tensor)
             utils.NO_STORAGE,  # original OC count (non tensor)
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
+        ],
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.q8ta_conv2d.default,
+        exir_ops.edge.et_vk.q8ta_conv2d_dw.default,
+    ]
+)
+def register_q8ta_conv2d_ops():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_4C1W_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # kernel_size (non tensor)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # original OC count (non tensor)
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
         ],
         supports_resize=False,
         supports_prepacking=True,
