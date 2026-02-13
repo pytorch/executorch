@@ -50,6 +50,7 @@ class VoxtralRealtimeConfig:
     downsample_factor: int = 4
     # Runtime
     max_seq_len: int = 4096
+    use_standard_attention: bool = False  # Use standard PyTorch attention instead of custom ops
 
     @staticmethod
     def from_params_json(path: str) -> "VoxtralRealtimeConfig":
@@ -323,6 +324,46 @@ class KVCache(nn.Module):
         return self.k_cache, self.v_cache
 
 
+class StaticKVCache(nn.Module):
+    """Export-friendly KV cache using index_copy_ for updates.
+
+    Compatible with torch.export and AOTI. Uses [B, H, S, D] layout
+    (matching transformers.StaticCache) for index_copy_ compatibility.
+    """
+
+    def __init__(self, max_seq_len: int, n_kv_heads: int, head_dim: int):
+        super().__init__()
+        self.max_seq_len = max_seq_len
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        # Use [B, H, S, D] layout like transformers.StaticCache
+        cache_shape = (1, n_kv_heads, max_seq_len, head_dim)
+        self.register_buffer("k_cache", torch.zeros(cache_shape))
+        self.register_buffer("v_cache", torch.zeros(cache_shape))
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Write k_val/v_val into cache using index_copy_ (export-friendly).
+
+        Args:
+            input_pos: (seq_len,) position indices [0, 1, 2, ...] or [start_pos] for decode.
+            k_val, v_val: (B, seq_len, n_kv_heads, head_dim).
+        Returns:
+            k_cache, v_cache: (B, n_kv_heads, max_seq_len, head_dim).
+        """
+        # Transpose k_val, v_val from [B, S, H, D] to [B, H, S, D]
+        k_val = k_val.transpose(1, 2)  # [B, n_kv_heads, seq_len, head_dim]
+        v_val = v_val.transpose(1, 2)  # [B, n_kv_heads, seq_len, head_dim]
+
+        # Use index_copy_ on dimension 2 (sequence dimension in [B, H, S, D])
+        # This matches transformers.cache_utils.StaticLayer implementation
+        self.k_cache.index_copy_(2, input_pos, k_val)
+        self.v_cache.index_copy_(2, input_pos, v_val)
+
+        return self.k_cache, self.v_cache
+
+
 class SDPA(nn.Module):
     """Scaled dot-product attention using torch.ops.llama.custom_sdpa.
 
@@ -384,12 +425,84 @@ class SDPA(nn.Module):
         return y.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
-class LMAttention(nn.Module):
-    """GQA with RoPE, KV cache, and fused SDPA. No biases.
+class StandardSDPA(nn.Module):
+    """Standard scaled dot-product attention using F.scaled_dot_product_attention.
 
-    Data flows in [B, T, H, D] throughout — no transposes in the hot path.
-    GQA expansion is handled inside the custom_sdpa kernel.
-    Causal masking is handled via start_pos — no pre-built mask buffer.
+    Compatible with AOTI/Metal backend. Handles GQA and causal masking using
+    standard PyTorch operations. Works with StaticKVCache that returns [B, H, S, D] layout.
+    """
+
+    def __init__(self, n_heads: int, n_kv_heads: int, head_dim: int):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        self.dim = n_heads * head_dim
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+    ) -> torch.Tensor:
+        """
+        Args:
+            input_pos: (seq_len,) position indices.
+            q: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
+            k, v: (B, n_kv_heads, max_seq_len, head_dim) in [B, H, S, D] layout from StaticKVCache.
+            bsz, seqlen: batch size and query sequence length.
+        Returns:
+            output: (B, seq_len, n_heads * head_dim).
+        """
+        # Convert q from [B, S, H, D] to [B, H, S, D] for F.scaled_dot_product_attention
+        q = q.transpose(1, 2)  # [B, n_heads, seq_len, head_dim]
+        # k, v are already in [B, H, S, D] from StaticKVCache
+
+        # Handle GQA: repeat k/v heads if needed
+        if self.n_heads != self.n_kv_heads:
+            n_rep = self.n_heads // self.n_kv_heads
+            k = k.repeat_interleave(n_rep, dim=1)  # [B, n_heads, max_seq_len, head_dim]
+            v = v.repeat_interleave(n_rep, dim=1)
+
+        # Create causal attention mask
+        # input_pos contains the positions being attended to, e.g., [0,1,2,3] or [pos]
+        # We need a mask of shape [seqlen, max_seq_len]
+        max_seq_len = k.shape[2]
+
+        if seqlen > 1:
+            # Prefill: create causal mask where position i can attend to positions 0..input_pos[i]
+            # Create position matrix for queries and keys
+            q_pos = input_pos.unsqueeze(1)  # [seqlen, 1]
+            k_pos = torch.arange(max_seq_len, device=q.device).unsqueeze(0)  # [1, max_seq_len]
+            # Causal mask: can attend where k_pos <= q_pos
+            attn_mask = k_pos > q_pos  # [seqlen, max_seq_len], True = masked out
+        else:
+            # Decode: single token can attend to all positions up to current position
+            # Current position is input_pos[0]
+            curr_pos = input_pos[0]  # scalar tensor
+            k_pos = torch.arange(max_seq_len, device=q.device)
+            attn_mask = k_pos > curr_pos  # [max_seq_len], True = masked out
+            attn_mask = attn_mask.unsqueeze(0)  # [1, max_seq_len] for broadcasting
+
+        # Standard SDPA
+        y = F.scaled_dot_product_attention(
+            q, k, v,
+            attn_mask=attn_mask,
+            is_causal=False,  # We handle causal masking explicitly via attn_mask
+        )  # [B, n_heads, seq_len, head_dim]
+
+        # Convert back to [B, S, H, D] and flatten
+        y = y.transpose(1, 2).contiguous()  # [B, seq_len, n_heads, head_dim]
+        return y.view(bsz, seqlen, self.dim)
+
+
+class LMAttention(nn.Module):
+    """GQA with RoPE, KV cache, and SDPA. No biases.
+
+    Supports both custom ops (for XNNPACK) and standard PyTorch ops (for Metal/AOTI).
     """
 
     def __init__(self, config: VoxtralRealtimeConfig, max_seq_len: int):
@@ -398,14 +511,20 @@ class LMAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.head_dim = config.head_dim
         self.dim = config.dim
+        self.use_standard_attention = config.use_standard_attention
 
         self.wq = nn.Linear(config.dim, self.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(self.n_heads * self.head_dim, config.dim, bias=False)
 
-        self.kv_cache = KVCache(max_seq_len, self.n_kv_heads, self.head_dim)
-        self.sdpa = SDPA(self.n_heads, self.head_dim)
+        # Choose KV cache and SDPA based on backend
+        if self.use_standard_attention:
+            self.kv_cache = StaticKVCache(max_seq_len, self.n_kv_heads, self.head_dim)
+            self.sdpa = StandardSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+        else:
+            self.kv_cache = KVCache(max_seq_len, self.n_kv_heads, self.head_dim)
+            self.sdpa = SDPA(self.n_heads, self.head_dim)
 
     def forward(
         self,
@@ -802,6 +921,7 @@ def load_model(
     max_seq_len: int = 4096,
     n_delay_tokens: int = 6,
     dtype: torch.dtype = torch.float32,
+    use_standard_attention: bool = False,
 ) -> VoxtralRealtimeModel:
     """Load VoxtralRealtimeModel from a Mistral consolidated checkpoint.
 
@@ -814,16 +934,20 @@ def load_model(
         max_seq_len: Maximum sequence length for KV cache.
         n_delay_tokens: Transcription delay in tokens (default 6 = 480ms).
         dtype: Weight dtype (default: float32).
+        use_standard_attention: Use standard PyTorch attention instead of custom ops
+            (required for Metal/AOTI backends).
     """
     from safetensors import safe_open
 
     model_dir = Path(model_path)
     config = VoxtralRealtimeConfig.from_params_json(str(model_dir / "params.json"))
     config.max_seq_len = max_seq_len
+    config.use_standard_attention = use_standard_attention
 
     print(
         f"Building model on meta device (dim={config.dim}, enc_dim={config.enc_dim}, "
-        f"layers={config.n_layers}, enc_layers={config.enc_n_layers})..."
+        f"layers={config.n_layers}, enc_layers={config.enc_n_layers}, "
+        f"attention={'standard' if use_standard_attention else 'custom'})..."
     )
     with torch.device("meta"):
         model = VoxtralRealtimeModel(config, max_seq_len)

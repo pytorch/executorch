@@ -16,9 +16,16 @@ With --streaming, produces a streaming .pte instead:
   - text_decoder:       same as above
   - token_embedding:    same as above
 
+Backend support:
+  - XNNPACK (default): Uses custom SDPA op (torch.ops.llama.custom_sdpa) for optimal performance
+  - Metal/AOTI: Automatically switches to standard PyTorch SDPA (F.scaled_dot_product_attention)
+                to avoid AOTI compilation issues. Still uses custom KV cache ops.
+  - Portable: Uses custom SDPA like XNNPACK
+
 Usage:
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --streaming
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal
 """
 
 import argparse
@@ -449,10 +456,12 @@ def main():
 
     # Load model
     print("Loading model...")
+    use_standard_attention = (args.backend == "metal")
     model = load_model(
         args.model_path,
         max_seq_len=args.max_seq_len,
         n_delay_tokens=args.delay_tokens,
+        use_standard_attention=use_standard_attention,
     )
 
     # Untie output/embedding weights before quantization so each layer gets
