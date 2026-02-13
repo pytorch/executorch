@@ -137,6 +137,58 @@ class NumericalComparatorBase(ABC):
         """
         from executorch.devtools.inspector._inspector_utils import find_op_names
 
+        def _validate_preprocessing_output(
+            processed_mapping: IntermediateOutputMapping,
+        ) -> None:
+            """Validate the output format of preprocessing().
+
+            Ensures the preprocessed mapping follows the expected format:
+            Dict[Tuple[DebugHandle, Any], Tuple[DebugHandle, Any]]
+
+            Args:
+                processed_mapping: The mapping returned by preprocessing().
+
+            Raises:
+                TypeError: If processed_mapping is not a dict.
+                ValueError: If any key or value in the mapping has an invalid format.
+            """
+            if not isinstance(processed_mapping, dict):
+                raise TypeError(
+                    f"preprocessing() must return a dict, got {type(processed_mapping).__name__}. "
+                    "Expected format: Dict[Tuple[DebugHandle, Any], Tuple[DebugHandle, Any]]"
+                )
+
+            for key, value in processed_mapping.items():
+                # Validate key format: Tuple[DebugHandle, Any]
+                if not isinstance(key, tuple) or len(key) != 2:
+                    raise ValueError(
+                        f"Invalid key format in preprocessed mapping: {key}. "
+                        "Expected Tuple[DebugHandle, Any] where DebugHandle is Tuple[int, ...]"
+                    )
+                aot_debug_handle, _ = key
+                if not isinstance(aot_debug_handle, tuple) or not all(
+                    isinstance(x, int) for x in aot_debug_handle
+                ):
+                    raise ValueError(
+                        f"Invalid AOT debug handle in key: {aot_debug_handle}. "
+                        "Expected Tuple[int, ...]"
+                    )
+
+                # Validate value format: Tuple[DebugHandle, Any]
+                if not isinstance(value, tuple) or len(value) != 2:
+                    raise ValueError(
+                        f"Invalid value format in preprocessed mapping: {value}. "
+                        "Expected Tuple[DebugHandle, Any] where DebugHandle is Tuple[int, ...]"
+                    )
+                runtime_debug_handle, _ = value
+                if not isinstance(runtime_debug_handle, tuple) or not all(
+                    isinstance(x, int) for x in runtime_debug_handle
+                ):
+                    raise ValueError(
+                        f"Invalid runtime debug handle in value: {runtime_debug_handle}. "
+                        "Expected Tuple[int, ...]"
+                    )
+
         def _compare_intermediate_outputs(a: Any, b: Any) -> List[float]:
             """Compare two outputs, handling both sequence and non-sequence cases.
 
@@ -170,6 +222,9 @@ class NumericalComparatorBase(ABC):
 
         # Step 1: Apply preprocessing
         processed_mapping = self.preprocessing(mapping)
+
+        # Validate the preprocessed mapping format
+        _validate_preprocessing_output(processed_mapping)
 
         # Step 2: Element-wise comparison and aggregation
         rows = []
