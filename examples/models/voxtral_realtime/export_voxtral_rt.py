@@ -273,6 +273,7 @@ def export_streaming(
     stft_right_lookahead = (
         (chunk_mel_len - 1) * hop_length + n_fft // 2 - chunk_mel_len * hop_length
     )
+    # = (8-1)*160 + 200 - 8*160 = 1320 - 1280 = 40 samples = 2.5ms
 
     metadata = {
         "sample_rate": sample_rate,
@@ -410,7 +411,7 @@ def main():
         "--max-enc-len",
         type=int,
         default=750,
-        help="Max encoder KV cache length for streaming (default: 750, ~60s audio).",
+        help="Max encoder KV cache length for streaming (default: 750, ~15s audio).",
     )
     args = parser.parse_args()
 

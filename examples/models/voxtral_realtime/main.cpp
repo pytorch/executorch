@@ -87,8 +87,8 @@ int main(int argc, char** argv) {
         "Model was not exported with --streaming. Re-export with --streaming flag.");
     auto session = runner.create_streaming_session(config, token_cb);
 
-    // Feed audio in 200ms chunks (simulates live microphone input).
-    const int64_t chunk_size = 3200;
+    // Feed audio in 80ms chunks (one streaming step = 1280 samples at 16kHz).
+    const int64_t chunk_size = 1280;
     for (int64_t offset = 0; offset < static_cast<int64_t>(audio_data.size());
          offset += chunk_size) {
       int64_t n = std::min(

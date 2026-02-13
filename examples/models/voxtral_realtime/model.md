@@ -196,7 +196,7 @@ Each of the 32 encoder transformer layers gets its own `KVCache` instance
 attention via `start_pos`, accumulating encoder frames incrementally.
 
 - Cache shape: `(1, max_enc_len, 32, 64)` per layer
-- Default `max_enc_len=750` (~60s audio, matching the model's trained
+- Default `max_enc_len=750` (~15s audio, matching the model's trained
   sliding window). Configurable via `--max-enc-len`.
 - Memory: 32 layers × 2 × 750 × 32 × 64 × 4 bytes ≈ 393 MB (fp32)
 
