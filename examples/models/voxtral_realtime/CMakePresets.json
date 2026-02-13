@@ -1,0 +1,44 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "voxtral-realtime-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/voxtral_realtime",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "voxtral-realtime-cpu",
+            "displayName": "Voxtral Realtime runner (CPU)",
+            "inherits": ["voxtral-realtime-base"]
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "voxtral-realtime-cpu",
+            "displayName": "Build Voxtral Realtime runner (CPU)",
+            "configurePreset": "voxtral-realtime-cpu",
+            "targets": ["voxtral_realtime_runner"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "voxtral-realtime-cpu",
+            "displayName": "Configure and build Voxtral Realtime runner (CPU)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-realtime-cpu"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-realtime-cpu"
+                }
+            ]
+        }
+    ]
+}
