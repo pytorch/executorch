@@ -42,7 +42,6 @@ from executorch.devtools.etdump.schema_flatcc import (
 from executorch.devtools.etrecord import ETRecord, parse_etrecord
 from executorch.devtools.inspector._inspector_utils import (
     calculate_time_scale_factor,
-    compare_intermediate_outputs,
     create_debug_handle_to_op_node_mapping,
     DebugHandle,
     display_or_print_df,
@@ -50,7 +49,6 @@ from executorch.devtools.inspector._inspector_utils import (
     EXCLUDED_COLUMNS_WHEN_PRINTING,
     EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT,
     EXCLUDED_EVENTS_WHEN_PRINTING,
-    find_op_names,
     find_populated_event,
     FORWARD,
     gen_etdump_object,
@@ -1421,8 +1419,10 @@ class Inspector:
         Args:
             distance: The metrics the inspector will use for gap calculation. Can be either:
                 - A string: one of "MSE", "L1", or "SNR" for built-in comparators.
-                - A custom NumericalComparatorBase instance: allows you to define custom comparison logic
-                  by subclassing NumericalComparatorBase and implementing the compare() method.
+                - A custom NumericalComparatorBase instance: allows you to define custom comparison
+                  logic by subclassing NumericalComparatorBase and implementing the element_compare()
+                  method. Custom comparators can also override the preprocessing() method to apply
+                  transformations (e.g., layout conversion, dequantization) before comparison.
             disable_debug_handle_validation: Often when aten graph has symbolic shape nodes and inbuilt ops like gt/lt etc.,
                 during re-export of such a graph 'from_node' information is lost from node.meta. As a result we loose
                 connection between edge IR nodes and aten nodes for such ops. By default we validate that every edge IR
@@ -1448,48 +1448,27 @@ class Inspector:
         mapping = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
+
+        # Get or create comparator
         if isinstance(distance, NumericalComparatorBase):
             comparator = distance
+            # Inject inspector if not already set
+            if comparator.inspector is None:
+                comparator.inspector = self
         else:
             metric = distance.strip().upper()
             if metric == "MSE":
-                comparator = MSEComparator()
+                comparator = MSEComparator(inspector=self)
             elif metric == "L1":
-                comparator = L1Comparator()
+                comparator = L1Comparator(inspector=self)
             elif metric == "SNR":
-                comparator = SNRComparator()
+                comparator = SNRComparator(inspector=self)
             else:
                 raise ValueError(f"Unsupported distance metric {distance!r}")
 
-        rows = []
-        for (aot_debug_handle, aot_intermediate_output), (
-            runtime_debug_handle,
-            runtime_intermediate_output,
-        ) in mapping.items():
-            if aot_intermediate_output is None or runtime_intermediate_output is None:
-                continue
-            # If aot outputs length is > 1 then comparison fails since we dont really have
-            # any instances where runtime intermediate output is a tuple or list
-            # This does not happen when edge dialect program is reference for comparison
-            # but happens in aten graph where ops like unbind remain undecomposed
-            if (
-                isinstance(aot_intermediate_output, Sequence)
-                and len(aot_intermediate_output) > 1
-            ):
-                continue
-            rows.append(
-                {
-                    "aot_ops": find_op_names(
-                        aot_debug_handle, aot_debug_handle_to_op_names
-                    ),
-                    "aot_intermediate_output": aot_intermediate_output,
-                    "runtime_ops": find_op_names(
-                        runtime_debug_handle, runtime_debug_handle_to_op_names
-                    ),
-                    "runtime_intermediate_output": runtime_intermediate_output,
-                    "gap": compare_intermediate_outputs(
-                        aot_intermediate_output, runtime_intermediate_output, comparator
-                    ),
-                }
-            )
-        return pd.DataFrame(rows)
+        # Delegate to comparator's compare method (includes preprocessing)
+        return comparator.compare(
+            mapping,
+            aot_debug_handle_to_op_names,
+            runtime_debug_handle_to_op_names,
+        )

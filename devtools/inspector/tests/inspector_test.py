@@ -58,10 +58,28 @@ from executorch.exir import (
     to_edge,
     to_edge_transform_and_lower,
 )
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
 from torch.export import export, ExportedProgram
+
+
+# Models for testing inplace ops intermediate output logging
+class IndexPutModel(torch.nn.Module):
+    """
+    A model that uses index_put to update a tensor at specific indices.
+    When the reinplace_pass is enabled, this will be converted to index_put_
+    (the inplace variant), which was causing issues with event tracer logging.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("data", torch.zeros(5, 3))
+
+    def forward(self, indices: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
+        result = self.data.index_put((indices,), values)
+        return result.sum()
 
 
 OP_TYPE = "aten::add"
@@ -730,7 +748,7 @@ class TestInspector(unittest.TestCase):
 
         # Create a custom comparator that returns the max absolute difference
         class MaxAbsDiffComparator(NumericalComparatorBase):
-            def compare(self, a, b):
+            def element_compare(self, a, b):
                 if isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor):
                     return torch.max(torch.abs(a - b)).item()
                 return abs(a - b)
@@ -794,6 +812,119 @@ class TestInspector(unittest.TestCase):
             self.assertEqual(df.iloc[0]["gap"][0], 2.0)
             # For (1,): max(|[4.0, 5.0, 6.0] - [3.0, 6.0, 5.0]|) = max([1.0, 1.0, 1.0]) = 1.0
             self.assertEqual(df.iloc[1]["gap"][0], 1.0)
+
+    def test_calculate_numeric_gap_with_custom_comparator_and_preprocessing(self):
+        """Test calculate_numeric_gap with a custom comparator that includes preprocessing."""
+        from executorch.devtools.inspector.numerical_comparator import (
+            IntermediateOutputMapping,
+            NumericalComparatorBase,
+        )
+
+        # Create a custom comparator with preprocessing that scales runtime tensors by 2x
+        class ScalingComparator(NumericalComparatorBase):
+            def __init__(self, scale_factor: float = 2.0):
+                super().__init__()
+                self.scale_factor = scale_factor
+                self.preprocessing_called = False
+
+            def preprocessing(
+                self, mapping: IntermediateOutputMapping
+            ) -> IntermediateOutputMapping:
+                """Scale runtime tensors by scale_factor before comparison."""
+                self.preprocessing_called = True
+                transformed_mapping = {}
+                for (aot_handle, aot_output), (
+                    runtime_handle,
+                    runtime_output,
+                ) in mapping.items():
+                    # Scale the runtime output
+                    if isinstance(runtime_output, torch.Tensor):
+                        scaled_runtime_output = runtime_output * self.scale_factor
+                    else:
+                        scaled_runtime_output = runtime_output
+                    transformed_mapping[(aot_handle, aot_output)] = (
+                        runtime_handle,
+                        scaled_runtime_output,
+                    )
+                return transformed_mapping
+
+            def element_compare(self, a, b) -> float:
+                """Compute MSE between two tensors."""
+                if isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor):
+                    return torch.mean(torch.square(a.float() - b.float())).item()
+                return (a - b) ** 2
+
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            # AOT outputs: [1.0, 2.0, 3.0] and [4.0, 5.0, 6.0]
+            aot_intermediate_outputs = {
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+                (1,): torch.tensor([4.0, 5.0, 6.0]),
+            }
+
+            # Runtime outputs: [1.0, 1.0, 1.0] and [2.0, 2.0, 2.0]
+            # After 2x scaling: [2.0, 2.0, 2.0] and [4.0, 4.0, 4.0]
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([1.0, 1.0, 1.0])], 1),
+                (1,): ([torch.tensor([2.0, 2.0, 2.0])], 1),
+            }
+
+            aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+            runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
+                aot_intermediate_outputs,
+                aot_debug_handle_to_op_name,
+            )
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # Create custom comparator with 2x scaling
+            custom_comparator = ScalingComparator(scale_factor=2.0)
+
+            # Test with custom comparator
+            df = inspector_instance.calculate_numeric_gap(distance=custom_comparator)
+
+            # Verify preprocessing was called
+            self.assertTrue(custom_comparator.preprocessing_called)
+
+            # Verify DataFrame structure
+            self.assertIsInstance(df, pd.DataFrame)
+            self.assertEqual(len(df), 2)
+            cols = set(df.columns)
+            expected_cols = {
+                "aot_ops",
+                "aot_intermediate_output",
+                "runtime_ops",
+                "runtime_intermediate_output",
+                "gap",
+            }
+            self.assertEqual(cols, expected_cols)
+
+            # Verify the comparison after preprocessing
+            # For (0,): AOT=[1.0, 2.0, 3.0], Runtime after scaling=[2.0, 2.0, 2.0]
+            #   MSE = mean((1-2)^2 + (2-2)^2 + (3-2)^2) = mean(1 + 0 + 1) = 2/3
+            expected_gap_0 = (1.0 + 0.0 + 1.0) / 3.0
+            self.assertAlmostEqual(df.iloc[0]["gap"][0], expected_gap_0, places=5)
+
+            # For (1,): AOT=[4.0, 5.0, 6.0], Runtime after scaling=[4.0, 4.0, 4.0]
+            #   MSE = mean((4-4)^2 + (5-4)^2 + (6-4)^2) = mean(0 + 1 + 4) = 5/3
+            expected_gap_1 = (0.0 + 1.0 + 4.0) / 3.0
+            self.assertAlmostEqual(df.iloc[1]["gap"][0], expected_gap_1, places=5)
 
     @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
     def test_transformer_block_xnnpack_numeric_gap_within_tolerance(self):
@@ -1261,3 +1392,212 @@ class TestInspector(unittest.TestCase):
                 )
             )
         return events
+
+
+class TestInplaceOpsIntermediateOutput(unittest.TestCase):
+    """
+    Test suite for verifying that inplace operators correctly log intermediate
+    outputs when the event tracer is enabled.
+
+    This validates the fix for an issue where inplace ops converted by the
+    reinplace_pass could cause logging errors because the output tensor's data
+    pointer was null at the time of logging.
+
+    Note: The reinplace_pass currently only supports converting index_put to
+    index_put_ (see executorch/exir/passes/reinplace.py).
+    """
+
+    def _run_model_and_get_inspector(
+        self,
+        model: torch.nn.Module,
+        example_inputs: tuple,
+        run_reinplace_pass: bool = True,
+    ) -> Inspector:
+        """
+        Helper method to export a model, run it with event tracing, and return
+        an Inspector instance for verifying intermediate outputs.
+        """
+        model.eval()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_path = os.path.join(tmp_dir, "model.pte")
+            etrecord_path = os.path.join(tmp_dir, "etrecord.bin")
+            etdump_path = os.path.join(tmp_dir, "etdump.etdp")
+            debug_buffer_path = os.path.join(tmp_dir, "debug_buffer.bin")
+
+            # Step 1: Export the model
+            exported_program = export(model, example_inputs)
+            self.assertIsNotNone(exported_program)
+
+            # Step 2: Convert to edge dialect
+            edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+            edge_program = to_edge(exported_program, compile_config=edge_compile_config)
+            self.assertIsNotNone(edge_program)
+
+            # Keep a copy for etrecord
+            edge_program_copy = to_edge(
+                export(model, example_inputs), compile_config=edge_compile_config
+            )
+
+            # Step 3: Convert to executorch with reinplace_pass enabled
+            executorch_config = ExecutorchBackendConfig(
+                run_reinplace_pass=run_reinplace_pass
+            )
+            executorch_program = edge_program.to_executorch(config=executorch_config)
+            self.assertIsNotNone(executorch_program)
+
+            # Step 4: Generate ETRecord
+            generate_etrecord(
+                etrecord_path,
+                edge_program_copy,
+                executorch_program,
+            )
+
+            # Step 5: Save the PTE file
+            with open(model_path, "wb") as f:
+                executorch_program.write_to_file(f)
+
+            # Step 6: Load and run with event tracing enabled
+            with open(model_path, "rb") as f:
+                pte_buffer = f.read()
+
+            executorch_module = _load_for_executorch_from_buffer(
+                pte_buffer,
+                enable_etdump=True,
+                debug_buffer_size=1024 * 1024,  # 1MB for testing
+            )
+            self.assertIsNotNone(executorch_module)
+
+            # Run the model
+            import torch.utils._pytree as pytree
+
+            flattened_inputs = pytree.tree_flatten(example_inputs)[0]
+            executorch_module.run_method("forward", tuple(flattened_inputs))
+
+            # Write ETDump results
+            executorch_module.write_etdump_result_to_file(
+                etdump_path, debug_buffer_path
+            )
+
+            # Check if event tracer captured data
+            if not os.path.exists(etdump_path):
+                self.skipTest(
+                    "Event tracer not enabled. Run with --config executorch.event_tracer_enabled=true"
+                )
+
+            # Step 7: Create Inspector and return
+            inspector = Inspector(
+                etdump_path=etdump_path,
+                etrecord=etrecord_path,
+                debug_buffer_path=debug_buffer_path,
+            )
+            return inspector
+
+    def test_index_put_inplace_intermediate_output(self):
+        """
+        Test that index_put_ (converted from index_put by reinplace_pass)
+        correctly logs intermediate outputs without crashing.
+
+        This test verifies the fix for the issue where logging happened before
+        the return assignment in the generated kernel code.
+        """
+        model = IndexPutModel()
+        indices = torch.tensor([0, 2, 4])
+        values = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
+        example_inputs = (indices, values)
+
+        inspector = self._run_model_and_get_inspector(
+            model, example_inputs, run_reinplace_pass=True
+        )
+
+        self.assertIsNotNone(inspector)
+        self.assertGreater(len(inspector.event_blocks), 0)
+
+        total_events = sum(len(eb.events) for eb in inspector.event_blocks)
+        self.assertGreater(
+            total_events, 0, "Expected at least one event to be captured"
+        )
+
+    def test_index_put_without_reinplace_pass(self):
+        """
+        Test that the model works correctly without the reinplace pass as a
+        baseline comparison.
+        """
+        model = IndexPutModel()
+        indices = torch.tensor([0, 2, 4])
+        values = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
+        example_inputs = (indices, values)
+
+        inspector = self._run_model_and_get_inspector(
+            model, example_inputs, run_reinplace_pass=False
+        )
+
+        self.assertIsNotNone(inspector)
+        self.assertGreater(len(inspector.event_blocks), 0)
+
+    def test_index_put_intermediate_output_data_correctness(self):
+        """
+        Test that the intermediate output values captured by the event tracer
+        are valid tensors with correct data.
+
+        This specifically validates that:
+        1. The output tensor has a valid (non-null) data pointer
+        2. The output tensor contains the correct values after index_put_
+        """
+        model = IndexPutModel()
+        # Use simple values to verify correctness
+        indices = torch.tensor([0, 1])
+        values = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        example_inputs = (indices, values)
+
+        # Compute expected intermediate output of index_put
+        # index_put on zeros(5,3) with indices [0,1] and values [[1,2,3],[4,5,6]]
+        # Result should be:
+        # [[1, 2, 3],
+        #  [4, 5, 6],
+        #  [0, 0, 0],
+        #  [0, 0, 0],
+        #  [0, 0, 0]]
+        expected_index_put_output = torch.zeros(5, 3)
+        expected_index_put_output[0] = torch.tensor([1.0, 2.0, 3.0])
+        expected_index_put_output[1] = torch.tensor([4.0, 5.0, 6.0])
+
+        inspector = self._run_model_and_get_inspector(
+            model, example_inputs, run_reinplace_pass=True
+        )
+
+        # Find and verify the index_put_ output
+        found_index_put_output = False
+        for event_block in inspector.event_blocks:
+            for event in event_block.events:
+                # Check if this event has debug_data (intermediate outputs)
+                if hasattr(event, "debug_data") and event.debug_data is not None:
+                    for debug_entry in event.debug_data:
+                        if isinstance(debug_entry, torch.Tensor):
+                            # Verify tensor has valid data pointer
+                            self.assertIsNotNone(
+                                debug_entry.data_ptr(),
+                                "Intermediate output tensor should have valid data pointer",
+                            )
+                            self.assertNotEqual(
+                                debug_entry.data_ptr(),
+                                0,
+                                "Intermediate output tensor data pointer should not be null",
+                            )
+
+                            # Check if this matches our expected index_put output shape
+                            if debug_entry.shape == expected_index_put_output.shape:
+                                # Verify the data is correct
+                                if torch.allclose(
+                                    debug_entry, expected_index_put_output, atol=1e-5
+                                ):
+                                    found_index_put_output = True
+
+        # Assert that we found the expected index_put output with correct data
+        # This validates that the intermediate output was properly logged
+        # and contains the correct tensor values
+        self.assertTrue(
+            found_index_put_output,
+            "Expected to find index_put intermediate output with correct tensor data. "
+            "The output tensor should match the expected result of index_put operation.",
+        )
