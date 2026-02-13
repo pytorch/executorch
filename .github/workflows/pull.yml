@@ -196,6 +196,42 @@ jobs:
         bash .ci/scripts/test_model_e2e.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./parakeet_output"
         echo "::endgroup::"
 
+  test-voxtral-realtime-xnnpack-linux:
+    name: test-voxtral-realtime-xnnpack-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.4xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      secrets-env: VOXTRAL_REALTIME_HF_TOKEN
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        export HF_TOKEN="${SECRET_VOXTRAL_REALTIME_HF_TOKEN}"
+
+        echo "::group::Setup ExecuTorch"
+        ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Export Voxtral Realtime with XNNPACK"
+        bash .ci/scripts/export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-8da4w" "./voxtral_realtime_output"
+        echo "::endgroup::"
+
+        echo "::group::Test Voxtral Realtime with XNNPACK"
+        bash .ci/scripts/test_model_e2e.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-8da4w" "./voxtral_realtime_output"
+        echo "::endgroup::"
+
   test-llama-runner-linux:
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
@@ -1136,7 +1172,7 @@ jobs:
         ./cmake-out/backends/vulkan/test/custom_ops/choose_qparams_per_row
         ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_qdq
         ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_clone
-        ./cmake-out/backends/vulkan/test/custom_ops/q8ta_q8ta_q8to_add
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_binary
 
         # "Classic" Operator tests
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
