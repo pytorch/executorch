@@ -68,6 +68,7 @@ To calculate 15% of 80"
 
 EXPECTED_BASE_PREFIX="<|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant:
 <think>
+<think>
 Okay, so I need to calculate 15% of 80."
 
 ### TEST 1: Run lora_forward method ###
@@ -84,13 +85,11 @@ echo "Finished at ${NOW}"
 
 RESULT=$(cat result_lora.txt)
 if [[ "${RESULT}" == "${EXPECTED_LORA_PREFIX}"* ]]; then
-  echo "Expected result prefix: ${EXPECTED_LORA_PREFIX}"
-  echo "Actual result: ${RESULT}"
   echo "Test 1 (lora_forward): Success"
 else
+  echo "Test 1 (lora_forward): Failure"
   echo "Expected result prefix: ${EXPECTED_LORA_PREFIX}"
   echo "Actual result: ${RESULT}"
-  echo "Test 1 (lora_forward): Failure"
   cleanup_files
   exit 1
 fi
@@ -109,13 +108,11 @@ echo "Finished at ${NOW}"
 
 RESULT=$(cat result_base.txt)
 if [[ "${RESULT}" == "${EXPECTED_BASE_PREFIX}"* ]]; then
-  echo "Expected result prefix: ${EXPECTED_BASE_PREFIX}"
-  echo "Actual result: ${RESULT}"
   echo "Test 2 (base_forward): Success"
 else
+  echo "Test 2 (base_forward): Failure"
   echo "Expected result prefix: ${EXPECTED_BASE_PREFIX}"
   echo "Actual result: ${RESULT}"
-  echo "Test 2 (base_forward): Failure"
   cleanup_files
   exit 1
 fi
