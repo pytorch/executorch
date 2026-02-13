@@ -851,7 +851,7 @@ jobs:
         bash examples/models/llama/install_requirements.sh
 
         # run llama runner in eager mode
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_lora-multimethod.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_lora_multimethod.sh
 
   test-mediatek-models-linux:
     name: test-mediatek-models-linux
@@ -1038,13 +1038,9 @@ jobs:
 
         # Setup Samsung SDK (AI Lite Core) and install enn backend
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
-        source .ci/scripts/setup-samsung-linux-deps.sh
 
-        # Check if device was reserved
-        if [[ "${DEVICE_RESERVED:-0}" != "1" ]]; then
-          echo "::warning::Skipping tests - no Samsung device available"
-          exit 0
-        fi
+        trap 'bash .ci/scripts/cleanup-samsung-linux-deps.sh' EXIT TERM INT
+        source .ci/scripts/setup-samsung-linux-deps.sh --skip-device-connect
 
         # Test quant models
         model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
@@ -1079,10 +1075,11 @@ jobs:
 
         # Setup Samsung SDK (AI Lite Core) and install enn backend
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
+        trap 'bash .ci/scripts/cleanup-samsung-linux-deps.sh' EXIT TERM INT
         source .ci/scripts/setup-samsung-linux-deps.sh
 
         # Check if device was reserved
-        if [[ "${DEVICE_RESERVED:-0}" != "1" ]]; then
+        if [[ "${DEVICE_ACQUIRED:-0}" != "1" ]]; then
           echo "::warning::Skipping tests - no Samsung device available"
           exit 0
         fi

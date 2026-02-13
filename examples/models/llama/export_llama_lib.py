@@ -854,15 +854,15 @@ def _validate_args(llm_config):
                 "Shared embedding is only supported with torchao quantization."
             )
 
-    if llm_config.multimethod.enabled:
+    if llm_config.multimethod_lora.enabled:
         if llm_config.base.lora_config is not None:
             raise ValueError(
-                "Cannot use both base.lora_config and multimethod.methods. "
-                "Use multimethod.methods for all LoRA variants."
+                "Cannot use both base.lora_config and multimethod_lora.methods. "
+                "Use multimethod_lora.methods for all LoRA variants."
             )
         if llm_config.quantization.pt2e_quantize is not None:
             raise ValueError(
-                "PT2E quantization is not supported with multimethod export."
+                "PT2E quantization is not supported with multimethod_lora export."
             )
         if (
             llm_config.backend.coreml.enabled
@@ -872,7 +872,7 @@ def _validate_args(llm_config):
             or llm_config.backend.openvino.enabled
         ):
             raise ValueError(
-                "Multimethod export only supports XNNPACK backend or portable ops"
+                "multimethod_lora export only supports XNNPACK backend or portable ops"
                 "Please disable other backends (coreml, vulkan, qnn, mps, openvino)."
             )
 
@@ -1165,7 +1165,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
 
 
 def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List]:
-    """Get XNNPACK partitioners for multimethod export."""
+    """Get XNNPACK partitioners for multimethod_lora export."""
     partitioners = []
 
     if llm_config.backend.xnnpack.enabled:
@@ -1201,20 +1201,20 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     """
     Export multiple methods (base + LoRA variants) to a single .pte file.
 
-    For each method in llm_config.multimethod.methods:
+    For each method in llm_config.multimethod_lora.methods:
     - If LoraConfig is None: use base model
     - If LoraConfig is provided: create model with LoRA weights
 
     Limitations:
-    - Only XNNPACK backend is supported for multimethod export.
+    - Only XNNPACK backend is supported for multimethod_lora export.
     - PT2E quantization is not supported.
     - Each method is exported separately; export time scales linearly
       with the number of methods.
     - The final .pte file deduplicates shared weights automatically.
     """
-    num_methods = len(llm_config.multimethod.methods)
+    num_methods = len(llm_config.multimethod_lora.methods)
     logging.info(
-        f"Multimethod export: exporting {num_methods} method(s). "
+        f"multimethod_lora export: exporting {num_methods} method(s). "
         "Each method requires separate model instantiation and export."
     )
 
@@ -1226,14 +1226,14 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     method_to_program: Dict[str, ExportedProgram] = {}
     first_builder = None
 
-    for method_name, lora_config in llm_config.multimethod.methods.items():
+    for method_name, lora_config in llm_config.multimethod_lora.methods.items():
         logging.info(f"Exporting method: {method_name}")
 
         # Create a copy of config with this method's LoRA setting
         method_config = copy.deepcopy(llm_config)
         method_config.base.lora_config = lora_config
-        # Disable multimethod to avoid infinite recursion
-        method_config.multimethod.methods = {}
+        # Disable multimethod_lora to avoid infinite recursion
+        method_config.multimethod_lora.methods = {}
 
         # Load and prepare model for this method
         builder = _prepare_for_llama_export(method_config)
@@ -1252,7 +1252,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     # Get partitioners based on backend config
     partitioners = _get_xnnpack_partitioners(llm_config)
 
-    # Lower all methods together using multimethod API
+    # Lower all methods together using multimethod_lora API
     edge_config = first_builder._get_edge_config()
     edge_manager = to_edge_transform_and_lower(
         method_to_program,
@@ -1279,8 +1279,8 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
 def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     _validate_args(llm_config)
 
-    # Check for multimethod export
-    if llm_config.multimethod.enabled:
+    # Check for multimethod_lora export
+    if llm_config.multimethod_lora.enabled:
         return _export_llama_multimethod(llm_config)
 
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
@@ -1386,23 +1386,12 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     if llm_config.debug.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
 
-    if builder.dtype == DType.fp16:
-        modelname = f"{modelname}_h"
-
-    if llm_config.export.output_name:
-        modelname = llm_config.export.output_name
-        if modelname.endswith(".pte"):
-            output_file = modelname
-            modelname = modelname[:-4]
-            print(f"modelname: {modelname}")
-            print(f"output_file: {output_file}")
-        else:
-            output_file = f"{builder.output_dir}/{modelname}.pte"
-            print(f"modelname: {modelname}")
-            print(f"output_file: {output_file}")
-    else:
-        output_file = f"{builder.output_dir}/{modelname}.pte"
-
+    output_file = _get_output_filename(
+        llm_config,
+        modelname,
+        builder.output_dir,
+        builder.dtype,
+    )
     builder.save_to_pte(output_file)
     return builder
 

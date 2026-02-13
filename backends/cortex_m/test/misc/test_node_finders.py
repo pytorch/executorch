@@ -34,6 +34,7 @@ def test_node_name_finder_single_name():
     nodes = list(node_finder.find_nodes(graph_module))
     assert len(nodes) == 1
     assert nodes[0].name == "add"
+    assert str(node_finder) == "NodeNameNodeFinder targeting names: add"
 
 
 def test_node_name_finder_multiple_names():
@@ -44,6 +45,7 @@ def test_node_name_finder_multiple_names():
     nodes = list(node_finder.find_nodes(graph_module))
     node_names = {n.name for n in nodes}
     assert node_names == {"add", "sub"}
+    assert str(node_finder) == "NodeNameNodeFinder targeting names: add, sub"
 
 
 def test_node_name_finder_missing_name():
@@ -53,6 +55,7 @@ def test_node_name_finder_missing_name():
     node_finder = node_finders.NodeNameNodeFinder("not_in_graph")
     nodes = list(node_finder.find_nodes(graph_module))
     assert nodes == []
+    assert str(node_finder) == "NodeNameNodeFinder targeting names: not_in_graph"
 
 
 def test_node_target_finder_single_target():
@@ -63,6 +66,10 @@ def test_node_target_finder_single_target():
     nodes = list(node_finder.find_nodes(graph_module))
     assert len(nodes) == 1
     assert nodes[0].target == torch.ops.aten.add.Tensor
+    assert (
+        str(node_finder)
+        == "NodeTargetNodeFinder targeting node targets: aten::add.Tensor"
+    )
 
 
 def test_node_target_finder_multiple_targets():
@@ -84,6 +91,7 @@ def test_node_target_finder_missing_target():
     node_finder = node_finders.NodeTargetNodeFinder(torch.ops.aten.relu.default)
     nodes = list(node_finder.find_nodes(graph_module))
     assert nodes == []
+    assert str(node_finder) == "NodeTargetNodeFinder targeting node targets: aten::relu"
 
 
 def test_global_node_finder():
@@ -104,6 +112,7 @@ def test_global_node_finder():
         "mul",
         "output",
     ]
+    assert str(node_finder) == "GlobalNodeFinder targeting all nodes"
 
 
 def test_input_node_finder():
@@ -116,6 +125,7 @@ def test_input_node_finder():
     node_names = [node.name for node in nodes]
     assert node_names == ["p_linear_weight", "p_linear_bias", "x"]
     assert all(node.op == "placeholder" for node in nodes)
+    assert str(node_finder) == "InputNodeFinder targeting all placeholder nodes"
 
 
 def test_output_node_finder():
@@ -127,6 +137,7 @@ def test_output_node_finder():
 
     assert len(nodes) == 1
     assert nodes[0].op == "output"
+    assert str(node_finder) == "OutputNodeFinder targeting the output node"
 
 
 def test_module_name_finder():
@@ -138,6 +149,7 @@ def test_module_name_finder():
 
     assert len(nodes) == 1
     assert nodes[0].target == torch.ops.aten.linear.default
+    assert str(node_finder) == "ModuleNameNodeFinder targeting module names: linear"
 
 
 def test_module_name_finder_missing_name():
@@ -147,6 +159,9 @@ def test_module_name_finder_missing_name():
     node_finder = node_finders.ModuleNameNodeFinder("not_in_graph")
     nodes = list(node_finder.find_nodes(graph_module))
     assert nodes == []
+    assert (
+        str(node_finder) == "ModuleNameNodeFinder targeting module names: not_in_graph"
+    )
 
 
 def test_module_type_finder():
@@ -158,6 +173,7 @@ def test_module_type_finder():
 
     assert len(nodes) == 1
     assert nodes[0].target == torch.ops.aten.linear.default
+    assert str(node_finder) == "ModuleTypeNodeFinder targeting module types: Linear"
 
 
 def test_module_type_finder_missing_type():
@@ -167,3 +183,4 @@ def test_module_type_finder_missing_type():
     node_finder = node_finders.ModuleTypeNodeFinder(torch.nn.Conv2d)
     nodes = list(node_finder.find_nodes(graph_module))
     assert nodes == []
+    assert str(node_finder) == "ModuleTypeNodeFinder targeting module types: Conv2d"
