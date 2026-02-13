@@ -299,6 +299,18 @@ def export_streaming(
     return programs, metadata
 
 
+# Custom decomposition for Metal backend compatibility.
+# This decomposition is necessary to avoid issues with reinterpret_tensor_wrapper
+# when linear layers have biases, which would cause ExecuTorch errors with 0 stride.
+def _linear_bias_decomposition(input, weight, bias=None):
+    """Decompose linear with bias into matmul + add."""
+    weight_t = torch.ops.aten.t.default(weight)
+    out = torch.ops.aten.matmul.default(input, weight_t)
+    if bias is not None:
+        return torch.ops.aten.add.Tensor(out, bias)
+    return out
+
+
 def lower_to_executorch(programs, metadata, backend="xnnpack"):
     """Lower exported programs to ExecuTorch."""
     if backend == "xnnpack":
@@ -317,6 +329,15 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
         from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
 
         print("\nLowering to ExecuTorch with Metal...")
+
+        # Run decompositions for Metal backend
+        updated_programs = {}
+        for key, ep in programs.items():
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.linear.default: _linear_bias_decomposition}
+            )
+        programs = updated_programs
+
         partitioner = {}
         for key in programs:
             compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
