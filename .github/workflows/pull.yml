@@ -1002,15 +1002,17 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
+        
+        # Install eIQ packages
+        pip install -r backends/nxp/requirements-eiq.txt
 
         # Build and install Executorch
         PYTHON_EXECUTABLE=python \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON" \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON -DEXECUTORCH_BUILD_NXP_NEUTRON_RUNNER=ON " \
         .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Install test requirements
         pip install -r backends/nxp/requirements-tests-pypi.txt
-        pip install -r backends/nxp/requirements-tests-eiq.txt
         PYTHON_EXECUTABLE=python bash examples/nxp/setup.sh
 
         # Run pytest
@@ -1019,6 +1021,9 @@ jobs:
         # Run aot examples:
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
+        
+        # Run e2e example with Simulator:
+        PYTHON_EXECUTABLE=python bash examples/nxp/run.sh cifar10
 
   test-samsung-quantmodels-linux:
     name: test-samsung-quantmodels-linux
