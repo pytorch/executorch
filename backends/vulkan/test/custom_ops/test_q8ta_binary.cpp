@@ -6,49 +6,57 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <vector>
 #include "utils.h"
 
 using namespace executorch::vulkan::prototyping;
 
-// Utility function to create a test case for quantized add operation
-TestCase create_quantized_add_test_case(
-    const std::vector<int64_t>& sizes,
+static constexpr int64_t kRefDimSizeLimit = 512;
+
+// Configuration struct for q8ta binary testing
+struct Q8taBinaryConfig {
+  std::vector<int64_t> shape; // Tensor shape (can be any dimensionality)
+  std::string test_case_name = "placeholder";
+  std::string op_name = "q8ta_add";
+};
+
+// Utility function to create a test case from a Q8taBinaryConfig
+TestCase create_test_case_from_config(
+    const Q8taBinaryConfig& config,
     utils::StorageType storage_type,
-    vkapi::ScalarType input_dtype) {
+    vkapi::ScalarType input_dtype,
+    utils::GPUMemoryLayout fp_memory_layout,
+    utils::GPUMemoryLayout quant_layout) {
   TestCase test_case;
 
   // Create a descriptive name for the test case
-  std::string size_str = "";
-  for (size_t i = 0; i < sizes.size(); ++i) {
-    size_str += std::to_string(sizes[i]);
-    if (i < sizes.size() - 1)
-      size_str += "x";
-  }
-
-  std::string storage_str =
-      (storage_type == utils::kTexture3D) ? "Texture3D" : "Buffer";
-  std::string dtype_str = (input_dtype == vkapi::kFloat) ? "Float" : "Half";
-
-  std::string test_name =
-      "QuantizedAdd_" + size_str + "_" + storage_str + "_" + dtype_str;
+  std::string shape_str = shape_string(config.shape);
+  std::string test_name = config.test_case_name + "  I=" + shape_str + "  " +
+      repr_str(utils::kBuffer, quant_layout);
   test_case.set_name(test_name);
 
   // Set the operator name for the test case
-  test_case.set_operator_name("et_vk.add_q8ta_q8ta_q8to.test");
-
-  utils::GPUMemoryLayout io_memory_layout = storage_type == utils::kBuffer
-      ? utils::kWidthPacked
-      : utils::kChannelsPacked;
+  std::string operator_name = "et_vk." + config.op_name + ".test";
+  test_case.set_operator_name(operator_name);
 
   // Input tensor A (float/half)
   ValueSpec input_a(
-      sizes, input_dtype, storage_type, io_memory_layout, DataGenType::RANDOM);
+      config.shape,
+      input_dtype,
+      storage_type,
+      fp_memory_layout,
+      DataGenType::RANDOM);
 
   // Input tensor B (float/half)
   ValueSpec input_b(
-      sizes, input_dtype, storage_type, io_memory_layout, DataGenType::RANDOM);
+      config.shape,
+      input_dtype,
+      storage_type,
+      fp_memory_layout,
+      DataGenType::RANDOM);
 
   // Quantization parameters for input A
   float input_a_scale_val = 0.007843; // 2/255 approximately
@@ -75,11 +83,19 @@ TestCase create_quantized_add_test_case(
   float alpha_val = 1.0f;
   ValueSpec alpha(alpha_val);
 
+  // Quantized layout as integer
+  int32_t quant_layout_int = static_cast<int32_t>(quant_layout);
+  ValueSpec quant_layout_spec(quant_layout_int);
+
   // Output tensor (float/half)
   ValueSpec output(
-      sizes, input_dtype, storage_type, io_memory_layout, DataGenType::ZEROS);
+      config.shape,
+      input_dtype,
+      storage_type,
+      fp_memory_layout,
+      DataGenType::ZEROS);
 
-  // Add all specs to test case for q8ta_q8ta_q8to add operation
+  // Add all specs to test case for q8ta add operation
   test_case.add_input_spec(input_a);
   test_case.add_input_spec(input_b);
   test_case.add_input_spec(input_a_scale);
@@ -89,41 +105,116 @@ TestCase create_quantized_add_test_case(
   test_case.add_input_spec(output_scale);
   test_case.add_input_spec(output_zero_point);
   test_case.add_input_spec(alpha);
+  test_case.add_input_spec(quant_layout_spec);
 
   test_case.add_output_spec(output);
 
   test_case.set_abs_tolerance(output_scale_val + 1e-4f);
 
+  // Use layout-only filter to focus on the binary operation
+  test_case.set_shader_filter({
+      "nchw_to",
+      "to_nchw",
+      "q8ta_quantize",
+      "q8ta_dequantize",
+  });
+
   return test_case;
 }
 
-// Generate test cases for quantized add operation
-std::vector<TestCase> generate_quantized_add_test_cases() {
+// Generate easy test cases for q8ta_add operation (for debugging)
+std::vector<TestCase> generate_q8ta_add_easy_cases() {
   std::vector<TestCase> test_cases;
 
-  // Define different input size configurations
-  std::vector<std::vector<int64_t>> size_configs = {
-      {3, 32, 32}, // Small square
-      {8, 64, 64}, // Medium square
-      {16, 16, 16}, // 3D cube
-      {8, 32, 16}, // 3D rectangular
-      {7, 7, 13}, // Irregular sizes
+  // Single simple configuration for debugging
+  Q8taBinaryConfig config = {
+      {1, 16, 16, 16}, // shape: [N, C, H, W]
+      "ACCU", // test_case_name
   };
 
-  // Storage types to test
-  std::vector<utils::StorageType> storage_types = {
-      utils::kTexture3D, utils::kBuffer};
+  // Quantized memory layouts to test
+  std::vector<utils::GPUMemoryLayout> quant_layouts = {
+      utils::kPackedInt8_4W,
+      utils::kPackedInt8_4C,
+      utils::kPackedInt8_4W4C,
+      utils::kPackedInt8_4H4W,
+      utils::kPackedInt8_4C1W,
+  };
 
-  // Data types to test
-  std::vector<vkapi::ScalarType> data_types = {vkapi::kFloat};
+  for (const auto& quant_layout : quant_layouts) {
+    test_cases.push_back(create_test_case_from_config(
+        config,
+        /*storage_type=*/utils::kBuffer,
+        /*input_dtype=*/vkapi::kFloat,
+        /*fp_memory_layout=*/utils::kWidthPacked,
+        quant_layout));
+  }
 
-  // Generate test cases for each combination
-  for (const auto& sizes : size_configs) {
-    for (const auto& storage_type : storage_types) {
-      for (const auto& data_type : data_types) {
-        test_cases.push_back(
-            create_quantized_add_test_case(sizes, storage_type, data_type));
+  return test_cases;
+}
+
+// Generate test cases for q8ta_add operation
+std::vector<TestCase> generate_q8ta_add_test_cases() {
+  std::vector<TestCase> test_cases;
+
+  // Shapes to test
+  std::vector<std::vector<int64_t>> shapes = {
+      // Small test cases for correctness
+      {1, 3, 16, 16},
+      {1, 8, 32, 32},
+      {1, 16, 24, 24},
+      {1, 32, 12, 12},
+      {1, 1, 64, 64},
+      {1, 3, 64, 64},
+      {1, 4, 16, 16},
+
+      // Different tensor sizes
+      {1, 8, 20, 20},
+      {1, 16, 14, 14},
+      {1, 8, 28, 28},
+
+      // Odd tensor sizes
+      {1, 3, 15, 15},
+      {1, 13, 31, 31},
+      {1, 17, 23, 23},
+
+      // Performance test cases (larger tensors)
+      {1, 64, 128, 128},
+      {1, 32, 64, 64},
+      {1, 128, 56, 56},
+      {1, 128, 128, 128},
+  };
+
+  // Quantized memory layouts to test
+  std::vector<utils::GPUMemoryLayout> quant_layouts = {
+      utils::kPackedInt8_4W,
+      utils::kPackedInt8_4C,
+      utils::kPackedInt8_4W4C,
+      utils::kPackedInt8_4H4W,
+      utils::kPackedInt8_4C1W,
+  };
+
+  // Generate all combinations
+  for (const auto& shape : shapes) {
+    // Generate test case name prefix from shape dimensions
+    std::string prefix = "ACCU";
+    for (const auto& dim : shape) {
+      if (dim > kRefDimSizeLimit) {
+        prefix = "PERF";
+        break;
       }
+    }
+
+    Q8taBinaryConfig config;
+    config.shape = shape;
+    config.test_case_name = prefix;
+    for (const auto& quant_layout : quant_layouts) {
+      test_cases.push_back(create_test_case_from_config(
+          config,
+          /*storage_type=*/utils::kBuffer,
+          /*input_dtype=*/vkapi::kFloat,
+          /*fp_memory_layout=*/utils::kWidthPacked,
+          quant_layout));
     }
   }
 
@@ -131,8 +222,7 @@ std::vector<TestCase> generate_quantized_add_test_cases() {
 }
 
 // Reference implementation for quantized add operation
-void add_q8ta_q8ta_q8to_reference_impl(TestCase& test_case) {
-  // Extract input specifications
+void q8ta_add_reference_impl(TestCase& test_case) {
   int32_t idx = 0;
   const ValueSpec& input_a_spec = test_case.inputs()[idx++];
   const ValueSpec& input_b_spec = test_case.inputs()[idx++];
@@ -143,13 +233,29 @@ void add_q8ta_q8ta_q8to_reference_impl(TestCase& test_case) {
   const ValueSpec& output_scale_spec = test_case.inputs()[idx++];
   const ValueSpec& output_zero_point_spec = test_case.inputs()[idx++];
   const ValueSpec& alpha_spec = test_case.inputs()[idx++];
+  const ValueSpec& quant_layout_spec = test_case.inputs()[idx++];
+  (void)quant_layout_spec; // Not used in reference implementation
 
-  // Extract output specification (mutable reference)
+  // Extract output specification
   ValueSpec& output_spec = test_case.outputs()[0];
 
   // Get tensor dimensions
   auto input_sizes = input_a_spec.get_tensor_sizes();
-  int64_t num_elements = input_a_spec.numel();
+
+  // Calculate total number of elements
+  int64_t num_elements = 1;
+  for (const auto& dim : input_sizes) {
+    num_elements *= dim;
+  }
+
+  // Skip for large tensors since computation time will be extremely slow
+  for (const auto& dim : input_sizes) {
+    if (dim > kRefDimSizeLimit) {
+      throw std::invalid_argument(
+          "One or more dimensions exceed the allowed limit for reference "
+          "implementation.");
+    }
+  }
 
   if (input_a_spec.dtype != vkapi::kFloat) {
     throw std::invalid_argument("Unsupported dtype");
@@ -208,50 +314,36 @@ void add_q8ta_q8ta_q8to_reference_impl(TestCase& test_case) {
   }
 }
 
-void reference_impl(TestCase& test_case) {
-  add_q8ta_q8ta_q8to_reference_impl(test_case);
-}
-
-// Custom FLOP calculator for quantized add operation
-int64_t quantized_add_flop_calculator(const TestCase& test_case) {
-  // Calculate total elements from the first input tensor
-  int64_t total_elements = 1;
-  if (!test_case.empty() && test_case.num_inputs() > 0 &&
-      test_case.inputs()[0].is_tensor()) {
-    const auto& sizes = test_case.inputs()[0].get_tensor_sizes();
-    for (int64_t size : sizes) {
-      total_elements *= size;
-    }
-  }
-
-  // Quantized add operation includes:
-  // - 2 quantizations (float to int8)
-  // - 2 dequantizations (int8 to float)
-  // - 1 addition
-  // For simplicity, we count this as 1 FLOP per element (the addition)
-  return total_elements;
-}
-
 int main(int argc, char* argv[]) {
   set_debugging(false);
   set_print_output(false);
+#ifdef DEBUG_MODE
   set_print_latencies(false);
+#else
+  set_print_latencies(false);
+#endif
   set_use_gpu_timestamps(true);
 
   print_performance_header();
-  std::cout << "Quantized Add Operation (q8ta_q8ta_q8to) Prototyping Framework"
-            << std::endl;
+  std::cout << "Q8TA Binary Add Operation Prototyping Framework" << std::endl;
   print_separator();
 
-  ReferenceComputeFunc ref_fn = reference_impl;
+  ReferenceComputeFunc ref_fn = q8ta_add_reference_impl;
 
-  // Execute test cases using the new framework with custom FLOP calculator
   auto results = execute_test_cases(
-      generate_quantized_add_test_cases,
-      quantized_add_flop_calculator,
-      "QuantizedAddQ8taQ8taQ8to",
+#ifdef DEBUG_MODE
+      generate_q8ta_add_easy_cases,
+#else
+      generate_q8ta_add_test_cases,
+#endif
+      "Q8taBinaryAdd",
+#ifdef DEBUG_MODE
       0,
       1,
+#else
+      3,
+      10,
+#endif
       ref_fn);
 
   return 0;
