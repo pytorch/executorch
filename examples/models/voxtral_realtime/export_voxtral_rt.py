@@ -19,7 +19,8 @@ With --streaming, produces a streaming .pte instead:
 Backend support:
   - XNNPACK (default): Uses custom SDPA op (torch.ops.llama.custom_sdpa) for optimal performance
   - Metal/AOTI: Automatically switches to standard PyTorch SDPA (F.scaled_dot_product_attention)
-                to avoid AOTI compilation issues. Still uses custom KV cache ops.
+                for text_decoder to avoid AOTI compilation issues. Uses Dim.AUTO for audio encoder
+                dynamic shapes (explicit bounds cause issues with AOTI). All components run on Metal GPU.
   - Portable: Uses custom SDPA like XNNPACK
 
 Usage:
@@ -162,6 +163,7 @@ def export_all(
     qlinear=None,
     qlinear_group_size=32,
     qembedding=None,
+    backend="xnnpack",
 ):
     """Export all three model components with per-component quantization."""
     from executorch.extension.llm.export.quantize import quantize_model_
@@ -182,13 +184,22 @@ def export_all(
             qlinear_group_size=qlinear_encoder_group_size,
         )
 
-    _t_mel_base = Dim("_t_mel_base", min=1, max=3000)
-    t_mel_dim = 8 * _t_mel_base
-    sample_mel = torch.randn(1, model.config.num_mel_bins, 160, dtype=param_dtype)
+    # For Metal/AOTI: use max size as sample and Dim.AUTO (explicit bounds cause issues)
+    # For XNNPACK: use small sample with explicit bounds
+    if backend == "metal":
+        max_t_mel = 24000  # 3000 * 8
+        sample_mel = torch.randn(1, model.config.num_mel_bins, max_t_mel, dtype=param_dtype)
+        dynamic_shapes = {"mel": {2: Dim.AUTO}}
+    else:
+        _t_mel_base = Dim("_t_mel_base", min=1, max=3000)
+        t_mel_dim = 8 * _t_mel_base
+        sample_mel = torch.randn(1, model.config.num_mel_bins, 160, dtype=param_dtype)
+        dynamic_shapes = {"mel": {2: t_mel_dim}}
+
     programs["audio_encoder"] = export(
         audio_encoder,
         (sample_mel,),
-        dynamic_shapes={"mel": {2: t_mel_dim}},
+        dynamic_shapes=dynamic_shapes,
         strict=True,
     )
     print(f"  audio_encoder exported (sample input: {sample_mel.shape})")
@@ -221,6 +232,7 @@ def export_streaming(
     qlinear=None,
     qlinear_group_size=32,
     qembedding=None,
+    backend="xnnpack",
 ):
     """Export streaming model components with per-component quantization."""
     from executorch.extension.llm.export.quantize import quantize_model_
@@ -479,6 +491,7 @@ def main():
         "qlinear": args.qlinear,
         "qlinear_group_size": args.qlinear_group_size,
         "qembedding": args.qembedding,
+        "backend": args.backend,
     }
     if args.streaming:
         programs, metadata = export_streaming(
