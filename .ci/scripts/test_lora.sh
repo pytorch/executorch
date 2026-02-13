@@ -143,9 +143,11 @@ So, 15% of 80 is equal to (80 * 15) / 100 = 1200 / 100 = 12.
 The answer is: 12<|im_end|>"
 
 # Export Quantized PTE, PTD file, no LoRA.
+# override base.lora_config=null to avoid creating a lora model
+# and loading lora weights.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
-    +base.lora_config=null \
+    base.lora_config=null \
     +export.output_name="qwen_q.pte" \
     +export.foundation_weights_file="qwen_foundation_q.ptd" \
     +quantization.qmode="8da4w" \
