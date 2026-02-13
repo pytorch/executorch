@@ -106,7 +106,7 @@ ExternalProject_Add(
     -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
     ${_flatcc_extra_cmake_args}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
-                   {_executorch_external_project_additional_args}
+                   ${_executorch_external_project_additional_args}
 )
 file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
 ExternalProject_Get_Property(flatcc_ep INSTALL_DIR)
