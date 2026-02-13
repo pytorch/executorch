@@ -176,11 +176,11 @@ void ComputeGraph::print_readable() {
     // Node type
     std::cout << std::setw(10);
     {
-      if (input_set.count(value_idx) > 0) {
+      if (input_set.contains(value_idx)) {
         std::cout << "INPUT";
-      } else if (output_set.count(value_idx) > 0) {
+      } else if (output_set.contains(value_idx)) {
         std::cout << "OUTPUT";
-      } else if (prepack_set.count(value_idx) > 0) {
+      } else if (prepack_set.contains(value_idx)) {
         std::cout << "PREPACK";
       } else {
         std::cout << "";
@@ -198,7 +198,7 @@ void ComputeGraph::print_readable() {
     }
 
     std::cout << std::setw(10);
-    if (value_ref_to_shared_object_idx.count(value_idx) > 0) {
+    if (value_ref_to_shared_object_idx.contains(value_idx)) {
       size_t shared_obj_idx = value_ref_to_shared_object_idx.at(value_idx);
       std::cout << shared_obj_idx;
     } else {
