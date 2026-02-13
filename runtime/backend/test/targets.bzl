@@ -17,6 +17,15 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "backend_options_map_test",
+        srcs = ["backend_options_map_test.cpp"],
+        deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/backend:interface",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "backend_interface_update_test",
         srcs = ["backend_interface_update_test.cpp"],
         deps = [
