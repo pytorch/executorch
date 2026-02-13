@@ -323,7 +323,9 @@ void add_q8ta_conv2d_node(
 // High level operator impl
 //
 
-void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+void q8ta_conv2d_general(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
   int32_t idx = 0;
   const ValueRef packed_int8_input = args.at(idx++);
   const ValueRef input_scale = args.at(idx++);
@@ -398,8 +400,30 @@ void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       packed_int8_output);
 }
 
+void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  // Index into args to extract values needed for dispatch decision
+  const ValueRef packed_int8_input = args.at(0);
+  const ValueRef kernel_size = args.at(9);
+  const ValueRef groups = args.at(13);
+
+  const int32_t groups_val = graph.get_int(groups);
+  const int64_t IC = graph.size_at<int64_t>(-3, packed_int8_input);
+
+  const int64_t K_h = graph.get_int_list(kernel_size)->at(0);
+  const int64_t K_w = graph.get_int_list(kernel_size)->at(1);
+
+  // Use im2col path when: non-grouped, input channels multiple of 4, small
+  // kernel
+  if (groups_val == 1 && IC % 4 == 0 && K_h <= 3 && K_w <= 3) {
+    q8ta_conv2d_im2col(graph, args);
+  } else {
+    q8ta_conv2d_general(graph, args);
+  }
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(etvk.q8ta_conv2d.default, q8ta_conv2d);
+  VK_REGISTER_OP(etvk.q8ta_conv2d_general.default, q8ta_conv2d_general);
 }
 
 } // namespace vkcompute
