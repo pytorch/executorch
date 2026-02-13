@@ -18,7 +18,7 @@ quantization:
   qmode: "8da4w"
   group_size: 32
 
-multimethod:
+multimethod_lora:
   methods:
     # LoRA method - adapter paths from environment variables
     lora_forward:
