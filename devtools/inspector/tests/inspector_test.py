@@ -17,7 +17,7 @@ from contextlib import redirect_stdout
 
 from typing import Callable, List, Union
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
@@ -1023,6 +1023,237 @@ class TestInspector(unittest.TestCase):
                     distance=InvalidValueDebugHandleComparator()
                 )
             self.assertIn("Invalid runtime debug handle", str(context.exception))
+
+    def test_calculate_numeric_gap_with_reference_graph_name(self):
+        """Test calculate_numeric_gap with the reference_graph_name parameter."""
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ):
+            inspector_instance = Inspector(
+                etdump_path="",
+                etrecord="",
+            )
+
+            # Create mock intermediate outputs
+            aot_intermediate_outputs = {
+                (0,): ([torch.tensor([1.0, 2.0, 3.0])], 1),
+                (1,): ([torch.tensor([4.0, 5.0, 6.0])], 1),
+            }
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([2.0, 3.0, 4.0])], 1),
+                (1,): ([torch.tensor([5.0, 6.0, 7.0])], 1),
+            }
+
+            aot_debug_handle_to_op_name = {(0,): ["op_0"], (1,): ["op_1"]}
+            runtime_debug_handle_to_op_name = {(0,): ["op_0"], (1,): ["op_1"]}
+
+            # Create a mock graph module for the reference graph
+            class MockGraphModule:
+                def __init__(self):
+                    self.graph = MockGraph()
+
+                def module(self):
+                    return self
+
+            class MockGraph:
+                def __init__(self):
+                    self.nodes = []
+
+            mock_graph_module = MockGraphModule()
+
+            # Create a real ETRecord and use add_extra_export_modules to add the graph
+            from executorch.devtools.etrecord import ETRecord
+
+            mock_etrecord = ETRecord()
+            mock_etrecord._representative_inputs = torch.tensor([1.0])
+            mock_etrecord.exported_program = None
+            mock_etrecord.edge_dialect_program = mock_graph_module
+
+            # Simulate what add_extra_export_modules does - it adds "/forward" suffix
+            # So "edge_after_transform" becomes "edge_after_transform/forward"
+            mock_etrecord.graph_map = {"edge_after_transform/forward": mock_graph_module}
+
+            inspector_instance._etrecord = mock_etrecord
+
+            # Mock the runtime intermediate outputs
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # Mock IntermediateOutputCapturer to return our AOT outputs
+            with patch(
+                "executorch.devtools.inspector._inspector.IntermediateOutputCapturer"
+            ) as mock_capturer_class, patch(
+                "executorch.devtools.inspector._inspector.get_aot_debug_handle_to_op_name_mapping"
+            ) as mock_get_mapping:
+                mock_capturer = MagicMock()
+                mock_capturer.run_and_capture.return_value = aot_intermediate_outputs
+                mock_capturer_class.return_value = mock_capturer
+                mock_get_mapping.return_value = aot_debug_handle_to_op_name
+
+                # Test with reference_graph_name parameter (without /forward suffix)
+                # The code should automatically add "/forward" when looking up
+                df = inspector_instance.calculate_numeric_gap(
+                    distance="L1",
+                    reference_graph_name="edge_after_transform",
+                )
+
+                self.assertIsInstance(df, pd.DataFrame)
+                self.assertEqual(len(df), 2)
+
+    def test_calculate_numeric_gap_with_invalid_reference_graph_name(self):
+        """Test that calculate_numeric_gap raises ValueError for invalid reference_graph_name."""
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ):
+            inspector_instance = Inspector(
+                etdump_path="",
+                etrecord="",
+            )
+
+            # Create a real ETRecord with empty graph_map
+            from executorch.devtools.etrecord import ETRecord
+
+            mock_etrecord = ETRecord()
+            mock_etrecord._representative_inputs = torch.tensor([1.0])
+            mock_etrecord.graph_map = {}
+
+            inspector_instance._etrecord = mock_etrecord
+
+            # Test with non-existent reference_graph_name
+            # Since "non_existent_graph" has no "/", it will be looked up as "non_existent_graph/forward"
+            with self.assertRaises(ValueError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance="L1",
+                    reference_graph_name="non_existent_graph",
+                )
+            self.assertIn("not found", str(context.exception))
+            self.assertIn("non_existent_graph/forward", str(context.exception))
+
+    def test_calculate_numeric_gap_with_exported_program_name_backprop_failure(self):
+        """Test that calculate_numeric_gap raises ValueError when exported_program backpropagation fails."""
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ):
+            inspector_instance = Inspector(
+                etdump_path="",
+                etrecord="",
+            )
+
+            # Create mock graph modules
+            class MockGraphModule:
+                def __init__(self):
+                    self.graph = MagicMock()
+
+                def module(self):
+                    return self
+
+            mock_exported_program = MockGraphModule()
+            mock_edge_dialect_program = MockGraphModule()
+
+            # Create a real ETRecord with exported_program
+            from executorch.devtools.etrecord import ETRecord
+
+            mock_etrecord = ETRecord()
+            mock_etrecord._representative_inputs = torch.tensor([1.0])
+            mock_etrecord.exported_program = mock_exported_program
+            mock_etrecord.edge_dialect_program = mock_edge_dialect_program
+            mock_etrecord.export_graph_id = "graph_id"
+            mock_etrecord.graph_map = {}
+
+            inspector_instance._etrecord = mock_etrecord
+
+            # Mock propagate_back_debug_handle to return False (backpropagation failure)
+            with patch(
+                "executorch.devtools.inspector._inspector.propagate_back_debug_handle"
+            ) as mock_propagate:
+                mock_propagate.return_value = False
+
+                # Test with "exported_program" should raise error when backpropagation fails
+                with self.assertRaises(ValueError) as context:
+                    inspector_instance.calculate_numeric_gap(
+                        distance="L1",
+                        reference_graph_name="exported_program",
+                    )
+                self.assertIn("Cannot use 'exported_program'", str(context.exception))
+                self.assertIn("backpropagation failed", str(context.exception))
+
+    def test_calculate_numeric_gap_with_edge_dialect_exported_program_name(self):
+        """Test calculate_numeric_gap with edge_dialect_exported_program reference_graph_name."""
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ):
+            inspector_instance = Inspector(
+                etdump_path="",
+                etrecord="",
+            )
+
+            # Create mock intermediate outputs
+            aot_intermediate_outputs = {
+                (0,): ([torch.tensor([1.0, 2.0, 3.0])], 1),
+            }
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([2.0, 3.0, 4.0])], 1),
+            }
+
+            aot_debug_handle_to_op_name = {(0,): ["op_0"]}
+            runtime_debug_handle_to_op_name = {(0,): ["op_0"]}
+
+            # Create mock graph modules
+            class MockGraphModule:
+                def __init__(self):
+                    self.graph = MagicMock()
+                    self.graph.nodes = []
+
+                def module(self):
+                    return self
+
+            mock_edge_dialect_program = MockGraphModule()
+
+            # Create a real ETRecord
+            from executorch.devtools.etrecord import ETRecord
+
+            mock_etrecord = ETRecord()
+            mock_etrecord._representative_inputs = torch.tensor([1.0])
+            mock_etrecord.exported_program = None
+            mock_etrecord.edge_dialect_program = mock_edge_dialect_program
+            mock_etrecord.graph_map = {}
+
+            inspector_instance._etrecord = mock_etrecord
+
+            # Mock the runtime intermediate outputs
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # Mock IntermediateOutputCapturer to return our AOT outputs
+            with patch(
+                "executorch.devtools.inspector._inspector.IntermediateOutputCapturer"
+            ) as mock_capturer_class, patch(
+                "executorch.devtools.inspector._inspector.get_aot_debug_handle_to_op_name_mapping"
+            ) as mock_get_mapping:
+                mock_capturer = MagicMock()
+                mock_capturer.run_and_capture.return_value = aot_intermediate_outputs
+                mock_capturer_class.return_value = mock_capturer
+                mock_get_mapping.return_value = aot_debug_handle_to_op_name
+
+                # Test with edge_dialect_exported_program parameter
+                df = inspector_instance.calculate_numeric_gap(
+                    distance="L1",
+                    reference_graph_name="edge_dialect_exported_program",
+                )
+
+                self.assertIsInstance(df, pd.DataFrame)
+                self.assertEqual(len(df), 1)
 
     @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
     def test_transformer_block_xnnpack_numeric_gap_within_tolerance(self):
