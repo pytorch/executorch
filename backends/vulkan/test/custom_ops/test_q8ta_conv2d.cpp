@@ -237,8 +237,7 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
 
       // Test im2col implementation for non-grouped convolutions with input
       // channels that are a multiple of 4 and stride_w == 1
-      if (config.groups == 1 && config.channels.in % 4 == 0 &&
-          config.stride.w == 1) {
+      if (config.groups == 1 && config.channels.in % 4 == 0) {
         test_cases.push_back(create_test_case_from_config(
             config,
             vkapi::kFloat,
@@ -417,8 +416,7 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
 
         // Test im2col implementation for non-grouped convolutions with input
         // channels that are a multiple of 4 and stride_w == 1
-        if (config.groups == 1 && config.channels.in % 4 == 0 &&
-            config.stride.w == 1) {
+        if (config.groups == 1 && config.channels.in % 4 == 0) {
           test_cases.push_back(create_test_case_from_config(
               config,
               vkapi::kFloat,
