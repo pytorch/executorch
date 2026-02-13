@@ -730,7 +730,7 @@ class TestInspector(unittest.TestCase):
 
         # Create a custom comparator that returns the max absolute difference
         class MaxAbsDiffComparator(NumericalComparatorBase):
-            def compare(self, a, b):
+            def element_compare(self, a, b):
                 if isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor):
                     return torch.max(torch.abs(a - b)).item()
                 return abs(a - b)
@@ -794,6 +794,235 @@ class TestInspector(unittest.TestCase):
             self.assertEqual(df.iloc[0]["gap"][0], 2.0)
             # For (1,): max(|[4.0, 5.0, 6.0] - [3.0, 6.0, 5.0]|) = max([1.0, 1.0, 1.0]) = 1.0
             self.assertEqual(df.iloc[1]["gap"][0], 1.0)
+
+    def test_calculate_numeric_gap_with_custom_comparator_and_preprocessing(self):
+        """Test calculate_numeric_gap with a custom comparator that includes preprocessing."""
+        from executorch.devtools.inspector.numerical_comparator import (
+            IntermediateOutputMapping,
+            NumericalComparatorBase,
+        )
+
+        # Create a custom comparator with preprocessing that scales runtime tensors by 2x
+        class ScalingComparator(NumericalComparatorBase):
+            def __init__(self, scale_factor: float = 2.0):
+                super().__init__()
+                self.scale_factor = scale_factor
+                self.preprocessing_called = False
+
+            def preprocessing(
+                self, mapping: IntermediateOutputMapping
+            ) -> IntermediateOutputMapping:
+                """Scale runtime tensors by scale_factor before comparison."""
+                self.preprocessing_called = True
+                transformed_mapping = {}
+                for (aot_handle, aot_output), (
+                    runtime_handle,
+                    runtime_output,
+                ) in mapping.items():
+                    # Scale the runtime output
+                    if isinstance(runtime_output, torch.Tensor):
+                        scaled_runtime_output = runtime_output * self.scale_factor
+                    else:
+                        scaled_runtime_output = runtime_output
+                    transformed_mapping[(aot_handle, aot_output)] = (
+                        runtime_handle,
+                        scaled_runtime_output,
+                    )
+                return transformed_mapping
+
+            def element_compare(self, a, b) -> float:
+                """Compute MSE between two tensors."""
+                if isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor):
+                    return torch.mean(torch.square(a.float() - b.float())).item()
+                return (a - b) ** 2
+
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            # AOT outputs: [1.0, 2.0, 3.0] and [4.0, 5.0, 6.0]
+            aot_intermediate_outputs = {
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+                (1,): torch.tensor([4.0, 5.0, 6.0]),
+            }
+
+            # Runtime outputs: [1.0, 1.0, 1.0] and [2.0, 2.0, 2.0]
+            # After 2x scaling: [2.0, 2.0, 2.0] and [4.0, 4.0, 4.0]
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([1.0, 1.0, 1.0])], 1),
+                (1,): ([torch.tensor([2.0, 2.0, 2.0])], 1),
+            }
+
+            aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+            runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
+                aot_intermediate_outputs,
+                aot_debug_handle_to_op_name,
+            )
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # Create custom comparator with 2x scaling
+            custom_comparator = ScalingComparator(scale_factor=2.0)
+
+            # Test with custom comparator
+            df = inspector_instance.calculate_numeric_gap(distance=custom_comparator)
+
+            # Verify preprocessing was called
+            self.assertTrue(custom_comparator.preprocessing_called)
+
+            # Verify DataFrame structure
+            self.assertIsInstance(df, pd.DataFrame)
+            self.assertEqual(len(df), 2)
+            cols = set(df.columns)
+            expected_cols = {
+                "aot_ops",
+                "aot_intermediate_output",
+                "runtime_ops",
+                "runtime_intermediate_output",
+                "gap",
+            }
+            self.assertEqual(cols, expected_cols)
+
+            # Verify the comparison after preprocessing
+            # For (0,): AOT=[1.0, 2.0, 3.0], Runtime after scaling=[2.0, 2.0, 2.0]
+            #   MSE = mean((1-2)^2 + (2-2)^2 + (3-2)^2) = mean(1 + 0 + 1) = 2/3
+            expected_gap_0 = (1.0 + 0.0 + 1.0) / 3.0
+            self.assertAlmostEqual(df.iloc[0]["gap"][0], expected_gap_0, places=5)
+
+            # For (1,): AOT=[4.0, 5.0, 6.0], Runtime after scaling=[4.0, 4.0, 4.0]
+            #   MSE = mean((4-4)^2 + (5-4)^2 + (6-4)^2) = mean(0 + 1 + 4) = 5/3
+            expected_gap_1 = (0.0 + 1.0 + 4.0) / 3.0
+            self.assertAlmostEqual(df.iloc[1]["gap"][0], expected_gap_1, places=5)
+
+    def test_calculate_numeric_gap_with_invalid_preprocessing_output(self):
+        """Test that invalid preprocessing output raises appropriate errors."""
+        from executorch.devtools.inspector.numerical_comparator import (
+            NumericalComparatorBase,
+        )
+
+        # Test 1: preprocessing returns non-dict
+        class NonDictPreprocessingComparator(NumericalComparatorBase):
+            def preprocessing(self, mapping):
+                return "invalid"  # Should return a dict
+
+            def element_compare(self, a, b) -> float:
+                return 0.0
+
+        # Test 2: preprocessing returns dict with invalid key format
+        class InvalidKeyFormatComparator(NumericalComparatorBase):
+            def preprocessing(self, mapping):
+                return {"invalid_key": ((0,), torch.tensor([1.0]))}
+
+            def element_compare(self, a, b) -> float:
+                return 0.0
+
+        # Test 3: preprocessing returns dict with invalid debug handle in key
+        class InvalidKeyDebugHandleComparator(NumericalComparatorBase):
+            def preprocessing(self, mapping):
+                return {
+                    (("not_int",), torch.tensor([1.0])): ((0,), torch.tensor([1.0]))
+                }
+
+            def element_compare(self, a, b) -> float:
+                return 0.0
+
+        # Test 4: preprocessing returns dict with invalid value format
+        class InvalidValueFormatComparator(NumericalComparatorBase):
+            def preprocessing(self, mapping):
+                return {((0,), torch.tensor([1.0])): "invalid_value"}
+
+            def element_compare(self, a, b) -> float:
+                return 0.0
+
+        # Test 5: preprocessing returns dict with invalid debug handle in value
+        class InvalidValueDebugHandleComparator(NumericalComparatorBase):
+            def preprocessing(self, mapping):
+                return {
+                    ((0,), torch.tensor([1.0])): (("not_int",), torch.tensor([1.0]))
+                }
+
+            def element_compare(self, a, b) -> float:
+                return 0.0
+
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            aot_intermediate_outputs = {
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+            }
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([1.0, 1.0, 1.0])], 1),
+            }
+            aot_debug_handle_to_op_name = {(0,): "op_0"}
+            runtime_debug_handle_to_op_name = {(0,): "op_0"}
+
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
+                aot_intermediate_outputs,
+                aot_debug_handle_to_op_name,
+            )
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # Test 1: Non-dict return type
+            with self.assertRaises(TypeError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance=NonDictPreprocessingComparator()
+                )
+            self.assertIn("must return a dict", str(context.exception))
+
+            # Test 2: Invalid key format
+            with self.assertRaises(ValueError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance=InvalidKeyFormatComparator()
+                )
+            self.assertIn("Invalid key format", str(context.exception))
+
+            # Test 3: Invalid debug handle in key
+            with self.assertRaises(ValueError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance=InvalidKeyDebugHandleComparator()
+                )
+            self.assertIn("Invalid AOT debug handle", str(context.exception))
+
+            # Test 4: Invalid value format
+            with self.assertRaises(ValueError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance=InvalidValueFormatComparator()
+                )
+            self.assertIn("Invalid value format", str(context.exception))
+
+            # Test 5: Invalid debug handle in value
+            with self.assertRaises(ValueError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance=InvalidValueDebugHandleComparator()
+                )
+            self.assertIn("Invalid runtime debug handle", str(context.exception))
 
     @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
     def test_transformer_block_xnnpack_numeric_gap_within_tolerance(self):
