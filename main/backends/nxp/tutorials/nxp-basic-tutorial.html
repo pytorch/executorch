@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Preparing a Model for NXP eIQ Neutron Backend &#8212; ExecuTorch main documentation</title>
+    <title>Getting started with eIQ Neutron NPU ExecuTorch backend &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -1076,7 +1076,7 @@ document.write(`
 
 <li class="toctree-l2"><a class="reference internal" href="../nxp-quantization.html">NXP eIQ Neutron Quantization</a></li>
 <li class="toctree-l2 current active has-children"><a class="reference internal" href="nxp-tutorials.html">NXP Tutorials</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l3 current active"><a class="current reference internal" href="#">Preparing a Model for NXP eIQ Neutron Backend</a></li>
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">Getting started with eIQ Neutron NPU ExecuTorch backend</a></li>
 </ul>
 </details></li>
 <li class="toctree-l2"><a class="reference internal" href="../nxp-dim-order.html">NXP eIQ Dim Order Support</a></li>
@@ -1137,7 +1137,7 @@ document.write(`
     
     <li class="breadcrumb-item"><a href="nxp-tutorials.html" class="nav-link">NXP Tutorials</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page">Preparing a...</li>
+    <li class="breadcrumb-item active" aria-current="page">Getting...</li>
   </ul>
 </nav>
 </div>
@@ -1197,7 +1197,7 @@ document.write(`
       </div>
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <meta itemprop="name" content="Preparing a Model for NXP eIQ Neutron Backend">
+        <meta itemprop="name" content="Getting started with eIQ Neutron NPU ExecuTorch backend">
         <meta itemprop="position" content="4">
       </div>
     </div>
@@ -1211,27 +1211,168 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="preparing-a-model-for-nxp-eiq-neutron-backend">
-<h1>Preparing a Model for NXP eIQ Neutron Backend<a class="headerlink" href="#preparing-a-model-for-nxp-eiq-neutron-backend" title="Link to this heading">#</a></h1>
+  <section id="getting-started-with-eiq-neutron-npu-executorch-backend">
+<h1>Getting started with eIQ Neutron NPU ExecuTorch backend<a class="headerlink" href="#getting-started-with-eiq-neutron-npu-executorch-backend" title="Link to this heading">#</a></h1>
+<section id="prerequisities">
+<h2>Prerequisities<a class="headerlink" href="#prerequisities" title="Link to this heading">#</a></h2>
+<section id="hardware">
+<h3>Hardware<a class="headerlink" href="#hardware" title="Link to this heading">#</a></h3>
+<p>For this tutorial, you will need a Linux machine with x86_64 processor architecture.
+This tutorial demonstrates the use of the eIQ Neutron backend with the Neutron behavioral simulator, called NSYS. You don’t need any specific development board for this tutorial.</p>
+</section>
+<section id="software">
+<h3>Software<a class="headerlink" href="#software" title="Link to this heading">#</a></h3>
+<p>First you need to have Python 3.10 - 3.12 installed.</p>
+<p>You need to install the ExecuTorch. Please follow the tutorial to install the ExecuTorch <a class="reference internal" href="../../../getting-started-setup.html"><span class="std std-doc">Setting Up ExecuTorch</span></a></p>
+<p>In addition to this, you will need to install the eIQ Neutron Simulator, called NSYS,
+and the Neutron Converter for generating the byte-code for the eIQ Neutron NPU,
+during the model conversion in ExecuTorch AoT flow.
+To install the eIQ Neutron dependencies, run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>examples/nxp/setup.sh
+</pre></div>
+</div>
+<p>This will install:</p>
+<ul class="simple">
+<li><p>Neutron Converter, for converting the Neutron IR to Neutron byte-code</p></li>
+<li><p>eIQ Neutron SDK, containing the eIQ Neutron runtimes (driver and firmware) for various NXP SoC and simulator</p></li>
+<li><p>eIQ NSYS, the Neutron behavioral simulator</p></li>
+</ul>
+</section>
+</section>
+<section id="preparing-a-model-for-nxp-eiq-neutron-backend">
+<h2>Preparing a Model for NXP eIQ Neutron Backend<a class="headerlink" href="#preparing-a-model-for-nxp-eiq-neutron-backend" title="Link to this heading">#</a></h2>
 <p>This guide demonstrating the use of ExecuTorch AoT flow to convert a PyTorch model to ExecuTorch
 format and delegate the model computation to eIQ Neutron NPU using the eIQ Neutron Backend.</p>
 <section id="step-1-environment-setup">
-<h2>Step 1: Environment Setup<a class="headerlink" href="#step-1-environment-setup" title="Link to this heading">#</a></h2>
+<h3>Step 1: Environment Setup<a class="headerlink" href="#step-1-environment-setup" title="Link to this heading">#</a></h3>
 <p>This tutorial is intended to be run from a Linux and uses Conda or Virtual Env for Python environment management. For full setup details and system requirements, see <a class="reference internal" href="../../../getting-started.html"><span class="doc std std-doc">Getting Started with ExecuTorch</span></a>.</p>
 <p>Create a Conda environment and install the ExecuTorch Python package.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>conda<span class="w"> </span>create<span class="w"> </span>-y<span class="w"> </span>--name<span class="w"> </span>executorch<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12
 conda<span class="w"> </span>activate<span class="w"> </span>executorch
-conda<span class="w"> </span>install<span class="w"> </span>executorch
 </pre></div>
 </div>
-<p>Run the setup.sh script to install the neutron-converter:</p>
-<div class="highlight-commandline notranslate"><div class="highlight"><pre><span></span>$ ./examples/nxp/setup.sh
+<p>and install the ExecuTorch Python package, either a prebuilt one:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>conda<span class="w"> </span>install<span class="w"> </span>executorch
+</pre></div>
+</div>
+<p>or build from source:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./install_executorch.sh
+</pre></div>
+</div>
+<p>Also run the <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script to install the eIQ Neutron dependencies:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>./examples/nxp/setup.sh
 </pre></div>
 </div>
 </section>
 <section id="step-2-model-preparation-and-running-the-model-on-target">
-<h2>Step 2: Model Preparation and Running the Model on Target<a class="headerlink" href="#step-2-model-preparation-and-running-the-model-on-target" title="Link to this heading">#</a></h2>
-<p>See the example <code class="docutils literal notranslate"><span class="pre">aot_neutron_compile.py</span></code> and its <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/1.0/examples/nxp/README.md">README</a> file.</p>
+<h3>Step 2: Model Preparation and Running the Model on Target<a class="headerlink" href="#step-2-model-preparation-and-running-the-model-on-target" title="Link to this heading">#</a></h3>
+<p>See the example <code class="docutils literal notranslate"><span class="pre">aot_neutron_compile.py</span></code> and its <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/nxp/README.md">README</a> file.</p>
+<p>For the purpose of this tutorial we will use a simple image classification model CifarNet10.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.nxp.aot_neutron_compile<span class="w"> </span>--quantize<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--delegate<span class="w"> </span>--neutron_converter_flavor<span class="w"> </span>SDK_25_12<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;cifar10&quot;</span>
+</pre></div>
+</div>
+<p>Also, we will dump few of the images from the Cifar 10 dataset to a folder:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.nxp.experimental.cifar_net.cifar_net<span class="w"> </span>--store-test-data
+</pre></div>
+</div>
+<p>The destination folder is <code class="docutils literal notranslate"><span class="pre">./cifar10_test_data</span></code>.</p>
+</section>
+</section>
+<section id="runtime-with-nsys">
+<h2>Runtime with NSYS<a class="headerlink" href="#runtime-with-nsys" title="Link to this heading">#</a></h2>
+<section id="nxp-executor-runner-example">
+<h3>nxp_executor_runner example<a class="headerlink" href="#nxp-executor-runner-example" title="Link to this heading">#</a></h3>
+<p>The end-to-end example illustrating the use of the eIQ Neutron NPU is located in <code class="docutils literal notranslate"><span class="pre">examples/nxp/executor_runner</span></code>.
+Before we proceed with the build and execution, let’s stop to briefly introduce the example.</p>
+<p>The application runs the executorch on a particular model.
+If a delegated model is provided to the runner, as in this tutorial, the instruction <code class="docutils literal notranslate"><span class="pre">DelegateCall</span></code> having the <code class="docutils literal notranslate"><span class="pre">NeutronBackend</span></code> ID is present in the model.
+This instruction is recognized by ExecuTorch runtime and handed over to the NeutronBackend.
+NeutronBackend runs it on the eIQ Neutron NPU, simulated by NSYS.</p>
+<p>The NeutronDriver’s API (<code class="docutils literal notranslate"><span class="pre">NeutronDriver.h</span></code> and <code class="docutils literal notranslate"><span class="pre">NeutronErrors.h</span></code>) is the same, regardless of whether it is a physical IP or NSYS.
+What is specific, is the API provided by the <code class="docutils literal notranslate"><span class="pre">NeutronEnvConfig.h</span></code>, to set up the paths to:</p>
+<ul class="simple">
+<li><p>the NSYS,</p></li>
+<li><p>the Neutron Firmware to run and</p></li>
+<li><p>the NSYS configuration (.ini file):</p></li>
+</ul>
+<div class="highlight-c++ notranslate"><div class="highlight"><pre><span></span><span class="w">    </span><span class="n">storeNsysConfigPath</span><span class="p">(</span><span class="n">FLAGS_nsys_config</span><span class="p">.</span><span class="n">c_str</span><span class="p">());</span>
+<span class="w">    </span><span class="n">storeFirmwarePath</span><span class="p">(</span><span class="n">FLAGS_firmware</span><span class="p">.</span><span class="n">c_str</span><span class="p">());</span>
+<span class="w">    </span><span class="n">storeNsysPath</span><span class="p">(</span><span class="n">FLAGS_nsys</span><span class="p">.</span><span class="n">c_str</span><span class="p">());</span>
+</pre></div>
+</div>
+<p>What corresponds to nxp_executor_runner CLI options, <code class="docutils literal notranslate"><span class="pre">--firmware</span></code>, <code class="docutils literal notranslate"><span class="pre">--nsys</span></code>, <code class="docutils literal notranslate"><span class="pre">--nsys_config</span></code> or provided by environmental variable:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>CLI Option</p></th>
+<th class="head"><p>Environmental variable</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--firmware</span></code></p></td>
+<td><p>NSYS_FIRMWARE_PATH</p></td>
+<td><p>Path to the NSYS firmware. The NSYS firmware for each supported platform is provided by the eIQ Neutron SDK package.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">--nsys_config</span></code></p></td>
+<td><p>NSYS_CONFIG_PATH</p></td>
+<td><p>Path to the NSYS configuration. For i.MXRT700 SoC available in <code class="docutils literal notranslate"><span class="pre">examples/nxp/exector_runner/neutron-imxrt700.ini</span></code>. For other platform not required.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--nsys</span></code></p></td>
+<td><p>N/A</p></td>
+<td><p>Path to the eIQ NSYS simulator executable (<code class="docutils literal notranslate"><span class="pre">which</span> <span class="pre">nsys</span></code>)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>For further details about <code class="docutils literal notranslate"><span class="pre">eiq_nsys</span></code> refer for the provided user guide in the python package.</p>
+</section>
+<section id="build-the-nxp-executor-runner">
+<h3>Build the nxp_executor_runner<a class="headerlink" href="#build-the-nxp-executor-runner" title="Link to this heading">#</a></h3>
+<p>Use the provided <code class="docutils literal notranslate"><span class="pre">examples/nxp/executor_runner/CMakeLists.txt</span></code>. It can be build separately:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>./examples/nxp/executor_runner/build<span class="w"> </span>
+<span class="nb">pushd</span><span class="w"> </span>./examples/nxp/executor_runner/build
+cmake<span class="w"> </span>..
+make<span class="w"> </span>nxp_executor_runner
+<span class="nb">popd</span>
+</pre></div>
+</div>
+<p>or as part of the ExecuTorch build:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>&lt;executorch_root_dir&gt;
+mkdir<span class="w"> </span>build
+cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_NXP_NEUTRON<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_NXP_NEUTRON_RUNNER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+make<span class="w"> </span>nxp_executorch_runner
+</pre></div>
+</div>
+</section>
+<section id="run-the-nxp-executor-runner">
+<h3>Run the nxp_executor_runner<a class="headerlink" href="#run-the-nxp-executor-runner" title="Link to this heading">#</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./examples/nxp/executor_runner/build/nxp_executor_runner<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--firmware<span class="w"> </span><span class="sb">`</span>make<span class="w"> </span>-C<span class="w"> </span>./examples/nxp/executor_runner/build<span class="w"> </span>locate_neutron_firmware<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;NeutronFirmware.elf&quot;</span><span class="w"> </span><span class="sb">`</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--nsys<span class="w"> </span><span class="sb">`</span>which<span class="w"> </span>nsys<span class="sb">`</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--nsys_config<span class="w"> </span>./examples/nxp/executor_runner/neutron-imxrt700.ini<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--model<span class="w"> </span>./cifar10_nxp_delegate.pte<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--dataset<span class="w"> </span>./cifar10_test_data<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--output<span class="w"> </span>./cifar10_test_output
+</pre></div>
+</div>
+</section>
+</section>
+<section id="takeways">
+<h2>Takeways<a class="headerlink" href="#takeways" title="Link to this heading">#</a></h2>
+<p>For the convenience, you can run the provided utility script doing all the above-mentioned steps for detailed inspection:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>&lt;executorch-root&gt;
+./examples/nxp/run.sh
+</pre></div>
+</div>
+</section>
+<section id="faqs">
+<h2>FAQs<a class="headerlink" href="#faqs" title="Link to this heading">#</a></h2>
+<p>If you encounter any bugs or issues following this tutorial please file a bug/issue here on <a class="reference external" href="https://github.com/pytorch/executorch/issues/new">Github</a> and label as <code class="docutils literal notranslate"><span class="pre">module:</span> <span class="pre">nxp</span></code>.</p>
 </section>
 </section>
 
@@ -1352,8 +1493,24 @@ conda<span class="w"> </span>install<span class="w"> </span>executorch
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-1-environment-setup">Step 1: Environment Setup</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-2-model-preparation-and-running-the-model-on-target">Step 2: Model Preparation and Running the Model on Target</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisities">Prerequisities</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#hardware">Hardware</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#software">Software</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#preparing-a-model-for-nxp-eiq-neutron-backend">Preparing a Model for NXP eIQ Neutron Backend</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-1-environment-setup">Step 1: Environment Setup</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-2-model-preparation-and-running-the-model-on-target">Step 2: Model Preparation and Running the Model on Target</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-with-nsys">Runtime with NSYS</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nxp-executor-runner-example">nxp_executor_runner example</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#build-the-nxp-executor-runner">Build the nxp_executor_runner</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#run-the-nxp-executor-runner">Run the nxp_executor_runner</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#takeways">Takeways</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#faqs">FAQs</a></li>
 </ul>
   </nav></div>
     
@@ -1575,11 +1732,11 @@ conda<span class="w"> </span>install<span class="w"> </span>executorch
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Preparing a Model for NXP eIQ Neutron Backend",
-       "headline": "Preparing a Model for NXP eIQ Neutron Backend",
+       "name": "Getting started with eIQ Neutron NPU ExecuTorch backend",
+       "headline": "Getting started with eIQ Neutron NPU ExecuTorch backend",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/backends/nxp/tutorials/nxp-basic-tutorial.html",
-       "articleBody": "Preparing a Model for NXP eIQ Neutron Backend# This guide demonstrating the use of ExecuTorch AoT flow to convert a PyTorch model to ExecuTorch format and delegate the model computation to eIQ Neutron NPU using the eIQ Neutron Backend. Step 1: Environment Setup# This tutorial is intended to be run from a Linux and uses Conda or Virtual Env for Python environment management. For full setup details and system requirements, see Getting Started with ExecuTorch. Create a Conda environment and install the ExecuTorch Python package. conda create -y --name executorch python=3.12 conda activate executorch conda install executorch Run the setup.sh script to install the neutron-converter: $ ./examples/nxp/setup.sh Step 2: Model Preparation and Running the Model on Target# See the example aot_neutron_compile.py and its README file.",
+       "articleBody": "Getting started with eIQ Neutron NPU ExecuTorch backend# Prerequisities# Hardware# For this tutorial, you will need a Linux machine with x86_64 processor architecture. This tutorial demonstrates the use of the eIQ Neutron backend with the Neutron behavioral simulator, called NSYS. You don\u2019t need any specific development board for this tutorial. Software# First you need to have Python 3.10 - 3.12 installed. You need to install the ExecuTorch. Please follow the tutorial to install the ExecuTorch Setting Up ExecuTorch In addition to this, you will need to install the eIQ Neutron Simulator, called NSYS, and the Neutron Converter for generating the byte-code for the eIQ Neutron NPU, during the model conversion in ExecuTorch AoT flow. To install the eIQ Neutron dependencies, run: examples/nxp/setup.sh This will install: Neutron Converter, for converting the Neutron IR to Neutron byte-code eIQ Neutron SDK, containing the eIQ Neutron runtimes (driver and firmware) for various NXP SoC and simulator eIQ NSYS, the Neutron behavioral simulator Preparing a Model for NXP eIQ Neutron Backend# This guide demonstrating the use of ExecuTorch AoT flow to convert a PyTorch model to ExecuTorch format and delegate the model computation to eIQ Neutron NPU using the eIQ Neutron Backend. Step 1: Environment Setup# This tutorial is intended to be run from a Linux and uses Conda or Virtual Env for Python environment management. For full setup details and system requirements, see Getting Started with ExecuTorch. Create a Conda environment and install the ExecuTorch Python package. conda create -y --name executorch python=3.12 conda activate executorch and install the ExecuTorch Python package, either a prebuilt one: conda install executorch or build from source: ./install_executorch.sh Also run the setup.sh script to install the eIQ Neutron dependencies: $ ./examples/nxp/setup.sh Step 2: Model Preparation and Running the Model on Target# See the example aot_neutron_compile.py and its README file. For the purpose of this tutorial we will use a simple image classification model CifarNet10. python -m examples.nxp.aot_neutron_compile --quantize \\ --delegate --neutron_converter_flavor SDK_25_12 -m \"cifar10\" Also, we will dump few of the images from the Cifar 10 dataset to a folder: python -m examples.nxp.experimental.cifar_net.cifar_net --store-test-data The destination folder is ./cifar10_test_data. Runtime with NSYS# nxp_executor_runner example# The end-to-end example illustrating the use of the eIQ Neutron NPU is located in examples/nxp/executor_runner. Before we proceed with the build and execution, let\u2019s stop to briefly introduce the example. The application runs the executorch on a particular model. If a delegated model is provided to the runner, as in this tutorial, the instruction DelegateCall having the NeutronBackend ID is present in the model. This instruction is recognized by ExecuTorch runtime and handed over to the NeutronBackend. NeutronBackend runs it on the eIQ Neutron NPU, simulated by NSYS. The NeutronDriver\u2019s API (NeutronDriver.h and NeutronErrors.h) is the same, regardless of whether it is a physical IP or NSYS. What is specific, is the API provided by the NeutronEnvConfig.h, to set up the paths to: the NSYS, the Neutron Firmware to run and the NSYS configuration (.ini file): storeNsysConfigPath(FLAGS_nsys_config.c_str()); storeFirmwarePath(FLAGS_firmware.c_str()); storeNsysPath(FLAGS_nsys.c_str()); What corresponds to nxp_executor_runner CLI options, --firmware, --nsys, --nsys_config or provided by environmental variable: CLI Option Environmental variable Description --firmware NSYS_FIRMWARE_PATH Path to the NSYS firmware. The NSYS firmware for each supported platform is provided by the eIQ Neutron SDK package. --nsys_config NSYS_CONFIG_PATH Path to the NSYS configuration. For i.MXRT700 SoC available in examples/nxp/exector_runner/neutron-imxrt700.ini. For other platform not required. --nsys N/A Path to the eIQ NSYS simulator executable (which nsys) For further details about eiq_nsys refer for the provided user guide in the python package. Build the nxp_executor_runner# Use the provided examples/nxp/executor_runner/CMakeLists.txt. It can be build separately: mkdir ./examples/nxp/executor_runner/build pushd ./examples/nxp/executor_runner/build cmake .. make nxp_executor_runner popd or as part of the ExecuTorch build: cd \u003cexecutorch_root_dir\u003e mkdir build cmake .. \\ -DEXECUTORCH_BUILD_NXP_NEUTRON=ON \\ -DEXECUTORCH_BUILD_NXP_NEUTRON_RUNNER=ON \\ -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \\ -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \\ make nxp_executorch_runner Run the nxp_executor_runner# ./examples/nxp/executor_runner/build/nxp_executor_runner \\ --firmware `make -C ./examples/nxp/executor_runner/build locate_neutron_firmware | grep \"NeutronFirmware.elf\" ` \\ --nsys `which nsys` \\ --nsys_config ./examples/nxp/executor_runner/neutron-imxrt700.ini \\ --model ./cifar10_nxp_delegate.pte \\ --dataset ./cifar10_test_data \\ --output ./cifar10_test_output Takeways# For the convenience, you can run the provided utility script doing all the above-mentioned steps for detailed inspection: cd \u003cexecutorch-root\u003e ./examples/nxp/run.sh FAQs# If you encounter any bugs or issues following this tutorial please file a bug/issue here on Github and label as module: nxp.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
