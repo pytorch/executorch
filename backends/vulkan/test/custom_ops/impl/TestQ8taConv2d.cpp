@@ -157,6 +157,9 @@ void test_q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   } else if (impl_selector == "im2col") {
     // Use the im2col-based conv2d operator
     VK_GET_OP_FN("etvk.q8ta_conv2d_im2col.default")(graph, conv_args);
+  } else if (impl_selector == "general") {
+    // Use the general q8ta_conv2d operator (no im2col dispatch)
+    VK_GET_OP_FN("etvk.q8ta_conv2d_general.default")(graph, conv_args);
   } else {
     // Use the new general q8ta_conv2d operator
     VK_GET_OP_FN("etvk.q8ta_conv2d.default")(graph, conv_args);
