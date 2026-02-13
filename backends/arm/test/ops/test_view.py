@@ -53,6 +53,17 @@ class View(torch.nn.Module):
         "rand_3d_5d": lambda: (torch.rand(4, 5, 6), (1, 1, 2, -1, 3)),
     }
 
+    needs_transpose_tests_fp16 = {
+        "rand_4d_4d_fp16": lambda: (
+            torch.rand(2, 1, 1, 9, dtype=torch.float16),
+            (3, 2, 3, 1),
+        ),
+        "rand_4d_neg_fp16": lambda: (
+            torch.rand(10, 2, 1, 5, dtype=torch.float16),
+            (1, -1, 5, 2),
+        ),
+    }
+
     rank_product_too_large = {
         "rand_4d_large": lambda: (torch.rand(1, 49, 16, 128), (1, 16, 49, 128)),
         "rand_5d_large": lambda: (torch.rand(2, 25, 16, 8, 64), (2, 16, 25, 8, 64)),
@@ -66,7 +77,9 @@ class View(torch.nn.Module):
         return x.view(self.new_shape)
 
 
-@common.parametrize("test_data", View.needs_transpose_tests)
+@common.parametrize(
+    "test_data", View.needs_transpose_tests | View.needs_transpose_tests_fp16
+)
 def test_view_tosa_FP(test_data: Tuple):
     test_tensor, new_shape = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -103,7 +116,9 @@ def test_view_u55_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", View.needs_transpose_tests)
+@common.parametrize(
+    "test_data", View.needs_transpose_tests | View.needs_transpose_tests_fp16
+)
 @common.SkipIfNoModelConverter
 def test_view_vgf_no_quant(test_data: Tuple):
     test_tensor, new_shape = test_data()
