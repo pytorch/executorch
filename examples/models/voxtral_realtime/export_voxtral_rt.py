@@ -312,6 +312,15 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
             key: [XnnpackDynamicallyQuantizedPartitioner(), XnnpackPartitioner()]
             for key in programs
         }
+    elif backend == "metal":
+        from executorch.backends.apple.metal.metal_backend import MetalBackend
+        from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+
+        print("\nLowering to ExecuTorch with Metal...")
+        partitioner = {}
+        for key in programs:
+            compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
+            partitioner[key] = [MetalPartitioner(compile_specs)]
     else:
         print("\nLowering to ExecuTorch (portable)...")
         partitioner = []
@@ -352,7 +361,7 @@ def main():
     parser.add_argument(
         "--backend",
         default="xnnpack",
-        choices=["portable", "xnnpack"],
+        choices=["portable", "xnnpack", "metal"],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
