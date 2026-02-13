@@ -19,7 +19,6 @@ for more information.
 """
 
 import argparse
-import json
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -74,11 +73,13 @@ class LoraConfig:
             adapter_checkpoint="/path/to/adapter.safetensors",
             adapter_config="/path/to/adapter_config.json",
         )
+        Note: user is responsible for parsing the config and
+        ensure it doesn't conflict with any explicit values.
 
     2. With explicit values:
         LoraConfig(
             adapter_checkpoint="/path/to/adapter.safetensors",
-            r=16,
+            lora_rank=16,
             lora_alpha=32,
             target_modules=["q_proj", "v_proj"],
         )
@@ -86,39 +87,9 @@ class LoraConfig:
 
     adapter_checkpoint: str
     adapter_config: Optional[str] = None
-    r: int = 0
+    lora_rank: int = 0
     lora_alpha: int = 0
     target_modules: List[str] = field(default_factory=list)
-
-    def __post_init__(self):
-        has_explicit = (
-            self.r != 0 or self.lora_alpha != 0 or len(self.target_modules) > 0
-        )
-
-        if self.adapter_config and has_explicit:
-            raise ValueError(
-                "Cannot specify both adapter_config and individual LoRA "
-                "parameters (r, lora_alpha, target_modules). Use one or the other."
-            )
-
-        if self.adapter_config:
-            with open(self.adapter_config, "r") as f:
-                cfg = json.load(f)
-            for key in ("r", "lora_alpha", "target_modules"):
-                if key not in cfg:
-                    raise ValueError(
-                        f"adapter_config JSON is missing required key '{key}'"
-                    )
-            self.r = cfg["r"]
-            self.lora_alpha = cfg["lora_alpha"]
-            self.target_modules = cfg["target_modules"]
-
-        if self.r <= 0:
-            raise ValueError(f"LoRA rank (r) must be positive, got {self.r}")
-        if self.lora_alpha <= 0:
-            raise ValueError(f"lora_alpha must be positive, got {self.lora_alpha}")
-        if not self.target_modules:
-            raise ValueError("target_modules must be non-empty")
 
 
 @dataclass
@@ -343,7 +314,7 @@ class MultimethodLoraConfig:
 
     @property
     def enabled(self) -> bool:
-        """Returns True if multimethod export is configured."""
+        """Returns True if multimethod_lora export is configured."""
         return len(self.methods) > 0
 
 
@@ -603,7 +574,7 @@ class LlmConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
-    multimethod: MultimethodLoraConfig = field(default_factory=MultimethodLoraConfig)
+    multimethod_lora: MultimethodLoraConfig = field(default_factory=MultimethodLoraConfig)
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
 
