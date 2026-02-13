@@ -574,7 +574,9 @@ class LlmConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
-    multimethod_lora: MultimethodLoraConfig = field(default_factory=MultimethodLoraConfig)
+    multimethod_lora: MultimethodLoraConfig = field(
+        default_factory=MultimethodLoraConfig
+    )
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
 
