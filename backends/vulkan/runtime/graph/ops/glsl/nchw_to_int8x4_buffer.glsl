@@ -55,25 +55,23 @@ void main() {
   int packed = 0;
   [[unroll]] for (int i = 0; i < 4; ++i) {
     const int elem_inner = tidx.data[inner_dim] + i;
-    if (elem_inner >= int(outp.sizes[0][inner_dim])) {
-      break;
+    if (elem_inner < int(outp.sizes[0][inner_dim])) {
+      // Build element coordinates
+      ivec4 elem = tidx.data;
+      elem[inner_dim] = elem_inner;
+
+      // Compute NCHW contiguous index: w + h*W + c*H*W + n*C*H*W
+      const uint nchw_idx = uint(elem[0]) + uint(elem[1]) * W +
+                            uint(elem[2]) * H * W + uint(elem[3]) * C * H * W;
+
+      // Read int8 from staging buffer (each int32 contains 4 bytes)
+      const uint int_idx = nchw_idx >> 2;
+      const uint byte_pos = nchw_idx & 3;
+      const int staging_val = nchw_in[int_idx];
+      const int byte_val = (staging_val >> (byte_pos * 8)) & 0xFF;
+
+      packed |= (byte_val << (i * 8));
     }
-
-    // Build element coordinates
-    ivec4 elem = tidx.data;
-    elem[inner_dim] = elem_inner;
-
-    // Compute NCHW contiguous index: w + h*W + c*H*W + n*C*H*W
-    const uint nchw_idx = uint(elem[0]) + uint(elem[1]) * W +
-                          uint(elem[2]) * H * W + uint(elem[3]) * C * H * W;
-
-    // Read int8 from staging buffer (each int32 contains 4 bytes)
-    const uint int_idx = nchw_idx >> 2;
-    const uint byte_pos = nchw_idx & 3;
-    const int staging_val = nchw_in[int_idx];
-    const int byte_val = (staging_val >> (byte_pos * 8)) & 0xFF;
-
-    packed |= (byte_val << (i * 8));
   }
 
   t_outp[texel_idx] = packed;
