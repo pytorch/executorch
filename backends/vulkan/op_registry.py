@@ -778,6 +778,9 @@ def register_q8ta_conv_pw_op():
             utils.NO_STORAGE,  # groups (non tensor)
             utils.NO_STORAGE,  # original OC count (non tensor)
         ],
+        outputs_storage=[
+            utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
+        ],
         supports_resize=False,
         supports_prepacking=True,
     )
@@ -792,7 +795,7 @@ def register_q8ta_conv_pw_op():
 def register_q8ta_conv2d_ops():
     return OpFeatures(
         inputs_storage=[
-            utils.PACKED_INT8_4W4C_BUFFER,  # input
+            utils.PACKED_INT8_4C1W_BUFFER,  # input
             utils.NO_STORAGE,  # input_scale (non tensor)
             utils.NO_STORAGE,  # input_zero_point (non tensor)
             utils.NO_STORAGE,  # weight (prepacked)
@@ -807,6 +810,9 @@ def register_q8ta_conv2d_ops():
             utils.NO_STORAGE,  # dilation (non tensor)
             utils.NO_STORAGE,  # groups (non tensor)
             utils.NO_STORAGE,  # original OC count (non tensor)
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
         ],
         supports_resize=False,
         supports_prepacking=True,
