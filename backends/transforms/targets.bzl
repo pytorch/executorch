@@ -204,6 +204,17 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "quantize_fused_convbn_bias_pass",
+        srcs = ["quantize_fused_convbn_bias_pass.py"],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
     runtime.python_test(
         name = "test_duplicate_dynamic_quant_chain",
         srcs = [
