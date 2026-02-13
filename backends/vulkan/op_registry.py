@@ -745,17 +745,46 @@ def register_convolution_cpp_ops():
 
 
 # =============================================================================
-# QuantizedConvolution.cpp
+# Q8taConv2d*.cpp
 # =============================================================================
 
 
 @update_features(
     [
-        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to.default,
-        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to_dw.default,
+        exir_ops.edge.et_vk.q8ta_conv2d_pw.default,
     ]
 )
-def register_quantizedconvolution_cpp_ops():
+def register_q8ta_conv_pw_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_4W4C_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # kernel_size (non tensor)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # original OC count (non tensor)
+        ],
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.q8ta_conv2d.default,
+        exir_ops.edge.et_vk.q8ta_conv2d_dw.default,
+    ]
+)
+def register_q8ta_conv2d_ops():
     return OpFeatures(
         inputs_storage=[
             utils.PACKED_INT8_4W4C_BUFFER,  # input
