@@ -16,20 +16,19 @@ import logging
 import re
 import shlex
 from functools import partial
-
 from importlib import resources as _resources
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
 import torch
-
 from executorch.devtools.backend_debug import print_delegation_info
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
 )
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import LlmConfig
@@ -1164,7 +1163,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
     return builder
 
 
-def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List]:
+def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List[Partitioner]]:
     """Get XNNPACK partitioners for multimethod_lora export."""
     partitioners = []
 
@@ -1259,6 +1258,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
         partitioner=partitioners,
         compile_config=edge_config,
         constant_methods=first_builder.metadata,
+        generate_etrecord=llm_config.debug.generate_etrecord,
     )
 
     # Convert to executorch and save
