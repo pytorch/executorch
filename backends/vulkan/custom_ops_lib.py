@@ -564,11 +564,11 @@ lib.impl(name, apply_rotary_emb_impl, "CompositeExplicitAutograd")
 apply_rotary_emb_op = getattr(getattr(torch.ops, namespace), name)
 
 ########################
-## add_q8ta_q8ta_q8to ##
+## q8ta_add ##
 ########################
 
 
-def add_q8ta_q8ta_q8to_impl(
+def q8ta_add_impl(
     input_a: torch.Tensor,
     input_b: torch.Tensor,
     input_a_scale: float,
@@ -598,12 +598,12 @@ def add_q8ta_q8ta_q8to_impl(
     return quantized_result
 
 
-name = "add_q8ta_q8ta_q8to"
+name = "q8ta_add"
 lib.define(
     f"{name}(Tensor input_a, Tensor input_b, float input_a_scale, int input_a_zero_point, float input_b_scale, int input_b_zero_point, float output_scale, int output_zero_point, float alpha) -> Tensor"
 )
-lib.impl(name, add_q8ta_q8ta_q8to_impl, "CompositeExplicitAutograd")
-add_q8ta_q8ta_q8to_op = getattr(getattr(torch.ops, namespace), name)
+lib.impl(name, q8ta_add_impl, "CompositeExplicitAutograd")
+q8ta_add_op = getattr(getattr(torch.ops, namespace), name)
 
 #############################
 ## select_as_symint ##
