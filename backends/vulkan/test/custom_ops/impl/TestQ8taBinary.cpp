@@ -10,13 +10,14 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taBinary.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taQuantizeDequantize.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taStaging.h>
 
 namespace vkcompute {
 
 void q8ta_add_test(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   int32_t idx = 0;
-  const ValueRef fp_input_a = args.at(idx++);
-  const ValueRef fp_input_b = args.at(idx++);
+  ValueRef fp_input_a = args.at(idx++);
+  ValueRef input_b = args.at(idx++);
   const ValueRef input_a_scale = args.at(idx++);
   const ValueRef input_a_zp = args.at(idx++);
   const ValueRef input_b_scale = args.at(idx++);
@@ -32,6 +33,10 @@ void q8ta_add_test(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   utils::GPUMemoryLayout quant_layout =
       static_cast<utils::GPUMemoryLayout>(layout_value);
 
+  // Check if input_b is a pre-quantized int8 TensorRef
+  bool input_b_is_int8 =
+      graph.val_is_tref(input_b) && graph.dtype_of(input_b) == vkapi::kChar;
+
   // Create temporary tensors for quantized data with the specified layout
   TmpTensor packed_int8_input_a(
       &graph,
@@ -40,12 +45,8 @@ void q8ta_add_test(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       utils::kBuffer,
       quant_layout);
 
-  TmpTensor packed_int8_input_b(
-      &graph,
-      graph.sizes_of(fp_input_b),
-      vkapi::kInt8x4,
-      utils::kBuffer,
-      quant_layout);
+  ValueRef packed_int8_input_b = graph.add_tensor(
+      graph.sizes_of(input_b), vkapi::kInt8x4, utils::kBuffer, quant_layout);
 
   TmpTensor packed_int8_output(
       &graph,
@@ -54,12 +55,19 @@ void q8ta_add_test(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       utils::kBuffer,
       quant_layout);
 
-  // Quantize: FP -> int8x4 with specified layout
+  // Quantize input A: FP -> int8x4
   add_q8ta_quantize_node(
       graph, fp_input_a, input_a_scale, input_a_zp, packed_int8_input_a);
 
-  add_q8ta_quantize_node(
-      graph, fp_input_b, input_b_scale, input_b_zp, packed_int8_input_b);
+  if (input_b_is_int8) {
+    // Input B is a pre-quantized int8 TensorRef; prepack directly into packed
+    // int8x4 format
+    add_staging_to_int8x4_buffer_node(graph, input_b, packed_int8_input_b);
+  } else {
+    // Input B is a float tensor; quantize at runtime
+    add_q8ta_quantize_node(
+        graph, input_b, input_b_scale, input_b_zp, packed_int8_input_b);
+  }
 
   // Binary add: int8x4 -> int8x4 (same layout for all tensors)
   add_q8ta_binary_node(
