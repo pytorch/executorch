@@ -21,14 +21,14 @@ import os
 import torch
 import torch.nn as nn
 
+from executorch.examples.models.voxtral_realtime.model import load_model
+
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
 from executorch.exir.passes import MemoryPlanningPass
-
-from model import load_model
 from torch.export import Dim, export
 
 
@@ -262,8 +262,13 @@ def main():
         n_delay_tokens=args.delay_tokens,
     )
 
-    # Quantize (before export, source-transform style)
+    # Untie output/embedding weights before quantization so each layer gets
+    # its own quantization config (embedding: 8w, output linear: 8da4w).
     if args.qlinear or args.qembedding:
+        model.decoder.output.weight = torch.nn.Parameter(
+            model.decoder.tok_embeddings.weight.clone()
+        )
+
         from executorch.extension.llm.export.quantize import quantize_model_
 
         print("\nQuantizing...")
@@ -282,7 +287,7 @@ def main():
     et = lower_to_executorch(programs, metadata, backend=args.backend)
 
     # Save
-    pte_path = os.path.join(args.output_dir, "voxtral_realtime.pte")
+    pte_path = os.path.join(args.output_dir, "model.pte")
     print(f"\nSaving to {pte_path}...")
     with open(pte_path, "wb") as f:
         et.write_to_file(f)

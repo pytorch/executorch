@@ -24,7 +24,7 @@
 
 DEFINE_string(
     model_path,
-    "voxtral_realtime.pte",
+    "model.pte",
     "Path to Voxtral Realtime model (.pte).");
 DEFINE_string(tokenizer_path, "tekken.json", "Path to Tekken tokenizer file.");
 DEFINE_string(

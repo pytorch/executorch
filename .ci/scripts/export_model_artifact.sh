@@ -124,7 +124,7 @@ case "$HF_MODEL" in
     MODEL_NAME="voxtral_realtime"
     TASK=""
     MAX_SEQ_LEN=""
-    EXTRA_PIP=""
+    EXTRA_PIP="mistral-common librosa"
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
@@ -236,7 +236,7 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
       --max_audio_len 300 \
       --output_file "${OUTPUT_DIR}/preprocessor.pte"
 
-  test -f "${OUTPUT_DIR}/voxtral_realtime.pte"
+  test -f "${OUTPUT_DIR}/model.pte"
   test -f "${OUTPUT_DIR}/preprocessor.pte"
   # Copy tokenizer from downloaded model weights
   cp "$LOCAL_MODEL_DIR/tekken.json" "${OUTPUT_DIR}/tekken.json"

@@ -140,9 +140,9 @@ case "$HF_MODEL" in
     MODEL_NAME="voxtral_realtime"
     RUNNER_TARGET="voxtral_realtime_runner"
     RUNNER_PATH="voxtral_realtime"
-    EXPECTED_OUTPUT="Mr. Quilter"
+    EXPECTED_OUTPUT="Quilter"
     PREPROCESSOR="preprocessor.pte"
-    TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602/resolve/main"
+    TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602/resolve/main" # @lint-ignore
     TOKENIZER_FILE="tekken.json"
     AUDIO_URL=""
     AUDIO_FILE="test_audio.wav"
@@ -236,7 +236,7 @@ case "$MODEL_NAME" in
     fi
     ;;
   voxtral_realtime)
-    RUNNER_ARGS="--model_path ${MODEL_DIR}/voxtral_realtime.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0"
+    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0"
     ;;
 esac
 

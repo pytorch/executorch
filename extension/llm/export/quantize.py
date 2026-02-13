@@ -15,8 +15,10 @@ Usage:
 from typing import Optional
 
 import torch
+from executorch.exir._warnings import experimental
 
 
+@experimental("quantize_model_ is experimental and may change without notice.")
 def quantize_model_(  # noqa: C901
     module: torch.nn.Module,
     qlinear_config: Optional[str] = None,
@@ -26,6 +28,10 @@ def quantize_model_(  # noqa: C901
     qembedding_group_size: int = 0,
 ) -> None:
     """Quantize linear and embedding layers in a module in-place.
+
+    .. warning::
+
+        This API is experimental and may change without notice.
 
     Args:
         module: The PyTorch module to quantize.

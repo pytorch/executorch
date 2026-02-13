@@ -78,14 +78,14 @@ at `cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner`.
 ## Run
 
 The runner requires:
-- `voxtral_realtime.pte` — exported model (see [Export](#export))
+- `model.pte` — exported model (see [Export](#export))
 - `tekken.json` — tokenizer from the model weights directory
 - `preprocessor.pte` — mel spectrogram preprocessor (see [Preprocessor](#preprocessor))
 - A 16kHz mono WAV audio file
 
 ```bash
 cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
-    --model_path voxtral_rt_exports/voxtral_realtime.pte \
+    --model_path voxtral_rt_exports/model.pte \
     --tokenizer_path ~/models/Voxtral-Mini-4B-Realtime-2602/tekken.json \
     --preprocessor_path voxtral_rt_exports/preprocessor.pte \
     --audio_path input.wav
@@ -93,7 +93,7 @@ cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--model_path` | `voxtral_realtime.pte` | Path to exported model |
+| `--model_path` | `model.pte` | Path to exported model |
 | `--tokenizer_path` | `tekken.json` | Path to Tekken tokenizer |
 | `--preprocessor_path` | (none) | Path to mel preprocessor `.pte` |
 | `--audio_path` | (required) | Path to 16kHz mono WAV file |
@@ -104,7 +104,7 @@ cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
 
 ```
 $ cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
-    --model_path voxtral_rt_exports/voxtral_realtime.pte \
+    --model_path voxtral_rt_exports/model.pte \
     --tokenizer_path tekken.json \
     --preprocessor_path voxtral_rt_exports/preprocessor.pte \
     --audio_path output.wav

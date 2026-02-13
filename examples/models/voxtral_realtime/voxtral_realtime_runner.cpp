@@ -159,9 +159,6 @@ int VoxtralRealtimeRunner::transcribe(
       ::executorch::extension::llm::kTopp,
       static_cast<unsigned long long>(std::time(nullptr)));
 
-  // Mutable buffer for logits (Sampler::sample modifies in-place).
-  std::vector<float> logits_buf(static_cast<size_t>(vocab_size_));
-
   for (int64_t pos = 0; pos < max_pos; pos++) {
     // a. Look up embedding for the previous token.
     int64_t token_id = static_cast<int64_t>(prev_token);
@@ -202,15 +199,11 @@ int VoxtralRealtimeRunner::transcribe(
 
     auto logits = dec_result.get()[0].toTensor();
 
-    // d. Sample next token from logits.
-    const float* logits_data =
-        logits.const_data_ptr<float>() + (logits.numel() - vocab_size_);
-    std::memcpy(
-        logits_buf.data(),
-        logits_data,
-        static_cast<size_t>(vocab_size_) * sizeof(float));
-    int64_t next_token =
-        static_cast<int64_t>(sampler.sample(logits_buf.data()));
+    // d. Sample next token from logits. Safe to mutate the output buffer
+    //    since text_decoder overwrites it on the next execute() call.
+    float* logits_data =
+        logits.mutable_data_ptr<float>() + (logits.numel() - vocab_size_);
+    int64_t next_token = static_cast<int64_t>(sampler.sample(logits_data));
     num_generated++;
 
     // e. Decode token to text and emit via callback.
