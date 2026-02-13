@@ -13,6 +13,11 @@ from collections.abc import Iterable
 from typing import Any, Dict, List, Tuple, Type
 
 import torch
+
+from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes import (
+    AddSimulatedLinearBatchNormFusionQATPass,
+    RemoveSimulatedLinearBatchNormFusionQATPass,
+)
 from torch import fx
 from torch._ops import OpOverload
 from torch.export import ExportedProgram
@@ -184,12 +189,17 @@ def calibrate_and_quantize(
 
     if is_qat:
         m = prepare_qat_pt2e(model, quantizer)
+        m = AddSimulatedLinearBatchNormFusionQATPass()(m).graph_module
         m = move_exported_model_to_eval(m)
     else:
         m = prepare_pt2e(model, quantizer)
 
     for data in calibration_inputs:
         m(*data)
+
+    if is_qat:
+        m = RemoveSimulatedLinearBatchNormFusionQATPass()(m).graph_module
+
     m = convert_pt2e(m)
 
     return m
