@@ -628,6 +628,10 @@ if(EXECUTORCH_BUILD_NXP_NEUTRON)
   list(APPEND _executorch_backends executorch_delegate_neutron)
 endif()
 
+if(EXECUTORCH_BUILD_NXP_NEUTRON_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/nxp/executor_runner)
+endif()
+
 if(EXECUTORCH_BUILD_COREML)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
   list(APPEND _executorch_backends coremldelegate)
