@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -22,9 +22,12 @@ class QuantArgs(NamedTuple):
     per_channel: bool = False
 
     def quantize_value(self, x: torch.Tensor | float) -> Tensor:
-        """Quantizes the input tensor or value to a quantized tensor. If the input is
-        not a tensor, it is converted to a tensor first. If self.per_channel is True,
-        the quantization is done per channel, otherwise it is done per tensor.
+        """Quantizes the input tensor or value to a quantized tensor.
+
+        If the input is not a tensor, it is converted to a tensor first. If
+        self.per_channel is True, the quantization is done per channel,
+        otherwise it is done per tensor.
+
         """
         if not isinstance(x, torch.Tensor):
             x = torch.Tensor([x])
@@ -46,9 +49,12 @@ class QuantArgs(NamedTuple):
         return q_op(*args)
 
     def dequantize_value(self, qx: torch.Tensor) -> torch.Tensor:
-        """Dequantizes the input tensor or value to a dequantized tensor  If the input
-        is not a tensor, it is converted to a tensor first. If self.per_channel is True,
-        the dequantization is done per channel, otherwise it is done per tensor.
+        """Dequantizes the input tensor or value to a dequantized tensor  If the
+        input is not a tensor, it is converted to a tensor first.
+
+        If self.per_channel is True, the dequantization is done per channel,
+        otherwise it is done per tensor.
+
         """
         if self.per_channel:
             dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
