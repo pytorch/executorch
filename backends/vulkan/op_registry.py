@@ -431,6 +431,11 @@ def register_torchao_quantize_dequantize():
     )
 
 
+# =============================================================================
+# Q8taQuantizeDequantize.cpp
+# =============================================================================
+
+
 @update_features(
     [
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
@@ -443,7 +448,7 @@ def register_quantize_per_tensor():
             utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
         outputs_storage=[
-            utils.PACKED_INT8_4W4C_BUFFER,
+            utils.PACKED_INT8_BUFFER,
         ],
     )
 
@@ -457,7 +462,7 @@ def register_quantize_per_tensor():
 def register_dequantize_per_tensor():
     return OpFeatures(
         inputs_storage=[
-            utils.PACKED_INT8_4W4C_BUFFER,
+            utils.PACKED_INT8_BUFFER,
         ],
         outputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
