@@ -39,11 +39,20 @@ from executorch.exir.schema import (
     Program,
 )
 from executorch.extension.pybindings.portable_lib import (  # @manual
+    _get_registered_backend_names,
     _load_for_executorch_from_buffer,
 )
 from torch.export.exported_program import ExportedProgram
 
 from torch.testing import FileCheck
+
+
+def _has_backend_with_compiler_demo() -> bool:
+    """Check if BackendWithCompilerDemo is linked into the portable runtime."""
+    try:
+        return "BackendWithCompilerDemo" in _get_registered_backend_names()
+    except Exception:
+        return False
 
 
 class TestToBackendMultiMethod(unittest.TestCase):
@@ -504,6 +513,10 @@ class TestToBackendMultiMethod(unittest.TestCase):
         ):
             self._test(test_set)
 
+    @unittest.skipUnless(
+        _has_backend_with_compiler_demo(),
+        "BackendWithCompilerDemo not registered (build with EXECUTORCH_BUILD_TESTS=ON)",
+    )
     def test_multi_method_end_to_end(self):
         """
         Tests multi method lowering end-to-end. Lowers the same Sin Module for two methods

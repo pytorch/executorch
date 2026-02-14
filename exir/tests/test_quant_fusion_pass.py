@@ -41,11 +41,41 @@ from torchao.quantization.quant_api import IntxWeightOnlyConfig, MappingType, qu
 from torchao.quantization.utils import compute_error
 
 
+def _has_quantized_decomposed_out_variants() -> bool:
+    """Check if the quantized_decomposed .out variants are registered.
+
+    These are built by the quantized_ops_aot_lib and loaded via
+    executorch.kernels.quantized.  Under BUCK the library is preloaded;
+    under plain pytest it is usually absent.
+    """
+    try:
+        # Attempt to load the library (no-op if already loaded)
+        import executorch.kernels.quantized  # noqa: F401
+
+        return (
+            hasattr(torch.ops, "quantized_decomposed")
+            and hasattr(torch.ops.quantized_decomposed, "quantize_per_tensor")
+            and hasattr(
+                torch.ops.quantized_decomposed.quantize_per_tensor, "out"
+            )
+        )
+    except Exception:
+        return False
+
+
+_skip_no_qd_out = unittest.skipUnless(
+    _has_quantized_decomposed_out_variants(),
+    "quantized_decomposed .out variants not registered "
+    "(build quantized_ops_aot_lib or run via BUCK)",
+)
+
+
 class TestQuantFusionPass(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         register_additional_test_aten_ops()
 
+    @_skip_no_qd_out
     def test_add(self) -> None:
         class M(torch.nn.Module):
             def forward(self, x, y):
@@ -85,6 +115,7 @@ class TestQuantFusionPass(unittest.TestCase):
             m.exported_program().graph_module.code
         )
 
+    @_skip_no_qd_out
     def test_reshape(self) -> None:
         class M(torch.nn.Module):
             def forward(self, x, y):
@@ -133,6 +164,7 @@ class TestQuantFusionPass(unittest.TestCase):
             "torch.ops.aten.view_copy.out"
         ).run(m.exported_program().graph_module.code)
 
+    @_skip_no_qd_out
     def test_slice(self) -> None:
         """We don't proactively quantize slice today, but we'll fuse the dq-slice-q
 
@@ -188,6 +220,7 @@ class TestQuantFusionPass(unittest.TestCase):
             "torch.ops.aten.slice_copy.Tensor_out"
         ).run(m.exported_program().graph_module.code)
 
+    @_skip_no_qd_out
     def test_cat(self) -> None:
         class M(torch.nn.Module):
             def forward(self, x, y):
