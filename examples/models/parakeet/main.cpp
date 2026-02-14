@@ -151,7 +151,8 @@ std::vector<Token> greedy_decode_executorch(
     int64_t blank_id,
     int64_t num_rnn_layers = 2,
     int64_t pred_hidden = 640,
-    int64_t max_symbols_per_step = 10) {
+    int64_t max_symbols_per_step = 10,
+    ::executorch::extension::llm::Stats* stats = nullptr) {
   std::vector<Token> hypothesis;
 
   // Shape: [1, T, joint_hidden]
@@ -289,6 +290,9 @@ std::vector<Token> greedy_decode_executorch(
       t += std::max(dur, static_cast<int64_t>(1));
       symbols_on_frame = 0;
     } else {
+      if (hypothesis.empty() && stats) {
+        stats->first_token_ms = ::executorch::extension::llm::time_in_ms();
+      }
       hypothesis.push_back({static_cast<TokenId>(k), t, dur});
 
       std::vector<int64_t> token_data = {k};
@@ -367,6 +371,19 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Failed to load model.");
     return 1;
   }
+
+  // Load all methods upfront so model_load_time captures the real cost.
+  // With Mmap load mode, model->load() only sets up memory mappings;
+  // the actual data is paged in lazily when methods are first loaded.
+  const std::vector<std::string> required_methods = {
+      "preprocessor", "encoder", "decoder_step", "joint"};
+  for (const auto& method : required_methods) {
+    auto method_load_error = model->load_method(method);
+    if (method_load_error != Error::Ok) {
+      ET_LOG(Error, "Failed to load method: %s", method.c_str());
+      return 1;
+    }
+  }
   stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
   stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
 
@@ -420,8 +437,6 @@ int main(int argc, char** argv) {
     return 1;
   }
   stats.prompt_eval_end_ms = ::executorch::extension::llm::time_in_ms();
-  stats.first_token_ms =
-      stats.prompt_eval_end_ms; // For ASR, first token is at end of encoding
 
   auto& enc_outputs = enc_result.get();
   auto f_proj = enc_outputs[0].toTensor(); // [B, T, joint_hidden]
@@ -478,7 +493,14 @@ int main(int argc, char** argv) {
 
   ET_LOG(Info, "Running TDT greedy decode...");
   auto decoded_tokens = greedy_decode_executorch(
-      *model, f_proj, encoded_len, blank_id, num_rnn_layers, pred_hidden);
+      *model,
+      f_proj,
+      encoded_len,
+      blank_id,
+      num_rnn_layers,
+      pred_hidden,
+      10,
+      &stats);
 
   ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
 
