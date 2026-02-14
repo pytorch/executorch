@@ -14,6 +14,7 @@ from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.pass_base import ExportPass, ProxyValue
 from executorch.exir.passes.dim_order_utils import (
     dim_order_from_fake_tensor,
+    get_explicit_output_dim_order,
     should_propagate_dim_order,
 )
 from executorch.exir.tensor import TensorSpec
@@ -85,33 +86,35 @@ class SpecPropPass(ExportPass):
                         and should_propagate_dim_order(node.target)
                         and node.args
                     ):
-                        # Propagate primary input dim_order for format-preserving ops (Fix #16032).
-                        # Handles both clone.out (out= kwarg) and clone.default (single output).
-                        self_val = node.args[0].meta.get("val")
-                        if self_val is not None:
-                            src_dim_order = dim_order_from_fake_tensor(self_val)
-                            if "out" in node.kwargs:
-                                out_arg = node.kwargs["out"]
-                                assert isinstance(
-                                    out_arg, torch.fx.Node
-                                ), (
-                                    f"Expected clone.out 'out' to be fx.Node, got {type(out_arg)}"
+                        # Output dim_order: use explicit kwargs for dim_order ops
+                        # (_clone_dim_order, _to_dim_order_copy), else propagate from input (Fix #16032).
+                        if "out" in node.kwargs:
+                            out_arg = node.kwargs["out"]
+                            assert isinstance(
+                                out_arg, torch.fx.Node
+                            ), (
+                                f"Expected clone.out 'out' to be fx.Node, got {type(out_arg)}"
+                            )
+                            out_spec = out_arg.meta.get("spec")
+                        else:
+                            out_spec = node.meta.get("spec")
+                            if out_spec is None and meta_val is not None:
+                                node.meta["spec"] = pytree.tree_map(
+                                    make_spec, meta_val
                                 )
-                                out_spec = out_arg.meta.get("spec")
+                                out_spec = node.meta["spec"]
+                        if out_spec is not None and hasattr(out_spec, "dim_order"):
+                            explicit_dim_order = get_explicit_output_dim_order(node)
+                            if explicit_dim_order is not None:
+                                out_spec.dim_order = tuple(explicit_dim_order)
                             else:
-                                # clone.default: ensure node has spec (ExportPass may not set it)
-                                out_spec = node.meta.get("spec")
-                                if out_spec is None and meta_val is not None:
-                                    node.meta["spec"] = pytree.tree_map(
-                                        make_spec, meta_val
+                                self_val = node.args[0].meta.get("val")
+                                if self_val is not None:
+                                    src_dim_order = dim_order_from_fake_tensor(
+                                        self_val
                                     )
-                                    out_spec = node.meta["spec"]
-                            if (
-                                out_spec is not None
-                                and hasattr(out_spec, "dim_order")
-                                and src_dim_order is not None
-                            ):
-                                out_spec.dim_order = tuple(src_dim_order)
+                                    if src_dim_order is not None:
+                                        out_spec.dim_order = tuple(src_dim_order)
                     elif (
                         node.op == "call_function"
                         and node.target == executorch_call_delegate

@@ -18,6 +18,22 @@ except ImportError:
     exir_ops = None  # type: ignore[assignment]
 
 
+def _is_dim_order_op_with_explicit_arg(op: object) -> bool:
+    """True if the op takes an explicit dim_order kwarg (e.g. _clone_dim_order, _to_dim_order_copy)."""
+    if exir_ops is None:
+        return False
+    return op in (
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    ) or (
+        hasattr(exir_ops.edge.dim_order_ops._clone_dim_order, "out")
+        and op == exir_ops.edge.dim_order_ops._clone_dim_order.out
+    ) or (
+        hasattr(exir_ops.edge.dim_order_ops._to_dim_order_copy, "out")
+        and op == exir_ops.edge.dim_order_ops._to_dim_order_copy.out
+    )
+
+
 def _format_preserving_ops() -> Set[object]:
     """Build set of format-preserving ops (aten and edge dialect)."""
     ops: Set[object] = {
@@ -59,6 +75,25 @@ def dim_order_from_fake_tensor(t: torch.Tensor) -> Optional[List[int]]:
         return list(result)
     except ValueError:
         return None
+
+
+def get_explicit_output_dim_order(
+    node: "torch.fx.Node",
+) -> Optional[List[int]]:
+    """
+    If the node is a dim_order op (_clone_dim_order, _to_dim_order_copy) with
+    an explicit dim_order in kwargs, return it. Otherwise return None so the
+    caller can propagate from the primary input (format-preserving).
+    """
+    if not _is_dim_order_op_with_explicit_arg(node.target):
+        return None
+    dim_order_val = node.kwargs.get("dim_order") if node.kwargs else None
+    if dim_order_val is None:
+        return None
+    if isinstance(dim_order_val, (list, tuple)) and len(dim_order_val) > 0:
+        if all(isinstance(i, int) for i in dim_order_val):
+            return list(dim_order_val)
+    return None
 
 
 def should_propagate_dim_order(op: object) -> bool:
