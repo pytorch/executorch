@@ -41,7 +41,7 @@ from torch.export.exported_program import (
     InputKind,
 )
 from torch.fx import Node
-from torch.utils._pytree import tree_flatten
+from torch.utils._pytree import tree_flatten, tree_map
 
 REGISTERED_ALGOS: Dict[str, Callable[..., List[int]]] = {}
 
@@ -753,6 +753,26 @@ def get_node_tensor_specs(
             for spec in specs
             if not isinstance(spec, (int, float, bool, str, type(None)))
         ]
+
+
+def ensure_graph_node_specs(graph_module: torch.fx.GraphModule) -> None:
+    """
+    Set meta["spec"] from meta["val"] for nodes that are missing spec (e.g. output
+    or out-var nodes in delegated graphs that were built after SpecPropPass).
+    """
+    for node in graph_module.graph.nodes:
+        if "spec" in node.meta:
+            continue
+        if "val" not in node.meta:
+            continue
+        val = node.meta["val"]
+
+        def to_spec(x: Any) -> Any:
+            if isinstance(x, torch.Tensor):
+                return TensorSpec.from_tensor(x)
+            return x
+
+        node.meta["spec"] = tree_map(to_spec, val)
 
 
 # Little bit hacky to check if the graph contains
