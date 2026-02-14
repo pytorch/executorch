@@ -12,6 +12,10 @@ from typing import Optional
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.passes.dim_order_utils import (
+    dim_order_from_fake_tensor,
+    should_propagate_dim_order,
+)
 from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx.node import Node
@@ -37,14 +41,12 @@ def _is_mutable_buffer(
     """
     Check if the node is mutable buffer according to the provided graph signature.
     """
-    # graph signature is None for memory planning passes not called from EdgeProgramManager, these paths are deprecated so mutable buffers are not supported on them.
     if graph_signature is None:
         return False
     if node.op == "placeholder":
         if isinstance(node.target, str):
             if node.target in graph_signature.inputs_to_buffers:
                 fqn = graph_signature.inputs_to_buffers[node.target]
-                # if the buffer is mutated then record that
                 if fqn in graph_signature.buffers_to_mutate.values():
                     return True
     return False
@@ -77,20 +79,37 @@ class SpecPropPass(ExportPass):
                         node.meta["spec"] = value_spec[node.args[1]]
                     elif (
                         node.op == "call_function"
+                        and should_propagate_dim_order(node.target)
+                        and "out" in node.kwargs
+                        and node.args
+                    ):
+                        # Propagate primary input dim_order to out TensorSpec for
+                        # format-preserving ops (Fix #16032).
+                        self_val = node.args[0].meta.get("val")
+                        if self_val is not None:
+                            src_dim_order = dim_order_from_fake_tensor(self_val)
+                            if src_dim_order is not None and src_dim_order != list(
+                                range(len(src_dim_order))
+                            ):
+                                out_arg = node.kwargs["out"]
+                                assert isinstance(
+                                    out_arg, torch.fx.Node
+                                ), (
+                                    f"Expected clone.out 'out' to be fx.Node, got {type(out_arg)}"
+                                )
+                                out_spec = out_arg.meta.get("spec")
+                                if out_spec is not None:
+                                    out_spec.dim_order = tuple(src_dim_order)
+                    elif (
+                        node.op == "call_function"
                         and node.target == executorch_call_delegate
                     ):
-                        # Note: We currently rely on delegate node specs not being regenerated,
-                        # as the spec is set somewhat manually when adding the call delegate node.
-                        # If we regenerate, it can change and break lowering (it becomes a tuple?).
-                        # Ideally, we should figure out how to make the spec regeneration not break
-                        # things.
-                        #
-                        # We do need to regenerate non-call-delegate node specs, as this pass is called
-                        # multiple times in some lowering paths (backends can and do call it).
                         if "spec" not in node.meta:
                             node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
-                    else:
-                        node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
+                        else:
+                            node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
+                        return res
+
         return res
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -115,7 +134,9 @@ class SpecPropPass(ExportPass):
                 node.target in exported_program.graph_signature.inputs_to_parameters
                 or (
                     node.target in exported_program.graph_signature.inputs_to_buffers
-                    and not _is_mutable_buffer(node, exported_program.graph_signature)
+                    and not _is_mutable_buffer(
+                        node, exported_program.graph_signature
+                    )
                 )
                 or node.target
                 in exported_program.graph_signature.inputs_to_lifted_tensor_constants
