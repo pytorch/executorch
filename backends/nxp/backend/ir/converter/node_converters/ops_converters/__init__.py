@@ -46,6 +46,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.permute_copy_converter import (
     PermuteCopyConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.prelu_converter import (
+    PReLUConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_dequantize_converter import (
     QDQPerChannelDequantizeConverter,
     QDQPerTensorDequantizeConverter,
@@ -98,6 +101,7 @@ __all__ = [
     "MulTensorConverter",
     "NegConverter",
     "PermuteCopyConverter",
+    "PReLUConverter",
     "QDQPerChannelDequantizeConverter",
     "QDQPerTensorDequantizeConverter",
     "QDQQuantizeConverter",
