@@ -759,11 +759,14 @@ def ensure_graph_node_specs(graph_module: torch.fx.GraphModule) -> None:
     """
     Set meta["spec"] from meta["val"] for nodes that are missing spec (e.g. output
     or out-var nodes in delegated graphs that were built after SpecPropPass).
+    Skip memory.alloc nodes; their spec is set by MemoryPlanningPass._set_alloc_node_spec.
     """
     for node in graph_module.graph.nodes:
         if "spec" in node.meta:
             continue
         if "val" not in node.meta:
+            continue
+        if node.op == "call_function" and node.target is memory.alloc:
             continue
         val = node.meta["val"]
 
