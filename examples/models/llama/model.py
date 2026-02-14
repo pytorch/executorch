@@ -203,12 +203,18 @@ class Llama2Model(EagerModelBase):
             from .source_transformation.attention_sink import enable_attention_sink
 
             attention_sink_params = self.llm_config.model.use_attention_sink.split(",")
-            assert len(attention_sink_params) == 3
+            assert len(attention_sink_params) >= 2
             sink_size = int(attention_sink_params[0])
             window_size = int(attention_sink_params[1])
-            eviction_batch_size = int(attention_sink_params[2])
+            eviction_batch_size = 1
 
-            assert self.llm_config.export.max_context_length == sink_size + window_size
+            # KV cache size = sink + window = max_seq_length
+            assert self.llm_config.export.max_seq_length == sink_size + window_size, (
+                f"max_seq_length ({self.llm_config.export.max_seq_length}) must equal "
+                f"sink_size ({sink_size}) + window_size ({window_size})"
+            )
+            # max_context_length is the RoPE/position encoding limit
+            assert self.llm_config.export.max_context_length >= self.llm_config.export.max_seq_length
 
             self.model_ = enable_attention_sink(
                 module=self.model_,

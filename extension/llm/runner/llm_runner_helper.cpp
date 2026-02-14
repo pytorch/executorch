@@ -144,6 +144,18 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
         metadata[llm::kMaxContextLen]);
   }
 
+  // Read optional attention sink metadata
+  for (const auto& key :
+       {llm::kAttentionSinkSize, llm::kAttentionWindowSize}) {
+    if (method_names.count(key)) {
+      auto get_result = module->get(key);
+      int64_t value =
+          get_result.get().toScalar().to<decltype(metadata)::mapped_type>();
+      metadata[key] = value;
+      ET_LOG(Info, "Metadata: %s = %" PRId64, key, value);
+    }
+  }
+
   // Set tokenizer-related metadata
   metadata[llm::kBosId] = tokenizer->bos_tok();
   metadata[llm::kVocabSize] = tokenizer->vocab_size();
