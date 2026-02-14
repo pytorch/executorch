@@ -35,38 +35,19 @@ layout(push_constant) uniform restrict Block {
 };
 
 void main() {
-  const int W = int(min(5, size_at(inp, 0)));
-  const int H = int(min(5, size_at(inp, 1)));
+  const uint buf_idx = gl_GlobalInvocationID.x;
+  if (buf_idx >= inp.ndim_numel.y) {
+    return;
+  }
 
-  debugPrintfEXT(
-      "\\n[print_buffer] value_ref=%d, sizes=(%u, %u, %u, %u), printing %dx%d plane at c=0, n=0",
-      value_ref,
-      size_at(inp, 0), size_at(inp, 1), size_at(inp, 2), size_at(inp, 3),
-      W, H);
-
-  for (int y = 0; y < H; y++) {
-    if (y == 0) {
-      debugPrintfEXT("\\n[[");
-    } else {
-      debugPrintfEXT("\\n [");
-    }
-
-    for (int x = 0; x < W; x++) {
-      TensorIndex4D t;
-      t.data = ivec4(x, y, 0, 0);
-      int buf_idx = tensor4d_idx_to_buf_idx(inp, t, inp_layout);
-      float v = float(t_inp[buf_idx]);
-      if (x < W - 1) {
-        debugPrintfEXT("%8.4f, ", v);
-      } else {
-        debugPrintfEXT("%8.4f", v);
-      }
-    }
-
-    if (y == H - 1) {
-      debugPrintfEXT("]]\\n");
-    } else {
-      debugPrintfEXT("]");
-    }
+  float v = float(t_inp[buf_idx]);
+  if (abs(v) > 1e5) {
+    TensorIndex tidx = linear_idx_to_tensor_idx(inp, buf_idx);
+    debugPrintfEXT(
+        "[print_buffer] value_ref=%d, sizes=(%u, %u, %u, %u), idx=(%d, %d, %d, %d), value=%f\\n",
+        value_ref,
+        size_at(inp, 0), size_at(inp, 1), size_at(inp, 2), size_at(inp, 3),
+        tidx.data[0].x, tidx.data[0].y, tidx.data[0].z, tidx.data[0].w,
+        v);
   }
 }

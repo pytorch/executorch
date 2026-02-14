@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Print.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taPrint.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -32,15 +33,16 @@ void add_print_node(ComputeGraph& graph, const ValueRef input) {
 
   int32_t value_ref_val = static_cast<int32_t>(input);
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      {1u, 1u, 1u},
-      {1u, 1u, 1u},
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       {{input, vkapi::kRead}},
       param_buffers,
       {PushConstantDataInfo(&value_ref_val, sizeof(value_ref_val))},
-      spec_vars));
+      spec_vars,
+      {}));
 }
 
 void print_op(ComputeGraph& graph, const std::vector<ValueRef>& args) {
