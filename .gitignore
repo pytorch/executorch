@@ -62,6 +62,9 @@ xcuserdata/
 /include/
 /share/
 /version.py
+/src/executorch/include/
+/src/executorch/share/
+/src/executorch/version.py
 *_etdump
 
 # Android
@@ -70,3 +73,6 @@ xcuserdata/
 # Windows
 *.dll
 *.pyd
+
+# Agents
+.claude/*.local.*
