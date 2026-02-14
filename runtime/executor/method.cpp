@@ -1123,6 +1123,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     const auto& t_dst = e.toTensor();
     const auto& t_src = input_evalue.toTensor();
 
+    // Validate scalar type and dim order
     ET_CHECK_OR_RETURN_ERROR(
         t_dst.scalar_type() == t_src.scalar_type(),
         InvalidArgument,
@@ -1131,6 +1132,32 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         executorch::runtime::toString(t_dst.scalar_type()),
         executorch::runtime::toString(t_src.scalar_type()));
+
+    if (!tensors_have_same_dim_order(t_dst, t_src)) {
+#if ET_LOG_ENABLED
+      std::array<exec_aten::DimOrderType, kTensorDimensionLimit> dst_dim_order;
+      std::array<exec_aten::DimOrderType, kTensorDimensionLimit> src_dim_order;
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          get_dim_order(t_dst, dst_dim_order.data(), dst_dim_order.size()));
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          get_dim_order(t_src, src_dim_order.data(), src_dim_order.size()));
+
+      auto dst_dim_order_c_str =
+          dim_order_to_c_string(dst_dim_order.data(), t_dst.dim());
+      auto src_dim_order_c_str =
+          dim_order_to_c_string(src_dim_order.data(), t_src.dim());
+
+      ET_LOG(
+          Error,
+          "Input %zu has unexpected dim order: expected %s but was %s.",
+          input_idx,
+          dst_dim_order_c_str.data(),
+          src_dim_order_c_str.data());
+
+#endif
+      return Error::InvalidArgument;
+    }
+
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     ET_CHECK_OK_OR_RETURN_ERROR(

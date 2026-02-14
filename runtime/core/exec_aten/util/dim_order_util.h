@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -272,6 +273,49 @@ ET_NODISCARD inline Error stride_to_dim_order(
     dim_order[i] = array[i].dim_order;
   }
   return Error::Ok;
+}
+
+/**
+ * Maximum size of a string returned by dim_order_to_c_string, for
+ * stack allocation.
+ */
+constexpr size_t kDimOrderStringSizeLimit = 1 + /* opening parenthesis */
+    4 * kTensorDimensionLimit + /* maximum size of each printed element,
+                                 * including comma and space */
+    1; /* padding for NULL terminator */
+template <typename DimOrderType>
+inline std::array<char, kDimOrderStringSizeLimit> dim_order_to_c_string(
+    const DimOrderType* dim_order,
+    const size_t dims) {
+  std::array<char, kDimOrderStringSizeLimit> result = {0};
+  char* p = result.data();
+  static_assert(
+      kDimOrderStringSizeLimit >= 3,
+      "Invalid value for kDimOrderStringSizeLimit");
+  size_t remaining_size = kDimOrderStringSizeLimit - 1;
+
+  auto chars_written = snprintf(p, remaining_size, "(");
+  if (chars_written >= remaining_size) {
+    return result;
+  }
+  remaining_size -= chars_written;
+  p += chars_written;
+
+  for (size_t i = 0; i < dims; ++i) {
+    chars_written = snprintf(
+        p,
+        remaining_size,
+        i != dims - 1 ? "%d, " : "%d",
+        static_cast<int>(dim_order[i]));
+    if (chars_written >= remaining_size) {
+      return result;
+    }
+    remaining_size -= chars_written;
+    p += chars_written;
+  }
+
+  snprintf(p, remaining_size, ")");
+  return result;
 }
 
 } // namespace runtime
