@@ -35,40 +35,27 @@ layout(push_constant) uniform restrict Block {
 };
 
 void main() {
-  const int W = min(5, inp.sizes.x);
-  const int H = min(5, inp.sizes.y);
+  const ivec3 pos = ivec3(gl_GlobalInvocationID);
+  if (out_of_bounds(pos, inp)) {
+    return;
+  }
 
-  debugPrintfEXT(
-      "\\n[print_texture] value_ref=%d, sizes=(%d, %d, %d, %d), printing %dx%d plane at c=0, n=0",
-      value_ref,
-      inp.sizes.x, inp.sizes.y, inp.sizes.z, inp.sizes.w,
-      W, H);
+  TensorIndex4D tidx = texture_pos_to_tensor4d_idx_simple(inp, pos);
+  VEC4_T texel = texelFetch(t_inp, pos, 0);
 
-  for (int y = 0; y < H; y++) {
-    if (y == 0) {
-      debugPrintfEXT("\\n[[");
-    } else {
-      debugPrintfEXT("\\n [");
-    }
-
-    for (int x = 0; x < W; x++) {
-      TensorIndex4D t;
-      t.data = ivec4(x, y, 0, 0);
-      TextureElementIndex elem =
-          tensor4d_idx_to_texture_element_idx_simple(inp, t);
-      VEC4_T texel = texelFetch(t_inp, elem.pos, 0);
-      float v = float(texel[elem.comp]);
-      if (x < W - 1) {
-        debugPrintfEXT("%8.4f, ", v);
-      } else {
-        debugPrintfEXT("%8.4f", v);
-      }
-    }
-
-    if (y == H - 1) {
-      debugPrintfEXT("]]\\n");
-    } else {
-      debugPrintfEXT("]");
+  int limit = min(
+      4, inp.sizes[inp.packed_dim] - tidx.data[inp.packed_dim]);
+  for (int i = 0; i < limit; i++) {
+    float v = float(texel[i]);
+    if (abs(v) > 1e5) {
+      ivec4 idx = tidx.data;
+      idx[inp.packed_dim] += i;
+      debugPrintfEXT(
+          "[print_texture] value_ref=%d, sizes=(%d, %d, %d, %d), idx=(%d, %d, %d, %d), value=%f\\n",
+          value_ref,
+          inp.sizes.x, inp.sizes.y, inp.sizes.z, inp.sizes.w,
+          idx.x, idx.y, idx.z, idx.w,
+          v);
     }
   }
 }
