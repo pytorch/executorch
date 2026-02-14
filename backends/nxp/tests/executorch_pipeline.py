@@ -34,7 +34,7 @@ from executorch.exir import (
     ExecutorchProgramManager,
     to_edge_transform_and_lower,
 )
-from torch import nn
+from torch import memory_format, nn
 from torch.export import export
 from torchao.quantization.pt2e.quantizer import Quantizer
 
@@ -48,6 +48,31 @@ neutron_target_spec = NeutronTargetSpec(
 class ModelInputSpec:
     shape: tuple[int, ...]
     dtype: torch.dtype = torch.float32
+    dim_order: memory_format = torch.contiguous_format
+
+
+def _convert_input_data_to_expected_dim_order(
+    example_input: tuple[torch.Tensor, ...], input_spec: tuple[ModelInputSpec, ...]
+) -> tuple[torch.Tensor, ...]:
+    if len(example_input) != len(input_spec):
+        raise ValueError(
+            f"Number of model inputs ({len(example_input)}) does not match"
+            f" number of input specs ({len(input_spec)})."
+        )
+    example_input_dim_order = []
+
+    for spec, ex_input in zip(input_spec, example_input):
+        match spec.dim_order:
+            case torch.contiguous_format:
+                ex_input = ex_input.to(memory_format=torch.contiguous_format)
+            case torch.channels_last:
+                ex_input = ex_input.to(memory_format=torch.channels_last)
+            case _:
+                raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
+        # noinspection PyUnboundLocalVariable
+        example_input_dim_order.append(ex_input)
+
+    return tuple(example_input_dim_order)
 
 
 def get_random_calibration_inputs(
@@ -97,6 +122,7 @@ def to_quantized_edge_program(
     remove_quant_io_ops=False,
     custom_delegation_options=CustomDelegationOptions(),  # noqa B008
     get_quantizer_fn=None,
+    delegate_to_npu=True,
     use_neutron_for_format_conversion=True,
 ) -> EdgeProgramManager:
     _neutron_target_spec = NeutronTargetSpec(target, neutron_converter_flavor)
@@ -105,8 +131,13 @@ def to_quantized_edge_program(
             _get_default_quantizer, _neutron_target_spec, use_qat
         )
 
-    calibration_inputs = get_calibration_inputs_fn(to_model_input_spec(input_spec))
-    example_input = calibration_inputs[0]
+    input_spec = to_model_input_spec(
+        input_spec
+    )  # Make sure input_spec is ModelInputSpec
+    calibration_inputs = get_calibration_inputs_fn(input_spec)
+    example_input = _convert_input_data_to_expected_dim_order(
+        calibration_inputs[0], input_spec
+    )
 
     # Make sure the model is in the evaluation mode.
     model.eval()
@@ -126,14 +157,18 @@ def to_quantized_edge_program(
         neutron_converter_flavor=neutron_converter_flavor,
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
     )
-    partitioners = [
-        NeutronPartitioner(
-            compile_spec,
-            _neutron_target_spec,
-            custom_delegation_options,
-            exir_program_aten__module_quant.state_dict(),
-        )
-    ]
+    partitioners = (
+        [
+            NeutronPartitioner(
+                compile_spec,
+                _neutron_target_spec,
+                custom_delegation_options,
+                exir_program_aten__module_quant.state_dict(),
+            )
+        ]
+        if delegate_to_npu
+        else []
+    )
 
     edge_program_manager = to_edge_transform_and_lower(
         export(exir_program_aten__module_quant, example_input, strict=True),
