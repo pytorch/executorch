@@ -51,6 +51,8 @@ class QnnCustomProtocol {
 // ---------------------------------
 // | context_binary_size (8 bytes) |
 // ---------------------------------
+// | extra padding (236 bytes)     |
+// ---------------------------------
 // | context_binary.data           |
 // ---------------------------------
 class QnnContextCustomProtocol : public QnnCustomProtocol {

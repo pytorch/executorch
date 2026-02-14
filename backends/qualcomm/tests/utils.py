@@ -29,6 +29,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ZERO_POINT,
 )
 from executorch.backends.qualcomm.utils.utils import (
+    get_qnn_context_binary_alignment,
     get_soc_to_chipset_map,
     to_edge_transform_and_lower_to_qnn,
 )
@@ -185,6 +186,7 @@ class TestQNN(unittest.TestCase):
     inference_speed: float = 0.0
     inference_speed_output_path = "outputs/inference_speed.txt"
     static_llm_eval_method = ""
+    direct_build_folder: str = ""
 
     @classmethod
     def setUpClass(cls):
@@ -193,6 +195,7 @@ class TestQNN(unittest.TestCase):
             adb = SimpleADB(
                 qnn_sdk=os.getenv("QNN_SDK_ROOT"),
                 build_path=cls.build_folder,
+                direct_mode_build_path=cls.direct_build_folder,
                 pte_path=[],
                 workspace="/data/local/tmp/qnn_executorch_test",
                 device_id=cls.device,
@@ -484,6 +487,7 @@ class TestQNN(unittest.TestCase):
                 adb = SimpleADB(
                     qnn_sdk=os.getenv("QNN_SDK_ROOT"),
                     build_path=self.build_folder,
+                    direct_mode_build_path=self.direct_build_folder,
                     pte_path=pte_fname,
                     workspace="/data/local/tmp/qnn_executorch_test",
                     device_id=self.device,
@@ -583,6 +587,8 @@ class TestQNN(unittest.TestCase):
             qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
             qnn_intermediate_debugger.intermediate_output_module(*sample_inputs)
 
+        # Don't allocate if shared_buffer enabled or using direct_mode
+        allocate_io = not (self.shared_buffer or self.direct_build_folder)
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 # For shared buffer, user must pass the memory address
@@ -590,9 +596,10 @@ class TestQNN(unittest.TestCase):
                 # Therefore, won't want to pre-allocate
                 # by memory manager in runtime.
                 memory_planning_pass=MemoryPlanningPass(
-                    alloc_graph_input=not self.shared_buffer,
-                    alloc_graph_output=not self.shared_buffer,
+                    alloc_graph_input=allocate_io,
+                    alloc_graph_output=allocate_io,
                 ),
+                segment_alignment=get_qnn_context_binary_alignment(),
             )
         )
 
@@ -722,6 +729,7 @@ class TestQNN(unittest.TestCase):
         adb = SimpleADB(
             qnn_sdk=os.getenv("QNN_SDK_ROOT"),
             build_path=self.build_folder,
+            direct_mode_build_path=self.direct_build_folder,
             pte_path=pte_fname,
             workspace="/data/local/tmp/qnn_executorch_test",
             device_id=self.device,

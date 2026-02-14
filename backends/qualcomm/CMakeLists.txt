@@ -164,7 +164,6 @@ add_library(qnn_sys_function_interface INTERFACE)
 add_library(qnn_sys_implementation STATIC)
 add_library(shared_buffer STATIC)
 add_library(wrappers STATIC)
-add_library(utils STATIC)
 
 #
 # declare dependency
@@ -230,24 +229,40 @@ target_link_libraries(
 )
 
 target_link_libraries(
-  qnn_manager
-  PRIVATE qnn_factory
-          qnn_backend_unified_registry
-          wrappers
-          qnn_schema
-          utils
-          shared_buffer
-          qnn_dlc_manager
+  qnn_manager PRIVATE qnn_factory qnn_backend_unified_registry wrappers
+                      qnn_schema shared_buffer qnn_dlc_manager
 )
 target_link_libraries(
   qnn_executorch_backend
   PRIVATE qnn_executorch_header qnn_schema qnn_manager executorch_core
           extension_tensor qnn_backend_options
 )
+
+# Add CTX_BIN_ALIGNMENT here so all backend files has access to this macro.
+add_compile_definitions(QNN_CTX_BIN_ALIGNMENT=256)
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
+  # Add macro here so we can dlopen the correct .so library.
+  if(DSP_TYPE STREQUAL "3")
+    string(TOUPPER ${DSP_VERSION} CAPITAL_DSP_VERSION)
+    set(HEXAGON_LIB "libQnnHtp${CAPITAL_DSP_VERSION}.so")
+    add_compile_definitions(HEXAGON_LIB="${HEXAGON_LIB}")
+    message(STATUS "For hexagon build, using HTP Library: ${HEXAGON_LIB}")
+  else()
+    message(FATAL_ERROR "Unknown DSP_TYPE ${DSP_TYPE}")
+  endif()
+
+  target_link_libraries(
+    qnn_executorch_backend
+    PRIVATE
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc.so
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++.so.1
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++abi.so.1
+  )
+endif()
+
 set_target_properties(
   qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )
-target_link_libraries(utils PRIVATE qnn_executorch_logging)
 target_link_libraries(
   shared_buffer PRIVATE qnn_executorch_logging ${CMAKE_DL_LIBS}
 )
@@ -277,6 +292,13 @@ install(
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
   RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
 )
+
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
+  add_subdirectory(
+    ${QNN_EXECUTORCH_ROOT_DIR}/runtime/backends/direct_mode
+    ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/direct_mode
+  )
+endif()
 
 # QNN pybind
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")

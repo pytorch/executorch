@@ -11,6 +11,9 @@
 #ifdef __ANDROID__
 #include <android/log.h>
 #endif
+#ifdef __hexagon__
+#include "HAP_farf.h"
+#endif
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -58,10 +61,18 @@ void Log(QnnExecuTorchLogLevel log_level, const char* format, ...) {
   }
   __android_log_vprint(android_severity, "[Qnn ExecuTorch]", format, args);
 #endif
+
+#ifndef __hexagon__
   fprintf(stderr, "[%s] [Qnn ExecuTorch]: ", serverity_name);
   vfprintf(stderr, format, args);
   va_end(args);
   fputc('\n', stderr);
+#else
+  char buf[QNN_EXECUTORCH_FARF_BUF_SIZE] = {0};
+  vsnprintf(buf, QNN_EXECUTORCH_FARF_BUF_SIZE, format, args);
+  va_end(args);
+  FARF(RUNTIME_HIGH, "[%s] [Qnn ExecuTorch]: %s\n", serverity_name, buf);
+#endif
 }
 } // namespace qnn
 } // namespace backends

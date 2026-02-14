@@ -1302,3 +1302,7 @@ def is_qnn_sdk_version_less_than(target_version):
     target_major, target_minor = map(int, target_version.split(".")[:2])
 
     return current_major == target_major and current_minor < target_minor
+
+
+def get_qnn_context_binary_alignment() -> int:
+    return PyQnnManagerAdaptor.GetQNNCtxBinAlignment()
