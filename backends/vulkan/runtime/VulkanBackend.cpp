@@ -13,13 +13,15 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/Logging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Print.h>
+
 #include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #ifdef ET_EVENT_TRACER_ENABLED
-#include <executorch/backends/vulkan/runtime/graph/Logging.h>
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 #endif // ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -33,6 +35,8 @@
 #include <memory>
 #include <type_traits>
 #include <vector>
+
+#include <iostream>
 
 namespace executorch {
 namespace backends {
@@ -425,15 +429,24 @@ class GraphBuilder {
         args.push_back(get_fb_id_valueref(static_cast<int>(arg_fb_id)));
       }
 
-#ifdef ET_EVENT_TRACER_ENABLED
       std::string operator_json =
           make_operator_json(compute_graph_, op_name, args);
+      std::cout << operator_json << std::endl;
+#ifdef ET_EVENT_TRACER_ENABLED
       set_and_get_current_operator_json(operator_json);
       get_current_operator_count(true);
 #endif // ET_EVENT_TRACER_ENABLED
 
       auto vkFn = VK_GET_OP_FN(op_name);
       vkFn(*compute_graph_, args);
+
+      // Debug: print the output tensor after each op
+      if (!args.empty()) {
+        ValueRef last_arg = args.back();
+        if (compute_graph_->val_is_tensor(last_arg)) {
+          add_print_node(*compute_graph_, last_arg);
+        }
+      }
     }
 
     // Parse the outputs, which will be mostly tensors but may contain tensorref
