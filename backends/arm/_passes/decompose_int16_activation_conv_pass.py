@@ -52,7 +52,15 @@ class DecomposeConvWithInt16ActivationPass(ArmPass):
         activation_tensor = args[0].data
         activation_rank = activation_tensor.dim()
 
-        if activation_rank not in (4, 5) or activation_tensor.dtype != torch.int16:
+        # Check input qparams dtype instead of raw tensor dtype, since the tensor
+        # may have been rescaled to int32 by earlier passes while the quantization
+        # parameters still indicate the original int16 dtype.
+        input_qparams = meta.data.get("input_qparams", {})
+        if 0 not in input_qparams:
+            return super().call_operator(op, args, kwargs, meta)
+        activation_dtype = input_qparams[0].dtype
+
+        if activation_rank not in (4, 5) or activation_dtype != torch.int16:
             return super().call_operator(op, args, kwargs, meta)
 
         if not tosa_spec.support_extension("int16"):
