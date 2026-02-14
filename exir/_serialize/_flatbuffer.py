@@ -197,6 +197,9 @@ def _run_flatc(args: Sequence[str]) -> None:
     else:
         # Expect the `flatc` tool to be on the system path or set as an env var.
         flatc_path = os.getenv("FLATC_EXECUTABLE")
+        if flatc_path and not os.path.isfile(flatc_path):
+            # Env set to a path that doesn't exist (e.g. placeholder); use PATH.
+            flatc_path = "flatc"
         if not flatc_path:
             flatc_path = "flatc"
         subprocess.run([flatc_path] + list(args), check=True)
