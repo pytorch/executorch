@@ -144,7 +144,12 @@ VulkanImage Allocator::create_image(
 VulkanBuffer Allocator::create_staging_buffer(
     const VkDeviceSize size,
     const CopyDirection direction) {
-  const VkBufferUsageFlags buffer_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+  // TRANSFER_SRC allows staging buffers to be used as source for
+  // vkCmdCopyBufferToImage, needed for direct buffer-to-image copies
+  // (e.g., 1D tensor prepacking where compute shader coordinate remapping
+  // would produce incorrect results on some GPUs).
+  const VkBufferUsageFlags buffer_usage =
+      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
   VmaAllocationCreateInfo alloc_create_info = {};
   alloc_create_info.flags =

@@ -118,6 +118,65 @@ void PrepackNode::encode(ComputeGraph* graph) {
 
   context->check_device_capabilities(shader_);
 
+  // For 1D width-packed tensors (e.g., conv2d bias), use a direct
+  // vkCmdCopyBufferToImage instead of the nchw_to_image compute shader.
+  //
+  // The nchw_to_image shader uses axis_map coordinate remapping that assumes
+  // multi-dimensional tensors. For 1D tensors padded to 4D with three fake
+  // dimensions of size 1, the coordinate math can produce out-of-bounds texture
+  // writes. Some GPU drivers (e.g., PowerVR) strictly validate texture bounds
+  // and silently drop these writes, causing bias values to never reach the
+  // texture. Other drivers wrap coordinates, masking the bug.
+  //
+  // The staging buffer already contains correctly ordered data for 1D
+  // width-packed tensors, so we can copy it directly without remapping.
+  const std::vector<int64_t> packed_sizes = graph->sizes_of(packed_);
+  const int32_t packed_dim = graph->packed_dim_of(packed_);
+  const bool is_1d_width_packed =
+      packed_sizes.size() == 1 && packed_dim == 0 && packed_sizes[0] % 4 == 0;
+
+  if (is_1d_width_packed) {
+    api::StagingBuffer staging = create_staging_buffer(graph);
+
+    graph->create_dedicated_allocation_for(packed_);
+    vTensorPtr tensor(graph, packed_);
+    vkapi::VulkanImage& image = tensor->image();
+    VkExtent3D extents = image.extents();
+
+    std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
+
+    // Transition image layout for transfer destination
+    vkapi::PipelineBarrier transfer_barrier{};
+    transfer_barrier.stage.src = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    transfer_barrier.stage.dst = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    transfer_barrier.images.emplace_back(
+        0,
+        VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_GENERAL,
+        image);
+    image.set_layout(VK_IMAGE_LAYOUT_GENERAL);
+
+    vkapi::CommandBuffer& cmd = context->extract_cmd();
+    cmd.insert_barrier(transfer_barrier);
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = extents;
+
+    cmd.copy_buffer_to_image(
+        staging.buffer(),
+        image,
+        region,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    return;
+  }
+
   api::StagingBuffer staging = create_staging_buffer(graph);
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();

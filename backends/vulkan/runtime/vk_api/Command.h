@@ -94,6 +94,11 @@ class CommandBuffer final {
   void insert_barrier(PipelineBarrier& pipeline_barrier);
   void dispatch(const utils::uvec3&);
   void blit(vkapi::VulkanImage& src, vkapi::VulkanImage& dst);
+  void copy_buffer_to_image(
+      vkapi::VulkanBuffer& src,
+      vkapi::VulkanImage& dst,
+      const VkBufferImageCopy& region,
+      VkImageLayout dst_final_layout);
 
   void write_timestamp(VkQueryPool, const uint32_t) const;
   void reset_querypool(VkQueryPool, const uint32_t, const uint32_t) const;

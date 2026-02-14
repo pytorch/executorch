@@ -233,6 +233,49 @@ void CommandBuffer::blit(vkapi::VulkanImage& src, vkapi::VulkanImage& dst) {
   state_ = CommandBuffer::State::RECORDING;
 }
 
+void CommandBuffer::copy_buffer_to_image(
+    vkapi::VulkanBuffer& src,
+    vkapi::VulkanImage& dst,
+    const VkBufferImageCopy& region,
+    VkImageLayout dst_final_layout) {
+  VK_CHECK_COND(
+      state_ == CommandBuffer::State::BARRIERS_INSERTED,
+      "Vulkan CommandBuffer: called copy_buffer_to_image() on a command buffer "
+      "whose state is not BARRIERS_INSERTED.");
+
+  vkCmdCopyBufferToImage(
+      handle_,
+      src.handle(),
+      dst.handle(),
+      dst.layout(),
+      1,
+      &region);
+
+  // Transition image to final layout via a post-copy barrier
+  VkImageMemoryBarrier post_barrier{};
+  post_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  post_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  post_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+  post_barrier.oldLayout = dst.layout();
+  post_barrier.newLayout = dst_final_layout;
+  post_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  post_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  post_barrier.image = dst.handle();
+  post_barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+  vkCmdPipelineBarrier(
+      handle_,
+      VK_PIPELINE_STAGE_TRANSFER_BIT,
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+      0,
+      0, nullptr,
+      0, nullptr,
+      1, &post_barrier);
+
+  dst.set_layout(dst_final_layout);
+  state_ = CommandBuffer::State::RECORDING;
+}
+
 void CommandBuffer::write_timestamp(VkQueryPool querypool, const uint32_t idx)
     const {
   VK_CHECK_COND(
