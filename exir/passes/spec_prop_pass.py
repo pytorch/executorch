@@ -72,6 +72,9 @@ class SpecPropPass(ExportPass):
             if isinstance(module, torch.fx.GraphModule):
                 for node in module.graph.nodes:
                     meta_val = node.meta.get("val", None)
+                    # Ensure every node with val has a spec (base ExportPass may not set it).
+                    if "spec" not in node.meta and meta_val is not None:
+                        node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
                     if node.op == "output":
                         node.meta["spec"] = pytree.tree_map(get_spec, node.args[0])
                     elif node.op == "call_function" and node.target == operator.getitem:
@@ -80,17 +83,14 @@ class SpecPropPass(ExportPass):
                     elif (
                         node.op == "call_function"
                         and should_propagate_dim_order(node.target)
-                        and "out" in node.kwargs
                         and node.args
                     ):
-                        # Propagate primary input dim_order to out TensorSpec for
-                        # format-preserving ops (Fix #16032).
+                        # Propagate primary input dim_order for format-preserving ops (Fix #16032).
+                        # Handles both clone.out (out= kwarg) and clone.default (single output).
                         self_val = node.args[0].meta.get("val")
                         if self_val is not None:
                             src_dim_order = dim_order_from_fake_tensor(self_val)
-                            if src_dim_order is not None and src_dim_order != list(
-                                range(len(src_dim_order))
-                            ):
+                            if "out" in node.kwargs:
                                 out_arg = node.kwargs["out"]
                                 assert isinstance(
                                     out_arg, torch.fx.Node
@@ -98,8 +98,20 @@ class SpecPropPass(ExportPass):
                                     f"Expected clone.out 'out' to be fx.Node, got {type(out_arg)}"
                                 )
                                 out_spec = out_arg.meta.get("spec")
-                                if out_spec is not None:
-                                    out_spec.dim_order = tuple(src_dim_order)
+                            else:
+                                # clone.default: ensure node has spec (ExportPass may not set it)
+                                out_spec = node.meta.get("spec")
+                                if out_spec is None and meta_val is not None:
+                                    node.meta["spec"] = pytree.tree_map(
+                                        make_spec, meta_val
+                                    )
+                                    out_spec = node.meta["spec"]
+                            if (
+                                out_spec is not None
+                                and hasattr(out_spec, "dim_order")
+                                and src_dim_order is not None
+                            ):
+                                out_spec.dim_order = tuple(src_dim_order)
                     elif (
                         node.op == "call_function"
                         and node.target == executorch_call_delegate

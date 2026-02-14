@@ -12,22 +12,40 @@ import torch
 
 from executorch.exir.tensor import dim_order_from_stride
 
+try:
+    from executorch.exir.dialects._ops import ops as exir_ops
+except ImportError:
+    exir_ops = None  # type: ignore[assignment]
+
+
+def _format_preserving_ops() -> Set[object]:
+    """Build set of format-preserving ops (aten and edge dialect)."""
+    ops: Set[object] = {
+        torch.ops.aten.clone.out,
+        torch.ops.aten.clone.default,
+        torch.ops.aten.copy_.default,
+        torch.ops.aten.contiguous.default,
+        torch.ops.aten.relu.default,
+        torch.ops.aten.silu.default,
+        torch.ops.aten.gelu.default,
+        torch.ops.aten.add.Tensor,
+        torch.ops.aten.mul.Tensor,
+        torch.ops.aten.div.Tensor,
+    }
+    if hasattr(torch.ops.aten.clone, "memory_format"):
+        ops.add(torch.ops.aten.clone.memory_format)
+    if exir_ops is not None:
+        ops.add(exir_ops.edge.aten.clone.default)
+        ops.add(exir_ops.edge.dim_order_ops._clone_dim_order.default)
+        if hasattr(exir_ops.edge.dim_order_ops._clone_dim_order, "out"):
+            ops.add(exir_ops.edge.dim_order_ops._clone_dim_order.out)
+    return ops
+
+
 # Format-preserving ops: output layout must match primary input. Include out-variants
 # because when SpecPropPass runs, OutVarPass has already converted e.g. clone.default
 # to clone.out.
-FORMAT_PRESERVING_OPS: Set[object] = {
-    torch.ops.aten.clone.out,
-    torch.ops.aten.clone.default,
-    torch.ops.aten.clone.memory_format,
-    torch.ops.aten.copy_.default,
-    torch.ops.aten.contiguous.default,
-    torch.ops.aten.relu.default,
-    torch.ops.aten.silu.default,
-    torch.ops.aten.gelu.default,
-    torch.ops.aten.add.Tensor,
-    torch.ops.aten.mul.Tensor,
-    torch.ops.aten.div.Tensor,
-}
+FORMAT_PRESERVING_OPS: Set[object] = _format_preserving_ops()
 
 
 def dim_order_from_fake_tensor(t: torch.Tensor) -> Optional[List[int]]:
