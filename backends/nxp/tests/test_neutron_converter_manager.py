@@ -54,6 +54,6 @@ def test__conv2d_neutron_conversion__invalid_flavor():
     with pytest.raises(RuntimeError) as excinfo:
         _ = NeutronConverterManager("bad_flavor").convert(tflite_model, "imxrt700")
 
-    assert "Neutron Converter module with flavor 'bad_flavor' not found." in str(
+    assert "Neutron Converter module 'neutron_converter_bad_flavor' not found." in str(
         excinfo
     )
