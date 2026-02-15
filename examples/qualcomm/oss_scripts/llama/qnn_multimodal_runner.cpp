@@ -15,21 +15,32 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/chat_template.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/encoder.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_runner.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/utils.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
+#include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/runtime/platform/log.h>
 #include <gflags/gflags.h>
 
 #include <fstream>
 #include <vector>
 
+using executorch::aten::ScalarType;
+using executorch::extension::llm::Image;
+using ::executorch::extension::llm::make_image_input;
+using ::executorch::extension::llm::make_text_input;
+using executorch::extension::llm::MultimodalInput;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Result;
+
 // Model paths
 DEFINE_string(
-    embedding_path,
-    "embedding.pte",
-    "Path to embedding model serialized in flatbuffer format.");
+    tok_embedding_path,
+    "tok_embedding.pte",
+    "Path to tok_embedding model serialized in flatbuffer format.");
 DEFINE_string(
     encoder_path,
     "encoder.pte",
@@ -119,128 +130,11 @@ std::vector<std::string> CollectPrompts(int argc, char** argv) {
   return prompts;
 }
 
-/**
- * Special tokens structure for different models
- */
-struct SpecialTokens {
-  std::string image_token;
-  std::string global_img;
-  std::string fake_wrap_start;
-  std::string fake_wrap_end;
-};
-
-/**
- * Get special tokens based on decoder model version
- */
-SpecialTokens get_special_tokens(
-    example::MultimodalDecoderModelVersion decoder_model_version) {
-  SpecialTokens tokens;
-
-  switch (decoder_model_version) {
-    case example::MultimodalDecoderModelVersion::
-        kSmolvlm: // smolvlm_500m_instruct
-      tokens.image_token = "<image>";
-      tokens.global_img = "<global-img>";
-      tokens.fake_wrap_start = "<fake_token_around_image>";
-      tokens.fake_wrap_end = "<fake_token_around_image>";
-      break;
-    case example::MultimodalDecoderModelVersion::kInternvl3: // internvl3_1b
-      tokens.image_token = "<IMG_CONTEXT>";
-      tokens.global_img = "";
-      tokens.fake_wrap_start = "<img>";
-      tokens.fake_wrap_end = "</img>";
-      break;
-    default:
-      break;
-  }
-
-  return tokens;
-}
-
-/**
- * Prepare multimodal token IDs by expanding image tokens
- * This implements the logic from prepare_multimodal_token_ids in Python
- */
-std::string prepare_multimodal_prompt(
-    const std::string& prompt,
-    int image_seq_len,
-    const SpecialTokens& specials) {
-  // Create image prompt with repeated image tokens
-  std::string image_prompt = specials.fake_wrap_start;
-  image_prompt += specials.global_img;
-  for (int i = 0; i < image_seq_len; ++i) {
-    image_prompt += specials.image_token;
-  }
-  image_prompt += specials.fake_wrap_end;
-
-  // Replace single image token with expanded version
-  size_t pos = 0;
-  std::string expanded = prompt;
-  while ((pos = expanded.find(specials.image_token, pos)) !=
-         std::string::npos) {
-    expanded.replace(pos, specials.image_token.size(), image_prompt);
-    pos += image_prompt.size();
-  }
-  ET_LOG(Info, "Prompt after expanding image token: %s", expanded.c_str());
-
-  return expanded;
-}
-
-/**
- * Format prompt based on model version with multimodal token expansion
- */
-std::string get_formatted_prompt(
-    const std::string& prompt,
-    const std::string& system_prompt,
-    example::MultimodalDecoderModelVersion decoder_model_version,
-    int32_t img_seq_len = 0) {
-  std::string formatted_prompt;
-
-  // Get special tokens for this model
-  SpecialTokens specials = get_special_tokens(decoder_model_version);
-
-  switch (decoder_model_version) {
-    case example::MultimodalDecoderModelVersion::kSmolvlm:
-      if (!system_prompt.empty()) {
-        formatted_prompt.append(
-            "<|start_header_id|>system<|end_header_id|>\n\n");
-        formatted_prompt.append(system_prompt);
-        formatted_prompt.append("<|eot_id|>");
-      }
-      formatted_prompt.append("<|im_start|>User:");
-      formatted_prompt.append(specials.image_token);
-      formatted_prompt.append(prompt);
-      formatted_prompt.append("<end_of_utterance>\nAssistant:");
-      break;
-    case example::MultimodalDecoderModelVersion::kInternvl3:
-      if (!system_prompt.empty()) {
-        formatted_prompt.append("<|im_start|>system<|im_end|>\n\n");
-        formatted_prompt.append(system_prompt);
-        formatted_prompt.append("<|im_end|>");
-      }
-      formatted_prompt.append("<|im_start|>user:\n");
-      formatted_prompt.append(specials.image_token);
-      formatted_prompt.append("\n");
-      formatted_prompt.append(prompt);
-      formatted_prompt.append("<|im_end|>assistant\n");
-      break;
-    default:
-      ET_CHECK_MSG(false, "unsupported VLM version");
-      break;
-  }
-
-  // Expand image tokens
-  formatted_prompt =
-      prepare_multimodal_prompt(formatted_prompt, img_seq_len, specials);
-
-  return formatted_prompt;
-}
-
 template <typename T>
 void start_multimodal_runner(
-    std::unique_ptr<example::EncoderRunner> encoder_runner,
-    std::unique_ptr<executorch::extension::Module> module,
-    std::unique_ptr<executorch::extension::Module> embedding,
+    std::unique_ptr<executorch::extension::Module> encoder,
+    std::unique_ptr<executorch::extension::Module> tok_embedding,
+    std::unique_ptr<executorch::extension::Module> text_decoder,
     std::vector<std::string>& prompts) {
   ET_LOG(Info, "Starting multimodal runner");
 
@@ -248,32 +142,12 @@ void start_multimodal_runner(
       gflags::GetCommandLineFlagInfoOrDie("tokenized_prompt").is_default ? false
                                                                          : true;
 
-  // Load image, run encoder forward pass, and set image hidden states if
-  // provided
-  bool has_image = !FLAGS_image_path.empty();
-
-  // Load encoder
-  if (encoder_runner->load() != executorch::runtime::Error::Ok) {
-    ET_LOG(Error, "Failed to load encoder");
-    return;
-  }
-
-  // Encode image from file
-  auto encode_result =
-      encoder_runner->encode_from_file(FLAGS_image_path.c_str());
-  if (!encode_result.ok()) {
-    ET_LOG(Error, "Failed to encode image");
-    return;
-  }
-
-  auto image_hidden_states = encode_result.get();
-
   // Create multimodal runner
   example::MultimodalRunner<T> runner(
-      std::move(module),
-      std::move(embedding),
+      std::move(encoder),
+      std::move(tok_embedding),
+      std::move(text_decoder),
       FLAGS_decoder_model_version.c_str(),
-      FLAGS_decoder_path.c_str(),
       FLAGS_tokenizer_path.c_str(),
       FLAGS_dump_logits_path.c_str(),
       FLAGS_performance_output_path.c_str(),
@@ -282,23 +156,25 @@ void start_multimodal_runner(
       FLAGS_shared_buffer,
       FLAGS_ngram,
       FLAGS_window,
-      FLAGS_gcap,
-      std::make_unique<executorch::aten::Tensor>(image_hidden_states));
+      FLAGS_gcap);
 
-  auto decoder_model_version = runner.get_decoder_model_version();
+  auto model_version = runner.get_model_version().get();
+
+  if (modality_of(model_version) == example::Modality::kVision) {
+    ET_CHECK_MSG(
+        !FLAGS_image_path.empty(),
+        "For VLM models, please specify image path.");
+  }
 
   // Prepare output buffer (similar to qnn_llama_runner.cpp)
   std::vector<char> buf;
   buf.reserve(5 * FLAGS_seq_len); // assume each token is around 5 char
   std::ofstream fout(FLAGS_output_path.c_str());
-
   auto callback = [&](const std::string& piece) {
     for (const char c : piece) {
       buf.push_back(c);
     }
   };
-
-  // Configure generation
   executorch::extension::llm::GenerationConfig config{
       true,
       false,
@@ -309,25 +185,46 @@ void start_multimodal_runner(
       0,
       0};
 
-  // Get image sequence length from encoder
-  int32_t img_seq_len = encoder_runner->get_image_seq_len();
-  if (use_tokenized_prompt) {
-    runner.generate_from_prompt_or_file(
-        FLAGS_tokenizer_path.c_str(), use_tokenized_prompt, config, callback);
-  } else {
-    // generate tokens & store inference output
-    for (int i = 0; i < FLAGS_num_iters; i++) {
-      for (size_t j = 0; j < prompts.size(); ++j) {
-        const auto& prompt = prompts[j];
-        std::string formatted_prompt;
-        formatted_prompt = get_formatted_prompt(
-            prompt,
-            FLAGS_system_prompt,
-            decoder_model_version.get(),
-            img_seq_len);
-        runner.generate_from_prompt_or_file(
-            formatted_prompt.c_str(), use_tokenized_prompt, config, callback);
+  // 1. [Multi-modality] Get raw files from input_list.txt
+  std::vector<std::string> raw_files =
+      example::load_raw_files(FLAGS_image_path.c_str());
+
+  // 2. Prepare messages for multi-turn simulation
+  std::vector<Message> messages = prepare_messages(prompts, raw_files);
+
+  // 3. Get expected input size/dtype for encoder
+  Result<MethodMeta> method_meta = runner.get_encoder_method_meta();
+  auto input_meta_result = method_meta->input_tensor_meta(0);
+  std::vector<int32_t> expected_size(
+      input_meta_result->sizes().begin(), input_meta_result->sizes().end());
+  ScalarType expected_dtype = input_meta_result->scalar_type();
+
+  // TODO: add use_tokenized_prompt for enable running static Llama models
+  // inside LlamaDemo Android
+  //  4. generate tokens & store inference output
+  for (int i = 0; i < FLAGS_num_iters; i++) {
+    for (size_t j = 0; j < messages.size(); ++j) {
+      const auto& prompt = messages[j].text;
+      const std::vector<std::string> files_path = messages[j].files_path;
+
+      // 4.1 prepare image input
+      std::vector<MultimodalInput> inputs;
+      if (modality_of(model_version) == example::Modality::kVision) {
+        for (const std::string& file_path : files_path) {
+          Image image;
+          example::load_image(file_path, image, expected_size, expected_dtype);
+          inputs.emplace_back(make_image_input(image));
+        }
       }
+
+      // 4.2 prepare prompt input
+      std::string formatted_prompt =
+          apply_chat_template(prompt, FLAGS_system_prompt, model_version);
+      inputs.emplace_back(make_text_input(formatted_prompt));
+
+      // 4.3 generate text
+      runner.generate_from_prompt_or_file(
+          inputs, use_tokenized_prompt, config, callback);
     }
   }
   fout.write(buf.data(), buf.size());
@@ -346,22 +243,24 @@ int main(int argc, char** argv) {
     ET_CHECK_MSG(
         false, "Only TokenGenerator(kv) mode is supported to dump all logits.");
   }
-  ET_LOG(Info, "Embedding: %s", FLAGS_embedding_path.c_str());
-  ET_LOG(Info, "Encoder: %s", FLAGS_encoder_path.c_str());
-  ET_LOG(Info, "Decoder: %s", FLAGS_decoder_path.c_str());
 
-  // Create encoder runner
-  std::unique_ptr<example::EncoderRunner> encoder_runner =
-      std::make_unique<example::EncoderRunner>(FLAGS_encoder_path.c_str());
-
-  // load embedding
-  std::unique_ptr<executorch::extension::Module> embedding =
+  // Load encoder
+  ET_LOG(Info, "Load Encoder: %s", FLAGS_encoder_path.c_str());
+  std::unique_ptr<executorch::extension::Module> encoder =
       std::make_unique<executorch::extension::Module>(
-          FLAGS_embedding_path.c_str(),
+          FLAGS_encoder_path.c_str(),
           executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
 
-  // load decoder
-  std::unique_ptr<executorch::extension::Module> module =
+  // Load token embedding
+  ET_LOG(Info, "Load Token Embedding: %s", FLAGS_tok_embedding_path.c_str());
+  std::unique_ptr<executorch::extension::Module> tok_embedding =
+      std::make_unique<executorch::extension::Module>(
+          FLAGS_tok_embedding_path.c_str(),
+          executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
+
+  // Load text decoder
+  ET_LOG(Info, "Load Text Decoder: %s", FLAGS_decoder_path.c_str());
+  std::unique_ptr<executorch::extension::Module> text_decoder =
       std::make_unique<executorch::extension::Module>(
           FLAGS_decoder_path.c_str(),
           executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
@@ -369,22 +268,25 @@ int main(int argc, char** argv) {
   // Using 8bit as default since this meta is introduced with 16bit kv io
   // support and older models only have 8bit kv io.
   example::KvBitWidth kv_bitwidth = example::KvBitWidth::kWidth8;
-  if (module->method_names()->count("get_kv_io_bit_width") > 0) {
+  if (text_decoder->method_names()->count("get_kv_io_bit_width") > 0) {
     kv_bitwidth = static_cast<example::KvBitWidth>(
-        module->get("get_kv_io_bit_width").get().toScalar().to<int64_t>());
+        text_decoder->get("get_kv_io_bit_width")
+            .get()
+            .toScalar()
+            .to<int64_t>());
   }
   // Start runner with appropriate KV bitwidth
   if (kv_bitwidth == example::KvBitWidth::kWidth8) {
     start_multimodal_runner<uint8_t>(
-        std::move(encoder_runner),
-        std::move(module),
-        std::move(embedding),
+        std::move(encoder),
+        std::move(tok_embedding),
+        std::move(text_decoder),
         prompts);
   } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
     start_multimodal_runner<uint16_t>(
-        std::move(encoder_runner),
-        std::move(module),
-        std::move(embedding),
+        std::move(encoder),
+        std::move(tok_embedding),
+        std::move(text_decoder),
         prompts);
   } else {
     ET_CHECK_MSG(

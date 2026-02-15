@@ -51,9 +51,9 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     DECODE_QDQ_FILENAME,
     DECODER_GRAPH_NAMES,
     TEXT_DECODER,
-    TEXT_EMBEDDING,
-    TEXT_EMBEDDING_GRAPH_NAMES,
     TEXT_ENCODER,
+    TOK_EMBEDDING,
+    TOK_EMBEDDING_GRAPH_NAMES,
     VISION_ENCODER,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
@@ -62,7 +62,9 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_quant_recipe import (
     EncoderQuantRecipe,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.model.embedding import TextEmbedding
+from executorch.examples.qualcomm.oss_scripts.llama.model.embedding import (
+    TokenEmbedding,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
@@ -113,7 +115,6 @@ class TextDecoder(Component):
         )
 
         # For multimodal embedding
-        self._modality_placeholder_token_id = None
         self.apply_embedding = apply_embedding
         self.tok_embedding_passes_job = (
             get_capture_program_passes() if apply_embedding else None
@@ -276,7 +277,7 @@ class TextDecoder(Component):
             auto_model = AutoModel.from_pretrained(
                 self.config.repo_id, _attn_implementation="eager"
             )
-            tok_embedding = TextEmbedding(
+            tok_embedding = TokenEmbedding(
                 auto_model.get_input_embeddings().to(torch.float32),
                 self.model_args.max_batch_size,
                 self.model_args.ar_len,
@@ -516,16 +517,15 @@ class TextDecoder(Component):
             else None
         )
         # check user's prompt which helps calibrate special token
-        for prompt in user_calibration_data:
+        for turn in zip(intermediate_outputs, user_calibration_data):
+            hidden_states, prompt = turn
             graph_module_inference(
                 use_kv_cache=self.meta["get_use_kv_cache"],
                 get_example_inputs=self.get_example_inputs,
-                hidden_states=intermediate_outputs,  # hidden_states for multimodal
+                hidden_states=hidden_states,  # hidden_states for multimodal
                 module=model,
                 tok_embedding=tok_embedding,
-                modality_placeholder_token_id=self.meta.get(
-                    "modality_placeholder_token_id", None
-                ),
+                image_token_id=self.meta.get("image_token_id", None),
                 tokenizer=tokenizer,
                 ar_len=self.meta["get_ar_len"],
                 max_seq_len=self.meta["get_max_context_len"],
@@ -564,20 +564,27 @@ class TextDecoder(Component):
             )
 
         data = request.method_data[TEXT_DECODER]
-
-        image_embedding = None
-        if self.apply_embedding:
-            # For demo: get first data now
-            image_embedding = request.method_data[
-                VISION_ENCODER
-            ].calibration_data.intermediate_outputs[0]
+        audio_turns = request.method_data[
+            AUDIO_ENCODER
+        ].calibration_data.intermediate_outputs
+        vision_turns = request.method_data[
+            VISION_ENCODER
+        ].calibration_data.intermediate_outputs
+        if audio_turns is None:
+            audio_turns = [[] for _ in range(len(data.calibration_data.datasets))]
+        if vision_turns is None:
+            vision_turns = [[] for _ in range(len(data.calibration_data.datasets))]
+        intermediate_outputs = [
+            [*audio_turn, *vision_turn]
+            for audio_turn, vision_turn in zip(audio_turns, vision_turns)
+        ]
 
         quantizer = make_quantizer()
         for custom_annotation in data.custom_annotation:
             self.quant_recipe.recipe.custom_quant_annotations.append(custom_annotation)
         quantizer.recipe = self.quant_recipe
 
-        text_embedding_quantizer = make_quantizer(
+        tok_embedding_quantizer = make_quantizer(
             quant_dtype=QuantDtype.use_16a8w,
             per_channel_conv=True,
             per_channel_linear=True,
@@ -600,7 +607,7 @@ class TextDecoder(Component):
             self.decoder = prepare_pt2e(self.decoder, quantizer)
             if self.apply_embedding:
                 self.tok_embedding = prepare_pt2e(
-                    self.tok_embedding, text_embedding_quantizer
+                    self.tok_embedding, tok_embedding_quantizer
                 )
 
             # start calibration
@@ -610,7 +617,7 @@ class TextDecoder(Component):
                 event="prepare_pt2e",
                 user_calibration_data=data.calibration_data.datasets,
                 tok_embedding=self.tok_embedding,
-                intermediate_outputs=image_embedding,
+                intermediate_outputs=intermediate_outputs,
             )
             self.decoder = convert_pt2e(self.decoder)
 
@@ -626,18 +633,19 @@ class TextDecoder(Component):
             if self.apply_embedding:
                 self.tok_embedding = convert_pt2e(self.tok_embedding)
 
+            # QDQ inference
             if self.control_args.verbose:
                 if self.apply_embedding:
-                    image_embedding = request.method_data[
+                    qdq_intermediate_outputs = request.method_data[
                         VISION_ENCODER
-                    ].calibration_data.qdq_intermediate_outputs[0]
+                    ].calibration_data.qdq_intermediate_outputs
                 self._calibrate(
                     model=self.decoder,
                     tokenizer=data.tokenizer,
                     event="convert_pt2e",
                     user_calibration_data=data.calibration_data.datasets,
                     tok_embedding=self.tok_embedding,
-                    intermediate_outputs=image_embedding,
+                    intermediate_outputs=qdq_intermediate_outputs,
                 )
 
         # save logit's quantization attributes to meta
@@ -749,14 +757,14 @@ class HybridTextDecoder(Component):
 
         # prepare lowering tok_embedding if applicable
         if self.apply_embedding:
-            tok_embedding_data = request.method_data[TEXT_EMBEDDING]
+            tok_embedding_data = request.method_data[TOK_EMBEDDING]
             models = [
                 d for d in [self.decode, self.prefill] if d.tok_embedding is not None
             ]
             tok_embedding_example_inputs = [
                 m.tok_embedding_export_input for m in models if m is not None
             ]  # tokens
-            tok_embedding_graph_names = TEXT_EMBEDDING_GRAPH_NAMES[: len(models)]
+            tok_embedding_graph_names = TOK_EMBEDDING_GRAPH_NAMES[: len(models)]
 
         # prepare lowering decoder
         data = request.method_data[TEXT_DECODER]
@@ -807,7 +815,7 @@ class HybridTextDecoder(Component):
             tok_embedding_exec_prog_mgr = tok_embedding_edge_prog_mgr.to_executorch(
                 executorch_config
             )
-            data = request.method_data[TEXT_EMBEDDING]
+            data = request.method_data[TOK_EMBEDDING]
             with open(
                 f"{self.control_args.artifact}/{data.pte_filename}.pte", "wb"
             ) as file:
@@ -871,7 +879,6 @@ class Modality(Component):
             self.model = self.model.eval()
             self.model.load_state_dict(auto_model.state_dict(), strict=False)
             self.example_input = self.model.get_example_inputs()
-            self.preprocess = self.model.preprocess
 
             # set quant recipe
             self.quant_recipe: EncoderQuantRecipe = (
@@ -898,38 +905,46 @@ class Modality(Component):
         ) as file:
             exec_prog_mgr.write_to_file(file)
 
+    def _calibrate(self, model, calibration_datasets):
+        outputs = []
+        for turn in calibration_datasets:
+            outputs_each_turn = [model(*data) for data in turn]
+            outputs.append(outputs_each_turn)
+        return outputs
+
     def quantize(self, request: Request):
-        if self.model is None or self.quant_recipe is None:
+        if self.model is None:
             return
 
         request_data = request.method_data[self.modality]
+        calibration_datasets = request_data.calibration_data.datasets
+
         with torch.no_grad():
             self.model = torch.export.export(self.model, self.example_input).module()
+
+            if request_data.skip_quantize:
+                logging.info(f"skipping encoder quantization for {self.modality}")
+                intermediate_outputs = self._calibrate(self.model, calibration_datasets)
+                request_data.calibration_data.intermediate_outputs = (
+                    intermediate_outputs
+                )
+                return
 
             quantizer = make_quantizer()
             quantizer.recipe = self.quant_recipe
             self.model = prepare_pt2e(self.model, quantizer)
 
-            # calibration
-            intermediate_outputs = []
-            for data in request_data.calibration_data.datasets:
-                output = self.model(*self.preprocess(data))
-                intermediate_outputs.append(
-                    (output,) if isinstance(output, torch.Tensor) else output
-                )
-            # update intermediate outputs for next modality
+            # start calibration
+            intermediate_outputs = self._calibrate(self.model, calibration_datasets)
             request_data.calibration_data.intermediate_outputs = intermediate_outputs
 
             self.model = convert_pt2e(self.model)
 
-            qdq_intermediate_outputs = []
+            # QDQ inference
             if self.control_args.verbose:
-                for data in request_data.calibration_data.datasets:
-                    output = self.model(*self.preprocess(data))
-                    qdq_intermediate_outputs.append(
-                        (output,) if isinstance(output, torch.Tensor) else output
-                    )
-                # update qdq intermediate outputs for next modality
+                qdq_intermediate_outputs = self._calibrate(
+                    self.model, calibration_datasets
+                )
                 request_data.calibration_data.qdq_intermediate_outputs = (
                     qdq_intermediate_outputs
                 )
@@ -961,7 +976,7 @@ class MultiModalManager(Component):
             AUDIO_ENCODER,
             TEXT_ENCODER,
             VISION_ENCODER,
-            TEXT_EMBEDDING,
+            TOK_EMBEDDING,
             TEXT_DECODER,
         ]
         # build dependency chain
@@ -994,6 +1009,7 @@ class MultiModalManager(Component):
     def quantize(
         self,
         calibration_data: Dict[str, List[Any]],
+        skip_quantize: Dict[str, bool],
         tokenizer,
     ):
         quantize_request = Request(
@@ -1003,6 +1019,7 @@ class MultiModalManager(Component):
                     calibration_data=Request.CalibrationData(
                         datasets=calibration_data[m]
                     ),
+                    skip_quantize=skip_quantize.get(m, False),
                     tokenizer=tokenizer,
                 )
                 for m in self._modalities

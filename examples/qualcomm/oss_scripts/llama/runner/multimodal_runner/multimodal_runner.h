@@ -14,27 +14,54 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <variant>
 
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
-#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/embedding_processor.h>
-#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/embedding_runner.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/encoder.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_embedding_merger.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_prompt_processor.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_token_generator.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/tok_embedding_processor.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/tok_embedding_runner.h>
+#include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
+#include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/module/module.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
 namespace example {
 
-// Extend DecoderModelVersion enum with multimodal models
-enum MultimodalDecoderModelVersion {
+enum class Modality {
+  kAudio = 0,
+  kVision,
+};
+
+enum class VisionLanguageModel {
   kSmolvlm = 0,
   kInternvl3,
 };
+
+// TODO: Add audio models when they are supported
+enum class AudioLanguageModel {};
+
+using ModelVersion = std::variant<VisionLanguageModel, AudioLanguageModel>;
+
+constexpr Modality modality_of(const VisionLanguageModel& vlm) {
+  return Modality::kVision;
+}
+
+constexpr Modality modality_of(const AudioLanguageModel& alm) {
+  return Modality::kAudio;
+}
+
+inline Modality modality_of(const ModelVersion& model_version) {
+  return std::visit(
+      [](const auto& model) { return modality_of(model); }, model_version);
+}
 
 enum KvBitWidth {
   kWidth8 = 8,
@@ -45,10 +72,10 @@ template <typename T>
 class MultimodalRunner : public executorch::extension::llm::IRunner {
  public:
   explicit MultimodalRunner(
-      std::unique_ptr<executorch::extension::Module> module,
-      std::unique_ptr<executorch::extension::Module> embedding_module,
-      const std::string& decoder_model,
-      const std::string& model_path,
+      std::unique_ptr<executorch::extension::Module> encoder,
+      std::unique_ptr<executorch::extension::Module> tok_embedding,
+      std::unique_ptr<executorch::extension::Module> text_decoder,
+      const std::string& model_version,
       const std::string& tokenizer_path,
       const std::string& performance_output_path,
       const std::string& dump_logits_path,
@@ -57,37 +84,29 @@ class MultimodalRunner : public executorch::extension::llm::IRunner {
       const bool shared_buffer = false,
       const int ngram = 0,
       const int window = 0,
-      const int gcap = 0,
-      std::unique_ptr<executorch::aten::Tensor> image_hidden_states = nullptr);
+      const int gcap = 0);
 
   bool is_loaded() const override;
   executorch::runtime::Error load() override;
 
-  // Override generate to support multimodal inputs
   executorch::runtime::Error generate(
       const std::string& prompt,
       const executorch::extension::llm::GenerationConfig& config,
-      std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const executorch::llm::Stats&)> stats_callback = {})
+      std::function<void(const std::string&)> token_callback,
+      std::function<void(const executorch::llm::Stats&)> stats_callback)
       override;
 
-  // Multimodal-specific generation with image embeddings
   executorch::runtime::Error generate_from_prompt_or_file(
-      const std::string& prompt,
+      std::vector<executorch::extension::llm::MultimodalInput> inputs,
       bool tokenized_prompt,
       const executorch::extension::llm::GenerationConfig& config,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const executorch::llm::Stats&)> stats_callback = {});
   void stop() override {};
   void reset() override {};
-  executorch::runtime::Result<MultimodalDecoderModelVersion>
-  get_decoder_model_version();
-
-  // Multimodal-specific method for merging embeddings
-  void merge_multimodal_embeddings(
-      const std::vector<uint64_t>& input_ids,
-      const TensorStruct<float>& text_embeddings,
-      uint64_t placeholder_token_id);
+  executorch::runtime::Result<ModelVersion> get_model_version();
+  executorch::runtime::Result<executorch::runtime::MethodMeta>
+  get_encoder_method_meta();
 
  private:
   enum EvalMode {
@@ -98,8 +117,11 @@ class MultimodalRunner : public executorch::extension::llm::IRunner {
   };
 
   // Modules
-  std::unique_ptr<executorch::extension::Module> module_;
-  std::unique_ptr<executorch::extension::Module> embedding_module_;
+  std::unique_ptr<executorch::extension::Module> encoder_;
+  std::unique_ptr<executorch::extension::Module> tok_embedding_;
+  std::unique_ptr<executorch::extension::Module> text_decoder_;
+
+  inline static const std::string kEncoderForwardName = "forward";
 
   int32_t context_len_{0};
 
@@ -119,27 +141,23 @@ class MultimodalRunner : public executorch::extension::llm::IRunner {
   EvalMode eval_mode_;
   bool shared_buffer_;
 
-  MultimodalDecoderModelVersion decoder_model_version_;
+  ModelVersion model_version_;
   std::unique_ptr<IMemAlloc> buffer_manager_;
   std::unique_ptr<KVManager<T>> kv_manager_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::unique_ptr<DecoderRunner> decoder_runner_;
   std::unique_ptr<MultimodalPromptProcessor<T>> prompt_processor_;
   std::unique_ptr<MultimodalTokenGenerator<T>> token_generator_;
-  std::unique_ptr<EmbeddingRunner> embedding_runner_;
-  std::unique_ptr<EmbeddingProcessor> embedding_processor_;
-  std::unique_ptr<EmbeddingProcessor> embedding_generator_;
+  std::unique_ptr<EncoderRunner> encoder_runner_;
+  std::unique_ptr<TokenEmbeddingRunner> tok_embedding_runner_;
+  std::unique_ptr<TokenEmbeddingProcessor> tok_embedding_processor_;
+  std::unique_ptr<TokenEmbeddingProcessor> tok_embedding_generator_;
+  std::unique_ptr<MultimodalEmbeddingMerger> embedding_merger_;
 
-  // Image hidden states storage
-  std::unique_ptr<executorch::aten::Tensor> image_hidden_states_;
-
-  // Multimodal embeddings storage
-  std::vector<float> multimodal_embeddings_buffer_;
-  std::vector<executorch::aten::TensorImpl::SizesType>
-      multimodal_embeddings_sizes_;
-  std::vector<executorch::aten::TensorImpl::DimOrderType>
-      multimodal_embeddings_dim_order_;
-  TensorStruct<float> merged_embeddings_;
+  // Placeholder token ID for image inputs. This value will be set from the
+  // model's metadata. A default of 0 indicates that the vision modality is not
+  // supported.
+  uint64_t image_token_id_{0};
 
   // scale and zero point for quantized KV cache
   std::vector<float> input_k_cache_scales_;
