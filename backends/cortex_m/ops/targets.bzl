@@ -9,6 +9,9 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library", "executorch_generated_lib")
 load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
 
+# ARM embedded platforms for Cortex-M targets (FVP simulation, on-device)
+_ARM_EMBEDDED_PLATFORMS = ["ovr_config//cpu:arm32-embedded", "ovr_config//cpu:arm32-embedded-fpu"]
+
 def define_operator_target(name: str):
     runtime.cxx_library(
         name = "op_{}".format(name),
@@ -16,15 +19,30 @@ def define_operator_target(name: str):
             "op_{}.cpp".format(name),
         ],
         platforms = CXX,
+        compatible_with = _ARM_EMBEDDED_PLATFORMS,
         deps = [
-            "//executorch/runtime/kernel:kernel_includes"
+            "//executorch/runtime/kernel:kernel_includes",
         ],
         link_whole = True,
     )
 
+# All cortex_m operators - must match operators.yaml declarations
 OPERATORS = [
     "quantize_per_tensor",
     "dequantize_per_tensor",
+    "quantized_add",
+    "quantized_mul",
+    "minimum",
+    "maximum",
+    "quantized_linear",
+    "softmax",
+    "transpose",
+    "pad",
+    "quantized_conv2d",
+    "quantized_depthwise_conv2d",
+    "quantized_transpose_conv2d",
+    "quantized_avg_pool2d",
+    "quantized_max_pool2d",
 ]
 
 def define_common_targets():
@@ -43,6 +61,7 @@ def define_common_targets():
         srcs = [],
         visibility = ["PUBLIC"],
         platforms = CXX,
+        compatible_with = _ARM_EMBEDDED_PLATFORMS,
         exported_deps = all_op_targets,
     )
 
