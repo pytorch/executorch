@@ -18,6 +18,7 @@ Currently, the Samsung Exynos backend is supported only for devices with the
 following chipsets:
 
 - Exynos 2500 (E9955)
+- Exynos 2600 (E9965)
 
 ## Development Requirements
 
