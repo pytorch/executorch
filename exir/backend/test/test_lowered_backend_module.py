@@ -20,9 +20,18 @@ from executorch.exir.backend.test.demo_backend import DemoBackend
 from executorch.exir.schema import DelegateCall, Program
 
 from executorch.extension.pybindings.portable_lib import (  # @manual
+    _get_registered_backend_names,
     _load_for_executorch_from_buffer,
 )
 from torch.export import export
+
+
+def _has_backend_with_compiler_demo() -> bool:
+    """Check if BackendWithCompilerDemo is linked into the portable runtime."""
+    try:
+        return "BackendWithCompilerDemo" in _get_registered_backend_names()
+    except Exception:
+        return False
 
 
 class TestBackendAPI(unittest.TestCase):
@@ -64,6 +73,10 @@ class TestBackendAPI(unittest.TestCase):
             .executorch_program
         )
 
+    @unittest.skipUnless(
+        _has_backend_with_compiler_demo(),
+        "BackendWithCompilerDemo not registered (build with EXECUTORCH_BUILD_TESTS=ON)",
+    )
     def test_emit_lowered_backend_module_end_to_end(self):
         class SinModule(torch.nn.Module):
             def __init__(self):

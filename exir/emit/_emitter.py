@@ -1747,9 +1747,12 @@ class _Emitter(torch.fx.Interpreter):
         # Default to none and let delegates and ops override.
         if target == operator.getitem:
             assert len(args) == 2
-            head = typing.cast(Mapping[int, _EmitterValue], args[0])
+            head = args[0]
             index = typing.cast(int, args[1])
-            return head[index]
+            # Delegate may return a single _AbstractValue (single output) or tuple/list.
+            if index == 0 and isinstance(head, _AbstractValue):
+                return head
+            return typing.cast(Mapping[int, _EmitterValue], head)[index]
 
         elif target == memory.alloc:
             assert len(args) == 1

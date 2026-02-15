@@ -115,6 +115,15 @@ def collect_ops(gm: torch.fx.GraphModule):
     return ops
 
 
+def _has_awesome_op_out() -> bool:
+    """True if test_lib is loaded and my_awesome_3rdparty_ns.awesome_op is available."""
+    try:
+        getattr(torch.ops.my_awesome_3rdparty_ns, "awesome_op").out
+        return True
+    except AttributeError:
+        return False
+
+
 lib = Library("DO_NOT_USE_TEST_ONLY", "DEF")
 
 lib.define("foo(Tensor self) -> (Tensor, Tensor)")
@@ -351,6 +360,10 @@ class TestPasses(unittest.TestCase):
         # TODO(angelayi): Add a utility function that verifies a model is in
         # the edge dialect
 
+    @unittest.skipIf(
+        not _has_awesome_op_out(),
+        "test_lib not loaded (my_awesome_3rdparty_ns.awesome_op unavailable)",
+    )
     def test_to_out_variant_none_output(self) -> None:
         class CompositeModel(torch.nn.Module):
             def __init__(self, _weight):
