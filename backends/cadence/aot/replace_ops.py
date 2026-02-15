@@ -863,10 +863,12 @@ class ReplaceTrivialConvWithLinear(RemoveOrReplacePassInterface):
     the image.
     """
 
+    # A map from the trivial convolution op to the linear op that it should
+    # be replaced with.
     trivial_conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
         exir_ops.edge.cadence.conv1d.default: exir_ops.edge.aten.linear.default,
         exir_ops.edge.cadence.conv2d.default: exir_ops.edge.aten.linear.default,
-        exir_ops.edge.cadence.conv3d.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
     }
@@ -882,7 +884,8 @@ class ReplaceTrivialConvWithLinear(RemoveOrReplacePassInterface):
         # and output tensor.
         assert isinstance(node.target, EdgeOpOverload)
         quantized_op = (
-            node.target == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
+            node.target == exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor
+            or node.target == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
             or node.target == exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
         )
         assert (len(node.args) == 7 and not quantized_op) or (
