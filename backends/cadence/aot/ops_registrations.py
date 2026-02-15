@@ -1160,12 +1160,24 @@ def quantized_conv2d_nhwc_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+
+    # Determine weight layout based on input and weight dimensions:
+    # - 1D conv: input is 3D, weight is 3D [OC, K, IC]
+    # - 2D depthwise conv: input is 4D, weight is 3D [KH, KW, OC]
+    # - 2D regular conv: input is 4D, weight is 4D [OC, KH, KW, IC]
+    if len(in_size) == 3:
+        # 1D conv: weight is [OC, K, IC]
+        out_channels, *kernel_size, _ = weight.shape
+    elif len(weight.shape) == 3:
+        # 2D depthwise conv: weight is [KH, KW, OC]
+        *kernel_size, out_channels = weight.shape
+    else:
+        # 2D regular conv: weight is [OC, KH, KW, IC]
+        out_channels, *kernel_size, _ = weight.shape
 
     # Compute the output tensor size
     output_size = (
