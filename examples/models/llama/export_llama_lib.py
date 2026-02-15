@@ -99,6 +99,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "static_llama",
     "qwen2_5_0_5b",
     "qwen2_5_1_5b",
+    "qwen2_5_coder_32b",
     "qwen3_0_6b",
     "qwen3_1_7b",
     "qwen3_4b",
@@ -112,6 +113,7 @@ TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
     "qwen2_5_0_5b": "Qwen/Qwen2.5-0.5B",
     "qwen2_5_1_5b": "Qwen/Qwen2.5-1.5B",
+    "qwen2_5_coder_32b": "Qwen/Qwen2.5-Coder-32B-Instruct",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM-135M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
