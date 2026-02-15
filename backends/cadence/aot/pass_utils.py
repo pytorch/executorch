@@ -8,7 +8,7 @@
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Set, Type, Union
+from typing import Any, Callable, List, Optional, Set, Type, TypeVar, Union, get_args, get_origin
 
 import torch
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
@@ -18,6 +18,9 @@ from executorch.exir.pass_base import ExportPass, PassBase, PassResult
 
 from torch._ops import OpOverloadPacket
 from torch.fx import Node
+from torch.fx.node import Argument
+
+T = TypeVar("T")
 
 
 # Is an overlap in tensor lifetime and storage allowed at the current opt level?
@@ -174,27 +177,94 @@ def nodes_not_adjacent_in_gm(
     return True
 
 
+
+def _matches_expected_type(value: Any, expected_type: Any) -> bool:
+    if expected_type is Any:
+        return True
+
+    origin = get_origin(expected_type)
+    if origin is list:
+        args = get_args(expected_type)
+        if len(args) == 1 and args[0] in (Node, EdgeOpOverload, EdgeOpOverloadPacket):
+            elem_type = args[0]
+            items = value if isinstance(value, list) else list(value) if isinstance(value, tuple) else None
+            if items is None:
+                return False
+            return all(isinstance(elem, elem_type) for elem in items)
+
+    try:
+        return isinstance(value, expected_type)
+    except TypeError:
+        if origin is not None:
+            return isinstance(value, origin)
+        return False
+
+
+def get_arg_typed(
+    node: torch.fx.Node,
+    kwarg_name: str,
+    expected_type: Type[T],
+) -> T:
+    """
+    Get the arg with kwarg_name of the node, with type checking.
+
+    Args:
+        node: The FX node to extract the argument from
+        kwarg_name: The name of the argument to extract
+        expected_type: Type to validate and cast the argument to.
+                      Asserts the argument is an instance of this type.
+
+    Returns:
+        The argument value, type-checked and cast to expected_type
+
+    Example:
+        # Get a node argument with type checking
+        conv_weight_node = get_arg_typed(node, "weight", torch.fx.Node)
+
+        # Get a float argument with type checking
+        eps = get_arg_typed(node, "eps", float)
+    """
+    value = get_arg(node, kwarg_name)
+
+    assert _matches_expected_type(
+        value, expected_type
+    ), f"Expected {kwarg_name} to be {expected_type}, got {type(value).__name__}"
+    return value  # type: ignore[return-value]
+
+
 def get_arg(
     node: torch.fx.Node,
     kwarg_name: str,
-) -> torch.fx.node.Argument:
+) -> Argument:
     """
-    Get the arg with arg_name of the node, returns default value if not set.
+    Get the arg with kwarg_name of the node.
+
+    Args:
+        node: The FX node to extract the argument from
+        kwarg_name: The name of the argument to extract
+
+    Returns:
+        The argument value
+
+    Example:
+        # Get an argument
+        value = get_arg(node, "some_arg")
     """
     # Try to get the arg from kwargs first since this is faster
     if kwarg_name in node.kwargs:
-        return node.kwargs[kwarg_name]
-
-    # If it's not found in kwargs, try to normalize the args
-    normalized_args = node.normalized_arguments(
-        node.graph.owning_module, normalize_to_only_use_kwargs=True
-    )
-    if not normalized_args:
-        raise RuntimeError(
-            f"get_arg: Node {node} does not support normalization of arguments"
+        value = node.kwargs[kwarg_name]
+    else:
+        # If it's not found in kwargs, try to normalize the args
+        normalized_args = node.normalized_arguments(
+            node.graph.owning_module, normalize_to_only_use_kwargs=True
         )
+        if not normalized_args:
+            raise RuntimeError(
+                f"get_arg: Node {node} does not support normalization of arguments"
+            )
+        value = normalized_args.kwargs[kwarg_name]
 
-    return normalized_args.kwargs[kwarg_name]
+    return value
 
 
 def set_arg(
