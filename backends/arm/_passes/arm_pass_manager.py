@@ -18,6 +18,7 @@ from executorch.backends.arm._passes import (
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
+    ControlFlowConstInlinePass,
     Conv1dUnsqueezePass,
     ConvertELUParamsPass,
     ConvertExpandCopyToRepeatPass,
@@ -121,6 +122,7 @@ from executorch.backends.arm._passes import (
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
+
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.pipeline_config import (
@@ -240,6 +242,7 @@ class ArmPassManager(PassManager):
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
                 ConvertELUParamsPass(),
+                ControlFlowConstInlinePass(),
                 NormalizeWhileInitialArgsPass(use_exir_clone=True),
             ]
         )
@@ -416,6 +419,7 @@ class ArmPassManager(PassManager):
             [
                 ReplaceScalarWithTensorByProfilePass(tfa_pass=True),
                 ScalarsToAttributePass(tfa_pass=True),
+                ControlFlowConstInlinePass(tfa_pass=True),
             ]
         )
 

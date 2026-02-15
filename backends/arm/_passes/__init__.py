@@ -139,4 +139,7 @@ from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass 
 from .replace_inf_and_limit_values_pass import (  # noqa  # usort: skip
     ReplaceInfAndLimitValuesPass,
 )
+from .control_flow_const_inline import (  # noqa  # usort: skip
+    ControlFlowConstInlinePass,
+)
 from .arm_pass_manager import ArmPassManager  # noqa  # usort: skip
