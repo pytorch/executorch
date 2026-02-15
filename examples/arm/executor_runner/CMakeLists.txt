@@ -154,8 +154,68 @@ add_corstone_subdirectory(${SYSTEM_CONFIG} ${ETHOS_SDK_PATH})
 configure_timing_adapters(${SYSTEM_CONFIG} ${MEMORY_MODE})
 
 # Dependencies from the ExecuTorch build
-find_package(
-  executorch REQUIRED HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
+add_library(executorch STATIC IMPORTED)
+set_property(
+  TARGET executorch PROPERTY IMPORTED_LOCATION
+                           "${ET_BUILD_DIR_PATH}/libexecutorch.a"
+)
+
+add_library(executorch_core STATIC IMPORTED)
+set_property(
+  TARGET executorch_core
+  PROPERTY IMPORTED_LOCATION "${ET_BUILD_DIR_PATH}/libexecutorch_core.a"
+)
+target_link_libraries(executorch INTERFACE executorch_core)
+
+add_library(executorch_delegate_ethos_u STATIC IMPORTED)
+set_property(
+  TARGET executorch_delegate_ethos_u
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/backends/arm/libexecutorch_delegate_ethos_u.a"
+)
+
+add_library(portable_ops_lib STATIC IMPORTED)
+set_property(
+  TARGET portable_ops_lib
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/examples/arm/libarm_portable_ops_lib.a"
+)
+add_library(portable_kernels STATIC IMPORTED)
+set_property(
+  TARGET portable_kernels
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/kernels/portable/libportable_kernels.a"
+)
+add_library(quantized_ops_lib STATIC IMPORTED)
+set_property(
+  TARGET quantized_ops_lib
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/kernels/quantized/libquantized_ops_lib.a"
+)
+add_library(quantized_kernels STATIC IMPORTED)
+set_property(
+  TARGET quantized_kernels
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/kernels/quantized/libquantized_kernels.a"
+)
+add_library(cortex_m_ops_lib STATIC IMPORTED)
+set_property(
+  TARGET cortex_m_ops_lib
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/backends/cortex_m/libcortex_m_ops_lib.a"
+)
+add_library(cortex_m_kernels STATIC IMPORTED)
+set_property(
+  TARGET cortex_m_kernels
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/backends/cortex_m/libcortex_m_kernels.a"
+)
+add_library(extension_runner_util STATIC IMPORTED)
+set_property(
+  TARGET extension_runner_util
+  PROPERTY
+    IMPORTED_LOCATION
+    "${ET_BUILD_DIR_PATH}/extension/runner_util/libextension_runner_util.a"
 )
 
 # Convert pte to header
