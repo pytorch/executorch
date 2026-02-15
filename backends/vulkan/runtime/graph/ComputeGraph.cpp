@@ -1115,7 +1115,11 @@ void ComputeGraph::prepack() {
   int i = 0;
   bool submitted = false;
   const bool reduce_peak_memory = total_constant_nbytes_ > 500 * MB;
-  // int count = 0;
+  // On PowerVR GPUs, batching multiple prepack compute dispatches in a single
+  // command buffer produces incorrect results for the second and subsequent
+  // constants. Submit and wait after each prepack node to work around this
+  // driver issue.
+  const bool serialize_prepack = device_is_powervr();
   context_->set_cmd();
   for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
     // Do not trigger on the first or last prepack node.
@@ -1142,6 +1146,13 @@ void ComputeGraph::prepack() {
 
     node->encode(this);
     i++;
+
+    if (serialize_prepack && i < static_cast<int>(prepack_nodes_.size())) {
+      submit_current_cmd_and_wait();
+      context_->flush();
+      staging_nbytes_in_cmd_ = 0;
+      context_->set_cmd();
+    }
   }
   submit_current_cmd_and_wait(/*final_use=*/true);
   context_->flush();
