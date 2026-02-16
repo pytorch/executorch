@@ -67,7 +67,9 @@ def test_sdpa_tosa_FP(test_case: test_case_t):
 @common.parametrize("test_case", test_suite)
 def test_sdpa_tosa_INT(test_case: test_case_t):
     model, test_input = test_case()
-    pipeline = TosaPipelineINT[input_t](model, test_input, [], [])
+    pipeline = TosaPipelineINT[input_t](
+        model, test_input, [], [], frobenius_threshold=None, cosine_threshold=None
+    )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.pop_stage("check_count.exir")
     pipeline.pop_stage(

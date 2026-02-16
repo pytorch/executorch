@@ -217,6 +217,7 @@ def test_linear_tosa_INT_a8w4(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         tosa_extensions=["int4"],
+        frobenius_threshold=0.15,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)

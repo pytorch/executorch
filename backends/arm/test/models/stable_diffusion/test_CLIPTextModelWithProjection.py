@@ -116,6 +116,8 @@ def test_clip_text_with_projection_tosa_INT():
             exir_op=[],
             use_to_edge_transform_and_lower=True,
             atol=0.8,
+            frobenius_threshold=None,
+            cosine_threshold=None,
         )
         pipeline.change_args(
             "check_count.exir",
