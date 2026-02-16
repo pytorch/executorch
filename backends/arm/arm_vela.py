@@ -20,6 +20,18 @@ except ImportError:
     has_vela = False
 
 
+def _as_int32(value, name: str) -> int:
+    """Convert numpy scalars to signed int32 with a clear error on overflow."""
+    arr = np.asarray(value)
+    if np.issubdtype(arr.dtype, np.unsignedinteger):
+        # Interpret unsigned values as signed (e.g., uint64 max -> -1).
+        arr = arr.astype(np.int64)
+    v = int(arr)
+    if v < -(2**31) or v > 2**31 - 1:
+        raise ValueError(f"{name} out of int32 range: {v}")
+    return v
+
+
 # Pack either input or output tensor block, compose the related arrays into
 # per-io structs to simplify runtime use.
 def vela_bin_pack_io(prefix, data):
@@ -30,9 +42,9 @@ def vela_bin_pack_io(prefix, data):
     ios = struct.pack("<i", len(vela_input_shapes))
     for i in range(len(vela_input_shapes)):
         io_shape = vela_input_shapes[i]
-        io_elem_size = data[prefix + "_elem_size"][i]
-        io_offset = data[prefix + "_offset"][i]
-        io_region = data[prefix + "_region"][i]
+        io_elem_size = _as_int32(data[prefix + "_elem_size"][i], f"{prefix}_elem_size")
+        io_offset = _as_int32(data[prefix + "_offset"][i], f"{prefix}_offset")
+        io_region = _as_int32(data[prefix + "_region"][i], f"{prefix}_region")
         if len(io_shape) != vela_io_shape_dims:
             raise ValueError(
                 f"Expected {vela_io_shape_dims}D shape, got {len(io_shape)}D"
