@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,8 +16,8 @@ from torch.fx import GraphModule
 
 
 class VisualizePass(ArmPass):
-    """
-    This pass visualizes the graph at the point of insertion in the pass manager
+    """This pass visualizes the graph at the point of insertion in the pass
+    manager.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -32,8 +32,8 @@ class VisualizePass(ArmPass):
 
 
 class PrintGraphModuleCodePass(ArmPass):
-    """
-    This pass prints the graph module's code to stdout for debugging purposes.
+    """This pass prints the graph module's code to stdout for debugging
+    purposes.
 
     Example output:
 
@@ -42,6 +42,7 @@ class PrintGraphModuleCodePass(ArmPass):
           x, y, = fx_pytree.tree_flatten_spec(([x, y], {}), self._in_spec)
           remainder = torch.ops.aten.remainder.Scalar(x, 0.25);  x = None
           return pytree.tree_unflatten((remainder,), self._out_spec)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()

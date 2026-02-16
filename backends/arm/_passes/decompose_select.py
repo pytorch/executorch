@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -21,8 +21,8 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class DecomposeSelectPass(ArmPass):
-    """
-    This pass decomposes select into slice + squeeze to ensure that Aten and TOSA outputs has the same rank (input rank -1)
+    """This pass decomposes select into slice + squeeze to ensure that Aten and
+    TOSA outputs has the same rank (input rank -1)
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ConvertSqueezesToViewPass}

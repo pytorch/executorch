@@ -11,6 +11,7 @@ from typing import Dict, Sequence
 import torch
 from executorch.backends.cortex_m.passes.passes_utils import (
     quantize_multiplier_aot,
+    quantize_val,
     SHIFT_INT8,
 )
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
@@ -374,6 +375,39 @@ class QuantizedOpFusionPass(ExportPass):
 
         return exir_ops.edge.cortex_m.quantized_avg_pool2d.default, args
 
+    def _get_pad_replacement(self, args, meta):
+        input_qparams = meta.data.get("input_qparams", {})
+        if not input_qparams:
+            return exir_ops.edge.aten.constant_pad_nd.default, args
+
+        scale = float(input_qparams[0].scale)
+        zero_point = int(input_qparams[0].zp)
+
+        padding = self._unwrap_argument(args[1])
+        pad_value_raw = self._unwrap_argument(args[2]) if len(args) > 2 else 0
+        pad_value_float = float(pad_value_raw)
+
+        quantized_pad_value = int(
+            quantize_val(pad_value_float, scale, zero_point, -128, 127)
+        )
+
+        rank = len(args[0].data.shape)
+        assert 1 <= rank <= 4, f"cortex_m pad: expected rank in [1, 4], got {rank}"
+        n_pairs = len(padding) // 2
+        assert (
+            len(padding) % 2 == 0 and n_pairs <= rank
+        ), f"cortex_m pad: invalid padding length {len(padding)} for rank {rank}"
+
+        pre_pad = [0, 0, 0, 0]
+        post_pad = [0, 0, 0, 0]
+        for i in range(n_pairs):
+            dim_4d = 3 - i
+            pre_pad[dim_4d] = int(padding[2 * i])
+            post_pad[dim_4d] = int(padding[2 * i + 1])
+
+        new_args = (args[0], pre_pad, post_pad, int(quantized_pad_value))
+        return exir_ops.edge.cortex_m.pad.default, new_args
+
     def call_operator(
         self,
         op: EdgeOpOverload,
@@ -399,6 +433,8 @@ class QuantizedOpFusionPass(ExportPass):
                 op, args = self._get_permute_replacement(args, meta)
             case exir_ops.edge.aten.avg_pool2d.default:
                 op, args = self._get_avg_pool2d_replacement(args, meta)
+            case exir_ops.edge.aten.constant_pad_nd.default:
+                op, args = self._get_pad_replacement(args, meta)
             case _:
                 pass
 

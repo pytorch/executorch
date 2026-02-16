@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,7 +19,9 @@ aten_sign = torch.ops.aten.sign.default
 
 
 def get_ops(op):
-    """Returns the appropriate operator functions based on the input operator."""
+    """Returns the appropriate operator functions based on the input
+    operator.
+    """
     if op == edge_sign:
         return (
             exir_ops.edge.aten.gt.Scalar,
@@ -43,7 +45,9 @@ def get_ops(op):
 
 
 class DecomposeSignPass(ArmPass):
-    """Decomposes the sign operator into a sequence of operations that are supported by the Arm backend."""
+    """Decomposes the sign operator into a sequence of operations that are
+    supported by the Arm backend.
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 

@@ -800,6 +800,15 @@ class MulTensorPattern(QuantizationPattern):
         )
 
 
+class NegPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.neg.default` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.neg.default]
+
+
 class PadPattern(SharedSpecPattern):
     """
     Quantizer for Pad operator.
@@ -942,6 +951,15 @@ class TanhInPlacePattern(QuantizationPattern):
         return get_anchors_for_fixed_quant_specs(
             fused_partition, scale=1.0 / 128.0, zero_point=0, is_qat=self.is_qat
         )
+
+
+class UpsampleBilinear2DPattern(SharedSpecPattern):
+    """
+    Quantizer for `aten.upsample_bilinear2d.vec` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.upsample_bilinear2d.vec]
 
 
 class UpsampleNearest2DPattern(SharedSpecPattern):

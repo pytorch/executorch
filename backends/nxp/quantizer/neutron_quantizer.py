@@ -32,6 +32,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     MeanDimPattern,
     MmPattern,
     MulTensorPattern,
+    NegPattern,
     NodeArgsIdx,
     PadPattern,
     PermutePattern,
@@ -47,6 +48,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     TanhInPlacePattern,
     TanhPattern,
     TransposeIntPattern,
+    UpsampleBilinear2DPattern,
     UpsampleNearest2DPattern,
     ViewPattern,
 )
@@ -262,6 +264,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(MeanDimPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(MmPattern(self, is_qat=is_qat), static_qconfig),
                 OpQuantizer(MulTensorPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(NegPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(PadPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(PermutePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(ReluPattern(is_qat=is_qat), static_qconfig),
@@ -274,6 +277,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(TanhPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(TanhInPlacePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(TransposeIntPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(UpsampleBilinear2DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(UpsampleNearest2DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(ViewPattern(is_qat=is_qat), static_qconfig),
             ]
