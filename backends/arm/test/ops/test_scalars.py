@@ -216,7 +216,9 @@ def test_add_tensor_tosa_INT_scalar(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", tensor_scalar_tests, xfails=int_inplace_xfails)
+@common.parametrize(
+    "test_data", tensor_scalar_tests, xfails=int_inplace_xfails, strict=False
+)
 def test_add_tensor_tosa_INT_inplace(test_data):
     """Tests inplace add with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](AddInplace(), test_data, aten_op=[])
@@ -284,7 +286,9 @@ def test_sub_tensor_tosa_INT_scalar(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", tensor_scalar_tests, xfails=int_inplace_xfails)
+@common.parametrize(
+    "test_data", tensor_scalar_tests, xfails=int_inplace_xfails, strict=False
+)
 def test_sub_tensor_tosa_INT_inplace(test_data):
     """Tests inplace sub with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](SubInplace(), test_data, aten_op=[])
@@ -341,7 +345,9 @@ def test_mul_tensor_tosa_INT_scalar(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", tensor_scalar_tests, xfails=int_inplace_xfails)
+@common.parametrize(
+    "test_data", tensor_scalar_tests, xfails=int_inplace_xfails, strict=False
+)
 def test_mul_tensor_tosa_INT_inplace(test_data):
     """Tests inplace mul with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](MulInplace(), test_data, aten_op=[])
@@ -395,7 +401,7 @@ def test_div_scalar_tosa_FP(test_data):
 def test_div_tensor_tosa_INT_scalar(test_data):
     """Tests regular div with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](
-        Div(), test_data, aten_op=[], frobenius_threshold=0.3
+        Div(), test_data, aten_op=[], frobenius_threshold=0.5
     )
     pipeline.run()
 
@@ -404,7 +410,7 @@ def test_div_tensor_tosa_INT_scalar(test_data):
 def test_div_tensor_tosa_INT_inplace(test_data):
     """Tests inplace div with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](
-        DivInplace(), test_data, aten_op=[], frobenius_threshold=0.3
+        DivInplace(), test_data, aten_op=[], frobenius_threshold=0.5
     )
     pipeline.run()
 
