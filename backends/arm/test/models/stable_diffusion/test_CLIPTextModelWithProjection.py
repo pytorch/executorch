@@ -1,10 +1,12 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
 from typing import Tuple
+
+import pytest
 
 import torch
 from executorch.backends.arm._passes import (
@@ -76,6 +78,9 @@ class TestCLIPTextModelWithProjection:
         return text_encoder_model, text_encoder_model_inputs
 
 
+@pytest.mark.xfail(
+    reason="MLETORCH-1601: Delegate output order mismatch from TOSA reference model."
+)
 def test_clip_text_with_projection_tosa_FP():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
