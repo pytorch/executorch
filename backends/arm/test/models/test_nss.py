@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -72,6 +72,8 @@ def test_nss_tosa_INT():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 

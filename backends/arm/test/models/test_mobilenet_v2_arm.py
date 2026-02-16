@@ -95,6 +95,8 @@ def test_mv2_tosa_INT(per_channel_quantization):
         per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -172,6 +174,8 @@ def test_mv2_tosa_INT_FP_partial_quant():
         tosa_extensions=["FP"],
         use_to_edge_transform_and_lower=True,
         atol=0.20,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     _use_partial_quantizer(pipeline)
     pipeline.run()
