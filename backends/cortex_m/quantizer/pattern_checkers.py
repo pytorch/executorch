@@ -18,7 +18,10 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CortexMQuantizationConfig,
 )
 from torch.fx import Node
-from torchao.quantization.pt2e.quantizer import QuantizationSpec, SharedQuantizationSpec
+from torchao.quantization.pt2e.quantizer import (
+    QuantizationSpecBase,
+    SharedQuantizationSpec,
+)
 
 
 class PatternCheck:
@@ -33,20 +36,20 @@ class PatternCheck:
     """
 
     @classmethod
-    def is_per_tensor(cls, qspec: QuantizationSpec | None) -> bool:
+    def is_per_tensor(cls, qspec: QuantizationSpecBase | None) -> bool:
         """
         Returns true if the given quantization spec is per-tensor, otherwise false.
         """
-        if not isinstance(qspec, QuantizationSpec):
+        if not isinstance(qspec, QuantizationSpecBase):
             return False
         return qspec.qscheme in (torch.per_tensor_affine, torch.per_tensor_symmetric)
 
     @classmethod
-    def is_per_channel(cls, qspec: QuantizationSpec | None) -> bool:
+    def is_per_channel(cls, qspec: QuantizationSpecBase | None) -> bool:
         """
         Returns true if the given quantization spec is per-channel, otherwise false.
         """
-        if not isinstance(qspec, QuantizationSpec):
+        if not isinstance(qspec, QuantizationSpecBase):
             return False
         return qspec.qscheme in (torch.per_channel_affine, torch.per_channel_symmetric)
 
@@ -61,8 +64,8 @@ class PatternCheck:
         """
         input_qspec = qconfig.get_input_act_qspec()
         output_qspec = qconfig.get_output_act_qspec(output_node)
-        if not isinstance(input_qspec, QuantizationSpec) or not isinstance(
-            output_qspec, QuantizationSpec
+        if not isinstance(input_qspec, QuantizationSpecBase) or not isinstance(
+            output_qspec, QuantizationSpecBase
         ):
             return False
         return input_qspec.dtype == torch.int8 and output_qspec.dtype == torch.int8
