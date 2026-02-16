@@ -1033,5 +1033,13 @@ void get_view_as_real_copy_out_target_size(
   out_sizes[self.dim()] = 2;
 }
 
+void get_view_as_complex_copy_out_target_size(
+    const Tensor& self,
+    executorch::aten::SizesType* out_sizes) {
+  for (auto i : c10::irange(self.dim() - 1)) {
+    out_sizes[i] = static_cast<executorch::aten::SizesType>(self.size(i));
+  }
+}
+
 } // namespace executor
 } // namespace torch
