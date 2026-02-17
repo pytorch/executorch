@@ -2064,7 +2064,11 @@ void compute_weight_sums(
   auto& weight_sums_data = weight_sums.get_int32_data();
   auto& quantized_weight_data = quantized_weight.get_int8_data();
 
-  weight_sums_data.resize(out_features);
+  // Don't resize down - the buffer may be pre-allocated with aligned size.
+  // Only resize up if needed.
+  if (weight_sums_data.size() < static_cast<size_t>(out_features)) {
+    weight_sums_data.resize(out_features);
+  }
 
   // For each output feature, compute the sum of quantized weights
   for (int64_t out_f = 0; out_f < out_features; ++out_f) {
