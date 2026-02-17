@@ -168,7 +168,10 @@
 #define MAX_FLT32  (3.402823466e+38F)
 #endif
 #ifndef MIN_FLT32
-#define MIN_FLT32  (1.175494351e-38F)
+#define MIN_FLT32  (- MAX_FLT32)
+#endif
+#ifndef MIN_ABS_FLT32
+#define MIN_ABS_FLT32  (1.175494351e-38F)
 #endif
 #ifndef MAX_INT8
 #define MAX_INT8  (0x7f)
