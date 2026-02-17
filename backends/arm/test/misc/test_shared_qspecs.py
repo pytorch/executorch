@@ -467,10 +467,16 @@ class SharedQspecNoQspecs(torch.nn.Module):
     outputs_qspecs = {None: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
-            (0.000244141, -128, -128, 127, torch.int8): 2,
+            (
+                1.5259e-05,
+                -128,
+                -128,
+                127,
+                torch.int8,
+            ): 2,  # The network always has 0 output -> very small scale.
         },
         "quantized_decomposed.quantize_per_tensor.default": {
-            (0.000244141, -128, -128, 127, torch.int8): 2,
+            (1.5259e-05, -128, -128, 127, torch.int8): 2,
         },
     }
 
@@ -575,7 +581,7 @@ test_cases = {
 
 
 @parametrize("test_case", test_cases)
-def test_shared_qspec_quantizer(test_case):
+def test_shared_qspec_quantizer_no_target(test_case):
     """
     Test that ops which does not change dynamic range are able to use int8 portable kernels.
     """
@@ -608,7 +614,7 @@ float_test_cases = {
 
 
 @parametrize("test_case", float_test_cases)
-def test_shared_qspec_quantizer_no_qspecs(test_case):
+def test_shared_qspec_quantizer_no_qspecs_no_target(test_case):
     """
     Test that ops which does not change dynamic range are able to use int8 portable kernels.
     """
@@ -624,7 +630,7 @@ def test_shared_qspec_quantizer_no_qspecs(test_case):
     _check_quant_params(pipeline, test_case.model.quant_params)
 
 
-def test_maximum_mixed_int8_int16_inputs():
+def test_maximum_mixed_int8_int16_inputs_no_target():
     model = MixedMaximumInt8Int16()
     inputs = (ramp_tensor(-2, 2, (2, 3, 4)),)
 

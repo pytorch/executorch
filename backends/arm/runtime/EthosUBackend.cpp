@@ -373,16 +373,6 @@ Error copy_with_layout_adjustment(
     return Error::InvalidProgram;
   }
 
-  if (chunk_size > vela_chunk_size) {
-    ET_LOG(
-        Error,
-        "Ethos-U output %d chunk bytes %zu exceed vela chunk bytes %zu",
-        output_index,
-        chunk_size,
-        vela_chunk_size);
-    return Error::InvalidProgram;
-  }
-
   if (src == nullptr) {
     ET_LOG(Error, "Ethos-U padded copy received null buffer");
     return Error::InvalidState;
