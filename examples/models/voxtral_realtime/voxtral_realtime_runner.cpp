@@ -404,10 +404,9 @@ bool StreamingSession::try_process_step() {
     return false;
   }
 
-  // Guard: encoder/decoder cache capacity.
+  // Guard: decoder cache capacity (encoder uses ring buffer, no limit).
   const int64_t enc_frames_per_chunk = chunk_mel_len / 2;
-  if (enc_frame_pos_ + enc_frames_per_chunk > runner_.max_enc_len_ ||
-      dec_pos_ >= runner_.max_seq_len_) {
+  if (dec_pos_ >= runner_.max_seq_len_) {
     return false;
   }
 

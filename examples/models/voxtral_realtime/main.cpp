@@ -52,6 +52,11 @@ DEFINE_bool(
     mic,
     false,
     "Live microphone mode: read raw 16kHz float32 PCM from stdin.");
+DEFINE_int32(
+    mic_chunk_ms,
+    80,
+    "Mic read chunk size in ms. Multiples of 80 align with the model's "
+    "streaming step (80, 160, 320, 640, 960).");
 
 namespace {
 volatile sig_atomic_t g_interrupted = 0;
@@ -150,9 +155,8 @@ int main(int argc, char** argv) {
     fprintf(stdout, "Listening (Ctrl+C to stop)...\n");
     fflush(stdout);
 
-    // Read 80ms chunks (1280 samples * 4 bytes = 5120 bytes).
-    // StreamingSession internally processes in 80ms steps.
-    const size_t chunk_samples = 1280;
+    // Read chunk size from flag (16 samples per ms at 16kHz).
+    const size_t chunk_samples = static_cast<size_t>(FLAGS_mic_chunk_ms) * 16;
     const size_t chunk_bytes = chunk_samples * sizeof(float);
     std::vector<float> buf(chunk_samples);
 

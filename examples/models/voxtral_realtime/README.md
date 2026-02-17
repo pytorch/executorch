@@ -91,7 +91,7 @@ python export_voxtral_rt.py \
 | `--qlinear-encoder-group-size` | `32` | Group size for encoder linear quantization |
 | `--qembedding` | (none) | Embedding layer quantization (`8w`) |
 | `--streaming` | off | Export streaming encoder with KV cache |
-| `--max-enc-len` | `750` | Max encoder KV cache length (~15s audio, streaming only) |
+| `--max-enc-len` | `750` | Encoder sliding window size (streaming only) |
 
 ## Build
 
