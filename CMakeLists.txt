@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -614,8 +614,14 @@ install(FILES tools/cmake/executorch-config.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
 
-if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+if(EXECUTORCH_BUILD_ARM_BAREMETAL
+   OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
+   OR EXECUTORCH_BUILD_VGF
+)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
+endif()
+
+if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   list(APPEND _executorch_backends executorch_delegate_ethos_u)
 endif()
 
@@ -626,6 +632,10 @@ endif()
 if(EXECUTORCH_BUILD_NXP_NEUTRON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/nxp)
   list(APPEND _executorch_backends executorch_delegate_neutron)
+endif()
+
+if(EXECUTORCH_BUILD_NXP_NEUTRON_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/nxp/executor_runner)
 endif()
 
 if(EXECUTORCH_BUILD_COREML)
@@ -666,6 +676,16 @@ endif()
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
   list(APPEND _executorch_backends coretex_m_backend)
+endif()
+
+# If CUDA, Metal, or pybind will need Torch, find it at root scope first so that
+# imported targets (e.g. MKL::MKL) aren't created in child directory scopes and
+# then duplicated when found again at root scope.
+if(EXECUTORCH_BUILD_CUDA
+   OR EXECUTORCH_BUILD_METAL
+   OR EXECUTORCH_BUILD_PYBIND
+)
+  find_package_torch()
 endif()
 
 # Build common AOTI functionality if needed by CUDA or Metal backends
@@ -886,6 +906,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       torch
   )
 
+  # Build common AOTI functionality if needed by CUDA or Metal backends
+  if(EXECUTORCH_BUILD_CUDA)
+    # CUDA uses SlimTensor-based shims
+    list(APPEND _dep_libs aoti_cuda_backend)
+  elseif(EXECUTORCH_BUILD_METAL)
+    # Metal still uses ETensor-based shims (for now)
+    list(APPEND _dep_libs aoti_common)
+  endif()
+
   # RPATH for _portable_lib.so
   set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
 
@@ -1044,7 +1073,6 @@ if(EXECUTORCH_BUILD_VULKAN)
 endif()
 
 if(EXECUTORCH_BUILD_VGF)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
   list(APPEND _executorch_backends vgf_backend)
 endif()
 
@@ -1178,6 +1206,21 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+  if(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+    target_sources(
+      executor_runner
+      PRIVATE
+        ${CMAKE_SOURCE_DIR}/examples/arm/executor_runner/ethosu_link_helper.cpp
+    )
+    target_compile_definitions(
+      executor_runner PRIVATE EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1
+    )
+    # Wrap static linking like the delegate_runner to keep images
+    # self-contained.
+    target_link_options(
+      executor_runner PRIVATE -static-libstdc++ -static-libgcc
+    )
+  endif()
 
   # Automatically set when using `emcmake cmake` for Wasm build.
   if(EMSCRIPTEN)

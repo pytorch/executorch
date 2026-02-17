@@ -14,8 +14,11 @@ aten.max_pool2d_with_indices.default,int8,static int8,"dilation=1, ceil_mode=Fal
 aten.mean.dim,int8,static int8,"4D tensor only, dims = [-1,-2] or [-2,-1]"
 aten.mul.Tensor, int8, static int8, "tensor-size % 8 = 0"
 aten.mm.default,int8,static int8,"2D tensor only"
+aten.neg.default,int8,static int8,
 aten.relu.default,int8,static int8,
-aten.tanh.default,int8,static int8,
-aten.view_copy.default,int8,static int8,
 aten.sigmoid.default,int8,static int8,
 aten.slice_copy.Tensor, int8, static int8
+aten.tanh.default,int8,static int8,
+aten.upsample_bilinear2d.vec,int8,static int8,"channels % 8 = 0, H_scale = W_scale = 2 or 4"
+aten.upsample_nearest2d.vec,int8,static int8,"channels % 8 = 0, H_scale = W_scale = 2 or 4"
+aten.view_copy.default,int8,static int8,

@@ -35,6 +35,9 @@ test_data_suite = {
     "randn_neg": lambda: torch.randn(10) - 10,
     "ramp": lambda: torch.arange(-16, 16, 0.2),
 }
+test_data_suite_fp16 = {
+    "rand_fp16": lambda: torch.rand(4, 4, dtype=torch.float16) - 0.2,
+}
 
 test_data_suite_bf16 = {
     "rand_bf16": lambda: torch.rand(4, 4, dtype=torch.bfloat16) - 0.2,
@@ -77,7 +80,9 @@ class SigmoidAddSigmoid(torch.nn.Module):
         return self.sigmoid((self.sigmoid(y) + self.sigmoid(x)))
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
+)
 def test_sigmoid_tosa_FP(test_data: torch.Tensor):
     TosaPipelineFP[input_t1](
         Sigmoid(),
@@ -171,7 +176,7 @@ def test_sigmoid_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_sigmoid_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](

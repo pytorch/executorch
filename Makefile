@@ -15,8 +15,11 @@
 # SUPPORTED MODELS:
 # -----------------
 # - voxtral:  Multimodal voice + text model (CPU, CUDA, Metal)
+# - voxtral_realtime: Realtime speech-to-text model (CPU)
 # - whisper:  Speech recognition model (CPU, CUDA, Metal)
 # - parakeet: Speech recognition model (CPU, CUDA, Metal)
+# - sortformer: Speaker diarization model (CPU)
+# - silero_vad: Voice activity detection model (CPU)
 # - llama:    Text generation model (CPU)
 # - llava:    Vision + language model (CPU)
 # - gemma3:   Text generation model (CPU, CUDA)
@@ -88,13 +91,14 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cpu whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal sortformer-cpu silero-vad-cpu llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
 	@echo "  voxtral-cuda        - Build Voxtral runner with CUDA backend"
 	@echo "  voxtral-cpu         - Build Voxtral runner with CPU backend"
 	@echo "  voxtral-metal       - Build Voxtral runner with Metal backend (macOS only)"
+	@echo "  voxtral_realtime-cpu - Build Voxtral Realtime runner with CPU backend"
 	@echo "  whisper-cuda        - Build Whisper runner with CUDA backend"
 	@echo "  whisper-cuda-debug  - Build Whisper runner with CUDA backend (debug mode)"
 	@echo "  whisper-cpu         - Build Whisper runner with CPU backend"
@@ -103,6 +107,8 @@ help:
 	@echo "  parakeet-cuda-debug - Build Parakeet runner with CUDA backend (debug mode)"
 	@echo "  parakeet-cpu        - Build Parakeet runner with CPU backend"
 	@echo "  parakeet-metal      - Build Parakeet runner with Metal backend (macOS only)"
+	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
+	@echo "  silero-vad-cpu      - Build Silero VAD runner with CPU backend"
 	@echo "  llama-cpu           - Build Llama runner with CPU backend"
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
@@ -207,6 +213,38 @@ parakeet-metal:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+sortformer-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Sortformer runner (CPU)..."
+	cd examples/models/sortformer && cmake --workflow --preset sortformer-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/sortformer/sortformer_runner"
+
+voxtral_realtime-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Voxtral Realtime runner (CPU)..."
+	cd examples/models/voxtral_realtime && cmake --workflow --preset voxtral-realtime-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner"
+
+silero-vad-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Silero VAD runner (CPU)..."
+	cmake -DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_FIND_ROOT_PATH=$(CURDIR)/cmake-out \
+		-DCMAKE_PREFIX_PATH=$(CURDIR)/cmake-out \
+		-S examples/models/silero_vad \
+		-B cmake-out/examples/models/silero_vad
+	cmake --build cmake-out/examples/models/silero_vad --target silero_vad_runner
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/silero_vad/silero_vad_runner"
 
 llama-cpu:
 	@echo "==> Building and installing ExecuTorch..."

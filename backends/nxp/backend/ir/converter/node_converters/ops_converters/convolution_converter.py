@@ -1,10 +1,11 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
 import torch
+from executorch.backends.nxp.backend.data_format import DataFormat
 
 from executorch.backends.nxp.backend.edge_helper import (
     input_tensor,
@@ -37,7 +38,6 @@ from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
 )
 from executorch.backends.nxp.backend.ir.converter.tensor_utils import tensor_has_data
 from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     conv_2d_options,
@@ -386,7 +386,7 @@ class ConvolutionConverter(NodeConverter):
                 w.quantization.quantized_dimension = 0
         else:
             raise NotImplementedError("Dynamic Transpose Conv weights.")
-        w.tensor_format = TensorFormat.TRANSPOSE_CONV_2D_WEIGHT_FORMAT
+        w.tensor_format = DataFormat.TRANSPOSE_CONV_2D_WEIGHT_FORMAT
 
         output_shape_tensor_data = np.asarray(y.shape.vector, dtype=np.int32)
         o = self.builder.create_tensor_for_data(

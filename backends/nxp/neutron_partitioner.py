@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,11 +17,13 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
 )
 from executorch.backends.nxp.backend.edge_helper import (
     DEQUANTIZE_OPERATORS,
+    is_no_op_on_neutron,
     QUANTIZE_OPERATORS,
 )
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converter import is_not_qdq_node
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
@@ -211,6 +213,7 @@ supported_ops = {
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
+    exir_ops.edge.aten.neg.default: NegConverter,  # noqa F405
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
@@ -218,6 +221,8 @@ supported_ops = {
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
     exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.tanh.default: TanhConverter,  # noqa F405
+    exir_ops.edge.aten.upsample_bilinear2d.vec: UpsampleBilinear2DConverter,  # noqa F405
+    exir_ops.edge.aten.upsample_nearest2d.vec: UpsampleNearest2DConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
 }
 
@@ -268,12 +273,11 @@ class NeutronSupportedOperators(OperatorSupportBase):
             # There is no `NodeConverter` for this `node`.
             return False
 
+        # noinspection PyUnresolvedReferences
         return (
             self._is_node_call_function(node)
             and self._is_node_quantized(node)
-            and
-            # TODO: `view_copy` node should be delegated only if it's not the only operator in the cluster.
-            node_converter.is_supported(
+            and node_converter.is_supported(
                 node,
                 self.neutron_target_spec,
                 self.parameters_mapping,
@@ -314,12 +318,40 @@ class NeutronPartitioner(Partitioner):
         compile_spec: list[CompileSpec],
         neutron_target_spec: NeutronTargetSpec,
         custom_delegation_options: CustomDelegationOptions | None = None,
+        post_quantization_state_dict: dict[str, Parameter] | None = None,
     ) -> None:
+        """Class responsible for identifying partitions suited for delegation to the eIQ Neutron NPU.
+
+        :param compile_spec: A list of compile specifications for Neutron.
+        :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
+        :param custom_delegation_options: Custom user options which affect node delegation.
+        :param post_quantization_state_dict: State-dict of the model right after quantization. During partitioning, the
+                                              `edge_program` only contains fake tensors without any data. In this case,
+                                              this state dict is used instead (if provided). Notice: It may potentially
+                                              contain outdated data,
+        """
+        super().__init__()
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
         self.custom_delegation_options = (
             custom_delegation_options or CustomDelegationOptions()
         )
         self.neutron_target_spec = neutron_target_spec
+        self.post_quantization_state_dict = post_quantization_state_dict
+
+    @staticmethod
+    def _partition_contains_compute_nodes(
+        partition: Partition, parameters_mapping: dict[str, Parameter]
+    ) -> bool:
+        non_q_dq_partition_nodes = list(filter(is_not_qdq_node, partition.nodes))
+
+        if all(
+            is_no_op_on_neutron(node, parameters_mapping)
+            for node in non_q_dq_partition_nodes
+        ):
+            # All operators in the partition are no-ops from the perspective of Neutron.
+            return False
+
+        return True
 
     def validate_partitioning_result(
         self,
@@ -328,10 +360,37 @@ class NeutronPartitioner(Partitioner):
         custom_delegation_options: CustomDelegationOptions,
         parameters_mapping: dict[str, Parameter],
     ) -> bool:
+        """Verify that the result of the partitioning can be safely used for delegation.
+
+        :param graph: Original graph that was partitioned.
+        :param partition_list: List of the resulting partitions.
+        :param custom_delegation_options: Custom user options which affect node delegation.
+        :param parameters_mapping: Dict mapping tensor names to their static data. Should be inferred from the
+                                   `state_dict` attribute of an edge program.
+        :return: True, if the partitioning result is valid.
+        """
+        if len(partition_list) == 0:
+            # If there are no partitions, the partitioning is trivially valid.
+            return True
+
+        partitioning_valid = True
+
+        if not custom_delegation_options.allow_no_op_partitions:
+            # Make sure all every partition contains at least 1 compute node. A partition with just no-op nodes will
+            #  result in an empty Neutron delegated partition, causing an exception.
+            for partition in partition_list:
+                if not self._partition_contains_compute_nodes(
+                    partition, parameters_mapping
+                ):
+                    # None of the nodes in this partition are compute nodes. Make sure they will not be delegated.
+                    partitioning_valid = False
+                    for node in partition.nodes:
+                        node.meta[NXP_DO_NOT_DELEGATE] = True
+
+        # Verify that all node-specific partitioning requirements are satisfied.
         all_delegated_nodes = {
             node for partition in partition_list for node in partition.nodes
         }
-        partitioning_valid = True
         for node in graph.nodes:
             if (
                 node in all_delegated_nodes
@@ -370,7 +429,7 @@ class NeutronPartitioner(Partitioner):
         logging.info(f"Operators not to delegate: {operators_not_to_delegate}")
 
         parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(
-            exported_program
+            exported_program, self.post_quantization_state_dict
         )
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
@@ -389,7 +448,7 @@ class NeutronPartitioner(Partitioner):
         NodeFormatInference(exported_program).identify_node_formats()
 
         parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(
-            exported_program
+            exported_program, self.post_quantization_state_dict
         )
 
         iteration_limit = len(exported_program.graph.nodes)

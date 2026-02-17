@@ -124,6 +124,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.tan.default,
     exir_ops.edge.aten.index_put.default,
     exir_ops.edge.aten.silu.default,
+    exir_ops.edge.aten.detach_copy.default,
 }
 
 
@@ -202,6 +203,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.round.default,
     exir_ops.edge.aten._softmax.default,
     exir_ops.edge.aten.select_copy.int,
+    exir_ops.edge.aten.slice_scatter.default,
     exir_ops.edge.aten._log_softmax.default,
     exir_ops.edge.aten.sub.Tensor,
     exir_ops.edge.aten.tanh.default,
@@ -245,6 +247,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.floor_divide.default,
     exir_ops.edge.aten.tan.default,
     exir_ops.edge.aten.index_put.default,
+    exir_ops.edge.aten.detach_copy.default,
 }
 
 

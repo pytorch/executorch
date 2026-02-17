@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,10 +13,10 @@ from executorch.exir.pass_base import ExportPass
 
 
 class DecomposeLinalgVectorNormPass(ArmPass):
-    """
-    This pass decomposes aten.linalg_vector_norm.default into more primitive ops.
-    We need to add this pass before quantization for graph annotation.
-    By default, aten.linalg_vector_norm op is decomposed during legalization to Edge IR.
+    """This pass decomposes aten.linalg_vector_norm.default into more primitive
+    ops. We need to add this pass before quantization for graph annotation. By
+    default, aten.linalg_vector_norm op is decomposed during legalization to
+    Edge IR.
 
     The decomposition is as follows:
 
@@ -31,6 +31,7 @@ class DecomposeLinalgVectorNormPass(ArmPass):
           out = POW(REDUCE_SUM(POW(ABS(x), p), dims, keepdim), 1/p)
           In this case we need to wrap p into Tensor and we need to know
           dtype prior, but we dont know this from FX graph.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
