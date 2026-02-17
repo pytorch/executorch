@@ -863,10 +863,13 @@ class ReplaceTrivialConvWithLinear(RemoveOrReplacePassInterface):
     the image.
     """
 
+    # A map from the trivial convolution op to the linear op that it should
+    # be replaced with.
     trivial_conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
         exir_ops.edge.cadence.conv1d.default: exir_ops.edge.aten.linear.default,
         exir_ops.edge.cadence.conv2d.default: exir_ops.edge.aten.linear.default,
-        exir_ops.edge.cadence.conv3d.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
+        exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
     }
@@ -882,7 +885,9 @@ class ReplaceTrivialConvWithLinear(RemoveOrReplacePassInterface):
         # and output tensor.
         assert isinstance(node.target, EdgeOpOverload)
         quantized_op = (
-            node.target == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
+            node.target == exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor
+            or node.target == exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
+            or node.target == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
             or node.target == exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
         )
         assert (len(node.args) == 7 and not quantized_op) or (
@@ -1012,7 +1017,7 @@ def canonicalize_transposed_dim(dim: int, shape: Sequence[int]) -> int:
 @register_cadence_pass(CadencePassAttribute(opt_level=3))
 class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
     """
-    Replace NCHW convolutions with NHWC (channel-last) convolutions by adding
+    Replace NCHW/NCL convolutions with NHWC/NLC (channel-last) convolutions by adding
     transpose operations before and after the convolution.
     """
 
@@ -1022,6 +1027,7 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
             exir_ops.edge.cadence.conv1d.default,
             exir_ops.edge.cadence.conv2d.default,
             exir_ops.edge.cadence.conv3d.default,
+            exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
         ]
 
@@ -1073,16 +1079,22 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         assert isinstance(node.target, EdgeOpOverload)
-        quantized_op = (
+        quantized_conv1d_op = (
+            node.target == exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor
+        )
+        quantized_conv2d_op = (
             node.target == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
         )
+        quantized_op = quantized_conv1d_op or quantized_conv2d_op
 
-        # Check if already in NHWC layout
+        # Check if already in NHWC/NLC layout
         if not quantized_op and len(node.args) == 8 and node.args[-1] is True:
             return False
 
         # Determine the new op target
-        if quantized_op:
+        if quantized_conv1d_op:
+            new_op = exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
+        elif quantized_conv2d_op:
             new_op = exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
         else:
             new_op = node.target
@@ -1095,10 +1107,20 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
 
         # Insert transpose operations before the node
         with graph.inserting_before(node):
-            # Convert input from NCHW to NHWC
+            # Convert input from NCHW/NCL to NHWC/NLC
             input_nhwc = self._change_nchw_to_nhwc(graph, input_node)
-            # Convert weight from NCHW to NHWC
-            weight_nhwc = self._change_nchw_to_nhwc(graph, weight_node)
+
+            # For quantized conv1d ops, weight format changes from OIK [oc, in_ch, kernel]
+            # to OKI [oc, kernel, in_ch] - need to transpose last two dimensions
+            # For non-quantized conv ops and quantized conv2d, weight also needs transposition
+            # from OIHW [oc, in_ch, H, W] to OHWI [oc, H, W, in_ch]
+            if quantized_conv1d_op:
+                # Swap last two dimensions for conv1d: [oc, in_ch, kernel] -> [oc, kernel, in_ch]
+                weight_nhwc = self._transpose_dims(graph, weight_node, 1, 2)
+            else:
+                # For both quantized conv2d and non-quantized conv ops, convert weight
+                # from OIHW to OHWI format
+                weight_nhwc = self._change_nchw_to_nhwc(graph, weight_node)
 
             # Non-quantized ops need to set the last optional argument to True
             channel_last_arg = [] if quantized_op else [True]
@@ -1114,7 +1136,7 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
             new_conv = graph.call_function(new_op, new_args, node.kwargs)
             new_conv.meta = node.meta
 
-            # Convert output back from NHWC to NCHW
+            # Convert output back from NHWC/NLC to NCHW/NCL
             nchw_output = self._change_nhwc_to_nchw(graph, new_conv)
 
         # Replace all uses with the final output
@@ -1215,6 +1237,8 @@ class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
         exir_ops.edge.cadence.conv1d.default: exir_ops.edge.aten.linear.default,
         exir_ops.edge.cadence.conv2d.default: exir_ops.edge.aten.linear.default,
         exir_ops.edge.cadence.conv3d.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
+        exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
     }
@@ -1227,7 +1251,9 @@ class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
         # Get the relevant args from convolution node.
         assert isinstance(node.target, EdgeOpOverload)
         quantized_op = (
-            node.target == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
+            node.target == exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor
+            or node.target == exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
+            or node.target == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
             or node.target == exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
         )
         assert (len(node.args) == 7 and not quantized_op) or (
@@ -1265,12 +1291,13 @@ class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
         out_shape = node.meta["val"].shape
         assert None not in {weight_shape, out_shape}
 
-        # Determine if the convolution is NCHW or NHWC. The NHWC, i.e., the
+        # Determine if the convolution is NCHW/NCL or NHWC/NLC. The NHWC/NLC, i.e., the
         # channel_last layout is specified by the channel_last arg of conv
         # op, which is either the last argument (15th) or implicitely False
         # if the op is quantized, or the last argument if not.
         channel_last = (
-            node.target == exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
+            node.target == exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
+            or node.target == exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
         )
         # The weight tensor is [out_channels, in_channels, X] for NCHW layout,
         # and [out_channels, X, in_channels] for NHWC layout. Here, X is the
