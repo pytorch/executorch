@@ -7,6 +7,7 @@
 
 # pyre-unsafe
 
+from executorch.exir.passes.propagate_input_spec import propagate_input_spec
 import copy
 import io
 import logging
@@ -912,6 +913,9 @@ def _generate_edge_program(
         ],
     )
 
+    # Recursively tag placeholder nodes in submodules with input specs.
+    propagate_input_spec(edge_program)
+
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
 
@@ -1074,6 +1078,7 @@ def _sanity_check_graph_for_non_decomp_ops(
                     + warning_str_end
                 )
                 if generate_error:
+                    print(submod)
                     raise RuntimeError(warning_str)
                 else:
                     logging.warning(warning_str)

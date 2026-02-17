@@ -9,7 +9,6 @@
 import unittest
 
 import executorch.exir as exir
-
 import torch
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import ScalarToTensorPass
