@@ -309,7 +309,7 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out",
         "ET_MLX_ENABLE_OP_LOGGING": "OFF",
-        "EXECUTORCH_LOG_LEVEL": "Error"
+        "ET_MIN_LOG_LEVEL": "Error"
       }
     },
     {
@@ -320,7 +320,7 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out",
         "ET_MLX_ENABLE_OP_LOGGING": "ON",
-        "EXECUTORCH_LOG_LEVEL": "Debug"
+        "ET_MIN_LOG_LEVEL": "Debug"
       }
     },
     {

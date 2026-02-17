@@ -16,8 +16,10 @@ This module provides functions to:
 """
 
 import json
+import os
 import struct
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -136,6 +138,30 @@ def bin_dtype_to_torch_dtype(dtype_val: int) -> torch.dtype:
     return mapping[dtype_val]
 
 
+def _atomic_write_binary(path: Path, data: bytes) -> None:
+    """
+    Atomically write binary data to a file.
+
+    Writes to a temporary file in the same directory, then atomically replaces
+    the target path. This prevents race conditions when multiple parallel
+    workers write to the same ``op_tests/`` tree.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    closed = False
+    try:
+        os.write(fd, data)
+        os.close(fd)
+        closed = True
+        os.replace(tmp, path)
+    except BaseException:
+        if not closed:
+            os.close(fd)
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
 def save_tensors_to_bin(tensors: List[torch.Tensor], path: Union[str, Path]) -> None:
     """
     Save a list of tensors to a binary file.
@@ -150,31 +176,33 @@ def save_tensors_to_bin(tensors: List[torch.Tensor], path: Union[str, Path]) -> 
     """
     path = Path(path)
 
-    with open(path, "wb") as f:
-        # Write number of tensors
-        f.write(struct.pack("I", len(tensors)))
+    buf = bytearray()
+    # Write number of tensors
+    buf += struct.pack("I", len(tensors))
 
-        for tensor in tensors:
-            # Ensure contiguous
-            tensor = tensor.contiguous()
+    for tensor in tensors:
+        # Ensure contiguous
+        tensor = tensor.contiguous()
 
-            # Write dtype
-            dtype_val = torch_dtype_to_bin_dtype(tensor.dtype)
-            f.write(struct.pack("I", dtype_val))
+        # Write dtype
+        dtype_val = torch_dtype_to_bin_dtype(tensor.dtype)
+        buf += struct.pack("I", dtype_val)
 
-            # Write ndim
-            f.write(struct.pack("I", tensor.dim()))
+        # Write ndim
+        buf += struct.pack("I", tensor.dim())
 
-            # Write shape
-            for s in tensor.shape:
-                f.write(struct.pack("i", s))
+        # Write shape
+        for s in tensor.shape:
+            buf += struct.pack("i", s)
 
-            # Write data - bf16 needs special handling since numpy doesn't support it
-            if tensor.dtype == torch.bfloat16:
-                # View bf16 as uint16 to preserve raw bytes
-                f.write(tensor.view(torch.uint16).numpy().tobytes())
-            else:
-                f.write(tensor.numpy().tobytes())
+        # Write data - bf16 needs special handling since numpy doesn't support it
+        if tensor.dtype == torch.bfloat16:
+            # View bf16 as uint16 to preserve raw bytes
+            buf += tensor.view(torch.uint16).numpy().tobytes()
+        else:
+            buf += tensor.numpy().tobytes()
+
+    _atomic_write_binary(path, bytes(buf))
 
 
 def load_tensors_from_bin(path: Union[str, Path]) -> List[torch.Tensor]:
@@ -303,8 +331,7 @@ def export_model_to_pte(
 
     # Save to file
     output_path = Path(output_path)
-    with open(output_path, "wb") as f:
-        f.write(executorch_program.buffer)
+    _atomic_write_binary(output_path, executorch_program.buffer)
 
 
 def inspect_pte_file(pte_path: Union[str, Path]) -> Dict:
@@ -377,6 +404,27 @@ def count_mlx_delegate_segments(pte_path: Union[str, Path]) -> int:
     except Exception as e:
         print(f"Error counting MLX segments: {e}")
         return 0
+
+
+def get_mlx_node_counts(pte_path: Union[str, Path]) -> Dict[str, int]:
+    """
+    Get a count of each MLX op node type in a serialized .pte file.
+
+    Args:
+        pte_path: Path to the .pte file
+
+    Returns:
+        Dictionary mapping op name (e.g. "SdpaNode", "SliceUpdateNode") to count.
+    """
+    data = inspect_pte_file(pte_path)
+    graph = data.get("graph", {})
+    instructions = graph.get("instructions", [])
+    counts: Dict[str, int] = {}
+    for instr in instructions:
+        op_name = instr.get("op_name")
+        if op_name:
+            counts[op_name] = counts.get(op_name, 0) + 1
+    return counts
 
 
 def compare_outputs(
@@ -818,6 +866,9 @@ class OpTestCase:
     skip_comparison: bool = False  # Skip output comparison (for pattern-only tests)
     skip_comparison_reason: str = ""  # Reason for skipping comparison
     expected_mlx_segments: int = 1  # Expected number of MLX delegate segments
+    expected_node_counts: Optional[Dict[str, int]] = (
+        None  # Expected serialized node counts
+    )
 
     def _set_seed(self) -> None:
         """Set random seed for reproducibility."""
@@ -978,6 +1029,20 @@ class OpTestCase:
             )
             return False
         print("✓ MLX delegation verified")
+
+        # Verify expected node counts if specified
+        if self.expected_node_counts is not None:
+            print("\n  Verifying serialized node counts...")
+            actual_counts = get_mlx_node_counts(pte_path)
+            for node_name, expected_count in self.expected_node_counts.items():
+                actual_count = actual_counts.get(node_name, 0)
+                if actual_count != expected_count:
+                    print(f"✗ FAILED: Node count mismatch for {node_name}!")
+                    print(f"  Expected {expected_count}, got {actual_count}")
+                    print(f"  All node counts: {actual_counts}")
+                    return False
+                print(f"  ✓ {node_name}: {actual_count}")
+            print("  ✓ All node counts verified")
 
         # Run C++ binary
         print("\nStep 3: Running C++ binary...")

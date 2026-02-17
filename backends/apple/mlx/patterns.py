@@ -343,49 +343,25 @@ class IndexUpdateHandler(PatternHandler):
 
 
 # =============================================================================
-# UPDATE_CACHE pattern
+# ET_KV_CACHE_UPDATE pattern
 # =============================================================================
 
 
-def _is_auto_func_update_cache(node: Node) -> bool:
-    """Check if a node is auto_functionalized_v2 wrapping llama.update_cache."""
-    if node.op != "call_function":
-        return False
-    target_str = str(node.target)
-    if "auto_functionalized" not in target_str:
-        return False
-    if len(node.args) < 1:
-        return False
-    func_arg = node.args[0]
-    func_str = str(func_arg) if func_arg else ""
-    return "update_cache" in func_str and "llama" in func_str
-
-
-@REGISTRY.register_pattern(name="UPDATE_CACHE")
-class UpdateCacheHandler(PatternHandler):
+@REGISTRY.register_pattern(name="ET_KV_CACHE_UPDATE")
+class ETKVCacheUpdateHandler(PatternHandler):
     """
-    Pattern for KV cache updates using torch.ops.llama.update_cache.
+    Pattern for KV cache updates using torch.ops.mlx.kv_cache_update.
 
-    Matches: transpose -> auto_functionalized(update_cache) -> getitem -> transpose
-    Where the transposes convert between [B, H, S, D] and [B, S, H, D].
+    Matches the full chain: auto_functionalized → getitem[1] → alias
+    HEAD = aten.alias.default (the final alias node that becomes output)
 
-    This pattern is used by CustomKVCache which transposes from [B, H, S, D]
-    to [B, S, H, D] for update_cache, then transposes back.
+    Graph structure after run_decompositions({}):
+        auto_func = auto_functionalized_v2(mlx.kv_cache_update, new_values=k_val, ...)
+        getitem_1 = getitem(auto_func, 1)    # Updated cache alias
+        alias_2 = alias(getitem_1)           # HEAD - the output alias
 
-    We recognize this pattern and lower directly to SliceUpdateNode operating
-    on the [B, H, S, D] layout (dim=2), eliminating the transpose overhead.
-
-    Graph structure after functionalization (is_edge_ir=False):
-        transpose = aten.transpose.int(k_val, 1, 2)
-        auto_func = auto_functionalized_v2(llama.update_cache, value=transpose, ...)
-        getitem = getitem(auto_func, 1)
-        transpose_out = aten.transpose.int(getitem, 1, 2)  <-- HEAD
-
-    Graph structure after to_edge (is_edge_ir=True):
-        permute = aten.permute_copy.default(k_val, [0, 2, 1, 3])
-        auto_func = auto_functionalized_v2(llama.update_cache, value=permute, ...)
-        getitem = getitem(auto_func, 1)
-        permute_out = aten.permute_copy.default(getitem, [0, 2, 1, 3])  <-- HEAD
+    By making alias the HEAD, we emit IdCopyNode directly and avoid
+    the ContiguousNode that _clone_handler would emit.
     """
 
     def __init__(
@@ -395,95 +371,100 @@ class UpdateCacheHandler(PatternHandler):
         cache: Node,
         update: Node,
         start_pos: Any,
+        getitem_node: Node,
     ):
         super().__init__(head, body)
         self.cache = cache  # The cache buffer [B, H, S, D]
         self.update = update  # The update tensor [B, H, S_step, D]
         self.start_pos = start_pos  # Start position (int or SymInt)
+        self.getitem_node = getitem_node  # getitem[1] node
+
+    @staticmethod
+    def _is_auto_func_et_kv_cache_update(node: Node) -> bool:
+        """Check if a node is auto_functionalized_v2 wrapping mlx.kv_cache_update."""
+        if node.op != "call_function":
+            return False
+        target_str = str(node.target)
+        if "auto_functionalized" not in target_str:
+            return False
+        if len(node.args) < 1:
+            return False
+        func_arg = node.args[0]
+        func_str = str(func_arg) if func_arg else ""
+        return "kv_cache_update" in func_str and "mlx" in func_str
 
     @classmethod
     def maybe_create(
         cls, ep: ExportedProgram, head: Node
-    ) -> Optional["UpdateCacheHandler"]:
+    ) -> Optional["ETKVCacheUpdateHandler"]:
         """
-        Match the UPDATE_CACHE pattern.
+        Match the ET_KV_CACHE_UPDATE pattern.
 
-        Pattern (HEAD = getitem):
-            transpose_in = transpose(update, 1, 2)
-            auto_func = auto_functionalized_v2(llama.update_cache, value=transpose_in, ...)
-            getitem = getitem(auto_func, 1)  <-- HEAD
-
-        Uses get_aten_target_normalized to handle both ATen IR
-        (transpose.int) and Edge IR (transpose_copy.int).
+        Pattern (HEAD = alias):
+            auto_func = auto_functionalized_v2(mlx.kv_cache_update, ...)
+            getitem_1 = getitem(auto_func, 1)    # Updated cache
+            alias = alias(getitem_1)             # HEAD
         """
-        # Only check getitem nodes
-        if head.op != "call_function" or "getitem" not in str(head.target):
+        # HEAD must be aten.alias.default or aten.alias_copy.default
+        if not match_target(head, torch.ops.aten.alias.default) and not match_target(
+            head, torch.ops.aten.alias_copy.default
+        ):
             return None
 
-        # Check getitem is extracting idx=1 (the updated cache)
-        if len(head.args) < 2 or head.args[1] != 1:
+        alias_node = head
+
+        # alias's input should be a getitem node with idx=1
+        if len(alias_node.args) < 1 or not isinstance(alias_node.args[0], Node):
             return None
 
-        getitem_node = head
+        potential_getitem = alias_node.args[0]
+        if potential_getitem.op != "call_function" or "getitem" not in str(
+            potential_getitem.target
+        ):
+            return None
 
-        # getitem's source should be auto_functionalized_v2
+        if len(potential_getitem.args) < 2 or potential_getitem.args[1] != 1:
+            return None
+
+        getitem_node = potential_getitem
+
+        # getitem's source should be auto_functionalized_v2 wrapping mlx.kv_cache_update
         if len(getitem_node.args) < 1 or not isinstance(getitem_node.args[0], Node):
             return None
 
-        potential_auto_func = getitem_node.args[0]
-        if "auto_functionalized" not in str(potential_auto_func.target):
+        auto_func_node = getitem_node.args[0]
+        if not cls._is_auto_func_et_kv_cache_update(auto_func_node):
             return None
-
-        auto_func_node = potential_auto_func
 
         # Extract info from auto_functionalized_v2 kwargs
         kwargs = auto_func_node.kwargs
-        value_node = kwargs.get("value")
+        new_values_node = kwargs.get("new_values")
         start_pos_node = kwargs.get("start_pos")
         all_bases = kwargs.get("_all_bases", [])
 
-        if not value_node or not all_bases:
+        if not new_values_node or not all_bases:
             return None
 
         cache_node = all_bases[0]
 
-        # value should be transpose(x, 1, 2)
-        if not isinstance(value_node, Node) or value_node.op != "call_function":
-            return None
+        # Build the pattern body: auto_func and getitem nodes
+        body = [auto_func_node, getitem_node]
 
-        # Check for transpose - use get_aten_target_normalized to handle both
-        # ATen IR (transpose.int) and Edge IR (transpose_copy.int)
-        if not match_target(value_node, torch.ops.aten.transpose.int):
-            return None
-
-        if len(value_node.args) < 3:
-            return None
-
-        dim0_in, dim1_in = value_node.args[1], value_node.args[2]
-        if not ((dim0_in == 1 and dim1_in == 2) or (dim0_in == 2 and dim1_in == 1)):
-            return None
-
-        input_transpose_node = value_node
-        # Get the actual update tensor (input to the transpose) - this is [B, H, S_step, D]
-        update_input_node = value_node.args[0] if value_node.args else None
-
-        # Build the pattern body
-        body = [auto_func_node, input_transpose_node]
-
-        return UpdateCacheHandler(
+        return ETKVCacheUpdateHandler(
             head=head,
             body=body,
             cache=cache_node,
-            update=update_input_node,
+            update=new_values_node,
             start_pos=start_pos_node,
+            getitem_node=getitem_node,
         )
 
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
 
         # Get slots for cache and update
-        # cache is [B, H, S, D] (SDPA convention - mutable buffer created with this shape)
-        # update is [B, H, S_step, D] (the input BEFORE the permute in the pattern)
+        # cache is [B, H, S, D] (BHSD layout - mutable buffer)
+        # update is [B, H, S_step, D] (new values to insert)
         cache_slot = P.slot_map([self.cache])[0]
         update_slot = P.slot_map([self.update])[0]
 
@@ -493,8 +474,7 @@ class UpdateCacheHandler(PatternHandler):
         else:
             start_slot = self.start_pos
 
-        # Get the output slot for this node (the head)
-        # The head is getitem, which outputs the mutated cache [B, H, S, D]
+        # Get the output slot for this node (the alias HEAD)
         out_slot = P.make_or_get_slot(n)
 
         # Calculate stop = start + seq_len
@@ -511,7 +491,6 @@ class UpdateCacheHandler(PatternHandler):
         # SliceUpdateNode on axis=2
         # cache is [B, H, S, D], update is [B, H, S_step, D]
         # This updates cache[:, :, start:stop, :] = update
-        # No transpose needed! Both are in SDPA format [B, H, S, D]
         P.emit(
             SliceUpdateNode(
                 dst=P.slot_to_tid(cache_slot),
@@ -522,9 +501,7 @@ class UpdateCacheHandler(PatternHandler):
             )
         )
 
-        # SliceUpdate mutates dst in-place and returns the updated dst
-        # The output is cache_slot which is [B, H, S, D] - exactly what we need!
-        # Copy cache to out_slot for the output
+        # Emit IdCopyNode from cache to output (NO ContiguousNode!)
         P.emit(
             IdCopyNode(
                 x=P.slot_to_tid(cache_slot),
@@ -677,6 +654,174 @@ class SDPAHandler(PatternHandler):
             )
         )
         return out
+
+
+# =============================================================================
+# MLX_CUSTOM_SDPA pattern (mlx::custom_sdpa)
+# =============================================================================
+
+
+@REGISTRY.register_pattern(name="MLX_CUSTOM_SDPA")
+class MLXCustomSdpaHandler(PatternHandler):
+    """
+    Pattern handler for mlx::custom_sdpa custom op.
+
+    This op follows the optimum-executorch pattern:
+    - Input: Q, K, V in BHSD format [B, num_heads, seq_len, head_dim]
+    - start_pos: FIRST position of current query batch (not last!)
+    - stop_pos: computed as start_pos + query_seq_len
+    - K/V are FULL cache, sliced internally to [:, :, :stop_pos, :]
+
+    For prefill with 7 tokens at positions [0,1,2,3,4,5,6]: start_pos=0, stop_pos=7
+    For decode at position 10: start_pos=10, stop_pos=11
+
+    Decomposes into:
+    - SliceNode (K): slice to [:, :, :stop_pos, :]
+    - SliceNode (V): slice to [:, :, :stop_pos, :]
+    - SdpaNode: scaled dot-product attention (handles GQA internally)
+    """
+
+    def __init__(
+        self,
+        head: Node,
+        body: List[Node],
+        query: Node,
+        key: Node,
+        value: Node,
+        start_pos: Any,  # int or Node (SymInt)
+        scale: Optional[float],
+        is_causal: bool,
+    ):
+        super().__init__(head, body)
+        self.query = query
+        self.key = key
+        self.value = value
+        self.start_pos = start_pos
+        self.scale = scale
+        self.is_causal = is_causal
+
+    @classmethod
+    def maybe_create(
+        cls, ep: ExportedProgram, head: Node
+    ) -> Optional["MLXCustomSdpaHandler"]:
+        """Match the mlx::custom_sdpa custom op."""
+        if head.op != "call_function":
+            return None
+
+        target_str = str(head.target)
+        if "custom_sdpa" not in target_str or "mlx" not in target_str:
+            return None
+
+        # Op signature: custom_sdpa(query, key, value, start_pos, attn_mask, dropout_p, is_causal, scale)
+        # start_pos is a SymInt (int), not a Tensor
+        args = head.args
+        kwargs = head.kwargs
+
+        if len(args) < 4:
+            return None
+
+        query = args[0]
+        key = args[1]
+        value = args[2]
+        start_pos = args[3]  # int or SymInt (Node)
+
+        # Get optional args
+        attn_mask = args[4] if len(args) > 4 else kwargs.get("attn_mask", None)
+        dropout_p = args[5] if len(args) > 5 else kwargs.get("dropout_p", 0.0)
+        is_causal = args[6] if len(args) > 6 else kwargs.get("is_causal", False)
+        scale = args[7] if len(args) > 7 else kwargs.get("scale", None)
+
+        # We only support causal attention without explicit mask
+        if attn_mask is not None and not isinstance(attn_mask, type(None)):
+            return None
+        if dropout_p != 0.0:
+            return None
+
+        return MLXCustomSdpaHandler(
+            head=head,
+            body=[],
+            query=query,
+            key=key,
+            value=value,
+            start_pos=start_pos,
+            scale=scale,
+            is_causal=is_causal,
+        )
+
+    def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
+        from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
+            IntOrVid,
+            SdpaNode,
+            SliceNode,
+        )
+
+        assert n == self.head
+
+        # Get slots for Q, K, V
+        q_slot, k_slot, v_slot = P.slot_map([self.query, self.key, self.value])
+
+        # Get scale from metadata if not provided
+        q_meta = self.query.meta.get("val")
+        head_dim = q_meta.shape[-1]
+        scale = self.scale if self.scale is not None else head_dim**-0.5
+
+        # Resolve start_pos to int or Slot (same pattern as KVCacheUpdateHandler)
+        if isinstance(self.start_pos, Node):
+            start_slot = P.slot_map([self.start_pos])[0]
+        else:
+            start_slot = self.start_pos
+
+        # Compute stop = start_pos + seq_len using emit_stop_position,
+        # which handles static/dynamic seq_len (SymInt) and start_pos correctly.
+        # BHSD layout: q is [B, num_heads, seq_len, head_dim], seq_len is dim 2.
+        stop = emit_stop_position(
+            P,
+            start=start_slot,
+            length_tensor=q_slot,
+            length_dim=2,
+            length_meta=q_meta,
+        )
+        slice_stop = P.to_int_or_vid(stop)
+
+        # Step 1: Slice K to [:, :, :stop_pos, :] where stop_pos = start_pos + query_seq_len
+        _, k_sliced_slot = P.make_tmp_slot()
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(k_slot),
+                out=P.slot_to_tid(k_sliced_slot),
+                axis=IntOrVid.from_literal(2),
+                start=IntOrVid.from_literal(0),
+                stop=slice_stop,
+            )
+        )
+
+        # Step 2: Slice V to [:, :, :stop_pos, :] where stop_pos = start_pos + query_seq_len
+        _, v_sliced_slot = P.make_tmp_slot()
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(v_slot),
+                out=P.slot_to_tid(v_sliced_slot),
+                axis=IntOrVid.from_literal(2),
+                start=IntOrVid.from_literal(0),
+                stop=slice_stop,
+            )
+        )
+
+        # Step 3: SDPA (handles GQA internally) - outputs BHSD
+        out_slot = P.make_or_get_slot(n)
+        P.emit(
+            SdpaNode(
+                q=P.slot_to_tid(q_slot),
+                k=P.slot_to_tid(k_sliced_slot),
+                v=P.slot_to_tid(v_sliced_slot),
+                out=P.slot_to_tid(out_slot),
+                scale=scale,
+                mask=None,
+                causal=self.is_causal,
+            )
+        )
+
+        return out_slot
 
 
 # =============================================================================

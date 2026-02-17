@@ -40,7 +40,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # Import shared KV cache module
-from executorch.backends.apple.mlx.examples.cache import KVCache
+from executorch.backends.apple.mlx.examples.cache import ETKVCache
 
 # Import custom ops
 from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
@@ -100,10 +100,12 @@ class WhisperSelfAttentionWithCache(nn.Module):
         self.max_cache_len = max_cache_len
 
         # Initialize KV cache module
-        self.kv_cache = KVCache(
-            num_heads=self.num_heads,
+        self.kv_cache = ETKVCache(
+            max_batch_size=1,
+            max_context_length=max_cache_len,
+            n_heads=self.num_heads,
             head_dim=self.head_dim,
-            max_cache_len=max_cache_len,
+            enable_dynamic_shape=True,
             dtype=dtype,
         )
 
@@ -125,8 +127,8 @@ class WhisperSelfAttentionWithCache(nn.Module):
         k = k.view(B, T, H, D).transpose(1, 2)
         v = v.view(B, T, H, D).transpose(1, 2)
 
-        # Update KV cache using callable module (returns full cache)
-        k_cache, v_cache = self.kv_cache(k, v, pos_int)
+        # Update KV cache
+        k_cache, v_cache = self.kv_cache.update(pos_int, k, v)
 
         # Explicit windowing: slice cache to valid positions
         end_pos = pos_int + T
@@ -293,6 +295,7 @@ class WhisperDecoderWithCache(nn.Module):
         )
 
         self.num_layers = len(self.layers)
+        self.max_decoder_seq_len = max_decoder_seq_len
 
     def forward(
         self,
@@ -307,6 +310,7 @@ class WhisperDecoderWithCache(nn.Module):
         torch._check(cache_position.numel() == 1)
         pos_int = cache_position.item()
         torch._check_is_size(pos_int)
+        torch._check(pos_int + T <= self.max_decoder_seq_len)
 
         # Token + positional embeddings
         # Whisper uses absolute positions [pos_int, pos_int + T)

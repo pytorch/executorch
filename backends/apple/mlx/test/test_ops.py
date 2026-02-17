@@ -37,12 +37,7 @@ from executorch.extension.llm.custom_ops import (  # noqa: F401 - registers llam
 )
 from torch.export import Dim
 
-from .test_utils import (
-    export_model_to_pte,
-    OpTestCase,
-    register_test,
-    save_tensors_to_bin,
-)
+from .test_utils import OpTestCase, register_test
 
 
 # =============================================================================
@@ -692,6 +687,60 @@ class NarrowTest(OpTestCase):
         return (x,)
 
 
+class SelectModel(nn.Module):
+    """Model that selects a single index along a dimension.
+
+    torch.select(input, dim, index) returns input[..., index, ...] where
+    the indexing happens at dimension `dim`. The selected dimension is removed.
+    Maps to aten.select_copy.int -> MLX take(array, index, axis).
+    """
+
+    def __init__(self, dim: int, index: int):
+        super().__init__()
+        self.dim = dim
+        self.index = index
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.select(x, self.dim, self.index)
+
+
+@register_test
+class SelectTest(OpTestCase):
+    """Test case for torch.select (aten.select_copy.int -> TakeNode)."""
+
+    name = "select"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (4, 8, 16),
+        dim: int = 1,
+        index: int = 3,
+    ):
+        self.shape = shape
+        self.dim = dim
+        self.index = index
+        self.name = f"select_dim{dim}_idx{index}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["SelectTest"]:
+        return [
+            cls(shape=(4, 8, 16), dim=0, index=2),
+            cls(shape=(4, 8, 16), dim=1, index=3),
+            cls(shape=(4, 8, 16), dim=2, index=0),
+            cls(shape=(4, 8, 16), dim=-1, index=5),
+            cls(shape=(2, 3), dim=0, index=1),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return SelectModel(self.dim, self.index)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.shape)
+        return (x,)
+
+
 class SliceModel(nn.Module):
     """Model that slices a tensor along dimension 1."""
 
@@ -1044,304 +1093,6 @@ class EmbeddingTest(OpTestCase):
 
 
 # =============================================================================
-# KV CACHE PATTERN OPS (transpose → update_cache → transpose fusion)
-# =============================================================================
-
-
-class KVCachePatternModel(nn.Module):
-    """
-    KV cache update using the transpose → update_cache → transpose pattern.
-
-    Cache is stored as [B, H, S, D] (SDPA convention).
-    Input is [B, H, S_step, D] (SDPA convention).
-
-    Both cache and input are transposed to [B, S, H, D] for update_cache,
-    then the result is implicitly transposed back. The MLX handler fuses
-    this pattern into a single SliceUpdateNode on axis=2.
-    """
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        start_pos: int = 0,
-        dynamic_pos: bool = False,
-    ):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.start_pos = start_pos
-        self.dynamic_pos = dynamic_pos
-
-        # KV cache buffers - [B, H, S, D] layout (SDPA convention)
-        self.register_buffer(
-            "k_cache", torch.zeros(1, num_heads, max_seq_len, head_dim)
-        )
-        self.register_buffer(
-            "v_cache", torch.zeros(1, num_heads, max_seq_len, head_dim)
-        )
-
-    def forward(
-        self,
-        k_val: torch.Tensor,
-        v_val: torch.Tensor,
-        start_pos: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Update KV cache using the transpose pattern.
-
-        Args:
-            k_val: Key values [B, H, S_step, D]
-            v_val: Value values [B, H, S_step, D]
-            start_pos: Optional position tensor (for dynamic pos variants)
-        """
-        if self.dynamic_pos:
-            pos = start_pos.item()
-        else:
-            pos = self.start_pos
-
-        # Transpose inputs from [B, H, S_step, D] to [B, S_step, H, D]
-        k_val_transposed = k_val.transpose(1, 2)
-        v_val_transposed = v_val.transpose(1, 2)
-
-        # Transpose cache views from [B, H, S, D] to [B, S, H, D]
-        k_cache_view = self.k_cache.transpose(1, 2)
-        v_cache_view = self.v_cache.transpose(1, 2)
-
-        # Call update_cache custom op (mutates cache via transposed view)
-        torch.ops.llama.update_cache(k_val_transposed, k_cache_view, pos)
-        torch.ops.llama.update_cache(v_val_transposed, v_cache_view, pos)
-
-        # Return cache directly - already [B, H, S, D]
-        return self.k_cache.clone(), self.v_cache.clone()
-
-
-class KVCachePatternVerifyModel(nn.Module):
-    """
-    KV cache update using direct slice assignment for verification.
-
-    This model uses direct slice assignment instead of llama.update_cache
-    to generate correct expected outputs. Used to verify that the pattern
-    handler produces correct results.
-    """
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        start_pos: int = 0,
-    ):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.start_pos = start_pos
-
-        # KV cache buffers - [B, H, S, D] layout (SDPA convention)
-        self.register_buffer(
-            "k_cache", torch.zeros(1, num_heads, max_seq_len, head_dim)
-        )
-        self.register_buffer(
-            "v_cache", torch.zeros(1, num_heads, max_seq_len, head_dim)
-        )
-
-    def forward(
-        self,
-        k_val: torch.Tensor,
-        v_val: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Update cache using direct slice assignment (for verification)."""
-        start_pos = self.start_pos
-        seq_len = k_val.shape[2]
-
-        # Direct slice update on axis=2
-        self.k_cache[:, :, start_pos : start_pos + seq_len, :] = k_val
-        self.v_cache[:, :, start_pos : start_pos + seq_len, :] = v_val
-
-        return self.k_cache.clone(), self.v_cache.clone()
-
-
-@register_test
-class KVCachePatternTest(OpTestCase):
-    """Test case for KV cache pattern recognition.
-
-    Tests that MLX correctly recognizes the transpose → update_cache → transpose
-    pattern and fuses it into a single SliceUpdateNode on axis=2.
-
-    Variants:
-    - pattern: Basic pattern test (skips output comparison)
-    - verify: Uses direct slice assignment for expected outputs (verifies correctness)
-    - fully_dynamic: Pattern with dynamic pos and seq_len (skips output comparison)
-    """
-
-    name = "kv_cache_pattern"
-    rtol = 1e-5
-    atol = 1e-5
-
-    # ExecutorTorch bug explanation for skip_comparison
-    _ET_BUG_REASON = (
-        "ExecutorTorch's llama.update_cache doesn't work with transposed views"
-    )
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        seq_step: int = 8,
-        start_pos: int = 0,
-        test_start_pos: int = 16,
-        export_seq_step: int = 8,
-        test_seq_step: int = 4,
-        variant: str = "pattern",
-    ):
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.seq_step = seq_step
-        self.start_pos = start_pos
-        self.test_start_pos = test_start_pos
-        self.export_seq_step = export_seq_step
-        self.test_seq_step = test_seq_step
-        self.variant = variant
-
-        # Set name based on variant
-        variant_names = {
-            "pattern": "kv_cache_pattern",
-            "verify": "kv_cache_pattern_verify",
-            "fully_dynamic": "kv_cache_pattern_fully_dynamic",
-        }
-        self.name = variant_names.get(variant, "kv_cache_pattern")
-
-        # Skip comparison for pattern tests (except verify)
-        if variant != "verify":
-            self.skip_comparison = True
-            self.skip_comparison_reason = self._ET_BUG_REASON
-
-        # Create dynamic dimension for fully_dynamic variant
-        if variant == "fully_dynamic":
-            self.seq_dim = Dim("seq_step", min=1, max=max_seq_len)
-        else:
-            self.seq_dim = None
-
-    @classmethod
-    def get_test_configs(cls) -> List["KVCachePatternTest"]:
-        """Return all test configurations to run."""
-        return [
-            cls(variant="pattern"),
-            cls(variant="verify"),
-            cls(variant="fully_dynamic"),
-        ]
-
-    def _has_dynamic_pos(self) -> bool:
-        """Return True if this variant takes start_pos as input."""
-        return self.variant == "fully_dynamic"
-
-    def _has_dynamic_seq(self) -> bool:
-        """Return True if this variant has dynamic sequence length."""
-        return self.variant == "fully_dynamic"
-
-    def create_model(self) -> nn.Module:
-        return KVCachePatternModel(
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            max_seq_len=self.max_seq_len,
-            start_pos=self.start_pos,
-            dynamic_pos=self._has_dynamic_pos(),
-        )
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for export (tracing)."""
-        seq_len = self.export_seq_step if self._has_dynamic_seq() else self.seq_step
-        k_val = torch.randn(1, self.num_heads, seq_len, self.head_dim)
-        v_val = torch.randn(1, self.num_heads, seq_len, self.head_dim)
-
-        if self._has_dynamic_pos():
-            start_pos = torch.tensor(0, dtype=torch.int64)
-            return (k_val, v_val, start_pos)
-        return (k_val, v_val)
-
-    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        """Create inputs for testing."""
-        seq_len = self.test_seq_step if self._has_dynamic_seq() else self.seq_step
-        k_val = torch.randn(1, self.num_heads, seq_len, self.head_dim)
-        v_val = torch.randn(1, self.num_heads, seq_len, self.head_dim)
-
-        if self._has_dynamic_pos():
-            start_pos = torch.tensor(self.test_start_pos, dtype=torch.int64)
-            return (k_val, v_val, start_pos)
-        return (k_val, v_val)
-
-    def get_dynamic_shapes(self) -> Optional[Dict]:
-        """Return dynamic shapes specification for torch.export."""
-        if self.variant == "fully_dynamic":
-            return {
-                "k_val": {2: self.seq_dim},
-                "v_val": {2: self.seq_dim},
-                "start_pos": None,
-            }
-        return None
-
-    def generate_test_files(self, verbose: bool = False) -> Tuple:
-        """Generate test files with correct expected outputs for verify variant."""
-        if self.variant != "verify":
-            return super().generate_test_files(verbose=verbose)
-
-        # Special handling for verify: use direct slice assignment for expected outputs
-        test_dir = self.get_test_dir()
-
-        pte_path = test_dir / "model.pte"
-        input_path = test_dir / "input.bin"
-        expected_path = test_dir / "expected_output.bin"
-
-        # Set seed for reproducibility
-        self._set_seed()
-
-        # Create model and inputs
-        model = self.create_model()
-        export_inputs = self.create_inputs()
-
-        # Set seed again before creating test inputs
-        self._set_seed()
-        test_inputs = self.create_test_inputs()
-
-        # Get expected outputs using CORRECT method (direct slice assignment)
-        verify_model = KVCachePatternVerifyModel(
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            max_seq_len=self.max_seq_len,
-            start_pos=self.start_pos,
-        )
-        verify_model.eval()
-        with torch.no_grad():
-            expected_outputs = list(verify_model(*test_inputs))
-
-        # Export model with export inputs
-        print(f"Exporting model to {pte_path}")
-
-        export_model_to_pte(
-            model,
-            export_inputs,
-            pte_path,
-            dynamic_shapes=self.get_dynamic_shapes(),
-            verbose=verbose,
-        )
-
-        # Save test inputs
-        print(f"Saving inputs to {input_path}")
-        save_tensors_to_bin(list(test_inputs), input_path)
-
-        # Save expected outputs
-        print(f"Saving expected outputs to {expected_path}")
-        save_tensors_to_bin(expected_outputs, expected_path)
-
-        return pte_path, input_path, expected_path
-
-
-# =============================================================================
 # RMS NORM (torch.nn.functional.rms_norm)
 # =============================================================================
 
@@ -1467,6 +1218,7 @@ class RopeTest(OpTestCase):
     def get_test_configs(cls) -> List["RopeTest"]:
         return [
             cls(),
+            cls(traditional=True),
         ]
 
     def create_model(self) -> nn.Module:
@@ -1904,6 +1656,662 @@ class KVCacheTest(OpTestCase):
                 "start_pos": None,
             }
         return None
+
+
+# =============================================================================
+# ET KV CACHE OPS (Functional cache update)
+# =============================================================================
+
+from executorch.backends.apple.mlx.examples.cache import ETKVCache
+
+
+class ETKVCacheModel(nn.Module):
+    """
+    Test model wrapping ETKVCache from cache.py.
+
+    This tests the ExecutorTorch llama KVCache-compatible interface that uses
+    the mlx::kv_cache_update op internally.
+    """
+
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_context_length: int,
+        n_heads: int,
+        head_dim: int,
+        enable_dynamic_shape: bool = True,
+    ):
+        super().__init__()
+        self.cache = ETKVCache(
+            max_batch_size=max_batch_size,
+            max_context_length=max_context_length,
+            n_heads=n_heads,
+            head_dim=head_dim,
+            enable_dynamic_shape=enable_dynamic_shape,
+        )
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,  # [S] position tensor
+        k_val: torch.Tensor,  # [B, H, S, D]
+        v_val: torch.Tensor,  # [B, H, S, D]
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Update cache using the llama KVCache interface."""
+        return self.cache.update(input_pos, k_val, v_val)
+
+
+@register_test
+class ETKVCacheTest(OpTestCase):
+    """
+    Test case for ETKVCache with ExecutorTorch llama KVCache interface.
+
+    This verifies that ETKVCache:
+    1. Follows the same interface as examples/models/llama/attention.py KVCache
+    2. Uses mlx::kv_cache_update internally
+    3. Works correctly with dynamic shapes
+    """
+
+    name = "et_kv_cache"
+    rtol = 1e-5
+    atol = 1e-5
+    expected_node_counts = {
+        "ItemIntNode": 1,
+        "SymSizeNode": 2,
+        "AddIntNode": 2,
+        "SliceUpdateNode": 2,
+        "IdCopyNode": 2,
+    }
+
+    def __init__(
+        self,
+        max_batch_size: int = 1,
+        n_heads: int = 4,
+        head_dim: int = 64,
+        max_context_length: int = 128,
+        seq_step: int = 8,
+        enable_dynamic_shape: bool = True,
+    ):
+        self.max_batch_size = max_batch_size
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.max_context_length = max_context_length
+        self.seq_step = seq_step
+        self.enable_dynamic_shape = enable_dynamic_shape
+
+    @classmethod
+    def get_test_configs(cls) -> List["ETKVCacheTest"]:
+        return [
+            cls(),  # default config
+            cls(n_heads=8, head_dim=32),  # different head config
+            cls(enable_dynamic_shape=False),  # static shape mode
+        ]
+
+    def create_model(self) -> nn.Module:
+        return ETKVCacheModel(
+            max_batch_size=self.max_batch_size,
+            max_context_length=self.max_context_length,
+            n_heads=self.n_heads,
+            head_dim=self.head_dim,
+            enable_dynamic_shape=self.enable_dynamic_shape,
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        # Note: ETKVCache.update() takes (input_pos, k_val, v_val) - position first
+        input_pos = torch.tensor([0], dtype=torch.int64)
+        k_val = torch.randn(
+            self.max_batch_size, self.n_heads, self.seq_step, self.head_dim
+        )
+        v_val = torch.randn(
+            self.max_batch_size, self.n_heads, self.seq_step, self.head_dim
+        )
+        return (input_pos, k_val, v_val)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        # Test with different position and different seq_step
+        test_seq_step = self.seq_step + 4
+        input_pos = torch.tensor([16], dtype=torch.int64)
+        k_val = torch.randn(
+            self.max_batch_size, self.n_heads, test_seq_step, self.head_dim
+        )
+        v_val = torch.randn(
+            self.max_batch_size, self.n_heads, test_seq_step, self.head_dim
+        )
+        return (input_pos, k_val, v_val)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        # seq_step (dim 2) is dynamic for k_val and v_val
+        seq_dim = Dim("seq_step", min=1, max=self.max_context_length)
+        return {
+            "input_pos": None,
+            "k_val": {2: seq_dim},
+            "v_val": {2: seq_dim},
+        }
+
+
+class ETKVCacheIntModel(nn.Module):
+    """
+    Test model that passes int/SymInt (not tensor) to ETKVCache.update().
+
+    This tests the "int route" where the caller extracts the start position
+    from the tensor before calling update, which is the preferred pattern
+    in multi-layer models to avoid redundant SymInt extraction.
+    """
+
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_context_length: int,
+        n_heads: int,
+        head_dim: int,
+        enable_dynamic_shape: bool = True,
+    ):
+        super().__init__()
+        self.cache = ETKVCache(
+            max_batch_size=max_batch_size,
+            max_context_length=max_context_length,
+            n_heads=n_heads,
+            head_dim=head_dim,
+            enable_dynamic_shape=enable_dynamic_shape,
+        )
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,  # [S] position tensor
+        k_val: torch.Tensor,  # [B, H, S, D]
+        v_val: torch.Tensor,  # [B, H, S, D]
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Extract int from tensor, then pass to update (the int route)."""
+        start_pos = input_pos[0].item()
+        return self.cache.update(start_pos, k_val, v_val)
+
+
+@register_test
+class ETKVCacheIntTest(OpTestCase):
+    """
+    Test case for ETKVCache with int/SymInt input_pos.
+
+    This verifies the "int route" where the caller extracts the start position
+    before calling update, matching the recommended pattern for multi-layer models.
+    """
+
+    name = "et_kv_cache_int"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        max_batch_size: int = 1,
+        n_heads: int = 4,
+        head_dim: int = 64,
+        max_context_length: int = 128,
+        seq_step: int = 8,
+        enable_dynamic_shape: bool = True,
+    ):
+        self.max_batch_size = max_batch_size
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.max_context_length = max_context_length
+        self.seq_step = seq_step
+        self.enable_dynamic_shape = enable_dynamic_shape
+
+    @classmethod
+    def get_test_configs(cls) -> List["ETKVCacheIntTest"]:
+        return [
+            cls(),  # default config
+            cls(n_heads=8, head_dim=32),  # different head config
+        ]
+
+    def create_model(self) -> nn.Module:
+        return ETKVCacheIntModel(
+            max_batch_size=self.max_batch_size,
+            max_context_length=self.max_context_length,
+            n_heads=self.n_heads,
+            head_dim=self.head_dim,
+            enable_dynamic_shape=self.enable_dynamic_shape,
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        input_pos = torch.tensor([0], dtype=torch.int64)
+        k_val = torch.randn(
+            self.max_batch_size, self.n_heads, self.seq_step, self.head_dim
+        )
+        v_val = torch.randn(
+            self.max_batch_size, self.n_heads, self.seq_step, self.head_dim
+        )
+        return (input_pos, k_val, v_val)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        test_seq_step = self.seq_step + 4
+        input_pos = torch.tensor([16], dtype=torch.int64)
+        k_val = torch.randn(
+            self.max_batch_size, self.n_heads, test_seq_step, self.head_dim
+        )
+        v_val = torch.randn(
+            self.max_batch_size, self.n_heads, test_seq_step, self.head_dim
+        )
+        return (input_pos, k_val, v_val)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        seq_dim = Dim("seq_step", min=1, max=self.max_context_length)
+        return {
+            "input_pos": None,
+            "k_val": {2: seq_dim},
+            "v_val": {2: seq_dim},
+        }
+
+
+class ETKVCacheSliceModel(nn.Module):
+    """
+    Test model that updates ETKVCache then slices the result.
+
+    This tests that operations on the returned cache work correctly,
+    matching the pattern used in attention implementations.
+    """
+
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_context_length: int,
+        n_heads: int,
+        head_dim: int,
+        enable_dynamic_shape: bool = True,
+    ):
+        super().__init__()
+        self.max_context_length = max_context_length
+        self.cache = ETKVCache(
+            max_batch_size=max_batch_size,
+            max_context_length=max_context_length,
+            n_heads=n_heads,
+            head_dim=head_dim,
+            enable_dynamic_shape=enable_dynamic_shape,
+        )
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,  # [S] position tensor
+        k_val: torch.Tensor,  # [B, H, S, D]
+        v_val: torch.Tensor,  # [B, H, S, D]
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Update cache and return sliced result."""
+        start_pos = input_pos[0].item()
+        seq_len = k_val.size(2)
+        end_pos = start_pos + seq_len
+
+        torch._check_is_size(start_pos)
+        torch._check(end_pos <= self.max_context_length)
+        torch._check(end_pos >= 0)
+
+        k_cache, v_cache = self.cache.update(input_pos, k_val, v_val)
+
+        k_valid = k_cache[:, :, :end_pos, :]
+        v_valid = v_cache[:, :, :end_pos, :]
+        return k_valid, v_valid
+
+
+@register_test
+class ETKVCacheSliceTest(OpTestCase):
+    """
+    Test case for ETKVCache update followed by slicing.
+
+    This verifies that:
+    1. The ET llama KVCache-compatible interface works correctly
+    2. Subsequent slice operations on the returned cache work correctly
+    """
+
+    name = "et_kv_cache_slice"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        max_batch_size: int = 1,
+        n_heads: int = 4,
+        head_dim: int = 64,
+        max_context_length: int = 128,
+        seq_step: int = 8,
+        enable_dynamic_shape: bool = True,
+    ):
+        self.max_batch_size = max_batch_size
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.max_context_length = max_context_length
+        self.seq_step = seq_step
+        self.enable_dynamic_shape = enable_dynamic_shape
+
+    @classmethod
+    def get_test_configs(cls) -> List["ETKVCacheSliceTest"]:
+        return [
+            cls(),
+            cls(n_heads=8, head_dim=32),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return ETKVCacheSliceModel(
+            max_batch_size=self.max_batch_size,
+            max_context_length=self.max_context_length,
+            n_heads=self.n_heads,
+            head_dim=self.head_dim,
+            enable_dynamic_shape=self.enable_dynamic_shape,
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        input_pos = torch.tensor([0], dtype=torch.int64)
+        k_val = torch.randn(
+            self.max_batch_size, self.n_heads, self.seq_step, self.head_dim
+        )
+        v_val = torch.randn(
+            self.max_batch_size, self.n_heads, self.seq_step, self.head_dim
+        )
+        return (input_pos, k_val, v_val)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        test_seq_step = self.seq_step + 4
+        input_pos = torch.tensor([16], dtype=torch.int64)
+        k_val = torch.randn(
+            self.max_batch_size, self.n_heads, test_seq_step, self.head_dim
+        )
+        v_val = torch.randn(
+            self.max_batch_size, self.n_heads, test_seq_step, self.head_dim
+        )
+        return (input_pos, k_val, v_val)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        seq_dim = Dim("seq_step", min=1, max=self.max_context_length)
+        return {
+            "input_pos": None,
+            "k_val": {2: seq_dim},
+            "v_val": {2: seq_dim},
+        }
+
+
+# =============================================================================
+# MLX STATIC CACHE TESTS (HuggingFace-compatible interface)
+# =============================================================================
+
+
+class MockModelConfig:
+    """
+    Mock HuggingFace model config for testing HFStaticCache.
+
+    This simulates the config structure expected by HFStaticCache.
+    """
+
+    def __init__(
+        self,
+        num_hidden_layers: int = 2,
+        num_attention_heads: int = 4,
+        num_key_value_heads: int | None = None,
+        hidden_size: int = 256,
+        head_dim: int | None = None,
+        max_position_embeddings: int = 128,
+    ):
+        self.num_hidden_layers = num_hidden_layers
+        self.num_attention_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads or num_attention_heads
+        self.hidden_size = hidden_size
+        self.head_dim = head_dim or (hidden_size // num_attention_heads)
+        self.max_position_embeddings = max_position_embeddings
+
+    def get_text_config(self):
+        """Return self for HF StaticCache compatibility."""
+        return self
+
+
+class HFStaticCacheModel(nn.Module):
+    """
+    Test model wrapping HFStaticCache from cache.py.
+
+    This tests the HuggingFace-compatible StaticCache interface.
+    """
+
+    def __init__(
+        self,
+        config: MockModelConfig,
+        layer_idx: int = 0,
+    ):
+        super().__init__()
+        from executorch.backends.apple.mlx.examples.cache import HFStaticCache
+
+        self.cache = HFStaticCache(config)
+        self.layer_idx = layer_idx
+
+        # Register buffers explicitly so torch.export treats them as mutable
+        # buffers rather than constants. This mirrors what replace_hf_cache_with_mlx() does.
+        for i, layer_cache in enumerate(self.cache.kv_cache):
+            self.register_buffer(
+                f"key_cache_{i}", layer_cache.k_cache, persistent=False
+            )
+            self.register_buffer(
+                f"value_cache_{i}", layer_cache.v_cache, persistent=False
+            )
+
+    def forward(
+        self,
+        k_val: torch.Tensor,  # [B, H, S, D]
+        v_val: torch.Tensor,  # [B, H, S, D]
+        cache_position: torch.Tensor,  # 1D tensor with start position
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Update cache using HuggingFace-style interface."""
+        return self.cache.update(
+            k_val,
+            v_val,
+            self.layer_idx,
+            cache_kwargs={"cache_position": cache_position},
+        )
+
+
+@register_test
+class HFStaticCacheTest(OpTestCase):
+    """Test case for HFStaticCache with HuggingFace-compatible interface."""
+
+    name = "hf_static_cache"
+    rtol = 1e-5
+    atol = 1e-5
+    expected_node_counts = {
+        "ItemIntNode": 1,
+        "SymSizeNode": 2,
+        "AddIntNode": 2,
+        "SliceUpdateNode": 2,
+        "IdCopyNode": 2,
+    }
+
+    def __init__(
+        self,
+        num_heads: int = 4,
+        head_dim: int = 64,
+        num_layers: int = 2,
+        max_seq_len: int = 128,
+        seq_step: int = 8,
+        layer_idx: int = 0,
+    ):
+        self.num_heads = num_heads
+        self.head_dim = head_dim
+        self.num_layers = num_layers
+        self.max_seq_len = max_seq_len
+        self.seq_step = seq_step
+        self.layer_idx = layer_idx
+
+    @classmethod
+    def get_test_configs(cls) -> List["HFStaticCacheTest"]:
+        return [
+            cls(),  # default config, layer 0
+            cls(num_heads=8, head_dim=32, layer_idx=1),  # different config, layer 1
+        ]
+
+    def create_model(self) -> nn.Module:
+        config = MockModelConfig(
+            num_hidden_layers=self.num_layers,
+            num_attention_heads=self.num_heads,
+            hidden_size=self.num_heads * self.head_dim,
+            head_dim=self.head_dim,
+            max_position_embeddings=self.max_seq_len,
+        )
+        return HFStaticCacheModel(config, layer_idx=self.layer_idx)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        # BHSD layout [B, H, S, D]
+        k_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
+        v_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
+        cache_position = torch.tensor([0], dtype=torch.int64)  # 1D tensor
+        return (k_val, v_val, cache_position)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        # Test with different position and different seq_step
+        test_seq_step = self.seq_step + 4  # Different from export seq_step
+        k_val = torch.randn(1, self.num_heads, test_seq_step, self.head_dim)
+        v_val = torch.randn(1, self.num_heads, test_seq_step, self.head_dim)
+        cache_position = torch.tensor([16], dtype=torch.int64)  # 1D tensor
+        return (k_val, v_val, cache_position)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        # seq_step (dim 2) is dynamic for k_val and v_val
+        seq_dim = Dim("seq_step", min=1, max=self.max_seq_len)
+        return {
+            "k_val": {2: seq_dim},
+            "v_val": {2: seq_dim},
+            "cache_position": None,
+        }
+
+
+class HFStaticCacheSliceModel(nn.Module):
+    """
+    Test model that updates HFStaticCache then slices the result.
+
+    This tests that operations on the returned cache work correctly
+    with the HuggingFace-compatible interface.
+    """
+
+    def __init__(
+        self,
+        config: MockModelConfig,
+        layer_idx: int = 0,
+    ):
+        super().__init__()
+        from executorch.backends.apple.mlx.examples.cache import HFStaticCache
+
+        self.max_seq_len = config.max_position_embeddings
+        self.cache = HFStaticCache(config)
+        self.layer_idx = layer_idx
+
+        # Register buffers explicitly so torch.export treats them as mutable
+        # buffers rather than constants. This mirrors what replace_hf_cache_with_mlx() does.
+        for i, layer_cache in enumerate(self.cache.kv_cache):
+            self.register_buffer(
+                f"key_cache_{i}", layer_cache.k_cache, persistent=False
+            )
+            self.register_buffer(
+                f"value_cache_{i}", layer_cache.v_cache, persistent=False
+            )
+
+    def forward(
+        self,
+        k_val: torch.Tensor,  # [B, H, S, D]
+        v_val: torch.Tensor,  # [B, H, S, D]
+        cache_position: torch.Tensor,  # 1D tensor with start position
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Update cache and return sliced cache (only the valid portion)."""
+        pos = cache_position[0].item()
+        seq_len = k_val.size(2)
+        end_pos = pos + seq_len
+
+        # Add constraints for dynamic shapes
+        torch._check(pos >= 0)
+        torch._check(end_pos <= self.max_seq_len)
+        torch._check(end_pos >= 0)
+
+        # Update cache using HuggingFace-style interface
+        k_cache, v_cache = self.cache.update(
+            k_val,
+            v_val,
+            self.layer_idx,
+            cache_kwargs={"cache_position": cache_position},
+        )
+
+        # Slice to get only the valid portion [0:end_pos]
+        k_valid = k_cache[:, :, :end_pos, :]
+        v_valid = v_cache[:, :, :end_pos, :]
+
+        return k_valid, v_valid
+
+
+@register_test
+class HFStaticCacheSliceTest(OpTestCase):
+    """
+    Test case for HFStaticCache update followed by slicing.
+
+    This verifies that:
+    1. The HuggingFace-compatible interface works correctly
+    2. Subsequent slice operations on the returned cache work correctly
+    """
+
+    name = "hf_static_cache_slice"
+    rtol = 1e-5
+    atol = 1e-5
+    expected_node_counts = {
+        "ItemIntNode": 2,
+        "SymSizeNode": 3,
+        "AddIntNode": 3,
+        "SliceUpdateNode": 2,
+        "IdCopyNode": 2,
+        "SliceNode": 2,
+    }
+
+    def __init__(
+        self,
+        num_heads: int = 4,
+        head_dim: int = 64,
+        num_layers: int = 2,
+        max_seq_len: int = 128,
+        seq_step: int = 8,
+        layer_idx: int = 0,
+    ):
+        self.num_heads = num_heads
+        self.head_dim = head_dim
+        self.num_layers = num_layers
+        self.max_seq_len = max_seq_len
+        self.seq_step = seq_step
+        self.layer_idx = layer_idx
+
+    @classmethod
+    def get_test_configs(cls) -> List["HFStaticCacheSliceTest"]:
+        return [
+            cls(),  # default config, layer 0
+            cls(num_heads=8, head_dim=32, layer_idx=1),  # different config, layer 1
+        ]
+
+    def create_model(self) -> nn.Module:
+        config = MockModelConfig(
+            num_hidden_layers=self.num_layers,
+            num_attention_heads=self.num_heads,
+            hidden_size=self.num_heads * self.head_dim,
+            head_dim=self.head_dim,
+            max_position_embeddings=self.max_seq_len,
+        )
+        return HFStaticCacheSliceModel(config, layer_idx=self.layer_idx)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        # BHSD layout [B, H, S, D]
+        k_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
+        v_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
+        cache_position = torch.tensor([0], dtype=torch.int64)  # 1D tensor
+        return (k_val, v_val, cache_position)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        # Test with different position and different seq_step
+        test_seq_step = self.seq_step + 4  # Different from export seq_step
+        k_val = torch.randn(1, self.num_heads, test_seq_step, self.head_dim)
+        v_val = torch.randn(1, self.num_heads, test_seq_step, self.head_dim)
+        cache_position = torch.tensor([16], dtype=torch.int64)  # 1D tensor
+        return (k_val, v_val, cache_position)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        # seq_step (dim 2) is dynamic for k_val and v_val
+        seq_dim = Dim("seq_step", min=1, max=self.max_seq_len)
+        return {
+            "k_val": {2: seq_dim},
+            "v_val": {2: seq_dim},
+            "cache_position": None,
+        }
 
 
 # =============================================================================
@@ -3895,6 +4303,7 @@ class SDPATest(OpTestCase):
     name = "sdpa"
     rtol = 1e-3
     atol = 1e-3
+    expected_node_counts = {"SdpaNode": 1, "ExpandDimsNode": 0}
 
     def __init__(
         self,
@@ -3969,11 +4378,142 @@ class SDPATest(OpTestCase):
         return (q, k, v)
 
 
-# Note: RopeTest requires custom ops imports
-# They are kept in separate files (test_rope.py) for now
-# as they require:
-#   from executorch.backends.apple.mlx import custom_ops  # noqa: F401
-#   from executorch.backends.apple.mlx import ops  # noqa: F401
+# =============================================================================
+# CUSTOM SDPA OP (mlx::custom_sdpa)
+# =============================================================================
+
+
+class CustomSDPAModel(nn.Module):
+    """
+    Test model for mlx::custom_sdpa with ETKVCache.
+
+    Simulates a single attention layer: updates the KV cache, then calls
+    mlx::custom_sdpa which slices K/V to [0:start_pos+seq_len] and runs SDPA.
+    """
+
+    def __init__(
+        self,
+        max_context_length: int,
+        n_heads: int,
+        n_kv_heads: int,
+        head_dim: int,
+    ):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        self.cache = ETKVCache(
+            max_batch_size=1,
+            max_context_length=max_context_length,
+            n_heads=n_kv_heads,
+            head_dim=head_dim,
+            enable_dynamic_shape=True,
+        )
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,  # [S] position indices
+        q: torch.Tensor,  # [B, n_heads, S, D]
+        k_val: torch.Tensor,  # [B, n_kv_heads, S, D]
+        v_val: torch.Tensor,  # [B, n_kv_heads, S, D]
+    ) -> torch.Tensor:
+        # Update KV cache and get full cache tensors
+        k_cache, v_cache = self.cache.update(input_pos, k_val, v_val)
+
+        start_pos = input_pos[0].item()
+
+        output = torch.ops.mlx.custom_sdpa(
+            q,
+            k_cache,
+            v_cache,
+            start_pos=start_pos,
+            is_causal=True,
+            scale=self.head_dim**-0.5,
+        )
+        return output
+
+
+@register_test
+class CustomSDPATest(OpTestCase):
+    """
+    Test case for mlx::custom_sdpa with KV cache slicing.
+
+    Verifies that custom_sdpa:
+    1. Correctly slices K/V cache to [0:start_pos+seq_len]
+    2. Produces numerically correct attention output
+    3. Handles GQA (fewer KV heads than Q heads)
+    4. Works with dynamic shapes (varying seq_len and start_pos)
+    """
+
+    name = "custom_sdpa"
+    rtol = 1e-3
+    atol = 1e-3
+    expected_node_counts = {
+        "SdpaNode": 1,
+        "SliceUpdateNode": 2,
+        "SliceNode": 2,
+        "IdCopyNode": 2,
+        "ExpandDimsNode": 0,
+    }
+
+    def __init__(
+        self,
+        n_heads: int = 8,
+        n_kv_heads: int = 8,
+        head_dim: int = 64,
+        max_context_length: int = 128,
+        seq_len: int = 8,
+    ):
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        self.max_context_length = max_context_length
+        self.seq_len = seq_len
+
+        parts = ["custom_sdpa"]
+        if n_kv_heads != n_heads:
+            parts.append(f"gqa{n_kv_heads}")
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["CustomSDPATest"]:
+        return [
+            cls(),  # MHA
+            cls(n_kv_heads=4),  # GQA (8 Q heads, 4 KV heads)
+            cls(n_kv_heads=1),  # MQA (8 Q heads, 1 KV head)
+        ]
+
+    def create_model(self) -> nn.Module:
+        return CustomSDPAModel(
+            max_context_length=self.max_context_length,
+            n_heads=self.n_heads,
+            n_kv_heads=self.n_kv_heads,
+            head_dim=self.head_dim,
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        input_pos = torch.tensor([0], dtype=torch.int64)
+        q = torch.randn(1, self.n_heads, self.seq_len, self.head_dim)
+        k = torch.randn(1, self.n_kv_heads, self.seq_len, self.head_dim)
+        v = torch.randn(1, self.n_kv_heads, self.seq_len, self.head_dim)
+        return (input_pos, q, k, v)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        test_seq_len = self.seq_len + 4
+        input_pos = torch.tensor([16], dtype=torch.int64)
+        q = torch.randn(1, self.n_heads, test_seq_len, self.head_dim)
+        k = torch.randn(1, self.n_kv_heads, test_seq_len, self.head_dim)
+        v = torch.randn(1, self.n_kv_heads, test_seq_len, self.head_dim)
+        return (input_pos, q, k, v)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        seq_dim = Dim("seq_len", min=1, max=self.max_context_length)
+        return {
+            "input_pos": None,
+            "q": {2: seq_dim},
+            "k_val": {2: seq_dim},
+            "v_val": {2: seq_dim},
+        }
 
 
 # =============================================================================

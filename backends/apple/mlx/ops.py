@@ -116,6 +116,7 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     SumNode,
     SymSizeNode,
     TakeAlongAxisNode,
+    TakeNode,
     TanhNode,
     TanNode,
     TidOrVid,
@@ -1499,6 +1500,32 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             indices=P.slot_to_tid(idx_list[0]),
             out=P.slot_to_tid(out),
             axis=0,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.select.int, torch.ops.aten.select_copy.int])
+def _select_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """
+    Handle aten.select_copy.int - select a single index along a dimension.
+
+    select_copy(input, dim, index) returns input[..., index, ...] where the
+    indexing happens at dimension `dim`. The selected dimension is removed.
+
+    Maps to MLX's take(array, int index, axis) which also removes the dimension.
+    """
+    args = P.args(n)
+    require_args(args, 3, 3, "aten.select_copy.int")
+    require_kwargs(P.kwargs(n), set(), "aten.select_copy.int")
+    x, dim, index = args
+    out = P.make_or_get_slot(n)
+    P.emit(
+        TakeNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            index=index,
+            axis=dim,
         )
     )
     return out

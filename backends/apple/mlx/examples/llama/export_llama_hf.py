@@ -6,15 +6,31 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Export Llama model from HuggingFace using optimum-executorch's CausalLMExportableModule.
+Export Llama model from HuggingFace to MLX backend.
 
-This script exports a Llama model from HuggingFace without any source modification,
-leveraging optimum-executorch's infrastructure that is proven to work.
+By default, uses optimum-executorch's CausalLMExportableModule which provides
+a proven export pipeline. Optional flags enable custom MLX-optimized components:
+
+  --use-custom-sdpa   Register MLX attention (mlx::custom_sdpa) which handles
+                      K/V slicing and causal masking internally.
+  --use-custom-kv-cache  Replace HF's StaticCache with HFStaticCache that uses
+                         mlx::kv_cache_update for optimized cache updates.
+
+When neither flag is set, the script behaves identically to the original
+optimum-executorch export pipeline.
 
 Usage:
-    python -m executorch.backends.apple.mlx.examples.llama.export_llama_hf \
-        --model-id "unsloth/Llama-3.2-1B-Instruct" \
+    # Baseline (optimum-executorch pipeline):
+    python -m executorch.backends.apple.mlx.examples.llama.export_llama_hf \\
+        --model-id "unsloth/Llama-3.2-1B-Instruct" \\
         --output llama_hf.pte
+
+    # With custom MLX components:
+    python -m executorch.backends.apple.mlx.examples.llama.export_llama_hf \\
+        --model-id "unsloth/Llama-3.2-1B-Instruct" \\
+        --output llama_hf_mlx.pte \\
+        --use-custom-sdpa \\
+        --use-custom-kv-cache
 
 Requirements:
     pip install transformers torch optimum-executorch
@@ -32,111 +48,101 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
 
-def export_llama_hf(
+def _apply_quantization(
+    model: torch.nn.Module,
+    quantize_linear: Optional[str],
+    quantize_embeddings: Optional[str],
+) -> None:
+    """Apply TorchAO quantization to the model."""
+    if not quantize_linear and not quantize_embeddings:
+        return
+
+    logger.info("Applying quantization with TorchAO...")
+    try:
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+
+        if quantize_embeddings:
+            embed_dtype = torch.int4 if quantize_embeddings == "int4" else torch.int8
+            embed_group_size = 32 if quantize_embeddings == "int4" else 128
+            logger.info(
+                f"Quantizing embedding layers with {quantize_embeddings} "
+                f"(group size {embed_group_size})..."
+            )
+            quantize_(
+                model,
+                IntxWeightOnlyConfig(
+                    weight_dtype=embed_dtype, granularity=PerGroup(embed_group_size)
+                ),
+                filter_fn=lambda m, fqn: isinstance(m, torch.nn.Embedding),
+            )
+
+        if quantize_linear:
+            linear_dtype = torch.int4 if quantize_linear == "int4" else torch.int8
+            linear_group_size = 32 if quantize_linear == "int4" else 128
+            logger.info(
+                f"Quantizing linear layers with {quantize_linear} "
+                f"(group size {linear_group_size})..."
+            )
+            quantize_(
+                model,
+                IntxWeightOnlyConfig(
+                    weight_dtype=linear_dtype,
+                    granularity=PerGroup(linear_group_size),
+                ),
+                filter_fn=lambda m, fqn: isinstance(m, torch.nn.Linear),
+            )
+
+        if quantize_embeddings:
+            model.lm_head.weight = model.model.embed_tokens.weight
+
+        logger.info("Applied quantization successfully")
+    except ImportError:
+        logger.error("TorchAO not installed. Run: pip install torchao")
+        raise
+
+
+def _export_with_optimum(
     model_id: str,
     output_path: str,
-    max_seq_len: int = 1024,
-    dtype: str = "bf16",
-    quantize_linear: Optional[str] = None,
-    quantize_embeddings: Optional[str] = None,
+    max_seq_len: int,
+    dtype: str,
+    quantize_linear: Optional[str],
+    quantize_embeddings: Optional[str],
 ) -> None:
     """
-    Export a HuggingFace Llama model using optimum-executorch's CausalLMExportableModule.
+    Export using optimum-executorch's CausalLMExportableModule.
 
-    Args:
-        model_id: HuggingFace model ID (e.g., "meta-llama/Llama-3.2-1B-Instruct")
-        output_path: Path to save the .pte file
-        max_seq_len: Maximum sequence length for KV cache
-        dtype: Model dtype ("fp32", "fp16", "bf16")
-        quantize_linear: Quantization method for linear layers ("int4", "int8", or None)
-        quantize_embeddings: Quantization method for embedding layers ("int4", "int8", or None)
+    This is the default pipeline when no custom flags are set.
     """
-    from optimum.exporters.executorch.tasks.causal_lm import load_causal_lm_model
-
-    logger.info(f"Loading model using optimum-executorch: {model_id}")
-
-    # Map dtype string to proper format for optimum-executorch
-    dtype_map = {"fp32": "float32", "fp16": "float16", "bf16": "bfloat16"}
-    dtype_str = dtype_map.get(dtype, "bfloat16")
-
-    # Load using optimum-executorch's task which handles all the necessary setup
-    exportable = load_causal_lm_model(
-        model_id,
-        dtype=dtype_str,  # optimum-executorch accepts string like "float32"
-        max_seq_len=max_seq_len,
-    )
-
-    # Apply quantization if requested
-    if quantize_linear or quantize_embeddings:
-        logger.info("Applying quantization with TorchAO...")
-        try:
-            from torchao.quantization.granularity import PerGroup
-            from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
-
-            # Get the underlying model from the exportable module
-            model = exportable.model
-
-            # Quantize embedding layers
-            if quantize_embeddings:
-                embed_dtype = (
-                    torch.int4 if quantize_embeddings == "int4" else torch.int8
-                )
-                embed_group_size = 32 if quantize_embeddings == "int4" else 128
-                logger.info(
-                    f"Quantizing embedding layers with {quantize_embeddings} (group size {embed_group_size})..."
-                )
-                quantize_(
-                    model,
-                    IntxWeightOnlyConfig(
-                        weight_dtype=embed_dtype, granularity=PerGroup(embed_group_size)
-                    ),
-                    filter_fn=lambda m, fqn: isinstance(m, torch.nn.Embedding),
-                )
-
-            # Quantize linear layers
-            if quantize_linear:
-                linear_dtype = torch.int4 if quantize_linear == "int4" else torch.int8
-                linear_group_size = 32 if quantize_linear == "int4" else 128
-                logger.info(
-                    f"Quantizing linear layers with {quantize_linear} (group size {linear_group_size})..."
-                )
-                quantize_(
-                    model,
-                    IntxWeightOnlyConfig(
-                        weight_dtype=linear_dtype,
-                        granularity=PerGroup(linear_group_size),
-                    ),
-                    filter_fn=lambda m, fqn: isinstance(m, torch.nn.Linear),
-                )
-
-            # Tie lm_head weights to embedding after quantization
-            if quantize_embeddings:
-                model.lm_head.weight = model.model.embed_tokens.weight
-
-            logger.info("Applied quantization successfully")
-        except ImportError:
-            logger.error("TorchAO not installed. Run: pip install torchao")
-            raise
-
-    # Export using optimum-executorch's export method
-    logger.info("Exporting model with torch.export...")
-    exported_progs = exportable.export()
-
-    # Lower to MLX backend
-    logger.info("Delegating to MLX backend...")
     import executorch.exir as exir
     from executorch.backends.apple.mlx import MLXPartitioner
     from executorch.exir import EdgeCompileConfig
     from executorch.exir.capture._config import ExecutorchBackendConfig
     from executorch.exir.passes import MemoryPlanningPass
+    from optimum.exporters.executorch.tasks.causal_lm import load_causal_lm_model
 
-    # Match optimum-executorch's EdgeCompileConfig
+    dtype_map = {"fp32": "float32", "fp16": "float16", "bf16": "bfloat16"}
+    dtype_str = dtype_map.get(dtype, "bfloat16")
+
+    logger.info(f"Loading model using optimum-executorch: {model_id}")
+    exportable = load_causal_lm_model(
+        model_id,
+        dtype=dtype_str,
+        max_seq_len=max_seq_len,
+    )
+
+    _apply_quantization(exportable.model, quantize_linear, quantize_embeddings)
+
+    logger.info("Exporting model with torch.export...")
+    exported_progs = exportable.export()
+
+    logger.info("Delegating to MLX backend...")
     edge_config = EdgeCompileConfig(
         _check_ir_validity=False,
         _skip_dim_order=True,
     )
 
-    # Convert single exported program to dict format
     if len(exported_progs) == 1:
         exported_progs = {"forward": next(iter(exported_progs.values()))}
 
@@ -155,7 +161,143 @@ def export_llama_hf(
         )
     )
 
-    # Save the program
+    _save_program(executorch_program, output_path)
+
+
+def _export_with_custom_components(
+    model_id: str,
+    output_path: str,
+    max_seq_len: int,
+    dtype: str,
+    quantize_linear: Optional[str],
+    quantize_embeddings: Optional[str],
+    use_custom_sdpa: bool,
+    use_custom_kv_cache: bool,
+) -> None:
+    """
+    Export using direct HF model with custom MLX components.
+
+    Used when --use-custom-sdpa and/or --use-custom-kv-cache are set.
+    """
+    import executorch.exir as exir
+    from executorch.backends.apple.mlx import MLXPartitioner
+    from executorch.exir import EdgeCompileConfig
+    from executorch.exir.capture._config import ExecutorchBackendConfig
+    from executorch.exir.passes import MemoryPlanningPass
+    from transformers import AutoModelForCausalLM
+    from transformers.integrations.executorch import (
+        TorchExportableModuleWithStaticCache,
+    )
+
+    torch_dtype_map = {
+        "fp32": torch.float32,
+        "fp16": torch.float16,
+        "bf16": torch.bfloat16,
+    }
+    torch_dtype = torch_dtype_map.get(dtype, torch.bfloat16)
+
+    if use_custom_sdpa:
+        from executorch.backends.apple.mlx.examples.attention import (
+            register_mlx_attention,
+        )
+
+        register_mlx_attention()
+        logger.info("Registered MLX custom SDPA attention")
+
+    attn_implementation = "mlx" if use_custom_sdpa else None
+
+    logger.info(f"Loading HuggingFace model: {model_id}")
+    load_kwargs = {
+        "torch_dtype": torch_dtype,
+        "low_cpu_mem_usage": True,
+    }
+    if attn_implementation:
+        load_kwargs["attn_implementation"] = attn_implementation
+    model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
+
+    model.generation_config.cache_implementation = "static"
+    model.generation_config.cache_config = {
+        "batch_size": 1,
+        "max_cache_len": max_seq_len,
+    }
+    model.eval()
+
+    logger.info("Creating TorchExportableModuleWithStaticCache wrapper...")
+    exportable = TorchExportableModuleWithStaticCache(
+        model=model,
+        batch_size=1,
+        max_cache_len=max_seq_len,
+    )
+
+    if use_custom_kv_cache:
+        from executorch.backends.apple.mlx.examples.source_transformation import (
+            replace_hf_cache_with_mlx,
+        )
+
+        logger.info("Replacing HuggingFace StaticCache with HFStaticCache...")
+        replace_hf_cache_with_mlx(
+            exportable,
+            model.config,
+            max_batch_size=1,
+            max_cache_len=max_seq_len,
+            dtype=torch_dtype,
+        )
+        logger.info("  HFStaticCache installed successfully")
+
+    _apply_quantization(exportable.model, quantize_linear, quantize_embeddings)
+
+    logger.info("Exporting model with torch.export...")
+    seq_length = 3
+    example_input_ids = torch.zeros((1, seq_length), dtype=torch.long)
+    example_cache_position = torch.arange(seq_length, dtype=torch.long)
+
+    seq_len_dim = torch.export.Dim("seq_length_dim", max=max_seq_len - 1)
+    dynamic_shapes = {
+        "input_ids": {1: seq_len_dim},
+        "cache_position": {0: seq_len_dim},
+    }
+
+    with torch.no_grad():
+        exported_program = torch.export.export(
+            exportable,
+            args=(),
+            kwargs={
+                "input_ids": example_input_ids,
+                "cache_position": example_cache_position,
+            },
+            dynamic_shapes=dynamic_shapes,
+            strict=True,
+        )
+
+    logger.info("Export completed successfully")
+    for sym, constraint in exported_program.range_constraints.items():
+        logger.info(f"  Range constraint: {sym}: {constraint}")
+
+    logger.info("Delegating to MLX backend...")
+    edge_config = EdgeCompileConfig(
+        _check_ir_validity=False,
+        _skip_dim_order=True,
+    )
+
+    edge_program = exir.to_edge_transform_and_lower(
+        {"forward": exported_program},
+        partitioner=[MLXPartitioner()],
+        compile_config=edge_config,
+    )
+
+    logger.info("Exporting to ExecuTorch...")
+    executorch_program = edge_program.to_executorch(
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
+        )
+    )
+
+    _save_program(executorch_program, output_path)
+
+
+def _save_program(executorch_program, output_path: str) -> None:
+    """Save the ExecuTorch program to disk."""
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "wb") as f:
         f.write(executorch_program.buffer)
@@ -164,9 +306,59 @@ def export_llama_hf(
     logger.info(f"Program size: {len(executorch_program.buffer) / 1024 / 1024:.2f} MB")
 
 
+def export_llama_hf(
+    model_id: str,
+    output_path: str,
+    max_seq_len: int = 1024,
+    dtype: str = "bf16",
+    quantize_linear: Optional[str] = None,
+    quantize_embeddings: Optional[str] = None,
+    use_custom_sdpa: bool = False,
+    use_custom_kv_cache: bool = False,
+) -> None:
+    """
+    Export a HuggingFace Llama model to ExecuTorch with MLX backend.
+
+    Args:
+        model_id: HuggingFace model ID
+        output_path: Path to save the .pte file
+        max_seq_len: Maximum sequence length for KV cache
+        dtype: Model dtype ("fp32", "fp16", "bf16")
+        quantize_linear: Quantization for linear layers ("int4", "int8", or None)
+        quantize_embeddings: Quantization for embeddings ("int4", "int8", or None)
+        use_custom_sdpa: Use MLX custom SDPA (mlx::custom_sdpa)
+        use_custom_kv_cache: Use MLX custom KV cache (mlx::kv_cache_update)
+    """
+    if use_custom_sdpa or use_custom_kv_cache:
+        logger.info(
+            f"Using custom components: sdpa={use_custom_sdpa}, "
+            f"kv_cache={use_custom_kv_cache}"
+        )
+        _export_with_custom_components(
+            model_id=model_id,
+            output_path=output_path,
+            max_seq_len=max_seq_len,
+            dtype=dtype,
+            quantize_linear=quantize_linear,
+            quantize_embeddings=quantize_embeddings,
+            use_custom_sdpa=use_custom_sdpa,
+            use_custom_kv_cache=use_custom_kv_cache,
+        )
+    else:
+        logger.info("Using optimum-executorch pipeline (no custom components)")
+        _export_with_optimum(
+            model_id=model_id,
+            output_path=output_path,
+            max_seq_len=max_seq_len,
+            dtype=dtype,
+            quantize_linear=quantize_linear,
+            quantize_embeddings=quantize_embeddings,
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Export HuggingFace Llama model using optimum-executorch to MLX"
+        description="Export HuggingFace Llama model to MLX backend"
     )
     parser.add_argument(
         "--model-id",
@@ -207,6 +399,18 @@ def main():
         default=None,
         help="Quantization method for embedding layers",
     )
+    parser.add_argument(
+        "--use-custom-sdpa",
+        action="store_true",
+        default=False,
+        help="Use MLX custom SDPA (mlx::custom_sdpa) for attention",
+    )
+    parser.add_argument(
+        "--use-custom-kv-cache",
+        action="store_true",
+        default=False,
+        help="Use MLX custom KV cache (mlx::kv_cache_update)",
+    )
 
     args = parser.parse_args()
 
@@ -217,6 +421,8 @@ def main():
         dtype=args.dtype,
         quantize_linear=args.quantize_linear,
         quantize_embeddings=args.quantize_embeddings,
+        use_custom_sdpa=args.use_custom_sdpa,
+        use_custom_kv_cache=args.use_custom_kv_cache,
     )
 
 
