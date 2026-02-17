@@ -12,9 +12,9 @@ from typing import Any, Dict, Optional, Tuple, Union
 import numpy as np
 import torch
 from torchao.quantization.pt2e import move_exported_model_to_eval
-from torchao.quantization.pt2e.quantize_pt2e import prepare_qat_pt2e, prepare_pt2e, convert_pt2e
 from torch.export import export, ExportedProgram
 from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, convert_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import prepare_qat_pt2e
 
 import executorch.exir as exir
 from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
@@ -112,9 +112,13 @@ def to_quantized_edge_program(model: torch.nn.Module, input_spec: list[ModelInpu
     core_aten_ep = _to_core_aten(exir_program_aten_quant, example_input, None, verbose=True)
 
     partitioners = (
-        [NeutronPartitioner(generate_neutron_compile_spec("imxrt700", "SDK_25_12"),
-                            neutron_target_spec=neutron_target_spec
-                            )]
+        [
+            NeutronPartitioner(
+                generate_neutron_compile_spec("imxrt700", "SDK_25_12"),
+                neutron_target_spec=neutron_target_spec,
+                post_quantization_state_dict=exir_program_aten_quant.state_dict(),
+            )
+        ]
     ) if delegate_to_npu else []
 
     edge_program_manager = to_edge_transform_and_lower(

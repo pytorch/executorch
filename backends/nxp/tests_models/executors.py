@@ -37,16 +37,18 @@ NSYS_CONFIG_PATH = test_config.NSYS_CONFIG_PATH
 NSYS_FIRMWARE_PATH = test_config.NSYS_FIRMWARE_PATH
 NEUTRON_TEST_PATH = test_config.NEUTRON_TEST_PATH
 
-def _run_delegated_executorch_program(model, test_dir, test_name, dataset_dir, input_spec, dlg_model_verifier,
-                                      npu_results_dir, mocker, use_qat: bool = False) -> ExportedProgram:
+def _run_delegated_executorch_program(model, test_dir, test_name, calibration_dataset_dir, testing_dataset_dir,
+                                      input_spec, dlg_model_verifier, npu_results_dir, mocker,
+                                      use_qat: bool = False) -> ExportedProgram:
     if len(input_spec) == 1:
         # Single input, use --dataset
         dataset_cli = "--dataset"
-        dataset_or_inputs = dataset_dir
+        dataset_or_inputs = testing_dataset_dir
     else:
         # Multiple input, use --inputs with subdirectories
         dataset_cli = "--inputs"
-        dataset_or_inputs = ",".join(sorted([os.path.join(dataset_dir, d) for d in os.listdir(dataset_dir)]))
+        dataset_or_inputs = ",".join(sorted([os.path.join(testing_dataset_dir, d) for d in os.listdir(testing_dataset_dir)])
+        )
 
     # Run nxp_executor_runner with program delegated to NPU
     delegated_model_path = os.path.abspath(os.path.join(test_dir, f'{test_name}_delegated.pte'))
@@ -67,7 +69,7 @@ def _run_delegated_executorch_program(model, test_dir, test_name, dataset_dir, i
             wrapped = functools.update_wrapper(wrapper, method)
             mocker.patch.object(NeutronPartitioner, "partition", side_effect=wrapped, autospec=True)
         delegated_program = to_quantized_executorch_program(
-            model, input_spec, dataset_dir, delegate_to_npu=True, use_qat=use_qat
+            model, input_spec, calibration_dataset_dir, delegate_to_npu=True, use_qat=use_qat
         )
     except RuntimeError as e:
         if "Model converted with neutron-converter has" in str(e):
@@ -86,16 +88,18 @@ def _run_delegated_executorch_program(model, test_dir, test_name, dataset_dir, i
     return exported_program
 
 
-def _run_non_delegated_executorch_program(model, test_dir, test_name, dataset_dir, input_spec,
+def _run_non_delegated_executorch_program(model, test_dir, test_name, calibration_dataset_dir, testing_dataset_dir,
+                                          input_spec,
                                           cpu_results_dir) -> ExportedProgram:
     if len(input_spec) == 1:
         # Single input, use --dataset
         dataset_cli = "--dataset"
-        dataset_or_inputs = dataset_dir
+        dataset_or_inputs = testing_dataset_dir
     else:
         # Multiple input, use --inputs with subdirectories
         dataset_cli = "--inputs"
-        dataset_or_inputs = ",".join(sorted([os.path.join(dataset_dir, d) for d in os.listdir(dataset_dir)]))
+        dataset_or_inputs = ",".join(sorted([os.path.join(testing_dataset_dir, d) for d in os.listdir(testing_dataset_dir)])
+        )
 
     # Run program via nxp_executor_runner on CPU
     non_delegated_model_path = os.path.abspath(os.path.join(test_dir, f'{test_name}_non_delegated.pte'))
@@ -103,7 +107,9 @@ def _run_non_delegated_executorch_program(model, test_dir, test_name, dataset_di
     non_delegated_cmd = f"{NEUTRON_TEST_PATH} --model {non_delegated_model_path} {dataset_cli} {dataset_or_inputs} \
         --output {cpu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
 
-    non_delegated_program = to_quantized_executorch_program(model, input_spec, dataset_dir, delegate_to_npu=False)
+    non_delegated_program = to_quantized_executorch_program(
+        model, input_spec, calibration_dataset_dir, delegate_to_npu=False
+    )
 
     nodes = list(non_delegated_program.exported_program().graph.nodes)
     assert all([not node.name.startswith("executorch_call_delegate") for node in
@@ -189,11 +195,11 @@ def store_results(results: list[tuple[np.ndarray, ...]], output_dir: str, refere
             output_array.tofile(bin_file_path)
 
 
-def _run_pytorch_program(model, dataset_dir, input_spec: list[ModelInputSpec],
+def _run_pytorch_program(model, testing_dataset_dir, input_spec: list[ModelInputSpec],
                          output_spec: list[torch.Tensor], cpu_results_dir, npu_results_dir):
     all_outputs = []
 
-    for input_samples in read_prepared_samples(dataset_dir, input_spec):
+    for input_samples in read_prepared_samples(testing_dataset_dir, input_spec):
         current_input_samples = []
         for spec, sample in zip(input_spec, input_samples, strict=True):
             match spec.dim_order:
@@ -280,21 +286,24 @@ def convert_run_compare(
     if isinstance(input_spec, tuple):
         input_spec = [ModelInputSpec(input_spec)]
 
-    dataset_creator.generate_samples(dataset_dir, input_spec)
+    calibration_dataset_dir, testing_dataset_dir = dataset_creator.generate_samples(dataset_dir, input_spec)
 
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
     npu_results_dir = os.path.join(test_dir, "results_npu")
 
-    delegated_program = _run_delegated_executorch_program(model, test_dir, test_name, dataset_dir, input_spec,
-                                                          dlg_model_verifier, npu_results_dir, mocker,
-                                                          use_qat=use_qat)
+    delegated_program = _run_delegated_executorch_program(
+        model, test_dir, test_name, calibration_dataset_dir, testing_dataset_dir, input_spec, dlg_model_verifier,
+        npu_results_dir, mocker, use_qat=use_qat
+    )
 
     output_spec = _get_program_output_spec(delegated_program)
 
     if run_cpu_version_in_pytorch:
-        _run_pytorch_program(model, dataset_dir, input_spec, output_spec, cpu_results_dir, npu_results_dir)
+        _run_pytorch_program(model, testing_dataset_dir, input_spec, output_spec, cpu_results_dir, npu_results_dir)
     else:
-        _run_non_delegated_executorch_program(model, test_dir, test_name, dataset_dir, input_spec, cpu_results_dir)
+        _run_non_delegated_executorch_program(
+            model, test_dir, test_name, calibration_dataset_dir, testing_dataset_dir, input_spec, cpu_results_dir
+        )
 
     output_tensor_spec = _get_program_output_spec(delegated_program)
 
