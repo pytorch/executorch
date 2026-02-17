@@ -7,15 +7,18 @@
 import os
 import pathlib
 import shutil
+
 from executorch.backends.nxp.tests_models.outputs_dir_importer import outputs_dir
+
 
 def pytest_addoption(parser):
     parser.addoption(
         "--nxp_runner_path",
         action="store",
         default=None,
-        help="Path to the nxp_executor_runner executable"
+        help="Path to the nxp_executor_runner executable",
     )
+
 
 def pytest_configure(config):
     nxp_runner_path = config.getoption("--nxp_runner_path")
@@ -33,8 +36,3 @@ def pytest_sessionstart(session):
     # Remove all cached test files
     shutil.rmtree(outputs_dir.OUTPUTS_DIR, ignore_errors=True)
     os.mkdir(outputs_dir.OUTPUTS_DIR)
-
-
-
-
-

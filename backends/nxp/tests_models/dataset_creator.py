@@ -13,18 +13,18 @@ from random import sample, seed
 
 import numpy as np
 import torch
-from torch import Tensor
+from executorch.backends.nxp.backend.ir.converter.conversion import translator
 
 from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
-from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.examples.nxp.models.calibration_dataset import CalibrationDataset
+from torch import Tensor
 
 
-
-
-def _get_calibration_and_testing_dataset_directory_names(dataset_dir_name: str) -> tuple[str, str]:
+def _get_calibration_and_testing_dataset_directory_names(
+    dataset_dir_name: str,
+) -> tuple[str, str]:
     """Return the names of the directories which contain calibration data for quantization, and testing data for the
-        inference. The difference is that the testing data may contain channels last samples.
+    inference. The difference is that the testing data may contain channels last samples.
     """
     mkdir(calibration_path := os.path.join(dataset_dir_name, "calibration"))
     mkdir(test_path := os.path.join(dataset_dir_name, "test"))
@@ -34,21 +34,28 @@ def _get_calibration_and_testing_dataset_directory_names(dataset_dir_name: str) 
 class DatasetCreator(abc.ABC):
 
     @abc.abstractmethod
-    def generate_samples(self, dataset_dir, input_spec: list[ModelInputSpec]) -> tuple[str, str]:
+    def generate_samples(
+        self, dataset_dir, input_spec: list[ModelInputSpec]
+    ) -> tuple[str, str]:
         pass
 
 
 class RandomDatasetCreator(DatasetCreator):
-    """ Dataset creator that generates random input samples. """
+    """Dataset creator that generates random input samples."""
 
     def __init__(self, num_samples=2):
         self._num_samples = num_samples
 
-    def generate_samples(self, dataset_dir: str, input_spec: list[ModelInputSpec]) -> tuple[str, str]:
-        assert isinstance(input_spec, list) and all([isinstance(spec, ModelInputSpec) for spec in input_spec]), \
-            "Input_spec must be a list of ModelInputSpec."
+    def generate_samples(
+        self, dataset_dir: str, input_spec: list[ModelInputSpec]
+    ) -> tuple[str, str]:
+        assert isinstance(input_spec, list) and all(
+            isinstance(spec, ModelInputSpec) for spec in input_spec
+        ), "Input_spec must be a list of ModelInputSpec."
 
-        calibration_dir, test_dir = _get_calibration_and_testing_dataset_directory_names(dataset_dir)
+        calibration_dir, test_dir = (
+            _get_calibration_and_testing_dataset_directory_names(dataset_dir)
+        )
 
         rng_seed = 42
         if any(spec.dim_order == torch.channels_last for spec in input_spec):
@@ -71,7 +78,9 @@ class RandomDatasetCreator(DatasetCreator):
 
         return calibration_dir, test_dir
 
-    def _gen_samples(self, dataset_dir: str, input_spec: list[ModelInputSpec], rng_seed: int):
+    def _gen_samples(
+        self, dataset_dir: str, input_spec: list[ModelInputSpec], rng_seed: int
+    ):
         rng = np.random.default_rng(rng_seed)
         for idx in range(self._num_samples):
             sample_dir = dataset_dir
@@ -86,24 +95,32 @@ class RandomDatasetCreator(DatasetCreator):
                     case torch.contiguous_format:
                         shape = spec.shape
                     case torch.channels_last:
-                        shape = tuple(translator.dims_to_channels_last(list(spec.shape)))
+                        shape = tuple(
+                            translator.dims_to_channels_last(list(spec.shape))
+                        )
                     case _:
                         raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
 
                 sample_vector = rng.random(np.prod(shape), spec.type).reshape(shape)
-                sample_vector.tofile(os.path.join(sample_dir, f"{str(spec_idx).zfill(2)}.bin"))
+                sample_vector.tofile(
+                    os.path.join(sample_dir, f"{str(spec_idx).zfill(2)}.bin")
+                )
 
 
 class CopyDatasetCreator(DatasetCreator):
-    """ Creator that just copies data from other directory. """
+    """Creator that just copies data from other directory."""
 
     def __init__(self, source_dir: str):
         self._source_dir = source_dir
 
     def generate_samples(self, dataset_dir, input_spec) -> tuple[str, str]:
-        assert len(input_spec) == 1, "Only one input is supported for `CopyDatasetCreator` right now."
+        assert (
+            len(input_spec) == 1
+        ), "Only one input is supported for `CopyDatasetCreator` right now."
 
-        calibration_dataset_dir, testing_dataset_dir = _get_calibration_and_testing_dataset_directory_names(dataset_dir)
+        calibration_dataset_dir, testing_dataset_dir = (
+            _get_calibration_and_testing_dataset_directory_names(dataset_dir)
+        )
         if input_spec[0].dim_order != torch.channels_last:
             # Use the calibration dataset for testing as well.
             testing_dataset_dir = calibration_dataset_dir
@@ -116,13 +133,20 @@ class CopyDatasetCreator(DatasetCreator):
 
             if input_spec[0].dim_order == torch.channels_last:
                 # Permute the sample to channels last and store it in the testing dataset.
-                tensor = np.fromfile(sample_path, dtype=input_spec[0].type).reshape(input_spec[0].shape)
+                tensor = np.fromfile(sample_path, dtype=input_spec[0].type).reshape(
+                    input_spec[0].shape
+                )
 
-                if list(tensor.shape) == list(input_spec[0].shape) and len(tensor.shape) == 4:
+                if (
+                    list(tensor.shape) == list(input_spec[0].shape)
+                    and len(tensor.shape) == 4
+                ):
                     # 4D tensor.
                     tensor = np.moveaxis(tensor, 1, -1)
                 else:
-                    raise ValueError(f"Cannot permute a tensor of shape {tensor.shape} to channels last.")
+                    raise ValueError(
+                        f"Cannot permute a tensor of shape {tensor.shape} to channels last."
+                    )
 
                 tensor.tofile(os.path.join(testing_dataset_dir, sample_name))
 
@@ -130,9 +154,14 @@ class CopyDatasetCreator(DatasetCreator):
 
 
 class FromCalibrationDataDatasetCreator(DatasetCreator):
-    """ Creator that uses CalibrationDataset archive file."""
+    """Creator that uses CalibrationDataset archive file."""
 
-    def __init__(self, dataset: CalibrationDataset, num_examples: int, idx_to_label: dict[int, str]):
+    def __init__(
+        self,
+        dataset: CalibrationDataset,
+        num_examples: int,
+        idx_to_label: dict[int, str],
+    ):
         self._dataset = dataset
         self._num_examples = num_examples
         self._idx_to_label = idx_to_label
@@ -159,21 +188,30 @@ class FromCalibrationDataDatasetCreator(DatasetCreator):
 
     def generate_samples(self, dataset_dir, input_spec) -> tuple[str, str]:
         os.makedirs(dataset_dir, exist_ok=True)
-        assert type(self._dataset[0]) is tuple and len(self._dataset[0]) == 2, \
-            "Provide calibration data with examples and labels"
+        assert (
+            type(self._dataset[0]) is tuple and len(self._dataset[0]) == 2
+        ), "Provide calibration data with examples and labels"
 
         # We need to use ordered collection for deterministic selection of samples
         classes = OrderedDict([(cl, None) for _, cl in self._dataset])
         examples_per_class = self._num_examples // len(classes)
         idx_list = []
         for cl in classes.keys():
-            cl_idx_list = [idx for idx in range(len(self._dataset)) if self._dataset[idx][1] == cl]
-            class_indices = list(zip(sample(cl_idx_list, examples_per_class), [cl] * examples_per_class))
+            cl_idx_list = [
+                idx for idx in range(len(self._dataset)) if self._dataset[idx][1] == cl
+            ]
+            class_indices = list(
+                zip(sample(cl_idx_list, examples_per_class), [cl] * examples_per_class)
+            )
             idx_list.extend(class_indices)
 
-        assert isinstance(input_spec, list) and len(input_spec) == 1  # Other cases are not implemented yet.
+        assert (
+            isinstance(input_spec, list) and len(input_spec) == 1
+        )  # Other cases are not implemented yet.
 
-        calibration_dir, test_dir = _get_calibration_and_testing_dataset_directory_names(dataset_dir)
+        calibration_dir, test_dir = (
+            _get_calibration_and_testing_dataset_directory_names(dataset_dir)
+        )
 
         if any(spec.dim_order == torch.channels_last for spec in input_spec):
             # We will need to generate a separate testing dataset, containing the same data as is in the calibration
@@ -192,21 +230,31 @@ class FromCalibrationDataDatasetCreator(DatasetCreator):
 
         return calibration_dir, test_dir
 
-    def _gen_samples(self, dataset_dir: str, input_spec: list[ModelInputSpec], idx_list):
+    def _gen_samples(
+        self, dataset_dir: str, input_spec: list[ModelInputSpec], idx_list
+    ):
         for i, (idx, cl) in enumerate(idx_list):
             label = self._idx_to_label[cl]
             example = self._dataset[idx]
             data = self._get_example_np_data(example)
             for inp_idx, dt in enumerate(data):
                 if input_spec[0].dim_order == torch.channels_last:
-                    if list(dt.shape) == list(input_spec[0].shape) and len(dt.shape) == 4:
+                    if (
+                        list(dt.shape) == list(input_spec[0].shape)
+                        and len(dt.shape) == 4
+                    ):
                         # 4D tensor.
                         dt = np.moveaxis(dt, 1, -1)
-                    elif list(dt.shape)[1:] == list(input_spec[0].shape) and len(dt.shape) == 5:
+                    elif (
+                        list(dt.shape)[1:] == list(input_spec[0].shape)
+                        and len(dt.shape) == 5
+                    ):
                         # Multiple 4D tensors.
                         dt = np.asarray([np.moveaxis(d, 1, -1) for d in dt])
                     else:
-                        raise ValueError(f"Cannot permute a tensor of shape {dt.shape} to channels last.")
+                        raise ValueError(
+                            f"Cannot permute a tensor of shape {dt.shape} to channels last."
+                        )
 
                 bin_file_name = f"{dataset_dir}/example_{label}_{cl}_{i}_i{str(inp_idx).zfill(2)}.bin"
                 dt.tofile(bin_file_name)

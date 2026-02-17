@@ -13,21 +13,28 @@ from os import mkdir
 
 import numpy as np
 import torch
-from pytest_mock import MockerFixture
-from torch.export import ExportedProgram
+from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
+from executorch.backends.nxp.backend.ir.converter.conversion import translator
+from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
+
+from executorch.backends.nxp.tests_models.config_importer import test_config
 
 from executorch.backends.nxp.tests_models.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests_models.graph_verifier import GraphVerifier
 from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
-from executorch.backends.nxp.tests_models.model_output_comparator import AllCloseOutputComparator
-from executorch.backends.nxp.tests_models.utils import to_quantized_executorch_program, save_pte_program
-from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
-from executorch.backends.nxp.backend.ir.converter.conversion import translator
-from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
-from executorch.devtools.visualization.visualization_utils import visualize_with_clusters
-
-from executorch.backends.nxp.tests_models.config_importer import test_config
+from executorch.backends.nxp.tests_models.model_output_comparator import (
+    AllCloseOutputComparator,
+)
 from executorch.backends.nxp.tests_models.outputs_dir_importer import outputs_dir
+from executorch.backends.nxp.tests_models.utils import (
+    save_pte_program,
+    to_quantized_executorch_program,
+)
+from executorch.devtools.visualization.visualization_utils import (
+    visualize_with_clusters,
+)
+from pytest_mock import MockerFixture
+from torch.export import ExportedProgram
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +44,19 @@ NSYS_CONFIG_PATH = test_config.NSYS_CONFIG_PATH
 NSYS_FIRMWARE_PATH = test_config.NSYS_FIRMWARE_PATH
 NEUTRON_TEST_PATH = test_config.NEUTRON_TEST_PATH
 
-def _run_delegated_executorch_program(model, test_dir, test_name, calibration_dataset_dir, testing_dataset_dir,
-                                      input_spec, dlg_model_verifier, npu_results_dir, mocker,
-                                      use_qat: bool = False) -> ExportedProgram:
+
+def _run_delegated_executorch_program(
+    model,
+    test_dir,
+    test_name,
+    calibration_dataset_dir,
+    testing_dataset_dir,
+    input_spec,
+    dlg_model_verifier,
+    npu_results_dir,
+    mocker,
+    use_qat: bool = False,
+) -> ExportedProgram:
     if len(input_spec) == 1:
         # Single input, use --dataset
         dataset_cli = "--dataset"
@@ -47,29 +64,45 @@ def _run_delegated_executorch_program(model, test_dir, test_name, calibration_da
     else:
         # Multiple input, use --inputs with subdirectories
         dataset_cli = "--inputs"
-        dataset_or_inputs = ",".join(sorted([os.path.join(testing_dataset_dir, d) for d in os.listdir(testing_dataset_dir)])
+        dataset_or_inputs = ",".join(
+            sorted(
+                [
+                    os.path.join(testing_dataset_dir, d)
+                    for d in os.listdir(testing_dataset_dir)
+                ]
+            )
         )
 
     # Run nxp_executor_runner with program delegated to NPU
-    delegated_model_path = os.path.abspath(os.path.join(test_dir, f'{test_name}_delegated.pte'))
+    delegated_model_path = os.path.abspath(
+        os.path.join(test_dir, f"{test_name}_delegated.pte")
+    )
 
     delegated_cmd = f"{NEUTRON_TEST_PATH} --model {delegated_model_path} {dataset_cli} {dataset_or_inputs} \
         --output {npu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
     try:
         if mocker:
-            method = getattr(NeutronPartitioner, "partition")
+            method = getattr(NeutronPartitioner, "partition")  # noqa B009
 
             def wrapper(*args, **kwargs):
                 result = method(*args, **kwargs)
-                visualize_with_clusters(result.tagged_exported_program,
-                                        os.path.join(test_dir, test_name + "_partitioned.json"),
-                                        False)
+                visualize_with_clusters(
+                    result.tagged_exported_program,
+                    os.path.join(test_dir, test_name + "_partitioned.json"),
+                    False,
+                )
                 return result
 
             wrapped = functools.update_wrapper(wrapper, method)
-            mocker.patch.object(NeutronPartitioner, "partition", side_effect=wrapped, autospec=True)
+            mocker.patch.object(
+                NeutronPartitioner, "partition", side_effect=wrapped, autospec=True
+            )
         delegated_program = to_quantized_executorch_program(
-            model, input_spec, calibration_dataset_dir, delegate_to_npu=True, use_qat=use_qat
+            model,
+            input_spec,
+            calibration_dataset_dir,
+            delegate_to_npu=True,
+            use_qat=use_qat,
         )
     except RuntimeError as e:
         if "Model converted with neutron-converter has" in str(e):
@@ -78,8 +111,9 @@ def _run_delegated_executorch_program(model, test_dir, test_name, calibration_da
 
     exported_program = delegated_program.exported_program()
     nodes = list(exported_program.graph.nodes)
-    assert any([node.name.startswith("executorch_call_delegate") for node in
-                nodes]), "No delegated parts found in program delegated to NPU!"
+    assert any(
+        node.name.startswith("executorch_call_delegate") for node in nodes
+    ), "No delegated parts found in program delegated to NPU!"
     dlg_model_verifier.verify_graph(exported_program.graph)
 
     save_pte_program(delegated_program, test_name + "_delegated", test_dir)
@@ -88,9 +122,15 @@ def _run_delegated_executorch_program(model, test_dir, test_name, calibration_da
     return exported_program
 
 
-def _run_non_delegated_executorch_program(model, test_dir, test_name, calibration_dataset_dir, testing_dataset_dir,
-                                          input_spec,
-                                          cpu_results_dir) -> ExportedProgram:
+def _run_non_delegated_executorch_program(
+    model,
+    test_dir,
+    test_name,
+    calibration_dataset_dir,
+    testing_dataset_dir,
+    input_spec,
+    cpu_results_dir,
+) -> ExportedProgram:
     if len(input_spec) == 1:
         # Single input, use --dataset
         dataset_cli = "--dataset"
@@ -98,11 +138,19 @@ def _run_non_delegated_executorch_program(model, test_dir, test_name, calibratio
     else:
         # Multiple input, use --inputs with subdirectories
         dataset_cli = "--inputs"
-        dataset_or_inputs = ",".join(sorted([os.path.join(testing_dataset_dir, d) for d in os.listdir(testing_dataset_dir)])
+        dataset_or_inputs = ",".join(
+            sorted(
+                [
+                    os.path.join(testing_dataset_dir, d)
+                    for d in os.listdir(testing_dataset_dir)
+                ]
+            )
         )
 
     # Run program via nxp_executor_runner on CPU
-    non_delegated_model_path = os.path.abspath(os.path.join(test_dir, f'{test_name}_non_delegated.pte'))
+    non_delegated_model_path = os.path.abspath(
+        os.path.join(test_dir, f"{test_name}_non_delegated.pte")
+    )
 
     non_delegated_cmd = f"{NEUTRON_TEST_PATH} --model {non_delegated_model_path} {dataset_cli} {dataset_or_inputs} \
         --output {cpu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
@@ -112,8 +160,9 @@ def _run_non_delegated_executorch_program(model, test_dir, test_name, calibratio
     )
 
     nodes = list(non_delegated_program.exported_program().graph.nodes)
-    assert all([not node.name.startswith("executorch_call_delegate") for node in
-                nodes]), "Delegated parts found in program executed on CPU!"
+    assert all(
+        not node.name.startswith("executorch_call_delegate") for node in nodes
+    ), "Delegated parts found in program executed on CPU!"
 
     save_pte_program(non_delegated_program, test_name + "_non_delegated", test_dir)
     execute_cmd(non_delegated_cmd)
@@ -121,8 +170,9 @@ def _run_non_delegated_executorch_program(model, test_dir, test_name, calibratio
     return non_delegated_program.exported_program()
 
 
-def read_prepared_samples(dataset_dir: str, input_spec: list[ModelInputSpec]) -> list[
-    tuple[np.ndarray, ...]]:
+def read_prepared_samples(
+    dataset_dir: str, input_spec: list[ModelInputSpec]
+) -> list[tuple[np.ndarray, ...]]:
     """Read numpy arrays generated by a `DatasetCreator`.
 
     :param dataset_dir: Directory containing the generated samples
@@ -134,33 +184,46 @@ def read_prepared_samples(dataset_dir: str, input_spec: list[ModelInputSpec]) ->
 
     # Multi-input: samples are in numbered subdirectories
     if len(input_spec) > 1:
-        sample_dirs = sorted([d for d in os.listdir(dataset_dir)
-                              if os.path.isdir(os.path.join(dataset_dir, d))])
+        sample_dirs = sorted(
+            [
+                d
+                for d in os.listdir(dataset_dir)
+                if os.path.isdir(os.path.join(dataset_dir, d))
+            ]
+        )
 
         for sample_name in sample_dirs:
             sample_dir = os.path.join(dataset_dir, sample_name)
             current_samples = []
 
             for spec_idx, spec in enumerate(input_spec):
-                bin_file_path = os.path.join(sample_dir, f"{str(spec_idx).zfill(2)}.bin")
-                sample_vector = np.fromfile(bin_file_path, dtype=spec.type).reshape(spec.shape)
+                bin_file_path = os.path.join(
+                    sample_dir, f"{str(spec_idx).zfill(2)}.bin"
+                )
+                sample_vector = np.fromfile(bin_file_path, dtype=spec.type).reshape(
+                    spec.shape
+                )
                 current_samples.append(sample_vector)
 
             all_samples.append(tuple(current_samples))
 
     # Single-input: binary files are directly in dataset_dir
     else:
-        bin_files = sorted([f for f in os.listdir(dataset_dir) if f.endswith('.bin')])
+        bin_files = sorted([f for f in os.listdir(dataset_dir) if f.endswith(".bin")])
 
         for bin_file in bin_files:
             bin_file_path = os.path.join(dataset_dir, bin_file)
-            sample_vector = np.fromfile(bin_file_path, dtype=input_spec[0].type).reshape(input_spec[0].shape)
+            sample_vector = np.fromfile(
+                bin_file_path, dtype=input_spec[0].type
+            ).reshape(input_spec[0].shape)
             all_samples.append((sample_vector,))
 
     return all_samples
 
 
-def store_results(results: list[tuple[np.ndarray, ...]], output_dir: str, reference_dir: str):
+def store_results(
+    results: list[tuple[np.ndarray, ...]], output_dir: str, reference_dir: str
+):
     """Store a list of output arrays in the directory structure matching the reference directory.
 
     :param results: List of tuples, where each tuple contains numpy arrays (outputs for one sample)
@@ -178,13 +241,21 @@ def store_results(results: list[tuple[np.ndarray, ...]], output_dir: str, refere
     os.makedirs(output_dir, exist_ok=True)
 
     # Get subdirectories from reference directory
-    sample_dirs = sorted([d for d in os.listdir(reference_dir)
-                          if os.path.isdir(os.path.join(reference_dir, d))])
+    sample_dirs = sorted(
+        [
+            d
+            for d in os.listdir(reference_dir)
+            if os.path.isdir(os.path.join(reference_dir, d))
+        ]
+    )
 
-    assert len(sample_dirs) == len(results), \
-        f"Number of samples ({len(results)}) must match number of subdirectories in reference_dir ({len(sample_dirs)})"
+    assert len(sample_dirs) == len(
+        results
+    ), f"Number of samples ({len(results)}) must match number of subdirectories in reference_dir ({len(sample_dirs)})"
 
-    for sample_idx, (sample_name, sample_outputs) in enumerate(zip(sample_dirs, results)):
+    for _sample_idx, (sample_name, sample_outputs) in enumerate(
+        zip(sample_dirs, results)
+    ):
         sample_dir = os.path.join(output_dir, sample_name)
         os.makedirs(sample_dir, exist_ok=True)
 
@@ -195,8 +266,14 @@ def store_results(results: list[tuple[np.ndarray, ...]], output_dir: str, refere
             output_array.tofile(bin_file_path)
 
 
-def _run_pytorch_program(model, testing_dataset_dir, input_spec: list[ModelInputSpec],
-                         output_spec: list[torch.Tensor], cpu_results_dir, npu_results_dir):
+def _run_pytorch_program(
+    model,
+    testing_dataset_dir,
+    input_spec: list[ModelInputSpec],
+    output_spec: list[torch.Tensor],
+    cpu_results_dir,
+    npu_results_dir,
+):
     all_outputs = []
 
     for input_samples in read_prepared_samples(testing_dataset_dir, input_spec):
@@ -211,7 +288,9 @@ def _run_pytorch_program(model, testing_dataset_dir, input_spec: list[ModelInput
                     # The tensor data was stored by the DatasetCreator as channels last (NHWC), but it was now
                     #  incorrectly parsed as contiguous/channels first (NCHW). Transpose it to channels last to preserve
                     #  the semantics.
-                    channels_last_shape = translator.dims_to_channels_last(list(spec.shape))
+                    channels_last_shape = translator.dims_to_channels_last(
+                        list(spec.shape)
+                    )
                     sample = np.moveaxis(sample.reshape(channels_last_shape), -1, 1)
                     sample = torch.tensor(sample).to(memory_format=torch.channels_last)
 
@@ -248,13 +327,14 @@ def _run_pytorch_program(model, testing_dataset_dir, input_spec: list[ModelInput
 
 
 def convert_run_compare(
-        model: torch.nn.Module, input_spec: list[ModelInputSpec] | tuple,
-        dlg_model_verifier: GraphVerifier,
-        dataset_creator=RandomDatasetCreator(),
-        output_comparator=AllCloseOutputComparator(),
-        mocker: MockerFixture = None,
-        run_cpu_version_in_pytorch: bool = False,
-        use_qat: bool = False,
+    model: torch.nn.Module,
+    input_spec: list[ModelInputSpec] | tuple,
+    dlg_model_verifier: GraphVerifier,
+    dataset_creator=None,
+    output_comparator=None,
+    mocker: MockerFixture = None,
+    run_cpu_version_in_pytorch: bool = False,
+    use_qat: bool = False,
 ):
     """
     Run provided program twice with neutron-test and check if results correspond. At first,
@@ -275,6 +355,11 @@ def convert_run_compare(
     assert os.path.exists(NSYS_CONFIG_PATH)
     assert os.path.exists(NSYS_FIRMWARE_PATH)
 
+    if not dataset_creator:
+        dataset_creator = RandomDatasetCreator()
+    if not output_comparator:
+        output_comparator = AllCloseOutputComparator()
+
     test_name = _get_caller_name()
     test_dir = os.path.join(OUTPUTS_DIR, test_name)
 
@@ -286,30 +371,55 @@ def convert_run_compare(
     if isinstance(input_spec, tuple):
         input_spec = [ModelInputSpec(input_spec)]
 
-    calibration_dataset_dir, testing_dataset_dir = dataset_creator.generate_samples(dataset_dir, input_spec)
+    calibration_dataset_dir, testing_dataset_dir = dataset_creator.generate_samples(
+        dataset_dir, input_spec
+    )
 
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
     npu_results_dir = os.path.join(test_dir, "results_npu")
 
     delegated_program = _run_delegated_executorch_program(
-        model, test_dir, test_name, calibration_dataset_dir, testing_dataset_dir, input_spec, dlg_model_verifier,
-        npu_results_dir, mocker, use_qat=use_qat
+        model,
+        test_dir,
+        test_name,
+        calibration_dataset_dir,
+        testing_dataset_dir,
+        input_spec,
+        dlg_model_verifier,
+        npu_results_dir,
+        mocker,
+        use_qat=use_qat,
     )
 
     output_spec = _get_program_output_spec(delegated_program)
 
     if run_cpu_version_in_pytorch:
-        _run_pytorch_program(model, testing_dataset_dir, input_spec, output_spec, cpu_results_dir, npu_results_dir)
+        _run_pytorch_program(
+            model,
+            testing_dataset_dir,
+            input_spec,
+            output_spec,
+            cpu_results_dir,
+            npu_results_dir,
+        )
     else:
         _run_non_delegated_executorch_program(
-            model, test_dir, test_name, calibration_dataset_dir, testing_dataset_dir, input_spec, cpu_results_dir
+            model,
+            test_dir,
+            test_name,
+            calibration_dataset_dir,
+            testing_dataset_dir,
+            input_spec,
+            cpu_results_dir,
         )
 
     output_tensor_spec = _get_program_output_spec(delegated_program)
 
     npu_results_dir = os.path.join(test_dir, "results_npu")
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
-    output_comparator.compare_results(cpu_results_dir, npu_results_dir, output_tensor_spec)
+    output_comparator.compare_results(
+        cpu_results_dir, npu_results_dir, output_tensor_spec
+    )
 
 
 def _get_caller_name():
@@ -319,15 +429,20 @@ def _get_caller_name():
             return inspect.stack()[idx + 1].function
 
 
-def execute_cmd(cmd, cwd='.'):
-    env = {
-        "LD_LIBRARY_PATH": NSYS_PATH.parent
-    }
+def execute_cmd(cmd, cwd="."):
+    env = {"LD_LIBRARY_PATH": NSYS_PATH.parent}
 
-    with subprocess.Popen(cmd, cwd=cwd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env) as process:
+    with subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    ) as process:
         cmd_out, cmd_err = process.communicate()
-        cmd_out_decoded = cmd_out.strip().decode('utf-8', errors='replace')
-        cmd_error_decoded = cmd_err.strip().decode('utf-8', errors='replace')
+        cmd_out_decoded = cmd_out.strip().decode("utf-8", errors="replace")
+        cmd_error_decoded = cmd_err.strip().decode("utf-8", errors="replace")
 
         for line in cmd_out_decoded.split("\n"):
             logger.info(line)
@@ -351,11 +466,13 @@ def _get_program_output_spec(exported_program) -> list[torch.Tensor]:
     :param exported_program: Exported program.
     :return: List of output PyTorch tensors.
     """
-    nodes = list(exported_program.graph.nodes)
+
     # TODO robert: since version 0.5 the user_outputs are not updated after delegation.
     # Hence bellow code does not works
     # Remove/update if the feature/bug if confirmed.
-
+    #
+    # nodes = list(exported_program.graph.nodes)
+    #
     # program_outputs = exported_program.graph_signature.user_outputs
     #
     # output_tensors_spec = []

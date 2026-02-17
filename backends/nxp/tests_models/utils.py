@@ -9,30 +9,35 @@ import logging
 import os
 from typing import Any, Dict, Optional, Tuple, Union
 
+import executorch.exir as exir
+
 import numpy as np
 import torch
-from torchao.quantization.pt2e import move_exported_model_to_eval
-from torch.export import export, ExportedProgram
-from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, convert_pt2e
-from torchao.quantization.pt2e.quantize_pt2e import prepare_qat_pt2e
-
-import executorch.exir as exir
-from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import NeutronEdgePassManager
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
+    NeutronEdgePassManager,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.devtools.visualization.visualization_utils import visualize_with_clusters
+from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
+from executorch.devtools.visualization.visualization_utils import (
+    visualize_with_clusters,
+)
 from executorch.exir import (
     EdgeProgramManager,
     ExecutorchProgramManager,
     to_edge_transform_and_lower,
-    EdgeCompileConfig,
 )
-from executorch.exir.capture._config import EdgeCompileConfig
-from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.tracer import Value
+from torch.export import export, ExportedProgram
+from torchao.quantization.pt2e import move_exported_model_to_eval
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=True,
@@ -40,10 +45,16 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 )
 
 
-def to_quantized_edge_program(model: torch.nn.Module, input_spec: list[ModelInputSpec], dataset_dir,
-                              delegate_to_npu=True, use_qat: bool = False) -> EdgeProgramManager:
-    assert isinstance(input_spec, list) and all([isinstance(spec, ModelInputSpec) for spec in input_spec]), \
-        "Input_spec must be a list of ModelInputSpec."
+def to_quantized_edge_program(
+    model: torch.nn.Module,
+    input_spec: list[ModelInputSpec],
+    dataset_dir,
+    delegate_to_npu=True,
+    use_qat: bool = False,
+) -> EdgeProgramManager:
+    assert isinstance(input_spec, list) and all(
+        isinstance(spec, ModelInputSpec) for spec in input_spec
+    ), "Input_spec must be a list of ModelInputSpec."
 
     example_input = []
     for spec in input_spec:
@@ -51,7 +62,9 @@ def to_quantized_edge_program(model: torch.nn.Module, input_spec: list[ModelInpu
             case torch.contiguous_format:
                 sample = torch.ones(spec.shape, dtype=spec.dtype)
             case torch.channels_last:
-                sample = torch.ones(spec.shape, dtype=spec.dtype).to(memory_format=torch.channels_last)
+                sample = torch.ones(spec.shape, dtype=spec.dtype).to(
+                    memory_format=torch.channels_last
+                )
             case _:
                 raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
         # noinspection PyUnboundLocalVariable
@@ -67,7 +80,9 @@ def to_quantized_edge_program(model: torch.nn.Module, input_spec: list[ModelInpu
     )
 
     # Quantize model
-    quantizer = NeutronQuantizer(neutron_target_spec=neutron_target_spec, is_qat=use_qat)
+    quantizer = NeutronQuantizer(
+        neutron_target_spec=neutron_target_spec, is_qat=use_qat
+    )
     if use_qat:
         m = prepare_qat_pt2e(module, quantizer)
         m = move_exported_model_to_eval(m)
@@ -96,7 +111,9 @@ def to_quantized_edge_program(model: torch.nn.Module, input_spec: list[ModelInpu
             if len(input_data) == inputs_needed:
                 break
 
-            tensor = np.fromfile(file, dtype=input_spec[idx].type).reshape(input_spec[idx].shape)
+            tensor = np.fromfile(file, dtype=input_spec[idx].type).reshape(
+                input_spec[idx].shape
+            )
             input_data += (torch.from_numpy(tensor),)
             continue
 
@@ -109,17 +126,23 @@ def to_quantized_edge_program(model: torch.nn.Module, input_spec: list[ModelInpu
     exir_program_aten_quant = convert_pt2e(m)
 
     # To ATen
-    core_aten_ep = _to_core_aten(exir_program_aten_quant, example_input, None, verbose=True)
+    core_aten_ep = _to_core_aten(
+        exir_program_aten_quant, example_input, None, verbose=True
+    )
 
     partitioners = (
-        [
-            NeutronPartitioner(
-                generate_neutron_compile_spec("imxrt700", "SDK_25_12"),
-                neutron_target_spec=neutron_target_spec,
-                post_quantization_state_dict=exir_program_aten_quant.state_dict(),
-            )
-        ]
-    ) if delegate_to_npu else []
+        (
+            [
+                NeutronPartitioner(
+                    generate_neutron_compile_spec("imxrt700", "SDK_25_12"),
+                    neutron_target_spec=neutron_target_spec,
+                    post_quantization_state_dict=exir_program_aten_quant.state_dict(),
+                )
+            ]
+        )
+        if delegate_to_npu
+        else []
+    )
 
     edge_program_manager = to_edge_transform_and_lower(
         core_aten_ep,
@@ -131,28 +154,31 @@ def to_quantized_edge_program(model: torch.nn.Module, input_spec: list[ModelInpu
     return edge_program_manager
 
 
-def to_quantized_executorch_program(model: torch.nn.Module, input_spec, dataset_dir: str,
-                                    delegate_to_npu=True, use_qat: bool = False) -> ExecutorchProgramManager:
+def to_quantized_executorch_program(
+    model: torch.nn.Module,
+    input_spec,
+    dataset_dir: str,
+    delegate_to_npu=True,
+    use_qat: bool = False,
+) -> ExecutorchProgramManager:
     edge_program_manager = to_quantized_edge_program(
         model, input_spec, dataset_dir, delegate_to_npu, use_qat=use_qat
     )
 
     return edge_program_manager.to_executorch(
-        config=ExecutorchBackendConfig(
-            extract_delegate_segments=False
-        )
+        config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
 
 def _to_core_aten(
-        model: Union[torch.fx.GraphModule, torch.nn.Module],
-        example_inputs: Tuple[Value, ...],
-        dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
-        verbose=True,
+    model: Union[torch.fx.GraphModule, torch.nn.Module],
+    example_inputs: Tuple[Value, ...],
+    dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
+    verbose=True,
 ) -> ExportedProgram:
     # post autograd export. eventually this will become .to_core_aten
     if not isinstance(model, torch.fx.GraphModule) and not isinstance(
-            model, torch.nn.Module
+        model, torch.nn.Module
     ):
         raise ValueError(
             f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
@@ -164,7 +190,7 @@ def _to_core_aten(
 
 
 def save_pte_program(
-        prog: ExecutorchProgramManager, model_name: str, output_dir: str = ""
+    prog: ExecutorchProgramManager, model_name: str, output_dir: str = ""
 ) -> str:
     if model_name.endswith(".pte"):
         filename = model_name
