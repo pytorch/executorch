@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -107,7 +107,11 @@ def test_ne_scalar_tosa_FP(test_module):
 @common.parametrize("test_module", test_data_tensor)
 def test_ne_tensor_tosa_INT(test_module):
     pipeline = TosaPipelineINT[input_t](
-        test_module, test_module.get_inputs(), NotEqual.decomposed_ops, NotEqual.exir_op
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.decomposed_ops,
+        NotEqual.exir_op,
+        frobenius_threshold=0.5,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
     )
     pipeline.run()
 
@@ -115,7 +119,11 @@ def test_ne_tensor_tosa_INT(test_module):
 @common.parametrize("test_module", test_data_scalar)
 def test_ne_scalar_tosa_INT(test_module):
     pipeline = TosaPipelineINT[input_t](
-        test_module, test_module.get_inputs(), NotEqual.decomposed_ops, NotEqual.exir_op
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.decomposed_ops,
+        NotEqual.exir_op,
+        frobenius_threshold=0.5,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
     )
     pipeline.run()
 

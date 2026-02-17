@@ -630,7 +630,7 @@ def get_args():
     args = parser.parse_args()
 
     if args.evaluate and (
-        args.quantize is None or args.intermediates is None or (not args.delegate)
+        (not args.quantize) or args.intermediates is None or (not args.delegate)
     ):
         raise RuntimeError(
             "--evaluate requires --quantize, --intermediates and --delegate to be enabled."

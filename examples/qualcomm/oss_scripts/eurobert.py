@@ -131,10 +131,9 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
-        backend=backend,
     )
     output_data_folder = f"{args.artifact}/outputs"
-    make_output_dir(output_data_folder)
+    make_output_dir(output_data_folder, backends={backend})
 
     # accuracy analysis
     adb.push(inputs=inputs)

@@ -7,6 +7,30 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    # Header-only library for backend options (no aten suffix needed)
+    runtime.cxx_library(
+        name = "backend_options",
+        exported_headers = [
+            "options.h",
+        ],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+        ],
+    )
+
+    # Header-only library for backend options map (no aten suffix needed)
+    runtime.cxx_library(
+        name = "backend_options_map",
+        exported_headers = [
+            "backend_options_map.h",
+        ],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            ":backend_options",
+        ],
+    )
+
     for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
         runtime.cxx_library(
@@ -18,6 +42,7 @@ def define_common_targets():
                 "backend_execution_context.h",
                 "backend_init_context.h",
                 "backend_option_context.h",
+                "backend_options_map.h",
                 "options.h",
                 "interface.h",
             ],
