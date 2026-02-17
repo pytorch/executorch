@@ -76,7 +76,7 @@ class StaticCacheModule(torch.nn.Module):
         value_states: torch.Tensor,
         cache_position: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.cache.update(
+        key, value = self.cache.update(
             key_states,
             value_states,
             layer_idx=0,
@@ -84,6 +84,8 @@ class StaticCacheModule(torch.nn.Module):
                 "cache_position": cache_position,
             },
         )
+
+        return key.clone(), value.clone()
 
     def get_inputs(self) -> input_t:
         key_states = torch.randn(

@@ -200,10 +200,17 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
 class ToExecutorch(tester.ToExecutorch):
     def run_artifact(self, inputs):
         with TosaReferenceModelDispatch():
-            # Check if the model has mutable buffers
-            buffers = list(self.artifact.exported_program().buffers())
-            if len(buffers) > 0:
+            # Check if the model has mutable buffers. These are not delegated to the backend
+            # and are handled by core ExecuTorch as I/O. In other words, the mutable buffer
+            # is outputted and re-inputted into the model. As we are calling the graph module
+            # directly, we need to ensure we handle these extra mutable inputs.
+            if (
+                len(self.artifact.exported_program().graph_signature.buffers_to_mutate)
+                > 0
+            ):
+                buffers = list(self.artifact.exported_program().buffers())
                 buffers.extend(inputs)
+
                 return self.artifact.exported_program().graph_module(*buffers)
             else:
                 return super().run_artifact(inputs)
