@@ -111,7 +111,7 @@ switcher_version = "main" if not RELEASE else version
 print(f"executorch_version: {executorch_version}")
 print(f"Version: {version}, RELEASE: {RELEASE}")
 
-html_baseurl = "https://docs.pytorch.org/executorch/"  # needed for sphinx-sitemap
+html_baseurl = "https://docs.pytorch.org/executorch/stable"  # needed for sphinx-sitemap
 sitemap_locales = [None]
 sitemap_excludes = [
     "search.html",
@@ -233,6 +233,7 @@ html_theme_options = {
     "navbar_start": ["navbar-logo", "version-switcher"],
     "navbar_center": ["navbar-nav"],
     "navbar_end": ["search-field-custom", "theme-switcher", "navbar-icon-links"],
+    "runllm_assistant_id": "1632",
     "navbar_persistent": [],
 }
 
