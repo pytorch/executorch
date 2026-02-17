@@ -376,5 +376,28 @@ size_t MethodMeta::num_instructions() const {
   }
   return num_instructions;
 }
+
+size_t MethodMeta::num_operators() const {
+  const auto operators = s_plan_->operators();
+  if (operators == nullptr) {
+    return 0;
+  }
+  return operators->size();
+}
+
+Result<const char*> MethodMeta::get_operator_name(size_t index) const {
+  const auto count = num_operators();
+  ET_CHECK_OR_RETURN_ERROR(
+      index < count,
+      InvalidArgument,
+      "Index %zu out of range. num_operators: %zu",
+      index,
+      count);
+  const auto op = s_plan_->operators()->Get(index);
+  if (op == nullptr || op->name() == nullptr) {
+    return Error::InvalidProgram;
+  }
+  return op->name()->c_str();
+}
 } // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

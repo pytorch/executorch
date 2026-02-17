@@ -16,6 +16,10 @@
 #include "api.h"
 #include <stdio.h>
 
+#include "dma.h"
+#include "memory_manager.h"
+#include "utils.h"
+
 #if defined COMPILER_XTENSA
 
 #include <xtensa/config/core-isa.h>
@@ -33,38 +37,38 @@
            opname, cycles_##test == 0 ? 0 : 1/((double)(opcnt)/cycles_##test), opname); }
 
 
-// IDMA Initializations and declarations
-#if XCHAL_HAVE_IDMA
-#ifndef IDMA_USE_MULTICHANNEL
-  #define IDMA_USE_MULTICHANNEL 1
-#endif
-#ifndef CHL_MAX
-  #define CHL_MAX 2
-#endif
-#include <xtensa/idma.h>
-#endif
+// // IDMA Initializations and declarations
+// #if XCHAL_HAVE_IDMA
+// #ifndef IDMA_USE_MULTICHANNEL
+//   #define IDMA_USE_MULTICHANNEL 1
+// #endif
+// #ifndef CHL_MAX
+//   #define CHL_MAX 2
+// #endif
+// #include <xtensa/idma.h>
+// #endif
 
-#ifndef DRAM0_BUFF_SIZE // To be defined at compile time
-  #error "DRAM0_BUFF_SIZE not defined"
-#endif
+// #ifndef DRAM0_BUFF_SIZE // To be defined at compile time
+//   #error "DRAM0_BUFF_SIZE not defined"
+// #endif
 
-#ifndef DRAM1_BUFF_SIZE // To be defined at compile time
-  #error "DRAM1_BUFF_SIZE not defined"
-#endif
+// #ifndef DRAM1_BUFF_SIZE // To be defined at compile time
+//   #error "DRAM1_BUFF_SIZE not defined"
+// #endif
 
-#ifndef PLACE_IN_DRAM0
-	#define PLACE_IN_DRAM0 __attribute__ ((aligned(2*IVP_SIMD_WIDTH), section(".dram0.data")))
-#endif
+// #ifndef PLACE_IN_DRAM0
+// 	#define PLACE_IN_DRAM0 __attribute__ ((aligned(2*IVP_SIMD_WIDTH), section(".dram0.data")))
+// #endif
 
-#ifndef PLACE_IN_DRAM1
-	#define PLACE_IN_DRAM1 __attribute__ ((aligned(2*IVP_SIMD_WIDTH), section(".dram1.data")))
-#endif
+// #ifndef PLACE_IN_DRAM1
+// 	#define PLACE_IN_DRAM1 __attribute__ ((aligned(2*IVP_SIMD_WIDTH), section(".dram1.data")))
+// #endif
 
 extern void *ptr_dram0;
 extern void *ptr_dram1;
 
-extern idma_buffer_t buffer_idma_ch_2d[];
-extern idma_buffer_t buffer_idma_ch_3d[];
+// extern idma_buffer_t buffer_idma_ch_2d[];
+// extern idma_buffer_t buffer_idma_ch_3d[];
 
 #endif // COMPILER_XTENSA
 

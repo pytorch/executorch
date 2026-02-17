@@ -1,0 +1,43 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv_MOD.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv_MOD.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv_MOW.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv_MOW.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv_SO.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv_SO.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv_VQ.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv_VQ.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_datatransform.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_datatransform.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOD.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOD.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOD_S16.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOD_S16.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOW.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOW.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOW_S16.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOW_S16.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_SO.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_SO.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOD.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOD.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOD_S16.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOD_S16.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOW.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOW.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOW_S16.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOW_S16.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_SO.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_SO.c.o.d"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_helper.c.o"
+  "CMakeFiles/xai.dir/libxai/cnn/src/cnn_helper.c.o.d"
+  "libxai.a"
+  "libxai.pdb"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang C)
+  include(CMakeFiles/xai.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

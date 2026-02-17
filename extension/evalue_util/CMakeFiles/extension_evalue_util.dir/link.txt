@@ -1,0 +1,2 @@
+/usr/bin/ar qc libextension_evalue_util.a CMakeFiles/extension_evalue_util.dir/print_evalue.cpp.o
+/usr/bin/ranlib libextension_evalue_util.a

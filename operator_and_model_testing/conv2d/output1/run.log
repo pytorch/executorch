@@ -1,0 +1,442 @@
+[INFO 2026-02-11 06:26:48,446 generate_all_conv2d_ptes.py:172] Generating PTEs for 34 conv2d layer configurations
+[INFO 2026-02-11 06:26:48,446 generate_all_conv2d_ptes.py:173] PTE output dir: /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte
+[INFO 2026-02-11 06:26:48,446 generate_all_conv2d_ptes.py:174] Log output dir: /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/output
+[INFO 2026-02-11 06:26:48,447 generate_all_conv2d_ptes.py:97] === Layer 0: conv1 (3_224_224_64_7_7_112_112_2_2_3_1) ===
+[INFO 2026-02-11 06:26:48,447 generate_all_conv2d_ptes.py:98]   in_channels=3, out_channels=64, kernel=(7,7), stride=(2,2), padding=(3,3), dilation=(1,1)
+[INFO 2026-02-11 06:26:48,447 generate_all_conv2d_ptes.py:100]   input_shape=(1,3,224,224), output_shape=(1,64,112,112)
+[INFO 2026-02-11 06:26:59,579 utils.py:246] 
++-------------------------------------------------------+---------------+-----------------+
+| Final Operators                                       |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| cadence::quantize_per_tensor                          |             1 |               0 |
+| cadence::quantized_conv2d_nchw.per_tensor             |             1 |               1 |
+| cadence::dequantize_per_tensor                        |             1 |               0 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:26:59,580 utils.py:262] +-------------------------------------------------------+---------------+-----------------+
+| Deleted Operators                                     |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| quantized_decomposed::quantize_per_tensor             |             0 |               1 |
+| quantized_decomposed::dequantize_per_tensor           |             0 |               1 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:26:59,736 memory_planning.py:322] 
++----------------+----------------+-----------------------+-----------------------------+
+|   Memory Space | Base Address   |   Memory Size (Bytes) |   Peak Memory Usage (Bytes) |
++================+================+=======================+=============================+
+|              1 |                |           68719476736 |                     4014080 |
++----------------+----------------+-----------------------+-----------------------------+
+[INFO 2026-02-11 06:26:59,736 memory_planning.py:355] 
++-------------------------------------+---------------+--------+
+| Peak memory usage across all spaces | 4014080 bytes | Node 7 |
++-------------------------------------+---------------+--------+
+[INFO 2026-02-11 06:26:59,752 compiler.py:478] Generated ETRecord at /tmp/conv2d_conv1_rfyeh5px/etrecord.bin
+[INFO 2026-02-11 06:26:59,753 export_example.py:76] Final exported graph:
+
+[INFO 2026-02-11 06:27:07,089 utils.py:287] Saved exported program to /tmp/conv2d_conv1_rfyeh5px/conv2d_layer0_conv1.pte
+[INFO 2026-02-11 06:27:07,092 utils.py:304] Saved exported program to /tmp/conv2d_conv1_rfyeh5px/conv2d_layer0_conv1.bpte
+[INFO 2026-02-11 06:27:07,096 generate_all_conv2d_ptes.py:141]   Copied PTE: /tmp/conv2d_conv1_rfyeh5px/conv2d_layer0_conv1.pte -> /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/conv2d_layer0_conv1.pte
+[INFO 2026-02-11 06:27:07,096 generate_all_conv2d_ptes.py:145]   Layer 0 (conv1): SUCCESS
+[INFO 2026-02-11 06:27:07,097 generate_all_conv2d_ptes.py:97] === Layer 1: conv2.1 (64_56_56_64_3_3_56_56_1_1_1_1) ===
+[INFO 2026-02-11 06:27:07,097 generate_all_conv2d_ptes.py:98]   in_channels=64, out_channels=64, kernel=(3,3), stride=(1,1), padding=(1,1), dilation=(1,1)
+[INFO 2026-02-11 06:27:07,097 generate_all_conv2d_ptes.py:100]   input_shape=(1,64,56,56), output_shape=(1,64,56,56)
+[INFO 2026-02-11 06:27:15,998 utils.py:246] 
++-------------------------------------------------------+---------------+-----------------+
+| Final Operators                                       |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| cadence::quantize_per_tensor                          |             1 |               0 |
+| cadence::quantized_conv2d_nchw.per_tensor             |             1 |               1 |
+| cadence::dequantize_per_tensor                        |             1 |               0 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:15,999 utils.py:262] +-------------------------------------------------------+---------------+-----------------+
+| Deleted Operators                                     |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| quantized_decomposed::quantize_per_tensor             |             0 |               1 |
+| quantized_decomposed::dequantize_per_tensor           |             0 |               1 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:16,141 memory_planning.py:322] 
++----------------+----------------+-----------------------+-----------------------------+
+|   Memory Space | Base Address   |   Memory Size (Bytes) |   Peak Memory Usage (Bytes) |
++================+================+=======================+=============================+
+|              1 |                |           68719476736 |                     1204224 |
++----------------+----------------+-----------------------+-----------------------------+
+[INFO 2026-02-11 06:27:16,141 memory_planning.py:355] 
++-------------------------------------+---------------+--------+
+| Peak memory usage across all spaces | 1003520 bytes | Node 3 |
++-------------------------------------+---------------+--------+
+[INFO 2026-02-11 06:27:16,152 compiler.py:478] Generated ETRecord at /tmp/conv2d_conv2_1_a61t1qec/etrecord.bin
+[INFO 2026-02-11 06:27:16,152 export_example.py:76] Final exported graph:
+
+[INFO 2026-02-11 06:27:19,223 utils.py:287] Saved exported program to /tmp/conv2d_conv2_1_a61t1qec/conv2d_layer1_conv2_1.pte
+[INFO 2026-02-11 06:27:19,224 utils.py:304] Saved exported program to /tmp/conv2d_conv2_1_a61t1qec/conv2d_layer1_conv2_1.bpte
+[INFO 2026-02-11 06:27:19,229 generate_all_conv2d_ptes.py:141]   Copied PTE: /tmp/conv2d_conv2_1_a61t1qec/conv2d_layer1_conv2_1.pte -> /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/conv2d_layer1_conv2_1.pte
+[INFO 2026-02-11 06:27:19,230 generate_all_conv2d_ptes.py:145]   Layer 1 (conv2.1): SUCCESS
+[INFO 2026-02-11 06:27:19,231 generate_all_conv2d_ptes.py:97] === Layer 2: conv2.2 (64_56_56_64_3_3_56_56_1_1_1_1) ===
+[INFO 2026-02-11 06:27:19,231 generate_all_conv2d_ptes.py:98]   in_channels=64, out_channels=64, kernel=(3,3), stride=(1,1), padding=(1,1), dilation=(1,1)
+[INFO 2026-02-11 06:27:19,231 generate_all_conv2d_ptes.py:100]   input_shape=(1,64,56,56), output_shape=(1,64,56,56)
+[INFO 2026-02-11 06:27:22,692 utils.py:246] 
++-------------------------------------------------------+---------------+-----------------+
+| Final Operators                                       |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| cadence::quantize_per_tensor                          |             1 |               0 |
+| cadence::quantized_conv2d_nchw.per_tensor             |             1 |               1 |
+| cadence::dequantize_per_tensor                        |             1 |               0 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:22,692 utils.py:262] +-------------------------------------------------------+---------------+-----------------+
+| Deleted Operators                                     |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| quantized_decomposed::quantize_per_tensor             |             0 |               1 |
+| quantized_decomposed::dequantize_per_tensor           |             0 |               1 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:22,833 memory_planning.py:322] 
++----------------+----------------+-----------------------+-----------------------------+
+|   Memory Space | Base Address   |   Memory Size (Bytes) |   Peak Memory Usage (Bytes) |
++================+================+=======================+=============================+
+|              1 |                |           68719476736 |                     1204224 |
++----------------+----------------+-----------------------+-----------------------------+
+[INFO 2026-02-11 06:27:22,834 memory_planning.py:355] 
++-------------------------------------+---------------+--------+
+| Peak memory usage across all spaces | 1003520 bytes | Node 3 |
++-------------------------------------+---------------+--------+
+[INFO 2026-02-11 06:27:22,845 compiler.py:478] Generated ETRecord at /tmp/conv2d_conv2_2_tzjd1sto/etrecord.bin
+[INFO 2026-02-11 06:27:22,846 export_example.py:76] Final exported graph:
+
+opcode         name                                      target                                        args                                                                                                                                                                          kwargs
+-------------  ----------------------------------------  --------------------------------------------  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ----------------
+placeholder    b__frozen_param0                          b__frozen_param0                              ()                                                                                                                                                                            {}
+placeholder    b__frozen_param1                          b__frozen_param1                              ()                                                                                                                                                                            {}
+placeholder    x                                         x                                             ()                                                                                                                                                                            {}
+call_function  alloc                                     <function alloc at 0x7f5828d13c40>            (((1, 3, 224, 224), torch.int8),)                                                                                                                                             {}
+call_function  cadence_quantize_per_tensor_default       cadence.quantize_per_tensor.out               (x, 0.030141646042466164, 0, -128, 127, torch.int8)                                                                                                                           {'out': alloc}
+call_function  alloc_1                                   <function alloc at 0x7f5828d13c40>            (((1, 64, 112, 112), torch.int8),)                                                                                                                                            {}
+call_function  cadence_quantized_conv2d_nchw_per_tensor  cadence.quantized_conv2d_nchw.per_tensor_out  (cadence_quantize_per_tensor_default, b__frozen_param0, b__frozen_param1, [2, 2], [3, 3], [1, 1], 1, 0, 0, 1.9498347696287298e-05, 0.017925642430782318, -2, 1195977216, -9)  {'out': alloc_1}
+call_function  alloc_2                                   <function alloc at 0x7f5828d13c40>            (((1, 64, 112, 112), torch.float32),)                                                                                                                                         {}
+call_function  cadence_dequantize_per_tensor_default     cadence.dequantize_per_tensor.out             (cadence_quantized_conv2d_nchw_per_tensor, 0.017925642430782318, -2, -128, 127, torch.int8)                                                                                   {'out': alloc_2}
+output         output_1                                  output                                        ((cadence_dequantize_per_tensor_default,),)                                                                                                                                   {}
+opcode         name                                      target                                        args                                                                                                                                                                           kwargs
+-------------  ----------------------------------------  --------------------------------------------  -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ----------------
+placeholder    b__frozen_param0                          b__frozen_param0                              ()                                                                                                                                                                             {}
+placeholder    b__frozen_param1                          b__frozen_param1                              ()                                                                                                                                                                             {}
+placeholder    x                                         x                                             ()                                                                                                                                                                             {}
+call_function  alloc                                     <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.int8),)                                                                                                                                               {}
+call_function  cadence_quantize_per_tensor_default       cadence.quantize_per_tensor.out               (x, 0.03323117271065712, -9, -128, 127, torch.int8)                                                                                                                            {'out': alloc}
+call_function  alloc_1                                   <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.int8),)                                                                                                                                               {}
+call_function  cadence_quantized_conv2d_nchw_per_tensor  cadence.quantized_conv2d_nchw.per_tensor_out  (cadence_quantize_per_tensor_default, b__frozen_param0, b__frozen_param1, [1, 1], [1, 1], [1, 1], 1, -9, 0, 1.0859535718932213e-05, 0.017387015745043755, 1, 1373460096, -10)  {'out': alloc_1}
+call_function  alloc_2                                   <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.float32),)                                                                                                                                            {}
+call_function  cadence_dequantize_per_tensor_default     cadence.dequantize_per_tensor.out             (cadence_quantized_conv2d_nchw_per_tensor, 0.017387015745043755, 1, -128, 127, torch.int8)                                                                                     {'out': alloc_2}
+output         output_1                                  output                                        ((cadence_dequantize_per_tensor_default,),)                                                                                                                                    {}
+[INFO 2026-02-11 06:27:25,804 utils.py:287] Saved exported program to /tmp/conv2d_conv2_2_tzjd1sto/conv2d_layer2_conv2_2.pte
+[INFO 2026-02-11 06:27:25,806 utils.py:304] Saved exported program to /tmp/conv2d_conv2_2_tzjd1sto/conv2d_layer2_conv2_2.bpte
+[INFO 2026-02-11 06:27:25,811 generate_all_conv2d_ptes.py:141]   Copied PTE: /tmp/conv2d_conv2_2_tzjd1sto/conv2d_layer2_conv2_2.pte -> /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/conv2d_layer2_conv2_2.pte
+[INFO 2026-02-11 06:27:25,811 generate_all_conv2d_ptes.py:145]   Layer 2 (conv2.2): SUCCESS
+[INFO 2026-02-11 06:27:25,813 generate_all_conv2d_ptes.py:97] === Layer 3: conv3.1 (64_56_56_64_3_3_56_56_1_1_1_1) ===
+[INFO 2026-02-11 06:27:25,813 generate_all_conv2d_ptes.py:98]   in_channels=64, out_channels=64, kernel=(3,3), stride=(1,1), padding=(1,1), dilation=(1,1)
+[INFO 2026-02-11 06:27:25,813 generate_all_conv2d_ptes.py:100]   input_shape=(1,64,56,56), output_shape=(1,64,56,56)
+[INFO 2026-02-11 06:27:29,314 utils.py:246] 
++-------------------------------------------------------+---------------+-----------------+
+| Final Operators                                       |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| cadence::quantize_per_tensor                          |             1 |               0 |
+| cadence::quantized_conv2d_nchw.per_tensor             |             1 |               1 |
+| cadence::dequantize_per_tensor                        |             1 |               0 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:29,314 utils.py:262] +-------------------------------------------------------+---------------+-----------------+
+| Deleted Operators                                     |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| quantized_decomposed::quantize_per_tensor             |             0 |               1 |
+| quantized_decomposed::dequantize_per_tensor           |             0 |               1 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:29,450 memory_planning.py:322] 
++----------------+----------------+-----------------------+-----------------------------+
+|   Memory Space | Base Address   |   Memory Size (Bytes) |   Peak Memory Usage (Bytes) |
++================+================+=======================+=============================+
+|              1 |                |           68719476736 |                     1204224 |
++----------------+----------------+-----------------------+-----------------------------+
+[INFO 2026-02-11 06:27:29,450 memory_planning.py:355] 
++-------------------------------------+---------------+--------+
+| Peak memory usage across all spaces | 1003520 bytes | Node 3 |
++-------------------------------------+---------------+--------+
+[INFO 2026-02-11 06:27:29,461 compiler.py:478] Generated ETRecord at /tmp/conv2d_conv3_1_w87_bcn_/etrecord.bin
+[INFO 2026-02-11 06:27:29,461 export_example.py:76] Final exported graph:
+
+[INFO 2026-02-11 06:27:32,776 utils.py:287] Saved exported program to /tmp/conv2d_conv3_1_w87_bcn_/conv2d_layer3_conv3_1.pte
+[INFO 2026-02-11 06:27:32,777 utils.py:304] Saved exported program to /tmp/conv2d_conv3_1_w87_bcn_/conv2d_layer3_conv3_1.bpte
+[INFO 2026-02-11 06:27:32,783 generate_all_conv2d_ptes.py:141]   Copied PTE: /tmp/conv2d_conv3_1_w87_bcn_/conv2d_layer3_conv3_1.pte -> /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/conv2d_layer3_conv3_1.pte
+[INFO 2026-02-11 06:27:32,783 generate_all_conv2d_ptes.py:145]   Layer 3 (conv3.1): SUCCESS
+[INFO 2026-02-11 06:27:32,785 generate_all_conv2d_ptes.py:97] === Layer 4: conv3.2 (64_56_56_64_3_3_56_56_1_1_1_1) ===
+[INFO 2026-02-11 06:27:32,785 generate_all_conv2d_ptes.py:98]   in_channels=64, out_channels=64, kernel=(3,3), stride=(1,1), padding=(1,1), dilation=(1,1)
+[INFO 2026-02-11 06:27:32,785 generate_all_conv2d_ptes.py:100]   input_shape=(1,64,56,56), output_shape=(1,64,56,56)
+[INFO 2026-02-11 06:27:35,535 utils.py:246] 
++-------------------------------------------------------+---------------+-----------------+
+| Final Operators                                       |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| cadence::quantize_per_tensor                          |             1 |               0 |
+| cadence::quantized_conv2d_nchw.per_tensor             |             1 |               1 |
+| cadence::dequantize_per_tensor                        |             1 |               0 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:35,535 utils.py:262] +-------------------------------------------------------+---------------+-----------------+
+| Deleted Operators                                     |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| quantized_decomposed::quantize_per_tensor             |             0 |               1 |
+| quantized_decomposed::dequantize_per_tensor           |             0 |               1 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:35,639 memory_planning.py:322] 
++----------------+----------------+-----------------------+-----------------------------+
+|   Memory Space | Base Address   |   Memory Size (Bytes) |   Peak Memory Usage (Bytes) |
++================+================+=======================+=============================+
+|              1 |                |           68719476736 |                     1204224 |
++----------------+----------------+-----------------------+-----------------------------+
+[INFO 2026-02-11 06:27:35,640 memory_planning.py:355] 
++-------------------------------------+---------------+--------+
+| Peak memory usage across all spaces | 1003520 bytes | Node 3 |
++-------------------------------------+---------------+--------+
+[INFO 2026-02-11 06:27:35,647 compiler.py:478] Generated ETRecord at /tmp/conv2d_conv3_2_j1bg2zzq/etrecord.bin
+[INFO 2026-02-11 06:27:35,647 export_example.py:76] Final exported graph:
+
+opcode         name                                      target                                        args                                                                                                                                                                         kwargs
+-------------  ----------------------------------------  --------------------------------------------  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ----------------
+placeholder    b__frozen_param0                          b__frozen_param0                              ()                                                                                                                                                                           {}
+placeholder    b__frozen_param1                          b__frozen_param1                              ()                                                                                                                                                                           {}
+placeholder    x                                         x                                             ()                                                                                                                                                                           {}
+call_function  alloc                                     <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.int8),)                                                                                                                                             {}
+call_function  cadence_quantize_per_tensor_default       cadence.quantize_per_tensor.out               (x, 0.033155277371406555, -4, -128, 127, torch.int8)                                                                                                                         {'out': alloc}
+call_function  alloc_1                                   <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.int8),)                                                                                                                                             {}
+call_function  cadence_quantized_conv2d_nchw_per_tensor  cadence.quantized_conv2d_nchw.per_tensor_out  (cadence_quantize_per_tensor_default, b__frozen_param0, b__frozen_param1, [1, 1], [1, 1], [1, 1], 1, -4, 0, 1.083457291601534e-05, 0.01845390722155571, 3, 1291080448, -10)  {'out': alloc_1}
+call_function  alloc_2                                   <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.float32),)                                                                                                                                          {}
+call_function  cadence_dequantize_per_tensor_default     cadence.dequantize_per_tensor.out             (cadence_quantized_conv2d_nchw_per_tensor, 0.01845390722155571, 3, -128, 127, torch.int8)                                                                                    {'out': alloc_2}
+output         output_1                                  output                                        ((cadence_dequantize_per_tensor_default,),)                                                                                                                                  {}
+opcode         name                                      target                                        args                                                                                                                                                                          kwargs
+-------------  ----------------------------------------  --------------------------------------------  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ----------------
+placeholder    b__frozen_param0                          b__frozen_param0                              ()                                                                                                                                                                            {}
+placeholder    b__frozen_param1                          b__frozen_param1                              ()                                                                                                                                                                            {}
+placeholder    x                                         x                                             ()                                                                                                                                                                            {}
+call_function  alloc                                     <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.int8),)                                                                                                                                              {}
+call_function  cadence_quantize_per_tensor_default       cadence.quantize_per_tensor.out               (x, 0.03194721043109894, 2, -128, 127, torch.int8)                                                                                                                            {'out': alloc}
+call_function  alloc_1                                   <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.int8),)                                                                                                                                              {}
+call_function  cadence_quantized_conv2d_nchw_per_tensor  cadence.quantized_conv2d_nchw.per_tensor_out  (cadence_quantize_per_tensor_default, b__frozen_param0, b__frozen_param1, [1, 1], [1, 1], [1, 1], 1, 2, 0, 1.0440178684146054e-05, 0.01793094351887703, -3, 1280367360, -10)  {'out': alloc_1}
+call_function  alloc_2                                   <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.float32),)                                                                                                                                           {}
+call_function  cadence_dequantize_per_tensor_default     cadence.dequantize_per_tensor.out             (cadence_quantized_conv2d_nchw_per_tensor, 0.01793094351887703, -3, -128, 127, torch.int8)                                                                                    {'out': alloc_2}
+output         output_1                                  output                                        ((cadence_dequantize_per_tensor_default,),)                                                                                                                                   {}
+[INFO 2026-02-11 06:27:38,938 utils.py:287] Saved exported program to /tmp/conv2d_conv3_2_j1bg2zzq/conv2d_layer4_conv3_2.pte
+[INFO 2026-02-11 06:27:38,939 utils.py:304] Saved exported program to /tmp/conv2d_conv3_2_j1bg2zzq/conv2d_layer4_conv3_2.bpte
+[INFO 2026-02-11 06:27:38,945 generate_all_conv2d_ptes.py:141]   Copied PTE: /tmp/conv2d_conv3_2_j1bg2zzq/conv2d_layer4_conv3_2.pte -> /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/conv2d_layer4_conv3_2.pte
+[INFO 2026-02-11 06:27:38,945 generate_all_conv2d_ptes.py:145]   Layer 4 (conv3.2): SUCCESS
+[INFO 2026-02-11 06:27:38,946 generate_all_conv2d_ptes.py:97] === Layer 5: conv4a.1 (64_56_56_128_1_1_28_28_2_2_0_1) ===
+[INFO 2026-02-11 06:27:38,946 generate_all_conv2d_ptes.py:98]   in_channels=64, out_channels=128, kernel=(1,1), stride=(2,2), padding=(0,0), dilation=(1,1)
+[INFO 2026-02-11 06:27:38,946 generate_all_conv2d_ptes.py:100]   input_shape=(1,64,56,56), output_shape=(1,128,28,28)
+[INFO 2026-02-11 06:27:47,339 utils.py:246] 
++-------------------------------------------------------+---------------+-----------------+
+| Final Operators                                       |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| cadence::quantize_per_tensor                          |             1 |               0 |
+| cadence::quantized_conv2d_nchw.per_tensor             |             1 |               1 |
+| cadence::dequantize_per_tensor                        |             1 |               0 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:47,339 utils.py:262] +-------------------------------------------------------+---------------+-----------------+
+| Deleted Operators                                     |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| quantized_decomposed::quantize_per_tensor             |             0 |               1 |
+| quantized_decomposed::dequantize_per_tensor           |             0 |               1 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:47,483 memory_planning.py:322] 
++----------------+----------------+-----------------------+-----------------------------+
+|   Memory Space | Base Address   |   Memory Size (Bytes) |   Peak Memory Usage (Bytes) |
++================+================+=======================+=============================+
+|              1 |                |           68719476736 |                     1003520 |
++----------------+----------------+-----------------------+-----------------------------+
+[INFO 2026-02-11 06:27:47,483 memory_planning.py:355] 
++-------------------------------------+---------------+--------+
+| Peak memory usage across all spaces | 1003520 bytes | Node 3 |
++-------------------------------------+---------------+--------+
+[INFO 2026-02-11 06:27:47,493 compiler.py:478] Generated ETRecord at /tmp/conv2d_conv4a_1_hdq_q8h5/etrecord.bin
+[INFO 2026-02-11 06:27:47,493 export_example.py:76] Final exported graph:
+
+[INFO 2026-02-11 06:27:49,944 utils.py:287] Saved exported program to /tmp/conv2d_conv4a_1_hdq_q8h5/conv2d_layer5_conv4a_1.pte
+[INFO 2026-02-11 06:27:49,944 utils.py:304] Saved exported program to /tmp/conv2d_conv4a_1_hdq_q8h5/conv2d_layer5_conv4a_1.bpte
+[INFO 2026-02-11 06:27:49,948 generate_all_conv2d_ptes.py:141]   Copied PTE: /tmp/conv2d_conv4a_1_hdq_q8h5/conv2d_layer5_conv4a_1.pte -> /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/conv2d_layer5_conv4a_1.pte
+[INFO 2026-02-11 06:27:49,949 generate_all_conv2d_ptes.py:145]   Layer 5 (conv4a.1): SUCCESS
+[INFO 2026-02-11 06:27:49,950 generate_all_conv2d_ptes.py:97] === Layer 6: conv4b.1 (64_56_56_128_3_3_28_28_2_2_1_1) ===
+[INFO 2026-02-11 06:27:49,950 generate_all_conv2d_ptes.py:98]   in_channels=64, out_channels=128, kernel=(3,3), stride=(2,2), padding=(1,1), dilation=(1,1)
+[INFO 2026-02-11 06:27:49,950 generate_all_conv2d_ptes.py:100]   input_shape=(1,64,56,56), output_shape=(1,128,28,28)
+[INFO 2026-02-11 06:27:58,627 utils.py:246] 
++-------------------------------------------------------+---------------+-----------------+
+| Final Operators                                       |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| cadence::quantize_per_tensor                          |             1 |               0 |
+| cadence::quantized_conv2d_nchw.per_tensor             |             1 |               1 |
+| cadence::dequantize_per_tensor                        |             1 |               0 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:58,627 utils.py:262] +-------------------------------------------------------+---------------+-----------------+
+| Deleted Operators                                     |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| quantized_decomposed::quantize_per_tensor             |             0 |               1 |
+| quantized_decomposed::dequantize_per_tensor           |             0 |               1 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:27:58,731 memory_planning.py:322] 
++----------------+----------------+-----------------------+-----------------------------+
+|   Memory Space | Base Address   |   Memory Size (Bytes) |   Peak Memory Usage (Bytes) |
++================+================+=======================+=============================+
+|              1 |                |           68719476736 |                     1003520 |
++----------------+----------------+-----------------------+-----------------------------+
+[INFO 2026-02-11 06:27:58,731 memory_planning.py:355] 
++-------------------------------------+---------------+--------+
+| Peak memory usage across all spaces | 1003520 bytes | Node 3 |
++-------------------------------------+---------------+--------+
+[INFO 2026-02-11 06:27:58,739 compiler.py:478] Generated ETRecord at /tmp/conv2d_conv4b_1_k4gy03r0/etrecord.bin
+[INFO 2026-02-11 06:27:58,739 export_example.py:76] Final exported graph:
+
+opcode         name                                      target                                        args                                                                                                                                                                         kwargs
+-------------  ----------------------------------------  --------------------------------------------  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ----------------
+placeholder    b__frozen_param0                          b__frozen_param0                              ()                                                                                                                                                                           {}
+placeholder    b__frozen_param1                          b__frozen_param1                              ()                                                                                                                                                                           {}
+placeholder    x                                         x                                             ()                                                                                                                                                                           {}
+call_function  alloc                                     <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.int8),)                                                                                                                                             {}
+call_function  cadence_quantize_per_tensor_default       cadence.quantize_per_tensor.out               (x, 0.03023502416908741, -1, -128, 127, torch.int8)                                                                                                                          {'out': alloc}
+call_function  alloc_1                                   <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.int8),)                                                                                                                                             {}
+call_function  cadence_quantized_conv2d_nchw_per_tensor  cadence.quantized_conv2d_nchw.per_tensor_out  (cadence_quantize_per_tensor_default, b__frozen_param0, b__frozen_param1, [1, 1], [1, 1], [1, 1], 1, -1, 0, 9.880258127636541e-06, 0.01758001185953617, 0, 1235887488, -10)  {'out': alloc_1}
+call_function  alloc_2                                   <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.float32),)                                                                                                                                          {}
+call_function  cadence_dequantize_per_tensor_default     cadence.dequantize_per_tensor.out             (cadence_quantized_conv2d_nchw_per_tensor, 0.01758001185953617, 0, -128, 127, torch.int8)                                                                                    {'out': alloc_2}
+output         output_1                                  output                                        ((cadence_dequantize_per_tensor_default,),)                                                                                                                                  {}
+opcode         name                                      target                                        args                                                                                                                                                                          kwargs
+-------------  ----------------------------------------  --------------------------------------------  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ----------------
+placeholder    b__frozen_param0                          b__frozen_param0                              ()                                                                                                                                                                            {}
+placeholder    b__frozen_param1                          b__frozen_param1                              ()                                                                                                                                                                            {}
+placeholder    x                                         x                                             ()                                                                                                                                                                            {}
+call_function  alloc                                     <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.int8),)                                                                                                                                              {}
+call_function  cadence_quantize_per_tensor_default       cadence.quantize_per_tensor.out               (x, 0.031304240226745605, -3, -128, 127, torch.int8)                                                                                                                          {'out': alloc}
+call_function  alloc_1                                   <function alloc at 0x7f5828d13c40>            (((1, 128, 28, 28), torch.int8),)                                                                                                                                             {}
+call_function  cadence_quantized_conv2d_nchw_per_tensor  cadence.quantized_conv2d_nchw.per_tensor_out  (cadence_quantize_per_tensor_default, b__frozen_param0, b__frozen_param1, [2, 2], [0, 0], [1, 1], 1, -3, 0, 3.0684172514131025e-05, 0.019728047773241997, 0, 1710134016, -9)  {'out': alloc_1}
+call_function  alloc_2                                   <function alloc at 0x7f5828d13c40>            (((1, 128, 28, 28), torch.float32),)                                                                                                                                          {}
+call_function  cadence_dequantize_per_tensor_default     cadence.dequantize_per_tensor.out             (cadence_quantized_conv2d_nchw_per_tensor, 0.019728047773241997, 0, -128, 127, torch.int8)                                                                                    {'out': alloc_2}
+output         output_1                                  output                                        ((cadence_dequantize_per_tensor_default,),)                                                                                                                                   {}
+[INFO 2026-02-11 06:28:01,128 utils.py:287] Saved exported program to /tmp/conv2d_conv4b_1_k4gy03r0/conv2d_layer6_conv4b_1.pte
+[INFO 2026-02-11 06:28:01,129 utils.py:304] Saved exported program to /tmp/conv2d_conv4b_1_k4gy03r0/conv2d_layer6_conv4b_1.bpte
+[INFO 2026-02-11 06:28:01,134 generate_all_conv2d_ptes.py:141]   Copied PTE: /tmp/conv2d_conv4b_1_k4gy03r0/conv2d_layer6_conv4b_1.pte -> /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/conv2d_layer6_conv4b_1.pte
+[INFO 2026-02-11 06:28:01,134 generate_all_conv2d_ptes.py:145]   Layer 6 (conv4b.1): SUCCESS
+[INFO 2026-02-11 06:28:01,135 generate_all_conv2d_ptes.py:97] === Layer 7: conv4b.2 (128_28_28_128_3_3_28_28_1_1_1_1) ===
+[INFO 2026-02-11 06:28:01,136 generate_all_conv2d_ptes.py:98]   in_channels=128, out_channels=128, kernel=(3,3), stride=(1,1), padding=(1,1), dilation=(1,1)
+[INFO 2026-02-11 06:28:01,136 generate_all_conv2d_ptes.py:100]   input_shape=(1,128,28,28), output_shape=(1,128,28,28)
+[INFO 2026-02-11 06:28:09,290 utils.py:246] 
++-------------------------------------------------------+---------------+-----------------+
+| Final Operators                                       |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| cadence::quantize_per_tensor                          |             1 |               0 |
+| cadence::quantized_conv2d_nchw.per_tensor             |             1 |               1 |
+| cadence::dequantize_per_tensor                        |             1 |               0 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:28:09,290 utils.py:262] +-------------------------------------------------------+---------------+-----------------+
+| Deleted Operators                                     |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| quantized_decomposed::quantize_per_tensor             |             0 |               1 |
+| quantized_decomposed::dequantize_per_tensor           |             0 |               1 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:28:09,445 memory_planning.py:322] 
++----------------+----------------+-----------------------+-----------------------------+
+|   Memory Space | Base Address   |   Memory Size (Bytes) |   Peak Memory Usage (Bytes) |
++================+================+=======================+=============================+
+|              1 |                |           68719476736 |                      602112 |
++----------------+----------------+-----------------------+-----------------------------+
+[INFO 2026-02-11 06:28:09,446 memory_planning.py:355] 
++-------------------------------------+--------------+--------+
+| Peak memory usage across all spaces | 501760 bytes | Node 3 |
++-------------------------------------+--------------+--------+
+[INFO 2026-02-11 06:28:09,458 compiler.py:478] Generated ETRecord at /tmp/conv2d_conv4b_2_q1fkjhw2/etrecord.bin
+[INFO 2026-02-11 06:28:09,458 export_example.py:76] Final exported graph:
+
+[INFO 2026-02-11 06:28:11,164 utils.py:287] Saved exported program to /tmp/conv2d_conv4b_2_q1fkjhw2/conv2d_layer7_conv4b_2.pte
+[INFO 2026-02-11 06:28:11,165 utils.py:304] Saved exported program to /tmp/conv2d_conv4b_2_q1fkjhw2/conv2d_layer7_conv4b_2.bpte
+[INFO 2026-02-11 06:28:11,173 generate_all_conv2d_ptes.py:141]   Copied PTE: /tmp/conv2d_conv4b_2_q1fkjhw2/conv2d_layer7_conv4b_2.pte -> /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/conv2d_layer7_conv4b_2.pte
+[INFO 2026-02-11 06:28:11,173 generate_all_conv2d_ptes.py:145]   Layer 7 (conv4b.2): SUCCESS
+[INFO 2026-02-11 06:28:11,175 generate_all_conv2d_ptes.py:97] === Layer 8: conv5a.1 (128_28_28_128_3_3_28_28_1_1_1_1) ===
+[INFO 2026-02-11 06:28:11,175 generate_all_conv2d_ptes.py:98]   in_channels=128, out_channels=128, kernel=(3,3), stride=(1,1), padding=(1,1), dilation=(1,1)
+[INFO 2026-02-11 06:28:11,175 generate_all_conv2d_ptes.py:100]   input_shape=(1,128,28,28), output_shape=(1,128,28,28)
+[INFO 2026-02-11 06:28:14,763 utils.py:246] 
++-------------------------------------------------------+---------------+-----------------+
+| Final Operators                                       |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| cadence::quantize_per_tensor                          |             1 |               0 |
+| cadence::quantized_conv2d_nchw.per_tensor             |             1 |               1 |
+| cadence::dequantize_per_tensor                        |             1 |               0 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:28:14,764 utils.py:262] +-------------------------------------------------------+---------------+-----------------+
+| Deleted Operators                                     |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| quantized_decomposed::quantize_per_tensor             |             0 |               1 |
+| quantized_decomposed::dequantize_per_tensor           |             0 |               1 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:28:14,871 memory_planning.py:322] 
++----------------+----------------+-----------------------+-----------------------------+
+|   Memory Space | Base Address   |   Memory Size (Bytes) |   Peak Memory Usage (Bytes) |
++================+================+=======================+=============================+
+|              1 |                |           68719476736 |                      602112 |
++----------------+----------------+-----------------------+-----------------------------+
+[INFO 2026-02-11 06:28:14,871 memory_planning.py:355] 
++-------------------------------------+--------------+--------+
+| Peak memory usage across all spaces | 501760 bytes | Node 3 |
++-------------------------------------+--------------+--------+
+[INFO 2026-02-11 06:28:14,882 compiler.py:478] Generated ETRecord at /tmp/conv2d_conv5a_1_iga9gqza/etrecord.bin
+[INFO 2026-02-11 06:28:14,883 export_example.py:76] Final exported graph:
+
+opcode         name                                      target                                        args                                                                                                                                                                          kwargs
+-------------  ----------------------------------------  --------------------------------------------  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ----------------
+placeholder    b__frozen_param0                          b__frozen_param0                              ()                                                                                                                                                                            {}
+placeholder    b__frozen_param1                          b__frozen_param1                              ()                                                                                                                                                                            {}
+placeholder    x                                         x                                             ()                                                                                                                                                                            {}
+call_function  alloc                                     <function alloc at 0x7f5828d13c40>            (((1, 64, 56, 56), torch.int8),)                                                                                                                                              {}
+call_function  cadence_quantize_per_tensor_default       cadence.quantize_per_tensor.out               (x, 0.030559251084923744, -3, -128, 127, torch.int8)                                                                                                                          {'out': alloc}
+call_function  alloc_1                                   <function alloc at 0x7f5828d13c40>            (((1, 128, 28, 28), torch.int8),)                                                                                                                                             {}
+call_function  cadence_quantized_conv2d_nchw_per_tensor  cadence.quantized_conv2d_nchw.per_tensor_out  (cadence_quantize_per_tensor_default, b__frozen_param0, b__frozen_param1, [2, 2], [1, 1], [1, 1], 1, -3, 0, 9.98643462567125e-06, 0.018231458961963654, -9, 1204533504, -10)  {'out': alloc_1}
+call_function  alloc_2                                   <function alloc at 0x7f5828d13c40>            (((1, 128, 28, 28), torch.float32),)                                                                                                                                          {}
+call_function  cadence_dequantize_per_tensor_default     cadence.dequantize_per_tensor.out             (cadence_quantized_conv2d_nchw_per_tensor, 0.018231458961963654, -9, -128, 127, torch.int8)                                                                                   {'out': alloc_2}
+output         output_1                                  output                                        ((cadence_dequantize_per_tensor_default,),)                                                                                                                                   {}
+opcode         name                                      target                                        args                                                                                                                                                                          kwargs
+-------------  ----------------------------------------  --------------------------------------------  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ----------------
+placeholder    b__frozen_param0                          b__frozen_param0                              ()                                                                                                                                                                            {}
+placeholder    b__frozen_param1                          b__frozen_param1                              ()                                                                                                                                                                            {}
+placeholder    x                                         x                                             ()                                                                                                                                                                            {}
+call_function  alloc                                     <function alloc at 0x7f5828d13c40>            (((1, 128, 28, 28), torch.int8),)                                                                                                                                             {}
+call_function  cadence_quantize_per_tensor_default       cadence.quantize_per_tensor.out               (x, 0.03623154014348984, -4, -128, 127, torch.int8)                                                                                                                           {'out': alloc}
+call_function  alloc_1                                   <function alloc at 0x7f5828d13c40>            (((1, 128, 28, 28), torch.int8),)                                                                                                                                             {}
+call_function  cadence_quantized_conv2d_nchw_per_tensor  cadence.quantized_conv2d_nchw.per_tensor_out  (cadence_quantize_per_tensor_default, b__frozen_param0, b__frozen_param1, [1, 1], [1, 1], [1, 1], 1, -4, 0, 8.372362846112945e-06, 0.01915130764245987, -9, 1922690688, -11)  {'out': alloc_1}
+call_function  alloc_2                                   <function alloc at 0x7f5828d13c40>            (((1, 128, 28, 28), torch.float32),)                                                                                                                                          {}
+call_function  cadence_dequantize_per_tensor_default     cadence.dequantize_per_tensor.out             (cadence_quantized_conv2d_nchw_per_tensor, 0.01915130764245987, -9, -128, 127, torch.int8)                                                                                    {'out': alloc_2}
+output         output_1                                  output                                        ((cadence_dequantize_per_tensor_default,),)                                                                                                                                   {}
+[INFO 2026-02-11 06:28:16,460 utils.py:287] Saved exported program to /tmp/conv2d_conv5a_1_iga9gqza/conv2d_layer8_conv5a_1.pte
+[INFO 2026-02-11 06:28:16,461 utils.py:304] Saved exported program to /tmp/conv2d_conv5a_1_iga9gqza/conv2d_layer8_conv5a_1.bpte
+[INFO 2026-02-11 06:28:16,467 generate_all_conv2d_ptes.py:141]   Copied PTE: /tmp/conv2d_conv5a_1_iga9gqza/conv2d_layer8_conv5a_1.pte -> /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/conv2d_layer8_conv5a_1.pte
+[INFO 2026-02-11 06:28:16,467 generate_all_conv2d_ptes.py:145]   Layer 8 (conv5a.1): SUCCESS
+[INFO 2026-02-11 06:28:16,468 generate_all_conv2d_ptes.py:97] === Layer 9: conv5a.2 (128_28_28_128_3_3_28_28_1_1_1_1) ===
+[INFO 2026-02-11 06:28:16,468 generate_all_conv2d_ptes.py:98]   in_channels=128, out_channels=128, kernel=(3,3), stride=(1,1), padding=(1,1), dilation=(1,1)
+[INFO 2026-02-11 06:28:16,468 generate_all_conv2d_ptes.py:100]   input_shape=(1,128,28,28), output_shape=(1,128,28,28)
+[INFO 2026-02-11 06:28:20,187 utils.py:246] 
++-------------------------------------------------------+---------------+-----------------+
+| Final Operators                                       |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| cadence::quantize_per_tensor                          |             1 |               0 |
+| cadence::quantized_conv2d_nchw.per_tensor             |             1 |               1 |
+| cadence::dequantize_per_tensor                        |             1 |               0 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:28:20,188 utils.py:262] +-------------------------------------------------------+---------------+-----------------+
+| Deleted Operators                                     |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| quantized_decomposed::quantize_per_tensor             |             0 |               1 |
+| quantized_decomposed::dequantize_per_tensor           |             0 |               1 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-11 06:28:20,303 memory_planning.py:322] 
++----------------+----------------+-----------------------+-----------------------------+
+|   Memory Space | Base Address   |   Memory Size (Bytes) |   Peak Memory Usage (Bytes) |
++================+================+=======================+=============================+
+|              1 |                |           68719476736 |                      602112 |
++----------------+----------------+-----------------------+-----------------------------+
+[INFO 2026-02-11 06:28:20,304 memory_planning.py:355] 
++-------------------------------------+--------------+--------+
+| Peak memory usage across all spaces | 501760 bytes | Node 3 |
++-------------------------------------+--------------+--------+
+[INFO 2026-02-11 06:28:20,311 compiler.py:478] Generated ETRecord at /tmp/conv2d_conv5a_2_2ysfgw73/etrecord.bin
+[INFO 2026-02-11 06:28:20,311 export_example.py:76] Final exported graph:
+
+[INFO 2026-02-11 06:28:21,984 utils.py:287] Saved exported program to /tmp/conv2d_conv5a_2_2ysfgw73/conv2d_layer9_conv5a_2.pte
+[INFO 2026-02-11 06:28:21,985 utils.py:304] Saved exported program to /tmp/conv2d_conv5a_2_2ysfgw73/conv2d_layer9_conv5a_2.bpte
+[INFO 2026-02-11 06:28:21,991 generate_all_conv2d_ptes.py:141]   Copied PTE: /tmp/conv2d_conv5a_2_2ysfgw73/conv2d_layer9_conv5a_2.pte -> /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/conv2d_layer9_conv5a_2.pte
+[INFO 2026-02-11 06:28:21,991 generate_all_conv2d_ptes.py:145]   Layer 9 (conv5a.2): SUCCESS
+[INFO 2026-02-11 06:28:21,992 generate_all_conv2d_ptes.py:97] === Layer 10: conv6a.1 (128_28_28_256_1_1_14_14_2_2_0_1) ===
+[INFO 2026-02-11 06:28:21,993 generate_all_conv2d_ptes.py:98]   in_channels=128, out_channels=256, kernel=(1,1), stride=(2,2), padding=(0,0), dilation=(1,1)
+[INFO 2026-02-11 06:28:21,993 generate_all_conv2d_ptes.py:100]   input_shape=(1,128,28,28), output_shape=(1,256,14,14)

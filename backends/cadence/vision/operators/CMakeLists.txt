@@ -91,6 +91,13 @@ add_library(
   "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_linear_out.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_add_out.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_conv2d_nchw_out.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/quantized_conv2d_nchw_out_per_tensor.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_kernel_dispatcher.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_7x7j2d1.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_1x1j1d1.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_1x1j2d1.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_3x3j1d1.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_3x3j2d1.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_conv2d_nhwc_out.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_relu_out.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_layer_norm.cpp"
@@ -102,7 +109,7 @@ add_library(
   "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/im2row_out.cpp"
 )
 target_link_libraries(custom_ops PUBLIC executorch)
-target_link_libraries(custom_ops PRIVATE xa_nnlib cadence_kernels idma)
+target_link_libraries(custom_ops PRIVATE xa_nnlib cadence_kernels idma xai)
 
 target_include_directories(
   custom_ops 
@@ -110,7 +117,10 @@ target_include_directories(
   ${ROOT_DIR}/.. 
   ${CMAKE_BINARY_DIR}
   ${_common_include_directories}
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/include
+  PRIVATE 
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/libxai/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/libxai_common/include
 )
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and

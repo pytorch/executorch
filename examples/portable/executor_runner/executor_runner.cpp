@@ -65,6 +65,7 @@ DEFINE_bool(
     print_all_output,
     false,
     "Prints all output. By default only first and last 100 elements are printed.");
+
 DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
 #ifdef ET_EVENT_TRACER_ENABLED
 DEFINE_string(etdump_path, "model.etdump", "Write ETDump data to this path.");
@@ -344,6 +345,16 @@ int main(int argc, char** argv) {
       (uint32_t)method.error());
   ET_LOG(Info, "Method loaded.");
 
+  // Print operator names
+  size_t num_ops = method_meta->num_operators();
+  ET_LOG(Info, "Number of operators: %zu", num_ops);
+  for (size_t i = 0; i < num_ops; ++i) {
+    auto op_name = method_meta->get_operator_name(i);
+    if (op_name.ok()) {
+      ET_LOG(Info, "Operator[%zu]: %s", i, *op_name);
+    }
+  }
+
   et_timestamp_t time_spent_executing = 0;
   // Run the model.
   for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
@@ -449,7 +460,114 @@ int main(int argc, char** argv) {
     std::cout << executorch::extension::evalue_edge_items(10000000);
 
     for (int i = 0; i < outputs.size(); ++i) {
-      std::cout << "OutputX " << i << ": " << outputs[i] << std::endl;
+      std::cout << "Output " << i << ": " << outputs[i] << std::endl;
+    }
+
+  }
+
+  // Log input and output to CSV file (always enabled)
+  {
+    // Derive CSV filename from model path: replace .pte with .csv
+    std::string csv_path = FLAGS_model_path;
+    auto dot_pos = csv_path.rfind('.');
+    if (dot_pos != std::string::npos) {
+      csv_path = csv_path.substr(0, dot_pos) + ".csv";
+    } else {
+      csv_path += ".csv";
+    }
+    std::ofstream csv_file(csv_path);
+    if (!csv_file.is_open()) {
+      ET_LOG(Error, "Failed to open CSV output file: %s", csv_path.c_str());
+    } else {
+      // Write inputs
+      std::vector<EValue> inputs_ev(method->inputs_size());
+      Error inputs_status = method->get_inputs(inputs_ev.data(), inputs_ev.size());
+      if (inputs_status == Error::Ok) {
+        for (int i = 0; i < inputs_ev.size(); ++i) {
+          if (inputs_ev[i].isTensor()) {
+            Tensor tensor = inputs_ev[i].toTensor();
+            csv_file << "# Input " << i
+                     << " shape=[";
+            for (int d = 0; d < tensor.dim(); ++d) {
+              if (d > 0) csv_file << ",";
+              csv_file << tensor.size(d);
+            }
+            csv_file << "] dtype=" << static_cast<int>(tensor.scalar_type()) << std::endl;
+
+            for (int j = 0; j < tensor.numel(); ++j) {
+              if (j > 0) csv_file << ",";
+              switch (tensor.scalar_type()) {
+                case ScalarType::Float:
+                  csv_file << tensor.const_data_ptr<float>()[j];
+                  break;
+                case ScalarType::Int:
+                  csv_file << tensor.const_data_ptr<int>()[j];
+                  break;
+                case ScalarType::Char:
+                  csv_file << static_cast<int>(tensor.const_data_ptr<int8_t>()[j]);
+                  break;
+                case ScalarType::Byte:
+                  csv_file << static_cast<int>(tensor.const_data_ptr<uint8_t>()[j]);
+                  break;
+                case ScalarType::Long:
+                  csv_file << tensor.const_data_ptr<int64_t>()[j];
+                  break;
+                case ScalarType::Double:
+                  csv_file << tensor.const_data_ptr<double>()[j];
+                  break;
+                default:
+                  csv_file << "unsupported";
+                  break;
+              }
+            }
+            csv_file << std::endl;
+          }
+        }
+      }
+
+      // Write outputs
+      for (int i = 0; i < outputs.size(); ++i) {
+        if (outputs[i].isTensor()) {
+          Tensor tensor = outputs[i].toTensor();
+          csv_file << "# Output " << i
+                   << " shape=[";
+          for (int d = 0; d < tensor.dim(); ++d) {
+            if (d > 0) csv_file << ",";
+            csv_file << tensor.size(d);
+          }
+          csv_file << "] dtype=" << static_cast<int>(tensor.scalar_type()) << std::endl;
+
+          for (int j = 0; j < tensor.numel(); ++j) {
+            if (j > 0) csv_file << ",";
+            switch (tensor.scalar_type()) {
+              case ScalarType::Float:
+                csv_file << tensor.const_data_ptr<float>()[j];
+                break;
+              case ScalarType::Int:
+                csv_file << tensor.const_data_ptr<int>()[j];
+                break;
+              case ScalarType::Char:
+                csv_file << static_cast<int>(tensor.const_data_ptr<int8_t>()[j]);
+                break;
+              case ScalarType::Byte:
+                csv_file << static_cast<int>(tensor.const_data_ptr<uint8_t>()[j]);
+                break;
+              case ScalarType::Long:
+                csv_file << tensor.const_data_ptr<int64_t>()[j];
+                break;
+              case ScalarType::Double:
+                csv_file << tensor.const_data_ptr<double>()[j];
+                break;
+              default:
+                csv_file << "unsupported";
+                break;
+            }
+          }
+          csv_file << std::endl;
+        }
+      }
+      csv_file.close();
+      ET_LOG(Info, "Input and output written to CSV file: %s", csv_path.c_str());
     }
   }
 

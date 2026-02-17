@@ -1,0 +1,2 @@
+/usr/bin/ar qc libextension_data_loader.a CMakeFiles/extension_data_loader.dir/file_data_loader.cpp.o CMakeFiles/extension_data_loader.dir/mmap_data_loader.cpp.o
+/usr/bin/ranlib libextension_data_loader.a

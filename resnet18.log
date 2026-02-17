@@ -1,0 +1,527 @@
+quantized_conv2d_nchw: n=1, c=3, h=64, w=64, oc=64, wc=3, wh=7, ww=7, oh=32, ow=32
+quantized_conv2d_nchw: groups=1, in_zero_point=10, weight_zero_point=0, bias_scale=0.000095, output_scale=0.027794
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+21 25 36 22 38 23 15 13 24 29 20 18 13 23 39 42 28 16 11 12 29 22 20 27 11 11 15 15 12 24 16 37 30 41 32 10 26 26 30 38 12 24 19 24 14 24 18 13 34 34 32 25 20 32 14 22 16 39 11 16 10 25 22 32 40 41 21 38 11 23 40 25 40 13 39 42 41 34 26 16 22 14 28 19 42 36 27 27 23 20 20 18 26 23 23 39 25 18 41 36 
+Weight tensor first 100 elements:
+-1 0 0 6 4 1 -1 1 1 -8 -21 -20 -10 0 -1 4 22 44 39 19 5 2 -5 -22 -33 -20 0 4 -2 1 5 -4 -25 -32 -19 2 3 5 18 31 30 13 -1 0 -2 -5 -11 -6 0 -1 -2 -3 3 2 0 -2 3 3 -8 -23 -24 -12 0 0 7 30 58 53 28 9 0 -10 -32 -45 -29 -3 5 -4 0 2 -11 -35 -43 -28 2 4 8 24 41 36 15 0 1 -1 -5 -11 -6 0 0 -1 
+quantized_conv2d_nchw: effective_scale=0.003410, output_scale=57213, output_shift=17, accum_shift=7 (ic=3 kh=7 kw=7 num_products=147)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 0
+Layer Name: conv1
+Kernel Name: 7x7j2d1
+Config Key: 3_64_64_64_7_7_32_32_2_2_3_1
+Input Dimensions (DRAM): 3 x 64 x 64
+Output Dimensions (DRAM): 64 x 32 x 32
+quantized_conv2d_nchw: bias correction applied (in_zero_point=10, weight_zero_point=0)
+  Dispatching to kernel: 7x7j2d1
+  [7x7j2d1] DRAM usage: dram0=18496, dram1=32768
+  [7x7j2d1] Convolution parameters: accum_shift=7, dilation=1, flags=0, output_scale=57213, output_shift=17, relu_max=4000, relu_min=0, stride_x=2, stride_y=2
+    [7x7j2d1] N-tile 0, H-tile 0: Convolution status = 0
+    [7x7j2d1] N-tile 0, H-tile 1: Convolution status = 0
+    [7x7j2d1] N-tile 0, H-tile 2: Convolution status = 0
+    [7x7j2d1] N-tile 0, H-tile 3: Convolution status = 0
+Using optimized cadence conv2d kernel for Char (output_zero_point=-8 applied)
+quantized_conv2d_nchw: n=1, c=64, h=16, w=16, oc=64, wc=64, wh=3, ww=3, oh=16, ow=16
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000045, output_scale=0.017865
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-115 -103 -103 -103 -103 -103 -85 -106 -89 -89 -101 -104 -99 -103 -115 -95 -97 -89 -89 -93 -93 -97 -85 -101 -89 -89 -101 -103 -99 -97 -97 -95 -106 -95 -91 -93 -95 -95 -85 -87 -101 -99 -101 -104 -95 -99 -99 -99 -103 -85 -88 -88 -95 -97 -85 -87 -97 -99 -103 -104 -104 -104 -91 -103 -99 -97 -103 -88 -103 -85 -85 -97 -97 -88 -99 -85 -85 -93 -93 -99 -91 -99 -89 -89 -103 -95 -99 -95 -97 -89 -88 -85 -85 -89 -93 -99 -91 -97 -85 -85 
+Weight tensor first 100 elements:
+9 -15 -3 -12 -128 -34 10 -15 -2 -1 2 0 7 -26 -4 1 1 11 0 0 0 0 0 0 0 0 0 0 -1 1 -3 -11 -3 4 -2 -1 0 0 0 0 0 0 0 0 0 7 2 -3 8 16 8 -2 2 0 -2 -6 -9 1 -5 -2 -1 5 1 0 0 0 0 0 0 0 0 0 4 1 0 11 1 2 9 5 4 0 0 0 0 0 0 0 0 0 2 10 -7 16 -42 -21 2 11 -8 0 
+quantized_conv2d_nchw: effective_scale=0.002512, output_scale=42145, output_shift=14, accum_shift=10 (ic=64 kh=3 kw=3 num_products=576)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 1
+Layer Name: conv2.1
+Kernel Name: 3x3j1d1
+Config Key: 64_16_16_64_3_3_16_16_1_1_1_1
+Input Dimensions (DRAM): 64 x 16 x 16
+Output Dimensions (DRAM): 64 x 16 x 16
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=27648, dram1=2304
+Using optimized cadence conv2d kernel for Char (output_zero_point=51 applied)
+quantized_conv2d_nchw: n=1, c=64, h=16, w=16, oc=64, wc=64, wh=3, ww=3, oh=16, ow=16
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000031, output_scale=0.016933
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -118 -128 -128 -128 -118 -128 -128 -101 -101 -101 -94 -94 -101 -76 -101 -94 -76 -83 -83 -66 -83 -101 -111 -101 -101 -83 -76 -101 -94 -83 -76 -83 -76 -94 -94 -83 -83 -101 -111 -111 -83 -101 -83 -94 -111 -94 -83 -94 -83 -66 -66 -76 -83 -76 -101 -66 -94 -94 -83 -111 -101 -94 -111 -118 -83 -111 -118 -83 -94 -94 -118 -83 -111 -101 -66 -83 -101 -76 -94 -101 -94 -128 -118 -101 -94 -101 -128 -101 -111 -111 
+Weight tensor first 100 elements:
+3 -13 -1 -11 -41 -13 -7 -23 -7 -2 3 0 0 6 -1 -7 1 0 -1 2 2 2 -1 1 2 1 1 4 -8 -6 2 -20 -9 -1 -13 -6 2 0 -1 1 2 -1 1 3 1 8 8 10 10 7 11 10 8 10 2 3 2 4 -5 -1 -1 -1 -1 -1 2 -2 -3 -2 -4 3 2 0 5 6 9 3 7 6 9 7 5 6 6 5 3 4 3 4 7 6 1 3 0 -1 7 4 0 -1 2 5 
+quantized_conv2d_nchw: effective_scale=0.001856, output_scale=62280, output_shift=15, accum_shift=10 (ic=64 kh=3 kw=3 num_products=576)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 1
+Layer Name: conv2.1
+Kernel Name: 3x3j1d1
+Config Key: 64_16_16_64_3_3_16_16_1_1_1_1
+Input Dimensions (DRAM): 64 x 16 x 16
+Output Dimensions (DRAM): 64 x 16 x 16
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=27648, dram1=2304
+Using optimized cadence conv2d kernel for Char (output_zero_point=-27 applied)
+quantized_conv2d_nchw: n=1, c=64, h=16, w=16, oc=64, wc=64, wh=3, ww=3, oh=16, ow=16
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000035, output_scale=0.017995
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-95 -84 -88 -88 -90 -90 -70 -91 -70 -70 -85 -88 -88 -90 -100 -82 -74 -65 -73 -78 -81 -82 -70 -84 -68 -65 -81 -81 -84 -84 -78 -80 -82 -70 -73 -78 -82 -80 -70 -70 -81 -80 -85 -87 -78 -84 -75 -84 -81 -64 -75 -71 -78 -78 -65 -70 -75 -75 -85 -88 -88 -88 -70 -88 -77 -78 -88 -71 -88 -65 -65 -82 -78 -67 -81 -64 -64 -77 -70 -81 -68 -77 -65 -68 -90 -80 -84 -82 -80 -70 -71 -64 -65 -74 -71 -84 -64 -71 -61 -61 
+Weight tensor first 100 elements:
+4 -1 -1 -4 -3 -7 11 16 9 3 -2 -2 -9 -5 -12 0 10 11 5 1 -2 -2 -5 -6 -6 -10 -5 -1 -10 15 7 -3 12 7 7 -13 14 17 14 2 3 -1 3 5 -2 9 10 15 5 -7 0 4 -2 -1 4 1 -7 1 -5 -9 4 3 3 6 1 -5 -4 -5 -16 4 16 9 -2 2 -5 -11 -7 -2 3 21 8 8 10 9 5 3 5 -4 -2 -1 -8 -18 -13 -6 7 4 -11 -25 -18 -3 
+quantized_conv2d_nchw: effective_scale=0.001924, output_scale=64554, output_shift=15, accum_shift=10 (ic=64 kh=3 kw=3 num_products=576)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 1
+Layer Name: conv2.1
+Kernel Name: 3x3j1d1
+Config Key: 64_16_16_64_3_3_16_16_1_1_1_1
+Input Dimensions (DRAM): 64 x 16 x 16
+Output Dimensions (DRAM): 64 x 16 x 16
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=27648, dram1=2304
+Using optimized cadence conv2d kernel for Char (output_zero_point=7 applied)
+quantized_conv2d_nchw: n=1, c=64, h=16, w=16, oc=64, wc=64, wh=3, ww=3, oh=16, ow=16
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000070, output_scale=0.025420
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-90 -90 -102 -94 -111 -111 -98 -107 -94 -102 -111 -90 -90 -102 -98 -111 -102 -119 -128 -119 -128 -128 -111 -128 -128 -128 -119 -128 -128 -128 -128 -115 -94 -124 -119 -124 -119 -128 -111 -107 -128 -124 -111 -98 -128 -111 -128 -94 -119 -128 -124 -124 -119 -128 -128 -128 -107 -111 -128 -98 -111 -128 -111 -94 -107 -128 -124 -124 -124 -128 -128 -128 -119 -111 -128 -128 -128 -128 -128 -115 -102 -119 -124 -128 -128 -128 -124 -128 -128 -128 -119 -128 -128 -128 -128 -107 -115 -115 -115 -128 
+Weight tensor first 100 elements:
+-3 -1 1 -1 6 3 -1 8 4 8 6 6 3 -2 1 6 4 5 -2 -5 -7 -3 4 1 -3 2 4 0 -12 -7 -7 -21 -15 0 -11 -8 -1 -3 1 -1 2 3 -3 -4 -5 0 1 1 1 0 -2 3 2 -3 1 -2 0 -4 -2 5 1 1 3 0 0 -2 1 1 1 -2 -1 1 0 0 1 0 0 1 -5 -6 -5 -4 -1 -3 0 0 -3 -2 -5 -4 5 9 6 15 6 -11 10 0 -15 1 
+quantized_conv2d_nchw: effective_scale=0.002736, output_scale=45907, output_shift=14, accum_shift=10 (ic=64 kh=3 kw=3 num_products=576)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 1
+Layer Name: conv2.1
+Kernel Name: 3x3j1d1
+Config Key: 64_16_16_64_3_3_16_16_1_1_1_1
+Input Dimensions (DRAM): 64 x 16 x 16
+Output Dimensions (DRAM): 64 x 16 x 16
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=27648, dram1=2304
+Using optimized cadence conv2d kernel for Char (output_zero_point=39 applied)
+quantized_conv2d_nchw: n=1, c=64, h=16, w=16, oc=128, wc=64, wh=1, ww=1, oh=8, ow=8
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000106, output_scale=0.019418
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-102 -83 -91 -95 -102 -97 -77 -90 -74 -77 -93 -100 -95 -97 -98 -86 -74 -55 -74 -77 -79 -81 -67 -77 -62 -67 -79 -76 -77 -84 -65 -79 -86 -67 -79 -79 -86 -86 -74 -70 -76 -81 -93 -91 -84 -97 -77 -93 -90 -65 -81 -77 -79 -79 -69 -77 -76 -77 -93 -91 -86 -91 -67 -91 -79 -74 -91 -83 -91 -67 -77 -91 -84 -76 -86 -72 -72 -83 -67 -86 -69 -69 -74 -76 -90 -86 -93 -86 -86 -77 -77 -76 -74 -84 -72 -88 -69 -67 -67 -63 
+Weight tensor first 100 elements:
+2 -43 2 1 -4 5 21 0 -2 17 -1 2 3 5 8 1 18 3 -21 -7 1 10 1 22 -1 2 2 -42 10 4 3 36 -14 -52 8 7 -6 32 4 2 -4 1 0 -5 0 -70 2 -3 5 -1 0 4 -16 -9 3 -4 -2 9 -2 8 5 -23 2 2 0 0 -1 -1 -1 -4 3 -1 1 4 1 0 3 -1 -8 -2 0 -3 -7 2 2 0 -2 1 -1 2 -10 -1 3 2 2 0 -1 1 1 2 
+quantized_conv2d_nchw: effective_scale=0.005463, output_scale=45825, output_shift=17, accum_shift=6 (ic=64 kh=1 kw=1 num_products=64)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 4
+Layer Name: conv4a.1
+Kernel Name: 1x1j2d1
+Config Key: 64_16_16_128_1_1_8_8_2_2_0_1
+Input Dimensions (DRAM): 64 x 16 x 16
+Output Dimensions (DRAM): 128 x 8 x 8
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 1x1j2d1
+  [1x1j2d1] DRAM usage: dram0=30720, dram1=25088
+Using optimized cadence conv2d kernel for Char (output_zero_point=7 applied)
+quantized_conv2d_nchw: n=1, c=64, h=16, w=16, oc=128, wc=64, wh=3, ww=3, oh=8, ow=8
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000033, output_scale=0.016331
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-102 -83 -91 -95 -102 -97 -77 -90 -74 -77 -93 -100 -95 -97 -98 -86 -74 -55 -74 -77 -79 -81 -67 -77 -62 -67 -79 -76 -77 -84 -65 -79 -86 -67 -79 -79 -86 -86 -74 -70 -76 -81 -93 -91 -84 -97 -77 -93 -90 -65 -81 -77 -79 -79 -69 -77 -76 -77 -93 -91 -86 -91 -67 -91 -79 -74 -91 -83 -91 -67 -77 -91 -84 -76 -86 -72 -72 -83 -67 -86 -69 -69 -74 -76 -90 -86 -93 -86 -86 -77 -77 -76 -74 -84 -72 -88 -69 -67 -67 -63 
+Weight tensor first 100 elements:
+-18 -28 -35 18 -4 -25 30 22 -2 -6 -2 1 2 5 6 1 -1 -3 2 2 -3 2 -3 -11 4 -4 -12 -10 -9 3 -4 -12 -2 8 2 0 13 14 7 7 3 -1 8 0 -3 -5 -6 -3 -4 2 -1 -2 10 1 -3 -2 3 1 -3 -2 -1 -5 -1 -3 -8 5 4 -9 -11 13 9 -1 7 17 8 -16 -1 20 -22 -28 -8 -7 -6 -2 -1 3 3 0 6 2 -10 -11 -7 8 1 -5 20 14 -1 1 
+quantized_conv2d_nchw: effective_scale=0.001996, output_scale=33483, output_shift=14, accum_shift=10 (ic=64 kh=3 kw=3 num_products=576)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 2
+Layer Name: conv4b.1
+Kernel Name: 3x3j2d1
+Config Key: 64_16_16_128_3_3_8_8_2_2_1_1
+Input Dimensions (DRAM): 64 x 16 x 16
+Output Dimensions (DRAM): 128 x 8 x 8
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j2d1
+  [3x3j2d1] DRAM usage: dram0=29952, dram1=1536
+Using optimized cadence conv2d kernel for Char (output_zero_point=9 applied)
+quantized_conv2d_nchw: n=1, c=128, h=8, w=8, oc=128, wc=128, wh=3, ww=3, oh=8, ow=8
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000043, output_scale=0.017316
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-128 -128 -128 -128 -128 -128 -128 -128 -128 -124 -128 -128 -124 -111 -128 -128 -128 -128 -119 -128 -128 -128 -115 -89 -128 -128 -124 -124 -128 -128 -128 -128 -128 -128 -128 -128 -124 -128 -128 -128 -128 -128 -115 -128 -128 -111 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -93 -81 -111 -89 -111 -106 -93 -74 -111 -124 -106 -128 -128 -124 -93 -98 -128 -128 -128 -128 -119 -128 -85 -106 -128 -128 -128 -128 -128 -128 -57 -81 -128 -128 -128 -128 -128 -111 -98 -98 -89 -128 -128 
+Weight tensor first 100 elements:
+-1 -1 0 -1 3 5 -3 1 2 4 3 1 0 2 3 4 4 2 2 -2 -4 -2 -2 -7 -3 -1 0 1 1 2 -2 1 1 -1 -4 -1 4 3 -1 4 5 -6 -1 -7 0 2 6 -1 3 10 4 2 1 1 2 0 -4 0 0 -3 0 -2 -2 -1 2 1 -2 -1 -1 -1 1 -3 1 0 2 0 -2 -1 1 -1 0 -2 2 1 2 2 -1 1 1 1 -3 -3 -1 -3 -1 -2 -3 0 -1 -11 
+quantized_conv2d_nchw: effective_scale=0.002484, output_scale=41668, output_shift=13, accum_shift=11 (ic=128 kh=3 kw=3 num_products=1152)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 3
+Layer Name: conv4b.2
+Kernel Name: 3x3j1d1
+Config Key: 128_8_8_128_3_3_8_8_1_1_1_1
+Input Dimensions (DRAM): 128 x 8 x 8
+Output Dimensions (DRAM): 128 x 8 x 8
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=28672, dram1=1024
+Using optimized cadence conv2d kernel for Char (output_zero_point=-16 applied)
+quantized_conv2d_nchw: n=1, c=128, h=8, w=8, oc=128, wc=128, wh=3, ww=3, oh=8, ow=8
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000026, output_scale=0.014842
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-110 -95 -99 -128 -97 -104 -91 -82 -110 -99 -113 -115 -128 -97 -126 -126 -73 -128 -128 -128 -128 -124 -99 -49 -128 -95 -128 -128 -84 -128 -126 -128 -128 -110 -128 -102 -128 -113 -128 -71 -106 -93 -115 -128 -115 -128 -128 -86 -126 -128 -106 -121 -88 -108 -86 -119 -84 -104 -29 -128 -128 -102 -128 -108 -73 -102 -82 -60 -66 -104 -77 -53 -71 -113 -99 -66 -99 -82 -80 -69 -86 -86 -106 -108 -99 -93 -60 -75 -64 -80 -104 -128 -110 -97 -71 -84 -64 -60 -75 -117 
+Weight tensor first 100 elements:
+0 -2 -2 7 0 2 3 -4 1 -6 0 -4 -5 3 2 3 -2 -3 0 8 6 -16 -6 1 11 -27 -16 1 3 3 2 3 5 -1 -1 3 -1 -9 -3 3 1 -7 0 2 0 -10 -1 4 -13 -4 -7 4 3 10 0 9 8 -5 -4 -4 4 9 -2 2 2 -6 -1 4 -11 -6 1 -4 7 -1 1 -9 3 8 -10 -3 -8 -5 1 -9 5 -9 -18 -6 0 -3 2 1 1 -3 -4 -1 0 -1 2 3 
+quantized_conv2d_nchw: effective_scale=0.001763, output_scale=59143, output_shift=14, accum_shift=11 (ic=128 kh=3 kw=3 num_products=1152)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 3
+Layer Name: conv4b.2
+Kernel Name: 3x3j1d1
+Config Key: 128_8_8_128_3_3_8_8_1_1_1_1
+Input Dimensions (DRAM): 128 x 8 x 8
+Output Dimensions (DRAM): 128 x 8 x 8
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=28672, dram1=1024
+Using optimized cadence conv2d kernel for Char (output_zero_point=17 applied)
+quantized_conv2d_nchw: n=1, c=128, h=8, w=8, oc=128, wc=128, wh=3, ww=3, oh=8, ow=8
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000044, output_scale=0.013537
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-96 -119 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -102 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -96 -128 -128 -128 -128 -128 -96 -128 -128 -128 -119 -128 -128 -128 -128 -128 -102 -128 -119 -128 -128 -119 -112 -128 -112 -86 -112 -112 -119 -102 -128 -128 -128 -119 -128 -128 -112 -128 -128 -128 -86 -112 -128 -128 -128 -128 -96 -119 -112 -119 -128 -128 -128 -128 -119 -128 -128 -128 -128 -128 -128 -128 -128 -128 -119 -128 
+Weight tensor first 100 elements:
+-2 1 0 -1 -2 -3 1 1 -2 -1 0 3 -2 3 8 1 10 13 -1 1 3 -1 1 1 1 2 1 0 -1 1 2 -1 0 3 2 1 -1 2 0 -2 -4 -1 -1 -2 -1 2 2 2 3 -3 3 2 -2 4 -1 -1 0 -2 -3 -3 0 -1 -1 -3 -5 -5 -3 -4 -6 -5 -2 -7 -2 -2 -1 0 0 0 -1 0 -2 0 1 5 2 -1 2 5 0 -2 -1 -1 -3 -2 -4 -1 0 0 0 -2 
+quantized_conv2d_nchw: effective_scale=0.003252, output_scale=54558, output_shift=13, accum_shift=11 (ic=128 kh=3 kw=3 num_products=1152)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 3
+Layer Name: conv4b.2
+Kernel Name: 3x3j1d1
+Config Key: 128_8_8_128_3_3_8_8_1_1_1_1
+Input Dimensions (DRAM): 128 x 8 x 8
+Output Dimensions (DRAM): 128 x 8 x 8
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=28672, dram1=1024
+Using optimized cadence conv2d kernel for Char (output_zero_point=18 applied)
+quantized_conv2d_nchw: n=1, c=128, h=8, w=8, oc=256, wc=128, wh=1, ww=1, oh=4, ow=4
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000046, output_scale=0.005402
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-114 -104 -107 -128 -111 -117 -101 -95 -114 -107 -123 -128 -128 -117 -126 -126 -87 -128 -128 -128 -128 -128 -119 -81 -128 -110 -128 -128 -108 -128 -128 -128 -128 -122 -128 -128 -128 -128 -128 -92 -123 -108 -125 -128 -128 -128 -128 -110 -128 -128 -119 -128 -110 -125 -104 -128 -108 -117 -61 -128 -128 -120 -128 -120 -87 -116 -107 -90 -95 -122 -90 -80 -98 -128 -119 -95 -125 -119 -105 -92 -110 -116 -128 -128 -119 -120 -96 -101 -93 -117 -128 -128 -126 -123 -105 -114 -93 -102 -101 -128 
+Weight tensor first 100 elements:
+1 -4 -3 2 -7 -7 -3 7 -12 11 -2 -1 -4 -1 0 -6 2 3 -6 -1 2 0 -13 2 -4 -7 -4 -2 -5 -8 5 -4 -7 1 -5 -3 -4 11 -10 -7 -21 12 -5 3 -10 -3 -1 4 4 -5 1 -1 -7 -3 4 -2 0 -14 -4 -1 -3 11 0 -9 2 5 -4 -2 -9 -2 9 -6 -10 -6 -9 12 -6 3 3 -4 4 -5 -7 -3 1 -3 9 1 2 2 12 4 1 1 0 -2 8 4 -7 6 
+quantized_conv2d_nchw: effective_scale=0.008601, output_scale=36073, output_shift=15, accum_shift=7 (ic=128 kh=1 kw=1 num_products=128)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 7
+Layer Name: conv6a.1
+Kernel Name: 1x1j2d1
+Config Key: 128_8_8_256_1_1_4_4_2_2_0_1
+Input Dimensions (DRAM): 128 x 8 x 8
+Output Dimensions (DRAM): 256 x 4 x 4
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 1x1j2d1
+  [1x1j2d1] DRAM usage: dram0=22528, dram1=3072
+Using optimized cadence conv2d kernel for Char (output_zero_point=30 applied)
+quantized_conv2d_nchw: n=1, c=128, h=8, w=8, oc=256, wc=128, wh=3, ww=3, oh=4, ow=4
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000027, output_scale=0.011027
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-114 -104 -107 -128 -111 -117 -101 -95 -114 -107 -123 -128 -128 -117 -126 -126 -87 -128 -128 -128 -128 -128 -119 -81 -128 -110 -128 -128 -108 -128 -128 -128 -128 -122 -128 -128 -128 -128 -128 -92 -123 -108 -125 -128 -128 -128 -128 -110 -128 -128 -119 -128 -110 -125 -104 -128 -108 -117 -61 -128 -128 -120 -128 -120 -87 -116 -107 -90 -95 -122 -90 -80 -98 -128 -119 -95 -125 -119 -105 -92 -110 -116 -128 -128 -119 -120 -96 -101 -93 -117 -128 -128 -126 -123 -105 -114 -93 -102 -101 -128 
+Weight tensor first 100 elements:
+-5 -5 -5 -2 5 3 -5 0 -4 -3 -6 -2 3 -4 -2 2 -5 -2 -7 -12 -10 -10 -18 -12 -11 -12 -5 -5 -1 -2 -9 -4 -6 -4 -8 -5 -6 -5 -2 -4 -2 -5 -3 -8 -10 -1 5 9 -1 2 6 -6 -7 3 5 5 -4 0 6 0 2 5 2 14 21 20 21 18 20 16 18 12 -3 -5 -12 -7 -9 -14 -4 -7 -1 4 -12 -6 -3 -9 -9 5 -5 1 -2 0 2 -2 4 0 1 4 1 -15 
+quantized_conv2d_nchw: effective_scale=0.002433, output_scale=40823, output_shift=13, accum_shift=11 (ic=128 kh=3 kw=3 num_products=1152)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 5
+Layer Name: conv6b.1
+Kernel Name: 3x3j2d1
+Config Key: 128_8_8_256_3_3_4_4_2_2_1_1
+Input Dimensions (DRAM): 128 x 8 x 8
+Output Dimensions (DRAM): 256 x 4 x 4
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j2d1
+  [3x3j2d1] DRAM usage: dram0=31232, dram1=1280
+Using optimized cadence conv2d kernel for Char (output_zero_point=22 applied)
+quantized_conv2d_nchw: n=1, c=256, h=4, w=4, oc=256, wc=256, wh=3, ww=3, oh=4, ow=4
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000020, output_scale=0.014651
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-116 -104 -91 -55 -128 -128 -128 -128 -128 -128 -128 -104 -91 -91 -128 -79 -43 -104 -104 -18 -104 -116 -128 -128 -116 -104 -91 -91 18 -91 -79 -43 -104 -128 -104 -91 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -79 -79 -116 -104 -55 -116 -116 -91 -104 -116 -128 -116 -104 -128 -128 -128 -91 -128 -116 -128 -128 -128 -116 -128 -116 -128 -128 -128 -79 -79 -67 -67 -18 6 -31 18 -31 -18 -104 -55 -91 -67 -79 -67 -6 -43 -18 30 -128 -128 -128 -128 
+Weight tensor first 100 elements:
+-2 -7 -3 -5 -18 -11 -10 -18 -14 -6 0 -6 2 2 -4 -2 1 -3 -3 5 1 3 2 -1 -5 -4 -4 9 4 0 9 -3 -4 -2 -12 -12 -5 -3 -1 2 2 1 -1 2 1 2 9 5 10 17 14 4 19 8 -4 -2 -1 -5 -2 -1 -1 3 3 -2 -2 -3 -1 8 2 6 13 4 -8 -4 -1 -1 -10 -5 1 1 -4 -6 3 1 -13 1 11 -8 -4 1 -12 -5 -9 -8 3 -3 -10 -1 -4 3 
+quantized_conv2d_nchw: effective_scale=0.001367, output_scale=45858, output_shift=13, accum_shift=12 (ic=256 kh=3 kw=3 num_products=2304)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 6
+Layer Name: conv6b.2
+Kernel Name: 3x3j1d1
+Config Key: 256_4_4_256_3_3_4_4_1_1_1_1
+Input Dimensions (DRAM): 256 x 4 x 4
+Output Dimensions (DRAM): 256 x 4 x 4
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=30720, dram1=1152
+Using optimized cadence conv2d kernel for Char (output_zero_point=-9 applied)
+quantized_conv2d_nchw: n=1, c=256, h=4, w=4, oc=256, wc=256, wh=3, ww=3, oh=4, ow=4
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000014, output_scale=0.009141
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-81 -76 -40 -68 -99 -92 -79 -118 -71 -81 -29 -79 -81 -97 -58 -86 -76 -89 -92 -97 -76 -86 -81 -94 -76 -97 -97 -86 -76 -86 -94 -76 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -125 -120 -125 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -94 -128 -128 -128 -102 -128 -128 -128 -97 -118 -107 -128 -97 -105 -107 -74 -102 -110 -128 -107 -128 -105 -120 -99 -120 -118 -128 -128 -128 -123 -128 -128 -128 
+Weight tensor first 100 elements:
+12 12 10 13 14 15 6 3 6 -1 -1 1 0 1 5 -6 -5 -1 -3 -5 -6 -3 -6 -7 3 2 -1 -5 -5 -8 -1 -1 -4 -1 0 0 -4 0 2 -1 0 0 1 2 -2 0 -2 -4 2 3 -2 2 3 1 2 -3 0 1 -1 5 -1 4 3 -7 -9 -8 -11 -4 -11 -7 0 -5 10 11 11 8 5 7 6 6 8 -9 -6 -4 -10 -9 -6 -7 -8 -6 -2 -3 -4 2 3 1 6 6 5 3 
+quantized_conv2d_nchw: effective_scale=0.001483, output_scale=49746, output_shift=13, accum_shift=12 (ic=256 kh=3 kw=3 num_products=2304)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 6
+Layer Name: conv6b.2
+Kernel Name: 3x3j1d1
+Config Key: 256_4_4_256_3_3_4_4_1_1_1_1
+Input Dimensions (DRAM): 256 x 4 x 4
+Output Dimensions (DRAM): 256 x 4 x 4
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=30720, dram1=1152
+Using optimized cadence conv2d kernel for Char (output_zero_point=34 applied)
+quantized_conv2d_nchw: n=1, c=256, h=4, w=4, oc=256, wc=256, wh=3, ww=3, oh=4, ow=4
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000026, output_scale=0.012442
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+6 6 22 -63 -79 -128 -128 -128 -46 -128 -112 -112 -11 -63 -30 -46 -128 -128 -128 -128 -79 -79 -95 -95 -95 -79 -112 -112 -79 -79 -95 -95 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -112 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -112 -128 -128 -128 -79 -128 -128 -112 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -95 -128 -128 -128 -128 -95 -112 -128 -112 
+Weight tensor first 100 elements:
+-8 -5 -4 -3 -1 -1 0 5 3 -1 -1 -1 0 3 3 3 6 10 -1 -1 1 3 5 5 7 10 9 2 2 5 1 2 5 1 0 4 -2 1 3 -1 5 6 -2 6 6 -3 -1 0 -1 -3 -5 1 0 -6 -1 1 1 -5 0 1 -4 -1 -1 1 -2 0 3 4 -2 1 2 -3 3 -1 1 -4 -9 -8 -1 -6 -9 5 9 0 6 8 0 2 4 0 7 2 -1 6 2 -3 5 2 -5 -2 
+quantized_conv2d_nchw: effective_scale=0.002051, output_scale=34404, output_shift=12, accum_shift=12 (ic=256 kh=3 kw=3 num_products=2304)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 6
+Layer Name: conv6b.2
+Kernel Name: 3x3j1d1
+Config Key: 256_4_4_256_3_3_4_4_1_1_1_1
+Input Dimensions (DRAM): 256 x 4 x 4
+Output Dimensions (DRAM): 256 x 4 x 4
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=30720, dram1=1152
+Using optimized cadence conv2d kernel for Char (output_zero_point=48 applied)
+quantized_conv2d_nchw: n=1, c=256, h=4, w=4, oc=512, wc=256, wh=1, ww=1, oh=2, ow=2
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000041, output_scale=0.010304
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-112 -125 -41 -96 -128 -128 -67 -128 -38 -51 73 -27 -70 -128 -22 -96 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -109 -128 -109 -128 -88 -128 -67 -109 -67 -128 -88 -109 -109 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -109 -128 -128 -128 -128 -128 -128 -109 -46 -128 -128 -128 -96 -128 -128 -128 -49 -128 -128 -128 -91 -99 -123 -80 -96 -125 -128 -128 -128 -99 -117 -94 -117 -128 -128 -128 -128 -128 -128 -128 -128 
+Weight tensor first 100 elements:
+1 0 3 1 2 -2 0 -9 -2 -9 2 -4 3 -1 0 -9 10 2 -3 5 5 0 -5 6 3 4 0 -5 12 -1 -2 -2 2 1 5 -1 13 -1 8 -6 -2 2 -1 -3 8 -5 -2 0 -3 -2 0 2 6 -4 -5 7 -4 2 0 -8 -11 5 -1 -9 -1 -1 -1 0 5 4 -7 -1 8 4 -4 -3 10 1 0 0 1 -8 2 8 0 -4 11 0 -2 -6 -3 7 3 -6 1 -16 -6 -2 5 -1 
+quantized_conv2d_nchw: effective_scale=0.003943, output_scale=33076, output_shift=15, accum_shift=8 (ic=256 kh=1 kw=1 num_products=256)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 10
+Layer Name: conv8a.1
+Kernel Name: 1x1j2d1
+Config Key: 256_4_4_512_1_1_2_2_2_2_0_1
+Input Dimensions (DRAM): 256 x 4 x 4
+Output Dimensions (DRAM): 512 x 2 x 2
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 1x1j2d1
+  [1x1j2d1] DRAM usage: dram0=22528, dram1=2560
+Using optimized cadence conv2d kernel for Char (output_zero_point=8 applied)
+quantized_conv2d_nchw: n=1, c=256, h=4, w=4, oc=512, wc=256, wh=3, ww=3, oh=2, ow=2
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000012, output_scale=0.005493
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-112 -125 -41 -96 -128 -128 -67 -128 -38 -51 73 -27 -70 -128 -22 -96 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -109 -128 -109 -128 -88 -128 -67 -109 -67 -128 -88 -109 -109 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -109 -128 -128 -128 -128 -128 -128 -109 -46 -128 -128 -128 -96 -128 -128 -128 -49 -128 -128 -128 -91 -99 -123 -80 -96 -125 -128 -128 -128 -99 -117 -94 -117 -128 -128 -128 -128 -128 -128 -128 -128 
+Weight tensor first 100 elements:
+-4 -6 -7 7 8 9 14 11 16 -2 1 -2 2 5 -1 -1 4 1 6 -3 -5 3 -1 -4 -2 -9 -3 -4 -3 -5 6 6 -1 11 17 9 5 4 3 3 1 -4 6 0 -6 0 -3 -14 1 3 -11 -2 4 -5 -3 3 2 -1 7 3 -3 3 3 -2 -2 1 9 10 2 16 14 7 -4 -8 -5 -9 -7 -6 -8 -6 -2 2 -5 -7 3 -1 -1 0 -1 2 -4 -1 -7 -3 2 -9 -2 3 -1 4 
+quantized_conv2d_nchw: effective_scale=0.002235, output_scale=37495, output_shift=12, accum_shift=12 (ic=256 kh=3 kw=3 num_products=2304)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 8
+Layer Name: conv8b.1
+Kernel Name: 3x3j2d1
+Config Key: 256_4_4_512_3_3_2_2_2_2_1_1
+Input Dimensions (DRAM): 256 x 4 x 4
+Output Dimensions (DRAM): 512 x 2 x 2
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j2d1
+  [3x3j2d1] DRAM usage: dram0=15360, dram1=20608
+Using optimized cadence conv2d kernel for Char (output_zero_point=17 applied)
+quantized_conv2d_nchw: n=1, c=512, h=2, w=2, oc=512, wc=512, wh=3, ww=3, oh=2, ow=2
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000022, output_scale=0.012096
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-128 -107 -107 -43 -128 -107 -87 -2 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -66 -107 -128 -128 -128 -128 -128 -128 -107 -128 -107 -128 -128 -128 -128 -128 -107 -128 -128 -128 -107 -66 -128 -128 39 -87 -107 -128 -128 -128 -128 -128 -107 -128 -128 -128 -107 -23 -107 -128 -87 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -107 -128 -128 -128 -128 -23 -87 -128 -128 -87 -128 -107 -128 123 123 -2 -107 -128 -128 -128 -107 -128 -128 -128 -128 
+Weight tensor first 100 elements:
+0 -5 -5 -4 -10 -12 9 6 -6 3 10 8 -4 -9 -4 -3 -3 -10 -2 -9 2 -4 -4 2 -1 2 2 -2 1 3 -7 9 3 -3 2 -4 -1 -6 -4 7 -8 -8 3 -10 -11 7 -3 0 -2 11 5 3 8 5 -2 -7 -1 -2 -3 -6 1 3 2 -6 -2 -7 -5 0 -6 -3 1 -6 2 -2 -3 1 -1 -3 4 2 3 5 4 4 4 4 3 5 10 6 -14 -8 4 -19 -17 19 -17 -1 12 4 
+quantized_conv2d_nchw: effective_scale=0.001783, output_scale=59827, output_shift=12, accum_shift=13 (ic=512 kh=3 kw=3 num_products=4608)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 9
+Layer Name: conv8b.2
+Kernel Name: 3x3j1d1
+Config Key: 512_2_2_512_3_3_2_2_1_1_1_1
+Input Dimensions (DRAM): 512 x 2 x 2
+Output Dimensions (DRAM): 512 x 2 x 2
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=16384, dram1=20608
+Using optimized cadence conv2d kernel for Char (output_zero_point=-28 applied)
+quantized_conv2d_nchw: n=1, c=512, h=2, w=2, oc=512, wc=512, wh=3, ww=3, oh=2, ow=2
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000019, output_scale=0.007715
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -126 -119 -128 -128 -128 -128 -128 -128 -107 -128 -128 -128 -109 -128 -71 -128 -128 -90 -115 -111 -128 -87 -128 -128 -128 -128 -128 -128 -105 -128 -128 -128 -128 -128 -128 -128 -126 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -126 -128 -117 -128 -126 -128 -128 -128 -126 -128 -124 -128 -128 -128 -128 -124 -128 -128 -126 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -117 -102 -124 -128 -128 -128 -128 -128 -128 -120 -128 
+Weight tensor first 100 elements:
+-2 -2 2 1 -2 4 4 4 7 -1 4 3 -5 -5 -3 -3 -1 -1 -3 -4 0 -5 -8 -4 -4 -8 -7 2 -2 1 -3 -12 -1 2 -5 0 0 3 3 0 -2 2 -6 -7 -2 -1 0 0 -3 0 0 -3 -4 1 4 5 4 6 4 2 1 -3 0 -2 -3 -3 -6 -8 -9 -1 0 -3 -5 -7 -13 -1 1 -7 -7 -2 -6 -2 -2 0 3 13 5 4 12 7 -1 9 15 -4 0 4 -6 -6 -2 0 
+quantized_conv2d_nchw: effective_scale=0.002475, output_scale=41518, output_shift=11, accum_shift=13 (ic=512 kh=3 kw=3 num_products=4608)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 9
+Layer Name: conv8b.2
+Kernel Name: 3x3j1d1
+Config Key: 512_2_2_512_3_3_2_2_1_1_1_1
+Input Dimensions (DRAM): 512 x 2 x 2
+Output Dimensions (DRAM): 512 x 2 x 2
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=16384, dram1=20608
+Using optimized cadence conv2d kernel for Char (output_zero_point=19 applied)
+quantized_conv2d_nchw: n=1, c=512, h=2, w=2, oc=512, wc=512, wh=3, ww=3, oh=2, ow=2
+quantized_conv2d_nchw: groups=1, in_zero_point=-128, weight_zero_point=0, bias_scale=0.000093, output_scale=0.041424
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8
+quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8
+Input tensor first 100 elements:
+-128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -81 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -81 -128 -128 -128 -128 -128 -81 -128 -81 -128 -31 -31 -128 -81 -128 -128 -128 -128 -81 -81 -81 -81 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 -128 
+Weight tensor first 100 elements:
+0 2 -1 0 1 -3 3 5 0 -6 -8 -6 -3 -3 -2 -4 -5 -5 -7 -7 -6 -7 -7 -5 -7 -5 -4 6 9 9 4 4 3 1 1 -2 1 -1 -1 -2 -2 -2 1 3 2 12 10 11 6 4 8 10 12 13 24 20 24 19 11 18 17 10 17 6 3 6 2 -3 2 2 -2 3 2 2 0 5 4 3 4 3 3 4 -2 1 0 -6 -3 5 2 6 -1 -2 -1 -3 -3 -3 0 -3 -4 11 
+quantized_conv2d_nchw: effective_scale=0.002250, output_scale=37748, output_shift=11, accum_shift=13 (ic=512 kh=3 kw=3 num_products=4608)
+quantized_conv2d_nchw: obtained layer config 0x7ffff39c
+Layer ID: 9
+Layer Name: conv8b.2
+Kernel Name: 3x3j1d1
+Config Key: 512_2_2_512_3_3_2_2_1_1_1_1
+Input Dimensions (DRAM): 512 x 2 x 2
+Output Dimensions (DRAM): 512 x 2 x 2
+quantized_conv2d_nchw: bias correction applied (in_zero_point=-128, weight_zero_point=0)
+  Dispatching to kernel: 3x3j1d1
+  [3x3j1d1] DRAM usage: dram0=16384, dram1=20608
+Using optimized cadence conv2d kernel for Char (output_zero_point=-40 applied)
+Output 0: tensor(sizes=[1, 1000], [
+  -1.01398, 0.217281, 1.37611, 1.66582, 2.02795, 1.23126, 1.81067, 0.506988, -1.59339, -0.724269, 
+  -0.724269, 0.651842, 0.362135, 1.66582, 1.59339, 0.144854, -1.15883, -1.0864, 1.23126, 0.289708, 
+  -1.01398, -0.579415, 0.144854, 0.289708, -1.59339, -0.434561, -0.289708, -0.289708, -1.0864, -1.01398, 
+  -0.651842, -1.66582, -0.94155, 2.17281, 4.27319, -0.434561, -0.869123, 0.651842, 0.651842, 0.869123, 
+  0.506988, 0.796696, 0.869123, 0.724269, 1.01398, 1.23126, 0.434561, -1.73825, 0.434561, -0.0724269, 
+  2.02795, -0.796696, 0.796696, 0.651842, 0.434561, 0.289708, -0.217281, -0.651842, 1.23126, 0.217281, 
+  1.01398, 0.506988, -0.217281, -0.506988, -0.362135, 3.91105, 0.651842, -0.579415, 1.0864, 3.69377, 
+  0.362135, 2.60737, -0.724269, 1.81067, -0.217281, 1.81067, 1.8831, 1.44854, 3.33164, 3.25921, 
+  -0.796696, 1.59339, -0.144854, -1.95553, -0.217281, 1.37611, -0.217281, 2.31766, -0.579415, 1.44854, 
+  -1.30368, -0.724269, 1.23126, -0.94155, 0.289708, -3.11436, -0.724269, -0.869123, -0.94155, 0.869123, 
+  0., -2.46252, 0.144854, 1.66582, 0.94155, -0.869123, 0.362135, 4.20076, 0.362135, 1.73825, 
+  -0.362135, 5.14231, 2.46252, 1.0864, 1.66582, -1.37611, -0.0724269, 1.66582, 1.73825, 0.434561, 
+  0.869123, -0.217281, 0.0724269, 0.289708, 1.95553, 3.04193, 2.02795, -0.651842, -0.144854, -0.362135, 
+  -0.796696, -0.289708, 0.724269, -0.144854, 0.869123, -1.59339, -0.579415, 0., 0.144854, 2.02795, 
+  1.52097, 0.724269, -0.217281, 0.94155, -0.0724269, -0.0724269, -0.869123, -0.506988, -0.289708, -0.362135, 
+  -0.579415, 0.506988, -2.39009, 1.0864, 1.15883, 1.52097, 0., -0.651842, 0.289708, -0.434561, 
+  -1.15883, 1.8831, 1.44854, 0.796696, 0.724269, -1.15883, -0.0724269, -2.89708, 0.217281, -0.506988, 
+  -1.23126, 1.01398, -0.362135, 0.144854, -0.362135, -2.39009, -1.01398, -2.17281, -0.217281, -0.217281, 
+  0.869123, -0.869123, -0.144854, -1.15883, -0.869123, -1.01398, -0.869123, 1.23126, -1.23126, 0.506988, 
+  -0.0724269, -0.362135, 1.15883, -1.15883, -1.37611, 0.362135, 0.506988, -2.24523, -1.30368, -0.362135, 
+  -1.59339, 0.144854, 0.796696, 2.17281, 1.30368, -1.66582, -1.66582, 0.434561, -0.362135, 0.869123, 
+  -1.15883, -1.23126, -0.362135, -0.579415, -1.37611, -0.0724269, -1.15883, 0.506988, 0.506988, 0.651842, 
+  -2.75222, -1.37611, -1.52097, 0.0724269, -1.01398, 0.217281, -0.869123, -1.15883, -1.52097, -0.869123, 
+  1.0864, -1.30368, -0.651842, -3.18678, -0.651842, -0.144854, -1.01398, 0., 0.434561, -0.651842, 
+  -1.15883, -0.869123, 0.217281, -0.362135, -3.7662, 1.66582, -1.0864, -0.434561, -0.434561, -0.796696, 
+  -0.506988, -0.144854, -2.39009, 0.217281, 0.217281, -3.40407, -1.8831, -0.796696, -0.0724269, 0.506988, 
+  -1.37611, -1.15883, -2.89708, 1.44854, -0.0724269, 0.362135, 0., -2.46252, -1.8831, -2.89708, 
+  -1.37611, -2.46252, 0.0724269, -0.217281, -1.95553, -1.66582, -0.651842, -0.651842, -1.0864, -0.94155, 
+  0.579415, 1.30368, 0.94155, 0., 1.23126, 0.651842, -2.02795, -2.39009, -2.10038, -2.9695, 
+  -2.9695, -1.37611, -1.23126, -1.73825, -1.81067, -1.37611, -0.434561, -3.62135, 0.796696, -0.796696, 
+  -1.30368, 0.94155, 0.362135, 0.579415, -0.434561, 2.24523, 1.30368, 0.434561, 0.362135, -0.869123, 
+  1.59339, 0.579415, 0.724269, 2.39009, 2.6798, 1.01398, 2.89708, 1.95553, 2.17281, 1.30368, 
+  0.94155, -2.31766, -3.25921, -1.66582, -1.01398, -2.10038, 0., 3.54892, 1.15883, 1.44854, 
+  0.217281, 0.0724269, -1.15883, -1.23126, -0.217281, -0.217281, -0.362135, -0.651842, -0.362135, -2.46252, 
+  -2.17281, -3.62135, -1.8831, -1.01398, -1.0864, -2.24523, -1.52097, -1.44854, -2.6798, -0.506988, 
+  -0.724269, -1.23126, -2.31766, -0.869123, -1.15883, -2.89708, 1.01398, 0.217281, 0.651842, 1.30368, 
+  -0.651842, 2.17281, 0.362135, 2.02795, -1.15883, -1.8831, -3.33164, -1.01398, -3.18678, -2.9695, 
+  -0.651842, -2.10038, -1.59339, -0.869123, -0.724269, -1.95553, -0.94155, -0.579415, -2.17281, -2.24523, 
+  -2.24523, -1.0864, -1.81067, -1.0864, -3.11436, -2.53494, -2.10038, -2.17281, -2.9695, -1.23126, 
+  1.0864, 0.869123, -1.0864, -0.94155, -0.434561, 1.15883, 1.44854, 1.8831, -0.434561, -0.94155, 
+  -2.75222, -1.15883, 2.24523, 1.01398, 0.362135, 1.73825, -0.724269, -1.95553, -2.17281, 0.362135, 
+  -0.869123, -0.724269, 1.66582, 1.30368, 0., -3.11436, 0.506988, 0.651842, 4.12833, 2.89708, 
+  1.73825, -0.217281, 2.02795, -2.53494, -2.6798, -1.15883, 0.506988, 0.144854, -0.579415, 1.30368, 
+  -0.506988, -1.01398, 2.17281, -0.94155, 0.289708, -2.31766, -0.434561, 0.144854, -1.15883, -1.44854, 
+  1.59339, 0.869123, -1.66582, 1.0864, 1.44854, -1.30368, 2.75222, 0., -0.506988, -1.37611, 
+  -1.44854, 2.46252, -0.796696, -0.362135, -0.579415, 2.6798, 0.362135, 0.362135, 4.41804, 0.94155, 
+  2.60737, -0.289708, 0.796696, 0.579415, 2.10038, -1.15883, -1.95553, -3.54892, -0.289708, -1.23126, 
+  0.796696, 0.94155, -0.796696, 1.95553, 1.15883, -1.44854, -4.5629, -0.869123, 2.39009, 0.434561, 
+  1.44854, 2.10038, 0.0724269, -0.869123, -0.0724269, 1.66582, 0.0724269, 0.506988, 2.17281, 0.506988, 
+  0.94155, 1.01398, 0.144854, -2.10038, 0.0724269, -1.23126, 0.217281, -0.94155, 0.144854, 0.217281, 
+  -0.796696, -0.724269, 1.59339, -0.434561, 0.579415, 0.94155, 0.506988, 0.869123, 2.02795, -3.04193, 
+  0.217281, -1.37611, 1.81067, 0.869123, 0.651842, 0.144854, -1.95553, 0., -0.724269, -0.506988, 
+  -2.39009, -0.796696, -0.434561, 2.75222, -1.81067, -0.796696, -0.506988, -1.66582, -0.434561, 0.144854, 
+  1.23126, -0.0724269, -1.37611, 0.651842, -1.30368, -0.506988, -0.94155, -0.579415, 0.579415, 2.31766, 
+  -0.362135, 0.796696, 2.6798, 1.8831, 0.796696, 1.44854, -0.217281, -3.04193, 0.217281, 4.12833, 
+  -2.6798, -1.01398, 0.0724269, 1.81067, -1.0864, -1.30368, -0.289708, -0.217281, 1.73825, 1.23126, 
+  -0.579415, -0.0724269, -0.0724269, 4.63532, -2.02795, -0.0724269, 1.23126, 1.01398, -2.24523, -1.52097, 
+  -0.94155, -1.73825, 1.01398, 1.15883, 2.31766, -1.37611, -3.69377, -0.217281, -2.02795, -0.362135, 
+  -2.75222, -1.0864, -3.47649, -0.869123, 2.60737, 0.144854, -0.651842, 2.02795, -0.579415, 0.724269, 
+  -1.8831, 1.52097, 0.796696, 2.10038, 0.724269, -1.73825, 1.01398, 2.39009, 0.506988, -1.0864, 
+  2.6798, 0.289708, 0.289708, -2.24523, 0.651842, 2.17281, 1.52097, -0.434561, 2.6798, -2.53494, 
+  1.37611, 4.78018, -1.37611, 2.46252, -0.579415, 1.59339, 4.34561, -1.52097, 2.02795, 0.144854, 
+  3.25921, -1.30368, 3.40407, 2.82465, 0.94155, -1.15883, 1.59339, 0., 1.0864, 2.17281, 
+  1.30368, 0.651842, 1.66582, 1.37611, -4.49047, 1.37611, -1.30368, 1.30368, -0.217281, -0.724269, 
+  4.34561, 0.289708, -0.724269, -0.144854, 4.05591, -1.52097, 1.30368, 1.01398, -2.89708, -0.724269, 
+  2.10038, -1.59339, -0.724269, -0.506988, -1.52097, 1.37611, -1.30368, 3.33164, 0.796696, 0.144854, 
+  -0.289708, -1.30368, 1.66582, -1.52097, 1.66582, 1.30368, 1.23126, 0.144854, -0.434561, -0.434561, 
+  -1.30368, -0.579415, -0.217281, 2.17281, 2.60737, -1.23126, -0.796696, 3.25921, -0.506988, 3.11436, 
+  0.506988, 2.60737, 2.60737, 1.30368, 1.95553, 1.59339, 0.217281, -2.75222, 1.59339, -1.8831, 
+  -2.53494, 0., 1.52097, 0.144854, -0.724269, 1.66582, 1.23126, 0.217281, -1.44854, 0.94155, 
+  2.53494, 1.66582, 0.217281, 0.434561, 1.59339, -1.95553, 0.434561, -0.217281, -0.796696, 1.44854, 
+  2.02795, 0.362135, 0.796696, -1.52097, 3.40407, -0.651842, 1.01398, -2.02795, 0.869123, 0.289708, 
+  1.95553, 0.724269, 3.18678, 1.0864, -0.796696, 1.0864, 0.579415, 2.02795, 0.94155, -1.52097, 
+  -1.0864, 1.44854, -0.579415, 2.02795, -2.10038, 1.01398, 1.73825, 1.0864, 0.869123, -3.69377, 
+  0.289708, 0.651842, -0.217281, -1.15883, 2.82465, 0.506988, 1.59339, -1.30368, -0.0724269, 2.75222, 
+  -1.01398, -0.94155, 2.60737, 1.23126, -0.579415, 0.724269, -1.23126, -0.651842, 0., 0.94155, 
+  -0.579415, 1.81067, -2.39009, 4.49047, 1.66582, 0.651842, -3.04193, 4.05591, -0.724269, 4.05591, 
+  2.82465, 1.8831, 1.95553, 1.52097, 3.18678, 0.144854, -0.144854, 3.7662, -1.23126, -1.30368, 
+  -0.506988, -0.651842, 2.17281, 3.7662, 2.89708, -0.651842, -0.217281, -0.724269, -1.44854, -0.869123, 
+  -1.30368, 2.31766, 0.289708, 0.289708, -0.362135, 1.30368, -0.0724269, -0.434561, 2.75222, -0.217281, 
+  -2.17281, 1.30368, -1.8831, -0.94155, 1.59339, 1.01398, 1.81067, -1.0864, -0.651842, 0.651842, 
+  -0.651842, 2.31766, 2.10038, 1.37611, 0.579415, 0.94155, 2.31766, -2.75222, 1.81067, -1.15883, 
+  -3.47649, -0.869123, -0.94155, -0.0724269, -0.289708, -1.8831, 1.15883, -1.8831, 2.17281, -2.60737, 
+  -0.796696, -0.579415, -0.94155, 0.579415, 0.651842, 1.81067, -0.724269, 0.869123, 0.651842, -0.144854, 
+  0.796696, 0., 0.144854, -0.144854, 2.9695, 4.63532, 0.796696, -1.81067, 1.0864, 0.289708, 
+  -0.796696, 1.66582, 3.69377, -0.579415, -1.37611, 2.39009, -4.05591, -1.8831, -0.144854, -0.0724269, 
+  -2.75222, -0.217281, 1.23126, -0.796696, -1.01398, -4.70775, -1.73825, -1.0864, 0.651842, -0.434561, 
+  2.10038, -0.579415, 2.9695, 0.362135, -3.54892, 0.144854, -1.37611, -1.15883, -1.52097, 1.15883, 
+  2.02795, -0.579415, 2.10038, 0.94155, -0.579415, 0.506988, -0.869123, -2.31766, -0.94155, -0.217281, 
+  -0.0724269, -0.217281, 3.18678, 2.60737, -1.44854, 0.434561, -1.52097, -2.39009, 1.66582, -0.0724269, 
+  -0.796696, 0.0724269, 3.04193, 0.0724269, 0.869123, -1.52097, -0.796696, 0.289708, 2.17281, 0.362135, 
+  2.02795, 0.144854, -2.31766, 1.52097, -1.37611, -1.8831, -0.94155, 0.217281, 1.59339, 0.506988, 
+  1.59339, 2.10038, 1.15883, -1.59339, -1.59339, -1.59339, -3.69377, -0.434561, -0.144854, 1.30368, 
+  -1.44854, -0.796696, 0.869123, -2.24523, -1.44854, -1.52097, -2.6798, -0.362135, -1.95553, -0.362135, 
+  -0.94155, -1.73825, -1.15883, -1.95553, -2.46252, -0.217281, -3.25921, -2.6798, 0.651842, 0.506988, 
+  1.44854, 1.15883, 0.94155, -0.434561, 0.434561, -0.579415, -1.95553, -0.0724269, -0.651842, -0.434561, 
+  -0.724269, 0.579415, -0.94155, 0.144854, -2.46252, -2.89708, -0.506988, 0.94155, 0.796696, -1.30368, 
+  -0.796696, 0.434561, -0.506988, 0.506988, -0.289708, 1.81067, 1.15883, 4.41804, 2.10038, -0.289708, 
+  2.24523, 0.724269, -1.81067, 0.869123, -0.579415, -1.0864, -1.8831, 0.94155, 0.506988, -0.579415, 
+  0.651842, -2.39009, -2.24523, -2.53494, -2.89708, -2.10038, -2.46252, -0.869123, -0.0724269, 2.60737, 
+])

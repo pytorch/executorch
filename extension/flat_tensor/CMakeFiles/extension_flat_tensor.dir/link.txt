@@ -1,0 +1,2 @@
+/usr/bin/ar qc libextension_flat_tensor.a CMakeFiles/extension_flat_tensor.dir/flat_tensor_data_map.cpp.o CMakeFiles/extension_flat_tensor.dir/serialize/flat_tensor_header.cpp.o
+/usr/bin/ranlib libextension_flat_tensor.a

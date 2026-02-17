@@ -143,9 +143,8 @@ Tensor& _softmax_out(
     const float32_t *ptr_inp = (float32_t *)in.const_data_ptr<float>();
     float32_t *out_data = (float32_t *)out.mutable_data_ptr<float>();
 
-	  /* Channel 0*/
-	  idma_init(0, 0, MAX_BLOCK_16, 8, TICK_CYCLES_1, 0, NULL);
-	  idma_init_loop(0, buffer_idma_ch_2d, IDMA_2D_DESC, 1, NULL, NULL);
+    /* Initialize DMA engines */
+    dma_2dm_init(0);
 
     if (ping_pong_process) {
       for (int i = 0; i < in.dim(); i++){

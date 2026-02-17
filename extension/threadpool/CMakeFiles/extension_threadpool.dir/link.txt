@@ -1,0 +1,2 @@
+/usr/bin/ar qc libextension_threadpool.a CMakeFiles/extension_threadpool.dir/threadpool.cpp.o CMakeFiles/extension_threadpool.dir/threadpool_guard.cpp.o CMakeFiles/extension_threadpool.dir/thread_parallel.cpp.o CMakeFiles/extension_threadpool.dir/cpuinfo_utils.cpp.o
+/usr/bin/ranlib libextension_threadpool.a

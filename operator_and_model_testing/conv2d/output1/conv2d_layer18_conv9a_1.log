@@ -1,0 +1,23 @@
+[ERROR 2026-02-13 19:28:38,714 generate_all_conv2d_ptes.py:149]   Layer 18 (conv9a.1): FAILED - 
+[ERROR 2026-02-13 19:28:38,733 generate_all_conv2d_ptes.py:150] Traceback (most recent call last):
+  File "/home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/generate_all_conv2d_ptes.py", line 134, in generate_pte_for_layer
+    exec_prog = export_model(model, example_inputs, file_name, working_dir=working_dir)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sraut/ext_main/cad_rlc/executorch/.venv/lib/python3.11/site-packages/executorch/backends/cadence/aot/export_example.py", line 72, in export_model
+    exec_prog: ExecutorchProgramManager = _lower_ep_to_cadence_gen_etrecord(
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sraut/ext_main/cad_rlc/executorch/.venv/lib/python3.11/site-packages/executorch/backends/cadence/aot/compiler.py", line 419, in _lower_ep_to_cadence_gen_etrecord
+    edge_prog_manager = _lower_ep_to_edge(ep, dump_graphs)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sraut/ext_main/cad_rlc/executorch/.venv/lib/python3.11/site-packages/executorch/backends/cadence/aot/compiler.py", line 270, in _lower_ep_to_edge
+    edge_prog_manager = to_edge(
+                        ^^^^^^^^
+  File "/home/sraut/ext_main/cad_rlc/executorch/.venv/lib/python3.11/site-packages/executorch/exir/program/_program.py", line 115, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sraut/ext_main/cad_rlc/executorch/.venv/lib/python3.11/site-packages/executorch/exir/program/_program.py", line 1472, in to_edge
+    EXIREdgeDialectVerifier(
+  File "/home/sraut/ext_main/cad_rlc/executorch/.venv/lib/python3.11/site-packages/executorch/exir/verification/verifier.py", line 257, in EXIREdgeDialectVerifier
+    _preserve_ops.extend(edge_compile_config.preserve_ops)
+MemoryError
+

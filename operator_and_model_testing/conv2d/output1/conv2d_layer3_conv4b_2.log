@@ -1,0 +1,31 @@
+[INFO 2026-02-16 21:31:26,388 utils.py:246] 
++-------------------------------------------------------+---------------+-----------------+
+| Final Operators                                       |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| cadence::quantize_per_tensor                          |             1 |               0 |
+| cadence::quantized_conv2d_nchw.per_tensor             |             1 |               1 |
+| cadence::dequantize_per_tensor                        |             1 |               0 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-16 21:31:26,388 utils.py:262] +-------------------------------------------------------+---------------+-----------------+
+| Deleted Operators                                     |   Final Graph |   To_edge Graph |
++=======================================================+===============+=================+
+| quantized_decomposed::quantize_per_tensor             |             0 |               1 |
+| quantized_decomposed::dequantize_per_tensor           |             0 |               1 |
++-------------------------------------------------------+---------------+-----------------+
+[INFO 2026-02-16 21:31:26,496 memory_planning.py:322] 
++----------------+----------------+-----------------------+-----------------------------+
+|   Memory Space | Base Address   |   Memory Size (Bytes) |   Peak Memory Usage (Bytes) |
++================+================+=======================+=============================+
+|              1 |                |           68719476736 |                       49152 |
++----------------+----------------+-----------------------+-----------------------------+
+[INFO 2026-02-16 21:31:26,497 memory_planning.py:355] 
++-------------------------------------+-------------+--------+
+| Peak memory usage across all spaces | 40960 bytes | Node 3 |
++-------------------------------------+-------------+--------+
+[INFO 2026-02-16 21:31:26,506 compiler.py:478] Generated ETRecord at /tmp/conv2d_conv4b_2_mnewupbu/etrecord.bin
+[INFO 2026-02-16 21:31:26,506 export_example.py:76] Final exported graph:
+
+[INFO 2026-02-16 21:31:26,828 utils.py:287] Saved exported program to /tmp/conv2d_conv4b_2_mnewupbu/conv2d_layer3_conv4b_2.pte
+[INFO 2026-02-16 21:31:26,829 utils.py:304] Saved exported program to /tmp/conv2d_conv4b_2_mnewupbu/conv2d_layer3_conv4b_2.bpte
+[INFO 2026-02-16 21:31:26,836 generate_all_conv2d_ptes.py:118]   Copied PTE: /tmp/conv2d_conv4b_2_mnewupbu/conv2d_layer3_conv4b_2.pte -> /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/conv2d_layer3_conv4b_2.pte
+[INFO 2026-02-16 21:31:26,836 generate_all_conv2d_ptes.py:122]   Layer 3 (conv4b.2): SUCCESS

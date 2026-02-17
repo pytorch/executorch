@@ -142,9 +142,9 @@ if(NOT EXECUTORCH_BUILD_CADENCE)
   endif()
 else()
   set(CMAKE_CXX_FLAGS_RELEASE
-    "-O3 -mcoproc -mlongcalls -LNO:simd -flto -ffunction-sections -fsigned-char -fno-exceptions -INLINE:requested -fno-zero-initialized-in-bss -mtext-section-literals -fmessage-length=0")
+    "-O3 -mcoproc -mlongcalls -LNO:simd  -ffunction-sections -fsigned-char -fno-exceptions -INLINE:requested -fno-zero-initialized-in-bss -mtext-section-literals -fmessage-length=0")
   set(CMAKE_C_FLAGS_RELEASE
-    "-O3 -mcoproc -mlongcalls -LNO:simd -flto -ffunction-sections -fsigned-char -fno-exceptions -INLINE:requested -fno-zero-initialized-in-bss -mtext-section-literals -fmessage-length=0")
+    "-O3 -mcoproc -mlongcalls -LNO:simd  -ffunction-sections -fsigned-char -fno-exceptions -INLINE:requested -fno-zero-initialized-in-bss -mtext-section-literals -fmessage-length=0")
 endif()
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 

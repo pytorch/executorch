@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/CMakeFiles/flatcc_ep"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/CMakeFiles/flatcc_ep.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/CMakeFiles/flatcc_ep-complete.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatcc_ep/src/flatcc_ep-stamp/flatcc_ep-build.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatcc_ep/src/flatcc_ep-stamp/flatcc_ep-configure.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatcc_ep/src/flatcc_ep-stamp/flatcc_ep-download.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatcc_ep/src/flatcc_ep-stamp/flatcc_ep-install.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatcc_ep/src/flatcc_ep-stamp/flatcc_ep-mkdir.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatcc_ep/src/flatcc_ep-stamp/flatcc_ep-patch.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatcc_ep/src/flatcc_ep-stamp/flatcc_ep-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"flatcc_ep"
+		],
+		"name" : "flatcc_ep"
+	}
+}
