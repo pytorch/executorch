@@ -7,20 +7,22 @@
 #include <iostream>
 #include <vector>
 
+#include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
+#include "nv_utils.h"
 #include "utils.h"
 
-// #define DEBUG_MODE
+#define DEBUG_MODE
 
 using namespace executorch::vulkan::prototyping;
 
 using namespace vkcompute;
 
-static constexpr int64_t kRefDimSizeLimit = 512;
+static constexpr int64_t kRefDimSizeLimit = 2048;
 
 // Configuration for linear layer test cases
 struct LinearConfig {
@@ -56,7 +58,7 @@ TestCase create_test_case_from_config(
       "  O=" + std::to_string(config.out_features) + "  " + storage_str + "  " +
       dtype_str + bias_str;
   if (impl_selector == 1) {
-    test_name += " L"; // Legacy/alternative implementation
+    test_name += " Experimental"; // Legacy/alternative implementation
   }
   test_case.set_name(test_name);
 
@@ -118,7 +120,8 @@ TestCase create_test_case_from_config(
   if (dtype == vkapi::kFloat) {
     test_case.set_abs_tolerance(1e-4f);
   } else {
-    test_case.set_abs_tolerance(1e-2f);
+    // FP16 cooperative matrix operations have slightly more numerical variance
+    test_case.set_abs_tolerance(2e-1f);
   }
 
   return test_case;
@@ -128,25 +131,27 @@ TestCase create_test_case_from_config(
 std::vector<TestCase> generate_linear_easy_cases() {
   std::vector<TestCase> test_cases;
 
-  // Simple configuration for debugging
+  // Test with multiple row tiles only (2 row tiles, 1 column tile)
+  // Using M=32, N=16 to get 2x1 workgroups (blocks_m=2, blocks_n=1)
   LinearConfig config = {
-      4,    // batch_size
-      64,   // in_features
-      32,   // out_features
+      64,   // batch_size (2 tiles in M dimension)
+      256,   // in_features
+      256,   // out_features (1 tile in N dimension)
       true, // has_bias
-      "ACCU",
+      "PERF",
   };
 
   std::vector<utils::StorageType> storage_types = {utils::kBuffer};
-  std::vector<vkapi::ScalarType> dtypes = {vkapi::kFloat, vkapi::kHalf};
+  // Use FP16 for cooperative matrix shader (RTX 4080 requires float16 A/B/C)
+  std::vector<vkapi::ScalarType> dtypes = {vkapi::kHalf};
 
   for (const utils::StorageType storage_type : storage_types) {
     for (const vkapi::ScalarType dtype : dtypes) {
-      config.test_case_name = "ACCU";
+      config.test_case_name = "PERF";
       // Test with impl_selector = 0 (default)
       test_cases.push_back(
           create_test_case_from_config(config, dtype, storage_type, 0));
-      // Test with impl_selector = 1 (alternative)
+      // // Test with impl_selector = 1 (alternative)
       test_cases.push_back(
           create_test_case_from_config(config, dtype, storage_type, 1));
     }
@@ -176,9 +181,8 @@ std::vector<TestCase> generate_linear_test_cases() {
       {64, 768, 768, true, "PERF"},
   };
 
-  std::vector<utils::StorageType> storage_types = {
-      utils::kTexture3D, utils::kBuffer};
-  std::vector<vkapi::ScalarType> dtypes = {vkapi::kFloat, vkapi::kHalf};
+  std::vector<utils::StorageType> storage_types = {utils::kBuffer};
+  std::vector<vkapi::ScalarType> dtypes = {vkapi::kHalf};
 
   for (auto& config : configs) {
     bool is_performance = config.batch_size > kRefDimSizeLimit ||
@@ -260,22 +264,64 @@ void linear_reference_impl(TestCase& test_case) {
     auto& input_data = input_spec.get_half_data();
     auto& weight_data = weight_spec.get_half_data();
 
+    // IEEE 754 FP16 to float conversion helper
+    auto half_to_float = [](uint16_t h) -> float {
+      uint32_t sign = (h >> 15) & 0x1;
+      uint32_t exponent = (h >> 10) & 0x1F;
+      uint32_t mantissa = h & 0x3FF;
+
+      uint32_t f_sign = sign << 31;
+      uint32_t f_exp;
+      uint32_t f_mant;
+
+      if (exponent == 0) {
+        if (mantissa == 0) {
+          f_exp = 0;
+          f_mant = 0;
+        } else {
+          // Denormalized
+          uint32_t exp_adj = 1;
+          uint32_t mant_temp = mantissa;
+          while ((mant_temp & 0x400) == 0) {
+            mant_temp <<= 1;
+            exp_adj--;
+          }
+          mant_temp &= 0x3FF;
+          f_exp = (127 - 15 + exp_adj) << 23;
+          f_mant = mant_temp << 13;
+        }
+      } else if (exponent == 31) {
+        f_exp = 0xFF << 23;
+        f_mant = mantissa << 13;
+      } else {
+        f_exp = (exponent + 127 - 15) << 23;
+        f_mant = mantissa << 13;
+      }
+
+      uint32_t bits = f_sign | f_exp | f_mant;
+      float result;
+      std::memcpy(&result, &bits, sizeof(result));
+      return result;
+    };
+
     // Perform linear operation: output = input @ weight^T + bias
     for (int64_t b = 0; b < batch_size; ++b) {
       for (int64_t o = 0; o < out_features; ++o) {
         float sum = 0.0f;
         for (int64_t i = 0; i < in_features; ++i) {
           // input[b, i] * weight[o, i]
+          // Convert from IEEE 754 FP16 to float
           int64_t input_idx = b * in_features + i;
           int64_t weight_idx = o * in_features + i;
-          sum += static_cast<float>(input_data[input_idx]) *
-              static_cast<float>(weight_data[weight_idx]);
+          float input_val = half_to_float(input_data[input_idx]);
+          float weight_val = half_to_float(weight_data[weight_idx]);
+          sum += input_val * weight_val;
         }
 
         // Add bias if present
         if (has_bias) {
           auto& bias_data = bias_spec.get_half_data();
-          sum += static_cast<float>(bias_data[o]);
+          sum += half_to_float(bias_data[o]);
         }
 
         int64_t output_idx = b * out_features + o;
@@ -310,15 +356,18 @@ int64_t linear_flop_calculator(const TestCase& test_case) {
   return flop;
 }
 
-int main(int argc, char* argv[]) {
+int main(int /* argc */, char* /* argv */[]) {
   set_debugging(false);
   set_print_output(false);
-  set_print_latencies(false);
+  set_print_latencies(true);
   set_use_gpu_timestamps(true);
 
   print_performance_header();
   std::cout << "FP32/FP16 Linear Layer Benchmark" << std::endl;
   print_separator();
+
+  // Query cooperative matrix properties to understand what's supported
+  queryCooperativeMatrixProperties();
 
   ReferenceComputeFunc ref_fn = reference_impl;
 

@@ -18,7 +18,7 @@ namespace vkcompute {
 
 // Implementation selector values:
 // 0 = default (use standard aten.linear.default dispatch)
-// 1 = alternative path (also uses aten.linear.default for correctness)
+// 1 = experimental tiled linear implementation
 
 void test_fp_linear(
     ComputeGraph& graph,
@@ -33,11 +33,14 @@ void test_fp_linear(
   // Extract the impl_selector flag
   int32_t impl_selector = graph.extract_scalar<int32_t>(impl_selector_ref);
 
-  if (impl_selector == 0 || impl_selector == 1) {
-    // Both paths use the standard linear operator dispatch
-    // impl_selector=1 is provided as a hook for future alternative implementations
+  if (impl_selector == 0) {
+    // Use standard linear operator dispatch
     std::vector<ValueRef> linear_args = {input, weight_data, bias_data, output};
     VK_GET_OP_FN("aten.linear.default")(graph, linear_args);
+  } else if (impl_selector == 1) {
+    // Use experimental tiled linear implementation
+    std::vector<ValueRef> linear_args = {input, weight_data, bias_data, output};
+    VK_GET_OP_FN("etvk.linear_nv_cm2.default")(graph, linear_args);
   } else {
     VK_THROW("Invalid impl_selector value: ", impl_selector);
   }
