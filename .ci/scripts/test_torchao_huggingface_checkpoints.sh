@@ -103,7 +103,7 @@ case "$MODEL_NAME" in
 
   lfm2_5_1_2b)
     echo "Running LFM2.5-1.2B export..."
-    HF_MODEL_DIR=$(huggingface-cli download LiquidAI/LFM2.5-1.2B-Instruct)
+    HF_MODEL_DIR=$(hf download LiquidAI/LFM2.5-1.2B-Instruct)
     EXPECTED_MODEL_SIZE_UPPER_BOUND=$((2500 * 1024 * 1024)) # 2.5GB
     $PYTHON_EXECUTABLE -m executorch.examples.models.lfm2.convert_weights \
       $HF_MODEL_DIR \
