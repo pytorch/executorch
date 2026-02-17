@@ -11,7 +11,7 @@ MODEL_NAME=""
 # Parse args
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <model_name> [--test_with_runner]"
-  echo "Supported model_name values: qwen3_4b, phi_4_mini"
+  echo "Supported model_name values: qwen3_4b, phi_4_mini, lfm2_5_1_2b"
   exit 1
 fi
 
@@ -28,7 +28,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       echo "Usage: $0 <model_name> [--test_with_runner] [--use_torchao_kernels]"
-      echo "  model_name: qwen3_4b | phi_4_mini"
+      echo "  model_name: qwen3_4b | phi_4_mini | lfm2_5_1_2b"
       echo "  --test_with_runner: build ET + run llama_main to sanity-check the export"
       echo "  --use_torchao_kernels: use torchao kernels for linear and tied embedding"
       exit 0
@@ -101,9 +101,32 @@ case "$MODEL_NAME" in
       ${BACKEND_ARGS}
     ;;
 
+  lfm2_5_1_2b)
+    echo "Running LFM2.5-1.2B export..."
+    HF_MODEL_DIR=$(huggingface-cli download LiquidAI/LFM2.5-1.2B-Instruct)
+    EXPECTED_MODEL_SIZE_UPPER_BOUND=$((2500 * 1024 * 1024)) # 2.5GB
+    $PYTHON_EXECUTABLE -m executorch.examples.models.lfm2.convert_weights \
+      $HF_MODEL_DIR \
+      pytorch_model_converted.bin
+
+    $PYTHON_EXECUTABLE -m executorch.examples.models.llama.export_llama \
+      --model "lfm2_5_1_2b" \
+      --checkpoint pytorch_model_converted.bin \
+      --params examples/models/lfm2/config/lfm2_5_1_2b_config.json \
+      --output_name $MODEL_OUT \
+      -kv \
+      --use_sdpa_with_kv_cache \
+      --max_context_length 1024 \
+      --max_seq_length 1024 \
+      --metadata '{"get_bos_id":1, "get_eos_ids":[7]}' \
+      --verbose \
+      --dtype fp32 \
+      ${BACKEND_ARGS}
+    ;;
+
   *)
     echo "Error: unsupported model_name '$MODEL_NAME'"
-    echo "Supported values: qwen3_4b, phi_4_mini"
+    echo "Supported values: qwen3_4b, phi_4_mini, lfm2_5_1_2b"
     exit 1
     ;;
 esac
