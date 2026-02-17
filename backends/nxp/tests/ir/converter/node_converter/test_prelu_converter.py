@@ -29,6 +29,10 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
+# noinspection PyProtectedMember
+ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
+
+
 @pytest.mark.parametrize(
     "input_shape",
     [
@@ -98,13 +102,7 @@ def test_prelu_2_partitions(mocker, input_shape):
 
     # Check there are two partitions
     edge_nodes = list(edge_program.graph.nodes)
-    assert (
-        sum(
-            n.target == torch._higher_order_ops.executorch_call_delegate
-            for n in edge_nodes
-        )
-        == 2
-    )
+    assert sum(n.target == ExecutorchDelegateCall for n in edge_nodes) == 2
 
 
 @pytest.mark.parametrize(
@@ -128,13 +126,7 @@ def test_prelu__no_delegation__unsupported_conversion(mocker, input_shape):
 
     # Check `prelu` was not delegated (only `linear` was)
     edge_nodes = list(edge_program.graph.nodes)
-    assert (
-        sum(
-            n.target == torch._higher_order_ops.executorch_call_delegate
-            for n in edge_nodes
-        )
-        == 1
-    )
+    assert sum(n.target == ExecutorchDelegateCall for n in edge_nodes) == 1
 
     # Check `prelu` was decomposed into simpler edge operators
     assert graph_contains_any_of_ops(

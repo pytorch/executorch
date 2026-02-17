@@ -237,7 +237,7 @@ class NodeFormatInference:
         return (
             node.target != "output"
             and node.target != operator.getitem
-            and node.target != torch._higher_order_ops.executorch_call_delegate
+            and node.target != torch.ops.higher_order.executorch_call_delegate
             and not str(node.target).startswith("lowered_module")
         )
 
