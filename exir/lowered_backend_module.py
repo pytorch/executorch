@@ -47,8 +47,71 @@ from torch.fx.passes.utils.fuser_utils import (
     insert_subgm,
     legalize_graph,
     NodeList,
-    topo_sort,
+    topo_sort as _topo_sort,
 )
+
+
+def _stable_topo_sort(nodes: NodeList) -> NodeList:
+    """
+    Stable topological sort that preserves the relative order of independent nodes.
+
+    Unlike the standard topo_sort which uses a queue (FIFO), this implementation
+    preserves the original ordering of nodes when they have no data dependencies
+    between them. This is important for constraint nodes (like _assert_scalar)
+    which must execute before the operations they constrain, even though there's
+    no explicit data edge between them.
+
+    Args:
+        nodes: List of nodes to sort. Assumed to already be in a valid topological
+               order (as is the case for nodes from an FX graph).
+
+    Returns:
+        Topologically sorted nodes that preserve original relative ordering of
+        independent nodes.
+    """
+    if not nodes:
+        return nodes
+
+    # Build indegree map only considering nodes in the partition
+    node_set = set(nodes)
+    indegree_map = {node: 0 for node in nodes}
+
+    for node in nodes:
+        for input_node in node.all_input_nodes:
+            if input_node in node_set:
+                indegree_map[node] += 1
+
+    # Create position map to preserve original ordering
+    position = {node: i for i, node in enumerate(nodes)}
+
+    sorted_nodes: NodeList = []
+    remaining = set(nodes)
+
+    while remaining:
+        # Find all nodes with zero indegree (can be scheduled now)
+        ready = [n for n in remaining if indegree_map[n] == 0]
+
+        if not ready:
+            # No nodes ready means we have a cycle
+            raise RuntimeError(
+                f"Cycle detected in topological sort. "
+                f"Remaining nodes: {remaining}"
+            )
+
+        # Sort ready nodes by their original position to maintain stability
+        ready.sort(key=lambda n: position[n])
+
+        # Take the first ready node (earliest in original order)
+        node = ready[0]
+        sorted_nodes.append(node)
+        remaining.remove(node)
+
+        # Update indegrees of nodes that depend on this one
+        for user in node.users:
+            if user in node_set:
+                indegree_map[user] -= 1
+
+    return sorted_nodes
 
 
 class LoweredBackendModule(torch.nn.Module):
@@ -764,7 +827,7 @@ def create_submodule_from_nodes(
         The submodule that has been partitioned, the call_module node in the
         toplevel graph module calling the submodule
     """
-    sorted_nodes = topo_sort(node_list)
+    sorted_nodes = _stable_topo_sort(node_list)
 
     submodule_name = "fused_" + tag
     sub_gm, orig_inputs, orig_outputs = fuse_as_graphmodule(

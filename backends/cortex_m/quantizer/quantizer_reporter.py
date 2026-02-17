@@ -23,13 +23,11 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
     INT8_ACTIVATION_PER_CHANNEL_QSPEC,
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_PER_CHANNEL_CONFIG,
-    INT8_PER_CHANNEL_TRANSPOSE_CONFIG,
     INT8_PER_TENSOR_CONFIG,
     INT8_WEIGHT_PER_CHANNEL_QSPEC,
     INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC,
     INT8_WEIGHT_PER_TENSOR_QSPEC,
     SOFTMAX_OUTPUT_FIXED_QSPEC,
-    SOFTMAX_PER_TENSOR_CONFIG,
 )
 from tabulate import tabulate
 from torch.fx import GraphModule, Node
@@ -41,9 +39,7 @@ logger = logging.getLogger(__name__)
 # Look-up dicts used to get human readable names for supported quantization configs and specs
 SUPPORTED_QCONFIGS = {
     INT8_PER_CHANNEL_CONFIG: f"{quantization_configs_module}.INT8_PER_CHANNEL_QCONFIG",
-    INT8_PER_CHANNEL_TRANSPOSE_CONFIG: f"{quantization_configs_module}.INT8_PER_CHANNEL_TRANSPOSE_QCONFIG",
     INT8_PER_TENSOR_CONFIG: f"{quantization_configs_module}.INT8_PER_TENSOR_QCONFIG",
-    SOFTMAX_PER_TENSOR_CONFIG: f"{quantization_configs_module}.SOFTMAX_PER_TENSOR_QCONFIG",
 }
 
 
