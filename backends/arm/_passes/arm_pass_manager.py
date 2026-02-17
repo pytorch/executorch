@@ -18,6 +18,7 @@ from executorch.backends.arm._passes import (
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
+    ConstantFoldingPass,
     ControlFlowConstInlinePass,
     Conv1dUnsqueezePass,
     ConvertELUParamsPass,
@@ -396,6 +397,7 @@ class ArmPassManager(PassManager):
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
         # Preprocessing passes
         self.add_pass(RemoveGraphAssertsPass(tfa_pass=True))
+        self.add_pass(ConstantFoldingPass())
 
         # Transformation passes (pre scalar -> tensor)
         self.add_passes(
