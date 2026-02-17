@@ -96,6 +96,13 @@ table TakeAlongAxisNode {
     axis: int32;
 }
 
+table TakeNode {
+    x: Tid (required);
+    out: Tid (required);
+    index: int32;  // Single index to select
+    axis: int32;   // Axis along which to select
+}
+
 table RMSNormNode {
     x: Tid (required);
     weight: Tid (required);
@@ -735,6 +742,7 @@ union OpNode {
     ExpandDimsNode,
     TileNode,
     TakeAlongAxisNode,
+    TakeNode,
     RMSNormNode,
     LayerNormNode,
     RopeNode,

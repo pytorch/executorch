@@ -40,7 +40,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # Import shared KV cache module
-from executorch.backends.apple.mlx.examples.cache import KVCache
+from executorch.backends.apple.mlx.examples.cache import ETKVCache
 
 # Import custom ops to register llama.update_cache
 from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
@@ -179,10 +179,12 @@ class KVCacheAttention(nn.Module):
         self.rope_base = rope_base
 
         # Initialize KV cache module
-        self.kv_cache = KVCache(
-            num_heads=self.num_key_value_heads,
+        self.kv_cache = ETKVCache(
+            max_batch_size=1,
+            max_context_length=self.T_max,
+            n_heads=self.num_key_value_heads,
             head_dim=self.head_dim,
-            max_cache_len=self.T_max,
+            enable_dynamic_shape=True,
             dtype=dtype,
         )
 
@@ -234,11 +236,12 @@ class KVCacheAttention(nn.Module):
             None,  # freqs
         )
 
-        # 5) Update KV cache using callable module (returns full cache)
-        k_cache, v_cache = self.kv_cache(k_bhtd, v_bhtd, pos_int)
+        # 5) Update KV cache
+        k_cache, v_cache = self.kv_cache.update(pos_int, k_bhtd, v_bhtd)
 
         # 6) Explicit windowing: slice cache to valid positions
         end_pos = pos_int + T
+        torch._check(end_pos <= self.T_max)
         k_ = k_cache[:, :, :end_pos, :]
         v_ = v_cache[:, :, :end_pos, :]
 
@@ -310,6 +313,7 @@ class LlamaWithFunctionalKV(nn.Module):
     ):
         super().__init__()
         self.model = base
+        self.max_seq_len = max_seq_len
 
         # Swap RMSNorm modules with custom op version
         for layer in self.model.model.layers:
@@ -366,6 +370,7 @@ class LlamaWithFunctionalKV(nn.Module):
         # Both MLX and Custom cache now accept int position directly
         pos_int = input_pos[0].item()
         torch._check_is_size(pos_int)
+        torch._check(pos_int + token_ids.size(1) <= self.max_seq_len)
 
         for layer in m.model.layers:
             residual = hs

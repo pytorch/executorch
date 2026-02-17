@@ -172,7 +172,11 @@ exec_linear(const LinearNode& n, ExecutionState& st, StreamOrDevice s) {
 // ----- Item Int -----
 inline void
 exec_item_int(const ItemIntNode& n, ExecutionState& st, StreamOrDevice) {
-  int item = st.const_tensor_ref(n.x).item<int>();
+  // Make a non-const copy so non-const item() is called (which does implicit
+  // eval). The const version of item() throws for unscheduled arrays.
+  auto x = st.const_tensor_ref(n.x);
+  eval(x);
+  int item = x.item<int>();
   st.set_value(n.out, item);
 }
 
@@ -200,6 +204,14 @@ inline void exec_take_along_axis(
       n.out,
       take_along_axis(
           st.const_tensor_ref(n.x), st.const_tensor_ref(n.indices), n.axis, s));
+}
+
+// ----- Take -----
+inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  int axis = normalize_axis(n.axis, x.ndim(), "Take");
+  int index = normalize_axis(n.index, x.shape(axis), "Take");
+  st.set_tensor(n.out, take(x, index, axis, s));
 }
 
 // ----- RMS Norm -----
@@ -1388,6 +1400,9 @@ class Interpreter {
       case OpCode::TAKE_ALONG_AXIS:
         ops::exec_take_along_axis(
             std::get<TakeAlongAxisNode>(instr.node), st, s);
+        break;
+      case OpCode::TAKE:
+        ops::exec_take(std::get<TakeNode>(instr.node), st, s);
         break;
       case OpCode::RMS_NORM:
         ops::exec_rms_norm(std::get<RMSNormNode>(instr.node), st, s);

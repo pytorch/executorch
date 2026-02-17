@@ -46,9 +46,13 @@ def run_inference(
     forward = program.load_method("forward")
 
     logger.info(f"Encoding prompt: {prompt!r}")
-    input_ids = tokenizer.encode(prompt, return_tensors="pt")
+    messages = [{"role": "user", "content": prompt}]
+    input_ids = tokenizer.apply_chat_template(
+        messages, return_tensors="pt", add_generation_prompt=True
+    )
     logger.info(f"Input shape: {input_ids.shape}")
 
+    prompt_len = input_ids.shape[1]
     generated_tokens = input_ids[0].tolist()
 
     # Prefill: process all input tokens at once
@@ -98,9 +102,12 @@ def run_inference(
     tokens_per_sec = (len(generated_tokens) - input_ids.shape[1]) / decode_time
     logger.info(f"Decode time: {decode_time:.3f}s ({tokens_per_sec:.1f} tokens/sec)")
 
-    # Decode the generated text
-    generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-    return generated_text
+    # Decode prompt and generated text separately
+    prompt_tokens = generated_tokens[:prompt_len]
+    new_tokens = generated_tokens[prompt_len:]
+    prompt_text = tokenizer.decode(prompt_tokens, skip_special_tokens=True)
+    generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
+    return prompt_text, generated_text
 
 
 def main():
@@ -132,7 +139,7 @@ def main():
 
     args = parser.parse_args()
 
-    generated_text = run_inference(
+    prompt_text, generated_text = run_inference(
         pte_path=args.pte,
         tokenizer_path=args.tokenizer,
         prompt=args.prompt,
@@ -140,6 +147,10 @@ def main():
     )
 
     print("\n" + "=" * 60)
+    print("Prompt:")
+    print("=" * 60)
+    print(prompt_text)
+    print("=" * 60)
     print("Generated text:")
     print("=" * 60)
     print(generated_text)

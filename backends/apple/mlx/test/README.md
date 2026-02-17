@@ -2,10 +2,38 @@
 
 This directory contains end-to-end tests for the MLX backend. Each test verifies that a specific op or pattern is correctly lowered to MLX and produces matching outputs between PyTorch and the MLX runtime.
 
+## Setup
+
+### 1. Install ExecuTorch Python package (if not already installed)
+
+```bash
+python install_executorch.py --editable
+```
+
+### 2. Configure CMake with MLX preset
+
+From the ExecuTorch root directory:
+
+```bash
+cmake --preset mlx-release
+```
+
+This configures the build with MLX delegate support. Build files are generated in `cmake-out/`.
+
+### 3. Build the test runner
+
+```bash
+cmake --build cmake-out --target op_test_runner
+```
+
+This builds the `op_test_runner` binary that executes `.pte` models using the MLX runtime.
+
+
+
 ## Prerequisites
 
 1. **Python environment**: Tests must be run in an environment where the `executorch` Python package is installed
-2. **Built C++ runtime**: The `op_test_runner` binary must be built (see main MLX backend README)
+2. **Built C++ runtime**: The `op_test_runner` binary must be built (see Setup above)
 
 ## Running Tests
 
