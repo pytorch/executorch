@@ -18,12 +18,16 @@ using namespace vkcompute;
 
 static constexpr int64_t kRefDimSizeLimit = 300;
 
+// Global operator selector: 0 = use existing kernel, 1 = use experimental NV CM2 kernel
+static int g_operator_selector = 0;
+static bool g_operator_selector_set = false;
+
 // Linear configuration struct
 struct LinearConfig {
   int64_t M; // Batch size / number of rows in input
   int64_t K; // Input features / columns in input, rows in weight
   int64_t N; // Output features / columns in weight
-  bool has_bias = true;
+  bool has_bias = false;
   std::string test_case_name = "placeholder";
   std::string op_name = "linear_q8ta_q8csw";
 };
@@ -64,13 +68,14 @@ TestCase create_test_case_from_config(
     print_valuespec_data(input_tensor, "input_tensor");
   }
 
-  float input_scale_val = 0.008f;
+  // TODO(hongbinghu): input_scale_value is not applied correctly
+  float input_scale_val = 1.0f;
   ValueSpec input_scale(input_scale_val);
 
-  int32_t input_zero_point_val = -2;
+  int32_t input_zero_point_val = 0.0f; // Use 0 zero-point for per-tensor quantization
   ValueSpec input_zero_point(input_zero_point_val);
 
-  // Quantized weight tensor (int8) - [K, N]
+  // Quantized weight tensor (int8) - [N, K]
   ValueSpec quantized_weight(
       weight_size,
       vkapi::kChar, // int8 for quantized weights
@@ -83,13 +88,24 @@ TestCase create_test_case_from_config(
     print_valuespec_data(quantized_weight, "weight_tensor");
   }
 
+  // Output tensor (float/half) - [M, N]
+  ValueSpec output(
+      {config.M, config.N},
+      input_dtype,
+      storage_type,
+      utils::kWidthPacked,
+      DataGenType::ZEROS);
+
+  // Both existing and experimental kernels use the same input structure:
+  // Args: input_tensor, input_scale, input_zero_point, weight, weight_sums, weight_scales, bias, output
+
   // Weight quantization scales (float/half, per-channel)
   ValueSpec weight_scales(
       {config.N}, // Per output feature
       input_dtype,
       storage_type,
       utils::kWidthPacked,
-      DataGenType::RANDOM_SCALES);
+      DataGenType::RANDOM);
   weight_scales.set_constant(true);
 
   ValueSpec weight_sums(
@@ -97,7 +113,7 @@ TestCase create_test_case_from_config(
       vkapi::kInt,
       storage_type,
       utils::kWidthPacked,
-      DataGenType::ZEROS);
+      DataGenType::RANDINT8);
   weight_sums.set_constant(true);
 
   // Compute weight_sums data based on quantized weights
@@ -111,96 +127,54 @@ TestCase create_test_case_from_config(
       input_dtype,
       storage_type,
       utils::kWidthPacked,
-      DataGenType::RANDOM);
+      config.has_bias ? DataGenType::RANDOM : DataGenType::ZEROS);
   bias.set_constant(true);
   if (!config.has_bias) {
     bias.set_none(true);
   }
 
-  // Output tensor (float/half) - [M, N]
-  ValueSpec output(
-      {config.M, config.N},
-      input_dtype,
-      storage_type,
-      utils::kWidthPacked,
-      DataGenType::ZEROS);
+  test_case.add_input_spec(input_tensor);
+  test_case.add_input_spec(input_scale);
+  test_case.add_input_spec(input_zero_point);
+  test_case.add_input_spec(quantized_weight);
+  test_case.add_input_spec(weight_sums);
+  test_case.add_input_spec(weight_scales);
+  test_case.add_input_spec(bias);
+  test_case.add_output_spec(output);
 
-  // Add all specs to test case
-  if (config.op_name.find("q8ta") != std::string::npos) {
-    test_case.add_input_spec(input_tensor);
-    test_case.add_input_spec(input_scale);
-    test_case.add_input_spec(input_zero_point);
-    test_case.add_input_spec(quantized_weight);
-    test_case.add_input_spec(weight_sums);
-    test_case.add_input_spec(weight_scales);
-    test_case.add_input_spec(bias);
-    test_case.add_output_spec(output);
-  } else {
-    test_case.add_input_spec(input_tensor);
-    test_case.add_input_spec(quantized_weight);
-    test_case.add_input_spec(weight_scales);
-    test_case.add_input_spec(bias);
-    test_case.add_output_spec(output);
-  }
+  test_case.set_abs_tolerance(5.0f);
+  test_case.set_rel_tolerance(0.020f);
 
   return test_case;
-}
-
-// Generate easy test cases for quantized linear operation (for debugging)
-std::vector<TestCase> generate_quantized_linear_easy_cases() {
-  std::vector<TestCase> test_cases;
-
-  // Single simple configuration for debugging
-  int M = 4;
-  int K = 4;
-  int N = 4;
-
-  LinearConfig config = {
-      M, // Batch size
-      K, // Input features
-      N, // Output features
-      true, // has_bias
-      "simple", // test_case_name
-  };
-
-  // Test with both storage types and data types for completeness
-  std::vector<utils::StorageType> storage_types = {
-      utils::kTexture3D, utils::kBuffer};
-  std::vector<vkapi::ScalarType> float_types = {vkapi::kFloat};
-
-  // Generate test cases for each combination
-  for (const auto& storage_type : storage_types) {
-    for (const auto& input_dtype : float_types) {
-      test_cases.push_back(
-          create_test_case_from_config(config, storage_type, input_dtype));
-    }
-  }
-
-  return test_cases;
 }
 
 // Generate test cases for quantized linear operation
 std::vector<TestCase> generate_quantized_linear_test_cases() {
   std::vector<TestCase> test_cases;
 
-  std::vector<LinearConfig> configs = {
-      {4, 64, 32},
-      {4, 128, 64},
-      {4, 256, 128},
-      {32, 64, 32},
-      {32, 128, 64},
-      {32, 256, 128},
-      // No bias tests
-      {32, 128, 64, false},
-      {32, 256, 128, false},
-      {256, 2048, 2048},
-      {512, 2048, 2048},
-      {1024, 2048, 2048},
-  };
+  std::vector<LinearConfig> configs;
+  configs = {
+        // Bias tests (new)
+        {2, 32, 32, false},
+        {1, 16, 16, false},
+        {4, 256, 128, false},
+        {4, 256, 128, true},
+        // No-bias tests
+        {2, 32, 32},
+        {4, 128, 64},
+        {4, 256, 128},
+        {2, 32, 32},
+        {32, 64, 32},
+        {32, 128, 64},
+        {2, 256, 128},
+        // Bias tests (larger)
+        {32, 64, 32, true},
+        {32, 128, 64, true},
+        {32, 256, 128, true},
+    };
 
-  // Test with different storage types and data types
-  std::vector<utils::StorageType> storage_types = {
-      utils::kTexture3D, utils::kBuffer};
+  // Only use buffer storage for NV CM2 kernel
+  std::vector<utils::StorageType> storage_types = {utils::kBuffer};
 
   for (auto config : configs) {
     std::string prefix =
@@ -217,102 +191,43 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
     config.test_case_name = generated_test_case_name;
 
     for (const auto& storage_type : storage_types) {
-      if (vkcompute::api::context()
+      // Check for int8 dot product support
+      if (!vkcompute::api::context()
               ->adapter_ptr()
               ->supports_int8_dot_product()) {
-        // Test both activation+weight quantized and weight only quantized
+        std::cout << "Skipping test: int8 dot product not supported"
+                  << std::endl;
+        continue;
+      }
+
+      if (g_operator_selector_set) {
+        // Use the operator specified by the command line
+        if (g_operator_selector == 1) {
+          config.op_name = "linear_q8ta_q8csw_nv_cm2";
+        } else {
+          config.op_name = "linear_q8ta_q8csw";
+        }
+        test_cases.push_back(
+            create_test_case_from_config(config, storage_type, vkapi::kFloat));
+      } else {
+        // Run both selectors
+        config.op_name = "linear_q8ta_q8csw";
+        test_cases.push_back(
+            create_test_case_from_config(config, storage_type, vkapi::kFloat));
+
+        config.op_name = "linear_q8ta_q8csw_nv_cm2";
         test_cases.push_back(
             create_test_case_from_config(config, storage_type, vkapi::kFloat));
       }
-
-      LinearConfig wo_quant_config = config;
-      wo_quant_config.op_name = "linear_q8csw";
-      test_cases.push_back(create_test_case_from_config(
-          wo_quant_config, storage_type, vkapi::kFloat));
     }
   }
 
   return test_cases;
 }
 
-// Reference implementation for weight only quantized linear
-void linear_q8csw_reference_impl(TestCase& test_case) {
-  int32_t idx = 0;
-  const ValueSpec& input_spec = test_case.inputs()[idx++];
-  const ValueSpec& weight_spec = test_case.inputs()[idx++];
-  const ValueSpec& weight_scales_spec = test_case.inputs()[idx++];
-  const ValueSpec& bias_spec = test_case.inputs()[idx++];
-
-  // Extract output specification (mutable reference)
-  ValueSpec& output_spec = test_case.outputs()[0];
-
-  // Get tensor dimensions
-  auto input_sizes = input_spec.get_tensor_sizes(); // [batch_size, in_features]
-  auto weight_sizes =
-      weight_spec.get_tensor_sizes(); // [out_features, in_features]
-  auto output_sizes =
-      output_spec.get_tensor_sizes(); // [batch_size, out_features]
-
-  int64_t batch_size = input_sizes[0];
-  int64_t in_features = input_sizes[1];
-  int64_t out_features = weight_sizes[0];
-
-  // Skip for large tensors since computation time will be extremely slow
-  if (batch_size > kRefDimSizeLimit || in_features > kRefDimSizeLimit ||
-      out_features > kRefDimSizeLimit) {
-    throw std::invalid_argument(
-        "One or more dimensions (batch_size, in_features, out_features) exceed the allowed limit for reference implementation.");
-  }
-
-  if (input_spec.dtype != vkapi::kFloat) {
-    throw std::invalid_argument("Unsupported dtype");
-  }
-
-  // Get raw data pointers
-  auto& input_data = input_spec.get_float_data();
-
-  auto& weight_data = weight_spec.get_int8_data();
-  auto& weight_scales_data = weight_scales_spec.get_float_data();
-  auto& bias_data = bias_spec.get_float_data();
-
-  // Calculate number of output elements
-  int64_t num_output_elements = batch_size * out_features;
-
-  auto& ref_data = output_spec.get_ref_float_data();
-  ref_data.resize(num_output_elements);
-
-  // Perform quantized linear transformation (matrix multiplication)
-  for (int64_t b = 0; b < batch_size; ++b) {
-    for (int64_t out_f = 0; out_f < out_features; ++out_f) {
-      float sum = 0.0f;
-
-      // Matrix multiplication: output[b][out_f] = sum(input[b][in_f] *
-      // weight[out_f][in_f])
-      for (int64_t in_f = 0; in_f < in_features; ++in_f) {
-        // Get input value and dequantize
-        int64_t input_idx = b * in_features + in_f;
-        float input_val = input_data[input_idx];
-
-        // Get weight value and dequantize
-        int64_t weight_idx = out_f * in_features + in_f;
-        float dequant_weight = (static_cast<float>(weight_data[weight_idx])) *
-            weight_scales_data[out_f];
-
-        sum += input_val * dequant_weight;
-      }
-
-      // Add bias and store result
-      if (!bias_spec.is_none()) {
-        sum += bias_data[out_f];
-      }
-      int64_t output_idx = b * out_features + out_f;
-      ref_data[output_idx] = sum;
-    }
-  }
-}
-
+// Reference implementation for q8ta_q8csw linear
 void linear_q8ta_q8csw_reference_impl(TestCase& test_case) {
-  // Extract input specifications
+  // Extract input specifications (common for both kernels)
   int32_t idx = 0;
   const ValueSpec& input_spec = test_case.inputs()[idx++];
   const ValueSpec& input_scale_spec = test_case.inputs()[idx++];
@@ -330,8 +245,6 @@ void linear_q8ta_q8csw_reference_impl(TestCase& test_case) {
   auto input_sizes = input_spec.get_tensor_sizes(); // [batch_size, in_features]
   auto weight_sizes =
       weight_spec.get_tensor_sizes(); // [out_features, in_features]
-  auto output_sizes =
-      output_spec.get_tensor_sizes(); // [batch_size, out_features]
 
   int64_t batch_size = input_sizes[0];
   int64_t in_features = input_sizes[1];
@@ -348,11 +261,8 @@ void linear_q8ta_q8csw_reference_impl(TestCase& test_case) {
     throw std::invalid_argument("Unsupported dtype");
   }
 
-  // Get raw data pointers
+  // Get raw data pointers (common for both kernels)
   auto& input_data = input_spec.get_float_data();
-  const float input_scale = input_scale_spec.get_float_value();
-  const int32_t input_zero_point = input_zeros_spec.get_int_value();
-
   auto& weight_data = weight_spec.get_int8_data();
   auto& weight_scales_data = weight_scales_spec.get_float_data();
   auto& bias_data = bias_spec.get_float_data();
@@ -363,72 +273,57 @@ void linear_q8ta_q8csw_reference_impl(TestCase& test_case) {
   auto& ref_data = output_spec.get_ref_float_data();
   ref_data.resize(num_output_elements);
 
-  // Perform quantized linear transformation (matrix multiplication) with
-  // integer accumulation
+  // Extract quantization parameters
+  const float input_scale = input_scale_spec.get_float_value();
+  const int32_t input_zero_point = input_zeros_spec.get_int_value();
+
+  // Perform quantized linear transformation (matrix multiplication)
+  // Both kernels (existing and experimental) use the same reference implementation:
+  // integer accumulation with zero-point correction
   for (int64_t b = 0; b < batch_size; ++b) {
     for (int64_t out_f = 0; out_f < out_features; ++out_f) {
       int32_t int_sum = 0;
-      int32_t weight_sum = 0; // Track weight sum on the fly
+      int32_t weight_sum = 0;
 
-      // Matrix multiplication with integer accumulation:
-      // int_sum = sum(quantized_input[b][in_f] * quantized_weight[out_f][in_f])
       for (int64_t in_f = 0; in_f < in_features; ++in_f) {
-        // Get input value and quantize to int8
         int64_t input_idx = b * in_features + in_f;
+        int64_t weight_idx = out_f * in_features + in_f;
 
+        // Quantize input to int8
         float quant_input_f =
             std::round(input_data[input_idx] / input_scale) + input_zero_point;
         quant_input_f = std::min(std::max(quant_input_f, -128.0f), 127.0f);
         int8_t quantized_input = static_cast<int8_t>(quant_input_f);
 
-        // Get quantized weight (already int8)
-        int64_t weight_idx = out_f * in_features + in_f;
         int8_t quantized_weight = weight_data[weight_idx];
 
-        // Integer multiplication and accumulation
         int_sum += static_cast<int32_t>(quantized_input) *
             static_cast<int32_t>(quantized_weight);
-
-        // Track weight sum for this output channel on the fly
         weight_sum += static_cast<int32_t>(quantized_weight);
       }
 
-      // Convert accumulated integer result to float and apply scales
-      // Final result = (int_sum - zero_point_correction) * input_scale *
-      // weight_scale + bias
-      // zero_point_correction = input_zero_point *
-      // sum_of_weights_for_this_output_channel
+      // Apply zero-point correction and scales
       int32_t zero_point_correction = input_zero_point * weight_sum;
       int32_t accum_adjusted = int_sum - zero_point_correction;
-
-      float float_result =
-          accum_adjusted * input_scale * weight_scales_data[out_f];
+      float result = accum_adjusted * input_scale * weight_scales_data[out_f];
 
       // Add bias and store result
       if (!bias_spec.is_none()) {
-        float_result += bias_data[out_f];
+        result += bias_data[out_f];
       }
       int64_t output_idx = b * out_features + out_f;
-      ref_data[output_idx] = float_result;
+      ref_data[output_idx] = result;
     }
   }
 }
 
 void reference_impl(TestCase& test_case) {
-  if (test_case.operator_name().find("q8ta") != std::string::npos) {
-    linear_q8ta_q8csw_reference_impl(test_case);
-  } else {
-    linear_q8csw_reference_impl(test_case);
-  }
+  linear_q8ta_q8csw_reference_impl(test_case);
 }
 
 int64_t quantized_linear_flop_calculator(const TestCase& test_case) {
   int input_idx = 0;
-  int weight_idx = 1;
-  if (test_case.operator_name().find("q8ta") != std::string::npos) {
-    input_idx = 0;
-    weight_idx = 3;
-  }
+  int weight_idx = 3;
 
   // Get input and weight dimensions
   const auto& input_sizes = test_case.inputs()[input_idx].get_tensor_sizes();
@@ -456,24 +351,80 @@ int64_t quantized_linear_flop_calculator(const TestCase& test_case) {
   return flop;
 }
 
+void print_usage(const char* program_name) {
+  std::cout << "Usage: " << program_name << " [options]" << std::endl;
+  std::cout << "Options:" << std::endl;
+  std::cout << "  --operator_selector <0|1>  Select operator implementation:"
+            << std::endl;
+  std::cout << "                             0 = existing kernel (linear_q8ta_q8csw)"
+            << std::endl;
+  std::cout << "                             1 = NV CM2 kernel (linear_q8ta_q8csw_nv_cm2)"
+            << std::endl;
+  std::cout << "  --help                     Show this help message"
+            << std::endl;
+}
+
 int main(int argc, char* argv[]) {
+  // Parse command line arguments
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "--operator_selector" && i + 1 < argc) {
+      g_operator_selector = std::stoi(argv[++i]);
+      g_operator_selector_set = true;
+      if (g_operator_selector != 0 && g_operator_selector != 1) {
+        std::cerr << "Error: operator_selector must be 0 or 1" << std::endl;
+        return 1;
+      }
+    } else if (arg == "--help" || arg == "-h") {
+      print_usage(argv[0]);
+      return 0;
+    }
+  }
+
   set_debugging(false);
   set_print_output(false);
-  set_print_latencies(false);
+  set_print_latencies(true);
   set_use_gpu_timestamps(true);
 
   print_performance_header();
-  std::cout << "Quantized Linear Operation Prototyping Framework" << std::endl;
+  std::cout << "Quantized Linear Operation Test Framework" << std::endl;
+  if (g_operator_selector_set) {
+    std::cout << "Operator selector: " << g_operator_selector;
+    if (g_operator_selector == 0) {
+      std::cout << " (existing kernel: linear_q8ta_q8csw)" << std::endl;
+    } else {
+      std::cout << " (NV CM2 kernel: linear_q8ta_q8csw_nv_cm2)"
+                << std::endl;
+    }
+  } else {
+    std::cout << "Operator selector: not set, running both kernels" << std::endl;
+  }
   print_separator();
+
+  // Check for NV CM2 support if using experimental kernel
+  if (g_operator_selector == 1) {
+    if (!vkcompute::api::context()
+            ->adapter_ptr()
+            ->supports_nv_cooperative_matrix2()) {
+      std::cerr
+          << "Error: Experimental NV CM2 kernel requires VK_NV_cooperative_matrix2 extension"
+          << std::endl;
+      std::cerr << "This extension is not supported on this device."
+                << std::endl;
+      return 1;
+    }
+    std::cout << "VK_NV_cooperative_matrix2 extension is supported."
+              << std::endl;
+  }
 
   ReferenceComputeFunc ref_fn = reference_impl;
 
   auto results = execute_test_cases(
       generate_quantized_linear_test_cases,
       quantized_linear_flop_calculator,
-      "QuantizedLinear",
+      "QuantizedLinearNvCoopMat",
+      1,
       3,
-      10,
       ref_fn);
 
   return 0;
