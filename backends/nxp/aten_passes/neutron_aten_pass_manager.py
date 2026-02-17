@@ -7,6 +7,7 @@ from typing import Callable
 
 import torch
 
+from executorch.backends.nxp.aten_passes.convert_div_to_mul import ConvertDivToMulPass
 from executorch.backends.nxp.aten_passes.convert_unsqueeze_to_view import (
     ConvertUnsqueezeToViewPass,
 )
@@ -51,6 +52,7 @@ def _get_default_passes(neutron_target_spec, qat_mode: bool = False) -> list[Pas
         FuseLinearAndAddPass(),
         MoveActivationBeforeConcat(neutron_target_spec),
         ConvertUnsqueezeToViewPass(),
+        ConvertDivToMulPass(),
     ]
 
     if not qat_mode:
