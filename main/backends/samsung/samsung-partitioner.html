@@ -1241,8 +1241,8 @@ using the <code class="docutils literal notranslate"><span class="pre">gen_samsu
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 </pre></div>
 </div>
-<p>At the moment, only <code class="docutils literal notranslate"><span class="pre">&quot;E9955&quot;</span></code> is supported as a valid chipset name, which corresponds to
-the Exynose 2500 SoC. Support for additional chipsets will be added in the future.</p>
+<p>At the moment, only <code class="docutils literal notranslate"><span class="pre">&quot;E9955&quot;</span></code> and <code class="docutils literal notranslate"><span class="pre">&quot;E9965&quot;</span></code> are supported as a valid chipset name, which corresponds to
+the Exynose 2500 and Exynos 2600 SoC. Support for additional chipsets will be added in the future.</p>
 </section>
 
 
@@ -1576,7 +1576,7 @@ the Exynose 2500 SoC. Support for additional chipsets will be added in the futur
        "headline": "Partitioner API",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/backends/samsung/samsung-partitioner.html",
-       "articleBody": "Partitioner API# The EnnPartitioner API is the primary entrypoint when exporting a model to the Samsung Exynos backend. The partitioner is responsible for determining which parts of the model should be lowered to the backend and also provides an interface for configuring the behaviour of the backend. Currently, the configuration options for EnnPartitioner can be generated automatically using the gen_samsung_backend_compile_spec API. For instance, from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner from executorch.backends.samsung.serialization.compile_options import ( gen_samsung_backend_compile_spec, ) from executorch.exir import to_edge_transform_and_lower chipset = \"E9955\" compile_specs = [gen_samsung_backend_compile_spec(chipset)] et_program = to_edge_transform_and_lower( exported_program, partitioner=[EnnPartitioner(compile_specs)], ).to_executorch() At the moment, only \"E9955\" is supported as a valid chipset name, which corresponds to the Exynose 2500 SoC. Support for additional chipsets will be added in the future.",
+       "articleBody": "Partitioner API# The EnnPartitioner API is the primary entrypoint when exporting a model to the Samsung Exynos backend. The partitioner is responsible for determining which parts of the model should be lowered to the backend and also provides an interface for configuring the behaviour of the backend. Currently, the configuration options for EnnPartitioner can be generated automatically using the gen_samsung_backend_compile_spec API. For instance, from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner from executorch.backends.samsung.serialization.compile_options import ( gen_samsung_backend_compile_spec, ) from executorch.exir import to_edge_transform_and_lower chipset = \"E9955\" compile_specs = [gen_samsung_backend_compile_spec(chipset)] et_program = to_edge_transform_and_lower( exported_program, partitioner=[EnnPartitioner(compile_specs)], ).to_executorch() At the moment, only \"E9955\" and \"E9965\" are supported as a valid chipset name, which corresponds to the Exynose 2500 and Exynos 2600 SoC. Support for additional chipsets will be added in the future.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
