@@ -23,6 +23,7 @@ from executorch.backends.nxp.backend.edge_helper import (
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.converter.node_converter import is_not_qdq_node
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph
@@ -215,6 +216,7 @@ supported_ops = {
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
     exir_ops.edge.aten.neg.default: NegConverter,  # noqa F405
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
+    exir_ops.edge.aten.prelu.default: PReLUConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
     exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
@@ -488,16 +490,52 @@ class NeutronPartitioner(Partitioner):
         ep: ExportedProgram,
     ) -> tuple[list[torch._ops.OpOverload], Callable[[torch.fx.Node], bool] | None]:
         """
-        Returns a list of operator names that should not be decomposed. When these ops are
-        registered and the `to_backend` is invoked through to_edge_transform_and_lower it will be
-        guaranteed that the program that the backend receives will not have any of these ops
-        decomposed.
+        Method to determine which operators SHOULD NOT be decomposed to edge dialect.
 
-        Returns:
-            List[torch._ops.OpOverload]: a list of operator names that should not be decomposed.
-            Optional[Callable[[torch.fx.Node], bool]]]: an optional callable, acting as a filter, that users can provide
-            which will be called for each node in the graph that users can use as a filter for certain
-            nodes that should be continued to be decomposed even though the op they correspond to is
-            in the list returned by ops_to_not_decompose.
+        The method returns:
+            a list of operators NOT to decompose
+            optional callable - filter
+        If the operator is in the list and the evaluation of the callable is True (or the callable is not specified),
+        the operator should not be decomposed (i.e. it truly belongs to the list). Otherwise, it should be decomposed.
         """
-        return self.preserve_ops, self.check_op_support
+
+        # The parameters_mapping will only contain `FakeTensor` objects since the partitioning is done with a "Fake model".
+        # If a node is selected to not be decomposed and it requires the real static parameters in its 'is_supported_*' methods,
+        # the state dict from the quantized model will need to be provided here.
+        parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(ep)
+        aten_op_to_converter = {}
+        for exir_op, converter in supported_ops.items():
+            aten_op_to_converter[exir_op._op] = converter
+
+        # determine node format so it can be checked if the nodes are delegable
+        NodeFormatInference(ep, only_for_op_support_check=True).identify_node_formats()
+
+        def check_op_support_extended(node: torch.fx.Node):
+            # if the operator should not be preserved, then it should be decomposed
+            if node.target not in self.preserve_ops:
+                return False
+
+            # if the converter for the node does not exist, the operator should be decomposed
+            node_converter = aten_op_to_converter.get(node.target)
+            if node_converter is None:
+                logger.w(
+                    f"Node of target {str(node.target)} might be decomposed to other edge operators "
+                    + "because no appropriate NodeConverter exists."
+                )
+                return False
+
+            delegable = node_converter.is_supported(
+                node,
+                self.neutron_target_spec,
+                parameters_mapping,
+                self.custom_delegation_options,
+            )
+
+            # if the node is delegable and the base check_op callable determines the node should not be decomposed,
+            # then do not decompose
+            base_check_op = (
+                True if self.check_op_support is None else self.check_op_support(node)
+            )
+            return delegable and base_check_op
+
+        return self.preserve_ops, check_op_support_extended
