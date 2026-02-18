@@ -108,7 +108,7 @@ The runner requires:
 - `model.pte` — exported model (see [Export](#export))
 - `tekken.json` — tokenizer from the model weights directory
 - `preprocessor.pte` — mel spectrogram preprocessor (see [Preprocessor](#preprocessor))
-- A 16kHz mono WAV audio file
+- A 16kHz mono WAV audio file (or live audio via `--mic`)
 
 ```bash
 cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
@@ -118,11 +118,9 @@ cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
     --audio_path input.wav
 ```
 
-For streaming, add `--streaming`. The runner feeds audio in 200ms chunks
-(simulating live microphone input), computing mel and running the
-encoder+decoder per 80ms step. The `StreamingSession` C++ API
-(`feed_audio` / `flush`) can be used directly for integration with live
-audio sources.
+For streaming, add `--streaming`. The runner processes audio in 80ms steps
+(one audio token per step), computing mel and running the encoder+decoder
+incrementally.
 
 ```bash
 cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
@@ -133,15 +131,31 @@ cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
     --streaming
 ```
 
+For live microphone input, use `--mic` to read raw 16kHz float32 PCM from
+stdin. Pipe from any audio capture tool:
+
+```bash
+# macOS
+ffmpeg -f avfoundation -i ":0" -ar 16000 -ac 1 -f f32le -nostats -loglevel error pipe:1 | \
+  cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
+    --model_path voxtral_rt_exports/model.pte \
+    --tokenizer_path ~/models/Voxtral-Mini-4B-Realtime-2602/tekken.json \
+    --preprocessor_path voxtral_rt_exports/preprocessor.pte \
+    --mic
+```
+
+Ctrl+C stops recording and flushes remaining text.
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model_path` | `model.pte` | Path to exported model |
 | `--tokenizer_path` | `tekken.json` | Path to Tekken tokenizer |
 | `--preprocessor_path` | (none) | Path to mel preprocessor `.pte` |
-| `--audio_path` | (required) | Path to 16kHz mono WAV file |
+| `--audio_path` | (none) | Path to 16kHz mono WAV file |
 | `--temperature` | `0.0` | Sampling temperature (0 = greedy) |
 | `--max_new_tokens` | `500` | Maximum tokens to generate |
-| `--streaming` | off | Use streaming transcription |
+| `--streaming` | off | Use streaming transcription (from WAV file) |
+| `--mic` | off | Live microphone mode (reads raw f32le PCM from stdin) |
 
 ### Example output
 
