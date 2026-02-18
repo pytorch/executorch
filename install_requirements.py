@@ -12,7 +12,12 @@ import sys
 
 from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
 
-from torch_pin import NIGHTLY_VERSION, TORCH_VERSION
+from torch_pin import (
+    NIGHTLY_VERSION,
+    TORCH_VERSION,
+    TORCHAUDIO_VERSION,
+    TORCHVISION_VERSION,
+)
 
 # The pip repository that hosts nightly torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
@@ -119,12 +124,12 @@ def install_optional_example_requirements(use_pytorch_nightly):
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
         (
-            f"torchvision==0.26.0.{NIGHTLY_VERSION}"
+            f"torchvision=={TORCHVISION_VERSION}.{NIGHTLY_VERSION}"
             if use_pytorch_nightly
             else "torchvision"
         ),
         (
-            f"torchaudio==2.11.0.{NIGHTLY_VERSION}"
+            f"torchaudio=={TORCHAUDIO_VERSION}.{NIGHTLY_VERSION}"
             if use_pytorch_nightly
             else "torchaudio"
         ),
