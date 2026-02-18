@@ -121,6 +121,7 @@ case "$MODEL_NAME" in
       --metadata '{"get_bos_id":1, "get_eos_ids":[7]}' \
       --verbose \
       --dtype fp32 \
+      -qmode 8da4w \
       ${BACKEND_ARGS}
     ;;
 
