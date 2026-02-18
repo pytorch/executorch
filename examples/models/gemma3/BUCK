@@ -1,8 +1,13 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
+
+non_fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = define_common_targets,)
 
 fbcode_target(_kind = runtime.python_library,
     name = "gemma3",

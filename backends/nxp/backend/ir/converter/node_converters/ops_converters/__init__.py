@@ -16,6 +16,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.cat_converter import (
     CatConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clamp_converter import (
+    ClampConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clone_converter import (
     CloneConverter,
 )
@@ -39,6 +42,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mul_tensor_converter import (
     MulTensorConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.neg_converter import (
+    NegConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.permute_copy_converter import (
     PermuteCopyConverter,
@@ -85,6 +91,7 @@ __all__ = [
     "AddTensorConverter",
     "AvgPool2dConverter",
     "CatConverter",
+    "ClampConverter",
     "CloneConverter",
     "ConstantPadNDConverter",
     "ConvolutionConverter",
@@ -93,6 +100,7 @@ __all__ = [
     "MeanDimConverter",
     "MMConverter",
     "MulTensorConverter",
+    "NegConverter",
     "PermuteCopyConverter",
     "QDQPerChannelDequantizeConverter",
     "QDQPerTensorDequantizeConverter",

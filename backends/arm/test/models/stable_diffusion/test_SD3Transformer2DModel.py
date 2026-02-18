@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -139,6 +139,8 @@ def test_sd3_transformer_tosa_INT():
             qtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
             rtol=1.0,
             atol=4.0,
+            frobenius_threshold=None,
+            cosine_threshold=None,
         )
         pipeline.change_args(
             "check_count.exir", TestSD3Transformer2DModel.ops_after_partitioner_INT

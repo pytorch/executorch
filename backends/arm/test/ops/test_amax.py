@@ -10,6 +10,7 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
@@ -136,8 +137,19 @@ def test_amax_tosa_INT(test_data: Amax.input_t):
     pipeline.run()
 
 
+@common.parametrize("test_data", Amax.test_data)
+def test_amax_u55_INT(test_data: Amax.input_t):
+    data, dim, keep_dims = test_data()
+    pipeline = EthosU55PipelineINT[Amax.input_t](
+        Amax(dim, keep_dims),
+        data,
+        amax_aten_op,
+    )
+    pipeline.run()
+
+
 def test_amax_u55_INT_not_delegated():
-    data, dim, keep_dims = Amax.test_data["rank_4_all_dim"]()
+    data, dim, keep_dims = ((torch.ones([2, 2], dtype=torch.int32),), 1, False)
     pipeline = OpNotSupportedPipeline[Amax.input_t](
         Amax(dim, keep_dims),
         data,

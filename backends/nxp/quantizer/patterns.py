@@ -377,6 +377,13 @@ class CatPattern(QuantizationPattern):
         )
 
 
+class ClampPattern(SingleInputBasicPattern):
+    """Quantizer for the `aten.clamp.default` operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.clamp.default]
+
+
 def _is_batch_norm(node_: Node) -> bool:
     return node_.op == "call_function" and node_.target in [
         torch.ops.aten.batch_norm.default,
@@ -798,6 +805,15 @@ class MulTensorPattern(QuantizationPattern):
                 (node,),
             ],
         )
+
+
+class NegPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.neg.default` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.neg.default]
 
 
 class PadPattern(SharedSpecPattern):
