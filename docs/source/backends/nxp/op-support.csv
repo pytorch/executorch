@@ -19,7 +19,11 @@ aten.neg.default,int8,static int8,
 aten.relu.default,int8,static int8,
 aten.sigmoid.default,int8,static int8,
 aten.slice_copy.Tensor, int8, static int8
+aten.squeeze.default,int8,static int8,
+aten.squeeze.dim,int8,static int8,
+aten.squeeze.dims,int8,static int8,
 aten.tanh.default,int8,static int8,
+aten.unsqueeze.default,int8,static int8,
 aten.upsample_bilinear2d.vec,int8,static int8,"channels % 8 = 0, H_scale = W_scale = 2 or 4"
 aten.upsample_nearest2d.vec,int8,static int8,"channels % 8 = 0, H_scale = W_scale = 2 or 4"
 aten.view_copy.default,int8,static int8,

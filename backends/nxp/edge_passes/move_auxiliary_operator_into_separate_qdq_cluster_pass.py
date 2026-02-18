@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -105,6 +105,9 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             ViewCopy,
         ],
         ViewCopy: [Clone, CloneDimOrder],
+        Conv: [
+            ViewCopy,  # For 1D conv.
+        ],
     }
 
     def run(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -200,6 +203,7 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             Relu,
             Sigmoid,
             Tanh,
+            ViewCopy,  # For 1D conv.
         ],
         ViewCopy: [Clone, CloneDimOrder],
     }
