@@ -3,6 +3,7 @@ aten.abs.default,int8,static int8,
 aten._adaptive_avg_pool2d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
 aten.addmm.default,int8,static int8,2D tensor only
 aten.add.Tensor,int8,static int8,"alpha = 1, input tensor of rame rank"
+aten.avg_pool1d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
 aten.avg_pool2d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
 aten.cat.default,int8,static int8,"input_channels % 8 = 0, output_channels %8 = 0"
 aten.clone.default,int8,static int8,
@@ -18,7 +19,11 @@ aten.neg.default,int8,static int8,
 aten.relu.default,int8,static int8,
 aten.sigmoid.default,int8,static int8,
 aten.slice_copy.Tensor, int8, static int8
+aten.squeeze.default,int8,static int8,
+aten.squeeze.dim,int8,static int8,
+aten.squeeze.dims,int8,static int8,
 aten.tanh.default,int8,static int8,
+aten.unsqueeze.default,int8,static int8,
 aten.upsample_bilinear2d.vec,int8,static int8,"channels % 8 = 0, H_scale = W_scale = 2 or 4"
 aten.upsample_nearest2d.vec,int8,static int8,"channels % 8 = 0, H_scale = W_scale = 2 or 4"
 aten.view_copy.default,int8,static int8,
