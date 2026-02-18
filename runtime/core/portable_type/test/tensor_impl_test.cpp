@@ -21,6 +21,9 @@ using namespace ::testing;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::Error;
 using executorch::runtime::TensorShapeDynamism;
+using executorch::runtime::etensor::Device;
+using executorch::runtime::etensor::DeviceIndex;
+using executorch::runtime::etensor::DeviceType;
 using executorch::runtime::etensor::ScalarType;
 using executorch::runtime::etensor::TensorImpl;
 using SizesType = TensorImpl::SizesType;
@@ -448,4 +451,113 @@ TEST_F(TensorImplTest, TestResizingTensorToZeroAndBack) {
   t.set_sizes_contiguous({new_sizes, 2});
   EXPECT_GT(t.numel(), 0);
   EXPECT_EQ(t.data(), data);
+}
+
+// ============== Device Tests ==============
+
+TEST_F(TensorImplTest, TestDefaultDeviceIsCPU) {
+  // TensorImpl constructed without device parameters should default to CPU
+  SizesType sizes[2] = {3, 2};
+  float data[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  TensorImpl t(ScalarType::Float, 2, sizes, data);
+
+  EXPECT_EQ(t.device_type(), DeviceType::CPU);
+  EXPECT_EQ(t.device_index(), -1);
+  EXPECT_EQ(t.device(), Device(DeviceType::CPU, -1));
+}
+
+TEST_F(TensorImplTest, TestExplicitCPUDevice) {
+  // TensorImpl constructed with explicit CPU device
+  SizesType sizes[2] = {3, 2};
+  DimOrderType dim_order[2] = {0, 1};
+  StridesType strides[2] = {2, 1};
+  float data[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  TensorImpl t(
+      ScalarType::Float,
+      2,
+      sizes,
+      data,
+      dim_order,
+      strides,
+      TensorShapeDynamism::STATIC,
+      DeviceType::CPU,
+      0);
+
+  EXPECT_EQ(t.device_type(), DeviceType::CPU);
+  EXPECT_EQ(t.device_index(), 0);
+  EXPECT_EQ(t.device(), Device(DeviceType::CPU, 0));
+}
+
+TEST_F(TensorImplTest, TestCUDADevice) {
+  // TensorImpl constructed with CUDA device
+  SizesType sizes[2] = {3, 2};
+  DimOrderType dim_order[2] = {0, 1};
+  StridesType strides[2] = {2, 1};
+  float data[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  TensorImpl t(
+      ScalarType::Float,
+      2,
+      sizes,
+      data,
+      dim_order,
+      strides,
+      TensorShapeDynamism::STATIC,
+      DeviceType::CUDA,
+      0);
+
+  EXPECT_EQ(t.device_type(), DeviceType::CUDA);
+  EXPECT_EQ(t.device_index(), 0);
+  EXPECT_EQ(t.device(), Device(DeviceType::CUDA, 0));
+}
+
+TEST_F(TensorImplTest, TestCUDADeviceMultiGPU) {
+  // TensorImpl with CUDA device index 1 (second GPU)
+  SizesType sizes[2] = {3, 2};
+  DimOrderType dim_order[2] = {0, 1};
+  StridesType strides[2] = {2, 1};
+  float data[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  TensorImpl t(
+      ScalarType::Float,
+      2,
+      sizes,
+      data,
+      dim_order,
+      strides,
+      TensorShapeDynamism::STATIC,
+      DeviceType::CUDA,
+      1);
+
+  EXPECT_EQ(t.device_type(), DeviceType::CUDA);
+  EXPECT_EQ(t.device_index(), 1);
+  EXPECT_EQ(t.device(), Device(DeviceType::CUDA, 1));
+}
+
+TEST_F(TensorImplTest, TestDeviceWithDynamicTensor) {
+  // Device info should work correctly with dynamic tensors
+  SizesType sizes[2] = {3, 2};
+  DimOrderType dim_order[2] = {0, 1};
+  StridesType strides[2] = {2, 1};
+  float data[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  TensorImpl t(
+      ScalarType::Float,
+      2,
+      sizes,
+      data,
+      dim_order,
+      strides,
+      TensorShapeDynamism::DYNAMIC_BOUND,
+      DeviceType::CUDA,
+      0);
+
+  EXPECT_EQ(t.device_type(), DeviceType::CUDA);
+  EXPECT_EQ(t.device_index(), 0);
+
+  // Resize should not affect device
+  SizesType new_sizes[2] = {2, 2};
+  Error err = resize_tensor_impl(&t, {new_sizes, 2});
+  EXPECT_EQ(err, Error::Ok);
+
+  // Device should remain unchanged after resize
+  EXPECT_EQ(t.device_type(), DeviceType::CUDA);
+  EXPECT_EQ(t.device_index(), 0);
 }
