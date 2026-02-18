@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -134,7 +134,12 @@ def test_torch_functions_tosa_FP(test_data):
 def test_torch_functions_tosa_INT(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineINT[input_t](
-        module, inputs, "", use_to_edge_transform_and_lower=True
+        module,
+        inputs,
+        "",
+        use_to_edge_transform_and_lower=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
