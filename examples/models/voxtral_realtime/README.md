@@ -31,6 +31,16 @@ This produces `preprocessor.pte` which takes a 1-D waveform tensor
 `(num_samples,)` and outputs a mel spectrogram `(1, 128, T_mel)`. The
 `--max_audio_len 300` flag supports audio up to 5 minutes.
 
+For streaming, add `--streaming` to skip the 30-second chunk padding so
+that 1280 samples (80ms) produces exactly 8 mel frames:
+
+```bash
+python -m executorch.extension.audio.mel_spectrogram \
+    --feature_size 128 \
+    --streaming \
+    --output_file ./voxtral_rt_exports/preprocessor.pte
+```
+
 ## Export
 
 Export produces a single `.pte` file with three methods:
@@ -46,12 +56,25 @@ python export_voxtral_rt.py \
     --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
     --backend xnnpack \
     --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder 8da4w \
     --qlinear 8da4w \
     --qembedding 8w
 ```
 
-This exports with XNNPACK backend acceleration and 8-bit dynamic activation /
-4-bit weight linear quantization + 8-bit embedding quantization.
+For streaming, add `--streaming` to export the encoder with KV caches for
+incremental processing. This replaces `audio_encoder` with
+`encode_audio_chunk` which processes 8 mel frames at a time:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend xnnpack \
+    --streaming \
+    --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder 8da4w \
+    --qlinear 8da4w \
+    --qembedding 8w
+```
 
 ### Options
 
@@ -62,9 +85,13 @@ This exports with XNNPACK backend acceleration and 8-bit dynamic activation /
 | `--output-dir` | `./voxtral_rt_exports` | Output directory |
 | `--max-seq-len` | `4096` | KV cache length |
 | `--delay-tokens` | `6` | Transcription delay in tokens (6 = 480ms) |
-| `--qlinear` | (none) | Linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`) |
-| `--qlinear-group-size` | `32` | Group size for linear quantization |
+| `--qlinear` | (none) | Decoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`) |
+| `--qlinear-group-size` | `32` | Group size for decoder linear quantization |
+| `--qlinear-encoder` | (none) | Encoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`) |
+| `--qlinear-encoder-group-size` | `32` | Group size for encoder linear quantization |
 | `--qembedding` | (none) | Embedding layer quantization (`8w`) |
+| `--streaming` | off | Export streaming encoder with KV cache |
+| `--max-enc-len` | `750` | Max encoder KV cache length (~15s audio, streaming only) |
 
 ## Build
 
@@ -91,6 +118,21 @@ cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
     --audio_path input.wav
 ```
 
+For streaming, add `--streaming`. The runner feeds audio in 200ms chunks
+(simulating live microphone input), computing mel and running the
+encoder+decoder per 80ms step. The `StreamingSession` C++ API
+(`feed_audio` / `flush`) can be used directly for integration with live
+audio sources.
+
+```bash
+cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
+    --model_path voxtral_rt_exports/model.pte \
+    --tokenizer_path ~/models/Voxtral-Mini-4B-Realtime-2602/tekken.json \
+    --preprocessor_path voxtral_rt_exports/preprocessor.pte \
+    --audio_path input.wav \
+    --streaming
+```
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model_path` | `model.pte` | Path to exported model |
@@ -99,6 +141,7 @@ cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
 | `--audio_path` | (required) | Path to 16kHz mono WAV file |
 | `--temperature` | `0.0` | Sampling temperature (0 = greedy) |
 | `--max_new_tokens` | `500` | Maximum tokens to generate |
+| `--streaming` | off | Use streaming transcription |
 
 ### Example output
 

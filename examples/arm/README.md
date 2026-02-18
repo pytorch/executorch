@@ -151,3 +151,11 @@ $ ./examples/arm/run.sh --model_name=mv2 --target=ethos-u55-128 --no_delegate
 We also have a [tutorial](https://pytorch.org/executorch/stable/backends-arm-ethos-u) explaining the steps performed in these
 scripts, expected results, possible problems and more. It is a step-by-step guide
 you can follow to better understand this delegate.
+
+### Project Templates
+
+These project templates provide alternative starting points with different toolchains and build systems:
+
+- [CMSIS-Executorch Project Template](https://github.com/Arm-Examples/cmsis-executorch) — Docker-based build environment with Keil Studio/VS Code integration, automated CI/CD, and AVH simulation support.
+
+- [ExecuTorch on Zephyr RTOS with CMSIS](https://github.com/Arm-Examples/cmsis-zephyr-executorch) — ExecuTorch on Arm Cortex-M with Ethos-U NPU using Zephyr RTOS and CMSIS Toolbox.

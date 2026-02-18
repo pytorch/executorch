@@ -18,15 +18,15 @@ from executorch.exir.pass_base import ExportPass
 
 
 def _get_unfold_copy_decomposition(op) -> tuple:
-    """
-    Returns the decomposition of the given aten.unfold_copy operation into
-    its equivalent TOSA-supported operations
+    """Returns the decomposition of the given aten.unfold_copy operation into
+    its equivalent TOSA-supported operations.
 
     Returns:
         A tuple of operator overloads used by the decomposition.
 
     Raises:
         RuntimeError: If the provided operator is not supported by this pass.
+
     """
 
     if op in DecomposeUnfoldToGatherPass._TARGET_OPS:
@@ -46,8 +46,7 @@ def _get_unfold_copy_decomposition(op) -> tuple:
 
 
 class DecomposeUnfoldToGatherPass(ArmPass):
-    """
-    Decompose unfold_copy with backend tosa.GATHER as the core op, plus other
+    """Decompose unfold_copy with backend tosa.GATHER as the core op, plus other
     TOSA-supported ops to build indices and materialize the output layout.
 
     Supported op:
@@ -87,6 +86,7 @@ class DecomposeUnfoldToGatherPass(ArmPass):
             tosa.GATHER(values=[P,K,Q], indices=[P,U*C]) -> [P,U*C,Q]
       - Reshape and permute to match PyTorch unfold layout:
             [P,U*C,Q] -> [*pre, U, *post, C]
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
