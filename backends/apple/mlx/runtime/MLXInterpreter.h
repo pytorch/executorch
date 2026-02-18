@@ -1430,8 +1430,17 @@ class Interpreter {
       const MLXProgram& prog,
       ExecutionState& st,
       StreamOrDevice stream = {}) const {
+    run_chain(prog, prog.main_chain_idx, st, stream);
+  }
+
+  void run_chain(
+      const MLXProgram& prog,
+      uint32_t chain_idx,
+      ExecutionState& st,
+      StreamOrDevice stream = {}) const {
+    const auto& chain = prog.instruction_chains.at(chain_idx);
     size_t idx = 0;
-    for (const auto& instr : prog.instructions) {
+    for (const auto& instr : chain) {
       st.begin_op(idx, op_name(instr.op));
       dispatch(instr, st, stream);
       st.end_op();

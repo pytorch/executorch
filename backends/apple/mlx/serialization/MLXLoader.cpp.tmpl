@@ -108,21 +108,23 @@ MLXProgram load_program(const void* data, size_t size) {
   program.num_temp_tensors = fb_graph->num_temp_tensors();
   program.num_values = fb_graph->num_values();
 
-  if (fb_graph->instructions()) {
-    program.instructions.reserve(fb_graph->instructions()->size());
-    for (size_t i = 0; i < fb_graph->instructions()->size(); ++i) {
-      const auto* fb_instr = fb_graph->instructions()->Get(i);
-      program.instructions.push_back(load_instruction(fb_instr));
+  if (fb_graph->instruction_chains()) {
+    program.instruction_chains.reserve(fb_graph->instruction_chains()->size());
+    for (size_t c = 0; c < fb_graph->instruction_chains()->size(); ++c) {
+      const auto* fb_chain = fb_graph->instruction_chains()->Get(c);
+      std::vector<Instruction> chain;
+      if (fb_chain && fb_chain->instructions()) {
+        chain.reserve(fb_chain->instructions()->size());
+        for (size_t i = 0; i < fb_chain->instructions()->size(); ++i) {
+          chain.push_back(load_instruction(fb_chain->instructions()->Get(i)));
+        }
+      }
+      program.instruction_chains.push_back(std::move(chain));
     }
   }
 
-  if (fb_graph->init_instructions()) {
-    program.init_instructions.reserve(fb_graph->init_instructions()->size());
-    for (size_t i = 0; i < fb_graph->init_instructions()->size(); ++i) {
-      const auto* fb_instr = fb_graph->init_instructions()->Get(i);
-      program.init_instructions.push_back(load_instruction(fb_instr));
-    }
-  }
+  program.main_chain_idx = fb_graph->main_chain_idx();
+  program.init_chain_idx = fb_graph->init_chain_idx();
 
   if (fb_graph->input_map()) {
     for (size_t i = 0; i < fb_graph->input_map()->size(); ++i) {

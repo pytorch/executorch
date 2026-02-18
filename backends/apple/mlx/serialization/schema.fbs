@@ -5,6 +5,13 @@
 //
 // After editing this file, regenerate dependent files with:
 //     python backends/apple/mlx/serialization/generate.py
+//
+// BACKWARD COMPATIBILITY RULES:
+//   - New fields in tables: APPEND ONLY (add at the end, with a default value)
+//   - New union members:    APPEND ONLY (add at the end of the union)
+//   - New tables:           Safe to add freely
+//   - New enum values:      APPEND ONLY
+//   - NEVER remove, reorder, or change the type of existing fields/members
 
 namespace mlx_delegate;
 
@@ -12,7 +19,7 @@ namespace mlx_delegate;
 // Core types
 // =============================================================================
 
-// Note: DTypeId enum removed - we now use ET's ScalarType (int8) directly.
+// We use ET's ScalarType (int8) directly.
 // See runtime/core/portable_type/scalar_type.h for ScalarType values.
 
 // Tensor slot identifier
@@ -769,6 +776,8 @@ table MedianNode {
 // Union of all op types
 // =============================================================================
 
+// BC: APPEND ONLY — new op nodes must be added at the end of this union.
+// Reordering or removing members changes numeric type IDs and breaks existing .pte files.
 union OpNode {
     NoopNode,
     AddmmNode,
@@ -838,7 +847,6 @@ union OpNode {
     TriNode,
     TrilNode,
     TriuNode,
-    // Math ops - Unary
     FloorNode,
     CeilNode,
     SquareNode,
@@ -864,12 +872,10 @@ union OpNode {
     SqrtNode,
     AbsNode,
     NegNode,
-    // Math ops - Binary
     Atan2Node,
     LogAddExpNode,
     FloorDivideNode,
     PowerNode,
-    // Math ops - Reduction
     LogSumExpNode,
     SumNode,
     MeanNode,
@@ -880,6 +886,7 @@ union OpNode {
     MinNode,
     ArgminNode,
     MedianNode
+    // BC: Add new op nodes here (append only)
 }
 
 // =============================================================================
@@ -888,6 +895,15 @@ union OpNode {
 
 table Instruction {
     op: OpNode (required);
+}
+
+// =============================================================================
+// Instruction chain (basic block of sequential instructions)
+// =============================================================================
+
+table InstructionChain {
+    instructions: [Instruction] (required);
+    // BC: New fields must be appended here with a default value
 }
 
 // =============================================================================
@@ -929,6 +945,7 @@ table NamedSlot {
 // Root type: MLX Graph
 // =============================================================================
 
+// BC: New fields must be appended at the end of this table with a default value.
 table MLXGraph {
     // Version for compatibility
     version: string;
@@ -942,9 +959,10 @@ table MLXGraph {
     num_temp_tensors: uint32;
     num_values: uint32;
 
-    // Instructions
-    instructions: [Instruction] (required);      // Run every execute() call
-    init_instructions: [Instruction];            // Run once at init()
+    // Instruction chains (basic blocks of sequential instructions)
+    instruction_chains: [InstructionChain] (required);
+    main_chain_idx: uint32 = 0;                  // Chain to run every execute() call
+    init_chain_idx: int32 = -1;                  // Chain to run once at init(), -1 = none
 
     // I/O mappings
     input_map: [SlotVariant];
@@ -956,6 +974,8 @@ table MLXGraph {
 
     // Tensor metadata (for non-temp tensors), indexed by Tid
     tensor_meta: [TensorMeta];
+
+    // BC: New fields must be appended here with a default value
 }
 
 root_type MLXGraph;
