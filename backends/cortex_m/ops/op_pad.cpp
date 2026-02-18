@@ -8,10 +8,6 @@
 
 #include "cortex_m_ops_common.h"
 
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -30,6 +26,7 @@ Tensor& pad_out(
     const Int64ArrayRef post_pad,
     int64_t pad_value,
     Tensor& out) {
+#if CMSIS_NN_SUPPORTED
   if (input.scalar_type() != ScalarType::Char ||
       out.scalar_type() != ScalarType::Char) {
     ET_LOG(
@@ -92,6 +89,11 @@ Tensor& pad_out(
   }
 
   return out;
+#else
+  ET_LOG(Error, "pad_out: requires ARM CMSIS-NN runtime");
+  context.fail(Error::Internal);
+  return out;
+#endif
 }
 
 } // namespace native

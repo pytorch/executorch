@@ -7,10 +7,6 @@
 
 #include "cortex_m_ops_common.h"
 
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -155,6 +151,7 @@ Tensor& quantized_depthwise_conv2d_out(
     const int64_t activation_min,
     const int64_t activation_max,
     Tensor& out) {
+#if CMSIS_NN_SUPPORTED
   if (!validate_depthwise_conv2d_arguments(
           context,
           input,
@@ -272,6 +269,11 @@ Tensor& quantized_depthwise_conv2d_out(
   }
 
   return out;
+#else
+  ET_LOG(Error, "quantized_depthwise_conv2d_out: requires ARM CMSIS-NN runtime");
+  context.fail(Error::Internal);
+  return out;
+#endif
 }
 
 } // namespace native

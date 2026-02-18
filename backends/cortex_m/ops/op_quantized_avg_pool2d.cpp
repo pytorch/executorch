@@ -7,10 +7,6 @@
 
 #include "cortex_m_ops_common.h"
 
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -26,6 +22,7 @@ Tensor& quantized_avg_pool2d_out(
     const int64_t multiplier,
     const int64_t shift,
     Tensor& out) {
+#if CMSIS_NN_SUPPORTED
   constexpr int32_t activation_min = std::numeric_limits<int8_t>::min();
   constexpr int32_t activation_max = std::numeric_limits<int8_t>::max();
 
@@ -78,6 +75,11 @@ Tensor& quantized_avg_pool2d_out(
   (void)shift;
 
   return out;
+#else
+  ET_LOG(Error, "quantized_avg_pool2d_out: requires ARM CMSIS-NN runtime");
+  context.fail(Error::Internal);
+  return out;
+#endif
 }
 
 } // namespace native

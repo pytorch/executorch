@@ -9,11 +9,6 @@
 
 #include "cortex_m_ops_common.h"
 
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -24,6 +19,7 @@ Tensor& minimum_out(
     const Tensor& input1,
     const Tensor& input2,
     Tensor& out) {
+#if CMSIS_NN_SUPPORTED
   validate_cmsis_nn_tensor_requirements(
       input1,
       input2,
@@ -98,6 +94,11 @@ Tensor& minimum_out(
   }
 
   return out;
+#else
+  ET_LOG(Error, "minimum_out: requires ARM CMSIS-NN runtime");
+  context.fail(Error::Internal);
+  return out;
+#endif
 }
 
 } // namespace native

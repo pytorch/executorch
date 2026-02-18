@@ -9,15 +9,26 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library", "executorch_generated_lib")
 load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
 
+
 def define_operator_target(name: str):
     runtime.cxx_library(
         name = "op_{}".format(name),
         srcs = [
             "op_{}.cpp".format(name),
         ],
+        headers = [
+            "cortex_m_ops_common.h",
+        ],
         platforms = CXX,
         deps = [
-            "//executorch/runtime/kernel:kernel_includes"
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+            "//executorch/kernels/portable/cpu/util:padding_util",
+            "fbsource//third-party/cmsis-nn:cmsis_header",
         ],
         link_whole = True,
     )
@@ -25,6 +36,19 @@ def define_operator_target(name: str):
 OPERATORS = [
     "quantize_per_tensor",
     "dequantize_per_tensor",
+    "quantized_add",
+    "quantized_mul",
+    "minimum",
+    "maximum",
+    "quantized_linear",
+    "softmax",
+    "transpose",
+    "pad",
+    "quantized_conv2d",
+    "quantized_depthwise_conv2d",
+    "quantized_transpose_conv2d",
+    "quantized_avg_pool2d",
+    "quantized_max_pool2d",
 ]
 
 def define_common_targets():
