@@ -210,7 +210,7 @@ if [ "$MODEL_NAME" = "parakeet" ]; then
   exit 0
 fi
 
-# Voxtral Realtime uses a custom export script
+# Voxtral Realtime uses a custom export script (streaming mode)
 if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   pip install safetensors huggingface_hub
 
@@ -218,22 +218,23 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   LOCAL_MODEL_DIR="${OUTPUT_DIR}/model_weights"
   python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
 
-  # Voxtral Realtime has its own quantization flags (no --qlinear_encoder)
+  # Per-component quantization flags
   VR_QUANT_ARGS=""
   if [ "$QUANT_NAME" = "quantized-8da4w" ]; then
-    VR_QUANT_ARGS="--qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
+    VR_QUANT_ARGS="--qlinear-encoder 8da4w --qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
   fi
 
   python -m executorch.examples.models.voxtral_realtime.export_voxtral_rt \
       --model-path "$LOCAL_MODEL_DIR" \
       --backend xnnpack \
+      --streaming \
       --output-dir "${OUTPUT_DIR}" \
       ${VR_QUANT_ARGS}
 
-  # Export preprocessor
+  # Export streaming preprocessor (no chunk padding)
   python -m executorch.extension.audio.mel_spectrogram \
       --feature_size 128 \
-      --max_audio_len 300 \
+      --streaming \
       --output_file "${OUTPUT_DIR}/preprocessor.pte"
 
   test -f "${OUTPUT_DIR}/model.pte"

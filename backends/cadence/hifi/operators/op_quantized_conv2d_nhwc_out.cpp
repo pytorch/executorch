@@ -307,18 +307,10 @@ void xa_opt_quantized_conv2d_nhwc(
 
       p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
 
-      WORD8* ptr1 = (WORD8*)kernels::allocate_temp_memory(
-          ctx,
-          ((batches * out_channels * out_height * out_width) + 8) *
-              sizeof(WORD8));
-
-      WORD8* p_out_temp = (WORD8*)ALIGN_PTR(ptr1, 8);
-
       for (int _n = 0; _n < batches; _n++) {
         WORD8* in_batch =
             p_inp + _n * input_channels * input_height * input_width;
-        WORD8* out_batch =
-            p_out_temp + _n * out_channels * out_height * out_width;
+        WORD8* out_batch = p_out + _n * out_channels * out_height * out_width;
 
         xa_nn_conv2d_depthwise_per_chan_sym8sxasym8s(
             out_batch,

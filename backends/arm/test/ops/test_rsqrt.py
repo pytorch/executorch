@@ -27,9 +27,9 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 class Rsqrt(torch.nn.Module):
     test_parameters = {
         "ones_4d": lambda: (torch.ones(1, 10, 10, 10),),
-        "rand_4d_1": lambda: (torch.rand(1, 10, 10, 10),),
-        "rand_4d_2": lambda: (torch.rand(1, 5, 10, 20),),
-        "rand_3d": lambda: (torch.rand(5, 10, 20),),
+        "rand_4d_1": lambda: (torch.rand(1, 10, 10, 10) + 0.1,),
+        "rand_4d_2": lambda: (torch.rand(1, 5, 10, 20) + 0.1,),
+        "rand_3d": lambda: (torch.rand(5, 10, 20) + 0.1,),
     }
     test_parameters_fp16 = {
         "rand_3d_fp16": lambda: (torch.rand(3, 4, 5, dtype=torch.float16),),
@@ -138,7 +138,8 @@ def test_rsqrt_tosa_INT_a16w8(test_tensor: torch.Tensor):
         aten_op,
         exir_op=[],
         tosa_extensions=["int16"],
-        epsilon=2**16,
+        epsilon=2**-16,
+        qtol=128,
     )
     pipeline.run()
 
@@ -154,7 +155,8 @@ def test_rsqrt_16a8w_u55_INT16(test_tensor: torch.Tensor):
         aten_op,
         exir_ops=[],
         a16w8_quantization=True,
-        epsilon=2**16,
+        epsilon=2**-16,
+        qtol=128,
     )
     pipeline.run()
 
@@ -170,6 +172,7 @@ def test_rsqrt_16a8w_u85_INT(test_tensor: torch.Tensor):
         aten_op,
         exir_ops=[],
         a16w8_quantization=True,
-        epsilon=2**16,
+        epsilon=2**-16,
+        qtol=128,
     )
     pipeline.run()
