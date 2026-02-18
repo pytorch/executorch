@@ -9,6 +9,7 @@
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -112,3 +113,24 @@ def load_checkpoint_from_pytorch_model(input_dir: str) -> Dict:
         return state_dict
 
     raise FileNotFoundError(f"Could not find pytorch_model checkpoint in {input_dir}")
+
+
+def get_mapped_key(key: str, mapping_dict: Dict[str, str]) -> str:
+    """Map a state dict key using a mapping dictionary with "{}" layer number placeholders."""
+    try:
+        # Checks if there is a layer # in the key
+        if any(k.isdigit() for k in key.split(".")):
+            # Replace layer number with "{}" to create key for lookup
+            abstract_key = re.sub(r"(\.\d+)", ".{}", key)
+            layer_num = re.search(r"\d+", key).group(0)
+            new_key = mapping_dict[abstract_key]
+            new_key = new_key.format(layer_num)
+        else:
+            new_key = mapping_dict[key]
+    except KeyError as e:
+        raise Exception(
+            f'Error converting the state dict. Found unexpected key: "{key}". '
+            "Please make sure you're loading a checkpoint with the right format. "
+        ) from e
+
+    return new_key
