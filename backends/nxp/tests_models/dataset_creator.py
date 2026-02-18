@@ -14,9 +14,8 @@ from random import sample, seed
 import numpy as np
 import torch
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
-
+from executorch.backends.nxp.tests_models.calibration_dataset import CalibrationDataset
 from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
-from executorch.examples.nxp.models.calibration_dataset import CalibrationDataset
 from torch import Tensor
 
 
