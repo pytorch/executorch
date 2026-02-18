@@ -166,8 +166,9 @@ def parse_mlx_flatbuffer(fb_data: bytes) -> Dict[str, Any]:  # noqa: C901
             "num_mutable_buffer_tensors": graph.NumMutableBufferTensors(),
             "num_temp_tensors": graph.NumTempTensors(),
             "num_values": graph.NumValues(),
-            "num_instructions": graph.InstructionsLength(),
-            "num_init_instructions": graph.InitInstructionsLength(),
+            "num_instruction_chains": graph.InstructionChainsLength(),
+            "main_chain_idx": graph.MainChainIdx(),
+            "init_chain_idx": graph.InitChainIdx(),
             "input_map_length": graph.InputMapLength(),
             "output_map_length": graph.OutputMapLength(),
             "mutable_buffer_map_length": graph.MutableBufferMapLength(),
@@ -175,29 +176,38 @@ def parse_mlx_flatbuffer(fb_data: bytes) -> Dict[str, Any]:  # noqa: C901
             "tensor_meta_length": graph.TensorMetaLength(),
         }
 
-        # Extract instructions with full op details
-        instructions = []
-        for i in range(graph.InstructionsLength()):
-            try:
-                instr = graph.Instructions(i)
-                if instr:
-                    op_type = instr.OpType()
-                    op_name = MLX_OP_TYPE_NAMES.get(op_type, f"Unknown({op_type})")
-                    instr_info = {
-                        "index": i,
-                        "op_type": op_type,
-                        "op_name": op_name,
-                    }
+        # Extract instruction chains with full op details
+        instruction_chains = []
+        for c in range(graph.InstructionChainsLength()):
+            chain = graph.InstructionChains(c)
+            chain_info = {"chain_index": c, "instructions": []}
+            if chain:
+                for i in range(chain.InstructionsLength()):
+                    try:
+                        instr = chain.Instructions(i)
+                        if instr:
+                            op_type = instr.OpType()
+                            op_name = MLX_OP_TYPE_NAMES.get(
+                                op_type, f"Unknown({op_type})"
+                            )
+                            instr_info = {
+                                "index": i,
+                                "op_type": op_type,
+                                "op_name": op_name,
+                            }
 
-                    # Parse op-specific fields
-                    op_data = parse_op_node(instr, op_type, op_name)
-                    if op_data:
-                        instr_info.update(op_data)
+                            # Parse op-specific fields
+                            op_data = parse_op_node(instr, op_type, op_name)
+                            if op_data:
+                                instr_info.update(op_data)
 
-                    instructions.append(instr_info)
-            except Exception as e:
-                instructions.append({"index": i, "error": f"parse_failed: {e}"})
-        result["instructions"] = instructions
+                            chain_info["instructions"].append(instr_info)
+                    except Exception as e:
+                        chain_info["instructions"].append(
+                            {"index": i, "error": f"parse_failed: {e}"}
+                        )
+            instruction_chains.append(chain_info)
+        result["instruction_chains"] = instruction_chains
 
         # Extract named slots
         named_slots = []
@@ -699,10 +709,20 @@ def show_mlx_summary(pte_data: bytes) -> None:  # noqa: C901
                                 f"  num_values:                 {graph_info.get('num_values', '?')}"
                             )
                             print(
-                                f"  num_instructions:           {graph_info.get('num_instructions', '?')}"
+                                f"  num_instruction_chains:     {graph_info.get('num_instruction_chains', '?')}"
+                            )
+                            main_idx = graph_info.get("main_chain_idx", 0)
+                            chains = graph_info.get("instruction_chains", [])
+                            main_num_instrs = "?"
+                            if main_idx < len(chains):
+                                main_num_instrs = len(
+                                    chains[main_idx].get("instructions", [])
+                                )
+                            print(
+                                f"  main_chain_idx:             {main_idx} ({main_num_instrs} instructions)"
                             )
                             print(
-                                f"  num_init_instructions:      {graph_info.get('num_init_instructions', '?')}"
+                                f"  init_chain_idx:             {graph_info.get('init_chain_idx', '?')}"
                             )
 
                             print("\nI/O Maps:")
@@ -857,18 +877,30 @@ def show_mlx_instructions(pte_data: bytes) -> None:  # noqa: C901
             )
             print(f"Temp tensors: {graph.get('num_temp_tensors', 0)}")
             print(f"Values: {graph.get('num_values', 0)}")
-            print(f"Instructions: {graph.get('num_instructions', 0)}")
-            print(f"Init instructions: {graph.get('num_init_instructions', 0)}")
+            num_chains = graph.get("num_instruction_chains", 0)
+            main_idx = graph.get("main_chain_idx", 0)
+            init_idx = graph.get("init_chain_idx", -1)
+            print(f"Instruction chains: {num_chains}")
+            print(f"Main chain idx: {main_idx}")
+            if init_idx >= 0:
+                print(f"Init chain idx: {init_idx}")
 
             # Constant data size
             constant_seg = graph.get("constant_segment", {})
             if constant_seg:
                 print(f"Constant data: {constant_seg.get('size', 0):,} bytes")
 
-            # Instructions
-            instructions = graph.get("instructions", [])
-            if instructions:
-                print("\nInstructions:")
+            # Instruction chains
+            instruction_chains = graph.get("instruction_chains", [])
+            for chain_info in instruction_chains:
+                chain_idx = chain_info.get("chain_index", "?")
+                label = ""
+                if chain_idx == main_idx:
+                    label = " (main)"
+                elif chain_idx == init_idx:
+                    label = " (init)"
+                instructions = chain_info.get("instructions", [])
+                print(f"\nChain {chain_idx}{label} ({len(instructions)} instructions):")
                 for instr in instructions:
                     op_name = instr.get("op_name", f"op_{instr.get('op_type', '?')}")
                     print(f"  [{instr.get('index', '?')}] {op_name}")

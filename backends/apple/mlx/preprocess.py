@@ -141,13 +141,16 @@ def _log_mlx_graph(mlx_graph) -> None:  # noqa: C901
     )
     logging.info(f"  num_temp_tensors: {mlx_graph.num_temp_tensors}")
     logging.info(f"  num_values: {mlx_graph.num_values}")
-    if mlx_graph.init_instructions:
-        logging.info(f"  init_instructions ({len(mlx_graph.init_instructions)}):")
-        for i, instr in enumerate(mlx_graph.init_instructions):
-            logging.info(f"    [{i}]: {type(instr.op).__name__}")
-    logging.info(f"  instructions ({len(mlx_graph.instructions)}):")
-    for i, instr in enumerate(mlx_graph.instructions):
-        logging.info(f"    [{i}]: {type(instr.op).__name__}")
+    logging.info(f"  instruction_chains ({len(mlx_graph.instruction_chains)}):")
+    for c, chain in enumerate(mlx_graph.instruction_chains):
+        label = ""
+        if c == mlx_graph.main_chain_idx:
+            label = " (main)"
+        elif c == mlx_graph.init_chain_idx:
+            label = " (init)"
+        logging.info(f"    chain {c}{label} ({len(chain.instructions)} instructions):")
+        for i, instr in enumerate(chain.instructions):
+            logging.info(f"      [{i}]: {type(instr.op).__name__}")
     if mlx_graph.input_map:
         logging.info(f"  input_map ({len(mlx_graph.input_map)}):")
         for i, slot in enumerate(mlx_graph.input_map):

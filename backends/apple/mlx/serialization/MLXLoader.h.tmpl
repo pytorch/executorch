@@ -143,9 +143,10 @@ struct MLXProgram {
   uint32_t num_temp_tensors{0};
   uint32_t num_values{0};
 
-  // Instructions
-  std::vector<Instruction> instructions;
-  std::vector<Instruction> init_instructions;
+  // Instruction chains
+  std::vector<std::vector<Instruction>> instruction_chains;
+  uint32_t main_chain_idx{0};
+  int32_t init_chain_idx{-1};  // -1 = no init chain
 
   // I/O mappings
   std::vector<SlotVariant> input_map;

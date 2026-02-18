@@ -44,6 +44,7 @@ import torch
 from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     FloatOrVid,
     Instruction,
+    InstructionChain,
     IntOrVid,
     MLXGraph,
     NamedSlot,
@@ -1535,7 +1536,9 @@ class MLXProgramBuilder:
             num_mutable_buffer_tensors=num_tensors[IdSpace.MutableBuffer],
             num_temp_tensors=num_temp_tensors,
             num_values=num_values_count,
-            instructions=self._instrs,
+            instruction_chains=[InstructionChain(instructions=self._instrs)],
+            main_chain_idx=0,
+            init_chain_idx=-1,
             input_map=input_map,
             output_map=output_map,
             mutable_buffer_map=mutable_buffer_map,

@@ -418,12 +418,12 @@ def get_mlx_node_counts(pte_path: Union[str, Path]) -> Dict[str, int]:
     """
     data = inspect_pte_file(pte_path)
     graph = data.get("graph", {})
-    instructions = graph.get("instructions", [])
     counts: Dict[str, int] = {}
-    for instr in instructions:
-        op_name = instr.get("op_name")
-        if op_name:
-            counts[op_name] = counts.get(op_name, 0) + 1
+    for chain_info in graph.get("instruction_chains", []):
+        for instr in chain_info.get("instructions", []):
+            op_name = instr.get("op_name")
+            if op_name:
+                counts[op_name] = counts.get(op_name, 0) + 1
     return counts
 
 

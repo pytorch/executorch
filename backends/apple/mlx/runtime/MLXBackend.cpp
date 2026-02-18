@@ -214,6 +214,15 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       handle->state.bind(
           handle->program, handle->constants, handle->mutable_buffers);
 
+      // Run init chain if present
+      if (handle->program.init_chain_idx >= 0) {
+        handle->interpreter.run_chain(
+            handle->program,
+            static_cast<uint32_t>(handle->program.init_chain_idx),
+            handle->state,
+            handle->stream);
+      }
+
     } catch (const std::exception& e) {
       ET_LOG(Error, "Failed to load MLX program: %s", e.what());
       handle->~MLXHandle();

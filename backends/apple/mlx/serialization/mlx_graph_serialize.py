@@ -204,14 +204,23 @@ class MLXGraphSerializer(GeneratedOpBuilders):
 
         # Build all components bottom-up (FlatBuffers requirement)
 
-        # 1. Build instructions
-        instr_offsets = []
-        for instr in self.graph.instructions:
-            instr_off = self._build_instruction(builder, instr)
-            instr_offsets.append(instr_off)
+        # 1. Build instruction chains
+        chain_offsets = []
+        for chain in self.graph.instruction_chains:
+            instr_offsets = []
+            for instr in chain.instructions:
+                instr_offsets.append(self._build_instruction(builder, instr))
+            instr_vec = self._build_offset_vector(builder, instr_offsets)
 
-        # Create instructions vector
-        instructions_vec = self._build_offset_vector(builder, instr_offsets)
+            from executorch.backends.apple.mlx.serialization._generated.mlx_delegate import (
+                InstructionChain as FBInstructionChainModule,
+            )
+
+            FBInstructionChainModule.Start(builder)
+            FBInstructionChainModule.AddInstructions(builder, instr_vec)
+            chain_offsets.append(FBInstructionChainModule.End(builder))
+
+        chains_vec = self._build_offset_vector(builder, chain_offsets)
 
         # 2. Build I/O maps
         input_map_vec = self._build_slot_variant_vector(builder, self.graph.input_map)
@@ -253,7 +262,9 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         )
         FBMLXGraphModule.AddNumTempTensors(builder, self.graph.num_temp_tensors)
         FBMLXGraphModule.AddNumValues(builder, self.graph.num_values)
-        FBMLXGraphModule.AddInstructions(builder, instructions_vec)
+        FBMLXGraphModule.AddInstructionChains(builder, chains_vec)
+        FBMLXGraphModule.AddMainChainIdx(builder, self.graph.main_chain_idx)
+        FBMLXGraphModule.AddInitChainIdx(builder, self.graph.init_chain_idx)
         FBMLXGraphModule.AddInputMap(builder, input_map_vec)
         FBMLXGraphModule.AddOutputMap(builder, output_map_vec)
         FBMLXGraphModule.AddMutableBufferMap(builder, mutable_buffer_map_vec)
