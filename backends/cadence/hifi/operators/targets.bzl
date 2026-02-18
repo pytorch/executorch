@@ -67,16 +67,12 @@ OPERATORS = [
     "pow",
     "quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor_out",
     "quantized_conv2d_nchw_asym8uxsym8u_asym8u_per_tensor_out",
-    "quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor_out",
-    "quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor_out",
     "quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_out",
     "quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_out",
     "quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_out",
     "quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_out",
     "quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_out",
     "quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_out",
-    "quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_out",
-    "quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_out",
     "quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_out",
     "quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_out",
     "quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_out",
@@ -119,6 +115,14 @@ def define_common_targets():
     # Define build targets for all operators registered in the tables above.
     for op in OPERATORS:
         define_operator(op)
+
+    # quantized_conv1d operators need shared implementation header
+    define_operator("quantized_conv1d_ncl_per_tensor_out", exported_headers=["operators.h", "quantized_conv1d_impl.h"])
+    define_operator("quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor_out", exported_headers=["operators.h", "quantized_conv1d_impl.h"])
+    define_operator("quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor_out", exported_headers=["operators.h", "quantized_conv1d_impl.h"])
+    define_operator("quantized_conv1d_nlc_per_tensor_out", exported_headers=["operators.h", "quantized_conv1d_impl.h"])
+    define_operator("quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_out", exported_headers=["operators.h", "quantized_conv1d_impl.h"])
+    define_operator("quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_out", exported_headers=["operators.h", "quantized_conv1d_impl.h"])
 
     # quantized_linear_out and quantized_linear_per_tensor_out needs additional dependency for int16 support
     define_operator("quantized_linear_out", deps=["//executorch/backends/cadence/generic/operators:op_quantized_linear"])

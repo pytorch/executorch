@@ -1974,7 +1974,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             ),
             1,
         )
-        # Three permutes are added, two for the input/weights and one for the output.
+        # Three permutes are added: one for the input, one for the weight, and one for the output.
         self.assertEqual(
             count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
             3,

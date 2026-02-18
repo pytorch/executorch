@@ -161,6 +161,42 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "quantized_conv1d_ncl_out",
+        srcs = ["quantized_conv1d_ncl_out.cpp"],
+        platforms = CXX,
+        deps = [
+            ":cadence_type_util",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/kernel:kernel_runtime_context",
+            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "quantized_conv1d_nlc_out",
+        srcs = ["quantized_conv1d_nlc_out.cpp"],
+        platforms = CXX,
+        deps = [
+            ":cadence_type_util",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/kernel:kernel_runtime_context",
+            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
         name = "op_quantized_layer_norm",
         srcs = ["op_quantized_layer_norm.cpp"],
         exported_headers = ["op_quantized_layer_norm.h"],

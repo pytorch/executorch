@@ -63,6 +63,22 @@ class CompileTimeTypeDispatchPass(ExportPass):
             weight_arg_idx=2,
             variant="default",
         ),
+        exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor: OpConfig(
+            "quantized_conv1d_ncl",
+            type_dispatch_suffixes={
+                (torch.int8, torch.int8): "asym8sxsym8s_asym8s",
+                (torch.uint8, torch.uint8): "asym8uxsym8u_asym8u",
+            },
+            weight_arg_idx=1,
+        ),
+        exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor: OpConfig(
+            "quantized_conv1d_nlc",
+            type_dispatch_suffixes={
+                (torch.int8, torch.int8): "asym8sxsym8s_asym8s",
+                (torch.uint8, torch.uint8): "asym8uxsym8u_asym8u",
+            },
+            weight_arg_idx=1,
+        ),
         exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: OpConfig(
             "quantized_conv2d_nchw",
             type_dispatch_suffixes={
@@ -158,13 +174,23 @@ class CompileTimeTypeDispatchPass(ExportPass):
         typed_op_name = f"{base_name}_{type_suffix}"
 
         if op in [
+            exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
         ]:
             groups = args[6]
+            is_conv1d = op in [
+                exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+                exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor,
+            ]
+            is_channel_first = op in [
+                exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+            ]
             input_channels = (
                 args[0].to_tensor().shape[1]
-                if op == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
+                if is_channel_first
                 else args[0].to_tensor().shape[-1]
             )
             is_depthwise = groups == input_channels
@@ -172,7 +198,10 @@ class CompileTimeTypeDispatchPass(ExportPass):
             is_dilated = any(d > 1 for d in args[5])
             is_1d = len(args[0].to_tensor().shape) == 3
 
-            if is_depthwise:
+            if is_conv1d:
+                # Already a conv1d op, just add type suffix
+                typed_op_name = f"{base_name}_{type_suffix}"
+            elif is_depthwise:
                 typed_op_name = f"{base_name}_depthwise_{type_suffix}"
             elif is_dilated:
                 typed_op_name = f"{base_name}_dilated_{type_suffix}"
