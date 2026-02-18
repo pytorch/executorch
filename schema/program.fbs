@@ -62,22 +62,9 @@ enum TensorDataLocation : byte {
 }
 
 // Device type enum indicating where a tensor resides or should be allocated.
-// Follows PyTorch DeviceType convention for compatibility.
 enum DeviceType : byte {
   CPU = 0,
   CUDA = 1,
-  // Reserve slots for future device types following PyTorch convention:
-  // MKLDNN = 2,
-  // OPENGL = 3,
-  // OPENCL = 4,
-  // IDEEP = 5,
-  // HIP = 6,
-  // FPGA = 7,
-  // MAIA = 8,
-  // XLA = 9,
-  // MPS = 10,
-  // XPU = 11,
-  // PrivateUse1 = 12,
 }
 
 // Table to put additional information about tensors in that is not applicable
