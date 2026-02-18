@@ -61,6 +61,25 @@ enum TensorDataLocation : byte {
   EXTERNAL = 1,
 }
 
+// Device type enum indicating where a tensor resides or should be allocated.
+// Follows PyTorch DeviceType convention for compatibility.
+enum DeviceType : byte {
+  CPU = 0,
+  CUDA = 1,
+  // Reserve slots for future device types following PyTorch convention:
+  // MKLDNN = 2,
+  // OPENGL = 3,
+  // OPENCL = 4,
+  // IDEEP = 5,
+  // HIP = 6,
+  // FPGA = 7,
+  // MAIA = 8,
+  // XLA = 9,
+  // MPS = 10,
+  // XPU = 11,
+  // PrivateUse1 = 12,
+}
+
 // Table to put additional information about tensors in that is not applicable
 // to the vast majority of tensors in the vast majority of programs.
 table ExtraTensorInfo {
@@ -79,6 +98,15 @@ table ExtraTensorInfo {
   //   must be non-empty, and is used as a key to find the tensor's external
   //   data. Tensor.data_buffer_idx is ignored.
   location: TensorDataLocation;
+
+  // [Optional] The device type where this tensor resides or should be allocated.
+  // Defaults to CPU for backward compatibility with existing PTE files.
+  device_type: DeviceType = CPU;
+
+  // [Optional] The device index for multi-device scenarios (e.g., cuda:0, cuda:1).
+  // A value of -1 indicates the default device. Defaults to -1 for backward
+  // compatibility.
+  device_index: byte = -1;
 }
 
 table Tensor {
@@ -386,6 +414,13 @@ table ExecutionPlan {
   // constants memory buffer size, and ignore non_const_buffer_sizes[0].
   non_const_buffer_sizes: [int64];
 
+  // [Optional] Sparse device placement information for non-constant buffers.
+  // Only buffers that are NOT on CPU need to be listed here. Each entry
+  // specifies a buffer_index (into non_const_buffer_sizes) and its device.
+  // Buffers not listed here default to CPU, saving binary size when most
+  // buffers are on CPU.
+  non_const_buffer_device: [NonConstBufferDevice];
+
 }
 
 // Constant tensor data stored directly in the flatbuffer.
@@ -404,6 +439,24 @@ table BackendDelegateInlineData {
   // The magic "@executorch-delegate-alignment" comment tells EXIR which lines
   // to patch.
   data: [ubyte] (force_align: 16);  // @executorch-delegate-alignment
+}
+
+// Device placement information for a non-constant memory buffer.
+// This is a sparse representation: only buffers that are NOT on CPU need entries.
+// Buffers not listed in ExecutionPlan.non_const_buffer_device default to CPU.
+table NonConstBufferDevice {
+  // Index into ExecutionPlan.non_const_buffer_sizes identifying which buffer
+  // this entry applies to.
+  buffer_index: uint32;
+
+  // The device type where this buffer should be allocated.
+  // Defaults to CPU for backward compatibility with existing PTE files.
+  device_type: DeviceType = CPU;
+
+  // The device index for multi-device scenarios (e.g., cuda:0, cuda:1).
+  // A value of -1 indicates the default device. Defaults to -1 for backward
+  // compatibility.
+  device_index: byte = -1;
 }
 
 // Describes a contiguous piece of data that lives outside of the flatbuffer data,
