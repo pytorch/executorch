@@ -4,7 +4,7 @@ from typing import Dict
 import torch
 from safetensors.torch import load_file
 
-from torchtune.models.convert_weights import get_mapped_key
+from executorch.examples.models.checkpoint import get_mapped_key
 
 _LFM_2_TO_META = {
     "model.embed_tokens.weight": "tok_embeddings.weight",

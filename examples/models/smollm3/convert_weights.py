@@ -7,7 +7,7 @@ import torch
 
 from safetensors.torch import load_file
 
-from torchtune.models.convert_weights import get_mapped_key
+from executorch.examples.models.checkpoint import get_mapped_key
 
 
 _SMOLLM_TO_META = {
