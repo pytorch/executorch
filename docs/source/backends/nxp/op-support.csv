@@ -19,6 +19,7 @@ aten.neg.default,int8,static int8,
 aten.relu.default,int8,static int8,
 aten.sigmoid.default,int8,static int8,
 aten.slice_copy.Tensor, int8, static int8
+aten.softmax.default, int8, static int8, "rank > 1, channels % 8 = 0, channels < 2048, flat input size / channels <= 4096, flat input size <= 524288"
 aten.tanh.default,int8,static int8,
 aten.upsample_bilinear2d.vec,int8,static int8,"channels % 8 = 0, H_scale = W_scale = 2 or 4"
 aten.upsample_nearest2d.vec,int8,static int8,"channels % 8 = 0, H_scale = W_scale = 2 or 4"
