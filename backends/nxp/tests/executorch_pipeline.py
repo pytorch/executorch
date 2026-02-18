@@ -98,6 +98,7 @@ def to_quantized_edge_program(
     custom_delegation_options=CustomDelegationOptions(),  # noqa B008
     get_quantizer_fn=None,
     use_neutron_for_format_conversion=True,
+    use_quant_state_dict=True,
 ) -> EdgeProgramManager:
     _neutron_target_spec = NeutronTargetSpec(target, neutron_converter_flavor)
     if get_quantizer_fn is None:
@@ -128,12 +129,15 @@ def to_quantized_edge_program(
         neutron_converter_flavor=neutron_converter_flavor,
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
     )
+    post_quant_state_dict = (
+        exir_program_aten__module_quant.state_dict() if use_quant_state_dict else None
+    )
     partitioners = [
         NeutronPartitioner(
             compile_spec,
             _neutron_target_spec,
             custom_delegation_options,
-            exir_program_aten__module_quant.state_dict(),
+            post_quant_state_dict,
             preserve_ops=preserve_ops,
         )
     ]
