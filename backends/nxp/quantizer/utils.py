@@ -13,6 +13,9 @@ from collections.abc import Iterable
 from typing import Any, Dict, List, Tuple, Type
 
 import torch
+from executorch.backends.transforms.quantize_fused_convbn_bias_pass import (
+    QuantizeFusedConvBnBiasPass,
+)
 from torch import fx
 from torch._ops import OpOverload
 from torch.export import ExportedProgram
@@ -162,15 +165,15 @@ def find_sequential_partitions_aten(
 
 
 def calibrate_and_quantize(
-    model: ExportedProgram | fx.GraphModule,
+    model: ExportedProgram,
     calibration_inputs: Iterable[tuple[torch.Tensor, ...]],
     quantizer: Quantizer,
     is_qat: bool = False,
 ) -> fx.GraphModule:
     """Quantize the provided model.
 
-    :param model: Aten model (or it's GraphModule representation) to quantize.
-    :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
+    :param model: Aten exported model to quantize.
+    :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a module
                                 input. Or an iterator over such tuples.
     :param quantizer: Quantizer to use.
     :param is_qat: Whether quantization is done using Quantization Aware Training (QAT) or not.
@@ -179,17 +182,21 @@ def calibrate_and_quantize(
     :return: Quantized GraphModule.
     """
 
-    if isinstance(model, ExportedProgram):
-        model = model.module()
+    module = model.module()
 
     if is_qat:
-        m = prepare_qat_pt2e(model, quantizer)
-        m = move_exported_model_to_eval(m)
+        module = prepare_qat_pt2e(module, quantizer)
+        module = move_exported_model_to_eval(module)
     else:
-        m = prepare_pt2e(model, quantizer)
+        module = prepare_pt2e(module, quantizer)
 
     for data in calibration_inputs:
-        m(*data)
-    m = convert_pt2e(m)
+        module(*data)
+    module = convert_pt2e(module)
 
-    return m
+    # Without this export, conv bias is not in the graph_signature.
+    model = torch.export.export(module, calibration_inputs[0], strict=True)
+    bias_quant_pass = QuantizeFusedConvBnBiasPass(model)
+    model = bias_quant_pass(model.graph_module)
+
+    return model.graph_module
