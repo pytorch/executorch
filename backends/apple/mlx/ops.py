@@ -23,8 +23,10 @@ from executorch.backends.apple.mlx.program_builder import (
     emit_stop_position,
     IntOrVid,
     MLXProgramBuilder,
+    parse_dequant_node,
     REGISTRY,
     Slot,
+    to_mlx_qparams,
     torch_dtype_to_scalar_type,
 )
 from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
@@ -41,6 +43,7 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     ArctanNode,
     ArgmaxNode,
     ArgminNode,
+    AsStridedNode,
     AsTypeNode,
     Atan2Node,
     BroadcastToNode,
@@ -49,14 +52,17 @@ from executorch.backends.apple.mlx.serialization.mlx_graph_schema import (
     ContiguousNode,
     Conv1DNode,
     Conv2DNode,
+    Conv3DNode,
     CoshNode,
     CosNode,
+    DequantizeNode,
     DivideNode,
     EqualNode,
     ErfNode,
     ExpandDimsNode,
     Expm1Node,
     ExpNode,
+    FloatOrVid,
     FloorDivideIntNode,
     FloorDivideNode,
     FloorNode,
@@ -647,6 +653,27 @@ def _clone_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     P.emit(
         ContiguousNode(
             x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.copy.default])
+def _copy_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.copy - copy data from src to self.
+
+    Schema: aten::copy(Tensor self, Tensor src, bool non_blocking=False) -> Tensor
+    In functionalized Edge IR, this returns a copy of src (args[1]).
+    """
+    args = P.args(n)
+    require_args(args, 2, 2, "aten.copy")
+    require_kwargs(P.kwargs(n), {"non_blocking"}, "aten.copy")
+    src = args[1]
+    out = P.make_or_get_slot(n)
+    P.emit(
+        ContiguousNode(
+            x=P.slot_to_tid(src),
             out=P.slot_to_tid(out),
         )
     )
@@ -1524,7 +1551,7 @@ def _select_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         TakeNode(
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
-            index=index,
+            index=P.to_int_or_vid(index),
             axis=dim,
         )
     )
@@ -1720,7 +1747,7 @@ def _rope_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     args = P.args(n)
     require_args(args, 3, 7, "mlx.rope")
     require_kwargs(P.kwargs(n), set(), "mlx.rope")
-    x, head_dim, pos = args[0], args[1], args[2]
+    x, dims, pos = args[0], args[1], args[2]
     traditional = args[3] if len(args) > 3 else False
     base = args[4] if len(args) > 4 else 500000.0
     scale = args[5] if len(args) > 5 else 1.0
@@ -1739,7 +1766,7 @@ def _rope_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         RopeNode(
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
-            head_dim=head_dim,
+            dims=dims,
             offset=TidOrVid.from_vid(P.slot_to_vid(pos)),
             freqs=P.slot_to_tid(freqs) if freqs else None,
             traditional=traditional,
@@ -1748,6 +1775,134 @@ def _rope_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
 
+    return out
+
+
+def _emit_channel_last_weight(P: MLXProgramBuilder, w_node: Node, perm: list) -> Slot:
+    """Get convolution weight in channel-last format.
+
+    If the weight is a placeholder (static parameter), permute at compile time
+    and store as a constant.  If it comes from another node (e.g. dequantize
+    output), emit a runtime TransposeNode instead.
+    """
+    if w_node.op == "placeholder":
+        w_target, w_tensor = P.get_placeholder_target_and_tensor(w_node)
+        return P.make_or_get_constant(
+            f"{w_target}_channel_last", w_tensor.permute(perm).contiguous()
+        )
+    else:
+        w_slot = P.slot_map([w_node])[0]
+        _, w = P.make_tmp_slot()
+        P.emit(
+            TransposeNode(
+                x=P.slot_to_tid(w_slot),
+                out=P.slot_to_tid(w),
+                perm=perm,
+            )
+        )
+        return w
+
+
+def _emit_conv_bias(
+    P: MLXProgramBuilder, bias: Optional[Slot], tmp: Slot, ndim: int
+) -> None:
+    """Reshape conv bias to channel-last broadcast shape and add to tmp in-place.
+
+    After the convolution the activation is in channel-last layout, so the bias
+    (shape ``[C_out]``) must be reshaped to ``[1, …, 1, -1]`` with *ndim*
+    dimensions before being added.  Does nothing when *bias* is ``None``.
+    """
+    if bias is None:
+        return
+    _, tmp2 = P.make_tmp_slot()
+    shape = [IntOrVid.from_literal(1)] * (ndim - 1) + [IntOrVid.from_literal(-1)]
+    P.emit(
+        ReshapeNode(
+            x=P.slot_to_tid(bias),
+            out=P.slot_to_tid(tmp2),
+            shape=shape,
+        )
+    )
+    P.emit(
+        AddNode(
+            a=P.slot_to_tid(tmp),
+            b=P.slot_to_tid(tmp2),
+            out=P.slot_to_tid(tmp),
+        )
+    )
+
+
+@REGISTRY.register(target=[torch.ops.aten.conv1d.default])
+def _conv1d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    require_args(n.args, 2, 7, "aten.convolution (Conv1D)")
+    require_kwargs(P.kwargs(n), set(), "aten.convolution (Conv1D)")
+    x_node, w_node = n.args[0:2]
+    bias_node = n.args[2] if len(n.args) > 2 else None
+    stride = n.args[3] if len(n.args) > 3 else 1
+    if isinstance(stride, list):
+        assert (
+            len(stride) == 1
+        ), f"Conv1D stride must be a single value, got {len(stride)} values"
+        stride = stride[0]
+    padding = n.args[4] if len(n.args) > 4 else 0
+    if isinstance(padding, list):
+        assert (
+            len(padding) == 1
+        ), f"Conv1D padding must be a single value, got {len(padding)} values"
+        padding = padding[0]
+    dilation = n.args[5] if len(n.args) > 5 else 1
+    if isinstance(dilation, list):
+        assert (
+            len(dilation) == 1
+        ), f"Conv1D dilation must be a single value, got {len(dilation)} values"
+        dilation = dilation[0]
+    groups = n.args[6] if len(n.args) > 6 else 1
+
+    # Validate all parameters are static integers
+    require_static_int(stride, "stride", "aten.conv1d (Conv1DNode)")
+    require_static_int(padding, "padding", "aten.conv1d (Conv1DNode)")
+    require_static_int(dilation, "dilation", "aten.conv1d (Conv1DNode)")
+    require_static_int(groups, "groups", "aten.conv1d (Conv1DNode)")
+
+    # Weight: [O, I/G, K] -> [O, K, I]
+    w = _emit_channel_last_weight(P, w_node, [0, 2, 1])
+
+    x, bias = P.slot_map([x_node, bias_node])
+
+    # Transpose input: (N, C_in, W) -> (N, W, C_in)
+    tmp_name, tmp = P.make_tmp_slot()
+    P.emit(
+        TransposeNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(tmp),
+            perm=[0, 2, 1],
+        )
+    )
+
+    # Conv1D
+    P.emit(
+        Conv1DNode(
+            x=P.slot_to_tid(tmp),
+            w=P.slot_to_tid(w),
+            out=P.slot_to_tid(tmp),
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+        )
+    )
+
+    _emit_conv_bias(P, bias, tmp, ndim=3)
+
+    # Transpose output: (N, W, C_out) -> (N, C_out, W)
+    out = P.make_or_get_slot(n)
+    P.emit(
+        TransposeNode(
+            x=P.slot_to_tid(tmp),
+            out=P.slot_to_tid(out),
+            perm=[0, 2, 1],
+        )
+    )
     return out
 
 
@@ -1802,12 +1957,8 @@ def _conv2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_static_int(dilation_w, "dilation_w", "aten.convolution (Conv2D)")
     require_static_int(groups, "groups", "aten.convolution (Conv2D)")
 
-    # Weight needs to be transposed: (C_out, C_in/G, KH, KW) -> (C_out, KH, KW, C_in/G)
-    # The memory format doesn't affect the dimension order - we always need to permute
-    w_target, w_tensor = P.get_placeholder_target_and_tensor(w_node)
-    w = P.make_or_get_constant(
-        f"{w_target}_channel_last", w_tensor.permute([0, 2, 3, 1]).contiguous()
-    )
+    # Weight: (C_out, C_in/G, KH, KW) -> (C_out, KH, KW, C_in/G)
+    w = _emit_channel_last_weight(P, w_node, [0, 2, 3, 1])
 
     x, bias = P.slot_map([x_node, bias_node])
 
@@ -1837,28 +1988,7 @@ def _conv2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
 
-    # Add bias if present
-    if bias is not None:
-        tmp2_name, tmp2 = P.make_tmp_slot()
-        P.emit(
-            ReshapeNode(
-                x=P.slot_to_tid(bias),
-                out=P.slot_to_tid(tmp2),
-                shape=[
-                    IntOrVid.from_literal(1),
-                    IntOrVid.from_literal(1),
-                    IntOrVid.from_literal(1),
-                    IntOrVid.from_literal(-1),
-                ],
-            )
-        )
-        P.emit(
-            AddNode(
-                a=P.slot_to_tid(tmp),
-                b=P.slot_to_tid(tmp2),
-                out=P.slot_to_tid(tmp),
-            )
-        )
+    _emit_conv_bias(P, bias, tmp, ndim=4)
 
     # Transpose output: (N, H, W, C_out) -> (N, C_out, H, W)
     out = P.make_or_get_slot(n)
@@ -1867,6 +1997,116 @@ def _conv2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             x=P.slot_to_tid(tmp),
             out=P.slot_to_tid(out),
             perm=[0, 3, 1, 2],
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.conv3d.default])
+def _conv3d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.conv3d with 3D inputs.
+
+    PyTorch format: (N, C_in, D, H, W) with weights (C_out, C_in/G, KD, KH, KW)
+    MLX format: (N, D, H, W, C_in) with weights (C_out, KD, KH, KW, C_in/G)
+    """
+    require_args(n.args, 2, 7, "aten.conv3d")
+    require_kwargs(P.kwargs(n), set(), "aten.conv3d")
+    x_node, w_node = n.args[0:2]
+    bias_node = n.args[2] if len(n.args) > 2 else None
+    stride = n.args[3] if len(n.args) > 3 else [1, 1, 1]
+    padding = n.args[4] if len(n.args) > 4 else [0, 0, 0]
+    dilation = n.args[5] if len(n.args) > 5 else [1, 1, 1]
+    groups = n.args[6] if len(n.args) > 6 else 1
+
+    # MLX only supports groups=1 for 3D convolutions
+    if groups != 1:
+        raise ValueError(
+            "aten.conv3d with groups != 1 is not supported by MLX. "
+            f"Got groups={groups}."
+        )
+
+    # Extract stride values
+    if isinstance(stride, list):
+        if len(stride) == 3:
+            stride_d, stride_h, stride_w = stride
+        else:
+            stride_d = stride_h = stride_w = stride[0]
+    else:
+        stride_d = stride_h = stride_w = stride
+
+    # Extract padding values
+    if isinstance(padding, list):
+        if len(padding) == 3:
+            padding_d, padding_h, padding_w = padding
+        else:
+            padding_d = padding_h = padding_w = padding[0]
+    else:
+        padding_d = padding_h = padding_w = padding
+
+    # Extract dilation values
+    if isinstance(dilation, list):
+        if len(dilation) == 3:
+            dilation_d, dilation_h, dilation_w = dilation
+        else:
+            dilation_d = dilation_h = dilation_w = dilation[0]
+    else:
+        dilation_d = dilation_h = dilation_w = dilation
+
+    # Validate all parameters are static integers
+    require_static_int(stride_d, "stride_d", "aten.conv3d")
+    require_static_int(stride_h, "stride_h", "aten.conv3d")
+    require_static_int(stride_w, "stride_w", "aten.conv3d")
+    require_static_int(padding_d, "padding_d", "aten.conv3d")
+    require_static_int(padding_h, "padding_h", "aten.conv3d")
+    require_static_int(padding_w, "padding_w", "aten.conv3d")
+    require_static_int(dilation_d, "dilation_d", "aten.conv3d")
+    require_static_int(dilation_h, "dilation_h", "aten.conv3d")
+    require_static_int(dilation_w, "dilation_w", "aten.conv3d")
+    require_static_int(groups, "groups", "aten.conv3d")
+
+    # Weight: (C_out, C_in/G, KD, KH, KW) -> (C_out, KD, KH, KW, C_in/G)
+    w = _emit_channel_last_weight(P, w_node, [0, 2, 3, 4, 1])
+
+    x, bias = P.slot_map([x_node, bias_node])
+
+    # Transpose input: (N, C_in, D, H, W) -> (N, D, H, W, C_in)
+    tmp_name, tmp = P.make_tmp_slot()
+    P.emit(
+        TransposeNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(tmp),
+            perm=[0, 2, 3, 4, 1],
+        )
+    )
+
+    # Conv3D
+    P.emit(
+        Conv3DNode(
+            x=P.slot_to_tid(tmp),
+            w=P.slot_to_tid(w),
+            out=P.slot_to_tid(tmp),
+            stride_d=stride_d,
+            stride_h=stride_h,
+            stride_w=stride_w,
+            padding_d=padding_d,
+            padding_h=padding_h,
+            padding_w=padding_w,
+            dilation_d=dilation_d,
+            dilation_h=dilation_h,
+            dilation_w=dilation_w,
+            groups=groups,
+        )
+    )
+
+    _emit_conv_bias(P, bias, tmp, ndim=5)
+
+    # Transpose output: (N, D, H, W, C_out) -> (N, C_out, D, H, W)
+    out = P.make_or_get_slot(n)
+    P.emit(
+        TransposeNode(
+            x=P.slot_to_tid(tmp),
+            out=P.slot_to_tid(out),
+            perm=[0, 4, 1, 2, 3],
         )
     )
     return out
@@ -1967,7 +2207,7 @@ def _relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     P.emit(
         FullNode(
             shape=[],  # Scalar (will be broadcast in maximum)
-            v=0.0,
+            v=FloatOrVid.from_literal(0.0),
             scalar_type=torch_dtype_to_scalar_type(dtype),
             out=P.slot_to_tid(zero_slot),
         )
@@ -2085,106 +2325,9 @@ def _constant_pad_nd_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         PadNode(
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
-            pad_width=pad_width,
+            pad_width=[P.to_int_or_vid(v) for v in pad_width],
             mode="constant",
             constant_value=float(value),
-        )
-    )
-    return out
-
-
-@REGISTRY.register(target=[torch.ops.aten.conv1d.default])
-def _conv1d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    require_args(n.args, 2, 7, "aten.convolution (Conv1D)")
-    require_kwargs(P.kwargs(n), set(), "aten.convolution (Conv1D)")
-    x_node, w_node = n.args[0:2]
-    bias_node = n.args[2] if len(n.args) > 2 else None
-    stride = n.args[3] if len(n.args) > 3 else 1
-    if isinstance(stride, list):
-        assert (
-            len(stride) == 1
-        ), f"Conv1D stride must be a single value, got {len(stride)} values"
-        stride = stride[0]
-    padding = n.args[4] if len(n.args) > 4 else 0
-    if isinstance(padding, list):
-        assert (
-            len(padding) == 1
-        ), f"Conv1D padding must be a single value, got {len(padding)} values"
-        padding = padding[0]
-    dilation = n.args[5] if len(n.args) > 5 else 1
-    if isinstance(dilation, list):
-        assert (
-            len(dilation) == 1
-        ), f"Conv1D dilation must be a single value, got {len(dilation)} values"
-        dilation = dilation[0]
-    groups = n.args[6] if len(n.args) > 6 else 1
-
-    # Validate all parameters are static integers
-    require_static_int(stride, "stride", "aten.conv1d (Conv1DNode)")
-    require_static_int(padding, "padding", "aten.conv1d (Conv1DNode)")
-    require_static_int(dilation, "dilation", "aten.conv1d (Conv1DNode)")
-    require_static_int(groups, "groups", "aten.conv1d (Conv1DNode)")
-
-    # Weight needs to be transposed: [O, I/G, K] -> [O, K, I]
-    w_target, w_tensor = P.get_placeholder_target_and_tensor(w_node)
-    w = P.make_or_get_constant(
-        f"{w_target}_channel_last", w_tensor.permute([0, 2, 1]).contiguous()
-    )
-
-    x, bias = P.slot_map([x_node, bias_node])
-
-    # Transpose input: (N, C_in, W) -> (N, W, C_in)
-    tmp_name, tmp = P.make_tmp_slot()
-    P.emit(
-        TransposeNode(
-            x=P.slot_to_tid(x),
-            out=P.slot_to_tid(tmp),
-            perm=[0, 2, 1],
-        )
-    )
-
-    # Conv1D
-    P.emit(
-        Conv1DNode(
-            x=P.slot_to_tid(tmp),
-            w=P.slot_to_tid(w),
-            out=P.slot_to_tid(tmp),
-            stride=stride,
-            padding=padding,
-            dilation=dilation,
-            groups=groups,
-        )
-    )
-
-    # Add bias if present
-    if bias is not None:
-        tmp2_name, tmp2 = P.make_tmp_slot()
-        P.emit(
-            ReshapeNode(
-                x=P.slot_to_tid(bias),
-                out=P.slot_to_tid(tmp2),
-                shape=[
-                    IntOrVid.from_literal(1),
-                    IntOrVid.from_literal(1),
-                    IntOrVid.from_literal(-1),
-                ],
-            )
-        )
-        P.emit(
-            AddNode(
-                a=P.slot_to_tid(tmp),
-                b=P.slot_to_tid(tmp2),
-                out=P.slot_to_tid(tmp),
-            )
-        )
-
-    # Transpose output: (N, W, C_out) -> (N, C_out, W)
-    out = P.make_or_get_slot(n)
-    P.emit(
-        TransposeNode(
-            x=P.slot_to_tid(tmp),
-            out=P.slot_to_tid(out),
-            perm=[0, 2, 1],
         )
     )
     return out
@@ -2231,7 +2374,7 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         P.emit(
             FullNode(
                 shape=[],  # Scalar
-                v=float(val),
+                v=FloatOrVid.from_literal(float(val)),
                 scalar_type=torch_dtype_to_scalar_type(dtype),
                 out=P.slot_to_tid(slot),
             )
@@ -2383,7 +2526,7 @@ def _native_batch_norm_legit_no_training_handler(P: MLXProgramBuilder, n: Node) 
         FullNode(
             out=P.slot_to_tid(eps_slot),
             shape=[],  # 0-D scalar
-            v=float(eps),
+            v=FloatOrVid.from_literal(float(eps)),
             scalar_type=torch_dtype_to_scalar_type(torch.float32),
         )
     )
@@ -2504,7 +2647,7 @@ def _full_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         FullNode(
             out=P.slot_to_tid(out),
             shape=shape_iovs,
-            v=float(fill_value),
+            v=P.to_float_or_vid(fill_value),
             scalar_type=torch_dtype_to_scalar_type(dtype),
         )
     )
@@ -2539,7 +2682,7 @@ def _zeros_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         FullNode(
             out=P.slot_to_tid(out),
             shape=shape_iovs,
-            v=0.0,
+            v=FloatOrVid.from_literal(0.0),
             scalar_type=torch_dtype_to_scalar_type(dtype),
         )
     )
@@ -2574,7 +2717,7 @@ def _ones_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         FullNode(
             out=P.slot_to_tid(out),
             shape=shape_iovs,
-            v=1.0,
+            v=FloatOrVid.from_literal(1.0),
             scalar_type=torch_dtype_to_scalar_type(dtype),
         )
     )
@@ -2608,7 +2751,7 @@ def _zeros_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         FullLikeNode(
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
-            v=0.0,
+            v=FloatOrVid.from_literal(0.0),
             scalar_type=(
                 torch_dtype_to_scalar_type(dtype) if dtype is not None else None
             ),
@@ -2644,7 +2787,7 @@ def _ones_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         FullLikeNode(
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
-            v=1.0,
+            v=FloatOrVid.from_literal(1.0),
             scalar_type=(
                 torch_dtype_to_scalar_type(dtype) if dtype is not None else None
             ),
@@ -2681,7 +2824,7 @@ def _full_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         FullLikeNode(
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
-            v=float(fill_value),
+            v=P.to_float_or_vid(fill_value),
             scalar_type=(
                 torch_dtype_to_scalar_type(dtype) if dtype is not None else None
             ),
@@ -2695,102 +2838,132 @@ def _full_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 # =============================================================================
 
 
-@REGISTRY.register(target=[torch.ops.aten.lt.Tensor])
+@REGISTRY.register(target=[torch.ops.aten.lt.Tensor, torch.ops.aten.lt.Scalar])
 def _less_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.lt - less than comparison."""
     args = P.args(n)
     require_args(args, 2, 2, "aten.lt")
     require_kwargs(P.kwargs(n), set(), "aten.lt")
+    a, b = args[0], args[1]
+    if not isinstance(b, Slot):
+        input_meta = n.args[0].meta.get("val")
+        dtype = input_meta.dtype if input_meta is not None else torch.float32
+        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
     out = P.make_or_get_slot(n)
     P.emit(
         LessNode(
-            a=P.slot_to_tid(args[0]),
-            b=P.slot_to_tid(args[1]),
+            a=P.slot_to_tid(a),
+            b=P.slot_to_tid(b),
             out=P.slot_to_tid(out),
         )
     )
     return out
 
 
-@REGISTRY.register(target=[torch.ops.aten.le.Tensor])
+@REGISTRY.register(target=[torch.ops.aten.le.Tensor, torch.ops.aten.le.Scalar])
 def _less_equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.le - less than or equal comparison."""
     args = P.args(n)
     require_args(args, 2, 2, "aten.le")
     require_kwargs(P.kwargs(n), set(), "aten.le")
+    a, b = args[0], args[1]
+    if not isinstance(b, Slot):
+        input_meta = n.args[0].meta.get("val")
+        dtype = input_meta.dtype if input_meta is not None else torch.float32
+        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
     out = P.make_or_get_slot(n)
     P.emit(
         LessEqualNode(
-            a=P.slot_to_tid(args[0]),
-            b=P.slot_to_tid(args[1]),
+            a=P.slot_to_tid(a),
+            b=P.slot_to_tid(b),
             out=P.slot_to_tid(out),
         )
     )
     return out
 
 
-@REGISTRY.register(target=[torch.ops.aten.gt.Tensor])
+@REGISTRY.register(target=[torch.ops.aten.gt.Tensor, torch.ops.aten.gt.Scalar])
 def _greater_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.gt - greater than comparison."""
     args = P.args(n)
     require_args(args, 2, 2, "aten.gt")
     require_kwargs(P.kwargs(n), set(), "aten.gt")
+    a, b = args[0], args[1]
+    if not isinstance(b, Slot):
+        input_meta = n.args[0].meta.get("val")
+        dtype = input_meta.dtype if input_meta is not None else torch.float32
+        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
     out = P.make_or_get_slot(n)
     P.emit(
         GreaterNode(
-            a=P.slot_to_tid(args[0]),
-            b=P.slot_to_tid(args[1]),
+            a=P.slot_to_tid(a),
+            b=P.slot_to_tid(b),
             out=P.slot_to_tid(out),
         )
     )
     return out
 
 
-@REGISTRY.register(target=[torch.ops.aten.ge.Tensor])
+@REGISTRY.register(target=[torch.ops.aten.ge.Tensor, torch.ops.aten.ge.Scalar])
 def _greater_equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.ge - greater than or equal comparison."""
     args = P.args(n)
     require_args(args, 2, 2, "aten.ge")
     require_kwargs(P.kwargs(n), set(), "aten.ge")
+    a, b = args[0], args[1]
+    if not isinstance(b, Slot):
+        input_meta = n.args[0].meta.get("val")
+        dtype = input_meta.dtype if input_meta is not None else torch.float32
+        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
     out = P.make_or_get_slot(n)
     P.emit(
         GreaterEqualNode(
-            a=P.slot_to_tid(args[0]),
-            b=P.slot_to_tid(args[1]),
+            a=P.slot_to_tid(a),
+            b=P.slot_to_tid(b),
             out=P.slot_to_tid(out),
         )
     )
     return out
 
 
-@REGISTRY.register(target=[torch.ops.aten.eq.Tensor])
+@REGISTRY.register(target=[torch.ops.aten.eq.Tensor, torch.ops.aten.eq.Scalar])
 def _equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.eq - equality comparison."""
     args = P.args(n)
     require_args(args, 2, 2, "aten.eq")
     require_kwargs(P.kwargs(n), set(), "aten.eq")
+    a, b = args[0], args[1]
+    if not isinstance(b, Slot):
+        input_meta = n.args[0].meta.get("val")
+        dtype = input_meta.dtype if input_meta is not None else torch.float32
+        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
     out = P.make_or_get_slot(n)
     P.emit(
         EqualNode(
-            a=P.slot_to_tid(args[0]),
-            b=P.slot_to_tid(args[1]),
+            a=P.slot_to_tid(a),
+            b=P.slot_to_tid(b),
             out=P.slot_to_tid(out),
         )
     )
     return out
 
 
-@REGISTRY.register(target=[torch.ops.aten.ne.Tensor])
+@REGISTRY.register(target=[torch.ops.aten.ne.Tensor, torch.ops.aten.ne.Scalar])
 def _not_equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.ne - not equal comparison."""
     args = P.args(n)
     require_args(args, 2, 2, "aten.ne")
     require_kwargs(P.kwargs(n), set(), "aten.ne")
+    a, b = args[0], args[1]
+    if not isinstance(b, Slot):
+        input_meta = n.args[0].meta.get("val")
+        dtype = input_meta.dtype if input_meta is not None else torch.float32
+        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
     out = P.make_or_get_slot(n)
     P.emit(
         NotEqualNode(
-            a=P.slot_to_tid(args[0]),
-            b=P.slot_to_tid(args[1]),
+            a=P.slot_to_tid(a),
+            b=P.slot_to_tid(b),
             out=P.slot_to_tid(out),
         )
     )
@@ -2917,7 +3090,7 @@ def _scalar_tensor_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         FullNode(
             out=P.slot_to_tid(out),
             shape=[],  # 0-D tensor (scalar)
-            v=float(scalar_value),
+            v=FloatOrVid.from_literal(float(scalar_value)),
             scalar_type=torch_dtype_to_scalar_type(dtype),
         )
     )
@@ -3377,7 +3550,7 @@ def _pow_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             FullNode(
                 out=P.slot_to_tid(b_slot),
                 shape=[],  # 0-D scalar - broadcasts correctly
-                v=float(b),
+                v=FloatOrVid.from_literal(float(b)),
                 scalar_type=torch_dtype_to_scalar_type(dtype),
             )
         )
@@ -3648,4 +3821,392 @@ def _argmin_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 x=P.slot_to_tid(x), out=P.slot_to_tid(out), axis=dim, keepdims=keepdim
             )
         )
+    return out
+
+
+# =============================================================================
+# Pooling ops (MaxPool / AvgPool 1d/2d/3d)
+# =============================================================================
+
+
+def _parse_pool_args(args, ndim, op_name):
+    """Parse pooling op arguments, normalizing scalars to lists.
+
+    ATen pooling signatures:
+      max_pool{N}d_with_indices(input, kernel_size, stride, padding, dilation, ceil_mode)
+      avg_pool{N}d(input, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override)
+
+    We only support the first 4 args (input, kernel_size, stride, padding).
+    Unsupported args (dilation, ceil_mode, count_include_pad, divisor_override)
+    are rejected by require_args.
+
+    Returns (kernel_size, stride, padding) as lists of length ndim.
+    """
+    require_args(args, 2, 4, op_name)
+
+    kernel_size = args[1]
+    if isinstance(kernel_size, int):
+        kernel_size = [kernel_size] * ndim
+
+    stride = args[2] if len(args) > 2 and args[2] else kernel_size
+    if isinstance(stride, int):
+        stride = [stride] * ndim
+    if not stride:  # empty list means default to kernel_size
+        stride = list(kernel_size)
+
+    padding = args[3] if len(args) > 3 else [0] * ndim
+    if isinstance(padding, int):
+        padding = [padding] * ndim
+
+    return list(kernel_size), list(stride), list(padding)
+
+
+def _emit_pool_nd(
+    P: MLXProgramBuilder,
+    n: Node,
+    ndim: int,
+    reduce_node_cls: type,
+    padding_value: float,
+    kernel_size: List[int],
+    stride: List[int],
+    padding: List[int],
+) -> Slot:
+    """Emit IR nodes for N-dimensional pooling.
+
+    Decomposes pooling into:
+      Transpose (channels-first -> channels-last)
+      -> Pad (if needed)
+      -> Reshape+Transpose (fast path) or AsStrided (general path)
+      -> Max/Mean reduction over kernel dims
+      -> Transpose (channels-last -> channels-first)
+
+    Works for 1D, 2D, and 3D pooling uniformly.
+
+    Args:
+        P: Program builder.
+        n: FX graph node for the pooling op.
+        ndim: Spatial dimensionality (1, 2, or 3).
+        reduce_node_cls: MaxNode or MeanNode.
+        padding_value: Padding fill value (-inf for max, 0 for avg).
+        kernel_size: Kernel size per spatial dim, length ndim.
+        stride: Stride per spatial dim, length ndim.
+        padding: Padding per spatial dim, length ndim.
+
+    Returns:
+        Output Slot with shape [N, C, *out_spatial].
+    """
+    x_node = P.args(n)[0]
+    (x,) = P.slot_map([x_node])
+    x_meta = n.args[0].meta["val"]
+    shape = list(x_meta.shape)  # [N, C, *spatial]
+
+    N = shape[0]
+    C = shape[1]
+    spatial = shape[2:]  # length == ndim
+
+    # 1. Transpose: channels-first [N, C, *spatial] -> channels-last [N, *spatial, C]
+    to_cl = [0] + list(range(2, ndim + 2)) + [1]
+    _, cur = P.make_tmp_slot()
+    P.emit(
+        TransposeNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(cur),
+            perm=to_cl,
+        )
+    )
+
+    # 2. Pad spatial dims if needed
+    spatial_padded = [s + 2 * p for s, p in zip(spatial, padding)]
+    if any(p > 0 for p in padding):
+        pad_width = [0, 0]  # batch dim: no pad
+        for p in padding:
+            pad_width += [p, p]
+        pad_width += [0, 0]  # channel dim: no pad
+        P.emit(
+            PadNode(
+                x=P.slot_to_tid(cur),
+                out=P.slot_to_tid(cur),
+                pad_width=[P.to_int_or_vid(v) for v in pad_width],
+                mode="constant",
+                constant_value=padding_value,
+            )
+        )
+
+    # 3. Sliding windows -> [N, *out_spatial, *kernel_size, C]
+    out_spatial = [
+        (sp - k) // s + 1 for sp, k, s in zip(spatial_padded, kernel_size, stride)
+    ]
+
+    can_fast_path = all(
+        k == s and sp % k == 0 for k, s, sp in zip(kernel_size, stride, spatial_padded)
+    )
+
+    if can_fast_path:
+        # Fast path: reshape + transpose (no AsStridedNode needed).
+        # [N, *spatial_padded, C]
+        #   -> reshape [N, sp0//k0, k0, sp1//k1, k1, ..., C]
+        #   -> transpose to gather output-spatial dims, then kernel dims, then C
+        reshape_shape = [N]
+        for sp, k in zip(spatial_padded, kernel_size):
+            reshape_shape += [sp // k, k]
+        reshape_shape += [C]
+
+        P.emit(
+            ReshapeNode(
+                x=P.slot_to_tid(cur),
+                out=P.slot_to_tid(cur),
+                shape=[IntOrVid.from_literal(d) for d in reshape_shape],
+            )
+        )
+
+        # Transpose: gather output-spatial (odd indices), then kernel (even indices after batch)
+        # Reshaped tensor axes: [0=batch, 1=out0, 2=k0, 3=out1, 4=k1, ..., last=C]
+        last = 2 * ndim + 1
+        out_spatial_axes = list(range(1, last, 2))  # [1, 3, 5, ...]
+        kernel_axes = list(range(2, last, 2))  # [2, 4, 6, ...]
+        perm = [0] + out_spatial_axes + kernel_axes + [last]
+
+        P.emit(
+            TransposeNode(
+                x=P.slot_to_tid(cur),
+                out=P.slot_to_tid(cur),
+                perm=perm,
+            )
+        )
+    else:
+        # General path: as_strided to create sliding window view.
+        # Input layout: [N, *spatial_padded, C] (channels-last, row-major)
+        dims = [N] + spatial_padded + [C]
+        elem_strides = []
+        acc = 1
+        for d in reversed(dims):
+            elem_strides.append(acc)
+            acc *= d
+        elem_strides.reverse()
+
+        # as_strided shape: [N, *out_spatial, *kernel_size, C]
+        as_shape = [N] + out_spatial + kernel_size + [C]
+
+        # as_strided strides:
+        #   batch:          elem_strides[0]
+        #   out_spatial[i]: elem_strides[i+1] * stride[i]  (skip by pool stride)
+        #   kernel[i]:      elem_strides[i+1]               (consecutive rows/cols)
+        #   channel:        1
+        as_strides = [elem_strides[0]]
+        for i in range(ndim):
+            as_strides.append(elem_strides[i + 1] * stride[i])
+        for i in range(ndim):
+            as_strides.append(elem_strides[i + 1])
+        as_strides.append(1)
+
+        P.emit(
+            AsStridedNode(
+                x=P.slot_to_tid(cur),
+                out=P.slot_to_tid(cur),
+                shape=[IntOrVid.from_literal(d) for d in as_shape],
+                strides=[IntOrVid.from_literal(d) for d in as_strides],
+                offset=0,
+            )
+        )
+
+    # 4. Reduce over kernel dims (axes [ndim+1 .. 2*ndim])
+    reduce_axes = list(range(ndim + 1, 2 * ndim + 1))
+    _, reduced = P.make_tmp_slot()
+    P.emit(
+        reduce_node_cls(
+            x=P.slot_to_tid(cur),
+            out=P.slot_to_tid(reduced),
+            axes=reduce_axes,
+            keepdims=False,
+        )
+    )
+
+    # 5. Transpose: channels-last [N, *out_spatial, C] -> channels-first [N, C, *out_spatial]
+    to_cf = [0, ndim + 1] + list(range(1, ndim + 1))
+    output_slots = P.make_or_get_slots(n)
+    out = output_slots[0]
+    P.emit(
+        TransposeNode(
+            x=P.slot_to_tid(reduced),
+            out=P.slot_to_tid(out),
+            perm=to_cf,
+        )
+    )
+    return out
+
+
+# --- MaxPool handlers ---
+
+
+@REGISTRY.register(target=[torch.ops.aten.max_pool2d_with_indices.default])
+def _max_pool2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.max_pool2d_with_indices.
+
+    Returns a tuple (output, indices). Indices are unused during inference;
+    make_or_get_slots in _emit_pool_nd allocates both output slots so
+    getitem[0] works.
+    """
+    args = P.args(n)
+    kernel_size, stride, padding = _parse_pool_args(
+        args, 2, "aten.max_pool2d_with_indices"
+    )
+
+    _emit_pool_nd(P, n, 2, MaxNode, float("-inf"), kernel_size, stride, padding)
+
+
+@REGISTRY.register(target=[torch.ops.aten.max_pool1d.default])
+def _max_pool1d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.max_pool1d (returns tensor, not tuple)."""
+    args = P.args(n)
+    kernel_size, stride, padding = _parse_pool_args(args, 1, "aten.max_pool1d")
+
+    return _emit_pool_nd(P, n, 1, MaxNode, float("-inf"), kernel_size, stride, padding)
+
+
+@REGISTRY.register(target=[torch.ops.aten.max_pool3d_with_indices.default])
+def _max_pool3d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.max_pool3d_with_indices.
+
+    Returns a tuple (output, indices). Indices are unused during inference;
+    make_or_get_slots in _emit_pool_nd allocates both output slots.
+    """
+    args = P.args(n)
+    kernel_size, stride, padding = _parse_pool_args(
+        args, 3, "aten.max_pool3d_with_indices"
+    )
+
+    _emit_pool_nd(P, n, 3, MaxNode, float("-inf"), kernel_size, stride, padding)
+
+
+# --- AvgPool handlers ---
+
+
+@REGISTRY.register(target=[torch.ops.aten.avg_pool1d.default])
+def _avg_pool1d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.avg_pool1d."""
+    args = P.args(n)
+    kernel_size, stride, padding = _parse_pool_args(args, 1, "aten.avg_pool1d")
+
+    return _emit_pool_nd(P, n, 1, MeanNode, 0.0, kernel_size, stride, padding)
+
+
+@REGISTRY.register(target=[torch.ops.aten.avg_pool2d.default])
+def _avg_pool2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.avg_pool2d."""
+    args = P.args(n)
+    kernel_size, stride, padding = _parse_pool_args(args, 2, "aten.avg_pool2d")
+
+    return _emit_pool_nd(P, n, 2, MeanNode, 0.0, kernel_size, stride, padding)
+
+
+@REGISTRY.register(target=[torch.ops.aten.avg_pool3d.default])
+def _avg_pool3d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.avg_pool3d."""
+    args = P.args(n)
+    kernel_size, stride, padding = _parse_pool_args(args, 3, "aten.avg_pool3d")
+
+    return _emit_pool_nd(P, n, 3, MeanNode, 0.0, kernel_size, stride, padding)
+
+
+# =============================================================================
+# Standalone dequantize (torchao.dequantize_affine)
+# =============================================================================
+
+
+@REGISTRY.register(target=[torch.ops.torchao.dequantize_affine.default])
+def _dequantize_affine_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle standalone torchao.dequantize_affine (not fused with linear/embedding).
+
+    MLX's dequantize always operates along the last axis.  When the quantized
+    dimension is not last (e.g. Conv2d with block_size=[1,32,1,1]), we permute
+    the constant weight/scale/zero_point tensors at compile time so the
+    quantized dim becomes last, emit the DequantizeNode, then emit a
+    TransposeNode with the inverse permutation to restore the original layout.
+    """
+    parsed = parse_dequant_node(n)
+    if parsed is None:
+        raise NotImplementedError(
+            f"dequantize_affine: unsupported quantization config at {n}"
+        )
+    (
+        qdata_node,
+        scale_node,
+        zero_point_node,
+        group_size,
+        bits,
+        out_dtype,
+        quantized_dim,
+    ) = parsed
+
+    qdata_target, qdata = P.get_placeholder_target_and_tensor(qdata_node)
+    zero_point_target, zero_point = P.get_placeholder_target_and_tensor(zero_point_node)
+    scale_target, scale = P.get_placeholder_target_and_tensor(scale_node)
+
+    if out_dtype is None:
+        out_dtype = scale_node.meta["val"].dtype
+    out_scalar_type = torch_dtype_to_scalar_type(out_dtype)
+
+    ndim = qdata.ndim
+    needs_permute = quantized_dim != ndim - 1
+
+    if needs_permute:
+        perm = list(range(ndim))
+        perm.remove(quantized_dim)
+        perm.append(quantized_dim)
+        qdata = qdata.permute(perm).contiguous()
+        scale = scale.permute(perm).contiguous()
+        zero_point = zero_point.permute(perm).contiguous()
+
+    # to_mlx_qparams expects 2D tensors; flatten N-D to 2D for packing,
+    # then restore the (possibly permuted) leading dimensions afterward.
+    permuted_shape = qdata.shape
+    qdata_2d = qdata.reshape(-1, qdata.shape[-1])
+    scale_2d = scale.reshape(-1, scale.shape[-1])
+    zero_point_2d = zero_point.reshape(-1, zero_point.shape[-1])
+
+    Q, B = to_mlx_qparams(qdata_2d, scale_2d, zero_point_2d, bits)
+
+    leading_dims = permuted_shape[:-1]
+    Q = Q.reshape(*leading_dims, Q.shape[-1])
+    scale_nd = scale_2d.reshape(*leading_dims, scale_2d.shape[-1])
+    if B is not None:
+        B = B.reshape(*leading_dims, B.shape[-1])
+
+    w = P.make_or_get_constant(f"{qdata_target}_to_packed", Q)
+    biases = P.make_or_get_constant(f"{zero_point_target}_to_biases", B)
+    scale_const = P.make_or_get_constant(f"{scale_target}_scale", scale_nd)
+
+    if needs_permute:
+        _, dequant_tmp = P.make_tmp_slot()
+    else:
+        dequant_tmp = P.make_or_get_slot(n)
+
+    P.emit(
+        DequantizeNode(
+            w=P.slot_to_tid(w),
+            scales=P.slot_to_tid(scale_const),
+            out=P.slot_to_tid(dequant_tmp),
+            biases=P.slot_to_tid(biases),
+            group_size=group_size,
+            bits=bits,
+            mode="affine",
+            out_scalar_type=out_scalar_type,
+        )
+    )
+
+    if needs_permute:
+        inv_perm = [0] * ndim
+        for i, p in enumerate(perm):
+            inv_perm[p] = i
+        out = P.make_or_get_slot(n)
+        P.emit(
+            TransposeNode(
+                x=P.slot_to_tid(dequant_tmp),
+                out=P.slot_to_tid(out),
+                perm=inv_perm,
+            )
+        )
+    else:
+        out = dequant_tmp
+
     return out

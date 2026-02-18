@@ -68,7 +68,6 @@ class MLXOperatorSupport(OperatorSupportBase):
             # corruption only matters if run_decompositions() is called afterward.
             # For pre-decomposition support checking (e.g., ops_to_not_decompose()),
             # use check_support_only() instead.
-            # See: backends/apple/mlx/docs/issues/dynamic_shapes_lost_during_delegate_lowering.md
             self._builder.build()
         except ValueError:
             # Build may fail if some nodes are unsupported, but node_info
@@ -132,8 +131,10 @@ class MLXPartitioner(Partitioner):
                 return ([], None)
 
         # Run the builder to determine which nodes are supported
-        # Use check_support_only() instead of build() to avoid corrupting shape_env
-        # See: backends/apple/mlx/docs/issues/dynamic_shapes_lost_during_delegate_lowering.md
+        # Use check_support_only() instead of build() to avoid corrupting shape_env.
+        # build() calls _build_mlx_graph() which evaluates SymInts to concrete values
+        # (via int(shape_dim)), corrupting the shape_env and causing dynamic shapes
+        # to be lost during subsequent decomposition passes.
         builder = MLXProgramBuilder(ep)
         builder.check_support_only()
 
@@ -193,10 +194,12 @@ class MLXPartitioner(Partitioner):
             op_support=self.supported_ops,
         )
 
-        # WORKAROUND for dynamic shapes bug: Include sym_size nodes in partitions
-        # when any of their users are in the partition. This prevents symbolic
-        # shapes from being concretized during delegate lowering.
-        # See: backends/apple/mlx/docs/issues/dynamic_shapes_lost_during_delegate_lowering.md
+        # WORKAROUND: Include sym_size nodes in partitions when any of their
+        # users are in the partition. Without this, sym_size nodes stay outside
+        # the partition and their results cross the partition boundary as concrete
+        # inputs, losing dynamic shape information during delegate lowering.
+        # By pulling them inside, the MLX runtime can execute SYM_SIZE at runtime,
+        # keeping shapes dynamic.
         partitions = self._include_sym_size_nodes_in_partitions(
             edge_program.graph_module, partitions
         )
@@ -289,54 +292,3 @@ class MLXPartitioner(Partitioner):
             tagged_exported_program=edge_program,
             partition_tags=self.partition_tags,
         )
-
-
-# =============================================================================
-# Supported ops list (for reference/documentation)
-# =============================================================================
-
-# The following ops are supported by the MLX delegate:
-#
-# Basic tensor ops:
-#   - aten.view, aten.reshape
-#   - aten.permute, aten.transpose
-#   - aten.slice
-#   - aten.unsqueeze, aten.squeeze
-#   - aten.clone, aten.alias
-#   - aten.repeat (tile)
-#   - aten.index (take_along_axis)
-#
-# Math ops:
-#   - aten.add (tensor and scalar)
-#   - aten.mul (tensor and scalar)
-#   - aten.linear
-#   - aten.embedding
-#
-# Activation functions:
-#   - aten.silu
-#   - aten.gelu
-#
-# Normalization:
-#   - aten.layer_norm
-#   - aten.rms_norm
-#
-# Attention:
-#   - aten.scaled_dot_product_attention (via SDPA pattern)
-#   - mlx.rope (custom op)
-#
-# Quantized ops (via patterns):
-#   - Quantized linear (torchao.dequantize_affine + aten.linear)
-#   - Quantized embedding (torchao.dequantize_affine + aten.embedding)
-#
-# Other:
-#   - aten.arange
-#   - aten.sym_size
-#   - aten.item (for SymInt extraction)
-#   - operator.getitem
-#   - operator.add (scalar)
-#
-# Patterns (fused ops):
-#   - SDPA: scaled_dot_product_attention with optional GQA repeat_interleave
-#   - QUANTIZED_LINEAR: dequantize_affine + linear
-#   - QUANTIZED_EMBEDDING: dequantize_affine + embedding
-#   - SLICE_UPDATE: slice + copy + slice_scatter (for KV cache updates)

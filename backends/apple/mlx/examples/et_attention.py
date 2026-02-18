@@ -96,6 +96,7 @@ class MLXAttentionMHA(Attention):
         self.rope_base = rope.params.rope_freq_base
         self.use_fused_rope = self._can_use_fused_rope(rope.params)
         self.rope_traditional = not rope.params.use_hf_rope
+        self.rope_dims = int(self.head_dim * rope.params.partial_rotary_factor)
 
         self.kv_cache = ETKVCache(
             max_batch_size=args.max_batch_size,
@@ -107,8 +108,6 @@ class MLXAttentionMHA(Attention):
 
     @staticmethod
     def _can_use_fused_rope(params: ModelArgs) -> bool:
-        if params.partial_rotary_factor != 1.0:
-            return False
         if params.no_rope_layer_interval is not None:
             return False
         return True
@@ -156,6 +155,9 @@ class MLXAttentionMHA(Attention):
         instance.rope_base = other.rope.params.rope_freq_base
         instance.use_fused_rope = cls._can_use_fused_rope(other.rope.params)
         instance.rope_traditional = not other.rope.params.use_hf_rope
+        instance.rope_dims = int(
+            instance.head_dim * other.rope.params.partial_rotary_factor
+        )
 
         if other.use_qk_norm:
             instance.q_norm_fn = other.q_norm_fn
@@ -209,7 +211,7 @@ class MLXAttentionMHA(Attention):
 
             q = torch.ops.mlx.rope(
                 q,
-                self.head_dim,
+                self.rope_dims,
                 start_pos,
                 self.rope_traditional,
                 self.rope_base,
@@ -218,7 +220,7 @@ class MLXAttentionMHA(Attention):
             )
             k = torch.ops.mlx.rope(
                 k,
-                self.head_dim,
+                self.rope_dims,
                 start_pos,
                 self.rope_traditional,
                 self.rope_base,

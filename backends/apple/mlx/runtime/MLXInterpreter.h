@@ -210,7 +210,7 @@ inline void exec_take_along_axis(
 inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   int axis = normalize_axis(n.axis, x.ndim(), "Take");
-  int index = normalize_axis(n.index, x.shape(axis), "Take");
+  int index = normalize_axis(resolve_int(n.index, st), x.shape(axis), "Take");
   st.set_tensor(n.out, take(x, index, axis, s));
 }
 
@@ -255,28 +255,14 @@ inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
     st.set_tensor(
         n.out,
         fast::rope(
-            x,
-            n.head_dim,
-            n.traditional,
-            n.base,
-            n.scale,
-            offset,
-            freqs_arr,
-            s));
+            x, n.dims, n.traditional, n.base, n.scale, offset, freqs_arr, s));
   } else {
     // Tensor offset from Tid
     const array& offset = st.const_tensor_ref(n.offset.tid);
     st.set_tensor(
         n.out,
         fast::rope(
-            x,
-            n.head_dim,
-            n.traditional,
-            n.base,
-            n.scale,
-            offset,
-            freqs_arr,
-            s));
+            x, n.dims, n.traditional, n.base, n.scale, offset, freqs_arr, s));
   }
 }
 
@@ -416,6 +402,21 @@ exec_conv2d(const Conv2DNode& n, ExecutionState& st, StreamOrDevice s) {
   std::pair<int, int> dilation = {n.dilation_h, n.dilation_w};
 
   auto out = conv2d(x, w, stride, padding, dilation, n.groups, s);
+  st.set_tensor(n.out, std::move(out));
+}
+
+// ----- Conv3D -----
+inline void
+exec_conv3d(const Conv3DNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const auto& w = st.const_tensor_ref(n.w);
+
+  std::tuple<int, int, int> stride = {n.stride_d, n.stride_h, n.stride_w};
+  std::tuple<int, int, int> padding = {n.padding_d, n.padding_h, n.padding_w};
+  std::tuple<int, int, int> dilation = {
+      n.dilation_d, n.dilation_h, n.dilation_w};
+
+  auto out = conv3d(x, w, stride, padding, dilation, n.groups, s);
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -622,8 +623,10 @@ inline void exec_pad(const PadNode& n, ExecutionState& st, StreamOrDevice s) {
 
   // Convert flat pad_width to vector of pairs
   std::vector<std::pair<int, int>> pad_width_pairs;
-  for (size_t i = 0; i < n.pad_width.size(); i += 2) {
-    pad_width_pairs.push_back({n.pad_width[i], n.pad_width[i + 1]});
+  auto pad_width_resolved = resolve_ints(n.pad_width, st);
+  for (size_t i = 0; i < pad_width_resolved.size(); i += 2) {
+    pad_width_pairs.push_back(
+        {pad_width_resolved[i], pad_width_resolved[i + 1]});
   }
 
   // MLX pad signature: pad(array, pad_width, pad_value, mode, stream)
@@ -658,6 +661,16 @@ exec_reshape(const ReshapeNode& n, ExecutionState& st, StreamOrDevice s) {
 inline void
 exec_transpose(const TransposeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, transpose(st.const_tensor_ref(n.x), n.perm, s));
+}
+
+// ----- AsStrided -----
+inline void
+exec_as_strided(const AsStridedNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  auto shape = to_shape(n.shape, st);
+  auto resolved_strides = resolve_ints(n.strides, st);
+  Strides strides(resolved_strides.begin(), resolved_strides.end());
+  st.set_tensor(n.out, as_strided(x, shape, strides, n.offset, s));
 }
 
 // ----- Contiguous -----
@@ -782,7 +795,12 @@ inline void exec_concatenate(
 // ----- Full -----
 inline void exec_full(const FullNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
-      n.out, full(to_shape(n.shape, st), n.v, resolve_dtype(n.scalar_type), s));
+      n.out,
+      full(
+          to_shape(n.shape, st),
+          resolve_float(n.v, st),
+          resolve_dtype(n.scalar_type),
+          s));
 }
 
 // ----- FullLike -----
@@ -792,7 +810,7 @@ exec_full_like(const FullLikeNode& n, ExecutionState& st, StreamOrDevice s) {
   // Use input dtype if not specified
   auto dtype = n.scalar_type.has_value() ? resolve_dtype(n.scalar_type.value())
                                          : x.dtype();
-  st.set_tensor(n.out, full_like(x, n.v, dtype, s));
+  st.set_tensor(n.out, full_like(x, resolve_float(n.v, st), dtype, s));
 }
 
 // ----- Slice Update -----
@@ -966,6 +984,35 @@ inline void exec_quantized_gather(
       Wq_sel,
       Sc_sel,
       Qb_sel,
+      n.group_size,
+      n.bits,
+      n.mode,
+      std::nullopt, // dtype - let MLX infer
+      s);
+
+  Dtype out_dtype = resolve_dtype(n.out_scalar_type);
+  if (out_dtype != Y.dtype()) {
+    Y = astype(Y, out_dtype, s);
+  }
+
+  st.set_tensor(n.out, std::move(Y));
+}
+
+// ----- Dequantize -----
+inline void
+exec_dequantize(const DequantizeNode& n, ExecutionState& st, StreamOrDevice s) {
+  array Wq = st.const_tensor_ref(n.w);
+  array Sc = st.const_tensor_ref(n.scales);
+
+  std::optional<array> Qb = std::nullopt;
+  if (n.biases) {
+    Qb = st.const_tensor_ref(*n.biases);
+  }
+
+  array Y = dequantize(
+      Wq,
+      Sc,
+      Qb,
       n.group_size,
       n.bits,
       n.mode,
@@ -1227,9 +1274,26 @@ inline void exec_floor_divide(
     const FloorDivideNode& n,
     ExecutionState& st,
     StreamOrDevice s) {
-  st.set_tensor(
-      n.out,
-      floor_divide(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+  const array& a = st.const_tensor_ref(n.a);
+  const array& b = st.const_tensor_ref(n.b);
+
+  if (!issubdtype(a.dtype(), inexact)) {
+    // mlx::floor_divide for integer types uses C++ truncation toward zero,
+    // but PyTorch floor_divide floors toward negative infinity.
+    // Adjust: floor_div(a, b) = trunc_div(a, b) - ((a % b != 0) & (sign(a) !=
+    // sign(b)))
+    auto quot = divide(a, b, s);
+    auto rem = remainder(a, b, s);
+    auto zero = array(0, a.dtype());
+    auto has_rem = not_equal(rem, zero, s);
+    auto a_neg = less(a, zero, s);
+    auto b_neg = less(b, zero, s);
+    auto signs_differ = not_equal(a_neg, b_neg, s);
+    auto adjust = logical_and(has_rem, signs_differ, s);
+    st.set_tensor(n.out, subtract(quot, astype(adjust, a.dtype(), s), s));
+  } else {
+    st.set_tensor(n.out, floor_divide(a, b, s));
+  }
 }
 
 // ----- Power -----
@@ -1450,6 +1514,9 @@ class Interpreter {
       case OpCode::CONV2D:
         ops::exec_conv2d(std::get<Conv2DNode>(instr.node), st, s);
         break;
+      case OpCode::CONV3D:
+        ops::exec_conv3d(std::get<Conv3DNode>(instr.node), st, s);
+        break;
       case OpCode::GELU:
         ops::exec_gelu(std::get<GeluNode>(instr.node), st, s);
         break;
@@ -1501,6 +1568,9 @@ class Interpreter {
       case OpCode::TRANSPOSE:
         ops::exec_transpose(std::get<TransposeNode>(instr.node), st, s);
         break;
+      case OpCode::AS_STRIDED:
+        ops::exec_as_strided(std::get<AsStridedNode>(instr.node), st, s);
+        break;
       case OpCode::CONTIGUOUS:
         ops::exec_contiguous(std::get<ContiguousNode>(instr.node), st, s);
         break;
@@ -1541,6 +1611,9 @@ class Interpreter {
       case OpCode::QUANTIZED_GATHER:
         ops::exec_quantized_gather(
             std::get<QuantizedGatherNode>(instr.node), st, s);
+        break;
+      case OpCode::DEQUANTIZE:
+        ops::exec_dequantize(std::get<DequantizeNode>(instr.node), st, s);
         break;
       case OpCode::LESS:
         ops::exec_less(std::get<LessNode>(instr.node), st, s);

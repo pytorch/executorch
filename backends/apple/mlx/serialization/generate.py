@@ -132,9 +132,9 @@ FBS_TO_CPP = {
     "string": "std::string",
     "byte": "uint8_t",
     "Tid": "Tid",
-    "Vid": "Vid<int32_t>",
-    "IntOrVid": "std::variant<int64_t, Vid<int32_t>>",
-    "FloatOrVid": "std::variant<double, Vid<int32_t>>",
+    "Vid": "Vid",
+    "IntOrVid": "std::variant<int64_t, Vid>",
+    "FloatOrVid": "std::variant<double, Vid>",
 }
 
 
@@ -975,7 +975,7 @@ def _fbs_type_to_cpp(
         if fbs_type == "Tid":
             return "std::optional<Tid>"
         if fbs_type == "Vid":
-            return "std::optional<Vid<int32_t>>"
+            return "std::optional<Vid>"
         if fld is not None and fld.default == "null" and fbs_type in FBS_TO_CPP:
             return f"std::optional<{cpp_type}>"
 
@@ -987,6 +987,7 @@ _OPCODE_OVERRIDES = {
     "AsType": "ASTYPE",
     "Conv1D": "CONV1D",
     "Conv2D": "CONV2D",
+    "Conv3D": "CONV3D",
 }
 
 

@@ -469,8 +469,9 @@ def compare_outputs(
                     f"  actual[:5]={act.flatten()[:5].tolist()}"
                 )
         elif not torch.allclose(exp, act, rtol=rtol, atol=atol):
-            max_diff = (exp - act).abs().max().item()
-            mean_diff = (exp - act).abs().mean().item()
+            diff = (exp - act).abs()
+            max_diff = diff.max().item()
+            mean_diff = diff.float().mean().item()
             return False, (
                 f"Output {i} values do not match:\n"
                 f"  max_diff={max_diff:.6e}, mean_diff={mean_diff:.6e}\n"
