@@ -33,7 +33,6 @@ from executorch.exir.error import internal_assert, InternalError
 from executorch.exir.operator.convert import is_inplace_variant, is_out_variant
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
-
 from torch import fx
 from torch.export.exported_program import (
     ConstantArgument,
@@ -236,6 +235,16 @@ class Verifier:
         }
         assert "output" in check_list, f"graph module has no output: {graph_module}"
 
+        # Collect mutable buffer specs so we can filter them from the output
+        # node when alloc_mutable_buffers=False (they may appear on the output
+        # node via SpecPropPass aliasing).
+        mutable_buffer_specs: Set[TensorSpec] = set()
+        if not self.alloc_mutable_buffers:
+            for nd in graph_module.graph.nodes:
+                if _is_mutable_buffer(nd, self.graph_signature):
+                    for spec in get_node_tensor_specs(nd):
+                        mutable_buffer_specs.add(spec)
+
         for nd in graph_module.graph.nodes:
             if nd.op in check_list:
                 if not (specs := get_node_tensor_specs(nd)):
@@ -244,6 +253,8 @@ class Verifier:
                     continue
                 assert len(specs) > 0, "Expect tensor specs"
                 specs = list(filter(lambda spec: not spec.const, specs))
+                if mutable_buffer_specs:
+                    specs = [s for s in specs if s not in mutable_buffer_specs]
                 if len(specs) == 0:
                     # all outputs are const so no need to allocate memory just say we suceeded
                     graph_output_allocated = self.alloc_graph_output
@@ -434,6 +445,14 @@ def collect_specs_from_nodes(  # noqa: C901
     graph_output_tensors: Set[TensorSpec] = (
         get_graph_output_tensors(nodes) if ignore_graph_output else set()
     )
+    # Collect mutable buffer specs so we can filter them even when they appear
+    # on non-placeholder nodes (e.g., aliased on the output node via SpecPropPass).
+    mutable_buffer_specs: Set[TensorSpec] = set()
+    if ignore_mutable_buffers:
+        for node in nodes:
+            if _is_mutable_buffer(node, graph_signature):
+                for spec in get_node_tensor_specs(node):
+                    mutable_buffer_specs.add(spec)
 
     for node in nodes:
         # ignore the specs from unrelevant Fx ops for now.
@@ -486,6 +505,8 @@ def collect_specs_from_nodes(  # noqa: C901
             if ignore_graph_input and spec in graph_input_tensors:
                 continue
             if ignore_graph_output and spec in graph_output_tensors:
+                continue
+            if ignore_mutable_buffers and spec in mutable_buffer_specs:
                 continue
             if (
                 ignore_const
