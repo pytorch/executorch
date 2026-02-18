@@ -56,7 +56,7 @@ Tensor& quantized_add_out(
       out);
 
   ET_LOG(
-      Info,
+      Debug,
       "quantized_add_out: input1_int8.sizes() = %zu",
       input1_int8.sizes().size());
 
@@ -78,7 +78,7 @@ Tensor& quantized_add_out(
   const int32_t activation_max = std::numeric_limits<int8_t>::max();
 
   ET_LOG(
-      Info,
+      Debug,
       "Using AoT-computed parameters: input1[mult=%d, shift=%d], input2[mult=%d, shift=%d], output[mult=%d, shift=%d]",
       input1_mult,
       input1_shift_val,
@@ -141,7 +141,7 @@ Tensor& quantized_add_out(
     }
   }
   ET_LOG(
-      Info,
+      Debug,
       "quantized_add_out: Successfully completed with AoT-computed parameters!");
 
   return out;
