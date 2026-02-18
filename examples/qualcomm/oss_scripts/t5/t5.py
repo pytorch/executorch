@@ -331,11 +331,11 @@ def main(args):
             shared_buffer=args.shared_buffer,
             target=args.target,
             runner="examples/qualcomm/oss_scripts/t5/qnn_t5_runner",
-            backend=backend,
         )
         adb.push(
             inputs=inputs,
             files=[runtime_tokenizer_path],
+            backends={backend},
         )
         adb.execute(custom_runner_cmd=runner_cmd)
         adb.pull(host_output_path=args.artifact, callback=post_process)
