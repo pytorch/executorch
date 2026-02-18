@@ -48,6 +48,17 @@ class TensorDataLocation(IntEnum):
     EXTERNAL = 1
 
 
+class DeviceType(IntEnum):
+    """
+    Device type enum indicating where a tensor resides or should be allocated.
+    Note that this enum is not directly mapped to the DeviceType enum in pytorch/pytorch
+    Check program.fbs for explanations of this enum.
+    """
+
+    CPU = 0
+    CUDA = 1
+
+
 @dataclass
 class ExtraTensorInfo:
     """
@@ -57,6 +68,12 @@ class ExtraTensorInfo:
     mutable_data_segments_idx: int = 0
     fully_qualified_name: Optional[str] = None
     location: TensorDataLocation = TensorDataLocation.SEGMENT
+    # Device type where this tensor resides or should be allocated.
+    # Defaults to CPU for backward compatibility.
+    device_type: DeviceType = DeviceType.CPU
+    # Device index for multi-device scenarios (e.g., cuda:0, cuda:1).
+    # A value of -1 indicates the default device.
+    device_index: int = -1
 
 
 @dataclass
@@ -262,6 +279,26 @@ class Operator:
 
 
 @dataclass
+class NonConstBufferDevice:
+    """
+    Device placement information for a non-constant memory buffer.
+    This is a sparse representation: only buffers that are NOT on CPU need entries.
+    Buffers not listed in ExecutionPlan.non_const_buffer_device default to CPU.
+    Check program.fbs for explanations.
+    """
+
+    # Index into ExecutionPlan.non_const_buffer_sizes identifying which buffer
+    # this entry applies to.
+    buffer_index: int
+    # The device type where this buffer should be allocated.
+    # Defaults to CPU for backward compatibility.
+    device_type: DeviceType = DeviceType.CPU
+    # The device index for multi-device scenarios (e.g., cuda:0, cuda:1).
+    # A value of -1 indicates the default device.
+    device_index: int = -1
+
+
+@dataclass
 class ExecutionPlan:
     name: str
     container_meta_type: ContainerMetadata
@@ -276,6 +313,12 @@ class ExecutionPlan:
     # Runtime should use the len(constant_buffer) as the ground truch of
     # constant memory buffer size, and ignore non_const_buffer_sizes[0].
     non_const_buffer_sizes: List[int]
+    # [Optional] Sparse device placement information for non-constant buffers.
+    # Only buffers that are NOT on CPU need to be listed here. Each entry
+    # specifies a buffer_index (into non_const_buffer_sizes) and its device.
+    # Buffers not listed here default to CPU, saving binary size when most
+    # buffers are on CPU.
+    non_const_buffer_device: Optional[List[NonConstBufferDevice]] = None
 
 
 @dataclass
