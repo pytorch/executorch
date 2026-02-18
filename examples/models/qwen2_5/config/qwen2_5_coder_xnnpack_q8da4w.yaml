@@ -1,5 +1,5 @@
 base:
-  metadata: '{"get_bos_id": 151643, "get_eos_ids":[151645]}'
+  metadata='{"get_bos_id": 151643, "get_eos_ids":[151645]}'
 
 model:
   use_kv_cache: True
