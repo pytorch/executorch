@@ -292,6 +292,7 @@
       "inherits": ["common"],
       "cacheVariables": {
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/mlx.cmake",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
         "CMAKE_CXX_FLAGS": "-DABSL_USES_STD_STRING_VIEW"
       },

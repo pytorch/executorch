@@ -125,3 +125,11 @@ Test artifacts are saved to `op_tests/<test_name>/`:
 2. Use the `@register_test` decorator on the test class
 3. Implement `create_model()`, `create_inputs()`, and `get_test_configs()`
 4. Run the test to verify it works E2E
+
+## Test harness
+
+MLX also plugs into the ExeucTorch test harness for even more coverage. To run, use the following command from the ExecuTorch root directory:
+
+```bash
+pytest -c /dev/null backends/test/suite/operators/ -m flow_mlx
+```

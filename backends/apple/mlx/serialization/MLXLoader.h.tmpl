@@ -27,7 +27,6 @@ struct Tid {
   uint32_t idx{};
 };
 
-template <typename T>
 struct Vid {
   uint32_t idx{};
 };
@@ -40,7 +39,7 @@ struct Vid {
 using ScalarType = ::executorch::runtime::etensor::ScalarType;
 
 struct TensorMeta {
-  std::vector<std::variant<int64_t, Vid<int32_t>>> shape;
+  std::vector<std::variant<int64_t, Vid>> shape;
   ScalarType scalar_type{ScalarType::Float};  // ET ScalarType
   std::vector<uint8_t> dim_order;
 };
@@ -48,7 +47,7 @@ struct TensorMeta {
 // TidOrVid: either a tensor (Tid) or a scalar value (Vid)
 struct TidOrVid {
   Tid tid{};
-  Vid<int32_t> vid{};
+  Vid vid{};
   bool is_vid{false};  // false = use tid, true = use vid
 };
 
@@ -208,15 +207,15 @@ inline Tid convert_tid(const mlx_delegate::Tid* fb_tid) {
 }
 
 // Convert FlatBuffer Vid
-inline Vid<int32_t> convert_vid(const mlx_delegate::Vid* fb_vid) {
+inline Vid convert_vid(const mlx_delegate::Vid* fb_vid) {
   if (!fb_vid) {
-    return Vid<int32_t>{0};
+    return Vid{0};
   }
-  return Vid<int32_t>{fb_vid->idx()};
+  return Vid{fb_vid->idx()};
 }
 
 // Convert FlatBuffer IntOrVid
-inline std::variant<int64_t, Vid<int32_t>> convert_int_or_vid(
+inline std::variant<int64_t, Vid> convert_int_or_vid(
     const mlx_delegate::IntOrVid* fb) {
   if (!fb) {
     return int64_t{0};
@@ -228,11 +227,11 @@ inline std::variant<int64_t, Vid<int32_t>> convert_int_or_vid(
   if (!vid_ptr) {
     return int64_t{0};
   }
-  return Vid<int32_t>{vid_ptr->idx()};
+  return Vid{vid_ptr->idx()};
 }
 
 // Convert FlatBuffer FloatOrVid
-inline std::variant<double, Vid<int32_t>> convert_float_or_vid(
+inline std::variant<double, Vid> convert_float_or_vid(
     const mlx_delegate::FloatOrVid* fb) {
   if (!fb) {
     return double{0.0};
@@ -244,14 +243,14 @@ inline std::variant<double, Vid<int32_t>> convert_float_or_vid(
   if (!vid_ptr) {
     return double{0.0};
   }
-  return Vid<int32_t>{vid_ptr->idx()};
+  return Vid{vid_ptr->idx()};
 }
 
 // Convert FlatBuffer TidOrVid (tensor or scalar value)
 inline TidOrVid convert_tid_or_vid(
     const mlx_delegate::TidOrVid* fb) {
   if (!fb) {
-    return TidOrVid{Tid{0}, Vid<int32_t>{0}, false};
+    return TidOrVid{Tid{0}, Vid{0}, false};
   }
   TidOrVid result;
   result.is_vid = fb->is_vid();
@@ -259,7 +258,7 @@ inline TidOrVid convert_tid_or_vid(
     result.tid = Tid{fb->tid()->idx()};
   }
   if (fb->vid()) {
-    result.vid = Vid<int32_t>{fb->vid()->idx()};
+    result.vid = Vid{fb->vid()->idx()};
   }
   return result;
 }

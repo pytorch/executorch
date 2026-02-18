@@ -297,8 +297,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
                   static_cast<long long>(val));
               return Error::InvalidArgument;
             }
-            h->state.set_value(
-                Vid<int32_t>{slot.idx}, static_cast<int32_t>(val));
+            h->state.set_value(Vid{slot.idx}, static_cast<int32_t>(val));
           } else {
             throw std::runtime_error(
                 "Unhandled input slot type: " +
@@ -328,7 +327,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
             prepared_outputs.push_back(std::move(out_arr));
             arg_idx++;
           } else if (slot.slot_type == SlotType::IntValueSlot) {
-            Vid<int32_t> vid{slot.idx};
+            Vid vid{slot.idx};
             int64_t int_val =
                 static_cast<int64_t>(h->state.const_value_ref<int32_t>(vid));
             *args[arg_idx] = EValue(int_val);

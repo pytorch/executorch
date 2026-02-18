@@ -190,7 +190,7 @@ def mlx_custom_sdpa_fake(
 @torch.library.custom_op("mlx::rope", mutates_args=())
 def rope(
     x: Tensor,  # (B, H, T, D)
-    head_dim: int,
+    dims: int,
     pos: int,  # int, not tensor
     traditional: bool = False,
     base: float = 500000.0,
@@ -202,7 +202,9 @@ def rope(
 
     Args:
         x: Input tensor of shape (B, H, T, D)
-        head_dim: Dimension of each attention head
+        dims: Number of feature dimensions to rotate. If less than D,
+            only the first `dims` dimensions are rotated and the rest
+            are left unchanged.
         pos: Starting position index (int, not tensor)
         traditional: Whether to use traditional RoPE formulation
         base: Base for frequency computation
@@ -212,8 +214,7 @@ def rope(
     Returns:
         Rotated tensor of the same shape
     """
-    Dh = int(head_dim)
-    assert x.size(-1) == Dh, "head_dim mismatch"
+    Dh = int(dims)
 
     B, H, T, _ = x.shape
     half = Dh // 2
@@ -237,28 +238,33 @@ def rope(
     cos = angles.cos().to(x.dtype)  # [1,1,T,half]
     sin = angles.sin().to(x.dtype)  # [1,1,T,half]
 
-    # x: [B, H, T, D]
+    # Split into rotated and unrotated portions
+    x_rot = x[..., :Dh]
+    x_pass = x[..., Dh:]
+
     if traditional:
         # Interleaved pairs: (x[0],x[1]), (x[2],x[3]), ...
-        x1 = x[..., 0::2]  # even indices
-        x2 = x[..., 1::2]  # odd indices
+        x1 = x_rot[..., 0::2]  # even indices
+        x2 = x_rot[..., 1::2]  # odd indices
         xr = x1 * cos - x2 * sin
         xi = x1 * sin + x2 * cos
-        return torch.stack([xr, xi], dim=-1).flatten(-2)
+        rotated = torch.stack([xr, xi], dim=-1).flatten(-2)
     else:
         # Split-half: first half paired with second half
-        x1, x2 = x[..., :half], x[..., half : 2 * half]
+        x1, x2 = x_rot[..., :half], x_rot[..., half:]
         xr = x1 * cos - x2 * sin
         xi = x1 * sin + x2 * cos
-        if 2 * half != Dh:
-            return torch.cat([xr, xi, x[..., 2 * half :]], dim=-1)
-        return torch.cat([xr, xi], dim=-1)
+        rotated = torch.cat([xr, xi], dim=-1)
+
+    if x_pass.shape[-1] > 0:
+        return torch.cat([rotated, x_pass], dim=-1)
+    return rotated
 
 
 @torch.library.register_fake("mlx::rope")
 def rope_fake(
     x: Tensor,
-    head_dim: int,
+    dims: int,
     pos: int,
     traditional: bool = False,
     base: float = 500000.0,

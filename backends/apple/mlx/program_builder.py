@@ -193,6 +193,91 @@ def emit_stop_position(
             return start + seq_len_concrete
 
 
+def to_mlx_qparams(
+    qdata: torch.Tensor,
+    scale: torch.Tensor,
+    zero_point: torch.Tensor,
+    bits: int,
+    compute_biases: bool = True,
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    """
+    Convert TorchAO quantization params to MLX format.
+
+    TorchAO uses: s * (q - z), with q signed
+    MLX uses: S * Q + B, with Q unsigned
+
+    s * (q - z)
+      = s ((q + offset) - (z + offset))
+      = s Q + B,
+    where Q = q + offset, B = -s * (z + offset)
+
+    Args:
+        compute_biases: If False, skip bias computation (for scale_only mode).
+                       Returns (Q, None) in this case. This is valid when
+                       zero_point is all zeros, as the C++ runtime will compute
+                       biases = -scales * 2^(bits-1).
+    """
+    assert qdata.dtype == torch.int8
+    offset = 2 ** (bits - 1)
+    Q = qdata.to(torch.int32) + offset
+
+    # Pack data tightly into uint32
+    assert 32 % bits == 0
+    vals_per_uint32 = 32 // bits
+    assert qdata.shape[1] % vals_per_uint32 == 0
+
+    Q = Q.reshape(-1, vals_per_uint32)
+    shifts = torch.arange(0, 32, bits, dtype=torch.int64)
+
+    # Convert to int64 for shift/packing
+    Q = Q.to(torch.int64)
+    Q = (Q << shifts).sum(dim=-1)
+    Q = Q.to(torch.uint32)
+    Q = Q.reshape(qdata.shape[0], -1)
+
+    if compute_biases:
+        B = -scale * (zero_point.to(scale.dtype) + offset)
+        return Q, B
+    else:
+        return Q, None
+
+
+def parse_dequant_node(
+    node: Node,
+) -> Optional[Tuple[Node, Node, Node, int, int, Optional[torch.dtype], int]]:
+    """Parse a torchao.dequantize_affine node.
+
+    Accepts N-dimensional block_size with a single non-1 element identifying
+    the quantized dimension and group_size. For example:
+      - Linear weights (2D):  block_size=[1, 32]       → quantized_dim=1
+      - Conv2d weights (4D):  block_size=[1, 32, 1, 1] → quantized_dim=1
+
+    Returns (qdata, scale, zero_point, group_size, bits, out_dtype, quantized_dim)
+    or None if unsupported.
+    """
+    qdata, block_size, scale, zero_point, dtype, qmin, qmax = node.args[0:7]
+    out_dtype = (
+        node.args[7] if len(node.args) > 7 else node.kwargs.get("output_dtype", None)
+    )
+    if dtype != torch.int8:
+        return None
+    if len(block_size) < 2:
+        return None
+    non_one = [(i, d) for i, d in enumerate(block_size) if d != 1]
+    if len(non_one) != 1:
+        return None
+    quantized_dim, group_size = non_one[0]
+    if group_size not in [32, 64, 128]:
+        return None
+    if qmin == -8 and qmax == 7:
+        bits = 4
+    elif qmin == -128 and qmax == 127:
+        bits = 8
+    else:
+        return None
+    return qdata, scale, zero_point, group_size, bits, out_dtype, quantized_dim
+
+
 # =============================================================================
 # Type conversions
 # =============================================================================
@@ -931,7 +1016,7 @@ class MLXProgramBuilder:
             target = ospec.target
             if target is not None:
                 output_kind_targets[kind].add(target)
-            if kind == OutputKind.USER_OUTPUT:
+            if kind in (OutputKind.USER_OUTPUT, OutputKind.USER_INPUT_MUTATION):
                 user_outputs.append(name)
 
         for ispec in self.ep.graph_signature.input_specs:

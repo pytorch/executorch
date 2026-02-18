@@ -1093,6 +1093,527 @@ class EmbeddingTest(OpTestCase):
 
 
 # =============================================================================
+# POOLING OPS
+# =============================================================================
+
+
+class MaxPool1dModel(nn.Module):
+    def __init__(self, kernel_size, stride=None, padding=0):
+        super().__init__()
+        self.pool = nn.MaxPool1d(kernel_size, stride=stride, padding=padding)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.pool(x)
+
+
+@register_test
+class MaxPool1dTest(OpTestCase):
+    name = "max_pool1d"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        kernel_size=2,
+        stride=2,
+        padding=0,
+        in_channels: int = 8,
+        seq_len: int = 32,
+        batch_size: int = 1,
+        tag: str = "",
+    ):
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.in_channels = in_channels
+        self.seq_len = seq_len
+        self.batch_size = batch_size
+
+        if tag:
+            self.name = f"max_pool1d_{tag}"
+        else:
+            parts = ["max_pool1d", f"k{kernel_size}", f"s{stride}"]
+            if padding != 0:
+                parts.append(f"p{padding}")
+            self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["MaxPool1dTest"]:
+        return [
+            # Fast path: kernel == stride
+            cls(kernel_size=2, stride=2),
+            # General path: overlapping windows with padding
+            cls(kernel_size=3, stride=2, padding=1),
+            # Fast path: larger kernel
+            cls(kernel_size=4, stride=4, seq_len=64),
+            # stride=None (defaults to kernel_size)
+            cls(kernel_size=4, stride=None, seq_len=64, tag="stride_none"),
+            # Single channel
+            cls(kernel_size=2, stride=2, in_channels=1, tag="c1"),
+            # Global pooling: kernel == spatial size
+            cls(kernel_size=32, stride=32, tag="global"),
+            # Batch > 1
+            cls(kernel_size=2, stride=2, batch_size=4, tag="batch4"),
+            # Stride > kernel (gaps between windows)
+            cls(kernel_size=2, stride=3, seq_len=32, tag="stride_gt_kernel"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return MaxPool1dModel(self.kernel_size, self.stride, self.padding)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.batch_size, self.in_channels, self.seq_len),)
+
+
+class MaxPool2dModel(nn.Module):
+    def __init__(self, kernel_size, stride=None, padding=0):
+        super().__init__()
+        self.pool = nn.MaxPool2d(kernel_size, stride=stride, padding=padding)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.pool(x)
+
+
+@register_test
+class MaxPool2dTest(OpTestCase):
+    name = "max_pool2d"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        kernel_size=2,
+        stride=2,
+        padding=0,
+        in_channels: int = 16,
+        input_size: Tuple[int, int] = (32, 32),
+        batch_size: int = 1,
+        tag: str = "",
+    ):
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.in_channels = in_channels
+        self.input_size = input_size
+        self.batch_size = batch_size
+
+        if tag:
+            self.name = f"max_pool2d_{tag}"
+        else:
+            parts = ["max_pool2d", f"k{kernel_size}", f"s{stride}"]
+            if padding != 0:
+                parts.append(f"p{padding}")
+            parts.append(f"{input_size[0]}x{input_size[1]}")
+            self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["MaxPool2dTest"]:
+        return [
+            # Fast path: kernel == stride, evenly divisible
+            cls(kernel_size=2, stride=2, input_size=(32, 32)),
+            # General path: overlapping windows
+            cls(kernel_size=3, stride=2, padding=1, input_size=(32, 32)),
+            # Fast path: 4x4 pooling
+            cls(kernel_size=4, stride=4, input_size=(64, 64)),
+            # General path: stride != kernel, no padding
+            cls(kernel_size=3, stride=1, input_size=(16, 16)),
+            # Batch > 1
+            cls(kernel_size=2, stride=2, input_size=(32, 32), batch_size=4),
+            # stride=None (defaults to kernel_size)
+            cls(kernel_size=2, stride=None, input_size=(32, 32), tag="stride_none"),
+            # Single channel
+            cls(kernel_size=2, stride=2, in_channels=1, input_size=(16, 16), tag="c1"),
+            # Global pooling
+            cls(kernel_size=8, stride=8, input_size=(8, 8), tag="global"),
+            # Non-square kernel/stride
+            cls(
+                kernel_size=(2, 3),
+                stride=(2, 3),
+                input_size=(16, 18),
+                tag="nonsquare_fast",
+            ),
+            cls(
+                kernel_size=(3, 2),
+                stride=(1, 2),
+                padding=(1, 0),
+                input_size=(16, 16),
+                tag="nonsquare_general",
+            ),
+            # Stride > kernel (gaps between windows)
+            cls(kernel_size=2, stride=3, input_size=(16, 16), tag="stride_gt_kernel"),
+            # Non-square input with square kernel
+            cls(kernel_size=2, stride=2, input_size=(16, 32), tag="nonsquare_input"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return MaxPool2dModel(self.kernel_size, self.stride, self.padding)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(
+                self.batch_size,
+                self.in_channels,
+                self.input_size[0],
+                self.input_size[1],
+            ),
+        )
+
+
+class MaxPool3dModel(nn.Module):
+    def __init__(self, kernel_size, stride=None, padding=0):
+        super().__init__()
+        self.pool = nn.MaxPool3d(kernel_size, stride=stride, padding=padding)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.pool(x)
+
+
+@register_test
+class MaxPool3dTest(OpTestCase):
+    name = "max_pool3d"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        kernel_size=2,
+        stride=2,
+        padding=0,
+        in_channels: int = 8,
+        input_size: Tuple[int, int, int] = (8, 16, 16),
+        batch_size: int = 1,
+        tag: str = "",
+    ):
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.in_channels = in_channels
+        self.input_size = input_size
+        self.batch_size = batch_size
+
+        if tag:
+            self.name = f"max_pool3d_{tag}"
+        else:
+            parts = ["max_pool3d", f"k{kernel_size}", f"s{stride}"]
+            if padding != 0:
+                parts.append(f"p{padding}")
+            self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["MaxPool3dTest"]:
+        return [
+            # Fast path: kernel == stride
+            cls(kernel_size=2, stride=2),
+            # General path: overlapping windows with padding
+            cls(kernel_size=3, stride=2, padding=1),
+            # Batch > 1
+            cls(kernel_size=2, stride=2, batch_size=2, tag="batch2"),
+            # Single channel
+            cls(kernel_size=2, stride=2, in_channels=1, tag="c1"),
+            # Non-cubic kernel/stride
+            cls(
+                kernel_size=(2, 2, 4),
+                stride=(2, 2, 4),
+                input_size=(8, 16, 16),
+                tag="noncubic_fast",
+            ),
+            # Stride > kernel
+            cls(
+                kernel_size=2, stride=3, input_size=(8, 16, 16), tag="stride_gt_kernel"
+            ),
+            # stride=None (defaults to kernel_size)
+            cls(kernel_size=2, stride=None, tag="stride_none"),
+            # Global pooling: kernel == spatial
+            cls(
+                kernel_size=(8, 16, 16),
+                stride=(8, 16, 16),
+                input_size=(8, 16, 16),
+                tag="global",
+            ),
+            # Non-cubic general path (stride != kernel)
+            cls(
+                kernel_size=(3, 2, 2),
+                stride=(1, 2, 2),
+                padding=(1, 0, 0),
+                input_size=(8, 16, 16),
+                tag="noncubic_general",
+            ),
+            # Non-cubic input with cubic kernel
+            cls(kernel_size=2, stride=2, input_size=(4, 8, 16), tag="nonsquare_input"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return MaxPool3dModel(self.kernel_size, self.stride, self.padding)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(
+                self.batch_size,
+                self.in_channels,
+                *self.input_size,
+            ),
+        )
+
+
+class AvgPool1dModel(nn.Module):
+    def __init__(self, kernel_size, stride=None, padding=0):
+        super().__init__()
+        self.pool = nn.AvgPool1d(kernel_size, stride=stride, padding=padding)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.pool(x)
+
+
+@register_test
+class AvgPool1dTest(OpTestCase):
+    name = "avg_pool1d"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        kernel_size=2,
+        stride=2,
+        padding=0,
+        in_channels: int = 8,
+        seq_len: int = 32,
+        batch_size: int = 1,
+        tag: str = "",
+    ):
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.in_channels = in_channels
+        self.seq_len = seq_len
+        self.batch_size = batch_size
+
+        if tag:
+            self.name = f"avg_pool1d_{tag}"
+        else:
+            parts = ["avg_pool1d", f"k{kernel_size}", f"s{stride}"]
+            if padding != 0:
+                parts.append(f"p{padding}")
+            self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["AvgPool1dTest"]:
+        return [
+            # Fast path: kernel == stride
+            cls(kernel_size=2, stride=2),
+            # General path: overlapping windows with padding
+            cls(kernel_size=3, stride=2, padding=1),
+            # Fast path: larger kernel
+            cls(kernel_size=4, stride=4, seq_len=64),
+            # stride=None (defaults to kernel_size)
+            cls(kernel_size=4, stride=None, seq_len=64, tag="stride_none"),
+            # Single channel
+            cls(kernel_size=2, stride=2, in_channels=1, tag="c1"),
+            # Global pooling
+            cls(kernel_size=32, stride=32, tag="global"),
+            # Batch > 1
+            cls(kernel_size=2, stride=2, batch_size=4, tag="batch4"),
+            # Stride > kernel (gaps between windows)
+            cls(kernel_size=2, stride=3, seq_len=32, tag="stride_gt_kernel"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return AvgPool1dModel(self.kernel_size, self.stride, self.padding)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.batch_size, self.in_channels, self.seq_len),)
+
+
+class AvgPool2dModel(nn.Module):
+    def __init__(self, kernel_size, stride=None, padding=0):
+        super().__init__()
+        self.pool = nn.AvgPool2d(kernel_size, stride=stride, padding=padding)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.pool(x)
+
+
+@register_test
+class AvgPool2dTest(OpTestCase):
+    name = "avg_pool2d"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        kernel_size=2,
+        stride=2,
+        padding=0,
+        in_channels: int = 16,
+        input_size: Tuple[int, int] = (32, 32),
+        batch_size: int = 1,
+        tag: str = "",
+    ):
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.in_channels = in_channels
+        self.input_size = input_size
+        self.batch_size = batch_size
+
+        if tag:
+            self.name = f"avg_pool2d_{tag}"
+        else:
+            parts = ["avg_pool2d", f"k{kernel_size}", f"s{stride}"]
+            if padding != 0:
+                parts.append(f"p{padding}")
+            parts.append(f"{input_size[0]}x{input_size[1]}")
+            self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["AvgPool2dTest"]:
+        return [
+            # Fast path: kernel == stride
+            cls(kernel_size=2, stride=2, input_size=(32, 32)),
+            # General path: overlapping windows
+            cls(kernel_size=3, stride=2, padding=1, input_size=(32, 32)),
+            # Fast path: 4x4 pooling
+            cls(kernel_size=4, stride=4, input_size=(64, 64)),
+            # General path: stride != kernel
+            cls(kernel_size=3, stride=1, input_size=(16, 16)),
+            # Batch > 1
+            cls(kernel_size=2, stride=2, input_size=(32, 32), batch_size=4),
+            # stride=None
+            cls(kernel_size=2, stride=None, input_size=(32, 32), tag="stride_none"),
+            # Single channel
+            cls(kernel_size=2, stride=2, in_channels=1, input_size=(16, 16), tag="c1"),
+            # Global pooling
+            cls(kernel_size=8, stride=8, input_size=(8, 8), tag="global"),
+            # Non-square kernel/stride
+            cls(
+                kernel_size=(2, 3),
+                stride=(2, 3),
+                input_size=(16, 18),
+                tag="nonsquare_fast",
+            ),
+            cls(
+                kernel_size=(3, 2),
+                stride=(1, 2),
+                padding=(1, 0),
+                input_size=(16, 16),
+                tag="nonsquare_general",
+            ),
+            # Stride > kernel (gaps between windows)
+            cls(kernel_size=2, stride=3, input_size=(16, 16), tag="stride_gt_kernel"),
+            # Non-square input with square kernel
+            cls(kernel_size=2, stride=2, input_size=(16, 32), tag="nonsquare_input"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return AvgPool2dModel(self.kernel_size, self.stride, self.padding)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(
+                self.batch_size,
+                self.in_channels,
+                self.input_size[0],
+                self.input_size[1],
+            ),
+        )
+
+
+class AvgPool3dModel(nn.Module):
+    def __init__(self, kernel_size, stride=None, padding=0):
+        super().__init__()
+        self.pool = nn.AvgPool3d(kernel_size, stride=stride, padding=padding)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.pool(x)
+
+
+@register_test
+class AvgPool3dTest(OpTestCase):
+    name = "avg_pool3d"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        kernel_size=2,
+        stride=2,
+        padding=0,
+        in_channels: int = 8,
+        input_size: Tuple[int, int, int] = (8, 16, 16),
+        batch_size: int = 1,
+        tag: str = "",
+    ):
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.in_channels = in_channels
+        self.input_size = input_size
+        self.batch_size = batch_size
+
+        if tag:
+            self.name = f"avg_pool3d_{tag}"
+        else:
+            parts = ["avg_pool3d", f"k{kernel_size}", f"s{stride}"]
+            if padding != 0:
+                parts.append(f"p{padding}")
+            self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["AvgPool3dTest"]:
+        return [
+            # Fast path: kernel == stride
+            cls(kernel_size=2, stride=2),
+            # General path: overlapping windows with padding
+            cls(kernel_size=3, stride=2, padding=1),
+            # Batch > 1
+            cls(kernel_size=2, stride=2, batch_size=2, tag="batch2"),
+            # Single channel
+            cls(kernel_size=2, stride=2, in_channels=1, tag="c1"),
+            # Non-cubic kernel/stride
+            cls(
+                kernel_size=(2, 2, 4),
+                stride=(2, 2, 4),
+                input_size=(8, 16, 16),
+                tag="noncubic_fast",
+            ),
+            # Stride > kernel
+            cls(
+                kernel_size=2, stride=3, input_size=(8, 16, 16), tag="stride_gt_kernel"
+            ),
+            # stride=None (defaults to kernel_size)
+            cls(kernel_size=2, stride=None, tag="stride_none"),
+            # Global pooling: kernel == spatial
+            cls(
+                kernel_size=(8, 16, 16),
+                stride=(8, 16, 16),
+                input_size=(8, 16, 16),
+                tag="global",
+            ),
+            # Non-cubic general path (stride != kernel)
+            cls(
+                kernel_size=(3, 2, 2),
+                stride=(1, 2, 2),
+                padding=(1, 0, 0),
+                input_size=(8, 16, 16),
+                tag="noncubic_general",
+            ),
+            # Non-cubic input with cubic kernel
+            cls(kernel_size=2, stride=2, input_size=(4, 8, 16), tag="nonsquare_input"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return AvgPool3dModel(self.kernel_size, self.stride, self.padding)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(
+                self.batch_size,
+                self.in_channels,
+                *self.input_size,
+            ),
+        )
+
+
+# =============================================================================
 # RMS NORM (torch.nn.functional.rms_norm)
 # =============================================================================
 
@@ -1158,13 +1679,13 @@ class RopeModel(nn.Module):
 
     def __init__(
         self,
-        head_dim: int = 64,
+        dims: int = 64,
         traditional: bool = False,
         base: float = 500000.0,
         scale: float = 1.0,
     ):
         super().__init__()
-        self.head_dim = head_dim
+        self.dims = dims
         self.traditional = traditional
         self.base = base
         self.scale = scale
@@ -1177,10 +1698,10 @@ class RopeModel(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         pos = pos_tensor.item()
         q_rot = torch.ops.mlx.rope(
-            q, self.head_dim, pos, self.traditional, self.base, self.scale, None
+            q, self.dims, pos, self.traditional, self.base, self.scale, None
         )
         k_rot = torch.ops.mlx.rope(
-            k, self.head_dim, pos, self.traditional, self.base, self.scale, None
+            k, self.dims, pos, self.traditional, self.base, self.scale, None
         )
         return q_rot, k_rot
 
@@ -1199,6 +1720,7 @@ class RopeTest(OpTestCase):
         num_heads: int = 8,
         seq_len: int = 16,
         head_dim: int = 64,
+        dims: Optional[int] = None,
         pos: int = 0,
         traditional: bool = False,
         base: float = 500000.0,
@@ -1208,6 +1730,7 @@ class RopeTest(OpTestCase):
         self.num_heads = num_heads
         self.seq_len = seq_len
         self.head_dim = head_dim
+        self.dims = dims if dims is not None else head_dim
         self.pos = pos
         self.traditional = traditional
         self.base = base
@@ -1219,11 +1742,13 @@ class RopeTest(OpTestCase):
         return [
             cls(),
             cls(traditional=True),
+            cls(head_dim=64, dims=32),
+            cls(head_dim=64, dims=32, traditional=True),
         ]
 
     def create_model(self) -> nn.Module:
         return RopeModel(
-            head_dim=self.head_dim,
+            dims=self.dims,
             traditional=self.traditional,
             base=self.base,
             scale=self.scale,
@@ -2634,6 +3159,136 @@ class Conv2DTest(OpTestCase):
         )
 
 
+class Conv3DModel(nn.Module):
+    """Model that performs 3D convolution."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int = 1,
+        padding: int = 0,
+        bias: bool = True,
+    ):
+        super().__init__()
+        self.conv = nn.Conv3d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            bias=bias,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
+
+
+@register_test
+class Conv3DTest(OpTestCase):
+    """Test case for conv3d op."""
+
+    name = "conv3d"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        in_channels: int = 3,
+        out_channels: int = 16,
+        kernel_size: int = 3,
+        stride: int = 1,
+        padding: int = 0,
+        input_size: Tuple[int, int, int] = (8, 16, 16),
+        batch_size: int = 1,
+        bias: bool = True,
+    ):
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.input_size = input_size
+        self.batch_size = batch_size
+        self.bias = bias
+
+        parts = [
+            "conv3d",
+            f"in{in_channels}",
+            f"out{out_channels}",
+            f"k{kernel_size}",
+        ]
+        if stride != 1:
+            parts.append(f"s{stride}")
+        if padding != 0:
+            parts.append(f"p{padding}")
+        parts.append(f"{input_size[0]}x{input_size[1]}x{input_size[2]}")
+        if batch_size != 1:
+            parts.append(f"b{batch_size}")
+        if not bias:
+            parts.append("nobias")
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["Conv3DTest"]:
+        return [
+            cls(
+                in_channels=3,
+                out_channels=16,
+                kernel_size=3,
+                padding=1,
+                input_size=(8, 16, 16),
+            ),
+            cls(
+                in_channels=16,
+                out_channels=32,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                input_size=(8, 16, 16),
+            ),
+            cls(in_channels=64, out_channels=128, kernel_size=1, input_size=(4, 8, 8)),
+            # Batch size > 1
+            cls(
+                in_channels=3,
+                out_channels=16,
+                kernel_size=3,
+                padding=1,
+                input_size=(8, 16, 16),
+                batch_size=2,
+            ),
+            cls(
+                in_channels=3,
+                out_channels=16,
+                kernel_size=3,
+                padding=1,
+                input_size=(8, 16, 16),
+                bias=False,
+            ),
+        ]
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(
+            self.batch_size,
+            self.in_channels,
+            self.input_size[0],
+            self.input_size[1],
+            self.input_size[2],
+        )
+        return (x,)
+
+    def create_model(self) -> nn.Module:
+        return Conv3DModel(
+            self.in_channels,
+            self.out_channels,
+            self.kernel_size,
+            self.stride,
+            self.padding,
+            self.bias,
+        )
+
+
 # =============================================================================
 # MATRIX MULTIPLICATION OPS
 # =============================================================================
@@ -3219,6 +3874,15 @@ def _bool_input_fn():
     return fn
 
 
+def _int_input_fn(low: int = -100, high: int = 100):
+    """Return a callable(shape, dtype) that generates a single-element integer tensor tuple."""
+
+    def fn(shape, dtype):
+        return (torch.randint(low, high, shape, dtype=dtype),)
+
+    return fn
+
+
 # Standard shape and dtype configs used by unary tests.
 _SHAPES_3 = [(16,), (4, 4), (2, 3, 4)]
 _SHAPES_2 = [(16,), (4, 4)]
@@ -3410,7 +4074,8 @@ _BINARY_OP_TESTS = [
     {"op_name": "minimum",       "op_fn": torch.minimum},
     {"op_name": "atan2",         "op_fn": torch.atan2},
     {"op_name": "logaddexp",     "op_fn": torch.logaddexp},
-    {"op_name": "floor_divide",  "op_fn": torch.floor_divide, "input_fn_a": _input_fn(scale=10), "input_fn_b": _input_fn(abs=True, offset=1)},
+    {"op_name": "floor_divide",      "op_fn": torch.floor_divide, "input_fn_a": _input_fn(scale=10), "input_fn_b": _input_fn(abs=True, offset=1)},
+    {"op_name": "floor_divide_int",  "op_fn": torch.floor_divide, "dtypes": [torch.int32], "input_fn_a": _int_input_fn(-100, 100), "input_fn_b": _int_input_fn(1, 10)},
     {"op_name": "power",         "op_fn": torch.pow,          "input_fn_a": _input_fn(uniform=True, offset=0.5), "input_fn_b": _input_fn(uniform=True, scale=2)},
     # comparison
     {"op_name": "less",          "op_fn": torch.lt, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.float32, torch.bfloat16]},
@@ -3465,6 +4130,72 @@ class PowerScalarTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         return PowerScalarModel(self.exponent)
+
+
+class CompareScalarModel(nn.Module):
+    def __init__(self, op_fn: Callable, scalar: float):
+        super().__init__()
+        self.op_fn = op_fn
+        self.scalar = scalar
+
+    def forward(self, a: torch.Tensor) -> torch.Tensor:
+        return self.op_fn(a, self.scalar)
+
+
+def _make_compare_scalar_test(
+    op_name: str,
+    op_fn: Callable,
+) -> type:
+    """Generate a registered OpTestCase subclass for a comparison Scalar op."""
+
+    class _Test(OpTestCase):
+        name = op_name
+
+        def __init__(
+            self,
+            shape: Tuple[int, ...],
+            scalar: float,
+            dtype: torch.dtype,
+        ):
+            self.shape = shape
+            self.scalar = scalar
+            self.dtype = dtype
+            shape_str = "x".join(str(s) for s in shape)
+            dtype_str = str(dtype).replace("torch.", "")
+            self.name = f"{op_name}_{shape_str}_s{scalar}_{dtype_str}"
+
+        @classmethod
+        def get_test_configs(cls) -> List["_Test"]:
+            return [
+                cls(shape=(16,), scalar=0.0, dtype=torch.float32),
+                cls(shape=(4, 4), scalar=0.5, dtype=torch.float32),
+                cls(shape=(2, 3, 4), scalar=-1.0, dtype=torch.float32),
+            ]
+
+        def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+            return (torch.randn(self.shape, dtype=self.dtype),)
+
+        def create_model(self) -> nn.Module:
+            return CompareScalarModel(op_fn, self.scalar)
+
+    _Test.__name__ = f"{op_name.title().replace('_', '')}Test"
+    _Test.__qualname__ = _Test.__name__
+    return _Test
+
+
+_COMPARE_SCALAR_TESTS = [
+    {"op_name": "less_scalar", "op_fn": torch.lt},
+    {"op_name": "less_equal_scalar", "op_fn": torch.le},
+    {"op_name": "greater_scalar", "op_fn": torch.gt},
+    {"op_name": "greater_equal_scalar", "op_fn": torch.ge},
+    {"op_name": "equal_scalar", "op_fn": torch.eq},
+    {"op_name": "not_equal_scalar", "op_fn": torch.ne},
+]
+
+for _entry in _COMPARE_SCALAR_TESTS:
+    _cls = _make_compare_scalar_test(**_entry)
+    register_test(_cls)
+    globals()[_cls.__name__] = _cls
 
 
 # =============================================================================
@@ -4673,4 +5404,101 @@ class QuantizedEmbeddingTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randint(0, self.num_embeddings, (self.batch_size, self.seq_len))
+        return (x,)
+
+
+class DequantizeConv2dModel(nn.Module):
+    """Conv2d layer whose weight will be quantized.
+
+    The pattern matcher only fuses dequantize_affine with linear and embedding.
+    A quantized Conv2d produces a standalone dequantize_affine node in the graph,
+    exercising the DequantizeNode path.
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 32,
+        out_channels: int = 64,
+        kernel_size: int = 3,
+    ):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels, out_channels, kernel_size, padding=1, bias=False
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
+
+
+@register_test
+class DequantizeTest(OpTestCase):
+    """Test case for standalone TorchAO dequantize_affine (DequantizeNode).
+
+    Uses a quantized Conv2d to produce a standalone dequantize_affine node,
+    since the pattern matcher only fuses dequantize with linear/embedding.
+    """
+
+    name = "dequantize"
+    rtol = 0.1
+    atol = 0.1
+
+    def __init__(
+        self,
+        in_channels: int = 32,
+        out_channels: int = 64,
+        kernel_size: int = 3,
+        height: int = 8,
+        width: int = 8,
+        batch_size: int = 1,
+        group_size: int = 32,
+        dtype: torch.dtype = torch.bfloat16,
+    ):
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.height = height
+        self.width = width
+        self.batch_size = batch_size
+        self.group_size = group_size
+        self.dtype = dtype
+
+        parts = ["dequantize", f"g{group_size}"]
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["DequantizeTest"]:
+        return [
+            cls(),
+        ]
+
+    def create_model(self) -> nn.Module:
+        model = DequantizeConv2dModel(
+            self.in_channels, self.out_channels, self.kernel_size
+        )
+        model = model.to(self.dtype)
+
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+
+        def conv2d_filter(module: nn.Module, fqn: str) -> bool:
+            return isinstance(module, nn.Conv2d)
+
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int4, granularity=PerGroup(self.group_size)
+            ),
+            conv2d_filter,
+        )
+
+        return model
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(
+            self.batch_size,
+            self.in_channels,
+            self.height,
+            self.width,
+            dtype=self.dtype,
+        )
         return (x,)

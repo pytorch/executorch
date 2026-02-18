@@ -29,7 +29,12 @@
 #include <vector>
 
 // =============================================================================
-// Op Logging - Enable via CMake: -DET_MLX_ENABLE_OP_LOGGING=1
+// Op Logging - compile-time gate + runtime env var check
+//
+// Compile flag (CMake: -DET_MLX_ENABLE_OP_LOGGING=1) controls whether logging
+// code is compiled in at all. When off, all logging is stripped (zero
+// overhead). When on, the env var ET_MLX_ENABLE_OP_LOGGING=1 must also be set
+// at runtime to actually produce output.
 // =============================================================================
 #ifndef ET_MLX_ENABLE_OP_LOGGING
 #define ET_MLX_ENABLE_OP_LOGGING 0
@@ -49,8 +54,20 @@ namespace executorch {
 namespace backends {
 namespace mlx {
 
-// Compile-time logging flag
-constexpr bool kEnableOpLogging = ET_MLX_ENABLE_OP_LOGGING;
+// Runtime check for op logging (only callable when compiled in)
+#if ET_MLX_ENABLE_OP_LOGGING
+inline bool isOpLoggingEnabled() {
+  static const bool enabled = []() {
+    const char* val = std::getenv("ET_MLX_ENABLE_OP_LOGGING");
+    return val != nullptr && std::string(val) == "1";
+  }();
+  return enabled;
+}
+#else
+constexpr bool isOpLoggingEnabled() {
+  return false;
+}
+#endif
 
 // Compile-time constant zero-copy flag
 constexpr bool kEnableConstantZeroCopy = ET_MLX_ENABLE_CONSTANT_ZERO_COPY;
@@ -338,13 +355,13 @@ struct ExecutionState {
   inline void begin_op(size_t idx, const char* name) {
     current_op_idx = idx;
     current_op_name = name;
-    if constexpr (kEnableOpLogging) {
+    if (isOpLoggingEnabled()) {
       std::cout << "[" << idx << "] " << name << std::endl;
     }
   }
 
   inline void end_op() {
-    if constexpr (kEnableOpLogging) {
+    if (isOpLoggingEnabled()) {
       std::cout << "----\n";
     }
   }
@@ -354,7 +371,7 @@ struct ExecutionState {
   // --------------------------
 
   inline Tensor& tensor_ref(Tid id) {
-    if constexpr (kEnableOpLogging) {
+    if (isOpLoggingEnabled()) {
       std::cout << "  ref  " << tensor_type_prefix(id) << id.idx << std::flush;
     }
     if (!program) {
@@ -385,14 +402,14 @@ struct ExecutionState {
       }
       t = &*opt;
     }
-    if constexpr (kEnableOpLogging) {
+    if (isOpLoggingEnabled()) {
       std::cout << "  " << format_tensor_info(*t) << "\n";
     }
     return *t;
   }
 
   inline const Tensor& const_tensor_ref(Tid id) const {
-    if constexpr (kEnableOpLogging) {
+    if (isOpLoggingEnabled()) {
       std::cout << "  in   " << tensor_type_prefix(id) << id.idx << std::flush;
     }
     if (!program) {
@@ -430,7 +447,7 @@ struct ExecutionState {
       t = &*opt;
     }
 
-    if constexpr (kEnableOpLogging) {
+    if (isOpLoggingEnabled()) {
       std::cout << "  " << format_tensor_info(*t) << " "
                 << format_tensor_stats(*t) << "\n";
     }
@@ -439,7 +456,7 @@ struct ExecutionState {
 
   // Set a tensor output
   inline void set_tensor(Tid id, Tensor arr) {
-    if constexpr (kEnableOpLogging) {
+    if (isOpLoggingEnabled()) {
       std::cout << "  out  " << tensor_type_prefix(id) << id.idx << "  "
                 << format_tensor_info(arr) << " " << format_tensor_stats(arr)
                 << "\n";
@@ -470,8 +487,8 @@ struct ExecutionState {
   // --------------------------
 
   template <typename T>
-  inline T& value_ref(Vid<T> id) {
-    if constexpr (kEnableOpLogging) {
+  inline T& value_ref(Vid id) {
+    if (isOpLoggingEnabled()) {
       std::cout << "  ref  v" << id.idx << std::flush;
     }
     if (id.idx >= values.size()) {
@@ -482,15 +499,15 @@ struct ExecutionState {
       throw std::runtime_error(
           "value_ref: uninitialized value idx=" + std::to_string(id.idx));
     }
-    if constexpr (kEnableOpLogging) {
+    if (isOpLoggingEnabled()) {
       std::cout << "  " << std::get<T>(*opt) << "\n";
     }
     return std::get<T>(*opt);
   }
 
   template <typename T>
-  inline const T& const_value_ref(Vid<T> id) const {
-    if constexpr (kEnableOpLogging) {
+  inline const T& const_value_ref(Vid id) const {
+    if (isOpLoggingEnabled()) {
       std::cout << "  in   v" << id.idx << std::flush;
     }
     if (id.idx >= values.size()) {
@@ -501,15 +518,15 @@ struct ExecutionState {
       throw std::runtime_error(
           "const_value_ref: uninitialized value idx=" + std::to_string(id.idx));
     }
-    if constexpr (kEnableOpLogging) {
+    if (isOpLoggingEnabled()) {
       std::cout << "  " << std::get<T>(*opt) << "\n";
     }
     return std::get<T>(*opt);
   }
 
   template <typename T>
-  inline void set_value(Vid<T> id, T val) {
-    if constexpr (kEnableOpLogging) {
+  inline void set_value(Vid id, T val) {
+    if (isOpLoggingEnabled()) {
       std::cout << "  out  v" << id.idx << "  " << val << "\n";
     }
     if (id.idx >= values.size()) {
@@ -577,12 +594,12 @@ inline int32_t clamp_to_int32(int64_t val64) {
 // =============================================================================
 
 inline int32_t resolve_int(
-    const std::variant<int64_t, Vid<int32_t>>& v,
+    const std::variant<int64_t, Vid>& v,
     const ExecutionState& st) {
   if (std::holds_alternative<int64_t>(v)) {
     return clamp_to_int32(std::get<int64_t>(v));
   }
-  return st.const_value_ref<int32_t>(std::get<Vid<int32_t>>(v));
+  return st.const_value_ref<int32_t>(std::get<Vid>(v));
 }
 
 // =============================================================================
@@ -590,7 +607,7 @@ inline int32_t resolve_int(
 // =============================================================================
 
 inline std::vector<int32_t> resolve_ints(
-    const std::vector<std::variant<int64_t, Vid<int32_t>>>& v,
+    const std::vector<std::variant<int64_t, Vid>>& v,
     const ExecutionState& st) {
   std::vector<int32_t> out;
   out.reserve(v.size());
@@ -601,11 +618,24 @@ inline std::vector<int32_t> resolve_ints(
 }
 
 // =============================================================================
+// Helper to resolve float or Vid
+// =============================================================================
+
+inline float resolve_float(
+    const std::variant<double, Vid>& v,
+    const ExecutionState& st) {
+  if (std::holds_alternative<double>(v)) {
+    return static_cast<float>(std::get<double>(v));
+  }
+  return st.const_value_ref<float>(std::get<Vid>(v));
+}
+
+// =============================================================================
 // Helper to convert shape with potential dynamic dims
 // =============================================================================
 
 inline ::mlx::core::Shape to_shape(
-    const std::vector<std::variant<int64_t, Vid<int32_t>>>& dims,
+    const std::vector<std::variant<int64_t, Vid>>& dims,
     const ExecutionState& st) {
   auto resolved = resolve_ints(dims, st);
   return ::mlx::core::Shape(resolved.begin(), resolved.end());
@@ -618,7 +648,7 @@ inline ::mlx::core::Shape to_shape(const std::vector<int32_t>& dims) {
 // Overload for static shapes (used when loading constants where all dims must
 // be literals)
 inline ::mlx::core::Shape to_shape(
-    const std::vector<std::variant<int64_t, Vid<int32_t>>>& dims) {
+    const std::vector<std::variant<int64_t, Vid>>& dims) {
   ::mlx::core::Shape out;
   out.reserve(dims.size());
   for (const auto& d : dims) {
