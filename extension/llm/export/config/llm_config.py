@@ -301,7 +301,7 @@ class MultimethodLoraConfig:
 
     Attributes:
         methods: Dict mapping method names to optional LoRA configs.
-            Empty dict disables multimethod export.
+            Empty dict disables multimethod_lora export.
 
     Example:
         MultimethodLoraConfig(methods={

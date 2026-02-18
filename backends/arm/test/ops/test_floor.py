@@ -87,6 +87,7 @@ def test_floor_tosa_INT(test_data: input_t1):
         module.exir_op,
         atol=0.06,
         rtol=0.01,
+        frobenius_threshold=0.2,
     )
     pipeline.run()
 

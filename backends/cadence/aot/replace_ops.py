@@ -1071,6 +1071,32 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
         permute_node.meta = node.meta
         return permute_node
 
+    def _change_depthwise_weight_to_hwc(
+        self, graph: torch.fx.Graph, node: torch.fx.Node
+    ) -> torch.fx.Node:
+        """Convert depthwise weight from OIHW [OC, 1, KH, KW] to HWC [KH, KW, OC].
+
+        NNLib depthwise convolution expects weights in [KH, KW, OC] format when
+        inp_data_format=0 (NHWC), but the standard NCHW->NHWC permutation produces
+        [OC, KH, KW, 1]. This function applies the correct permutation for depthwise
+        convolution weights.
+        """
+        # For depthwise: input shape is [OC, 1, KH, KW], target is [KH, KW, OC]
+        # Permute [0, 1, 2, 3] -> [2, 3, 0, 1] gives [KH, KW, OC, 1]
+        # Then squeeze the last dim (which is 1) to get [KH, KW, OC]
+        permute_indices = [2, 3, 0, 1]
+        permute_node = graph.call_function(
+            exir_ops.edge.aten.permute_copy.default, (node, permute_indices), {}
+        )
+        permute_node.meta = node.meta
+
+        # Squeeze the last dimension (which has size 1)
+        squeeze_node = graph.call_function(
+            exir_ops.edge.aten.squeeze_copy.dim, (permute_node, -1), {}
+        )
+        squeeze_node.meta = node.meta
+        return squeeze_node
+
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         assert isinstance(node.target, EdgeOpOverload)
         quantized_op = (
@@ -1093,12 +1119,28 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
         input_node = cast(torch.fx.Node, node.args[0])
         weight_node = cast(torch.fx.Node, node.args[1])
 
+        # Check if this is a depthwise convolution (groups == input_channels)
+        # and weight is 4D with shape [OC, 1, KH, KW]
+        groups = node.args[6]
+        input_shape = input_node.meta["val"].shape
+        weight_shape = weight_node.meta["val"].shape
+        input_channels = input_shape[1]  # NCHW format, channels at index 1
+        # Depthwise conv has 4D weight [OC, 1, KH, KW] where the IC dim is 1
+        is_depthwise = (
+            groups == input_channels and len(weight_shape) == 4 and weight_shape[1] == 1
+        )
+
         # Insert transpose operations before the node
         with graph.inserting_before(node):
             # Convert input from NCHW to NHWC
             input_nhwc = self._change_nchw_to_nhwc(graph, input_node)
-            # Convert weight from NCHW to NHWC
-            weight_nhwc = self._change_nchw_to_nhwc(graph, weight_node)
+            # Convert weight from NCHW to the appropriate format
+            if is_depthwise:
+                # For depthwise: [OC, 1, KH, KW] -> [KH, KW, OC] for NNLib
+                weight_nhwc = self._change_depthwise_weight_to_hwc(graph, weight_node)
+            else:
+                # For regular conv: [OC, IC, KH, KW] -> [OC, KH, KW, IC]
+                weight_nhwc = self._change_nchw_to_nhwc(graph, weight_node)
 
             # Non-quantized ops need to set the last optional argument to True
             channel_last_arg = [] if quantized_op else [True]

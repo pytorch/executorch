@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -31,9 +31,7 @@ class DecomposeSqrtPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
 
     def call_operator(self, op, args, kwargs, meta):
-        """
-        Decomposes `sqrt(x)` into `pow(x, 0.5)` for backend support.
-        """
+        """Decomposes `sqrt(x)` into `pow(x, 0.5)` for backend support."""
 
         if op not in (edge_sqrt_ops + aten_sqrt_ops) or not self.allowed_to_transform(
             meta
