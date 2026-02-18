@@ -5,13 +5,13 @@
 
 
 import logging
-from typing import cast, List, Optional
+from typing import List, Optional
 
 import torch
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
+
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
-from executorch.backends.cortex_m.passes.passes_utils import coerce_int_pair
 from executorch.backends.cortex_m.quantizer.node_finders import (
     GlobalNodeFinder,
     NodeFinder,
@@ -20,10 +20,8 @@ from executorch.backends.cortex_m.quantizer.node_finders import (
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     INT8_PER_CHANNEL_CONFIG,
-    INT8_PER_CHANNEL_TRANSPOSE_CONFIG,
     INT8_PER_TENSOR_CONFIG,
     QuantizationSpec,
-    SOFTMAX_PER_TENSOR_CONFIG,
 )
 from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
     QuantizerInfo,
@@ -36,7 +34,6 @@ from executorch.backends.cortex_m.quantizer.quantizer_support import (
     CONV_OP_PATTERNS,
     CONV_TRANSPOSE_OP_PATTERNS,
     CORTEX_M_QUANTIZER_SUPPORT_DICT,
-    SOFTMAX_OP_PATTERNS,
 )
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
@@ -79,16 +76,8 @@ class CortexMQuantizer(ComposableQuantizer):
 
     def __init__(self) -> None:
         conv_targets = set()
-        for key in CONV_OP_PATTERNS.keys():
+        for key in CONV_OP_PATTERNS.keys() | CONV_TRANSPOSE_OP_PATTERNS.keys():
             conv_targets.update(key)
-
-        softmax_targets = set()
-        for key in SOFTMAX_OP_PATTERNS.keys():
-            softmax_targets.update(key)
-
-        conv_transpose_targets = set()
-        for key in CONV_TRANSPOSE_OP_PATTERNS:
-            conv_transpose_targets.update(key)
 
         support_dict_name = (
             cortex_m_quantizer_support_module + ".CORTEX_M_QUANTIZER_SUPPORT_DICT"
@@ -98,16 +87,6 @@ class CortexMQuantizer(ComposableQuantizer):
             support_dict_name=support_dict_name,
         )
         quantizers: List[Quantizer] = [
-            PatternQuantizer(
-                SOFTMAX_PER_TENSOR_CONFIG,
-                node_finder=NodeTargetNodeFinder(softmax_targets),
-                pattern_matcher=pattern_matcher,
-            ),
-            PatternQuantizer(
-                INT8_PER_CHANNEL_TRANSPOSE_CONFIG,
-                node_finder=NodeTargetNodeFinder(conv_transpose_targets),
-                pattern_matcher=pattern_matcher,
-            ),
             PatternQuantizer(
                 INT8_PER_CHANNEL_CONFIG,
                 node_finder=NodeTargetNodeFinder(conv_targets),
@@ -189,7 +168,7 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
         return len(params) == 2 and node == params[1]
 
     def annotate_match(
-        self, match: List[Node], config: QuantizationConfig, model: GraphModule
+        self, match: List[Node], config: QuantizationConfig | None, model: GraphModule
     ) -> None:
         """
         Annotates a matched pattern according to the given quantization config. The
@@ -217,17 +196,21 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
                 if not has_float_output(input_node):
                     continue
                 if self.is_weight(input_node, params, model):
-                    input_qspec_map[input_node] = config.weight if config else None
+                    input_qspec_map[input_node] = (
+                        config.get_weight_qspec(node) if config else None
+                    )
                 elif self.is_bias(input_node, params, model):
                     # Bias qspec is derived from input + weight qspecs
-                    input_qspec_map[input_node] = config.bias(node) if config else None
+                    input_qspec_map[input_node] = (
+                        config.get_bias_qspec(node) if config else None
+                    )
                 elif input_node not in match:
                     input_qspec_map[input_node] = (
-                        config.input_activation if config else None
+                        config.get_input_act_qspec() if config else None
                     )
 
             if all(node not in match for node in node.users) and output_qspec is None:
-                output_qspec = config.output_activation if config else None
+                output_qspec = config.get_output_act_qspec(node) if config else None
 
             mark_node_as_annotated(
                 node, input_qspec_map, output_qspec, self.reporter, self
@@ -270,10 +253,6 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         # Min/Max/Mean
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
-        # Max/avg pooling
-        torch.ops.aten.avg_pool2d.default,
-        torch.ops.aten.max_pool2d_with_indices.default,
-        torch.ops.aten.max_pool2d.default,
         # Data shuffling
         torch.ops.aten.permute.default,
         torch.ops.aten.permute_copy.default,
@@ -429,41 +408,11 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             )
             return
 
-    @staticmethod
-    def _pool_arg_as_bool(node: Node, index: int, name: str, default: bool) -> bool:
-        raw = node.args[index] if len(node.args) > index else default
-        if raw is None:
-            return default
-        return bool(raw)
-
     def annotate(self, model: GraphModule) -> None:
         """
-        Annotate shared quantization spec for supported ops, skipping pooling
-        configurations that the Cortex-M backend cannot lower.
+        Annotate shared quantization spec for supported ops.
         """
         for node in model.graph.nodes:
-            # TODO Skip avg_pool2d when ceil_mode=True or count_include_pad=True
-            # CMSIS-NN doesn't directly support this. But, it should be done.
-            if node.target is torch.ops.aten.avg_pool2d.default:
-                ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
-                count_include_pad = (
-                    cast(bool, node.args[5]) if len(node.args) > 5 else True
-                )
-                if ceil_mode or count_include_pad:
-                    continue
-            if node.target in (
-                torch.ops.aten.max_pool2d.default,
-                torch.ops.aten.max_pool2d_with_indices.default,
-            ):
-                raw_dilation = node.args[4] if len(node.args) > 4 else (1, 1)
-                dilation = coerce_int_pair(raw_dilation, (1, 1))
-                ceil_mode = self._pool_arg_as_bool(node, 5, "ceil_mode", False)
-                if dilation != (1, 1) or ceil_mode:
-                    meta_custom = node.meta.get("custom", {})
-                    cortex_m_meta = meta_custom.get("cortex_m", {})
-                    cortex_m_meta["skip_quantized_max_pool2d"] = True
-                    meta_custom["cortex_m"] = cortex_m_meta
-                    node.meta["custom"] = meta_custom
             if node.target in self.targets and not self._is_annotated(node):
                 self._annotate_shared_cluster(node)
 

@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import torch
@@ -88,7 +88,6 @@ class SimpleADB:
         dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
         target="aarch64-android",
-        backend=QnnExecuTorchBackendType.kHtpBackend,
         expected_input_shape=None,
         expected_output_shape=None,
     ):
@@ -112,10 +111,26 @@ class SimpleADB:
         self.shared_buffer = shared_buffer
         self.runner = runner
         self.target = target
-        self.backend = backend
         self.expected_input_shape = expected_input_shape
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
+        self.qnn_backend_library_paths = {
+            QnnExecuTorchBackendType.kHtpBackend: [
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
+                (
+                    f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
+                    f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
+                ),
+                (
+                    f"{self.qnn_sdk}/lib/{self.target}/"
+                    f"libQnnHtpV{self.htp_arch}Stub.so"
+                ),
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
+            ],
+            QnnExecuTorchBackendType.kGpuBackend: [
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
+            ],
+        }
 
     def _adb(self, cmd, output_callback: Optional[Callable[[str], None]] = None):
         if not self.host_id:
@@ -134,7 +149,14 @@ class SimpleADB:
                 cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
             )
 
-    def push(self, inputs=None, input_list=None, files=None, init_env=True):
+    def push(
+        self,
+        inputs=None,
+        input_list=None,
+        files=None,
+        backends: Optional[Set[QnnExecuTorchBackendType]] = None,
+        init_env=True,
+    ):
         artifacts = [
             *self.pte_path,
         ]
@@ -142,26 +164,12 @@ class SimpleADB:
             self._adb(["shell", f"rm -rf {self.workspace}"])
             self._adb(["shell", f"mkdir -p {self.workspace}"])
 
-            # necessary artifacts
-            artifacts.extend(
-                {
-                    QnnExecuTorchBackendType.kHtpBackend: [
-                        f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
-                        (
-                            f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
-                            f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
-                        ),
-                        (
-                            f"{self.qnn_sdk}/lib/{self.target}/"
-                            f"libQnnHtpV{self.htp_arch}Stub.so"
-                        ),
-                        f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
-                    ],
-                    QnnExecuTorchBackendType.kGpuBackend: [
-                        f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
-                    ],
-                }[self.backend]
-            )
+            if backends is None:
+                backends = {QnnExecuTorchBackendType.kHtpBackend}
+
+            # backend libraries
+            for backend in backends:
+                artifacts.extend(self.qnn_backend_library_paths[backend])
 
             artifacts.extend(
                 [

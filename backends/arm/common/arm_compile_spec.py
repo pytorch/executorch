@@ -46,7 +46,7 @@ class ArmCompileSpec(ABC):
         compiler_flags: list[str],
         path_for_intermediates: str | None = None,
         tosa_debug_mode: DebugMode | None = None,
-        output_order_workaround: bool = True,
+        output_order_workaround: bool = False,
         pipeline_config: ArmPassPipelineConfig | None = None,
     ):
         """Set all values of dataclass directly."""
@@ -198,7 +198,7 @@ class ArmCompileSpec(ABC):
             compile_spec.append(
                 CompileSpec(
                     ArmCompileSpec._OUTPUT_REORDER_KEY,
-                    self.output_order_workaround,
+                    bytes(self.output_order_workaround),
                 )
             )
 
