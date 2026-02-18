@@ -7,7 +7,7 @@ from typing import Dict
 import torch
 from safetensors.torch import load_file
 
-from torchtune.models.convert_weights import get_mapped_key
+from executorch.examples.models.checkpoint import get_mapped_key
 
 
 # Weight mappings from Granite 3's checkpoint to ExecuTorch's transformer parameters.

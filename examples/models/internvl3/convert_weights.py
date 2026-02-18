@@ -4,7 +4,7 @@ from typing import Dict
 import torch
 
 from executorch.examples.models.smollm3.convert_weights import load_checkpoint
-from torchtune.models.convert_weights import get_mapped_key
+from executorch.examples.models.checkpoint import get_mapped_key
 
 # Standard _FROM_META weight mapping of Meta weights to TorchTune + additional bias weight mappings.
 _INTERNVL_TO_META = {

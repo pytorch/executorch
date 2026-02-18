@@ -3,7 +3,7 @@ from typing import Dict
 import torch
 
 from safetensors.torch import load_file
-from torchtune.models.convert_weights import get_mapped_key
+from executorch.examples.models.checkpoint import get_mapped_key
 
 _UNSLOTH_TO_META = {
     "base_model.model.model.layers.{}.mlp.down_proj.lora_A.weight": "layers.{}.feed_forward.w2.lora_a.weight",
