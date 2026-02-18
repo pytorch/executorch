@@ -66,8 +66,13 @@ def _print_channels(
                         res += " . "
                 else:
                     if not booldata:
-                        diff = (reference[c, y, x] - result[c, y, x]) / 10 ** (int(exp))
-                        res += f"{diff: .2f} "
+                        if exp == "inf":
+                            res += "NA "
+                        else:
+                            diff = (reference[c, y, x] - result[c, y, x]) / 10 ** (
+                                int(exp)
+                            )
+                            res += f"{diff: .2f} "
                     else:
                         diff = reference[c, y, x] ^ result[c, y, x]
                         res += " X "
@@ -350,8 +355,8 @@ def compare_rel_frobenius_and_cosine_similarity(
     reference_output: torch.Tensor,
     test_output: torch.Tensor,
     quantization_parameters,
-    frobenius_threshold: float = 0.05,
-    cosine_threshold: float = 0.95,
+    frobenius_threshold: float | None = 0.05,
+    cosine_threshold: float | None = 0.95,
     clean_reference: bool = True,
 ):
     """Frobenius test: computes the frobenius norm (sum of elementwise squared tensor values) of the *error*, and
@@ -396,13 +401,20 @@ def compare_rel_frobenius_and_cosine_similarity(
         test_output.flatten(), reference_output.flatten(), dim=0
     ).item()
 
-    if relative_frobenius_error > frobenius_threshold:
+    if (
+        frobenius_threshold is not None
+        and relative_frobenius_error > frobenius_threshold
+    ):
         raise AssertionError(
             f"Tensor-wise comparison failed: Relative frobenius norm error {relative_frobenius_error} exceeds threshold {frobenius_threshold}."
             f" (Cosine similarity: {cosine_similarity}, threshold {cosine_threshold})."
         )
 
-    if cosine_similarity < cosine_threshold and not reference_all_zeros:
+    if (
+        cosine_threshold is not None
+        and cosine_similarity < cosine_threshold
+        and not reference_all_zeros
+    ):
         raise AssertionError(
             f"Tensor-wise comparison failed: Cosine similarity {cosine_similarity} is below threshold {cosine_threshold}."
             f" (Relative frobenius error: {relative_frobenius_error}, threshold {frobenius_threshold})."

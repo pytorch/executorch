@@ -139,6 +139,7 @@ def test_amin_tosa_INT(test_data: Amin.input_t):
         Amin(dim, keep_dims),
         data,
         amin_aten_op,
+        frobenius_threshold=0.5,  # Single output value -> frobenius test sensitive to quantization.
     )
     pipeline.run()
 

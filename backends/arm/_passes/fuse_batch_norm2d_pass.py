@@ -27,8 +27,8 @@ from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 
 class FuseBatchNorm2dPass(ArmPass):
-    """Fuses the pattern convolution -> batchnorm by updating
-    the weights and bias of the convolution and removing the batchnorm.
+    """Fuses the pattern convolution -> batchnorm by updating the weights and
+    bias of the convolution and removing the batchnorm.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
