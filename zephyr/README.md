@@ -52,7 +52,7 @@ manifest:
 
 ## Run west config and update:
 
-Add ExecuTorch to Zephyr
+Add ExecuTorch and Ethos-U driver to Zephyr
 <!-- RUN west_config -->
 ```
 west config manifest.project-filter -- -.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u
@@ -88,6 +88,9 @@ modules/lib/executorch/examples/arm/setup.sh --i-agree-to-the-contained-eula
 
 To run you need to point of the path to the installed Corstone&trade; FVP and you can then use west to build and run. You point out the model PTE file you want to run with -DET_PTE_FILE_PATH= see below.
 
+The magic to include and use Ethos-U backend is to set
+CONFIG_ETHOS_U=y/n
+This is done in the example depending on the board you build for so it you build for a different board then the ones below you might want to add a board config file, or add this line to the prj.conf
 
 ## Corstone&trade; 300 FVP (Ethos&trade;-U55)
 
@@ -176,6 +179,47 @@ Run the Ethos-U85 PTE model
 west build -b mps4/corstone320/fvp modules/lib/executorch/examples/arm/zephyr -t run -- -DET_PTE_FILE_PATH=add_u85_256.pte
 ```
 
+## STM Nucleo n657x0_q
+
+### Run west config and update:
+
+You need to add hal_stm32 driver to Zephyr
+```
+west config manifest.project-filter -- -.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_stm32
+west update
+```
+
+### Setup tools
+
+Follow and make sure tools are setup according to this:
+
+https://docs.zephyrproject.org/latest/boards/st/nucleo_n657x0_q/doc/index.html
+
+Test the samples/hello_world in that guide to make sure all tools work.
+
+Please note that the ZephyrOS made a fix for the signing tool version v2.21.0 after the v4.3 release in 20 Nov 2025. Make sure to use a later version of ZephyrOS that contains it.
+Also note that the signing tool must be in your path for it to auto sign your elf.
+
+```
+export PATH=$PATH:~/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin
+```
+
+### Prepare a PTE model file
+
+Prepare the Cortex-M55 PTE model
+```
+python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/examples/arm/example_modules/add.py --quantize --output=add_m55.pte
+```
+
+#### Build and run
+
+Run the Cortex-M55 PTE model
+```
+west build -b nucleo_n657x0_q modules/lib/executorch/examples/arm/zephyr -- -DET_PTE_FILE_PATH=add_m55.pte
+west flash
+```
+This will run the simple add model on your hardware one and print the output on the serial consol.
+
 ## Notable files
 
 # executorch.yaml
@@ -189,3 +233,7 @@ Do not remove this file. As mentioned in the official Zephyr [documenation](http
 # Reference
 
 <a href="https://docs.pytorch.org/executorch">Documentation</a>
+
+## Related Projects
+
+- [ExecuTorch on Zephyr RTOS with CMSIS](https://github.com/Arm-Examples/cmsis-zephyr-executorch) — An alternative project structure demonstrating ExecuTorch on Zephyr using CMSIS Toolbox for build management.

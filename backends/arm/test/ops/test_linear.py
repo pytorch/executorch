@@ -60,6 +60,40 @@ test_data_rank1_FP = {
     ),
 }
 
+test_data_rank2_FP = {
+    # test_name: (test_data, out_features, has_bias)
+    "model_linear_rank2_zeros": lambda: (
+        torch.zeros(10, 20),
+        15,
+        True,
+    ),
+    "model_linear_rank2_ones": lambda: (
+        torch.ones(2, 240),
+        960,
+        False,
+    ),
+    "model_linear_rank2_negative_ones": lambda: (
+        torch.ones(10, 20) * (-1),
+        20,
+        True,
+    ),
+    "model_linear_rank2_rand": lambda: (
+        torch.rand(2, 240),
+        960,
+        True,
+    ),
+    "model_linear_rank2_negative_large_rand": lambda: (
+        torch.rand(10, 20) * (-100),
+        30,
+        False,
+    ),
+    "model_linear_rank2_large_randn": lambda: (
+        torch.randn(15, 20) * 100,
+        20,
+        True,
+    ),
+}
+
 test_data_rank4_FP = {
     # test_name: (test_data, out_features, has_bias)
     "model_linear_rank4_zeros": lambda: (
@@ -98,6 +132,13 @@ test_data_rank4_FP = {
 test_data_rank1_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (*v(), q))
     for (k, v) in test_data_rank1_FP.items()
+    for q in [True, False]
+}
+
+# Generate a new test set paired with per_channel_quant=True/False.
+test_data_rank2_INT = {
+    f"{k},per_channel_quant={q}": (lambda v=v, q=q: (*v(), q))
+    for (k, v) in test_data_rank2_FP.items()
     for q in [True, False]
 }
 
@@ -176,6 +217,7 @@ def test_linear_tosa_INT_a8w4(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         tosa_extensions=["int4"],
+        frobenius_threshold=0.15,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
@@ -192,7 +234,10 @@ def test_linear_tosa_INT_a8w4(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_rank1_INT)
+@common.parametrize(
+    "test_data",
+    test_data_rank1_INT | test_data_rank2_INT | test_data_rank4_INT,
+)
 @common.XfailIfNoCorstone300
 def test_linear_u55_INT(test_data: torch.Tensor):
     test_data, out_features, has_bias, per_channel_quantization = test_data()
@@ -213,7 +258,7 @@ def test_linear_u55_INT(test_data: torch.Tensor):
 
 @common.parametrize(
     "test_data",
-    test_data_rank1_INT | test_data_rank4_INT,
+    test_data_rank1_INT | test_data_rank2_INT | test_data_rank4_INT,
 )
 @common.XfailIfNoCorstone320
 def test_linear_u85_INT(test_data: torch.Tensor):
@@ -281,7 +326,7 @@ def test_linear_vgf_quant_a8w4(test_data: torch.Tensor):
     pipeline.run()
 
 
-test_data_all_16a8w = test_data_rank1_INT | test_data_rank4_INT
+test_data_all_16a8w = test_data_rank1_INT | test_data_rank2_INT | test_data_rank4_INT
 
 
 @common.parametrize("test_data", test_data_all_16a8w)

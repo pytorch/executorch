@@ -48,8 +48,8 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt
 
 from .experimental.cifar_net.cifar_net import (
     CifarNet,
-    test_cifarnet_model,
     train_cifarnet_model,
+    verify_cifarnet_model,
 )
 from .models.mobilenet_v2 import MobilenetV2
 
@@ -282,7 +282,7 @@ if __name__ == "__main__":  # noqa C901
     if args.test:
         match args.model_name:
             case "cifar10":
-                accuracy = test_cifarnet_model(module)
+                accuracy = verify_cifarnet_model(module)
 
             case _:
                 raise NotImplementedError(

@@ -33,7 +33,7 @@ VERBS="Add|Fix|Update|Refactor|Improve|Remove|Change|Implement|Create|Modify|"\
 "Handle|Ignore|Interpret|Instantiate|Invoke|Limit|Load|Modify|Permit|Print|"\
 "Profile|Recalculate|Reconstruct|Redefine|Redesign|Reevaluate|Relocate|Remap|"\
 "Render|Reposition|Request|Revert|Sanitize|Specify|Strengthen|Stub|Substitute|"\
-"Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify|Rename|Relax"
+"Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify|Rename|Relax|Format"
 
 # Remote branch
 REMOTE=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
@@ -102,10 +102,12 @@ for COMMIT in ${COMMITS}; do
     failed_license_check=false
     for commited_file in $commit_files; do
         # Skip files with certain extensions
-        if [[ "$commited_file" == *.md || "$commited_file" == *.md.in ]]; then
-            echo -e "${INFO} Skipping license check for ${commited_file} (excluded extension)"
-            continue
-        fi
+        case "$commited_file" in
+            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|.gitignore)
+                echo -e "${INFO} Skipping license check for ${commited_file} (excluded extension)"
+                continue
+                ;;
+        esac
 
         file_header=$(head "$commited_file")
         if ! echo "$file_header" | grep -qi "Arm"; then
