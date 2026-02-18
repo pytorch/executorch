@@ -16,9 +16,6 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.cat_converter import (
     CatConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clamp_converter import (
-    ClampConverter,
-)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clone_converter import (
     CloneConverter,
 )
@@ -94,7 +91,6 @@ __all__ = [
     "AddTensorConverter",
     "AvgPool2dConverter",
     "CatConverter",
-    "ClampConverter",
     "CloneConverter",
     "ConstantPadNDConverter",
     "ConvolutionConverter",
