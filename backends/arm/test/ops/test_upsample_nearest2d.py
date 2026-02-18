@@ -56,6 +56,20 @@ test_data_suite_bf16 = {
         True,
     ),
 }
+test_data_suite_fp16 = {
+    "randn_double_scale_fp16": lambda: (
+        torch.randn(1, 2, 3, 2, dtype=torch.float16),
+        None,
+        2.0,
+        True,
+    ),
+    "randn_double_size_fp16": lambda: (
+        torch.randn(1, 1, 2, 2, dtype=torch.float16),
+        (4, 4),
+        None,
+        True,
+    ),
+}
 
 test_data_u55 = {
     "rand_double_size": lambda: (torch.rand(2, 4, 8, 3), (16, 6), None, True),
@@ -118,7 +132,9 @@ class Interpolate(torch.nn.Module):
         return self.upsample(x)
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 def test_upsample_nearest2d_vec_tosa_FP(test_data: torch.Tensor):
     test_data, size, scale_factor, compare_outputs = test_data()
 
@@ -134,7 +150,9 @@ def test_upsample_nearest2d_vec_tosa_FP(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 def test_upsample_nearest2d_vec_tosa_FP_nearest(test_data: torch.Tensor):
     test_data, size, scale_factor, compare_outputs = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -149,7 +167,9 @@ def test_upsample_nearest2d_vec_tosa_FP_nearest(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 def test_upsample_nearest2d_vec_tosa_FP_interpolate(test_data: torch.Tensor):
     test_data, size, scale_factor, compare_outputs = test_data()
 
@@ -226,7 +246,7 @@ def test_upsample_nearest2d_vec_tosa_INT_a16w8(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_upsample_nearest2d_vec_vgf_no_quant(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
@@ -242,7 +262,7 @@ def test_upsample_nearest2d_vec_vgf_no_quant(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_upsample_nearest2d_vec_vgf_no_quant_nearest(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
@@ -258,7 +278,7 @@ def test_upsample_nearest2d_vec_vgf_no_quant_nearest(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_upsample_nearest2d_vec_vgf_no_quant_interpolate(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()

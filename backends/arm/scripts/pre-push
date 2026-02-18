@@ -102,10 +102,12 @@ for COMMIT in ${COMMITS}; do
     failed_license_check=false
     for commited_file in $commit_files; do
         # Skip files with certain extensions
-        if [[ "$commited_file" == *.md || "$commited_file" == *.md.in ]]; then
-            echo -e "${INFO} Skipping license check for ${commited_file} (excluded extension)"
-            continue
-        fi
+        case "$commited_file" in
+            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|.gitignore)
+                echo -e "${INFO} Skipping license check for ${commited_file} (excluded extension)"
+                continue
+                ;;
+        esac
 
         file_header=$(head "$commited_file")
         if ! echo "$file_header" | grep -qi "Arm"; then

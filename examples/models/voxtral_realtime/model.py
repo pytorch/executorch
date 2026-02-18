@@ -561,6 +561,124 @@ class VoxtralRealtimeModel(nn.Module):
 
 
 # ---------------------------------------------------------------------------
+# Streaming encoder
+# ---------------------------------------------------------------------------
+
+
+class StreamingAudioEncoderExport(nn.Module):
+    """Streaming encoder: processes one 8-mel-frame chunk at a time.
+
+    Shares conv/transformer/adapter weights with the offline encoder.
+    Owns separate KV caches and SDPA for incremental KV-cached attention.
+
+    Forward:
+        mel_chunk(1,128,8) + conv1_state(1,128,2) + conv2_state(1,1280,2)
+        + enc_input_pos(4,)
+        -> audio_embeds(1,1,3072), new_conv1_state(1,128,2), new_conv2_state(1,1280,2)
+    """
+
+    def __init__(self, model: VoxtralRealtimeModel, max_enc_len: int = 750):
+        super().__init__()
+        config = model.config
+
+        # Shared encoder weights (read-only references, never mutated)
+        self.conv1 = model.encoder.conv_layers[0].conv
+        self.conv2 = model.encoder.conv_layers[1].conv
+        self.layers = model.encoder.layers
+        self.enc_norm = model.encoder.norm
+        self.adapter = model.adapter
+
+        self.downsample_factor = config.downsample_factor
+        self.n_heads = config.enc_n_heads
+        self.head_dim = config.enc_head_dim
+
+        # Streaming-specific: encoder KV caches (one per layer)
+        self.kv_caches = nn.ModuleList(
+            [
+                KVCache(max_enc_len, config.enc_n_heads, config.enc_head_dim)
+                for _ in range(config.enc_n_layers)
+            ]
+        )
+
+        # SDPA for encoder MHA (n_heads=32, head_dim=64 -> attn_dim=2048)
+        self.sdpa = SDPA(config.enc_n_heads, config.enc_head_dim)
+
+        # RoPE for encoder dimensions
+        freqs_cos, freqs_sin = precompute_freqs_cis(
+            config.enc_head_dim, max_enc_len, config.enc_rope_theta
+        )
+        self.register_buffer("freqs_cos", freqs_cos)
+        self.register_buffer("freqs_sin", freqs_sin)
+
+    def _streaming_encoder_layer(
+        self,
+        x: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+        input_pos: torch.Tensor,
+        layer: CausalEncoderLayer,
+        layer_idx: int,
+    ) -> torch.Tensor:
+        """One encoder layer with streaming attention (KV cache + custom_sdpa)."""
+        h = layer.attention_norm(x)
+
+        B, T, _ = h.shape
+        attn = layer.attention
+        q = attn.wq(h).view(B, T, self.n_heads, self.head_dim)
+        k = attn.wk(h).view(B, T, self.n_heads, self.head_dim)
+        v = attn.wv(h).view(B, T, self.n_heads, self.head_dim)
+
+        q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+        k, v = self.kv_caches[layer_idx].update(input_pos, k, v)
+        y = self.sdpa(input_pos, q, k, v, B, T)
+        y = attn.wo(y)
+
+        x = x + y
+        x = x + layer.feed_forward(layer.ffn_norm(x))
+        return x
+
+    def forward(
+        self,
+        mel_chunk: torch.Tensor,
+        conv1_state: torch.Tensor,
+        conv2_state: torch.Tensor,
+        enc_input_pos: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # Conv1: cat state + chunk, raw Conv1d (no CausalConv1d padding)
+        # (1, 128, 2+8=10) -> conv1(k=3, s=1) -> (1, 1280, 8)
+        conv1_input = torch.cat([conv1_state, mel_chunk], dim=2)
+        conv1_out = F.gelu(self.conv1(conv1_input))
+        new_conv1_state = mel_chunk[:, :, -2:]
+
+        # Conv2: cat state + conv1_out, raw Conv1d
+        # (1, 1280, 2+8=10) -> conv2(k=3, s=2) -> (1, 1280, 4)
+        conv2_input = torch.cat([conv2_state, conv1_out], dim=2)
+        conv2_out = F.gelu(self.conv2(conv2_input))
+        new_conv2_state = conv1_out[:, :, -2:]
+
+        x = conv2_out.transpose(1, 2)  # (1, 4, 1280)
+
+        # Encoder transformer with KV cache
+        freqs_cos = self.freqs_cos[enc_input_pos]
+        freqs_sin = self.freqs_sin[enc_input_pos]
+
+        for i, layer in enumerate(self.layers):
+            x = self._streaming_encoder_layer(
+                x, freqs_cos, freqs_sin, enc_input_pos, layer, i
+            )
+
+        x = self.enc_norm(x)  # (1, 4, 1280)
+
+        # Downsample: concat 4 consecutive frames -> (1, 1, 5120)
+        B, T, D = x.shape
+        x = x.reshape(B, T // self.downsample_factor, D * self.downsample_factor)
+
+        audio_embeds = self.adapter(x)  # (1, 1, 3072)
+
+        return audio_embeds, new_conv1_state, new_conv2_state
+
+
+# ---------------------------------------------------------------------------
 # Weight loading
 # ---------------------------------------------------------------------------
 
