@@ -80,8 +80,8 @@ window_size=400, downsample_factor=4, frame_rate=12.5 fps.
 ## ExecuTorch Design Choices
 
 The model is written directly with ExecuTorch custom ops rather than using
-source transformations. The patterns come from `examples/models/llama/` and
-`optimum-executorch`.
+source transformations. The patterns come from `examples/models/llama/`,
+`extension/llm/export/builder.py`, and `optimum-executorch`.
 
 ### KV cache: `[B, S, H, D]` layout + `update_cache` custom op
 
@@ -101,12 +101,13 @@ Reference: `examples/models/llama/source_transformation/custom_kv_cache.py`
 `SDPA` is its own module (not inline code), making it swappable for
 alternative implementations (quantized, CoreML, manual matmul).
 
-Uses `torch.ops.llama.custom_sdpa(q, k, v, start_pos, None, 0, True)`
-which handles:
-- **GQA expansion** internally (no `repeat_interleave` needed)
-- **Causal masking** via `start_pos` + `is_causal=True` (no pre-built
-  mask buffer)
-- **float32 upcast** for numerical stability
+Two modes (mutually exclusive):
+- **Causal** (decoder): `custom_sdpa(q, k, v, start_pos, None, 0, True)`.
+  Causal masking via `start_pos` + `is_causal=True`.
+- **Explicit mask** (streaming encoder): `custom_sdpa(q, k, v, start_pos, mask, 0, False)`.
+  Sliding window mask from `EncoderRingKVCache.create_causal_mask()`.
+
+Both modes handle GQA expansion internally and upcast to float32.
 
 Reference: `examples/models/llama/source_transformation/sdpa.py`
 (`SDPACustom`).
@@ -142,14 +143,17 @@ Uses `F.rms_norm(x, (self.dim,), self.weight, self.eps)` with a stored
 
 ### Encoder attention: standard `F.scaled_dot_product_attention`
 
-The encoder has no KV cache (processes full mel at once in offline mode) and
+The offline encoder has no KV cache (processes full mel at once) and
 no GQA (n_heads == n_kv_heads). Uses `F.scaled_dot_product_attention` with
 `is_causal=True` and standard `[B, H, T, D]` layout. No custom ops needed.
 
-Uses full causal attention (no sliding window of 750). The model's
-`params.json` specifies `sliding_window: 750` but this is not enforced
-in the ExecuTorch implementation — the KV cache (streaming) or full
-attention (offline) provides equivalent or broader context.
+The offline encoder uses full causal attention (no sliding window).
+The model's `params.json` specifies `sliding_window: 750` but this is
+only enforced in the streaming encoder (via `EncoderRingKVCache`). For
+audio shorter than 750 encoder frames (~15s), full causal is equivalent.
+
+The streaming encoder enforces the trained sliding window — see
+[Encoder KV cache](#encoder-kv-cache).
 
 ## Streaming Encoder (`StreamingAudioEncoderExport`)
 
@@ -167,7 +171,7 @@ mel_chunk (1, 128, 8)
   -> cat(state, chunk) -> raw Conv1d (no CausalConv1d padding) -> GELU
   -> cat(state, conv1_out) -> raw Conv1d -> GELU
 (1, 1280, 4) -> transpose -> (1, 4, 1280)
-  -> 32x streaming encoder layer (KV cache + custom_sdpa)
+  -> 32x streaming encoder layer (EncoderRingKVCache + custom_sdpa)
   -> RMSNorm
 (1, 4, 1280)
   -> Reshape downsample (1, 1, 5120) -> Adapter (1, 1, 3072)
@@ -191,14 +195,45 @@ encoder — verified to within fp32 precision (max diff < 2e-5).
 
 ### Encoder KV cache
 
-Each of the 32 encoder transformer layers gets its own `KVCache` instance
-(reusing the same class as the decoder). The `SDPA` module handles causal
-attention via `start_pos`, accumulating encoder frames incrementally.
+Each of the 32 encoder transformer layers gets its own `EncoderRingKVCache`
+instance — a ring buffer that overwrites old entries when the window is
+exceeded, enabling streaming of arbitrary length audio.
 
-- Cache shape: `(1, max_enc_len, 32, 64)` per layer
-- Default `max_enc_len=750` (~15s audio, matching the model's trained
+- Cache shape: `(1, 2*max_enc_len, 32, 64)` per layer. The buffer is 2x the
+  window size because writes happen *before* attention. With a 1x buffer
+  (size = window), writing `seq_len` new entries evicts that many old ones —
+  but the current queries still need those old entries. Example with
+  `window=4, seq_len=4, start_pos=5`: a 1x buffer would overwrite positions
+  1-4 with 5-8, so query at position 5 can only attend to itself instead of
+  positions 2-4. A 2x buffer (size 8) keeps positions 1-4 alive alongside
+  5-8, giving query 5 full access to its window.
+- Default `max_enc_len=750` (matching the model's trained
   sliding window). Configurable via `--max-enc-len`.
-- Memory: 32 layers × 2 × 750 × 32 × 64 × 4 bytes ≈ 393 MB (fp32)
+- Memory: 32 layers × 2 × 1500 × 32 × 64 × 4 bytes ≈ 786 MB (fp32)
+- Duration: unlimited (ring buffer overwrites old entries, RoPE computed on-the-fly)
+
+Cache writes use `torch.ops.llama.update_cache_with_indices` (a custom op
+that scatter-writes via an indices tensor). Write indices are computed
+analytically: `(arange(seq_len) + start_pos) % buf_size`. No mutable
+position state is needed.
+
+Position tracking is analytic — no mutable state buffer. For buffer
+slot `j` after `total_written` frames have been stored:
+
+```
+abs_pos[j] = j + ((total_written - 1 - j) // buf_size) * buf_size
+```
+
+Negative results indicate unwritten slots. The sliding window mask
+is computed from these positions each step:
+
+```python
+valid = (cache_pos >= 0) & (delta >= 0) & (delta < window_size)
+mask = torch.where(valid, 0.0, float("-inf"))
+```
+
+The mask is identical for all 32 layers (same `input_pos`), so it
+is computed once in `forward()` and reused.
 
 ### STFT overlap for streaming mel
 
@@ -232,6 +267,28 @@ The streaming encoder references the same module objects that
 `quantize_model_()` mutates in-place, so quantized weights are
 used transparently. Conv1d layers are not quantized (not targeted
 by `quantize_model_`). KV caches and SDPA have no trainable weights.
+
+### Export: `strict=True` and `.item()` pattern
+
+All exports use `torch.export.export(..., strict=True)`, matching the
+Llama builder (`extension/llm/export/builder.py`) and optimum-executorch.
+
+`strict=True` is required because the model uses `.item()` to extract
+scalar positions from input tensors (for `update_cache`, `custom_sdpa`,
+and ring buffer index computation). With `strict=True`, `.item()` produces
+an unbacked `SymInt` — a symbolic integer that remains dynamic at runtime.
+With `strict=False`, `.item()` returns the concrete sample value which
+gets baked into the graph as a constant, making all cache positions
+and attention masks static (the model has no temporal memory).
+
+Each `.item()` call is guarded with `torch._check_is_size(start_pos)`
+(non-negative constraint) and optionally `torch._check(start_pos < max)`
+(upper bound for bounded caches like the decoder KV cache). The encoder
+ring buffer has no upper bound since positions are unlimited.
+
+This is the same pattern used by:
+- `examples/models/llama/attention.py` (`KVCache.update`)
+- `optimum-executorch` (`custom_sdpa_with_start_pos_forward`)
 
 ## Checkpoint Format
 
@@ -305,7 +362,7 @@ StreamingAudioEncoderExport (export wrapper, shares weights with encoder + adapt
   layers: 32x CausalEncoderLayer (shared from encoder.layers)
   enc_norm: RMSNorm (shared from encoder.norm)
   adapter: AudioLanguageAdapter (shared from model.adapter)
-  kv_caches: 32x KVCache (owned, for streaming attention)
+  kv_caches: 32x EncoderRingKVCache (owned, ring buffer for sliding window attention)
   sdpa: SDPA (owned, for streaming attention)
-  freqs_cos/sin: RoPE buffers (owned, encoder dims)
+  inv_freq: RoPE inverse frequencies (owned, on-the-fly computation)
 ```

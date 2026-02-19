@@ -37,6 +37,7 @@ functions_converters = {
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,  # noqa F405
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
+    exir_ops.edge.aten.leaky_relu.default: LeakyReluConverter,  # noqa F405
     exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,  # noqa F405
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
@@ -208,8 +209,12 @@ class EdgeProgramToIRConverter:
                         result_map[input_spec.arg.name] = param
 
                     else:
-                        # There is no data available.
-                        continue
+                        logger.w(
+                            f"No real or post-quantization data found for '{input_spec.target}'. "
+                            f"Using a FakeTensor."
+                        )
+                        param = edge_program.state_dict[input_spec.target]
+                        result_map[input_spec.arg.name] = param
 
         return result_map
 
