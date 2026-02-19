@@ -335,7 +335,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
     fi
 
     pushd tosa-tools
-    git checkout v2025.11.0
+    git checkout v2025.11.2
 
     if [[ ! -d "reference_model" ]]; then
         log_step "main" "[error] Missing reference_model directory in tosa-tools repo."
@@ -345,7 +345,6 @@ if [[ $is_script_sourced -eq 0 ]]; then
         log_step "main" "[error] Missing serialization directory in tosa-tools repo."
         exit 1
     fi
-
 
     export CMAKE_BUILD_PARALLEL_LEVEL="$(get_parallel_jobs)"
 
