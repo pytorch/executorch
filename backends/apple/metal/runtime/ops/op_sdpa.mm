@@ -45,6 +45,7 @@ template <typename T, int D, int V = D>
     constant bool& has_mask [[buffer(11)]],
     constant uint3& qkv_batch_strides [[buffer(12)]],  // NEW: batch strides for Q, K, V
     constant uint& num_q_heads [[buffer(13)]],          // NEW: number of query heads
+    constant bool& is_causal [[buffer(14)]],            // NEW: causal masking flag
     uint3 tid [[threadgroup_position_in_grid]],
     uint3 tpg [[threadgroups_per_grid]],
     uint simd_gid [[simdgroup_index_in_threadgroup]],
@@ -120,7 +121,13 @@ template <typename T, int D, int V = D>
   for (uint i = simd_gid; i < N; i += BN) {
     // Check mask: for floating point masks, values > -1e9 are considered valid (not masked)
     // Masked positions typically have -inf or very negative values
-    const bool is_valid = !has_mask || (static_cast<U>(mask[0]) > -1e9f);
+    bool is_valid = !has_mask || (static_cast<U>(mask[0]) > -1e9f);
+
+    // Apply causal masking: compute absolute query position and mask future keys
+    // Absolute query position = (N - Q) + q_seq_idx where Q = tpg.y
+    if (is_causal) {
+      is_valid = is_valid && (i <= (N - int(tpg.y) + int(q_seq_idx)));
+    }
 
     if (is_valid) {
       // Read the key
@@ -210,6 +217,7 @@ template <typename T, int D, int V = D>
       constant bool& has_mask [[buffer(11)]],         \
       constant uint3& qkv_batch_strides [[buffer(12)]], \
       constant uint& num_q_heads [[buffer(13)]],       \
+      constant bool& is_causal [[buffer(14)]],         \
       uint3 tid [[threadgroup_position_in_grid]],           \
       uint3 tpg [[threadgroups_per_grid]],                  \
       uint simd_gid [[simdgroup_index_in_threadgroup]],     \
@@ -261,10 +269,6 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
     return Error::InvalidArgument;
   }
 
-  if (is_causal) {
-    ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: is_causal=True not implemented");
-    return Error::NotImplemented;
-  }
   if (dropout_p != 0.0) {
     ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: dropout_p != 0 not implemented (dropout_p=%f)", dropout_p);
     return Error::NotImplemented;
@@ -587,6 +591,9 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
 
         // Set num_q_heads (buffer 13) - NEW
         kernel_func->setArg(13, static_cast<uint>(num_heads));
+
+        // Set is_causal (buffer 14) - NEW
+        kernel_func->setArg(14, static_cast<bool>(is_causal));
 
         ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: All arguments set, dispatching");
 

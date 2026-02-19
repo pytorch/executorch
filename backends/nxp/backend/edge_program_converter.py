@@ -208,8 +208,12 @@ class EdgeProgramToIRConverter:
                         result_map[input_spec.arg.name] = param
 
                     else:
-                        # There is no data available.
-                        continue
+                        logger.w(
+                            f"No real or post-quantization data found for '{input_spec.target}'. "
+                            f"Using a FakeTensor."
+                        )
+                        param = edge_program.state_dict[input_spec.target]
+                        result_map[input_spec.arg.name] = param
 
         return result_map
 
