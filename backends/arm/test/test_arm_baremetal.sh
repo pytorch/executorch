@@ -298,7 +298,6 @@ test_smaller_stories_llama() {
     --numprocesses=auto \
     --log-level=DEBUG \
     --junit-xml=stories110M/test-reports/unittest.xml \
-    -s \
     backends/arm/test/models/test_llama.py \
     --llama_inputs stories110M/stories110M.pt stories110M/params.json stories110m
 
