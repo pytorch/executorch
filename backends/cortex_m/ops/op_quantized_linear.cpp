@@ -31,7 +31,7 @@ Tensor& quantized_linear_out(
     const int64_t activation_max,
     const int64_t activation_min,
     Tensor& out) {
-  ET_LOG(Info, "quantized_linear_out: called");
+  ET_LOG(Debug, "quantized_linear_out: called");
 
   const int8_t* input_data = input.const_data_ptr<int8_t>();
   const int8_t* weight_data = weights.const_data_ptr<int8_t>();
@@ -65,14 +65,14 @@ Tensor& quantized_linear_out(
     batches *= input.size(i);
   }
   ET_LOG(
-      Info,
+      Debug,
       "in features: %d, out_features: %d, batches: %d, kernel_sum_size: %d",
       in_feat,
       out_feat,
       batches,
       kernel_sum.has_value() ? kernel_sum.value().numel() : 0);
   ET_LOG(
-      Info,
+      Debug,
       "kernel_sum[0]: %d, kernel_sum[1]: %d",
       kernel_sum_data != nullptr ? kernel_sum_data[0] : -1,
       kernel_sum_data != nullptr ? kernel_sum_data[1] : -1);
