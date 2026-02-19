@@ -38,7 +38,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Run op unit tests"
-        ${CONDA_RUN} python -m executorch.backends.apple.mlx.test.run_all_tests -j4 --clean-after
+        ${CONDA_RUN} python -m executorch.backends.apple.mlx.test.run_all_tests --clean-after
         echo "::endgroup::"
 
         echo "::group::Run multi-thread stress test"
