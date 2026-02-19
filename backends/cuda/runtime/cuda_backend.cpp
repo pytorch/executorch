@@ -147,7 +147,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
   // Create the shared CUDA stream. Called when use_shared_cuda_stream option
   // is set to true. The presence of shared_cuda_stream_ indicates shared mode.
-  void create_cuda_stream() {
+  void create_shared_cuda_stream() {
     std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
     if (shared_cuda_stream_ != nullptr) {
       return; // Already created
@@ -233,7 +233,7 @@ class ET_EXPERIMENTAL CudaBackend final
       } else if (std::strcmp(option.key, kUseSharedCudaStream) == 0) {
         if (auto* val = std::get_if<bool>(&option.value)) {
           if (*val) {
-            create_cuda_stream();
+            create_shared_cuda_stream();
           }
         } else {
           ET_LOG(Error, "Option %s must be a boolean.", kUseSharedCudaStream);
@@ -412,37 +412,34 @@ class ET_EXPERIMENTAL CudaBackend final
     // Process input tensors: convert ETensor (CPU) to SlimTensor (GPU)
     for (size_t i = 0; i < n_inputs; i++) {
       auto* cpu_tensor = &(args[i]->toTensor());
+
+      // Check if input data is already on GPU (skip-copy optimization for
+      // inputs) This can happen when the caller has pre-staged data on GPU
+      cudaPointerAttributes attributes{};
       const void* data_ptr = cpu_tensor->const_data_ptr();
+      if (data_ptr != nullptr) {
+        cudaError_t err = cudaPointerGetAttributes(&attributes, data_ptr);
+        if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
+          // Data is already on GPU - wrap it directly without copy
+          auto sizes = cpu_tensor->sizes();
+          auto strides = cpu_tensor->strides();
+          std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
+          std::vector<int64_t> strides_vec(strides.begin(), strides.end());
 
-      // Check if input data is already on GPU by looking up cached outputs.
-      // This avoids calling cudaPointerGetAttributes which is a sync point.
-      // If the data pointer matches a cached output tensor, we know it's on
-      // GPU.
-      SlimTensor* cached_tensor = find_cached_tensor_by_data_ptr(data_ptr);
-      if (cached_tensor != nullptr) {
-        // Data is already on GPU from a previous method's output.
-        // Use it directly without copy using from_blob and input etensor
-        // metadata. We do not direclty used cached_tensor here as gpu_input[i]
-        // because although the underlying data is the same, the shape and
-        // strides may be different between the cached tensor and the current
-        // input tensor.
-        auto sizes = cpu_tensor->sizes();
-        auto strides = cpu_tensor->strides();
-        std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
-        std::vector<int64_t> strides_vec(strides.begin(), strides.end());
-        gpu_inputs[i] = new SlimTensor(slim::from_blob(
-            const_cast<void*>(data_ptr),
-            slim::makeArrayRef(sizes_vec),
-            slim::makeArrayRef(strides_vec),
-            static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
-            DEFAULT_CUDA_DEVICE,
-            0 // storage_offset
-            ));
+          gpu_inputs[i] = new SlimTensor(slim::from_blob(
+              const_cast<void*>(data_ptr),
+              slim::makeArrayRef(sizes_vec),
+              slim::makeArrayRef(strides_vec),
+              static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
+              DEFAULT_CUDA_DEVICE,
+              0 // storage_offset
+              ));
 
-        continue;
+          continue;
+        }
       }
 
-      // Data is not cacheed -- it must on CPU - use from_etensor to copy to GPU
+      // Data is on CPU - use from_etensor to copy to GPU
       gpu_inputs[i] = new SlimTensor(
           from_etensor(*cpu_tensor, CPU_DEVICE, DEFAULT_CUDA_DEVICE));
     }
@@ -471,8 +468,10 @@ class ET_EXPERIMENTAL CudaBackend final
     // it's shared with the Metal backend. Instead, we reinterpret_cast
     // SlimTensor* to Tensor*
     //
-    // Get the CUDA stream from the handle.
-    cudaStream_t cuda_stream = handle->get_cuda_stream();
+    // Get current CUDA stream and pass it to AOTInductorModelContainerRun
+    Result<cudaStream_t> cuda_stream_ret = getCurrentCUDAStream(0);
+    cudaStream_t cuda_stream = cuda_stream_ret.get();
+    ET_CHECK_OK_OR_RETURN_ERROR(cuda_stream_ret.error());
     AOTIRuntimeError error = handle->run(
         handle->container_handle,
         reinterpret_cast<Tensor**>(gpu_inputs.data()),
@@ -509,7 +508,7 @@ class ET_EXPERIMENTAL CudaBackend final
     } else {
       // Skip-copy optimization: point ETensor directly to GPU data.
       // The caller is responsible for handling GPU data directly.
-
+      //
       // Lifetime management: We cache the newly created GPU tensors and delete
       // the previous round's tensors, since they are no longer needed.
       {
@@ -613,22 +612,6 @@ class ET_EXPERIMENTAL CudaBackend final
   mutable std::
       unordered_map<cuda::CudaDelegateHandle*, std::vector<SlimTensor*>>
           cached_outputs_;
-
-  // Finds a cached SlimTensor by data pointer.
-  // Returns the cached SlimTensor if found, nullptr otherwise.
-  // This is used to detect if input data is already on GPU from a previous
-  // method's output, avoiding the need for cudaPointerGetAttributes.
-  SlimTensor* find_cached_tensor_by_data_ptr(const void* data_ptr) const {
-    std::lock_guard<std::mutex> guard(cached_outputs_mutex_);
-    for (const auto& [handle, tensors] : cached_outputs_) {
-      for (SlimTensor* tensor : tensors) {
-        if (tensor != nullptr && tensor->data_ptr() == data_ptr) {
-          return tensor;
-        }
-      }
-    }
-    return nullptr;
-  }
 };
 
 } // namespace executorch::backends::cuda

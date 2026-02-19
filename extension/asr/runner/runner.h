@@ -64,8 +64,6 @@ class ET_EXPERIMENTAL AsrRunner {
       std::optional<std::string> data_path,
       const std::string& tokenizer_path);
 
-  ~AsrRunner();
-
   /**
    * Returns true when the module and tokenizer are ready for inference.
    */
