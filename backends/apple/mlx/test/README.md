@@ -15,10 +15,10 @@ python install_executorch.py --editable
 From the ExecuTorch root directory:
 
 ```bash
-cmake --preset mlx-release
+cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON
 ```
 
-This configures the build with MLX delegate support. Build files are generated in `cmake-out/`.
+This configures the build with MLX delegate support and test targets. Build files are generated in `cmake-out/`.
 
 ### 3. Build the test runner
 
