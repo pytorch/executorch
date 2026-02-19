@@ -8,7 +8,7 @@ def selective_jni_target(name, deps, srcs = [], soname = "libexecutorch.$(ext)")
         _kind = fb_android_cxx_library,
         name = name,
         srcs = [
-            "//xplat/executorch/extension/android/jni:jni_layer.cpp",
+            "//xplat/executorch/extension/android/jni:jni_module.cpp",
             "//xplat/executorch/extension/android/jni:jni_layer_runtime.cpp",
             "//xplat/executorch/extension/android/jni:jni_helper.cpp",
         ] + srcs,

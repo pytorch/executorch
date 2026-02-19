@@ -73,8 +73,8 @@ set_target_properties(
 executorch_target_link_options_shared_lib(executorch)
 
 add_library(
-  executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp
-                        jni/jni_helper.cpp
+  executorch_jni SHARED jni/jni_module.cpp jni/log.cpp
+                        jni/jni_layer_runtime.cpp jni/jni_helper.cpp
 )
 
 set(link_libraries)
@@ -171,7 +171,7 @@ endif()
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_sources(
-    executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/jni_layer_asr.cpp
+    executorch_jni PRIVATE jni/jni_llm_module.cpp jni/jni_layer_asr.cpp
                            jni/log.cpp
   )
   list(APPEND link_libraries extension_llm_runner extension_asr_runner)
