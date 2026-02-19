@@ -506,6 +506,56 @@ class StandardSDPA(nn.Module):
         return y.view(bsz, seqlen, self.dim)
 
 
+class StandardEncoderSDPA(nn.Module):
+    """Standard SDPA for encoder using F.scaled_dot_product_attention.
+
+    Compatible with AOTI/Metal backend. Works with EncoderRingKVCache that uses
+    [B, S, H, D] layout and sliding window masks.
+    """
+
+    def __init__(self, n_heads: int, head_dim: int):
+        super().__init__()
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.dim = n_heads * head_dim
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Args:
+            input_pos: (seq_len,) position indices.
+            q: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
+            k, v: (B, buf_size, n_heads, head_dim) in [B, S, H, D] layout from EncoderRingKVCache.
+            bsz, seqlen: batch size and query sequence length.
+            mask: (seq_len, buf_size) additive attention mask (0.0 = attend, -inf = don't attend).
+        Returns:
+            output: (B, seq_len, n_heads * head_dim).
+        """
+        # Convert from [B, S, H, D] to [B, H, S, D] for F.scaled_dot_product_attention
+        q = q.transpose(1, 2)  # [B, n_heads, seq_len, head_dim]
+        k = k.transpose(1, 2)  # [B, n_heads, buf_size, head_dim]
+        v = v.transpose(1, 2)  # [B, n_heads, buf_size, head_dim]
+
+        # Apply SDPA with sliding window mask
+        y = F.scaled_dot_product_attention(
+            q, k, v,
+            attn_mask=mask,
+            is_causal=False,  # We handle masking explicitly via mask parameter
+        )  # [B, n_heads, seq_len, head_dim]
+
+        # Convert back to [B, S, H, D] and flatten
+        y = y.transpose(1, 2).contiguous()  # [B, seq_len, n_heads, head_dim]
+        return y.view(bsz, seqlen, self.dim)
+
+
 class LMAttention(nn.Module):
     """GQA with RoPE, KV cache, and SDPA. No biases.
 
@@ -751,6 +801,56 @@ class EncoderRingKVCache(nn.Module):
         return torch.where(valid, 0.0, float("-inf"))
 
 
+class StandardEncoderRingKVCache(nn.Module):
+    """Export-friendly ring buffer KV cache using index_copy_ for updates.
+
+    Compatible with torch.export and AOTI. Uses [B, S, H, D] layout
+    matching the encoder's convention. Ring buffer enables unlimited streaming.
+    """
+
+    def __init__(self, window_size: int, n_heads: int, head_dim: int):
+        super().__init__()
+        self.window_size = window_size
+        self.buf_size = window_size * 2
+        cache_shape = (1, self.buf_size, n_heads, head_dim)
+        self.register_buffer("k_cache", torch.zeros(cache_shape))
+        self.register_buffer("v_cache", torch.zeros(cache_shape))
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Write k_val/v_val into ring buffer using index_copy_ (export-friendly).
+
+        Args:
+            input_pos: (seq_len,) position indices.
+            k_val, v_val: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
+        Returns:
+            k_cache, v_cache: (B, buf_size, n_heads, head_dim) in [B, S, H, D] layout.
+        """
+        start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+        seq_len = k_val.size(1)
+
+        # Compute wraparound indices
+        indices = (torch.arange(seq_len, dtype=torch.long, device=k_val.device) + start_pos) % self.buf_size
+
+        # Use index_copy_ on dimension 1 (sequence dimension in [B, S, H, D])
+        self.k_cache.index_copy_(1, indices, k_val)
+        self.v_cache.index_copy_(1, indices, v_val)
+
+        return self.k_cache, self.v_cache
+
+    def create_causal_mask(self, start_pos: int, seq_len: int) -> torch.Tensor:
+        """Create sliding window attention mask."""
+        total_written = start_pos + seq_len
+        j = torch.arange(self.buf_size, dtype=torch.long)
+        cache_pos = j + ((total_written - 1 - j) // self.buf_size) * self.buf_size
+        pos_q = (start_pos + torch.arange(seq_len, dtype=torch.long)).view(-1, 1)
+        delta = pos_q - cache_pos.unsqueeze(0)
+        valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
+        return torch.where(valid, 0.0, float("-inf"))
+
+
 class StreamingAudioEncoderExport(nn.Module):
     """Streaming encoder: processes one 8-mel-frame chunk at a time.
 
@@ -784,15 +884,20 @@ class StreamingAudioEncoderExport(nn.Module):
         # Ring buffer KV caches for unlimited streaming.
         # Window size = max_enc_len (encoder sliding window from params.json).
         # Buffer is 2x internally for safe wraparound.
+        # Choose cache implementation based on backend
+        cache_class = StandardEncoderRingKVCache if config.use_standard_attention else EncoderRingKVCache
         self.kv_caches = nn.ModuleList(
             [
-                EncoderRingKVCache(max_enc_len, config.enc_n_heads, config.enc_head_dim)
+                cache_class(max_enc_len, config.enc_n_heads, config.enc_head_dim)
                 for _ in range(config.enc_n_layers)
             ]
         )
 
-        # SDPA for encoder MHA (n_heads=32, head_dim=64 -> attn_dim=2048)
-        self.sdpa = SDPA(config.enc_n_heads, config.enc_head_dim)
+        # Choose SDPA based on backend
+        if config.use_standard_attention:
+            self.sdpa = StandardEncoderSDPA(config.enc_n_heads, config.enc_head_dim)
+        else:
+            self.sdpa = SDPA(config.enc_n_heads, config.enc_head_dim)
 
         # RoPE inverse frequencies for on-the-fly computation.
         # No pre-computed buffer — supports unlimited streaming positions.
