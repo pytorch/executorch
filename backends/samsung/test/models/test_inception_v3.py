@@ -8,6 +8,8 @@
 
 import unittest
 
+import torch
+
 from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
@@ -17,6 +19,7 @@ from executorch.examples.models.inception_v3 import InceptionV3Model
 
 class TestInceptionV3(unittest.TestCase):
     def test_inception_v3_fp16(self):
+        torch.manual_seed(8)
         model = InceptionV3Model().get_eager_model()
         example_input = InceptionV3Model().get_example_inputs()
         tester = SamsungTester(

@@ -73,9 +73,6 @@ from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
 
 
-FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.WARNING, format=FORMAT)
-
 _arm_model_evaluator = None
 
 
@@ -630,14 +627,15 @@ def get_args():
     args = parser.parse_args()
 
     if args.evaluate and (
-        args.quantize is None or args.intermediates is None or (not args.delegate)
+        (not args.quantize) or args.intermediates is None or (not args.delegate)
     ):
         raise RuntimeError(
             "--evaluate requires --quantize, --intermediates and --delegate to be enabled."
         )
 
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
+    LOGGING_FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+    logging_level = logging.DEBUG if args.debug else logging.WARNING
+    logging.basicConfig(level=logging_level, format=LOGGING_FORMAT, force=True)
 
     # if we have custom ops, register them before processing the model
     if args.so_library is not None:
