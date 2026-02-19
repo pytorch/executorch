@@ -46,8 +46,6 @@ AsrRunner::AsrRunner(
   }
 }
 
-AsrRunner::~AsrRunner() = default;
-
 bool AsrRunner::is_loaded() const {
   return module_ && encoder_method_loaded_ && decoder_method_loaded_ &&
       (!sampler_method_present_ || sampler_method_loaded_) && tokenizer_ &&
