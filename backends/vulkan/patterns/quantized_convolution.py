@@ -281,6 +281,7 @@ def make_q8ta_conv2d_custom_op(
                 match.padding,
                 match.dilation,
                 match.groups,
+                "relu" if match.relu_node is not None else "none",
             ),
         )
 
