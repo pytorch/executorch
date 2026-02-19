@@ -12,16 +12,82 @@ from typing import Optional
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.pass_base import ExportPass, ProxyValue
-from executorch.exir.passes.dim_order_utils import (
-    dim_order_from_fake_tensor,
-    get_explicit_output_dim_order,
-    should_propagate_dim_order,
-)
-from executorch.exir.tensor import TensorSpec
+from executorch.exir.tensor import TensorSpec, dim_order_from_stride
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx.node import Node
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
+
+
+# Ops that TRANSFORM layout — output dim_order from op's explicit dim_order kwarg.
+# Source: ExecuTorch issues #8037 and #6330. Verified (Q3): torch.ops.dim_order_ops.
+try:
+    _LAYOUT_TRANSFORMING_OPS = frozenset({
+        torch.ops.dim_order_ops._to_dim_order_copy.default,
+        torch.ops.dim_order_ops._clone_dim_order.default,
+    })
+except AttributeError:
+    _LAYOUT_TRANSFORMING_OPS = frozenset()
+
+# Ops where output memory format is IDENTICAL to primary input. Reference: PyTorch docs memory_format.
+_FORMAT_PRESERVING_OPS: frozenset = frozenset({
+    torch.ops.aten.clone.default,
+    torch.ops.aten.clone.out,
+    torch.ops.aten.relu.default,
+    torch.ops.aten.relu.out,
+    torch.ops.aten.relu_.default,
+    torch.ops.aten.silu.default,
+    torch.ops.aten.silu.out,
+    torch.ops.aten.silu_.default,
+    torch.ops.aten.gelu.default,
+    torch.ops.aten.gelu.out,
+    torch.ops.aten.neg.default,
+    torch.ops.aten.neg.out,
+    torch.ops.aten.abs.default,
+    torch.ops.aten.abs.out,
+    torch.ops.aten.exp.default,
+    torch.ops.aten.exp.out,
+    torch.ops.aten.sqrt.default,
+    torch.ops.aten.sqrt.out,
+    torch.ops.aten.rsqrt.default,
+    torch.ops.aten.rsqrt.out,
+})
+
+
+def _get_primary_tensor_input(node: Node) -> Optional[Node]:
+    """First argument that is an fx.Node with a FakeTensor val (primary input for layout)."""
+    for arg in node.args:
+        if (
+            isinstance(arg, Node)
+            and isinstance(arg.meta.get("val"), torch.Tensor)
+        ):
+            return arg
+    return None
+
+
+def _fix_out_spec_dim_order(node: Node) -> None:
+    """
+    For out-variant nodes, set the out kwarg node's TensorSpec.dim_order to the
+    layout the op will produce. Fixes Code=18 at runtime (issue #16032).
+    """
+    out_node = node.kwargs.get("out")
+    if not isinstance(out_node, Node):
+        return
+    spec = out_node.meta.get("spec")
+    if spec is None:
+        return
+    if node.target in _LAYOUT_TRANSFORMING_OPS:
+        explicit_dim_order = node.kwargs.get("dim_order")
+        if explicit_dim_order is not None:
+            spec.dim_order = list(int(d) for d in explicit_dim_order)
+    elif node.target in _FORMAT_PRESERVING_OPS:
+        primary = _get_primary_tensor_input(node)
+        if primary is None:
+            return
+        input_val = primary.meta.get("val")
+        if not isinstance(input_val, torch.Tensor):
+            return
+        spec.dim_order = dim_order_from_stride(input_val)
 
 
 # pyre-ignore
@@ -73,48 +139,11 @@ class SpecPropPass(ExportPass):
             if isinstance(module, torch.fx.GraphModule):
                 for node in module.graph.nodes:
                     meta_val = node.meta.get("val", None)
-                    # Ensure every node with val has a spec (base ExportPass may not set it).
-                    if "spec" not in node.meta and meta_val is not None:
-                        node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
                     if node.op == "output":
                         node.meta["spec"] = pytree.tree_map(get_spec, node.args[0])
                     elif node.op == "call_function" and node.target == operator.getitem:
                         value_spec = pytree.tree_map(get_spec, node.args[0])
                         node.meta["spec"] = value_spec[node.args[1]]
-                    elif (
-                        node.op == "call_function"
-                        and should_propagate_dim_order(node.target)
-                        and node.args
-                    ):
-                        # Output dim_order: use explicit kwargs for dim_order ops
-                        # (_clone_dim_order, _to_dim_order_copy), else propagate from input (Fix #16032).
-                        if "out" in node.kwargs:
-                            out_arg = node.kwargs["out"]
-                            assert isinstance(
-                                out_arg, torch.fx.Node
-                            ), (
-                                f"Expected clone.out 'out' to be fx.Node, got {type(out_arg)}"
-                            )
-                            out_spec = out_arg.meta.get("spec")
-                        else:
-                            out_spec = node.meta.get("spec")
-                            if out_spec is None and meta_val is not None:
-                                node.meta["spec"] = pytree.tree_map(
-                                    make_spec, meta_val
-                                )
-                                out_spec = node.meta["spec"]
-                        if out_spec is not None and hasattr(out_spec, "dim_order"):
-                            explicit_dim_order = get_explicit_output_dim_order(node)
-                            if explicit_dim_order is not None:
-                                out_spec.dim_order = tuple(explicit_dim_order)
-                            else:
-                                self_val = node.args[0].meta.get("val")
-                                if self_val is not None:
-                                    src_dim_order = dim_order_from_fake_tensor(
-                                        self_val
-                                    )
-                                    if src_dim_order is not None:
-                                        out_spec.dim_order = tuple(src_dim_order)
                     elif (
                         node.op == "call_function"
                         and node.target == executorch_call_delegate
@@ -123,7 +152,10 @@ class SpecPropPass(ExportPass):
                             node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
                         else:
                             node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
-                        return res
+                        continue
+                    if "spec" not in node.meta and meta_val is not None:
+                        node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
+                    _fix_out_spec_dim_order(node)
 
         return res
 

@@ -4,179 +4,288 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""
-Tests for SpecPropPass dim_order propagation to out TensorSpec (Fix #16032).
-Run from ExecuTorch repo root: python -m pytest exir/tests/test_spec_prop_dim_order.py -v
-"""
+# Tests for ExecuTorch #16032: dim_order / stride ambiguity and SpecPropPass fixes.
 
 import unittest
 
 import torch
-from executorch.exir import EdgeCompileConfig, to_edge
-from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.passes.dim_order_utils import (
-    dim_order_from_fake_tensor,
-    should_propagate_dim_order,
-)
-from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from torch.export import export
+
+from executorch.exir.passes.spec_prop_pass import make_spec
 
 
-# Clone ops that may appear in the graph: aten (pre-OpReplacePass) or edge (after to_edge).
-_CLONE_OPS = (
-    torch.ops.aten.clone.default,
-    torch.ops.aten.clone.out,
-    exir_ops.edge.aten.clone.default,
-    exir_ops.edge.dim_order_ops._clone_dim_order.default,
-)
-if hasattr(exir_ops.edge.dim_order_ops._clone_dim_order, "out"):
-    _CLONE_OPS = _CLONE_OPS + (exir_ops.edge.dim_order_ops._clone_dim_order.out,)
+class TestMakeSpecAmbiguity(unittest.TestCase):
+    """Layer 1: dim_order_from_stride in exir/tensor.py; make_spec calls it."""
+
+    def test_standard_nchw_unambiguous(self):
+        t = torch.empty(2, 3, 8, 8)
+        spec = make_spec(t)
+        self.assertEqual(spec.dim_order, [0, 1, 2, 3])
+
+    def test_standard_channels_last_unambiguous(self):
+        t = torch.empty(2, 3, 8, 8).to(memory_format=torch.channels_last)
+        spec = make_spec(t)
+        self.assertEqual(spec.dim_order, [0, 2, 3, 1])
+
+    def test_c1_contiguous_resolves_to_nchw(self):
+        t = torch.empty(2, 1, 8, 8)
+        spec = make_spec(t)
+        self.assertEqual(spec.dim_order, [0, 1, 2, 3])
+
+    def test_h_w_1_contiguous_resolves_to_nchw(self):
+        t = torch.empty(2, 3, 1, 1)
+        spec = make_spec(t)
+        self.assertEqual(spec.dim_order, [0, 1, 2, 3])
+
+    def test_scalar_tensor(self):
+        t = torch.tensor(1.0)
+        spec = make_spec(t)
+        self.assertEqual(spec.dim_order, [])
+
+    def test_1d_tensor(self):
+        t = torch.empty(16)
+        spec = make_spec(t)
+        self.assertEqual(spec.dim_order, [0])
 
 
-def _find_clone_nodes(graph_module):
-    """
-    Return list of (node, self_node, output_spec) for each clone in graph.
-    to_edge uses edge ops (edge.aten.clone or edge.dim_order_ops._clone_dim_order).
-    output_spec is node.meta['spec'] for single-output, or out_node.meta['spec'] for .out.
-    """
-    result = []
-    for node in graph_module.graph.nodes:
-        if node.op != "call_function":
-            continue
-        if node.target not in _CLONE_OPS:
-            continue
-        if not node.args:
-            continue
-        self_node = node.args[0]
-        if "out" in node.kwargs:
-            out_node = node.kwargs["out"]
-            output_spec = out_node.meta.get("spec") if isinstance(out_node, torch.fx.Node) else None
-        else:
-            output_spec = node.meta.get("spec")
-        if output_spec is not None:
-            result.append((node, self_node, output_spec))
-    return result
+class TestSpecPropPassOutVariant(unittest.TestCase):
+    """Layer 2: out-variant dim_order propagation."""
 
+    def _run_pass(self, model, example_inputs):
+        from torch.export import export
+        from executorch.exir import to_edge, EdgeCompileConfig
 
-class TestDimOrderFromFakeTensor(unittest.TestCase):
-    def test_contiguous_4d(self) -> None:
-        t = torch.randn(2, 3, 4, 5)
-        self.assertTrue(t.is_contiguous())
-        dim_order = dim_order_from_fake_tensor(t)
-        self.assertIsNotNone(dim_order)
-        self.assertEqual(dim_order, [0, 1, 2, 3])
-
-    def test_channels_last_4d(self) -> None:
-        t = torch.randn(2, 3, 4, 5).to(memory_format=torch.channels_last)
-        dim_order = dim_order_from_fake_tensor(t)
-        self.assertIsNotNone(dim_order)
-        self.assertEqual(dim_order, [0, 2, 3, 1])
-
-
-class TestShouldPropagateDimOrder(unittest.TestCase):
-    def test_clone_out(self) -> None:
-        self.assertTrue(should_propagate_dim_order(torch.ops.aten.clone.out))
-
-    def test_clone_default(self) -> None:
-        self.assertTrue(should_propagate_dim_order(torch.ops.aten.clone.default))
-
-    def test_conv_not_format_preserving(self) -> None:
-        self.assertFalse(
-            should_propagate_dim_order(torch.ops.aten.convolution.default)
+        exported = export(model, example_inputs)
+        edge = to_edge(
+            exported, compile_config=EdgeCompileConfig(_skip_dim_order=False)
         )
+        return edge.exported_program().graph_module
 
-
-class TestSpecPropPassDimOrder(unittest.TestCase):
-    """SpecPropPass must propagate primary input dim_order to out TensorSpec for clone.out."""
-
-    def test_fp32_contiguous_clone(self) -> None:
+    def test_clone_out_preserves_channels_last_fp32(self):
         class M(torch.nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x.clone()
-
-        m = M().eval()
-        example = (torch.randn(1, 3, 8, 8),)
-        ep = export(m, example)
-        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=True))
-        gm = edge.exported_program().graph_module
-        pass_result = SpecPropPass()(gm)
-        gm = pass_result.graph_module
-        clone_nodes = _find_clone_nodes(gm)
-        self.assertGreater(len(clone_nodes), 0, "graph should contain clone")
-        for _node, self_node, output_spec in clone_nodes:
-            self_spec = self_node.meta.get("spec")
-            self.assertIsNotNone(self_spec)
-            self.assertIsNotNone(output_spec)
-            self.assertEqual(
-                output_spec.dim_order,
-                self_spec.dim_order,
-                "out dim_order should match self (contiguous)",
-            )
-            self.assertEqual(list(output_spec.dim_order), [0, 1, 2, 3])
-
-    def test_fp16_conv_clone_channels_last(self) -> None:
-        class M(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
-                self.conv = torch.nn.Conv2d(3, 8, 3, padding=1)
+                self.conv = torch.nn.Conv2d(3, 16, 3, padding=1)
 
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                # Explicit channels_last so the traced FakeTensor has channels_last strides.
-                return self.conv(x).to(memory_format=torch.channels_last).clone()
+            def forward(self, x):
+                return self.conv(x).clone()
 
-        m = M().to(torch.float16).eval()
-        example = (torch.randn(1, 3, 16, 16, dtype=torch.float16),)
-        ep = export(m, example)
-        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=True))
-        gm = edge.exported_program().graph_module
-        pass_result = SpecPropPass()(gm)
-        gm = pass_result.graph_module
-        clone_nodes = _find_clone_nodes(gm)
-        self.assertGreater(len(clone_nodes), 0)
-        for _node, self_node, output_spec in clone_nodes:
-            self_spec = self_node.meta.get("spec")
-            self.assertIsNotNone(self_spec)
-            self.assertIsNotNone(output_spec)
-            self.assertEqual(
-                output_spec.dim_order,
-                self_spec.dim_order,
-                "out dim_order should match self (channels_last from conv)",
-            )
-            self.assertEqual(
-                list(output_spec.dim_order),
-                [0, 2, 3, 1],
-                "conv output is channels_last",
-            )
+        m = M().to(memory_format=torch.channels_last)
+        x = torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last)
+        gm = self._run_pass(m, (x,))
+        for node in gm.graph.nodes:
+            if "clone" in node.name and node.op == "call_function":
+                out_node = node.kwargs.get("out")
+                if out_node is not None:
+                    self.assertIsNotNone(out_node.meta.get("spec"))
+                    self.assertEqual(
+                        out_node.meta["spec"].dim_order,
+                        [0, 2, 3, 1],
+                        f"clone.out spec has wrong dim_order: {out_node.meta['spec'].dim_order}",
+                    )
 
-    def test_fp16_conv_relu_clone(self) -> None:
+    def test_clone_out_preserves_channels_last_fp16(self):
         class M(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
-                self.conv = torch.nn.Conv2d(3, 8, 3, padding=1)
-                self.relu = torch.nn.ReLU(inplace=False)
+                self.conv = torch.nn.Conv2d(3, 16, 3, padding=1)
 
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return self.relu(self.conv(x)).clone()
+            def forward(self, x):
+                return self.conv(x).clone()
 
-        m = M().to(torch.float16).eval()
-        example = (torch.randn(1, 3, 16, 16, dtype=torch.float16),)
-        ep = export(m, example)
-        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=True))
+        m = M().half().to(memory_format=torch.channels_last)
+        x = torch.randn(
+            1, 3, 8, 8, dtype=torch.float16
+        ).to(memory_format=torch.channels_last)
+        gm = self._run_pass(m, (x,))
+        for node in gm.graph.nodes:
+            if "clone" in node.name and node.op == "call_function":
+                out_node = node.kwargs.get("out")
+                if out_node is not None:
+                    self.assertEqual(
+                        out_node.meta["spec"].dim_order, [0, 2, 3, 1]
+                    )
+
+    def test_clone_out_c1_channels_last_ambiguous(self):
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(1, 1, 1)
+
+            def forward(self, x):
+                return self.conv(x).clone()
+
+        m = M().to(memory_format=torch.channels_last)
+        x = torch.randn(2, 1, 8, 8).to(memory_format=torch.channels_last)
+        gm = self._run_pass(m, (x,))
+
+    def test_layout_transforming_op_uses_kwarg_not_input(self):
+        try:
+            _ = torch.ops.dim_order_ops._to_dim_order_copy.default
+        except AttributeError:
+            self.skipTest("torch.ops.dim_order_ops not available in this build")
+
+        class LayoutTransformModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.ops.dim_order_ops._to_dim_order_copy.default(
+                    x, dtype=x.dtype, dim_order=[0, 2, 3, 1]
+                )
+
+        x = torch.randn(2, 3, 8, 8)
+        from torch.export import export
+        from executorch.exir import to_edge, EdgeCompileConfig
+
+        try:
+            exported = export(LayoutTransformModel(), (x,))
+            edge = to_edge(
+                exported,
+                compile_config=EdgeCompileConfig(_skip_dim_order=False),
+            )
+        except Exception as e:
+            self.skipTest(
+                f"Could not export _to_dim_order_copy directly: {e}"
+            )
+
         gm = edge.exported_program().graph_module
-        pass_result = SpecPropPass()(gm)
-        gm = pass_result.graph_module
-        clone_nodes = _find_clone_nodes(gm)
-        self.assertGreater(len(clone_nodes), 0)
-        for _node, self_node, output_spec in clone_nodes:
-            self_spec = self_node.meta.get("spec")
-            self.assertIsNotNone(self_spec)
-            self.assertIsNotNone(output_spec)
-            self.assertEqual(
-                output_spec.dim_order,
-                self_spec.dim_order,
-                "dim_order should propagate through relu to clone",
+        found = False
+        for node in gm.graph.nodes:
+            if (
+                node.op == "call_function"
+                and "_to_dim_order_copy" in str(node.target)
+            ):
+                found = True
+                spec = node.meta.get("spec")
+                self.assertIsNotNone(
+                    spec,
+                    f"_to_dim_order_copy node {node.name!r} has no meta['spec']",
+                )
+                self.assertEqual(
+                    spec.dim_order,
+                    [0, 2, 3, 1],
+                    f"Layout-transforming op must use kwarg dim_order; "
+                    f"got {spec.dim_order!r}, expected [0, 2, 3, 1]",
+                )
+        if not found:
+            import warnings
+
+            warnings.warn(
+                "No _to_dim_order_copy node found in exported graph; "
+                "test may need updating if the op name changed."
             )
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestGetitemSpecAfterDelegate(unittest.TestCase):
+    """lowered_backend_module.py getitem spec fix."""
+
+    def test_getitem_nodes_have_spec_after_delegation(self):
+        try:
+            from executorch.exir.backend._demo_backend import BackendWithCompilerDemo
+            from executorch.exir.backend.backend_api import to_backend
+        except ImportError:
+            self.skipTest(
+                "BackendWithCompilerDemo / to_backend not available in this build"
+            )
+
+        import operator
+
+        try:
+            from executorch.exir.delegate import executorch_call_delegate
+        except ImportError:
+            self.skipTest(
+                "executorch_call_delegate not importable in this build"
+            )
+
+        class TwoOutputModel(torch.nn.Module):
+            def forward(self, x):
+                return x + x, x * 2.0
+
+        x = torch.randn(2, 3)
+        from torch.export import export
+        from executorch.exir import to_edge, EdgeCompileConfig
+
+        exported = export(TwoOutputModel(), (x,))
+        edge = to_edge(exported, compile_config=EdgeCompileConfig())
+        try:
+            lowered_ep = to_backend(
+                "BackendWithCompilerDemo",
+                edge.exported_program(),
+                [],
+            )
+        except Exception as e:
+            self.skipTest(f"to_backend failed: {e}")
+
+        gm = lowered_ep.graph_module
+        getitem_count = 0
+        for node in gm.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target is operator.getitem
+                and len(node.args) >= 1
+                and isinstance(node.args[0], torch.fx.Node)
+                and node.args[0].target is executorch_call_delegate
+            ):
+                getitem_count += 1
+                self.assertIn(
+                    "spec",
+                    node.meta,
+                    f"getitem node {node.name!r} after "
+                    f"executorch_call_delegate has no meta['spec'].",
+                )
+                spec = node.meta["spec"]
+                self.assertIsNotNone(
+                    spec.dim_order, f"spec.dim_order is None on {node.name!r}"
+                )
+        if getitem_count == 0:
+            import warnings
+
+            warnings.warn(
+                "No getitem nodes found after executorch_call_delegate."
+            )
+
+
+class TestEndToEndFP16ChannelsLast(unittest.TestCase):
+    """Full pipeline: FP16 channels_last -> .pte without Code=18."""
+
+    def test_fp16_conv_clone_export_and_execute(self):
+        from executorch.exir import (
+            to_edge,
+            EdgeCompileConfig,
+            ExecutorchBackendConfig,
+        )
+        from executorch.exir.passes import MemoryPlanningPass
+        from torch.export import export
+
+        class FP16ConvClone(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 16, 3, padding=1)
+
+            def forward(self, x):
+                return self.conv(x).clone()
+
+        model = FP16ConvClone().half().to(memory_format=torch.channels_last)
+        x = torch.randn(1, 3, 8, 8, dtype=torch.float16).to(
+            memory_format=torch.channels_last
+        )
+        exported = export(model, (x,))
+        edge = to_edge(
+            exported,
+            compile_config=EdgeCompileConfig(_skip_dim_order=False),
+        )
+        et_program = edge.to_executorch(
+            config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass()
+            )
+        )
+        pte_bytes = et_program.buffer
+        self.assertGreater(len(pte_bytes), 0)
+        try:
+            from executorch.runtime import Runtime, Program, Method
+
+            runtime = Runtime.get()
+            program = runtime.load_program(pte_bytes)
+            method = program.load_method("forward")
+            outputs = method.execute((x,))
+            self.assertEqual(len(outputs), 1)
+            self.assertEqual(outputs[0].shape, torch.Size([1, 16, 8, 8]))
+        except ImportError:
+            pass

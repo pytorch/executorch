@@ -622,3 +622,41 @@ TEST_F(TensorUtilTest, SameShapesDifferentDimOrder) {
   EXPECT_FALSE(tensors_have_same_dim_order(a, c, b));
   EXPECT_FALSE(tensors_have_same_dim_order(c, b, a));
 }
+
+// Issue #16032: C=1 tensors with different dim_order labels but identical
+// strides must be considered layout-compatible.
+TEST_F(TensorUtilTest, SameDimOrderC1AmbiguityContiguous) {
+  Tensor nchw = tf_float_.ones({2, 1, 4, 4});
+  Tensor nhwc = tf_float_.full_channels_last({2, 1, 4, 4}, 1.0f);
+  EXPECT_TRUE(tensors_have_same_dim_order(nchw, nhwc));
+}
+
+TEST_F(TensorUtilTest, SameDimOrderHW1AmbiguityContiguous) {
+  Tensor nchw = tf_float_.ones({2, 3, 1, 1});
+  Tensor nhwc = tf_float_.full_channels_last({2, 3, 1, 1}, 1.0f);
+  EXPECT_TRUE(tensors_have_same_dim_order(nchw, nhwc));
+}
+
+TEST_F(TensorUtilTest, DifferentDimOrderNonDegenerate) {
+  Tensor nchw = tf_float_.ones({2, 3, 8, 8});
+  Tensor nhwc = tf_float_.full_channels_last({2, 3, 8, 8}, 1.0f);
+  EXPECT_FALSE(tensors_have_same_dim_order(nchw, nhwc));
+}
+
+TEST_F(TensorUtilTest, SameDimOrderBothContiguous) {
+  Tensor a = tf_float_.ones({2, 3, 8, 8});
+  Tensor b = tf_float_.ones({2, 3, 8, 8});
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b));
+}
+
+TEST_F(TensorUtilTest, SameDimOrderBothChannelsLast) {
+  Tensor a = tf_float_.full_channels_last({2, 3, 8, 8}, 1.0f);
+  Tensor b = tf_float_.full_channels_last({2, 3, 8, 8}, 1.0f);
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b));
+}
+
+TEST_F(TensorUtilTest, DifferentNdim) {
+  Tensor a = tf_float_.ones({2, 3, 8, 8});
+  Tensor b = tf_float_.ones({2, 3, 8});
+  EXPECT_FALSE(tensors_have_same_dim_order(a, b));
+}

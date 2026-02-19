@@ -109,29 +109,39 @@ bool tensor_is_channels_last_dim_order(torch::executor::Tensor t) {
   return ret_val;
 }
 
+// Helper: same physical layout for two tensors (label equality or stride equality).
+// Issue #16032: C=1 / H=W=1 can have identical strides but different dim_order labels.
+static bool two_tensors_same_dim_order(
+    const executorch::aten::Tensor& a,
+    const executorch::aten::Tensor& b) {
+  if (a.dim() != b.dim()) {
+    return false;
+  }
+  for (size_t i = 0; i < a.dim_order().size(); ++i) {
+    if (a.dim_order()[i] != b.dim_order()[i]) {
+      goto slow_path;
+    }
+  }
+  return true;
+slow_path:
+  for (size_t i = 0; i < a.dim(); ++i) {
+    if (a.strides()[i] != b.strides()[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool tensors_have_same_dim_order(
     const executorch::aten::ArrayRef<executorch::aten::Tensor> tensor_list) {
   if (tensor_list.size() < 2) {
     return true;
   }
-  bool all_contiguous = true;
-  bool all_channels_last = true;
-  for (const auto i : c10::irange(tensor_list.size())) {
-    all_contiguous = all_contiguous &&
-        is_contiguous_dim_order(
-                         tensor_list[i].dim_order().data(),
-                         tensor_list[i].dim_order().size());
-    all_channels_last = all_channels_last &&
-        is_channels_last_dim_order(
-                            tensor_list[i].dim_order().data(),
-                            tensor_list[i].dim_order().size());
+  for (size_t i = 1; i < tensor_list.size(); ++i) {
+    if (!two_tensors_same_dim_order(tensor_list[0], tensor_list[i])) {
+      return false;
+    }
   }
-
-  ET_CHECK_OR_RETURN_FALSE(
-      all_contiguous || all_channels_last,
-      "%zd input tensors have different dim orders",
-      tensor_list.size());
-
   return true;
 }
 
