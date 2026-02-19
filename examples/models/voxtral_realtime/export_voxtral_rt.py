@@ -424,7 +424,7 @@ def main():
     parser.add_argument(
         "--qlinear",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
         help="Quantize decoder linear layers.",
     )
     parser.add_argument(
@@ -436,7 +436,7 @@ def main():
     parser.add_argument(
         "--qlinear-encoder",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
         help="Quantize encoder linear layers (separate from decoder).",
     )
     parser.add_argument(
@@ -463,6 +463,12 @@ def main():
         help="Encoder sliding window size for streaming (default: 750).",
     )
     args = parser.parse_args()
+
+    # Validate fpa4w quantization requires Metal backend
+    if args.qlinear == "fpa4w" and args.backend != "metal":
+        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
+    if args.qlinear_encoder == "fpa4w" and args.backend != "metal":
+        parser.error("--qlinear-encoder=fpa4w can only be used with --backend=metal")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
