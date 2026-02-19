@@ -39,7 +39,8 @@ class VoxtralRealtimeRunner {
   VoxtralRealtimeRunner(
       const std::string& model_path,
       const std::string& tokenizer_path,
-      const std::string& preprocessor_path = "");
+      const std::string& preprocessor_path = "",
+      bool warmup = true);
 
   // Offline transcription: full encoder first, then step-by-step decode.
   int transcribe(
