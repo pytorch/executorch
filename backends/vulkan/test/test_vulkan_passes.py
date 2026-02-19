@@ -283,3 +283,49 @@ class TestVulkanPasses(unittest.TestCase):
             1,
             "Expected at least one q8ta_linear_gemv op for batch-1 linear fusion",
         )
+
+    def test_fuse_q8ta_linear_gemv_non_aligned_oc(self):
+        """Test that quantized linear with non-aligned output channels (not multiple of 4) fuses correctly."""
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+
+        class TwoLinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Use non-aligned output channels (9 is not a multiple of 4)
+                self.linear1 = torch.nn.Linear(128, 9, bias=False)
+                self.linear2 = torch.nn.Linear(9, 4, bias=False)
+
+            def forward(self, x):
+                return self.linear2(self.linear1(x))
+
+        model = TwoLinearModule()
+        sample_inputs = (torch.randn(1, 128),)
+
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        edge_program = quantize_and_lower_module(model, sample_inputs, quantizer)
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        # The first linear (OC=9, not multiple of 4) should still fuse
+        q8ta_linear_gemv_count = op_node_count(gm, "et_vk__q8ta_linear_gemv__default")
+        self.assertGreaterEqual(
+            q8ta_linear_gemv_count,
+            1,
+            "Expected non-aligned OC linear to fuse into q8ta_linear_gemv",
+        )

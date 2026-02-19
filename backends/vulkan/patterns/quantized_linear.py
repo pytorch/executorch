@@ -36,8 +36,14 @@ class QuantizedLinearMatch(PatternMatch):
         self.match_found = False
         self.all_nodes = [self.anchor_node]
 
+        # addmm(bias, mat1, mat2) has a different arg layout than
+        # mm(mat1, mat2) and linear(input, weight, bias?)
+        is_addmm = self.anchor_node.target == exir_ops.edge.aten.addmm.default
+        weight_arg_idx = 2 if is_addmm else 1
+        input_arg_idx = 1 if is_addmm else 0
+
         const_node, arg_chain = utils.trace_args_until_placeholder(
-            self.anchor_node.args[1]
+            self.anchor_node.args[weight_arg_idx]
         )
 
         # mat2 is not a constant tensor - no match
@@ -84,19 +90,12 @@ class QuantizedLinearMatch(PatternMatch):
         # Identify output node
         self.output_node = self.anchor_node
 
-        # The implementation has a limitation that output channels must be a
-        # multiple of 4. This is to ensure that data loads are aligned well with
-        # texel boundaries. If this is not true, then don't match the pattern.
-        out_channels = self.output_node.meta["val"].shape[-1]
-        if out_channels % 4 != 0:
-            return
-
         # Identify input node
         (
             self.fp_input_node,
             self.quantize_input_node,
             dq_node,
-        ) = utils.maybe_skip_q_dq_arg_chain(self.anchor_node.args[0])
+        ) = utils.maybe_skip_q_dq_arg_chain(self.anchor_node.args[input_arg_idx])
         assert self.fp_input_node is not None
         self.all_nodes.append(self.fp_input_node)
 
@@ -442,12 +441,34 @@ def make_linear_q8ta_q8csw_custom_op(
     match: QuantizedLinearMatch,
     weight_tensor: torch.Tensor,
 ):
+    # Pad weight_scales to multiple of 4 so GPU shader reads don't go OOB
+    weight_scales_tensor = get_param_tensor(ep, match.weight_scales_node)
+    assert weight_scales_tensor is not None
+    utils.align_width_and_update_state_dict(
+        ep, match.weight_scales_node, weight_scales_tensor
+    )
+
+    # Pad bias to multiple of 4 if present
+    if match.bias_node is not None:
+        bias_tensor = get_param_tensor(ep, match.bias_node)
+        if bias_tensor is not None:
+            utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
+
     first_graph_node = list(graph_module.graph.nodes)[0]
     with graph_module.graph.inserting_before(first_graph_node):
         weight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
         # Pre-compute the weight sums which are needed to apply activation zero point
         # when using integer accumulation.
         sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.int32).contiguous()
+
+        # Pad weight sums to align OC to multiple of 4
+        oc = sum_per_output_channel.shape[0]
+        if oc % 4 != 0:
+            num_padding = 4 - (oc % 4)
+            sum_per_output_channel = F.pad(
+                sum_per_output_channel, (0, num_padding)
+            ).contiguous()
+
         sums_name = weight_tensor_name + "_sums"
         # Sanitize the name
         sums_name = sums_name.replace(".", "_")
@@ -484,10 +505,32 @@ def make_q8ta_linear_custom_op(
     match: QuantizedLinearMatch,
     weight_tensor: torch.Tensor,
 ):
+    # Pad weight_scales to multiple of 4 so GPU shader reads don't go OOB
+    weight_scales_tensor = get_param_tensor(ep, match.weight_scales_node)
+    assert weight_scales_tensor is not None
+    utils.align_width_and_update_state_dict(
+        ep, match.weight_scales_node, weight_scales_tensor
+    )
+
+    # Pad bias to multiple of 4 if present
+    if match.bias_node is not None:
+        bias_tensor = get_param_tensor(ep, match.bias_node)
+        if bias_tensor is not None:
+            utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
+
     first_graph_node = list(graph_module.graph.nodes)[0]
     with graph_module.graph.inserting_before(first_graph_node):
         weight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
         sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.int32).contiguous()
+
+        # Pad weight sums to align OC to multiple of 4
+        oc = sum_per_output_channel.shape[0]
+        if oc % 4 != 0:
+            num_padding = 4 - (oc % 4)
+            sum_per_output_channel = F.pad(
+                sum_per_output_channel, (0, num_padding)
+            ).contiguous()
+
         sums_name = weight_tensor_name + "_sums"
         sums_name = sums_name.replace(".", "_")
 
