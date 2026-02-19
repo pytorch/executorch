@@ -19,7 +19,6 @@ from executorch.exir.memory_planning import (
     _is_out_var_node,
     apply_algo,
     collect_specs_from_nodes,
-    ensure_graph_node_specs,
     filter_nodes,
     get_node_tensor_specs,
     MemoryPlanningAlgorithmSuite,
@@ -234,9 +233,6 @@ class MemoryPlanningPass(PassBase):
         A pass for memory planning. The actual algorithm used will be picked by
         memory_planning_algo
         """
-        for subgm in graph_module.modules():
-            if isinstance(subgm, torch.fx.GraphModule):
-                ensure_graph_node_specs(subgm)
         self._set_alloc_node_spec(graph_module)
         # TODO(shunting) if people have concern of adding a field to GraphModule
         # directly, we should define a GraphModule subclass that we can add our

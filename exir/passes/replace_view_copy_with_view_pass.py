@@ -282,23 +282,11 @@ class ReplaceViewCopyWithViewPass(PassBase):
 
                     # Create spec for the node.
                     # _ViewSpec gives a view into its base spec for non-size
-                    # related information. Use base.meta["spec"] if present,
-                    # else derive from base.meta["val"] (e.g. after delegation).
-                    base_spec = base.meta.get("spec")
-                    if base_spec is None and "val" in base.meta:
-                        val = base.meta["val"]
-                        if isinstance(val, torch.Tensor):
-                            base_spec = TensorSpec.from_tensor(val)
-                    if base_spec is None:
-                        raise KeyError(
-                            f"replace_view_copy_with_view: base node {base} has no "
-                            "'spec' and no tensor 'val' to derive one"
-                        )
-
+                    # related information.
                     # the shape is not the same as node.args[1] because node.args[1]
                     # can have an inferred sizes (-1).
                     shape = node.meta["val"].shape
-                    node.meta["spec"] = _ViewSpec(base_spec, shape)
+                    node.meta["spec"] = _ViewSpec(base.meta["spec"], shape)
 
                     n_replaced += 1
 
