@@ -34,6 +34,7 @@ Usage:
 """
 
 import argparse
+
 import torch
 import torch.nn as nn
 
@@ -67,9 +68,7 @@ class MultiOpCacheModel(nn.Module):
             enable_dynamic_shape=True,
         )
 
-    def forward(
-        self, x: torch.Tensor, input_pos: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, input_pos: torch.Tensor) -> torch.Tensor:
         z = torch.relu(x * 2.0 + 1.0)
         old_k = self.cache.k_cache[:, :, :1, :]
         new_val = z + old_k
@@ -80,7 +79,7 @@ class MultiOpCacheModel(nn.Module):
 def export_model(output_path: str, dim=4, max_len=8):
     model = MultiOpCacheModel(dim=dim, max_len=max_len)
     example_inputs = (
-        torch.randn(1, 1, 1, dim),    # x: [B, H, S, D]
+        torch.randn(1, 1, 1, dim),  # x: [B, H, S, D]
         torch.tensor([0], dtype=torch.int64),  # input_pos
     )
 
@@ -88,9 +87,7 @@ def export_model(output_path: str, dim=4, max_len=8):
         exported = torch.export.export(model, example_inputs)
         exported = exported.run_decompositions({})
 
-    et_program = to_edge_transform_and_lower(
-        exported, partitioner=[MLXPartitioner()]
-    )
+    et_program = to_edge_transform_and_lower(exported, partitioner=[MLXPartitioner()])
     et_program = et_program.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=True)
     )

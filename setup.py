@@ -624,6 +624,26 @@ class CustomBuildPy(build_py):
             # the input file is read-only.
             self.copy_file(src, dst, preserve_mode=False)
 
+        # Copy CMake-generated Python directories that setuptools missed.
+        # Setuptools discovers packages at configuration time, before CMake
+        # runs. Directories created by CMake during the build (e.g. by
+        # generate.py) are not in the package list and must be copied manually.
+        generated_dirs = [
+            "backends/apple/mlx/serialization/_generated",
+        ]
+        for rel_dir in generated_dirs:
+            src_dir = os.path.join("src/executorch", rel_dir)
+            if not os.path.isdir(src_dir):
+                continue
+            dst_dir = os.path.join(dst_root, rel_dir)
+            for dirpath, _dirnames, filenames in os.walk(src_dir):
+                for filename in filenames:
+                    src_file = os.path.join(dirpath, filename)
+                    rel_path = os.path.relpath(src_file, src_dir)
+                    dst_file = os.path.join(dst_dir, rel_path)
+                    self.mkpath(os.path.dirname(dst_file))
+                    self.copy_file(src_file, dst_file, preserve_mode=False)
+
 
 class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
     """Removes HOME from the environment when running as root.
