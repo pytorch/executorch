@@ -348,11 +348,12 @@ if [[ $is_script_sourced -eq 0 ]]; then
     export CMAKE_BUILD_PARALLEL_LEVEL="$(get_parallel_jobs)"
 
     CMAKE_POLICY_VERSION_MINIMUM=3.5 \
-        BUILD_PYBIND=1 \
+        BUILD_PYBIND=ON \
+        BUILD_TOSA_REFERENCE_MODEL_TESTS=OFF \
         pip install --no-dependencies ./reference_model
 
     CMAKE_POLICY_VERSION_MINIMUM=3.5 \
-        BUILD_PYBIND=1 \
+        BUILD_PYBIND=ON \
         pip install --no-dependencies ./serialization
     popd
     popd
