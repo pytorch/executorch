@@ -109,19 +109,33 @@ if(NOT EXISTS "${MLX_SOURCE_DIR}/CMakeLists.txt")
   )
 endif()
 
-# Validate deployment target - MLX requires macOS 14.0+ / iOS 17.0+ For iOS
-# builds using ios.toolchain.cmake, DEPLOYMENT_TARGET is used For macOS builds,
-# CMAKE_OSX_DEPLOYMENT_TARGET is used
+# Validate deployment target - MLX requires macOS 14.0+ / iOS 17.0+
+#
+# The macOS preset uses ios.toolchain.cmake (with PLATFORM=MAC_ARM64), so
+# DEPLOYMENT_TARGET is set for both macOS and iOS builds. We check PLATFORM to
+# distinguish them rather than relying on which variable is set.
 set(_mlx_deployment_target_ok TRUE)
-if(DEPLOYMENT_TARGET)
-  # iOS/tvOS/watchOS builds via ios.toolchain.cmake
+if(PLATFORM AND PLATFORM MATCHES "^MAC")
+  # macOS build via ios.toolchain.cmake (e.g., MAC_ARM64, MAC_UNIVERSAL)
+  if(DEPLOYMENT_TARGET)
+    set(_mlx_dt_value ${DEPLOYMENT_TARGET})
+  elseif(CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(_mlx_dt_value ${CMAKE_OSX_DEPLOYMENT_TARGET})
+  endif()
+  if(_mlx_dt_value AND _mlx_dt_value VERSION_LESS "14.0")
+    set(_mlx_deployment_target_ok FALSE)
+    set(_mlx_deployment_target_value ${_mlx_dt_value})
+    set(_mlx_deployment_target_min "14.0")
+  endif()
+elseif(DEPLOYMENT_TARGET)
+  # iOS/tvOS/watchOS/visionOS builds via ios.toolchain.cmake
   if(DEPLOYMENT_TARGET VERSION_LESS "17.0")
     set(_mlx_deployment_target_ok FALSE)
     set(_mlx_deployment_target_value ${DEPLOYMENT_TARGET})
     set(_mlx_deployment_target_min "17.0")
   endif()
 elseif(CMAKE_OSX_DEPLOYMENT_TARGET)
-  # macOS builds
+  # Plain macOS build (no ios.toolchain.cmake)
   if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "14.0")
     set(_mlx_deployment_target_ok FALSE)
     set(_mlx_deployment_target_value ${CMAKE_OSX_DEPLOYMENT_TARGET})

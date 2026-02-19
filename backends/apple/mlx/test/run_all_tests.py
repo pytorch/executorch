@@ -175,7 +175,14 @@ def run_tests_parallel(
 
     print(f"\nRunning {len(test_configs)} tests with {num_workers} workers...\n")
 
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+    # Use explicit shutdown instead of context manager to avoid crashes during
+    # worker teardown. Workers import torch/MLX/Metal and can segfault during
+    # Python cleanup (atexit, __del__). With the context manager, that crash
+    # raises BrokenProcessPool from __exit__, killing the main process before
+    # it can print the test summary. Using wait=False lets us collect all
+    # results and move on without blocking on worker process teardown.
+    executor = ProcessPoolExecutor(max_workers=num_workers)
+    try:
         futures = {}
         for config_name, config_kwargs in test_configs:
             future = executor.submit(
@@ -206,6 +213,8 @@ def run_tests_parallel(
                 print(f"✗ FAILED: {config_name} - Worker exception: {e}")
                 failed += 1
                 failed_tests.append(config_name)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
     return passed, failed, failed_tests
 
