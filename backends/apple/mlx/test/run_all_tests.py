@@ -34,7 +34,6 @@ Usage:
 import argparse
 import importlib
 import multiprocessing
-import os
 import sys
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from typing import List, Optional, Tuple
@@ -114,6 +113,7 @@ def run_tests_sequential(
     configs_to_run: List[Tuple[str, object]],
     verbose: bool = False,
     timeout: int = DEFAULT_TEST_TIMEOUT,
+    clean_after_each: bool = False,
 ) -> Tuple[int, int, List[str]]:
     """
     Run tests sequentially.
@@ -122,6 +122,7 @@ def run_tests_sequential(
         configs_to_run: List of (config_name, test_instance) tuples.
         verbose: Whether to print verbose output.
         timeout: Timeout in seconds per test.
+        clean_after_each: Whether to clean up test outputs after each test.
 
     Returns:
         (passed_count, failed_count, failed_test_names)
@@ -144,6 +145,9 @@ def run_tests_sequential(
             traceback.print_exc()
             failed += 1
             failed_tests.append(config_name)
+
+        if clean_after_each:
+            clean_test_outputs([config_name], verbose=False)
 
     return passed, failed, failed_tests
 
@@ -176,14 +180,7 @@ def run_tests_parallel(
 
     print(f"\nRunning {len(test_configs)} tests with {num_workers} workers...\n")
 
-    # Use explicit shutdown instead of context manager to avoid crashes during
-    # worker teardown. Workers import torch/MLX/Metal and can segfault during
-    # Python cleanup (atexit, __del__). With the context manager, that crash
-    # raises BrokenProcessPool from __exit__, killing the main process before
-    # it can print the test summary. Using wait=False lets us collect all
-    # results and move on without blocking on worker process teardown.
-    executor = ProcessPoolExecutor(max_workers=num_workers)
-    try:
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
         futures = {}
         for config_name, config_kwargs in test_configs:
             future = executor.submit(
@@ -214,8 +211,6 @@ def run_tests_parallel(
                 print(f"✗ FAILED: {config_name} - Worker exception: {e}")
                 failed += 1
                 failed_tests.append(config_name)
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
 
     return passed, failed, failed_tests
 
@@ -225,6 +220,7 @@ def run_tests(
     verbose: bool = False,
     parallel: int = 1,
     timeout: int = DEFAULT_TEST_TIMEOUT,
+    clean_after_each: bool = False,
 ) -> Tuple[int, int, List[str]]:
     """
     Run tests matching the filter.
@@ -235,6 +231,7 @@ def run_tests(
         verbose: Whether to print verbose output.
         parallel: Number of parallel workers (1 = sequential).
         timeout: Timeout in seconds per test.
+        clean_after_each: Whether to clean up test outputs after each test (sequential only).
 
     Returns:
         (passed_count, failed_count, failed_test_names)
@@ -273,7 +270,7 @@ def run_tests(
     if parallel > 1:
         return run_tests_parallel(configs_to_run, parallel, verbose, timeout)
     else:
-        return run_tests_sequential(configs_to_run, verbose, timeout)
+        return run_tests_sequential(configs_to_run, verbose, timeout, clean_after_each)
 
 
 def main():  # noqa: C901
@@ -395,6 +392,7 @@ def main():  # noqa: C901
         verbose=args.verbose,
         parallel=args.parallel,
         timeout=args.timeout,
+        clean_after_each=args.clean_after,
     )
 
     # Print summary
@@ -427,14 +425,7 @@ def main():  # noqa: C901
                 f"\nCleaned up {files_removed} files ({current_size / 1024 / 1024:.2f} MB)"
             )
 
-    # Flush and use os._exit() to avoid ProcessPoolExecutor's atexit handler
-    # which joins worker threads. Workers that imported torch/MLX/Metal can
-    # segfault during Python cleanup, causing the atexit join to hang or crash.
-    # In CI (GitHub Actions), stdout is pipe-buffered so we must flush explicitly
-    # before os._exit() which does not flush stdio buffers.
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(0 if failed == 0 else 1)
+    sys.exit(0 if failed == 0 else 1)
 
 
 if __name__ == "__main__":
