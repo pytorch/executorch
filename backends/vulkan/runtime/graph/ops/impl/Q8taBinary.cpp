@@ -42,6 +42,7 @@ void add_q8ta_binary_node(
 
   VK_CHECK_COND(input_a_info.packed_dim == output_info.packed_dim);
   VK_CHECK_COND(input_b_info.packed_dim == output_info.packed_dim);
+
   VK_CHECK_COND(
       input_a_info.packed_dim_block_size == output_info.packed_dim_block_size);
   VK_CHECK_COND(
@@ -105,6 +106,7 @@ void add_q8ta_binary_node(
       // Specialization Constants
       {graph.hashed_layout_of(packed_int8_output),
        graph.hashed_layout_of(packed_int8_input_a),
+       graph.hashed_layout_of(packed_int8_input_b),
        block_config.as_packed_int()},
       // Resize args
       {block_config_ref},
