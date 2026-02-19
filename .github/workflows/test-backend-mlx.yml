@@ -29,7 +29,7 @@ jobs:
         set -eux
 
         echo "::group::Install ExecuTorch and configure build"
-        ${CONDA_RUN} python install_executorch.py --editable > /dev/null
+        ${CONDA_RUN} python install_executorch.py > /dev/null
         ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON
         echo "::endgroup::"
 
