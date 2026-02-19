@@ -73,8 +73,8 @@ set_target_properties(
 executorch_target_link_options_shared_lib(executorch)
 
 add_library(
-  executorch_jni SHARED jni/jni_module.cpp jni/log.cpp jni/jni_layer_runtime.cpp
-                        jni/jni_helper.cpp
+  executorch_jni SHARED jni/jni_module.cpp jni/log.cpp
+                        jni/jni_layer_runtime.cpp jni/jni_helper.cpp
 )
 
 set(link_libraries)
