@@ -233,3 +233,7 @@ Do not remove this file. As mentioned in the official Zephyr [documenation](http
 # Reference
 
 <a href="https://docs.pytorch.org/executorch">Documentation</a>
+
+## Related Projects
+
+- [ExecuTorch on Zephyr RTOS with CMSIS](https://github.com/Arm-Examples/cmsis-zephyr-executorch) — An alternative project structure demonstrating ExecuTorch on Zephyr using CMSIS Toolbox for build management.

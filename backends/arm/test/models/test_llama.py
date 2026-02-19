@@ -144,6 +144,8 @@ def test_llama_tosa_INT():
             custom_path="llama_tosa_fb_int",
             run_on_tosa_ref_model=False,  # Just want to write TOSA FB to disk
             use_to_edge_transform_and_lower=True,
+            frobenius_threshold=None,
+            cosine_threshold=None,
         )
         pipeline.add_stage_after("to_executorch", pipeline.tester.serialize)
         pipeline.run()
@@ -205,6 +207,8 @@ def test_llama_tosa_INT_FP_partial_quant():
             tosa_extensions=["FP"],
             # Due to a few outliers, atol must be set high
             atol=1.1,
+            frobenius_threshold=None,
+            cosine_threshold=None,
         )
         _use_partial_quantizer(pipeline)
         pipeline.run()

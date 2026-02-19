@@ -678,3 +678,36 @@ def test_conv_transpose2d_non_delegated_conversion__quantized(
     assert (
         nodes[11].target.__name__ == "aten.convolution.default"
     )  # TransposeConv not delegated.
+
+
+def test_conv2d_conversion__depthwise__delegates_without_post_quantization_state_dict(
+    mocker,
+):
+    """Depthwise convolution should delegate even when post_quantization_state_dict
+    is not provided to the partitioner. Without the fallback in map_inputs_to_parameters,
+    the parameter mapping would be incomplete and the depthwise conv would fail to
+    delegate due to missing weight data.
+
+    """
+    input_shape = (1, 4, 12, 12)
+    group = input_shape[1]
+    spy = mocker.spy(ModelBuilder, "finish")
+
+    edge_program = to_quantized_edge_program(
+        Conv2dModule(
+            group=group,
+            in_channels=group,
+            out_channels=group,
+            kernel_size=3,
+        ),
+        tuple(input_shape),
+        use_neutron_for_format_conversion=False,
+        use_quant_state_dict=False,
+    ).exported_program()
+
+    ops = spy.spy_return.sub_graphs[0].operators.vector
+    assert len(ops) == 1
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.DEPTHWISE_CONV_2D
+
+    nodes = list(edge_program.graph.nodes)
+    assert any(n.target == "lowered_module_0" for n in nodes)

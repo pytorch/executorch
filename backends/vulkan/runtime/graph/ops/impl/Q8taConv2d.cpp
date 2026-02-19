@@ -323,7 +323,9 @@ void add_q8ta_conv2d_node(
 // High level operator impl
 //
 
-void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+void q8ta_conv2d_general(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
   int32_t idx = 0;
   const ValueRef packed_int8_input = args.at(idx++);
   const ValueRef input_scale = args.at(idx++);
@@ -398,8 +400,13 @@ void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       packed_int8_output);
 }
 
+void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  q8ta_conv2d_general(graph, args);
+}
+
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(etvk.q8ta_conv2d.default, q8ta_conv2d);
+  VK_REGISTER_OP(et_vk.q8ta_conv2d.default, q8ta_conv2d);
+  VK_REGISTER_OP(et_vk.q8ta_conv2d_general.default, q8ta_conv2d_general);
 }
 
 } // namespace vkcompute

@@ -8,8 +8,10 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Iterator, List, Optional
 
-from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.quantizer.pattern_checkers import PatternCheck
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    CortexMQuantizationConfig,
+)
 from torch._ops import OpOverload
 from torch.fx import Node
 
@@ -74,7 +76,7 @@ class PatternMatcher:
         self,
         node: Optional[Node],
         pattern: List[OpOverload],
-        quantization_config: QuantizationConfig,
+        quantization_config: CortexMQuantizationConfig,
     ) -> Optional[PatternMatchResult]:
         """
         Returns a PatternMatchResult when the pattern structurally matches, with
@@ -99,14 +101,16 @@ class PatternMatcher:
             if not pattern_ok:
                 return PatternMatchResult(match, False, self.REJECT_UNSUPPORTED_PATTERN)
 
-            qconfig_ok = pattern_checker.check_quantization_config(quantization_config)
+            qconfig_ok = pattern_checker.check_quantization_config(
+                match, quantization_config
+            )
             if not qconfig_ok:
                 return PatternMatchResult(match, False, self.REJECT_UNSUPPORTED_QCONFIG)
 
         return PatternMatchResult(match, True)
 
     def find_pattern_matches(
-        self, nodes: Iterator[Node], quantization_config: QuantizationConfig
+        self, nodes: Iterator[Node], quantization_config: CortexMQuantizationConfig
     ) -> Iterator[PatternMatchResult]:
         """
         Match all given patterns in the graph and return match results with

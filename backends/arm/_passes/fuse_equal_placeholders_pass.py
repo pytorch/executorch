@@ -25,10 +25,9 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class FuseEqualPlaceholdersPass(ArmPass):
-    """
-    This pass optimizes memory usage by finding constant placeholders
-    pointing to identical tensors and fusing them to one single placeholder
-    with multiple users, using a cache for faster comparison.
+    """This pass optimizes memory usage by finding constant placeholders
+    pointing to identical tensors and fusing them to one single placeholder with
+    multiple users, using a cache for faster comparison.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
