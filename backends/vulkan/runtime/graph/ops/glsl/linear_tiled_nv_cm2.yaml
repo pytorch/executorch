@@ -1,0 +1,31 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Floating-point matrix multiplication shader using GL_NV_cooperative_matrix2
+# extension for optimized performance on NVIDIA GPUs with tensor cores.
+#
+# This shader computes: output = input @ weight^T + bias
+#
+# Tile sizes should be tuned for specific NVIDIA architectures:
+#   - SM80 (Ampere): 16x16x16 or 32x8x16
+#   - SM90 (Hopper): Up to 64x32x16
+
+linear_tiled_nv_cm2:
+  parameter_names_with_default_values:
+    DTYPE: float
+    # Tile sizes for cooperative matrix operations
+    # TILE_ROWS: rows of tile
+    # TILE_COLS: columns of tile
+    TILE_ROWS: 16
+    TILE_COLS: 16
+    # Use Vulkan 1.3 and SPIR-V 1.6 for GL_NV_cooperative_matrix2 support
+    VK_VERSION: "1.3"
+    SPV_VERSION: "1.6"
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+  shader_variants:
+    - NAME: linear_tiled_nv_cm2
