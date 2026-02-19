@@ -44,6 +44,13 @@ test_data_suite_fp16 = {
     ),
 }
 
+test_data_suite_bf16 = {
+    "ones_slice_4_bf16": lambda: (
+        torch.ones((1, 12, 10, 10), dtype=torch.bfloat16),
+        [(0, 1), (0, 5), (3, 5), (4, 10)],
+    ),
+}
+
 
 class Slice(torch.nn.Module):
     def forward(self, x: torch.Tensor, s: list[tuple[int, int]]):
@@ -54,6 +61,14 @@ class Slice(torch.nn.Module):
 @common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 def test_slice_tensor_tosa_FP(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](Slice(), test_data(), aten_op, exir_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_bf16)
+def test_slice_tensor_tosa_FP_bf16(test_data: torch.Tensor):
+    pipeline = TosaPipelineFP[input_t1](
+        Slice(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
+    )
     pipeline.run()
 
 
