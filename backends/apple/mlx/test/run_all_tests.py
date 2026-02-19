@@ -34,6 +34,7 @@ Usage:
 import argparse
 import importlib
 import multiprocessing
+import subprocess
 import sys
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from typing import List, Optional, Tuple
@@ -114,6 +115,7 @@ def run_tests_sequential(
     verbose: bool = False,
     timeout: int = DEFAULT_TEST_TIMEOUT,
     clean_after_each: bool = False,
+    isolate: bool = False,
 ) -> Tuple[int, int, List[str]]:
     """
     Run tests sequentially.
@@ -123,6 +125,8 @@ def run_tests_sequential(
         verbose: Whether to print verbose output.
         timeout: Timeout in seconds per test.
         clean_after_each: Whether to clean up test outputs after each test.
+        isolate: Whether to run each test in a subprocess to prevent memory
+            accumulation across tests (torch/MLX/Metal allocations).
 
     Returns:
         (passed_count, failed_count, failed_test_names)
@@ -132,17 +136,23 @@ def run_tests_sequential(
     failed_tests = []
 
     for config_name, test in configs_to_run:
-        try:
-            if test.run_test(verbose=verbose, timeout=timeout):
-                passed += 1
-            else:
-                failed += 1
-                failed_tests.append(config_name)
-        except Exception as e:
-            print(f"✗ FAILED: {config_name} - Exception: {e}")
-            import traceback
+        if isolate:
+            test_passed = _run_test_in_subprocess(
+                config_name, verbose=verbose, timeout=timeout
+            )
+        else:
+            try:
+                test_passed = test.run_test(verbose=verbose, timeout=timeout)
+            except Exception as e:
+                print(f"✗ FAILED: {config_name} - Exception: {e}")
+                import traceback
 
-            traceback.print_exc()
+                traceback.print_exc()
+                test_passed = False
+
+        if test_passed:
+            passed += 1
+        else:
             failed += 1
             failed_tests.append(config_name)
 
@@ -150,6 +160,50 @@ def run_tests_sequential(
             clean_test_outputs([config_name], verbose=False)
 
     return passed, failed, failed_tests
+
+
+def _run_test_in_subprocess(
+    config_name: str,
+    verbose: bool = False,
+    timeout: int = DEFAULT_TEST_TIMEOUT,
+) -> bool:
+    """
+    Run a single test in an isolated subprocess.
+
+    Each test gets its own Python interpreter so torch/MLX/Metal memory is
+    fully released between tests, preventing OOM on CI runners.
+
+    Args:
+        config_name: Name of the test configuration to run.
+        verbose: Whether to print verbose output.
+        timeout: Timeout in seconds.
+
+    Returns:
+        True if test passed, False otherwise.
+    """
+    cmd = [
+        sys.executable,
+        "-m",
+        "executorch.backends.apple.mlx.test.test_utils",
+        config_name,
+        "run",
+    ]
+    if verbose:
+        cmd.append("--verbose")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            timeout=timeout,
+            capture_output=False,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        print(f"✗ FAILED: {config_name} - Timeout after {timeout}s")
+        return False
+    except Exception as e:
+        print(f"✗ FAILED: {config_name} - Subprocess error: {e}")
+        return False
 
 
 def run_tests_parallel(
@@ -221,6 +275,7 @@ def run_tests(
     parallel: int = 1,
     timeout: int = DEFAULT_TEST_TIMEOUT,
     clean_after_each: bool = False,
+    isolate: bool = False,
 ) -> Tuple[int, int, List[str]]:
     """
     Run tests matching the filter.
@@ -232,6 +287,7 @@ def run_tests(
         parallel: Number of parallel workers (1 = sequential).
         timeout: Timeout in seconds per test.
         clean_after_each: Whether to clean up test outputs after each test (sequential only).
+        isolate: Whether to run each test in a subprocess (sequential only).
 
     Returns:
         (passed_count, failed_count, failed_test_names)
@@ -270,7 +326,9 @@ def run_tests(
     if parallel > 1:
         return run_tests_parallel(configs_to_run, parallel, verbose, timeout)
     else:
-        return run_tests_sequential(configs_to_run, verbose, timeout, clean_after_each)
+        return run_tests_sequential(
+            configs_to_run, verbose, timeout, clean_after_each, isolate
+        )
 
 
 def main():  # noqa: C901
@@ -308,6 +366,11 @@ def main():  # noqa: C901
         "--clean-after",
         action="store_true",
         help="Clean up generated test files after running tests",
+    )
+    parser.add_argument(
+        "--isolate",
+        action="store_true",
+        help="Run each test in a separate subprocess to prevent memory accumulation",
     )
     parser.add_argument(
         "-j",
@@ -393,6 +456,7 @@ def main():  # noqa: C901
         parallel=args.parallel,
         timeout=args.timeout,
         clean_after_each=args.clean_after,
+        isolate=args.isolate,
     )
 
     # Print summary
