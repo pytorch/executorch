@@ -502,10 +502,17 @@ def find_executorch_root() -> Path:  # noqa: C901
             break
         executorch_root = executorch_root.parent
 
+    # If we didn't find a valid root (e.g. running from a pip-installed
+    # site-packages), fall back to cwd which is typically the repo root.
+    if not (executorch_root / "CMakeLists.txt").exists():
+        cwd = Path.cwd()
+        if (cwd / "CMakeLists.txt").exists() and (cwd / "backends").exists():
+            executorch_root = cwd
+
     return executorch_root
 
 
-def find_build_dir() -> Optional[Path]:
+def find_build_dir():
     """Find the cmake build directory containing op_test_runner."""
     executorch_root = find_executorch_root()
 

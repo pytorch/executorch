@@ -2577,7 +2577,7 @@ class MockModelConfig:
         self.head_dim = head_dim or (hidden_size // num_attention_heads)
         self.max_position_embeddings = max_position_embeddings
 
-    def get_text_config(self):
+    def get_text_config(self, **kwargs):
         """Return self for HF StaticCache compatibility."""
         return self
 
