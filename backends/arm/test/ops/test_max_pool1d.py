@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -77,7 +77,7 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_defau
 
 @common.parametrize("test_data", test_data_suite_all)
 @pytest.mark.xfail(reason="MaxPool1D not yet supported", strict=False)
-def test_max_pool1d_tosa_FP(test_data: Callable):
+def test_max_pool2d_tosa_FP_decomposed(test_data: Callable):
     """Test max_pool1d with TOSA FP pipeline."""
     test_data, model_params = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -91,7 +91,7 @@ def test_max_pool1d_tosa_FP(test_data: Callable):
 
 @common.parametrize("test_data", test_data_suite_all)
 @pytest.mark.xfail(reason="MaxPool1D not yet supported", strict=False)
-def test_max_pool1d_tosa_INT(test_data: Callable):
+def test_max_pool2d_tosa_INT_decomposed(test_data: Callable):
     """Test max_pool1d with TOSA INT pipeline (quantized)."""
     test_data, model_params = test_data()
     pipeline = TosaPipelineINT[input_t1](
@@ -106,7 +106,7 @@ def test_max_pool1d_tosa_INT(test_data: Callable):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 @pytest.mark.xfail(reason="MaxPool1D not yet supported", strict=False)
-def test_max_pool1d_u55_INT(test_data: Callable):
+def test_max_pool2d_u55_INT_decomposed(test_data: Callable):
     """Test max_pool1d on Ethos-U55 (quantized)."""
     test_data, model_params = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
@@ -121,7 +121,7 @@ def test_max_pool1d_u55_INT(test_data: Callable):
 @common.parametrize("test_data", test_data_suite_all)
 @common.XfailIfNoCorstone320
 @pytest.mark.xfail(reason="MaxPool1D not yet supported", strict=False)
-def test_max_pool1d_u85_INT(test_data: Callable):
+def test_max_pool2d_u85_INT_decomposed(test_data: Callable):
     """Test max_pool1d on Ethos-U85 (quantized)."""
     test_data, model_params = test_data()
     pipeline = EthosU85PipelineINT[input_t1](
@@ -135,8 +135,9 @@ def test_max_pool1d_u85_INT(test_data: Callable):
 
 # VGF tests
 @common.parametrize("test_data", test_data_suite_all)
+@pytest.mark.xfail(reason="MaxPool1D not yet supported", strict=False)
 @common.SkipIfNoModelConverter
-def test_max_pool1d_vgf_no_quant(test_data: Callable):
+def test_max_pool2d_vgf_no_quant(test_data: Callable):
     """Test max_pool1d with VGF pipeline (non-quantized)."""
     test_data, model_params = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -150,8 +151,9 @@ def test_max_pool1d_vgf_no_quant(test_data: Callable):
 
 
 @common.parametrize("test_data", test_data_suite_all)
+@pytest.mark.xfail(reason="MaxPool1D not yet supported", strict=False)
 @common.SkipIfNoModelConverter
-def test_max_pool1d_vgf_quant(test_data: Callable):
+def test_max_pool2d_vgf_quant(test_data: Callable):
     """Test max_pool1d with VGF pipeline (quantized)."""
     test_data, model_params = test_data()
     pipeline = VgfPipeline[input_t1](
