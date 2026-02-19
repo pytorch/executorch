@@ -215,9 +215,17 @@ def make_q8ta_conv2d_custom_op(
     with graph_module.graph.inserting_before(first_graph_node):
         qweight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
         # Pre-compute the weight sums which are needed to apply activation zero point
-        # when using integer accumulation. For the reshaped 2D weight matrix (IC_per_group * H * W, OC),
-        # sum over dimension 0 to get sums per output channel
-        sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.int32).contiguous()
+        # when using integer accumulation. Sum all weight elements per output channel.
+        if is_depthwise_conv:
+            # weight_tensor shape is (H, W, OC); sum over spatial dims (H, W)
+            sum_per_output_channel = (
+                weight_tensor.sum(dim=(0, 1)).to(torch.int32).contiguous()
+            )
+        else:
+            # weight_tensor shape is (OC, H*W*IC_per_group); sum over dim 1
+            sum_per_output_channel = (
+                weight_tensor.sum(dim=1).to(torch.int32).contiguous()
+            )
         sums_name = qweight_tensor_name + "_sums"
         # Sanitize the name
         sums_name = sums_name.replace(".", "_")
