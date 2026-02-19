@@ -111,7 +111,7 @@ switcher_version = "main" if not RELEASE else version
 print(f"executorch_version: {executorch_version}")
 print(f"Version: {version}, RELEASE: {RELEASE}")
 
-html_baseurl = "https://docs.pytorch.org/executorch/stable"  # needed for sphinx-sitemap
+html_baseurl = "https://docs.pytorch.org/executorch/stable/"  # needed for sphinx-sitemap
 sitemap_locales = [None]
 sitemap_excludes = [
     "search.html",
