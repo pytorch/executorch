@@ -24,7 +24,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 et_cxx_test(
   multi_thread_test_runner
   SOURCES
-  multi_thread_test_runner.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/multi_thread_test_runner.cpp
   EXTRA_LIBS
   extension_module
   extension_tensor
