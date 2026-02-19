@@ -273,7 +273,9 @@ set(MLX_METALLIB_PATH
 )
 
 # -----------------------------------------------------------------------------
-# Tests
+# Tests (off by default; CI passes -DEXECUTORCH_BUILD_TESTS=ON)
 # -----------------------------------------------------------------------------
 
-add_subdirectory(test)
+if(EXECUTORCH_BUILD_TESTS)
+  add_subdirectory(test)
+endif()
