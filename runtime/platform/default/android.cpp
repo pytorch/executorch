@@ -21,43 +21,12 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <mutex>
 
 #include <android/log.h>
 
-/**
- * On debug builds, ensure that `et_pal_init` has been called before
- * other PAL functions which depend on initialization.
- */
-#ifdef NDEBUG
-
-/**
- * Assert that the PAL has been initialized.
- */
-#define _ASSERT_PAL_INITIALIZED() ((void)0)
-
-#else // NDEBUG
-
-/**
- * Assert that the PAL has been initialized.
- */
-#define _ASSERT_PAL_INITIALIZED()                                   \
-  do {                                                              \
-    if (!initialized) {                                             \
-      __android_log_print(                                          \
-          ANDROID_LOG_FATAL,                                        \
-          "ExecuTorch",                                             \
-          "ExecuTorch PAL must be initialized before call to %s()", \
-          ET_FUNCTION);                                             \
-    }                                                               \
-  } while (0)
-
-#endif // NDEBUG
-
 /// Start time of the system (used to zero the system timestamp).
 static std::chrono::time_point<std::chrono::steady_clock> systemStartTime;
-
-/// Flag set to true if the PAL has been successfully initialized.
-static bool initialized = false;
 
 /**
  * Initialize the platform abstraction layer.
@@ -69,12 +38,9 @@ static bool initialized = false;
 #pragma weak et_pal_init
 #endif // _MSC_VER
 void et_pal_init(void) {
-  if (initialized) {
-    return;
-  }
-
-  systemStartTime = std::chrono::steady_clock::now();
-  initialized = true;
+  static std::once_flag init_flag;
+  std::call_once(
+      init_flag, []() { systemStartTime = std::chrono::steady_clock::now(); });
 }
 
 /**
@@ -97,7 +63,7 @@ ET_NORETURN void et_pal_abort(void) {
 #pragma weak et_pal_current_ticks
 #endif // _MSC_VER
 et_timestamp_t et_pal_current_ticks(void) {
-  _ASSERT_PAL_INITIALIZED();
+  et_pal_init();
   auto systemCurrentTime = std::chrono::steady_clock::now();
   return std::chrono::duration_cast<std::chrono::nanoseconds>(
              systemCurrentTime - systemStartTime)
@@ -143,7 +109,7 @@ void et_pal_emit_log_message(
     ET_UNUSED size_t line,
     const char* message,
     ET_UNUSED size_t length) {
-  _ASSERT_PAL_INITIALIZED();
+  et_pal_init();
 
   int android_log_level = ANDROID_LOG_UNKNOWN;
   if (level == 'D') {
