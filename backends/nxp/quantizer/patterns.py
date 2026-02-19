@@ -25,7 +25,6 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
     SharedQuantizationSpec,
 )
-
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
@@ -377,6 +376,13 @@ class CatPattern(QuantizationPattern):
         )
 
 
+class ClampPattern(SingleInputBasicPattern):
+    """Quantizer for the `aten.clamp.default` operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.clamp.default]
+
+
 def _is_batch_norm(node_: Node) -> bool:
     return node_.op == "call_function" and node_.target in [
         torch.ops.aten.batch_norm.default,
@@ -641,6 +647,20 @@ class HardTanhInPlacePattern(SingleInputBasicPattern):
         raise AssertionError()
 
 
+class LeakyReluPattern(SingleInputBasicPattern):
+    """Quantizer for the `aten.leaky_relu.default` operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.leaky_relu.default]
+
+
+class LeakyReluInPlacePattern(SingleInputBasicPattern):
+    """Quantizer for the `aten.leaky_relu.default` operator, with the parameter `inplace=True`."""
+
+    def partition_types(self):
+        return [torch.ops.aten.leaky_relu_.default]
+
+
 class LinearPattern(QuantizationPattern):
     def __init__(self, neutron_quantizer, is_qat: bool = False):
         super().__init__(is_qat=is_qat)
@@ -825,6 +845,31 @@ class PermutePattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.permute.default]
+
+
+class PReLUPattern(QuantizationPattern):
+    """
+    Quantizer for PReLU operator.
+    """
+
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.prelu.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors:
+        node = fused_partition[0].nodes[-1]
+
+        inputs = [(node, NodeArgsIdx(0))]
+        weights = [(node, NodeArgsIdx(1))]
+        output = [(node,)]
+
+        return PartitionAnchors(
+            inputs=inputs,
+            weights=weights,
+            biases=[],
+            output=output,
+        )
 
 
 class TransposeIntPattern(SharedSpecPattern):

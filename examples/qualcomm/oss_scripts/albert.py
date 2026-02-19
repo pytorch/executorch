@@ -122,13 +122,12 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
-        backend=backend,
     )
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
     # accuracy analysis
-    adb.push(inputs=inputs)
+    adb.push(inputs=inputs, backends={backend})
     adb.execute()
     adb.pull(host_output_path=args.artifact)
     # since the original nn.Module could not perform well on this task either

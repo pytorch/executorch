@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -149,14 +149,23 @@ def test_native_layer_norm_tosa_INT_a16w8(test_data):
         "torch.ops.aten.sub.Tensor",  # check for sub op in decomposition
         symmetric_io_quantization=True,
         tosa_extensions=["int16"],
-        epsilon=2**16,
+        qtol=400,
+        epsilon=2**-16,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data",
+    test_data_suite,
+    xfails={
+        "randn_last_dim": "MLETORCH-1834 - 16A8W native_layer_norm output diff for certain configurations."
+    },
+)
 @common.XfailIfNoCorstone300
-def test_native_layer_norm_16a8w_u55_INT(test_data):
+def test_native_layer_norm_16a8w_u55_INT(
+    test_data,
+):
     """Test layer_norm with int16 I/O quantization for U55"""
     test_input, model = test_data()
     pipeline = EthosU55PipelineINT[input_t](
@@ -165,12 +174,20 @@ def test_native_layer_norm_16a8w_u55_INT(test_data):
         "torch.ops.aten.sub.Tensor",
         symmetric_io_quantization=True,
         a16w8_quantization=True,
-        epsilon=2**16,
+        qtol=128,
+        epsilon=2**-16,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+u85_xfails_16a8w = {
+    "randn_last_dim": "MLETORCH-1834 - 16A8W native_layer_norm output diff for certain configurations.",
+    "randn_last_three_dims": "MLETORCH-1834 - 16A8W native_layer_norm output diff for certain configurations.",
+    "randn_last_three_dims_no_bias": "MLETORCH-1834 - 16A8W native_layer_norm output diff for certain configurations.",
+}
+
+
+@common.parametrize("test_data", test_data_suite, xfails=u85_xfails_16a8w)
 @common.XfailIfNoCorstone320
 def test_native_layer_norm_16a8w_u85_INT(test_data):
     """Test layer_norm with int16 I/O quantization for U85"""
@@ -181,6 +198,7 @@ def test_native_layer_norm_16a8w_u85_INT(test_data):
         "torch.ops.aten.sub.Tensor",
         symmetric_io_quantization=True,
         a16w8_quantization=True,
-        epsilon=2**16,
+        qtol=128,
+        epsilon=2**-16,
     )
     pipeline.run()
