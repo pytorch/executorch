@@ -378,7 +378,23 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
        Stride(2, 2),
        Padding(2, 2),
        Dilation(1, 1),
-       4}};
+       4},
+      // Deep channels + small spatial (ResNet50 stage 5 bottleneck)
+      {OutInChannels(512, 512),
+       InputSize2D(7, 7),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1},
+      // Strided 1x1 shortcut (worst-case strided downsample)
+      {OutInChannels(2048, 1024),
+       InputSize2D(14, 14),
+       KernelSize(1, 1),
+       Stride(2, 2),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1}};
 
   // Test with different storage types and memory layouts
   std::vector<utils::StorageType> fp_storage_types = {utils::kTexture3D};
