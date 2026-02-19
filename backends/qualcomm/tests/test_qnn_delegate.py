@@ -1251,6 +1251,25 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_is_inf(self):
+        module = IsInf()  # noqa: F405
+        sample_input = (
+            torch.tensor(
+                [
+                    1.1,
+                    float("inf"),
+                    -float("inf"),
+                    0.0,
+                    float("nan"),
+                    0.6,
+                    float("nan"),
+                    -5.0,
+                ],
+                dtype=torch.float16,
+            ),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_interpolate_bicubic(self):
         modules = [
             ResizeBicubic([2, 2], None, False),  # noqa: F405
