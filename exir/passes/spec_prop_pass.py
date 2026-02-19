@@ -194,8 +194,10 @@ class SpecPropPass(ExportPass):
                         if explicit_dim_order is not None and primary is not None:
                             inp_spec = primary.meta.get("spec")
                             if isinstance(inp_spec, TensorSpec):
+                                # Use dtype from op kwarg when present (e.g. _to_dim_order_copy(..., dtype=torch.double))
+                                output_dtype = node.kwargs.get("dtype", inp_spec.dtype)
                                 node.meta["spec"] = TensorSpec(
-                                    dtype=inp_spec.dtype,
+                                    dtype=output_dtype,
                                     shape=inp_spec.shape,
                                     layout=inp_spec.layout,
                                     is_sparse=inp_spec.is_sparse,
