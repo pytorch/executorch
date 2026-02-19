@@ -857,6 +857,28 @@ def register_q8ta_linear():
     )
 
 
+@update_features(exir_ops.edge.et_vk.q8ta_linear_gemv.default)
+def register_q8ta_linear_gemv():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_4W_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_4W_BUFFER,
+        ],
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
 # =============================================================================
 # SDPA.cpp
 # =============================================================================
