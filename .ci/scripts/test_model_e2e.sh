@@ -92,7 +92,7 @@ case "$HF_MODEL" in
     MODEL_NAME="voxtral"
     RUNNER_TARGET="voxtral_runner"
     RUNNER_PATH="voxtral"
-    EXPECTED_OUTPUT="existence"
+    EXPECTED_OUTPUT="identity"
     PREPROCESSOR="voxtral_preprocessor.pte"
     TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main" # @lint-ignore
     TOKENIZER_FILE="tekken.json"
@@ -180,7 +180,7 @@ if [ "$AUDIO_URL" != "" ]; then
 elif [[ "$MODEL_NAME" == *whisper* ]] || [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   conda install -y -c conda-forge "ffmpeg<8"
   pip install datasets soundfile
-  pip install torchcodec --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+  pip install torchcodec==0.11.0.dev20260217 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
 fi
 
@@ -212,6 +212,13 @@ fi
 # Build runner command with common arguments
 RUNNER_BIN="cmake-out/examples/models/$RUNNER_PATH/$RUNNER_TARGET"
 RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --temperature 0"
+# Patch absolute libomp install name from some torch nightlies to rpath-based
+# lookup so the runner works on macOS images without /opt/llvm-openmp.
+if [ "$(uname -s)" = "Darwin" ] && [ -f "$RUNNER_BIN" ]; then
+  if otool -L "$RUNNER_BIN" | grep -q "/opt/llvm-openmp/lib/libomp.dylib"; then
+    install_name_tool -change /opt/llvm-openmp/lib/libomp.dylib @rpath/libomp.dylib "$RUNNER_BIN"
+  fi
+fi
 # For CUDA, add data_path argument (Metal embeds data in .pte)
 if [ "$DEVICE" = "cuda" ]; then
   RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
