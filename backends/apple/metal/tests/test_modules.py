@@ -468,7 +468,16 @@ class BaseStridedSDPA(nn.Module):
     """SDPA model with strided Q, K, V parameters."""
 
     def __init__(
-        self, q_size, k_size, v_size, q_stride, k_stride, v_stride, attn_mask_size=None
+        self,
+        q_size,
+        k_size,
+        v_size,
+        q_stride,
+        k_stride,
+        v_stride,
+        *,
+        attn_mask_size=None,
+        is_causal=False,
     ):
         super().__init__()
         self.q_size = q_size
@@ -478,6 +487,7 @@ class BaseStridedSDPA(nn.Module):
         self.k_stride = k_stride
         self.v_stride = v_stride
         self.attn_mask_size = attn_mask_size
+        self.is_causal = is_causal
 
         self.query = nn.Parameter(torch.randn(q_size))
         self.key = nn.Parameter(torch.randn(k_size))
@@ -492,7 +502,13 @@ class BaseStridedSDPA(nn.Module):
             attn_mask = torch.zeros(self.attn_mask_size)
 
         sdpa_output = torch.nn.functional.scaled_dot_product_attention(
-            query, key, value, attn_mask, dropout_p=0.0, is_causal=False, scale=1.0
+            query,
+            key,
+            value,
+            attn_mask,
+            dropout_p=0.0,
+            is_causal=self.is_causal,
+            scale=1.0,
         )
         return sdpa_output + x
 
@@ -557,6 +573,52 @@ MODULE_REGISTRY["sdpa_strided_broadcast_attn_mask"] = {
     "model_class": SDPAStridedBroadcastAttnMask,
     "input_shapes": [(1, 20, 1, 64)],
     "description": "Whisper-like strided SDPA variant 2",
+}
+
+
+# -------------------------------------------------------------------------
+class SDPAContiguousCausal(BaseStridedSDPA):
+    def __init__(self):
+        super().__init__(
+            q_size=(1, 32, 1500, 64),
+            k_size=(1, 32, 1500, 64),
+            v_size=(1, 32, 1500, 64),
+            q_stride=(3072000, 96000, 64, 1),
+            k_stride=(3072000, 96000, 64, 1),
+            v_stride=(3072000, 96000, 64, 1),
+            is_causal=True,
+        )
+
+
+MODULE_REGISTRY["sdpa_contiguous_causal"] = {
+    "model_class": SDPAContiguousCausal,
+    "input_shapes": [(1, 32, 1500, 64)],
+    "description": "SDPA model with contiguous Q, K, V parameters and causal attention",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
+}
+
+
+# -------------------------------------------------------------------------
+class SDPAStridedCausal(BaseStridedSDPA):
+    def __init__(self):
+        super().__init__(
+            q_size=(1, 32, 1500, 64),
+            k_size=(1, 32, 1500, 64),
+            v_size=(1, 32, 1500, 64),
+            q_stride=(3072000, 64, 2048, 1),
+            k_stride=(3072000, 64, 2048, 1),
+            v_stride=(3072000, 64, 2048, 1),
+            is_causal=True,
+        )
+
+
+MODULE_REGISTRY["sdpa_strided_causal"] = {
+    "model_class": SDPAStridedCausal,
+    "input_shapes": [(1, 32, 1500, 64)],
+    "description": "SDPA model with strided Q, K, V parameters and causal attention",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
 }
 
 

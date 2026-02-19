@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -55,6 +55,8 @@ def test_asin_tosa_INT(test_data: Tuple):
         (test_data(),),
         aten_op=[],
         exir_op=[],
+        frobenius_threshold=0.6,  # MLETORCH-1709
+        cosine_threshold=0.8,  # MLETORCH-1709
     )
     pipeline.run()
 

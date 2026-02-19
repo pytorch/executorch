@@ -40,6 +40,7 @@ class ModelType(str, Enum):
     static_llama = "static_llama"
     qwen2_5_0_5b = "qwen2_5_0_5b"
     qwen2_5_1_5b = "qwen2_5_1_5b"
+    qwen2_5_coder_32b = "qwen2_5_coder_32b"
     qwen3_0_6b = "qwen3_0_6b"
     qwen3_1_7b = "qwen3_1_7b"
     qwen3_4b = "qwen3_4b"
@@ -301,7 +302,7 @@ class MultimethodLoraConfig:
 
     Attributes:
         methods: Dict mapping method names to optional LoRA configs.
-            Empty dict disables multimethod export.
+            Empty dict disables multimethod_lora export.
 
     Example:
         MultimethodLoraConfig(methods={
