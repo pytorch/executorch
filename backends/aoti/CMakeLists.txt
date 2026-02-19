@@ -38,8 +38,10 @@ target_include_directories(
 )
 target_compile_options(
   aoti_common
-  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
-         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+  PUBLIC
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/EHsc /GR>
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-fexceptions
+    -frtti -fPIC>
 )
 target_compile_definitions(
   aoti_common PRIVATE $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
@@ -64,37 +66,83 @@ install(
 )
 
 # ==============================================================================
+# SlimTensor INTERFACE library (header-only) Provides lightweight tensor
+# operations for AOTI backends
+# ==============================================================================
+add_library(slimtensor INTERFACE)
+target_include_directories(
+  slimtensor
+  INTERFACE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+            $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+            $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/runtime/core/portable_type/c10>
+            $<INSTALL_INTERFACE:include>
+)
+
+# Use custom macros instead of cmake-generated ones (same as Buck build)
+target_compile_definitions(
+  slimtensor INTERFACE C10_USING_CUSTOM_GENERATED_MACROS
+)
+
+# Add CUDA support for SlimTensor when building with CUDA
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  target_include_directories(slimtensor INTERFACE ${CUDAToolkit_INCLUDE_DIRS})
+  target_link_libraries(slimtensor INTERFACE CUDA::cudart)
+endif()
+
+install(
+  TARGETS slimtensor
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+# ==============================================================================
 # AOTI common shims using SlimTensor (for CUDA backend) Uses SlimTensor for all
 # tensor operations
 # TODO(gasoonjia): Replace aoti_common with this one after metal migration
 # ==============================================================================
-add_library(aoti_common_shims_slim STATIC common_shims_slim.cpp)
-target_include_directories(
-  aoti_common_shims_slim
-  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
-         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-)
+set(_aoti_common_shims_slim_sources common_shims_slim.cpp)
+if(EXECUTORCH_BUILD_CUDA)
+  list(APPEND _aoti_common_shims_slim_sources slim/cuda/guard.cpp)
+endif()
+
+add_library(aoti_common_shims_slim STATIC ${_aoti_common_shims_slim_sources})
 target_compile_options(
   aoti_common_shims_slim
-  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
-         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+  PUBLIC
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/EHsc /GR>
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-fexceptions
+    -frtti -fPIC>
 )
 target_compile_definitions(
   aoti_common_shims_slim PUBLIC $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
 )
 
-# Add CUDA include directories and link CUDA runtime when building with CUDA
-if(EXECUTORCH_BUILD_CUDA)
-  find_package(CUDAToolkit REQUIRED)
-  target_include_directories(
-    aoti_common_shims_slim PUBLIC ${CUDAToolkit_INCLUDE_DIRS}
-  )
-  target_link_libraries(aoti_common_shims_slim PUBLIC CUDA::cudart)
-endif()
+target_link_libraries(aoti_common_shims_slim PUBLIC slimtensor ${CMAKE_DL_LIBS})
 
-target_link_libraries(
-  aoti_common_shims_slim PUBLIC slimtensor extension_tensor ${CMAKE_DL_LIBS}
-)
+if(MSVC)
+  # MSVC drops unreferenced symbols from static libs; export symbols by
+  # including the objects directly in the CUDA shims DLL.
+  add_library(
+    aoti_common_shims_slim_obj OBJECT ${_aoti_common_shims_slim_sources}
+  )
+  target_compile_options(
+    aoti_common_shims_slim_obj
+    PUBLIC
+      $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/EHsc
+      /GR>
+      $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-fexceptions
+      -frtti
+      -fPIC>
+  )
+  target_compile_definitions(
+    aoti_common_shims_slim_obj
+    PUBLIC $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
+  )
+  target_link_libraries(
+    aoti_common_shims_slim_obj PUBLIC slimtensor ${CMAKE_DL_LIBS}
+  )
+endif()
 
 install(
   TARGETS aoti_common_shims_slim

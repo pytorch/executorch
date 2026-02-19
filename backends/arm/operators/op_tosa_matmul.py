@@ -3,7 +3,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 """Provide a visitor for lowering batched matmul (BMM) to TOSA."""
 
 from typing import Any, List
@@ -45,24 +44,23 @@ class MatmulVisitor(NodeVisitor):
         """Define the TOSA ``MATMUL`` operator."""
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs], ts)
-        supported_input_dtypes = [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32]
-        if self.tosa_spec.support_extension("bf16"):
-            supported_input_dtypes.append(ts.DType.BF16)
-        if self.tosa_spec.support_extension("int16"):
-            supported_input_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
             self.target,
             [*inputs],
-            supported_input_dtypes,
+            [
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.FP16,
+                ts.DType.FP32,
+                ts.DType.BF16,
+            ],
             self.tosa_spec,
         )
-        supported_output_dtypes = [ts.DType.INT32, ts.DType.FP32]
-        if self.tosa_spec.support_extension("int16"):
-            supported_output_dtypes.append(ts.DType.INT48)
         validate_valid_dtype(
             self.target,
             [output],
-            supported_output_dtypes,
+            [ts.DType.INT32, ts.DType.INT48, ts.DType.FP32],
             self.tosa_spec,
         )
 

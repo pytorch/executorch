@@ -148,6 +148,7 @@ fbcode_target(_kind = runtime.python_library,
 fbcode_target(_kind = runtime.python_library,
     name = "export_library",
     srcs = [
+        "convert_weights.py",
         "export_llama.py",
         "export_llama_lib.py",
         "model.py",

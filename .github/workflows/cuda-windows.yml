@@ -32,6 +32,8 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "nvidia"
+            name: "parakeet-tdt"
         quant:
             - "non-quantized"
             - "quantized-int4-weight-only"
@@ -66,6 +68,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup ExecuTorch"
+        # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
+        export USE_MKL=OFF
         PYTHON_EXECUTABLE=python ./install_executorch.sh
         echo "::endgroup::"
 

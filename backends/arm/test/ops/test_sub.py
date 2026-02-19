@@ -34,13 +34,23 @@ sub_test_data = {
     "zeros": lambda: (torch.zeros(10),),
 }
 
+sub_test_data_fp16 = {
+    "rand_2D_fp16": lambda: (torch.rand(4, 4, dtype=torch.float16),),
+}
+
+sub_test_data_bf16 = {
+    "rand_2D_bf16": lambda: (torch.rand(4, 4, dtype=torch.bfloat16),),
+}
+
 # Two-input subtraction (x - y)
 sub2_test_data = {
     "rand_2D_4x4": lambda: (torch.rand(4, 4), torch.rand(4, 4)),
     "rand_3D_4x4x4": lambda: (torch.rand(4, 2, 2), torch.rand(4, 2, 2)),
     "rand_4D_2x2x4x4": lambda: (torch.rand(2, 2, 4, 4), torch.rand(2, 2, 4, 4)),
+    # Ensure 'uniformly' large values in range [1*10e30, 2*10e30], otherwise small values become zero, leading to diff
+    # between quantized and unquantized graph
     "rand_4D_big_small": lambda: (
-        (10e30) * torch.randn(1, 20, 30, 40),
+        (10e30) * (torch.rand(1, 20, 30, 40) + 1),
         torch.randn(1, 20, 30, 40),
     ),
     "zeros": lambda: (torch.rand(4, 4), torch.zeros(4, 4)),
@@ -52,8 +62,11 @@ sub2_test_data = {
     "rand_3d_Scalar": lambda: (torch.rand(1, 6, 2), 1),
 }
 
-sub_test_data_bf16 = {
-    "rand_2D_bf16": lambda: (torch.rand(4, 4, dtype=torch.bfloat16),),
+sub2_test_data_fp16 = {
+    "rand_2D_pair_fp16": lambda: (
+        torch.rand(2, 3, dtype=torch.float16),
+        torch.rand(2, 3, dtype=torch.float16),
+    ),
 }
 
 sub2_test_data_bf16 = {
@@ -101,7 +114,9 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 
-@common.parametrize("test_data", sub_test_data | sub_test_data_bf16)
+@common.parametrize(
+    "test_data", sub_test_data | sub_test_data_fp16 | sub_test_data_bf16
+)
 def test_sub_tensor_tosa_FP(test_data):
     """Test Subtraction (TOSA FP)"""
     pipeline = TosaPipelineFP[input_t1](
@@ -114,7 +129,9 @@ def test_sub_tensor_tosa_FP(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub2_test_data | sub2_test_data_bf16)
+@common.parametrize(
+    "test_data", sub2_test_data | sub2_test_data_fp16 | sub2_test_data_bf16
+)
 def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA FP)"""
     pipeline = TosaPipelineFP[input_t2](
@@ -123,7 +140,9 @@ def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub_tan_test_data | sub2_test_data_bf16)
+@common.parametrize(
+    "test_data", sub_tan_test_data | sub2_test_data_fp16 | sub2_test_data_bf16
+)
 def test_sub_tensor_tosa_FP_alpha(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction with alpha (TOSA FP)"""
     pipeline = TosaPipelineFP[input_t2](
@@ -142,7 +161,22 @@ def test_sub_tensor_tosa_INT(test_data):
 @common.parametrize("test_data", sub2_test_data)
 def test_sub_tensor_tosa_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA INT)"""
-    pipeline = TosaPipelineINT[input_t2](Sub2(), test_data(), aten_op, exir_op, qtol=0)
+    test_data = test_data()
+    if test_data[0].flatten()[0].item() > 10e30:
+        # Even though diffs are relatively small for large values they are still big in absolute terms, triggering the
+        # cosine threshold check.
+        cosine_threshold = None
+    else:
+        cosine_threshold = 0.9
+
+    pipeline = TosaPipelineINT[input_t2](
+        Sub2(),
+        test_data,
+        aten_op,
+        exir_op,
+        qtol=0,
+        cosine_threshold=cosine_threshold,
+    )
     pipeline.run()
 
 
@@ -151,7 +185,13 @@ def test_sub_tensor_tosa_INT_3(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA INT)"""
     # This test has only been added to the tosa INT profile in order to catch quantization-induced errors.
     pipeline = TosaPipelineINT[input_t2](
-        SubTan(), test_data(), aten_op, exir_op, qtol=0
+        SubTan(),
+        test_data(),
+        aten_op,
+        exir_op,
+        qtol=0,
+        frobenius_threshold=None,  # Outputs from this tests are unbounded due to tan(), so checking quantization errors doesn't make sense
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -217,7 +257,7 @@ def test_sub_tensor_u85_INT(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub_test_data)
+@common.parametrize("test_data", sub_test_data | sub_test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     """Test Subtraction (VGF FP)"""
@@ -231,7 +271,7 @@ def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub2_test_data)
+@common.parametrize("test_data", sub2_test_data | sub2_test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_sub_tensor_vgf_no_quant_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (VGF FP)"""

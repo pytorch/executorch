@@ -1,0 +1,44 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "sortformer-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/sortformer",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "sortformer-cpu",
+            "displayName": "Sortformer runner (CPU)",
+            "inherits": ["sortformer-base"]
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "sortformer-cpu",
+            "displayName": "Build Sortformer runner (CPU)",
+            "configurePreset": "sortformer-cpu",
+            "targets": ["sortformer_runner"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "sortformer-cpu",
+            "displayName": "Configure and build Sortformer runner (CPU)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "sortformer-cpu"
+                },
+                {
+                    "type": "build",
+                    "name": "sortformer-cpu"
+                }
+            ]
+        }
+    ]
+}

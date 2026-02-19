@@ -5,16 +5,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Test CUDA/Metal model end-to-end, need to run .ci/scripts/export_model_artifact.sh first
+# Test CUDA/Metal/XNNPACK model end-to-end, need to run .ci/scripts/export_model_artifact.sh first
 
 show_help() {
   cat << EOF
 Usage: test_model_e2e.sh <device> <hf_model> <quant_name> [model_dir]
 
-Build and run end-to-end tests for CUDA/Metal models.
+Build and run end-to-end tests for CUDA/Metal/XNNPACK models.
 
 Arguments:
-  device      cuda or metal (required)
+  device      cuda, metal, or xnnpack (required)
 
   hf_model    HuggingFace model ID (required)
               Supported models:
@@ -22,12 +22,14 @@ Arguments:
                 - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                 - google/gemma-3-4b-it
                 - nvidia/parakeet-tdt
+                - mistralai/Voxtral-Mini-4B-Realtime-2602
 
   quant_name  Quantization type (required)
               Options:
                 - non-quantized
                 - quantized-int4-tile-packed
                 - quantized-int4-weight-only
+                - quantized-8da4w (XNNPACK only)
 
   model_dir   Directory containing model artifacts (optional, default: current directory)
               Expected files: model.pte, aoti_cuda_blob.ptd (CUDA only)
@@ -37,6 +39,7 @@ Examples:
   test_model_e2e.sh metal "openai/whisper-small" "non-quantized"
   test_model_e2e.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed" "./model_output"
   test_model_e2e.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./model_output"
+  test_model_e2e.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./model_output"
 EOF
 }
 
@@ -89,7 +92,7 @@ case "$HF_MODEL" in
     MODEL_NAME="voxtral"
     RUNNER_TARGET="voxtral_runner"
     RUNNER_PATH="voxtral"
-    EXPECTED_OUTPUT="existence"
+    EXPECTED_OUTPUT="identity"
     PREPROCESSOR="voxtral_preprocessor.pte"
     TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main" # @lint-ignore
     TOKENIZER_FILE="tekken.json"
@@ -133,9 +136,21 @@ case "$HF_MODEL" in
     AUDIO_FILE="test_audio.wav"
     IMAGE_PATH=""
     ;;
+  mistralai/Voxtral-Mini-4B-Realtime-2602)
+    MODEL_NAME="voxtral_realtime"
+    RUNNER_TARGET="voxtral_realtime_runner"
+    RUNNER_PATH="voxtral_realtime"
+    EXPECTED_OUTPUT="Quilter"
+    PREPROCESSOR="preprocessor.pte"
+    TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602/resolve/main" # @lint-ignore
+    TOKENIZER_FILE="tekken.json"
+    AUDIO_URL=""
+    AUDIO_FILE="test_audio.wav"
+    IMAGE_PATH=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, nvidia/parakeet-tdt"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, nvidia/parakeet-tdt"
     exit 1
     ;;
 esac
@@ -148,8 +163,8 @@ echo "::endgroup::"
 echo "::group::Prepare $MODEL_NAME Artifacts"
 
 
-# Download tokenizer files (skip for parakeet which exports tokenizer with model)
-if [ "$MODEL_NAME" != "parakeet" ]; then
+# Download tokenizer files (skip for parakeet and voxtral_realtime which bundle tokenizer in export)
+if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
     curl -L $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
@@ -162,10 +177,10 @@ fi
 # Download test files
 if [ "$AUDIO_URL" != "" ]; then
   curl -L $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
-elif [[ "$MODEL_NAME" == *whisper* ]]; then
+elif [[ "$MODEL_NAME" == *whisper* ]] || [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   conda install -y -c conda-forge "ffmpeg<8"
   pip install datasets soundfile
-  pip install torchcodec==0.10.0.dev20251211 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+  pip install torchcodec==0.11.0.dev20260217 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
 fi
 
@@ -174,12 +189,17 @@ echo "::endgroup::"
 
 echo "::group::Build $MODEL_NAME Runner"
 
-if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ]; then
-  echo "Error: Unsupported device '$DEVICE'. Must be 'cuda' or 'metal'."
+if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ] && [ "$DEVICE" != "xnnpack" ]; then
+  echo "Error: Unsupported device '$DEVICE'. Must be 'cuda', 'metal', or 'xnnpack'."
   exit 1
 fi
 
-MAKE_TARGET="${RUNNER_PATH}-${DEVICE}"
+# Map device to make target (xnnpack uses cpu target which includes XNNPACK)
+if [ "$DEVICE" = "xnnpack" ]; then
+  MAKE_TARGET="${RUNNER_PATH}-cpu"
+else
+  MAKE_TARGET="${RUNNER_PATH}-${DEVICE}"
+fi
 make "${MAKE_TARGET}"
 echo "::endgroup::"
 
@@ -192,6 +212,13 @@ fi
 # Build runner command with common arguments
 RUNNER_BIN="cmake-out/examples/models/$RUNNER_PATH/$RUNNER_TARGET"
 RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --temperature 0"
+# Patch absolute libomp install name from some torch nightlies to rpath-based
+# lookup so the runner works on macOS images without /opt/llvm-openmp.
+if [ "$(uname -s)" = "Darwin" ] && [ -f "$RUNNER_BIN" ]; then
+  if otool -L "$RUNNER_BIN" | grep -q "/opt/llvm-openmp/lib/libomp.dylib"; then
+    install_name_tool -change /opt/llvm-openmp/lib/libomp.dylib @rpath/libomp.dylib "$RUNNER_BIN"
+  fi
+fi
 # For CUDA, add data_path argument (Metal embeds data in .pte)
 if [ "$DEVICE" = "cuda" ]; then
   RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
@@ -214,6 +241,9 @@ case "$MODEL_NAME" in
     if [ "$DEVICE" = "cuda" ]; then
       RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
     fi
+    ;;
+  voxtral_realtime)
+    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0 --streaming"
     ;;
 esac
 

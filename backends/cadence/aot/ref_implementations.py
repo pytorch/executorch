@@ -6,7 +6,8 @@
 
 # pyre-strict
 
-from typing import Callable, Protocol, TypeVar
+from pathlib import Path
+from typing import Callable, Optional, Protocol, TypeVar
 
 import torch
 import torch.nn as nn
@@ -19,8 +20,6 @@ m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
 try:
     torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
 except (OSError, RuntimeError):
-    # Fall back to path-based loading for CMake/OSS builds
-    from pathlib import Path
 
     custom_libs: list[Path] = list(
         Path(__file__)
@@ -1020,11 +1019,13 @@ def quantized_w8a32_gru(
     assert inputs.dtype == torch.float32
     assert hidden.dtype == torch.float32
 
-    if len(hidden.shape) > 2:
-        raise ValueError("Hidden state must be 2D or 1D")
-
-    if len(hidden.shape) == 2 and hidden.shape[0] != 1:
-        raise ValueError("Leading dimension of hidden state must be 1")
+    # Hidden state can be 1D, 2D (1, hidden_dim), or 3D (1, 1, hidden_dim).
+    # All leading dimensions must be 1.
+    for d in range(len(hidden.shape) - 1):
+        if hidden.shape[d] != 1:
+            raise ValueError(
+                f"Leading dimension {d} of hidden state must be 1, got {hidden.shape[d]}"
+            )
 
     original_hidden_shape = hidden.shape
     hidden = hidden.view(-1)
@@ -1060,7 +1061,7 @@ def quantized_w8a32_gru(
 
     assert new_hidden.shape == original_hidden_shape
 
-    new_hidden = new_hidden.view(-1)
+    new_hidden = new_hidden.view(original_hidden_shape)
     return torch.stack([new_hidden, new_hidden], dim=0)
 
 
@@ -1102,18 +1103,34 @@ def quantized_conv2d_nhwc_per_tensor(
     """
 
     # Convert to NCHW format to reuse the existing implementation
-    conv_is_1d = False
+    in_channels = input_tensor.shape[-1]
+    # Depthwise weights have one fewer dimension than the input because the IC
+    # dimension (always 1) was squeezed out during the NCHW->NHWC conversion in
+    # replace_ops.py.  E.g. 2D depthwise: weight is [KH, KW, OC] (3D) while
+    # input is [N, H, W, C] (4D).  A regular conv with in_channels==groups==1
+    # still has 4D weights [OC, KH, KW, IC].
+    is_depthwise = in_channels == groups and weight.dim() < input_tensor.dim()
+
     if len(input_tensor.shape) == 3:
-        conv_is_1d = True
+        # 1D conv: input is [N, L, C] -> [N, C, L]
         input_tensor = input_tensor.movedim(-1, 1).contiguous()
-        if len(weight.shape) != 3:
-            raise ValueError("Weight tensor must be 3D if input is 3D")
-        weight = weight.movedim(-1, 1).contiguous()
+        if is_depthwise:
+            # 1D depthwise: weight is [K, OC] -> [OC, 1, K]
+            weight = weight.permute(1, 0).unsqueeze(1).contiguous()
+        else:
+            # 1D regular: weight is [OC, K, IC] -> [OC, IC, K]
+            weight = weight.movedim(-1, 1).contiguous()
+        conv_is_1d = True
     else:
+        # 2D conv: input is [N, H, W, C] -> [N, C, H, W]
         input_tensor = input_tensor.movedim(-1, -3)
-        if len(weight.shape) != 4:
-            raise ValueError("Weight tensor must be 4D if input is nd > 3")
-        weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+        if is_depthwise:
+            # 2D depthwise: weight is [KH, KW, OC] -> [OC, 1, KH, KW]
+            weight = weight.permute(2, 0, 1).unsqueeze(1).contiguous()
+        else:
+            # 2D regular: weight is [OC, KH, KW, IC] -> [OC, IC, KH, KW]
+            weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+        conv_is_1d = False
 
     nchw_out = quantized_conv_per_tensor(
         input_tensor,
@@ -2290,3 +2307,16 @@ def sdpa_bitwise_mask_gen(mask: torch.Tensor, threshold: float) -> torch.Tensor:
         packed_last = last_dim // 8
         # Reshape packed to match mask shape, with last dim packed to bytes
         return packed.view(*original_shape[:-1], packed_last)
+
+
+@impl_tracked(m, "slice_scatter_")
+def slice_scatter_impl(
+    self: torch.Tensor,
+    src: torch.Tensor,
+    dim: int = 0,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+    step: int = 1,
+) -> torch.Tensor:
+    self[:] = torch.ops.aten.slice_scatter.default(self, src, dim, start, end, step)
+    return self

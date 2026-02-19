@@ -55,6 +55,11 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
+DEFINE_int32(
+    target_size,
+    896,
+    "Target image size for resizing. Defaults to 896.");
+
 DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 
 namespace {
@@ -109,8 +114,7 @@ MultimodalInput loadImage(const std::string& image_path) {
       height,
       channels);
 
-  // Resize to 896x896 (Gemma3 vision encoder input size)
-  const int target_size = 896;
+  const int target_size = FLAGS_target_size;
   std::vector<uint8_t> resized_data(target_size * target_size * channels);
 
   int resize_result = stbir_resize_uint8(

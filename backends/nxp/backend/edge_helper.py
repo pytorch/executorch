@@ -1,12 +1,15 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+import logging
 
 import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import GraphModule, Node
+from torch.fx.node import Argument
 from torch.nn import Parameter
 
 QUANTIZE_OPERATORS = [
@@ -18,6 +21,14 @@ DEQUANTIZE_OPERATORS = [
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
 ]
+
+# A set of operators which could possibly be no-ops in certain conditions. The operators in this set will be proclaimed
+#  as no-ops (and potentially not delegated), if their input and output tensors are equal (when run on random data).
+no_op_candidates = {
+    exir_ops.edge.aten.add.Tensor,
+    exir_ops.edge.aten.mul.Tensor,
+    exir_ops.edge.aten.sub.Tensor,
+}
 
 
 def input_tensor(node: Node, input_index: int) -> torch.Tensor:
@@ -220,3 +231,139 @@ def get_non_qdq_parent(node: Node, input_index: int = 0) -> Node | None:
         return None
 
     return quant_node.args[0]
+
+
+def try_get_dequantized_data(
+    dequantize_node: Node, parameters_mapping: dict[str, Parameter]
+) -> Parameter | None:
+    """Get the dequantized data from the following pattern. The dequantization formula is `r = (q - Z) * S`, where `q`
+        represents the static quantized data.
+
+         ┌─────────────────────────┐
+         │ <static_quantized_data> │
+         └────────────┬────────────┘
+                      │
+                ┌─────▼──────┐
+                │ Dequantize │
+                └─────┬──────┘
+                      ▼
+
+
+    :param dequantize_node: The Dequantize node from the pattern, which dequantizes the static quantized data.
+    :param parameters_mapping: Dict mapping tensor names to their static data. Should be inferred from the
+                                `state_dict` attribute of an edge program.
+    :return: The dequantized static parameter, or `None` if the data is not available.
+    """
+    if not _is_dequantize(dequantize_node):
+        return None
+
+    if not node_is_static_tensor(param := dequantize_node.args[0], parameters_mapping):
+        return None
+
+    # The pattern is correct. Dequantize the static data and return it.
+    scale, zp = get_quantization_parameters_for(dequantize_node)
+    quantized_data = parameters_mapping[param.name]
+
+    dequantized_data = (quantized_data - zp) * scale
+    return dequantized_data
+
+
+def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
+    """Check if a node is a no-op operation from the perspective of Neutron."""
+    if node.op != "call_function":
+        raise ValueError(
+            f"is_no_op_on_neutron(): Expected call_function node, got {node.op}."
+        )
+
+    if node.target in [
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
+        exir_ops.edge.aten.clone.default,
+    ]:
+        # Known operators which are always no-ops on Neutron.
+        return True
+
+    if node.target == exir_ops.edge.aten.cat.default and len(node.args[0]) == 1:
+        # Concatenation with 1 input is a no-op.
+        return True
+
+    # For any other operators, run them with random data and see if the output is identical to the input.
+    torch.manual_seed(42)
+    # noinspection PyBroadException
+    try:
+        input_data = None
+        args_with_random_data = []
+        for arg in node.args:
+            match arg:
+                case Node():
+                    # `arg` is either another operator, a model input, or a static parameter.
+
+                    if (
+                        data := try_get_dequantized_data(arg, parameters_mapping)
+                    ) is not None:
+                        # The `arg` is a static parameter. Use it's actual static data during the no-op test.
+                        args_with_random_data.append(data)
+
+                    else:
+                        # The `arg` is a compute node or a model input. Replace it with random data for the no-op test.
+                        if input_data is not None:
+                            # Some random input data for `node` has already been stored, which means that the node has
+                            #  more than 1 dynamic input node. Therefore, it cannot be a no-op.
+                            return False
+
+                        # Generate the random data. Use the range [-5, 5) to avoid proclaiming operations like Relu as
+                        #  no-ops.
+                        val = arg.meta["val"]
+                        input_data = torch.rand(val.shape, dtype=val.dtype) * 10 - 5
+                        args_with_random_data.append(input_data)
+
+                case list():
+                    # Lists of input nodes are not supported to keep the code simple. It is not crucial to support this
+                    #  case as the affected operators are either not supported on Neutron, or are extremely unlikely to
+                    #  be no-ops (e.g. GRU). One exception is `aten.cat`, which is explicitly supported above.
+                    return False
+
+                case _:
+                    # Generic argument (value). Not an input from a previous node. Store it in the arguments for the
+                    #  no-op test.
+                    args_with_random_data.append(arg)
+
+        # Run the operator with the random data. If the input equals the output, the node is considered a no-op.
+        output_data = node.target(*args_with_random_data)
+
+        val = node.meta["val"]
+        if (
+            output_data.dtype == val.dtype
+            and output_data.shape == val.shape
+            and torch.all(input_data == output_data)
+        ):
+            # The operator preserves the shape, data type, and data. Therefore, it is a no-op from the perspective of
+            #  Neutron.
+            if node.target in no_op_candidates:
+                return True
+            else:
+                logging.info(
+                    f"Found the operator `{node.target}`, which appears to be a no-op, but is not in the "
+                    "known no-op list. Please report this issue."
+                )
+                return False
+
+        else:
+            # Type, shape, or data doesn't match.
+            return False
+
+    except Exception:
+        # If execution fails, assume it's not a no-op.
+        return False
+
+
+def node_has_well_defined_shape(node: Node) -> bool:
+    if (val := node.meta.get("val")) is None:
+        # The node doesn't have a shape stored at all.
+        return False
+
+    return all(isinstance(dim, int) and dim > 0 for dim in val.shape)
+
+
+def try_get_arg(node: Node, idx: int) -> Argument | None:
+    return node.args[idx] if idx < len(node.args) else None

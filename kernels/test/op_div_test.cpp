@@ -601,3 +601,98 @@ TEST_F(OpDivScalarOutTest, OptimizedSanityCheck) {
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {0.65, 1.05, 2.3, 4.1}));
 }
+
+//
+// Complex Type Tests
+//
+
+TEST_F(OpDivOutTest, ComplexFloatBasic) {
+  TensorFactory<ScalarType::ComplexFloat> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  // (1+2i) / (1+0i) = (1+2i)
+  // (4+4i) / (2+0i) = (2+2i)
+  // (3+4i) / (1-1i) = (3+4i)(1+1i) / 2 = (-1+7i) / 2 = (-0.5+3.5i)
+  // (8+0i) / (2+2i) = (8)(2-2i) / 8 = (2-2i)
+  Tensor a = tf.make(
+      sizes,
+      {executorch::aten::complex<float>(1.0f, 2.0f),
+       executorch::aten::complex<float>(4.0f, 4.0f),
+       executorch::aten::complex<float>(3.0f, 4.0f),
+       executorch::aten::complex<float>(8.0f, 0.0f)});
+
+  Tensor b = tf.make(
+      sizes,
+      {executorch::aten::complex<float>(1.0f, 0.0f),
+       executorch::aten::complex<float>(2.0f, 0.0f),
+       executorch::aten::complex<float>(1.0f, -1.0f),
+       executorch::aten::complex<float>(2.0f, 2.0f)});
+
+  Tensor out = tf.zeros(sizes);
+
+  op_div_out(a, b, out);
+
+  Tensor expected = tf.make(
+      sizes,
+      {executorch::aten::complex<float>(1.0f, 2.0f),
+       executorch::aten::complex<float>(2.0f, 2.0f),
+       executorch::aten::complex<float>(-0.5f, 3.5f),
+       executorch::aten::complex<float>(2.0f, -2.0f)});
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpDivOutTest, ComplexDoubleBasic) {
+  TensorFactory<ScalarType::ComplexDouble> tf;
+
+  const std::vector<int32_t> sizes = {2};
+
+  Tensor a = tf.make(
+      sizes,
+      {executorch::aten::complex<double>(6.0, 8.0),
+       executorch::aten::complex<double>(4.0, 0.0)});
+
+  Tensor b = tf.make(
+      sizes,
+      {executorch::aten::complex<double>(2.0, 0.0),
+       executorch::aten::complex<double>(0.0, 2.0)});
+
+  Tensor out = tf.zeros(sizes);
+
+  op_div_out(a, b, out);
+
+  // (6+8i) / 2 = (3+4i)
+  // 4 / 2i = 4 * (-i) / 2 = -2i = (0-2i)
+  Tensor expected = tf.make(
+      sizes,
+      {executorch::aten::complex<double>(3.0, 4.0),
+       executorch::aten::complex<double>(0.0, -2.0)});
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpDivOutTest, ComplexFloatIdentity) {
+  TensorFactory<ScalarType::ComplexFloat> tf;
+
+  const std::vector<int32_t> sizes = {3};
+
+  // Dividing by 1 should return the same value
+  Tensor a = tf.make(
+      sizes,
+      {executorch::aten::complex<float>(1.0f, 2.0f),
+       executorch::aten::complex<float>(3.0f, 4.0f),
+       executorch::aten::complex<float>(-5.0f, 6.0f)});
+
+  Tensor one = tf.make(
+      sizes,
+      {executorch::aten::complex<float>(1.0f, 0.0f),
+       executorch::aten::complex<float>(1.0f, 0.0f),
+       executorch::aten::complex<float>(1.0f, 0.0f)});
+
+  Tensor out = tf.zeros(sizes);
+
+  op_div_out(a, one, out);
+
+  EXPECT_TENSOR_CLOSE(out, a);
+}

@@ -34,6 +34,10 @@ test_data_suite = {
     "op_reciprocal_rank4_large_randn": lambda: 200 * torch.randn(1, 10, 25, 20) + 1,
 }
 
+test_data_suite_fp16 = {
+    "op_reciprocal_rank2_fp16": lambda: torch.rand(3, 4, dtype=torch.float16),
+}
+
 test_data_suite_bf16 = {
     "op_reciprocal_rank2_bf16": lambda: torch.rand(3, 4, dtype=torch.bfloat16),
 }
@@ -45,7 +49,9 @@ class Reciprocal(torch.nn.Module):
         return input_.reciprocal()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
+)
 def test_reciprocal_tosa_FP(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](
         Reciprocal(),
@@ -64,6 +70,8 @@ def test_reciprocal_tosa_INT(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         exir_op=[],
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -93,7 +101,7 @@ def test_reciprocal_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_reciprocal_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](

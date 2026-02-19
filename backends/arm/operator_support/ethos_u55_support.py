@@ -86,7 +86,7 @@ class EthosU55DtypeSupport(OperatorSupportBase):
         exir_ops.edge.aten.permute_copy.default,
     ]
 
-    target_ops_i8 = tuple(TableOps.included_ops())
+    target_ops_i8_i16 = (*TableOps.included_ops(), exir_ops.edge.aten.amax.default)
 
     def is_node_supported(  # noqa: C901
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
@@ -117,7 +117,7 @@ class EthosU55DtypeSupport(OperatorSupportBase):
                 )
                 return False
 
-        if node.target in self.target_ops_i8:
+        if node.target in self.target_ops_i8_i16:
             if dtype not in (torch.int8, torch.int16):
                 self.reporter.report_reject(
                     node, f"Unsupported dtype {dtype} (Supports i8, i16)."
@@ -187,7 +187,6 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.logical_or.default,
         exir_ops.edge.aten.logical_xor.default,
         exir_ops.edge.aten.logical_not.default,
-        exir_ops.edge.aten.amax.default,  # REDUCE_MAX
         exir_ops.edge.aten.amin.default,  # REDUCE_MIN
         exir_ops.edge.aten.conv3d.default,  # CONV3D
         exir_ops.edge.aten.conv3d.padding,  # CONV3D (deprecated alias)
@@ -301,10 +300,10 @@ class EthosU55ViewCheck(OperatorSupportBase):
         output_shape: shape_t,
         dtype: torch.dtype | None,
     ) -> bool:
-        """Validate high-rank reshape scenarios against U55 restrictions.
-        If either input or output rank of node is >4, figuring out whether
-        a transpose is needed or not is complex. Instead, conservatively
-        check that the corresponding transpose is supported on hardware.
+        """Validate high-rank reshape scenarios against U55 restrictions. If
+        either input or output rank of node is >4, figuring out whether a
+        transpose is needed or not is complex. Instead, conservatively check
+        that the corresponding transpose is supported on hardware.
 
         Args:
             node (fx.Node): Reshape node under inspection.
@@ -364,10 +363,9 @@ class EthosU55ViewCheck(OperatorSupportBase):
     def _transpose_requirements(
         self, input_shape: shape_t, output_shape: shape_t
     ) -> tuple[bool, bool]:
-        """Determine if reshaping requires input or output transposes.
-        For ranks >4, assume transpose is needed as we cannot determine
-        the spatial rank reliably which is needed to determine if a transpose
-        is needed.
+        """Determine if reshaping requires input or output transposes. For ranks
+        >4, assume transpose is needed as we cannot determine the spatial rank
+        reliably which is needed to determine if a transpose is needed.
 
         Args:
             input_shape (shape_t): Original tensor shape.
@@ -423,7 +421,8 @@ class EthosU55ViewCheck(OperatorSupportBase):
         needs_input_transpose: bool,
         needs_output_transpose: bool,
     ) -> bool:
-        """Apply dtype- and size-based constraints for transpose insertions
+        """Apply dtype- and size-based constraints for transpose insertions.
+
         based on:
             - NCHW -> NHWC or NHWC -> NCHW transposes are not supported in int32.
             - Transposes with product of axes >65536 are not supported.

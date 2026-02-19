@@ -277,7 +277,7 @@ class SDPASimple(torch.nn.Module):
         attn_weight = torch.softmax(attn_weight, dim=-1)
         y = attn_weight @ v
 
-        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+        return y.transpose(1, 2).reshape(bsz, seqlen, self.dim)
 
 
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -332,7 +332,7 @@ class SDPAFlex(torch.nn.Module):
         attn_weight = torch.softmax(attn_weight, dim=-1)
         y = attn_weight @ v
 
-        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+        return y.transpose(1, 2).reshape(bsz, seqlen, self.dim)
 
 
 def replace_sdpa_with_simple_sdpa(module: torch.nn.Module):
@@ -414,7 +414,7 @@ class SDPACoreML(torch.nn.Module):
 
         y = torch.ops.coreml.sdpa(q, k, v, attn_mask)
 
-        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+        return y.transpose(1, 2).reshape(bsz, seqlen, self.dim)
 
 
 def replace_sdpa_with_coreml_sdpa(module: torch.nn.Module):
