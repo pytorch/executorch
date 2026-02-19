@@ -14,12 +14,14 @@ buck2-bin/
 build/
 cmake-android-out/
 cmake-ios-out/
+cmake-android-out*
 cmake-out*
 cmake-out-android/
 build-android/
 build-x86/
 dist/
 arm-scratch/
+ethos-u-scratch/
 executorch.egg-info
 pip-out/
 build-profiling/

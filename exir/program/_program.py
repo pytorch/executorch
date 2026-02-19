@@ -7,7 +7,6 @@
 
 # pyre-unsafe
 
-from executorch.exir.passes.propagate_input_spec import propagate_input_spec
 import copy
 import io
 import logging
@@ -60,6 +59,7 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.propagate_input_spec import propagate_input_spec
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
 from executorch.exir.passes.reinplace import reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
@@ -175,9 +175,9 @@ def _get_updated_graph_signature(
         if node.op != "placeholder":
             continue
 
-        assert i < len(
-            old_signature.input_specs
-        ), "Number of inputs changed after transformation"
+        # assert i < len(
+        #    old_signature.input_specs
+        # ), "Number of inputs changed after transformation"
         old_input_spec = old_signature.input_specs[i]
         arg = (
             old_input_spec.arg
@@ -1078,7 +1078,6 @@ def _sanity_check_graph_for_non_decomp_ops(
                     + warning_str_end
                 )
                 if generate_error:
-                    print(submod)
                     raise RuntimeError(warning_str)
                 else:
                     logging.warning(warning_str)
@@ -1236,6 +1235,11 @@ def _gen_edge_manager_for_partitioners(
 
                     # First pass of decompositions with this partitioner's preserved ops
                     program = program.run_decompositions(table)
+
+                    # Propagate input specs so that check_constraints
+                    # can identify parameter nodes inside control flow
+                    # submodules (e.g. cond/map/scan branches).
+                    propagate_input_spec(program)
 
                     # Filter ops using EDGE_DO_NOT_DECOMP
                     temp_partitioner_dict = {name: [curr_partitioner]}

@@ -66,6 +66,7 @@ from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.propagate_input_spec import propagate_input_spec
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
@@ -73,7 +74,6 @@ from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
-from executorch.exir.passes.propagate_input_spec import propagate_input_spec
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 from executorch.exir.program._program import lift_constant_tensor_pass
@@ -2627,7 +2627,7 @@ class TestPasses(unittest.TestCase):
                 input_spec = node.meta.get("input_spec", None)
                 self.assertIsNotNone(
                     input_spec,
-                    f"Missing input_spec on true_submodule placeholder: {node.target}"
+                    f"Missing input_spec on true_submodule placeholder: {node.target}",
                 )
 
         for node in false_submodule.graph.nodes:
@@ -2635,7 +2635,7 @@ class TestPasses(unittest.TestCase):
                 input_spec = node.meta.get("input_spec", None)
                 self.assertIsNotNone(
                     input_spec,
-                    f"Missing input_spec on false_submodule placeholder: {node.target}"
+                    f"Missing input_spec on false_submodule placeholder: {node.target}",
                 )
 
     def test_input_spec_prop_map(self) -> None:
