@@ -14,9 +14,7 @@ edge_tan_op = exir_ops.edge.aten.tan.default
 
 
 class DecomposeTanPass(ArmPass):
-    """
-    Decomposes tan to sin/cos
-    """
+    """Decomposes tan to sin/cos."""
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivPass}
 

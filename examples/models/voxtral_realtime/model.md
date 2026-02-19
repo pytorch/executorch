@@ -80,8 +80,8 @@ window_size=400, downsample_factor=4, frame_rate=12.5 fps.
 ## ExecuTorch Design Choices
 
 The model is written directly with ExecuTorch custom ops rather than using
-source transformations. The patterns come from `examples/models/llama/` and
-`optimum-executorch`.
+source transformations. The patterns come from `examples/models/llama/`,
+`extension/llm/export/builder.py`, and `optimum-executorch`.
 
 ### KV cache: `[B, S, H, D]` layout + `update_cache` custom op
 
@@ -101,12 +101,13 @@ Reference: `examples/models/llama/source_transformation/custom_kv_cache.py`
 `SDPA` is its own module (not inline code), making it swappable for
 alternative implementations (quantized, CoreML, manual matmul).
 
-Uses `torch.ops.llama.custom_sdpa(q, k, v, start_pos, None, 0, True)`
-which handles:
-- **GQA expansion** internally (no `repeat_interleave` needed)
-- **Causal masking** via `start_pos` + `is_causal=True` (no pre-built
-  mask buffer)
-- **float32 upcast** for numerical stability
+Two modes (mutually exclusive):
+- **Causal** (decoder): `custom_sdpa(q, k, v, start_pos, None, 0, True)`.
+  Causal masking via `start_pos` + `is_causal=True`.
+- **Explicit mask** (streaming encoder): `custom_sdpa(q, k, v, start_pos, mask, 0, False)`.
+  Sliding window mask from `EncoderRingKVCache.create_causal_mask()`.
+
+Both modes handle GQA expansion internally and upcast to float32.
 
 Reference: `examples/models/llama/source_transformation/sdpa.py`
 (`SDPACustom`).
@@ -142,13 +143,152 @@ Uses `F.rms_norm(x, (self.dim,), self.weight, self.eps)` with a stored
 
 ### Encoder attention: standard `F.scaled_dot_product_attention`
 
-The encoder has no KV cache (processes full mel at once in offline mode) and
+The offline encoder has no KV cache (processes full mel at once) and
 no GQA (n_heads == n_kv_heads). Uses `F.scaled_dot_product_attention` with
 `is_causal=True` and standard `[B, H, T, D]` layout. No custom ops needed.
 
-Uses full causal attention (no sliding window of 750) — acceptable for
-offline mode and simpler for export. Sliding window would be added for
-streaming (Phase 3).
+The offline encoder uses full causal attention (no sliding window).
+The model's `params.json` specifies `sliding_window: 750` but this is
+only enforced in the streaming encoder (via `EncoderRingKVCache`). For
+audio shorter than 750 encoder frames (~15s), full causal is equivalent.
+
+The streaming encoder enforces the trained sliding window — see
+[Encoder KV cache](#encoder-kv-cache).
+
+## Streaming Encoder (`StreamingAudioEncoderExport`)
+
+For streaming/live transcription, the encoder processes audio incrementally
+(8 mel frames = 80ms per step) instead of the full mel at once.
+
+### Architecture
+
+`StreamingAudioEncoderExport` shares all weights with the offline encoder
+but uses a different forward path:
+
+```
+mel_chunk (1, 128, 8)
+  + conv1_state (1, 128, 2) + conv2_state (1, 1280, 2)
+  -> cat(state, chunk) -> raw Conv1d (no CausalConv1d padding) -> GELU
+  -> cat(state, conv1_out) -> raw Conv1d -> GELU
+(1, 1280, 4) -> transpose -> (1, 4, 1280)
+  -> 32x streaming encoder layer (EncoderRingKVCache + custom_sdpa)
+  -> RMSNorm
+(1, 4, 1280)
+  -> Reshape downsample (1, 1, 5120) -> Adapter (1, 1, 3072)
+-> audio_embeds, new_conv1_state, new_conv2_state
+```
+
+### Conv state management
+
+The causal convolutions need left context across chunk boundaries.
+Instead of zero-padding (offline) or recompute-with-overlap (vLLM),
+explicit conv state carries the tail of the previous chunk:
+
+- **Conv1** (kernel=3, stride=1): state = last 2 mel frames from previous
+  chunk. `cat(state, chunk)` → (1, 128, 10) → Conv1d → (1, 1280, 8).
+- **Conv2** (kernel=3, stride=2): state = last 2 conv1 GELU output frames.
+  `cat(state, conv1_out)` → (1, 1280, 10) → Conv1d → (1, 1280, 4).
+
+The raw `nn.Conv1d` is called directly (bypassing `CausalConv1d.forward`
+which would zero-pad). This produces identical results to the offline
+encoder — verified to within fp32 precision (max diff < 2e-5).
+
+### Encoder KV cache
+
+Each of the 32 encoder transformer layers gets its own `EncoderRingKVCache`
+instance — a ring buffer that overwrites old entries when the window is
+exceeded, enabling streaming of arbitrary length audio.
+
+- Cache shape: `(1, 2*max_enc_len, 32, 64)` per layer. The buffer is 2x the
+  window size because writes happen *before* attention. With a 1x buffer
+  (size = window), writing `seq_len` new entries evicts that many old ones —
+  but the current queries still need those old entries. Example with
+  `window=4, seq_len=4, start_pos=5`: a 1x buffer would overwrite positions
+  1-4 with 5-8, so query at position 5 can only attend to itself instead of
+  positions 2-4. A 2x buffer (size 8) keeps positions 1-4 alive alongside
+  5-8, giving query 5 full access to its window.
+- Default `max_enc_len=750` (matching the model's trained
+  sliding window). Configurable via `--max-enc-len`.
+- Memory: 32 layers × 2 × 1500 × 32 × 64 × 4 bytes ≈ 786 MB (fp32)
+- Duration: unlimited (ring buffer overwrites old entries, RoPE computed on-the-fly)
+
+Cache writes use `torch.ops.llama.update_cache_with_indices` (a custom op
+that scatter-writes via an indices tensor). Write indices are computed
+analytically: `(arange(seq_len) + start_pos) % buf_size`. No mutable
+position state is needed.
+
+Position tracking is analytic — no mutable state buffer. For buffer
+slot `j` after `total_written` frames have been stored:
+
+```
+abs_pos[j] = j + ((total_written - 1 - j) // buf_size) * buf_size
+```
+
+Negative results indicate unwritten slots. The sliding window mask
+is computed from these positions each step:
+
+```python
+valid = (cache_pos >= 0) & (delta >= 0) & (delta < window_size)
+mask = torch.where(valid, 0.0, float("-inf"))
+```
+
+The mask is identical for all 32 layers (same `input_pos`), so it
+is computed once in `forward()` and reused.
+
+### STFT overlap for streaming mel
+
+The streaming preprocessor (`WhisperAudioProcessor(streaming=True)`)
+computes mel without 30-second chunk padding. To match offline mel values
+at chunk boundaries, the C++ runner uses overlapping audio windows:
+
+- **Left overlap**: 320 samples (2 × hop_length, ≥ n_fft/2 = 200)
+- **Right look-ahead**: 40 samples (2.5ms, matches vLLM's
+  `streaming_look_ahead_ms`)
+- **Total window**: 320 + 1280 + 40 = 1640 samples → 10 mel frames
+- **Frame extraction**: skip first 2 frames (overlap region), take
+  frames 2–9 (the 8 that align with offline mel frame positions)
+
+For the first step, the left overlap is zero-padded (matching the
+offline encoder's `center=True` STFT edge behavior). The 2.5ms
+look-ahead introduces negligible latency.
+
+### Per-component quantization
+
+Quantization is applied per-component after wrapping (following the
+Parakeet pattern), allowing different configs for encoder vs decoder:
+
+```bash
+--qlinear-encoder 8w      # encoder linear layers
+--qlinear 8da4w           # decoder linear layers
+--qembedding 8w           # embedding layer
+```
+
+The streaming encoder references the same module objects that
+`quantize_model_()` mutates in-place, so quantized weights are
+used transparently. Conv1d layers are not quantized (not targeted
+by `quantize_model_`). KV caches and SDPA have no trainable weights.
+
+### Export: `strict=True` and `.item()` pattern
+
+All exports use `torch.export.export(..., strict=True)`, matching the
+Llama builder (`extension/llm/export/builder.py`) and optimum-executorch.
+
+`strict=True` is required because the model uses `.item()` to extract
+scalar positions from input tensors (for `update_cache`, `custom_sdpa`,
+and ring buffer index computation). With `strict=True`, `.item()` produces
+an unbacked `SymInt` — a symbolic integer that remains dynamic at runtime.
+With `strict=False`, `.item()` returns the concrete sample value which
+gets baked into the graph as a constant, making all cache positions
+and attention masks static (the model has no temporal memory).
+
+Each `.item()` call is guarded with `torch._check_is_size(start_pos)`
+(non-negative constraint) and optionally `torch._check(start_pos < max)`
+(upper bound for bounded caches like the decoder KV cache). The encoder
+ring buffer has no upper bound since positions are unlimited.
+
+This is the same pattern used by:
+- `examples/models/llama/attention.py` (`KVCache.update`)
+- `optimum-executorch` (`custom_sdpa_with_start_pos_forward`)
 
 ## Checkpoint Format
 
@@ -215,4 +355,14 @@ VoxtralRealtimeModel
       feed_forward: LMMLP (w1/w2/w3)
     norm: RMSNorm
     output: Linear (tied to tok_embeddings)
+
+StreamingAudioEncoderExport (export wrapper, shares weights with encoder + adapter)
+  conv1: nn.Conv1d (shared from encoder.conv_layers[0].conv)
+  conv2: nn.Conv1d (shared from encoder.conv_layers[1].conv)
+  layers: 32x CausalEncoderLayer (shared from encoder.layers)
+  enc_norm: RMSNorm (shared from encoder.norm)
+  adapter: AudioLanguageAdapter (shared from model.adapter)
+  kv_caches: 32x EncoderRingKVCache (owned, ring buffer for sliding window attention)
+  sdpa: SDPA (owned, for streaming attention)
+  inv_freq: RoPE inverse frequencies (owned, on-the-fly computation)
 ```

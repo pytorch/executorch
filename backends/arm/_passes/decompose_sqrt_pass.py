@@ -31,9 +31,7 @@ class DecomposeSqrtPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
 
     def call_operator(self, op, args, kwargs, meta):
-        """
-        Decomposes `sqrt(x)` into `pow(x, 0.5)` for backend support.
-        """
+        """Decomposes `sqrt(x)` into `pow(x, 0.5)` for backend support."""
 
         if op not in (edge_sqrt_ops + aten_sqrt_ops) or not self.allowed_to_transform(
             meta
