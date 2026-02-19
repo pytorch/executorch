@@ -25,7 +25,6 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
     SharedQuantizationSpec,
 )
-
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
@@ -646,6 +645,20 @@ class HardTanhInPlacePattern(SingleInputBasicPattern):
 
     def replacement_op(self):
         raise AssertionError()
+
+
+class LeakyReluPattern(SingleInputBasicPattern):
+    """Quantizer for the `aten.leaky_relu.default` operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.leaky_relu.default]
+
+
+class LeakyReluInPlacePattern(SingleInputBasicPattern):
+    """Quantizer for the `aten.leaky_relu.default` operator, with the parameter `inplace=True`."""
+
+    def partition_types(self):
+        return [torch.ops.aten.leaky_relu_.default]
 
 
 class LinearPattern(QuantizationPattern):
