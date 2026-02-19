@@ -34,6 +34,7 @@ Usage:
 import argparse
 import importlib
 import multiprocessing
+import os
 import sys
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from typing import List, Optional, Tuple
@@ -426,7 +427,14 @@ def main():  # noqa: C901
                 f"\nCleaned up {files_removed} files ({current_size / 1024 / 1024:.2f} MB)"
             )
 
-    sys.exit(0 if failed == 0 else 1)
+    # Flush and use os._exit() to avoid ProcessPoolExecutor's atexit handler
+    # which joins worker threads. Workers that imported torch/MLX/Metal can
+    # segfault during Python cleanup, causing the atexit join to hang or crash.
+    # In CI (GitHub Actions), stdout is pipe-buffered so we must flush explicitly
+    # before os._exit() which does not flush stdio buffers.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0 if failed == 0 else 1)
 
 
 if __name__ == "__main__":
