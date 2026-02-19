@@ -4,14 +4,18 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 
-
 batch_norm_target_ops = [
+    # Aten dialect variants
     torch.ops.aten.batch_norm.default,
     torch.ops.aten.native_batch_norm.default,
     torch.ops.aten._native_batch_norm_legit_no_training.default,
+    # Edge dialect variants
+    exir_ops.edge.aten.batch_norm.default,
+    exir_ops.edge.aten.native_batch_norm.default,
+    exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
 ]
 
 

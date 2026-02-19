@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import executorch.backends.nxp.tests.models as models
+import numpy as np
 import pytest
 import torch
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
@@ -13,15 +14,28 @@ from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes impor
     AddSimulatedLinearBatchNormFusionQATPass,
     RemoveSimulatedLinearBatchNormFusionQATPass,
 )
-from executorch.backends.nxp.backend.graph_utils import is_batch_norm
-
+from executorch.backends.nxp.backend.edge_program_converter import (
+    EdgeProgramToIRConverter,
+)
+from executorch.backends.nxp.backend.graph_utils import (
+    batch_norm_target_ops,
+    is_batch_norm,
+)
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_random_calibration_inputs,
     neutron_target_spec,
     to_model_input_spec,
+    to_quantized_edge_program,
 )
-from torch.export import export
+from executorch.backends.nxp.tests.executors import (
+    convert_run_compare,
+    graph_contains_any_of_ops,
+    ToChannelFirstPreprocess,
+    ToChannelLastPreprocess,
+)
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export import export, ExportedProgram
 from torchao.quantization.pt2e.prepare import _is_activation_post_process_node
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
@@ -187,3 +201,60 @@ def test_input_output_graph_equivalence(input_shape, linear_bias, bn_eps):
         original_model(input_sample[0]), processed_model(input_sample[0])
     )
     assert len(original_model.graph.nodes) == len(processed_model.graph.nodes)
+
+
+@pytest.mark.parametrize("input_shape", [(2, 3)])
+@pytest.mark.parametrize("linear_bias", [True, False])
+@pytest.mark.parametrize("bn_eps", [1e-5, 1e-6])
+def test_linear_bn_full_qat_pipeline_conversion(
+    mocker, input_shape, linear_bias, bn_eps
+):
+    # TODO: Add pass for quantizing bias node when Linear has bias=False
+    if not linear_bias:
+        pytest.skip(
+            "Linear with bias=False is not yet supported. "
+            "The graph currently produces Linear layer without quantized bias which is incorrect."
+        )
+
+    model = models.LinearBNModule(
+        in_features=input_shape[-1],
+        out_features=5,
+        linear_bias=linear_bias,
+        bn_eps=bn_eps,
+    )
+    model.eval()
+
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+
+    # Run conversion
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=True, use_neutron_for_format_conversion=False
+    ).exported_program()
+
+    # Make sure neither `Linear` nor `BatchNorm` is in the graph.
+    assert not graph_contains_any_of_ops(
+        graph=edge_program.graph,
+        ops=[
+            exir_ops.edge.aten.addmm.default,
+            exir_ops.edge.aten.linear.default,
+        ]
+        + batch_norm_target_ops,
+    )
+    assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
+
+    # Capture generated model
+    tflite_flatbuffers_model, _ = converter_spy.spy_return
+
+    # Capture converted program
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+
+    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+
+    convert_run_compare(
+        exported_program,
+        tflite_input_preprocess=ToChannelLastPreprocess(),
+        tfl_model=tflite_flatbuffers_model,
+        tflite_output_preprocess=ToChannelFirstPreprocess(),
+        input_data=input_data,
+        atol=0.0,
+    )
