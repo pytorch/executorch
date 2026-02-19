@@ -360,6 +360,11 @@ class OpInstanceNorm:
 
 
 @dataclass(init=False, frozen=True)
+class OpIsNan:
+    op_name: str = "IsNan"
+
+
+@dataclass(init=False, frozen=True)
 class OpLayerNorm:
     op_name: str = "LayerNorm"
     param_epsilon = "epsilon"
