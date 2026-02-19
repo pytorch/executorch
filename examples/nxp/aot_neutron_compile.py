@@ -39,11 +39,11 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.extension.export_util import save_pte_program
-from torch.ao.quantization import (
+from torch.export import export
+from torchao.quantization.pt2e import (
     move_exported_model_to_eval,
     move_exported_model_to_train,
 )
-from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
 from .experimental.cifar_net.cifar_net import (
