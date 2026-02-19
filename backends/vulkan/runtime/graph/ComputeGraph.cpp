@@ -808,7 +808,8 @@ void ComputeGraph::register_pipeline_to_create(
   const vkapi::ComputePipelineCache::Key desc = {
       context()->pipeline_layout_cache().retrieve(shader_layout, pc_offset),
       context()->shader_cache().retrieve(shader_info),
-      spec_constants};
+      spec_constants,
+      shader_info.kernel_name};
 
   if (context_->pipeline_cache().contains(desc)) {
     return;
