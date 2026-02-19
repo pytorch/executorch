@@ -10,9 +10,9 @@
 Run exported Llama model using ExecuTorch pybindings.
 
 Usage:
-    python -m executorch.backends.apple.mlx.examples.llama.run_llama \
+    python -m executorch.backends.apple.mlx.examples.llm.run_llama \
         --pte /tmp/llama_test.pte \
-        --tokenizer /tmp/llama_test_tokenizer \
+        --model-id unsloth/Llama-3.2-1B-Instruct \
         --prompt "Hello, world!"
 """
 
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 def run_inference(
     pte_path: str,
-    tokenizer_path: str,
+    model_id: str,
     prompt: str,
     max_new_tokens: int = 50,
 ) -> str:
@@ -37,8 +37,8 @@ def run_inference(
     from executorch.runtime import Runtime, Verification
     from transformers import AutoTokenizer
 
-    logger.info(f"Loading tokenizer from {tokenizer_path}...")
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+    logger.info(f"Loading tokenizer from HuggingFace: {model_id}...")
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
 
     logger.info(f"Loading model from {pte_path}...")
     et_runtime = Runtime.get()
@@ -119,10 +119,10 @@ def main():
         help="Path to the .pte file",
     )
     parser.add_argument(
-        "--tokenizer",
+        "--model-id",
         type=str,
-        default="/tmp/llama_test_tokenizer",
-        help="Path to the tokenizer",
+        default="unsloth/Llama-3.2-1B-Instruct",
+        help="HuggingFace model ID (used to load tokenizer)",
     )
     parser.add_argument(
         "--prompt",
@@ -141,7 +141,7 @@ def main():
 
     prompt_text, generated_text = run_inference(
         pte_path=args.pte,
-        tokenizer_path=args.tokenizer,
+        model_id=args.model_id,
         prompt=args.prompt,
         max_new_tokens=args.max_new_tokens,
     )

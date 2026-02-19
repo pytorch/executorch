@@ -21,12 +21,12 @@ optimum-executorch export pipeline.
 
 Usage:
     # Baseline (optimum-executorch pipeline):
-    python -m executorch.backends.apple.mlx.examples.llama.export_llama_hf \\
+    python -m executorch.backends.apple.mlx.examples.llm.export_llm_hf \\
         --model-id "unsloth/Llama-3.2-1B-Instruct" \\
         --output llama_hf.pte
 
     # With custom MLX components:
-    python -m executorch.backends.apple.mlx.examples.llama.export_llama_hf \\
+    python -m executorch.backends.apple.mlx.examples.llm.export_llm_hf \\
         --model-id "unsloth/Llama-3.2-1B-Instruct" \\
         --output llama_hf_mlx.pte \\
         --use-custom-sdpa \\
@@ -48,60 +48,6 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
 
-def _apply_quantization(
-    model: torch.nn.Module,
-    quantize_linear: Optional[str],
-    quantize_embeddings: Optional[str],
-) -> None:
-    """Apply TorchAO quantization to the model."""
-    if not quantize_linear and not quantize_embeddings:
-        return
-
-    logger.info("Applying quantization with TorchAO...")
-    try:
-        from torchao.quantization.granularity import PerGroup
-        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
-
-        if quantize_embeddings:
-            embed_dtype = torch.int4 if quantize_embeddings == "int4" else torch.int8
-            embed_group_size = 32 if quantize_embeddings == "int4" else 128
-            logger.info(
-                f"Quantizing embedding layers with {quantize_embeddings} "
-                f"(group size {embed_group_size})..."
-            )
-            quantize_(
-                model,
-                IntxWeightOnlyConfig(
-                    weight_dtype=embed_dtype, granularity=PerGroup(embed_group_size)
-                ),
-                filter_fn=lambda m, fqn: isinstance(m, torch.nn.Embedding),
-            )
-
-        if quantize_linear:
-            linear_dtype = torch.int4 if quantize_linear == "int4" else torch.int8
-            linear_group_size = 32 if quantize_linear == "int4" else 128
-            logger.info(
-                f"Quantizing linear layers with {quantize_linear} "
-                f"(group size {linear_group_size})..."
-            )
-            quantize_(
-                model,
-                IntxWeightOnlyConfig(
-                    weight_dtype=linear_dtype,
-                    granularity=PerGroup(linear_group_size),
-                ),
-                filter_fn=lambda m, fqn: isinstance(m, torch.nn.Linear),
-            )
-
-        if quantize_embeddings:
-            model.lm_head.weight = model.model.embed_tokens.weight
-
-        logger.info("Applied quantization successfully")
-    except ImportError:
-        logger.error("TorchAO not installed. Run: pip install torchao")
-        raise
-
-
 def _export_with_optimum(
     model_id: str,
     output_path: str,
@@ -109,6 +55,7 @@ def _export_with_optimum(
     dtype: str,
     quantize_linear: Optional[str],
     quantize_embeddings: Optional[str],
+    no_tie_word_embeddings: bool = False,
 ) -> None:
     """
     Export using optimum-executorch's CausalLMExportableModule.
@@ -132,7 +79,17 @@ def _export_with_optimum(
         max_seq_len=max_seq_len,
     )
 
-    _apply_quantization(exportable.model, quantize_linear, quantize_embeddings)
+    from executorch.backends.apple.mlx.examples.llm.quantize import apply_quantization
+
+    apply_quantization(
+        exportable.model,
+        quantize_linear,
+        quantize_embeddings,
+        tie_word_embeddings=getattr(
+            exportable.model.config, "tie_word_embeddings", False
+        )
+        and not no_tie_word_embeddings,
+    )
 
     logger.info("Exporting model with torch.export...")
     exported_progs = exportable.export()
@@ -173,6 +130,7 @@ def _export_with_custom_components(
     quantize_embeddings: Optional[str],
     use_custom_sdpa: bool,
     use_custom_kv_cache: bool,
+    no_tie_word_embeddings: bool = False,
 ) -> None:
     """
     Export using direct HF model with custom MLX components.
@@ -244,7 +202,15 @@ def _export_with_custom_components(
         )
         logger.info("  HFStaticCache installed successfully")
 
-    _apply_quantization(exportable.model, quantize_linear, quantize_embeddings)
+    from executorch.backends.apple.mlx.examples.llm.quantize import apply_quantization
+
+    apply_quantization(
+        exportable.model,
+        quantize_linear,
+        quantize_embeddings,
+        tie_word_embeddings=getattr(model.config, "tie_word_embeddings", False)
+        and not no_tie_word_embeddings,
+    )
 
     logger.info("Exporting model with torch.export...")
     seq_length = 3
@@ -315,6 +281,7 @@ def export_llama_hf(
     quantize_embeddings: Optional[str] = None,
     use_custom_sdpa: bool = False,
     use_custom_kv_cache: bool = False,
+    no_tie_word_embeddings: bool = False,
 ) -> None:
     """
     Export a HuggingFace Llama model to ExecuTorch with MLX backend.
@@ -343,6 +310,7 @@ def export_llama_hf(
             quantize_embeddings=quantize_embeddings,
             use_custom_sdpa=use_custom_sdpa,
             use_custom_kv_cache=use_custom_kv_cache,
+            no_tie_word_embeddings=no_tie_word_embeddings,
         )
     else:
         logger.info("Using optimum-executorch pipeline (no custom components)")
@@ -353,6 +321,7 @@ def export_llama_hf(
             dtype=dtype,
             quantize_linear=quantize_linear,
             quantize_embeddings=quantize_embeddings,
+            no_tie_word_embeddings=no_tie_word_embeddings,
         )
 
 
@@ -369,7 +338,7 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="llama_hf.pte",
+        required=True,
         help="Output .pte file path",
     )
     parser.add_argument(
@@ -385,20 +354,11 @@ def main():
         default="bf16",
         help="Model dtype",
     )
-    parser.add_argument(
-        "--quantize-linear",
-        type=str,
-        choices=["int4", "int8"],
-        default=None,
-        help="Quantization method for linear layers",
+    from executorch.backends.apple.mlx.examples.llm.quantize import (
+        add_quantization_args,
     )
-    parser.add_argument(
-        "--quantize-embeddings",
-        type=str,
-        choices=["int4", "int8"],
-        default=None,
-        help="Quantization method for embedding layers",
-    )
+
+    add_quantization_args(parser)
     parser.add_argument(
         "--use-custom-sdpa",
         action="store_true",
@@ -423,6 +383,7 @@ def main():
         quantize_embeddings=args.quantize_embeddings,
         use_custom_sdpa=args.use_custom_sdpa,
         use_custom_kv_cache=args.use_custom_kv_cache,
+        no_tie_word_embeddings=args.no_tie_word_embeddings,
     )
 
 

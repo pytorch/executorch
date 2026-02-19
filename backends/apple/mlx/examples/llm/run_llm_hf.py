@@ -9,11 +9,11 @@
 """
 Run exported Llama model (from HuggingFace) using ExecuTorch pybindings.
 
-This script runs models exported using export_llama_hf.py. It loads the tokenizer
+This script runs models exported using export_llm_hf.py. It loads the tokenizer
 directly from HuggingFace using the same model ID used during export.
 
 Usage:
-    python -m executorch.backends.apple.mlx.examples.llama.run_llama_hf \
+    python -m executorch.backends.apple.mlx.examples.llm.run_llm_hf \
         --pte llama_hf.pte \
         --model-id unsloth/Llama-3.2-1B-Instruct \
         --prompt "Hello, world!"
@@ -145,7 +145,6 @@ def main():
     )
     parser.add_argument(
         "--model-id",
-        "--tokenizer",
         type=str,
         default="unsloth/Llama-3.2-1B-Instruct",
         help="HuggingFace model ID (used to load tokenizer)",

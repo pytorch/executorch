@@ -13,7 +13,7 @@ This package provides:
 - run_llama.py: Run inference using pybindings
 """
 
-from executorch.backends.apple.mlx.examples.llama.export_llama import (
+from executorch.backends.apple.mlx.examples.llm.export_llama import (
     CustomRMSNorm,
     export_llama_to_mlx,
     KVCacheAttention,
