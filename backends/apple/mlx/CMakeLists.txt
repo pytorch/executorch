@@ -50,7 +50,6 @@ set(_mlx_generated_cpp_files
 set(_mlx_generated_python_files
     "${CMAKE_CURRENT_SOURCE_DIR}/serialization/mlx_graph_schema.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/serialization/_generated_serializers.py"
-    "${CMAKE_CURRENT_SOURCE_DIR}/serialization/_generated_parsers.py"
 )
 
 # Run generate.py to create all generated files from schema.fbs Find Python -
@@ -110,14 +109,31 @@ if(NOT EXISTS "${MLX_SOURCE_DIR}/CMakeLists.txt")
   )
 endif()
 
-# Validate deployment target - MLX requires macOS 14.0+
-if(CMAKE_OSX_DEPLOYMENT_TARGET AND CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS
-                                   "14.0"
-)
+# Validate deployment target - MLX requires macOS 14.0+ / iOS 17.0+ For iOS
+# builds using ios.toolchain.cmake, DEPLOYMENT_TARGET is used For macOS builds,
+# CMAKE_OSX_DEPLOYMENT_TARGET is used
+set(_mlx_deployment_target_ok TRUE)
+if(DEPLOYMENT_TARGET)
+  # iOS/tvOS/watchOS builds via ios.toolchain.cmake
+  if(DEPLOYMENT_TARGET VERSION_LESS "17.0")
+    set(_mlx_deployment_target_ok FALSE)
+    set(_mlx_deployment_target_value ${DEPLOYMENT_TARGET})
+    set(_mlx_deployment_target_min "17.0")
+  endif()
+elseif(CMAKE_OSX_DEPLOYMENT_TARGET)
+  # macOS builds
+  if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "14.0")
+    set(_mlx_deployment_target_ok FALSE)
+    set(_mlx_deployment_target_value ${CMAKE_OSX_DEPLOYMENT_TARGET})
+    set(_mlx_deployment_target_min "14.0")
+  endif()
+endif()
+
+if(NOT _mlx_deployment_target_ok)
   message(
     FATAL_ERROR
-      "MLX requires CMAKE_OSX_DEPLOYMENT_TARGET >= 14.0, got ${CMAKE_OSX_DEPLOYMENT_TARGET}.\n"
-      "Either set CMAKE_OSX_DEPLOYMENT_TARGET=14.0 or disable MLX with -DEXECUTORCH_BUILD_MLX=OFF"
+      "MLX requires deployment target >= ${_mlx_deployment_target_min}, got ${_mlx_deployment_target_value}.\n"
+      "Either increase the deployment target or disable MLX with -DEXECUTORCH_BUILD_MLX=OFF"
   )
 endif()
 

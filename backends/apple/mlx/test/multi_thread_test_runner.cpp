@@ -152,8 +152,8 @@ void run_predict(
     for (ssize_t j = 0; j < output_tensor.numel(); j++) {
       if (std::fabs(data[j] - expected) > 1e-4f) {
         std::cerr << "Thread " << thread_id << ", prediction " << pred
-                  << ": output[" << j << "] = " << data[j]
-                  << ", expected " << expected << std::endl;
+                  << ": output[" << j << "] = " << data[j] << ", expected "
+                  << expected << std::endl;
         correct = false;
         break;
       }
@@ -173,15 +173,15 @@ TEST(MLXMultiThreadTest, LoadAndRunParallel) {
       << "ET_PREDICTIONS_PER_THREAD must be > 0";
 
   std::cout << "Running " << kNumThreads << " threads x "
-            << kPredictionsPerThread << " predictions with model: "
-            << kTestPTEPath << std::endl;
+            << kPredictionsPerThread
+            << " predictions with model: " << kTestPTEPath << std::endl;
 
   std::vector<std::thread> threads(kNumThreads);
   std::vector<ThreadResult> results(kNumThreads);
 
   for (int i = 0; i < kNumThreads; i++) {
-    threads[i] = std::thread(
-        [&, i]() { run_predict(i, kTestPTEPath, results[i]); });
+    threads[i] =
+        std::thread([&, i]() { run_predict(i, kTestPTEPath, results[i]); });
   }
   for (int i = 0; i < kNumThreads; i++) {
     threads[i].join();
