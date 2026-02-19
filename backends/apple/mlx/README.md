@@ -39,7 +39,7 @@ backends/apple/mlx/
 │   ├── op_test_runner.cpp      # C++ test runner (loads .pte, runs, compares)
 │   └── run_all_tests.py        # End-to-end: export → C++ run → compare
 └── examples/
-    ├── llama/                  # LLaMA export + run
+    ├── llm/                    # LLM export + run (Llama, etc.)
     └── whisper/                # Whisper export + run
 ```
 

@@ -17,3 +17,16 @@ target_link_libraries(
 target_include_directories(
   op_test_runner PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/..
 )
+
+# Multi-threaded inference test
+include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+
+et_cxx_test(
+  multi_thread_test_runner
+  SOURCES
+  multi_thread_test_runner.cpp
+  EXTRA_LIBS
+  extension_module
+  extension_tensor
+  mlxdelegate
+)

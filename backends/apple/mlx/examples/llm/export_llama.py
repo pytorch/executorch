@@ -16,7 +16,7 @@ This script:
 4. Exports to .pte file using MLX delegate
 
 Usage:
-    python -m executorch.backends.apple.mlx.examples.llama.export_llama \
+    python -m executorch.backends.apple.mlx.examples.llm.export_llama \
         --model-id "unsloth/Llama-3.2-1B-Instruct" \
         --output llama.pte \
         --quantize int4
@@ -398,6 +398,7 @@ def export_llama_to_mlx(
     dtype: str = "fp32",
     quantize_linear: Optional[str] = None,
     quantize_embeddings: Optional[str] = None,
+    no_tie_word_embeddings: bool = False,
 ) -> None:
     """
     Export a Llama model to MLX delegate.
@@ -429,54 +430,15 @@ def export_llama_to_mlx(
     model.eval()
 
     # Apply quantization if requested
-    if quantize_linear or quantize_embeddings:
-        logger.info("Applying quantization with TorchAO...")
-        try:
-            from torchao.quantization.granularity import PerGroup
-            from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+    from executorch.backends.apple.mlx.examples.llm.quantize import apply_quantization
 
-            # Quantize embedding layers
-            if quantize_embeddings:
-                embed_dtype = (
-                    torch.int4 if quantize_embeddings == "int4" else torch.int8
-                )
-                embed_group_size = 32 if quantize_embeddings == "int4" else 128
-                logger.info(
-                    f"Quantizing embedding layers with {quantize_embeddings} (group size {embed_group_size})..."
-                )
-                quantize_(
-                    model,
-                    IntxWeightOnlyConfig(
-                        weight_dtype=embed_dtype,
-                        granularity=PerGroup(embed_group_size),
-                    ),
-                    filter_fn=lambda m, fqn: isinstance(m, torch.nn.Embedding),
-                )
-
-            # Quantize linear layers
-            if quantize_linear:
-                linear_dtype = torch.int4 if quantize_linear == "int4" else torch.int8
-                linear_group_size = 32 if quantize_linear == "int4" else 128
-                logger.info(
-                    f"Quantizing linear layers with {quantize_linear} (group size {linear_group_size})..."
-                )
-                quantize_(
-                    model,
-                    IntxWeightOnlyConfig(
-                        weight_dtype=linear_dtype,
-                        granularity=PerGroup(linear_group_size),
-                    ),
-                    filter_fn=lambda m, fqn: isinstance(m, torch.nn.Linear),
-                )
-
-            # Tie lm_head weights to embedding after quantization
-            if quantize_embeddings:
-                model.model.lm_head.weight = model.model.model.embed_tokens.weight
-
-            logger.info("Applied quantization successfully")
-        except ImportError:
-            logger.error("TorchAO not installed. Run: pip install torchao")
-            raise
+    tie = (
+        getattr(base.config, "tie_word_embeddings", False)
+        and not no_tie_word_embeddings
+    )
+    apply_quantization(
+        model.model, quantize_linear, quantize_embeddings, tie_word_embeddings=tie
+    )
 
     # Prepare example inputs for export
     # input_pos is a [1] tensor, we call input_pos[0].item() to get the SymInt
@@ -549,7 +511,7 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="llama_mlx.pte",
+        required=True,
         help="Output .pte file path",
     )
     parser.add_argument(
@@ -565,20 +527,11 @@ def main():
         default="bf16",
         help="Model dtype (fp32, fp16, bf16)",
     )
-    parser.add_argument(
-        "--quantize-linear",
-        type=str,
-        choices=["int4", "int8"],
-        default=None,
-        help="Quantization method for linear layers",
+    from executorch.backends.apple.mlx.examples.llm.quantize import (
+        add_quantization_args,
     )
-    parser.add_argument(
-        "--quantize-embeddings",
-        type=str,
-        choices=["int4", "int8"],
-        default=None,
-        help="Quantization method for embedding layers",
-    )
+
+    add_quantization_args(parser)
 
     args = parser.parse_args()
 
@@ -589,6 +542,7 @@ def main():
         dtype=args.dtype,
         quantize_linear=args.quantize_linear,
         quantize_embeddings=args.quantize_embeddings,
+        no_tie_word_embeddings=args.no_tie_word_embeddings,
     )
 
 
