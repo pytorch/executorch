@@ -9,10 +9,6 @@
 
 #include "cortex_m_ops_common.h"
 
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
@@ -31,6 +27,7 @@ Tensor& quantized_linear_out(
     const int64_t activation_max,
     const int64_t activation_min,
     Tensor& out) {
+#if CMSIS_NN_SUPPORTED
   ET_LOG(Info, "quantized_linear_out: called");
 
   const int8_t* input_data = input.const_data_ptr<int8_t>();
@@ -104,6 +101,11 @@ Tensor& quantized_linear_out(
   }
 
   return out;
+#else
+  ET_LOG(Error, "quantized_linear_out: requires ARM CMSIS-NN runtime");
+  context.fail(Error::Internal);
+  return out;
+#endif
 }
 
 } // namespace native

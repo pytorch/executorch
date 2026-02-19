@@ -8,10 +8,8 @@
 #pragma once
 
 #include "cortex_m_ops_common.h"
-extern "C" {
-#include "arm_nnfunctions.h"
-}
 
+#if CMSIS_NN_SUPPORTED
 namespace cortex_m {
 namespace native {
 
@@ -185,3 +183,4 @@ class CMSISScratchBufferContext final {
 
 } // namespace native
 } // namespace cortex_m
+#endif // CMSIS_NN_SUPPORTED

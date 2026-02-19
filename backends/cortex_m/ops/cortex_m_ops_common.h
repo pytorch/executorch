@@ -23,7 +23,16 @@
 
 extern "C" {
 #include "arm_nn_types.h"
+#if defined(__arm__) || defined(__ARM_ARCH)
+#include "arm_nnfunctions.h"
+#endif
 }
+
+#if defined(__arm__) || defined(__ARM_ARCH)
+#define CMSIS_NN_SUPPORTED 1
+#else
+#define CMSIS_NN_SUPPORTED 0
+#endif
 
 using Tensor = torch::executor::Tensor;
 using ScalarType = executorch::aten::ScalarType;
@@ -81,15 +90,15 @@ inline void validate_single_quant_params(
   ET_CHECK_MSG(
       multiplier >= std::numeric_limits<int32_t>::min() &&
           multiplier <= std::numeric_limits<int32_t>::max(),
-      "%s multiplier must be in int32 range [Value: %d]",
+      "%s multiplier must be in int32 range [Value: %lld]",
       param_name,
-      multiplier);
+      static_cast<long long>(multiplier));
 
   ET_CHECK_MSG(
       shift >= -31 && shift <= 31,
-      "%s shift must be in range [-31, 31] [Value: %d]",
+      "%s shift must be in range [-31, 31] [Value: %lld]",
       param_name,
-      shift);
+      static_cast<long long>(shift));
 }
 
 /**
@@ -354,14 +363,14 @@ inline bool validate_per_channel_quant_params(
     if (multipliers[i] <= ARM_NN_Q31_MIN || multipliers[i] > ARM_NN_Q31_MAX) {
       ET_LOG(
           Error,
-          "weight_multiplier[%d] out of CMSIS-NN range: %d",
+          "weight_multiplier[%d] out of CMSIS-NN range: %lld",
           i,
-          multipliers[i]);
+          static_cast<long long>(multipliers[i]));
       return false;
     }
     // Shift: {-31, 30} for arm_nn_requantize
     if (shifts[i] < -31 || shifts[i] > 30) {
-      ET_LOG(Error, "weight_shift[%d] out of range: %d", i, shifts[i]);
+      ET_LOG(Error, "weight_shift[%d] out of range: %lld", i, static_cast<long long>(shifts[i]));
       return false;
     }
   }

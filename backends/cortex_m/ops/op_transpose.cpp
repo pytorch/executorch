@@ -11,11 +11,6 @@
 #include <limits>
 #include <vector>
 
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -32,6 +27,7 @@ Tensor& transpose_out(
     const Tensor& input,
     const Int64ArrayRef perm,
     Tensor& out) {
+#if CMSIS_NN_SUPPORTED
   if (input.scalar_type() != ScalarType::Char ||
       out.scalar_type() != ScalarType::Char) {
     ET_LOG(
@@ -118,6 +114,11 @@ Tensor& transpose_out(
   }
 
   return out;
+#else
+  ET_LOG(Error, "transpose_out: requires ARM CMSIS-NN runtime");
+  context.fail(Error::Internal);
+  return out;
+#endif
 }
 
 } // namespace native

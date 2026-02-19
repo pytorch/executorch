@@ -11,11 +11,6 @@
 #include <cstdint>
 #include <limits>
 
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -51,6 +46,7 @@ Tensor& softmax_out(
     int64_t input_shift,
     int64_t diff_min,
     Tensor& out) {
+#if CMSIS_NN_SUPPORTED
   if (!is_int8_tensor(input) || !is_int8_tensor(out)) {
     ET_LOG(
         Error,
@@ -139,6 +135,11 @@ Tensor& softmax_out(
       output_data);
 
   return out;
+#else
+  ET_LOG(Error, "softmax_out: requires ARM CMSIS-NN runtime");
+  context.fail(Error::Internal);
+  return out;
+#endif
 }
 
 } // namespace native
