@@ -478,13 +478,14 @@ class StandardSDPA(nn.Module):
             q_pos = input_pos.unsqueeze(1)  # [seqlen, 1]
             k_pos = torch.arange(max_seq_len, device=q.device).unsqueeze(0)  # [1, max_seq_len]
             # Causal mask: can attend where k_pos <= q_pos
-            attn_mask = k_pos > q_pos  # [seqlen, max_seq_len], True = masked out
+            # PyTorch convention: True = attend, False = don't attend
+            attn_mask = k_pos <= q_pos  # [seqlen, max_seq_len], True = can attend
         else:
             # Decode: single token can attend to all positions up to current position
             # Current position is input_pos[0]
             curr_pos = input_pos[0]  # scalar tensor
             k_pos = torch.arange(max_seq_len, device=q.device)
-            attn_mask = k_pos > curr_pos  # [max_seq_len], True = masked out
+            attn_mask = k_pos <= curr_pos  # [max_seq_len], True = can attend
             attn_mask = attn_mask.unsqueeze(0)  # [1, max_seq_len] for broadcasting
 
         # Standard SDPA
