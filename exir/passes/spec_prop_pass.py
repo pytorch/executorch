@@ -12,7 +12,7 @@ from typing import Optional
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.pass_base import ExportPass, ProxyValue
-from executorch.exir.tensor import TensorSpec, dim_order_from_stride
+from executorch.exir.tensor import TensorSpec, dim_order_from_stride, stride_from_dim_order
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx.node import Node
 from torch.fx.passes.infra.pass_base import PassResult
@@ -26,8 +26,27 @@ try:
         torch.ops.dim_order_ops._to_dim_order_copy.default,
         torch.ops.dim_order_ops._clone_dim_order.default,
     })
+    _LAYOUT_TRANSFORMING_OP_NAMES = frozenset({"dim_order_ops::_to_dim_order_copy", "dim_order_ops::_clone_dim_order"})
 except AttributeError:
     _LAYOUT_TRANSFORMING_OPS = frozenset()
+    _LAYOUT_TRANSFORMING_OP_NAMES = frozenset()
+
+
+def _is_layout_transforming_op(target) -> bool:
+    """True if op is layout-transforming (by identity, schema name, or string)."""
+    if target in _LAYOUT_TRANSFORMING_OPS:
+        return True
+    try:
+        schema = getattr(target, "_schema", None)
+        if schema is not None and schema.name is not None:
+            if schema.name in _LAYOUT_TRANSFORMING_OP_NAMES:
+                return True
+    except Exception:
+        pass
+    s = str(target)
+    if "_to_dim_order_copy" in s or "_clone_dim_order" in s:
+        return True
+    return False
 
 # Ops where output memory format is IDENTICAL to primary input. Reference: PyTorch docs memory_format.
 _FORMAT_PRESERVING_OPS: frozenset = frozenset({
@@ -68,15 +87,25 @@ def _get_primary_tensor_input(node: Node) -> Optional[Node]:
 def _fix_out_spec_dim_order(node: Node) -> None:
     """
     For out-variant nodes, set the out kwarg node's TensorSpec.dim_order to the
-    layout the op will produce. Fixes Code=18 at runtime (issue #16032).
+    layout the op will produce. For layout-transforming ops that return the
+    result (no out=), set this node's spec.dim_order from the dim_order kwarg.
+    Fixes Code=18 at runtime (issue #16032).
     """
+    # Layout-transforming ops: set this node's spec from dim_order kwarg (return-value case)
+    if _is_layout_transforming_op(node.target):
+        explicit_dim_order = node.kwargs.get("dim_order")
+        if explicit_dim_order is not None:
+            spec = node.meta.get("spec")
+            if spec is not None:
+                spec.dim_order = list(int(d) for d in explicit_dim_order)
+    # Out-variant: set the out node's spec
     out_node = node.kwargs.get("out")
     if not isinstance(out_node, Node):
         return
     spec = out_node.meta.get("spec")
     if spec is None:
         return
-    if node.target in _LAYOUT_TRANSFORMING_OPS:
+    if _is_layout_transforming_op(node.target):
         explicit_dim_order = node.kwargs.get("dim_order")
         if explicit_dim_order is not None:
             spec.dim_order = list(int(d) for d in explicit_dim_order)
@@ -153,6 +182,34 @@ class SpecPropPass(ExportPass):
                         else:
                             node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
                         continue
+                    # Layout-transforming ops (e.g. _to_dim_order_copy) may lack meta["val"];
+                    # ensure they get a spec from primary input + dim_order kwarg.
+                    if (
+                        "spec" not in node.meta
+                        and node.op == "call_function"
+                        and _is_layout_transforming_op(node.target)
+                    ):
+                        explicit_dim_order = node.kwargs.get("dim_order")
+                        primary = _get_primary_tensor_input(node)
+                        if explicit_dim_order is not None and primary is not None:
+                            inp_spec = primary.meta.get("spec")
+                            if isinstance(inp_spec, TensorSpec):
+                                node.meta["spec"] = TensorSpec(
+                                    dtype=inp_spec.dtype,
+                                    shape=inp_spec.shape,
+                                    layout=inp_spec.layout,
+                                    is_sparse=inp_spec.is_sparse,
+                                    const=inp_spec.const,
+                                    requires_grad=inp_spec.requires_grad,
+                                )
+                                node.meta["spec"].stride = tuple(
+                                    stride_from_dim_order(
+                                        inp_spec.shape, list(explicit_dim_order)
+                                    )
+                                )
+                                node.meta["spec"].dim_order = list(
+                                    int(d) for d in explicit_dim_order
+                                )
                     if "spec" not in node.meta and meta_val is not None:
                         node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
                     _fix_out_spec_dim_order(node)

@@ -146,6 +146,12 @@ class TestSpecPropPassOutVariant(unittest.TestCase):
             )
 
         gm = edge.exported_program().graph_module
+        # SpecPropPass may not run in to_edge pipeline; run it so we can assert spec.
+        # Pass returns a new graph_module; use it so specs are present.
+        from executorch.exir.passes.spec_prop_pass import SpecPropPass
+
+        result = SpecPropPass()(gm)
+        gm = result.graph_module
         found = False
         for node in gm.graph.nodes:
             if (
