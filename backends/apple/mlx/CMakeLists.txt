@@ -71,9 +71,10 @@ endif()
 
 add_custom_command(
   OUTPUT ${_mlx_generated_cpp_files} ${_mlx_generated_python_files}
-  COMMAND ${_python_executable} ${_mlx_generate_script}
+  COMMAND ${_python_executable} ${_mlx_generate_script} --flatc
+          $<TARGET_FILE:flatc>
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
-  DEPENDS ${_mlx_schema_fbs} ${_mlx_generate_script}
+  DEPENDS ${_mlx_schema_fbs} ${_mlx_generate_script} flatc
   COMMENT "Generating MLX delegate code from schema.fbs"
   VERBATIM
 )
