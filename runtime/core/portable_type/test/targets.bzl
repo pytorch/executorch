@@ -48,6 +48,14 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "device_test",
+        srcs = ["device_test.cpp"],
+        deps = [
+            "//executorch/runtime/core/portable_type:portable_type",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "tensor_impl_test",
         srcs = ["tensor_impl_test.cpp"],
         deps = [
