@@ -223,6 +223,7 @@ for preset_index in "${!PRESETS[@]}"; do
           -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
           -DCMAKE_BUILD_TYPE="${mode}" \
           ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
+          ${PYTHON_EXECUTABLE:+-DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}"} \
           --preset "${preset}"
 
     cmake --build "${preset_output_dir}" \
