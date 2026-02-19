@@ -9,8 +9,11 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
     is_not_qdq_node,
     NodeConverter,
 )
+
+from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
+    BuiltinOperator,
+)
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from tflite import BuiltinOperator
 from torch.fx import Node
 from torch.fx.passes.infra.partitioner import Partition
 from torch.nn import Parameter
