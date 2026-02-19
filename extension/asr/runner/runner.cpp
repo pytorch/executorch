@@ -110,21 +110,15 @@ Error AsrRunner::load() {
       static_cast<int>(method_names.count(kEncoderMethodName)),
       static_cast<int>(method_names.count(kDecoderMethodName)));
 
-  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kEncoderMethodName));
-  encoder_method_loaded_ = true;
-
-  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kDecoderMethodName));
-  decoder_method_loaded_ = true;
-
-  if (sampler_method_present_) {
-    ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kSamplerMethodName));
-    sampler_method_loaded_ = true;
-  }
 #ifdef CUDA_AVAILABLE
+  // IMPORTANT: Set backend options BEFORE loading methods.
+  // The backend's init() is called during load_method(), which creates CUDA
+  // streams. We must configure shared stream mode before any init() calls.
+  //
   // Skip copying outputs to CPU. When a sampler exists, keep both encoder and
   // decoder outputs on device and pass decoder logits directly into sampler.
-  // The backend will automatically create a shared CUDA stream for all methods
-  // when skip-copy is enabled to ensure proper ordering.
+  // The backend will use a shared CUDA stream for all methods when skip-copy
+  // is enabled to ensure proper ordering.
   executorch::runtime::BackendOptions<2> backend_options;
   std::string skip_methods = kEncoderMethodName;
   if (sampler_method_present_) {
@@ -146,6 +140,17 @@ Error AsrRunner::load() {
         static_cast<int>(opt_err));
   }
 #endif
+
+  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kEncoderMethodName));
+  encoder_method_loaded_ = true;
+
+  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kDecoderMethodName));
+  decoder_method_loaded_ = true;
+
+  if (sampler_method_present_) {
+    ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kSamplerMethodName));
+    sampler_method_loaded_ = true;
+  }
   ET_CHECK_OK_OR_RETURN_ERROR(load_tokenizer());
   auto eos_ids = get_eos_ids(tokenizer_.get(), module_.get());
   if (!eos_ids.empty()) {
