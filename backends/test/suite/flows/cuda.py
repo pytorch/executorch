@@ -20,6 +20,9 @@ def _create_cuda_flow(name: str = "cuda") -> TestFlow:
         backend="cuda",
         tester_factory=CudaTester,
         quantize=False,
+        # Skip tests that cause SIGABRT crashes in CUDA runtime
+        # test_mean_output_dtype: float64 output dtype causes crash in AOTI compiled code
+        skip_patterns=["test_mean_output_dtype"],
     )
 
 

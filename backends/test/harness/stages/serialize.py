@@ -1,11 +1,9 @@
 import copy
 import logging
-
 from typing import Dict, Optional
 
 from executorch.backends.test.harness.stages.stage import Stage, StageType
 from executorch.exir import ExecutorchProgramManager
-
 from torch.utils._pytree import tree_flatten
 
 logger = logging.getLogger(__name__)

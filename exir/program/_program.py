@@ -1966,6 +1966,22 @@ class ExecutorchProgramManager:
             self._buffer = bytes(self._pte_data)
         return self._buffer
 
+    @property
+    def data_files(self) -> Dict[str, bytes]:
+        """Returns the external data files as a dictionary of filename to bytes.
+
+        External data files (e.g., .ptd files) contain tensor data that is stored
+        separately from the main .pte file. This is used by backends like CUDA
+        that serialize weights externally.
+
+        Returns:
+            Dict[str, bytes]: Dictionary mapping filenames to their byte content.
+            Returns an empty dict if no external data files exist.
+        """
+        if self._tensor_data is None:
+            return {}
+        return {filename: bytes(cord) for filename, cord in self._tensor_data.items()}
+
     def get_etrecord(self):
         """
         Get the generated ETRecord if etrecord generation was enabled.

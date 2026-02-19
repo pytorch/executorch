@@ -2,7 +2,6 @@ from typing import Any
 
 import pytest
 import torch
-
 from executorch.backends.test.suite.flow import all_flows
 from executorch.backends.test.suite.reporting import _sum_op_counts
 from executorch.backends.test.suite.runner import run_test
@@ -79,7 +78,14 @@ class TestRunner:
     ids=str,
 )
 def test_runner(request):
-    return TestRunner(request.param, request.node.name, request.node.originalname)
+    flow = request.param
+    test_name = request.node.name
+
+    # Check if this test should be skipped based on the flow's skip_patterns
+    if flow.should_skip_test(test_name):
+        pytest.skip(f"Test '{test_name}' matches skip pattern for flow '{flow.name}'")
+
+    return TestRunner(flow, test_name, request.node.originalname)
 
 
 @pytest.hookimpl(optionalhook=True)
