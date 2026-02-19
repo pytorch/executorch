@@ -191,3 +191,49 @@ class TestVulkanPasses(unittest.TestCase):
 
         # We expect at least one custom op to be created
         self.assertGreater(custom_op_count, 0)
+
+    def test_fuse_q8ta_linear(self):
+        """Test that sequential quantized linears fuse into q8ta_linear when output quantization is present."""
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+
+        class TwoLinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(128, 64, bias=False)
+                self.linear2 = torch.nn.Linear(64, 32, bias=False)
+
+            def forward(self, x):
+                return self.linear2(self.linear1(x))
+
+        model = TwoLinearModule()
+        sample_inputs = (torch.randn(4, 128),)
+
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        edge_program = quantize_and_lower_module(model, sample_inputs, quantizer)
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        # The first linear should fuse to q8ta_linear (has output quantization
+        # from the second linear's input quantize node)
+        q8ta_linear_count = op_node_count(gm, "et_vk__q8ta_linear__default")
+        self.assertGreaterEqual(
+            q8ta_linear_count,
+            1,
+            "Expected at least one q8ta_linear op from output-quantized linear fusion",
+        )
