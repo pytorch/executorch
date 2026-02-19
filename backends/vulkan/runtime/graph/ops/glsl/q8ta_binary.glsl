@@ -46,6 +46,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "in_layout", "CONTIG_LAYOUT_INT")}
+${layout_declare_spec_const(C, "int", "other_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "block_config", "0")}
 
 // Generate loading functions for input buffers
@@ -71,7 +72,7 @@ void main() {
   ivec4 in_block_a = load_int8x4_block_from_t_in_a(
       in_a_meta, tidx, in_layout, block_outer_dim);
   ivec4 in_block_b = load_int8x4_block_from_t_in_b(
-      in_b_meta, tidx, in_layout, block_outer_dim);
+      in_b_meta, tidx, other_layout, block_outer_dim);
 
   ivec4 out_block;
 
