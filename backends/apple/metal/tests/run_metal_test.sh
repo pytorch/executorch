@@ -82,6 +82,12 @@ build_runtime() {
 
     cd "$EXECUTORCH_ROOT"
 
+    # Patch absolute libomp install name from some torch nightlies to rpath-based
+    # lookup so the runner works on macOS images without /opt/llvm-openmp.
+    if [[ -f "$EXECUTOR_RUNNER" ]] && otool -L "$EXECUTOR_RUNNER" | grep -q "/opt/llvm-openmp/lib/libomp.dylib"; then
+        install_name_tool -change /opt/llvm-openmp/lib/libomp.dylib @rpath/libomp.dylib "$EXECUTOR_RUNNER"
+    fi
+
     if [[ -f "$EXECUTOR_RUNNER" ]]; then
         echo "Build successful: $EXECUTOR_RUNNER"
     else
