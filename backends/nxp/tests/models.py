@@ -735,3 +735,33 @@ class UnsqueezeAddModel(torch.nn.Module):
 
     def forward(self, x, y):
         return torch.unsqueeze(x + y, self.dim)
+
+
+class LinearPReLUModule(torch.nn.Module):
+    def __init__(self, in_features, out_features, num_parameters=1):
+        super().__init__()
+
+        self.linear = nn.Linear(in_features=in_features, out_features=out_features)
+        self.prelu = torch.nn.PReLU(num_parameters)
+
+    def forward(self, x):
+        x = self.linear(x)
+        return self.prelu(x)
+
+
+class TwoPartitionPReLUModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.prelu = torch.nn.PReLU()
+
+    def forward(self, x, divisor):
+        # partition 1
+        x = self.prelu(x)
+
+        # `div` with non-static divisor is not supported in Neutron
+        x = torch.div(x, divisor)
+
+        # partition 2
+        x = self.prelu(x)
+        return x

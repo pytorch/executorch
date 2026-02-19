@@ -121,7 +121,7 @@ def _export_decoder_and_embedding(
             "input_embeds": {1: seq_dim},
             "cache_position": {0: seq_dim},
         },
-        strict=False,
+        strict=True,
     )
     print(f"  text_decoder exported (sample input: {sample_embeds.shape})")
 
@@ -142,7 +142,7 @@ def _export_decoder_and_embedding(
         tok_emb,
         (sample_ids,),
         dynamic_shapes={"token_ids": {1: tok_seq_dim}},
-        strict=False,
+        strict=True,
     )
     print(f"  token_embedding exported (sample input: {sample_ids.shape})")
 
@@ -182,7 +182,7 @@ def export_all(
         audio_encoder,
         (sample_mel,),
         dynamic_shapes={"mel": {2: t_mel_dim}},
-        strict=False,
+        strict=True,
     )
     print(f"  audio_encoder exported (sample input: {sample_mel.shape})")
 
@@ -247,7 +247,7 @@ def export_streaming(
         streaming_enc,
         (sample_mel_chunk, sample_conv1_state, sample_conv2_state, sample_enc_pos),
         dynamic_shapes=None,
-        strict=False,
+        strict=True,
     )
     print(
         f"  encode_audio_chunk exported (fixed shapes: mel_chunk={sample_mel_chunk.shape})"
@@ -411,7 +411,7 @@ def main():
         "--max-enc-len",
         type=int,
         default=750,
-        help="Max encoder KV cache length for streaming (default: 750, ~15s audio).",
+        help="Encoder sliding window size for streaming (default: 750).",
     )
     args = parser.parse_args()
 
