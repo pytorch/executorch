@@ -226,6 +226,16 @@ def make_q8ta_conv2d_custom_op(
             sum_per_output_channel = (
                 weight_tensor.sum(dim=1).to(torch.int32).contiguous()
             )
+        # Pad weight sums to align OC to multiple of 4, matching the alignment
+        # applied to weight, weight_scales, and bias above. Without this, the
+        # GPU shader would read out-of-bounds when OC is not a multiple of 4.
+        oc = sum_per_output_channel.shape[0]
+        if oc % 4 != 0:
+            num_padding = 4 - (oc % 4)
+            sum_per_output_channel = torch.nn.functional.pad(
+                sum_per_output_channel, (0, num_padding)
+            ).contiguous()
+
         sums_name = qweight_tensor_name + "_sums"
         # Sanitize the name
         sums_name = sums_name.replace(".", "_")

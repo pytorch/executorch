@@ -210,6 +210,28 @@ static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases() {
   }
 
   std::vector<Conv2dConfig> configs = {
+      // OC < 4 cases to test edge cases with partial output channel blocks
+      {OutInChannels(1, 16),
+       InputSize2D(8, 8),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(2, 16),
+       InputSize2D(8, 8),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(3, 16),
+       InputSize2D(8, 8),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
       // Pointwise convolutions: kernel size 1x1
       {OutInChannels(32, 3),
        InputSize2D(64, 64),
