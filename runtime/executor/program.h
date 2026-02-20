@@ -135,6 +135,9 @@ class Program final {
    * @param[in] event_tracer The event tracer to use for this method run.
    * @param[in] named_data_map An optional map of {name, blob} used to resolve
    *     data that is external to the PTE, if any.
+   * @param[in] backend_options An optional map of per-backend load-time options
+   *     (RuntimeSpecs). Each backend will receive its corresponding options
+   *     during initialization.
    *
    * @returns The loaded method on success, or an error on failure.
    */
@@ -142,7 +145,8 @@ class Program final {
       const char* method_name,
       MemoryManager* memory_manager,
       EventTracer* event_tracer = nullptr,
-      const NamedDataMap* named_data_map = nullptr) const;
+      const NamedDataMap* named_data_map = nullptr,
+      const LoadBackendOptionsMap* backend_options = nullptr) const;
 
   /**
    * Gathers metadata for the named method.

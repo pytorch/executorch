@@ -33,6 +33,13 @@ struct EValue;
 } // namespace executorch_flatbuffer
 
 namespace executorch {
+namespace runtime {
+// Forward declare LoadBackendOptionsMap to avoid including the full header.
+class LoadBackendOptionsMap;
+} // namespace runtime
+} // namespace executorch
+
+namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 
 // Forward declare NamedData. This is a public header and must not include
@@ -355,7 +362,8 @@ class Method final {
       const Program* program,
       MemoryManager* memory_manager,
       EventTracer* event_tracer,
-      const NamedDataMap* named_data_map);
+      const NamedDataMap* named_data_map,
+      const LoadBackendOptionsMap* backend_options = nullptr);
 
   /**
    * Initialize the method from its serialized representation.
@@ -364,7 +372,8 @@ class Method final {
    */
   ET_NODISCARD Error init(
       executorch_flatbuffer::ExecutionPlan* s_plan,
-      const NamedDataMap* named_data_map);
+      const NamedDataMap* named_data_map,
+      const LoadBackendOptionsMap* backend_options);
 
   /// Returns true if the Method was successfully initialized.
   inline bool initialized() const {

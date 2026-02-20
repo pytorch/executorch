@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdio>
 
+#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -806,7 +807,8 @@ Result<Method> Method::load(
     const Program* program,
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
-    const NamedDataMap* external_data_map) {
+    const NamedDataMap* external_data_map,
+    const LoadBackendOptionsMap* backend_options) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
@@ -820,7 +822,7 @@ Result<Method> Method::load(
   }
   Method method(program, memory_manager, event_tracer, temp_allocator);
   ET_LOG(Debug, "Loading method: %s.", s_plan->name()->c_str());
-  Error err = method.init(s_plan, external_data_map);
+  Error err = method.init(s_plan, external_data_map, backend_options);
   if (err != Error::Ok) {
     return err;
   } else {
@@ -831,9 +833,9 @@ Result<Method> Method::load(
 
 Error Method::init(
     executorch_flatbuffer::ExecutionPlan* s_plan,
-    const NamedDataMap* external_data_map) {
-  EXECUTORCH_SCOPE_PROF("Method::init");
-  internal::EventTracerProfileMethodScope event_tracer_profile_scope =
+    const NamedDataMap* external_data_map,
+    const LoadBackendOptionsMap* backend_options) {
+  internal::EventTracerProfileMethodScope event_tracer_scope =
       internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
   ET_CHECK_OR_RETURN_ERROR(
       // Don't use !initialized() here because we also want to fail on the
@@ -902,11 +904,21 @@ Error Method::init(
 
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
+
+      // Get per-delegate runtime specs from the LoadBackendOptionsMap if
+      // provided
+      Span<const BackendOption> delegate_runtime_specs;
+      if (backend_options != nullptr && delegate.id() != nullptr) {
+        delegate_runtime_specs =
+            backend_options->get_options(delegate.id()->c_str());
+      }
+
       BackendInitContext backend_init_context(
           method_allocator,
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
-          /*named_data_map=*/named_data_map);
+          /*named_data_map=*/named_data_map,
+          /*runtime_specs=*/delegate_runtime_specs);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
@@ -1276,15 +1288,6 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   }
 
   auto& t = output.toTensor();
-  if (!output.isTensor()) {
-#if ET_LOG_ENABLED
-    std::array<char, kTagNameBufferSize> tag_name;
-    tag_to_string(output.tag, tag_name.data(), tag_name.size());
-    ET_LOG(Error, "output type: %s is not a tensor.", tag_name.data());
-#endif
-
-    return Error::InvalidArgument;
-  }
 
   ET_CHECK_OR_RETURN_ERROR(
       t.nbytes() <= size,
