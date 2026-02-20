@@ -1,0 +1,161 @@
+name: test-backend-mlx
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+  pull_request:
+    paths:
+      - .github/workflows/mlx.yml
+      - backends/mlx/**
+      - examples/models/parakeet/**
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  test-mlx:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch and configure build"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON
+        echo "::endgroup::"
+
+        echo "::group::Build test runners"
+        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        echo "::endgroup::"
+
+        echo "::group::Run op unit tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.test.run_all_tests --clean-after --isolate
+        echo "::endgroup::"
+
+        echo "::group::Run multi-thread stress test"
+        ${CONDA_RUN} python backends/mlx/test/export_multi_thread_test_model.py /tmp/multi_thread_test_model.pte
+        ET_TESTING_MODEL_PATH=/tmp/multi_thread_test_model.pte \
+          ET_TESTING_NUM_THREADS=50 \
+          ET_PREDICTIONS_PER_THREAD=100 \
+          ./cmake-out/backends/mlx/test/multi_thread_test_runner
+        echo "::endgroup::"
+
+  test-mlx-parakeet:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-parakeet
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch and configure MLX build"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} cmake --preset mlx-release
+        echo "::endgroup::"
+
+        echo "::group::Install Parakeet requirements"
+        ${CONDA_RUN} pip install -r examples/models/parakeet/install_requirements.txt
+        echo "::endgroup::"
+
+        echo "::group::Export Parakeet model with MLX backend"
+        ${CONDA_RUN} python -m executorch.examples.models.parakeet.export_parakeet_tdt \
+          --backend mlx \
+          --dtype bf16 \
+          --qlinear_encoder 4w \
+          --qlinear_encoder_group_size 128 \
+          --qlinear 4w \
+          --qlinear_group_size 128 \
+          --output-dir /tmp/parakeet_mlx
+        echo "::endgroup::"
+
+        echo "::group::Build Parakeet MLX runner"
+        cd examples/models/parakeet
+        ${CONDA_RUN} cmake --workflow --preset parakeet-mlx
+        cd ../../..
+        echo "::endgroup::"
+
+        echo "::group::Run Parakeet MLX runner"
+        curl -L https://dldata-public.s3.us-east-2.amazonaws.com/2086-149220-0033.wav -o /tmp/test_audio.wav
+        OUTPUT=$(./cmake-out/examples/models/parakeet/parakeet_runner \
+          --model_path /tmp/parakeet_mlx/model.pte \
+          --audio_path /tmp/test_audio.wav \
+          --tokenizer_path /tmp/parakeet_mlx/tokenizer.model 2>&1)
+        echo "Runner output:"
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -iq "Phoebe"; then
+          echo "Success: 'Phoebe' found in output"
+        else
+          echo "Expected output 'Phoebe' not found in output"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+  test-mlx-llm:
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - id: "unsloth/Llama-3.2-1B-Instruct"
+            name: "llama-1b"
+          - id: "unsloth/Qwen3-0.6B"
+            name: "qwen3-0.6b"
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-llm-${{ matrix.model.name }}
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        MODEL_ID="${{ matrix.model.id }}"
+        MODEL_NAME="${{ matrix.model.name }}"
+
+        echo "::group::Install ExecuTorch and configure MLX build"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} cmake --preset mlx-release
+        echo "::endgroup::"
+
+        echo "::group::Install LLM requirements"
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install transformers "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
+        echo "::endgroup::"
+
+        echo "::group::Export ${MODEL_NAME} with MLX backend"
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llm_hf \
+          --model-id "${MODEL_ID}" \
+          --output /tmp/${MODEL_NAME}.pte \
+          --quantize-linear int4 \
+          --quantize-embeddings int8
+        echo "::endgroup::"
+
+        echo "::group::Run ${MODEL_NAME} inference"
+        OUTPUT=$(${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.run_llm_hf \
+          --pte /tmp/${MODEL_NAME}.pte \
+          --model-id "${MODEL_ID}" \
+          --prompt "Tell me a story." \
+          --max-new-tokens 50 2>&1)
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -q "Generated text:"; then
+          echo "Success: Model generated output"
+        else
+          echo "Failed: No generated text found in output"
+          exit 1
+        fi
+        echo "::endgroup::"
