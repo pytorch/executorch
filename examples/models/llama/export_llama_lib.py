@@ -640,7 +640,12 @@ def export_llama(
             raise ValueError(
                 f"Converting weights to meta format for {model_name} is not yet supported"
             )
-        checkpoint = download_and_convert_hf_checkpoint(repo_id, convert_weights)
+        
+        local_hf_path = None
+        if model_name.startswith("qwen3"):
+            local_hf_path = "/Users/scroy/Desktop/qwen3-2b/qwen3-4b-8da2w-parq"
+            print("OVERRIDING", local_hf_path)
+        checkpoint = download_and_convert_hf_checkpoint(repo_id, convert_weights, local_hf_path=local_hf_path)
         llm_config.base.checkpoint = checkpoint
 
     if llm_config.debug.profile_path is not None:

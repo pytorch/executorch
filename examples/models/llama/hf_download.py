@@ -6,13 +6,15 @@
 # LICENSE file in the root directory of this source tree.
 
 from pathlib import Path
-from typing import Callable
+from threading import local
+from typing import Callable, Optional
+import os
 
 from huggingface_hub import snapshot_download
 
 
 def download_and_convert_hf_checkpoint(
-    repo_id: str, convert_weights: Callable[[str, str], None]
+    repo_id: str, convert_weights: Callable[[str, str], None], *, local_hf_path: Optional[str] = None
 ) -> str:
     """
     Downloads and converts to Meta format a HuggingFace checkpoint.
@@ -35,15 +37,23 @@ def download_and_convert_hf_checkpoint(
     model_name = repo_id.replace("/", "_")
     converted_path = cache_dir / f"{model_name}.pth"
 
+    if local_hf_path is not None:
+        print("Deleting existing converted model because local_hf_path is provided: ", local_hf_path)
+        os.remove(converted_path)
+    
     if converted_path.exists():
         print(f"✔ Using cached converted model: {str(converted_path)}")
         return str(converted_path)
 
     # 1. Download weights from Hugging Face.
-    print("⬇ Downloading and converting checkpoint...")
-    checkpoint_path = snapshot_download(
-        repo_id=repo_id,
-    )
+    if local_hf_path is not None:
+        checkpoint_path = Path(local_hf_path)
+    else:
+        print("⬇ Downloading and converting checkpoint...")
+        checkpoint_path = snapshot_download(
+            repo_id=repo_id,
+        )
+
 
     # 2. Convert weights to Meta format.
     convert_weights(checkpoint_path, str(converted_path))

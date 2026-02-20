@@ -388,6 +388,7 @@ class QuantizationConfig:
     AO_QUANT_PATTERNS: ClassVar[List[str]] = [
         r"torchao:8da(\d+)w",
         r"torchao:fpa(\d+)w",
+        r"parq:8da(\d+)w",
     ]
 
     qmode: Optional[str] = None
