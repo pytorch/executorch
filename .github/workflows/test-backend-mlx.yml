@@ -11,7 +11,6 @@ on:
   pull_request:
     paths:
       - .github/workflows/test-backend-mlx.yml
-      - .github/workflows/_test_backend.yml
   workflow_dispatch:
 
 concurrency:
@@ -20,11 +19,26 @@ concurrency:
 
 jobs:
   test-mlx:
-    uses: ./.github/workflows/_test_backend.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [models, operators]
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
-      backend: mlx
-      flows: '["mlx"]'
+      job-name: test-mlx-backend-${{ matrix.suite }}
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
-      run-macos: true
-      runner-macos: macos-14-xlarge
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+
+        echo "::group::Run backend test suite (${{ matrix.suite }})"
+        ${CONDA_RUN} pytest -c /dev/null backends/test/suite/${{ matrix.suite }}/ -m flow_mlx -n auto
+        echo "::endgroup::"
