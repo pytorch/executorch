@@ -79,15 +79,24 @@ AttentionSinkIOManager::prepare_prefill(
       logical_pos_,
       is_cache_full() ? "true" : "false");
 
-  // Check if we need to provide cache_indices (3rd input)
   auto method_meta = module_.method_meta(prefill_method);
-  if (method_meta.ok() && method_meta->num_inputs() == 3) {
-    update_indices_tensor(logical_start, seq_len);
-    return std::vector<runtime::EValue>{input, start_pos, *indices_tensor_};
+  if (!method_meta.ok()) {
+    return method_meta.error();
   }
 
-  // Pass through to model as-is. 
-  return std::vector<runtime::EValue>{input, start_pos};
+  auto num_inputs = method_meta->num_inputs();
+  if (num_inputs == 3) {
+    update_indices_tensor(logical_start, seq_len);
+    return std::vector<runtime::EValue>{input, start_pos, *indices_tensor_};
+  } else if (num_inputs == 2) {
+    return std::vector<runtime::EValue>{input, start_pos};
+  }
+
+  ET_LOG(
+      Error,
+      "Expected 2 or 3 inputs for prefill method, got %zu.",
+      num_inputs);
+  return runtime::Error::InvalidState;
 }
 
 runtime::Result<std::vector<runtime::EValue>>
@@ -109,15 +118,24 @@ AttentionSinkIOManager::prepare_decode(
       logical_pos_,
       is_cache_full() ? "true" : "false");
 
-  // Check if we need to provide cache_indices (3rd input)
   auto method_meta = module_.method_meta(decode_method);
-  if (method_meta.ok() && method_meta->num_inputs() == 3) {
-    update_indices_tensor(logical_start, seq_len);
-    return std::vector<runtime::EValue>{input, start_pos, *indices_tensor_};
+  if (!method_meta.ok()) {
+    return method_meta.error();
   }
 
-  // Pass through to model as-is.
-  return std::vector<runtime::EValue>{input, start_pos};
+  auto num_inputs = method_meta->num_inputs();
+  if (num_inputs == 3) {
+    update_indices_tensor(logical_start, seq_len);
+    return std::vector<runtime::EValue>{input, start_pos, *indices_tensor_};
+  } else if (num_inputs == 2) {
+    return std::vector<runtime::EValue>{input, start_pos};
+  }
+
+  ET_LOG(
+      Error,
+      "Expected 2 or 3 inputs for decode method, got %zu.",
+      num_inputs);
+  return runtime::Error::InvalidState;
 }
 
 void AttentionSinkIOManager::update_indices_tensor(
