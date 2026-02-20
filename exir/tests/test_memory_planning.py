@@ -11,7 +11,6 @@ import unittest
 from typing import Any, Callable, List, Optional, Tuple, Type
 
 import executorch.exir as exir
-
 import torch
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.capture._capture import patch_forward
@@ -37,7 +36,6 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 from executorch.exir.tensor import TensorSpec
 from functorch.experimental.control_flow import map as torch_map
 from parameterized import parameterized
-
 from torch import nn
 from torch.ao.quantization import (  # @manual=//caffe2:torch
     float_qparams_weight_only_qconfig,
@@ -61,7 +59,21 @@ from torch.fx import Graph, GraphModule, Node
 from torch.nn import functional as F
 from torch.utils import _pytree as pytree
 
-torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
+try:
+    torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
+except (OSError, RuntimeError):
+    # When running outside of Buck (e.g., CMake/pip), find the shared library
+    # by globbing relative to the kernels/portable directory.
+    from pathlib import Path
+
+    _libs = list(
+        Path(__file__)
+        .parent.parent.parent.resolve()
+        .glob("**/kernels/portable/**/*custom_ops_generated_lib.*")
+    )
+    if _libs:
+        torch.ops.load_library(str(_libs[0]))
+    del Path
 
 
 def swap_modules(
