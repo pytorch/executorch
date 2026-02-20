@@ -323,6 +323,7 @@ def export_streaming(
 # Custom decomposition for Metal backend compatibility.
 # This decomposition is necessary to avoid issues with reinterpret_tensor_wrapper
 # when linear layers have biases, which would cause ExecuTorch errors with 0 stride.
+# TODO(manuelcandales): Remove this once ExecuTorch Metal backend supports bias in linear layers.
 def _linear_bias_decomposition(input, weight, bias=None):
     """Decompose linear with bias into matmul + add."""
     weight_t = torch.ops.aten.t.default(weight)
