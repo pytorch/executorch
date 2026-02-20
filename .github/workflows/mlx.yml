@@ -1,4 +1,4 @@
-name: test-backend-mlx
+name: MLX
 
 on:
   push:
