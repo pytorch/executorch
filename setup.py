@@ -629,7 +629,7 @@ class CustomBuildPy(build_py):
         # runs. Directories created by CMake during the build (e.g. by
         # generate.py) are not in the package list and must be copied manually.
         generated_dirs = [
-            "backends/apple/mlx/serialization/_generated",
+            "backends/mlx/serialization/_generated",
         ]
         for rel_dir in generated_dirs:
             src_dir = os.path.join("src/executorch", rel_dir)
@@ -853,9 +853,9 @@ setup(
         # MLX metallib (Metal GPU kernels) must be colocated with _portable_lib.so
         # because MLX uses dladdr() to find the directory containing the library,
         # then looks for mlx.metallib in that directory at runtime.
-        # After submodule migration, the path is backends/apple/mlx/mlx/...
+        # After submodule migration, the path is backends/mlx/mlx/...
         BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/backends/apple/mlx/mlx/mlx/backend/metal/kernels/",
+            src_dir="%CMAKE_CACHE_DIR%/backends/mlx/mlx/mlx/backend/metal/kernels/",
             src_name="mlx.metallib",
             dst="executorch/extension/pybindings/",
             dependent_cmake_flags=["EXECUTORCH_BUILD_MLX"],

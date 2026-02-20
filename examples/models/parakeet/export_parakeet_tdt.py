@@ -561,7 +561,7 @@ def _create_cuda_partitioners(programs, is_windows=False):
 
 def _create_mlx_partitioners(programs):
     """Create MLX partitioners for all programs."""
-    from executorch.backends.apple.mlx.partitioner import MLXPartitioner
+    from executorch.backends.mlx.partitioner import MLXPartitioner
 
     print("\nLowering to ExecuTorch with MLX...")
 
