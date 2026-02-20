@@ -1445,6 +1445,13 @@ class Inspector:
         runtime_intermediate_outputs, runtime_debug_handle_to_op_names = (
             self._get_runtime_intermediate_outputs_and_op_names()
         )
+        if (
+            len(aot_intermediate_outputs) == 0
+            or len(runtime_debug_handle_to_op_names) == 0
+        ):
+            raise ValueError(
+                "Inspector Events' debug_data is not populated properly which is required for calculating numerical gap"
+            )
         mapping = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
