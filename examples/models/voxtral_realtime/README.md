@@ -76,24 +76,55 @@ python export_voxtral_rt.py \
     --qembedding 8w
 ```
 
+### Backend support
+
+| Backend | Offline | Streaming | Quantization |
+|---------|---------|-----------|--------------|
+| `xnnpack` | ✓ | ✓ | `4w`, `8w`, `8da4w`, `8da8w` |
+| `metal` | ✓ | ✗ | `fpa4w` (Metal-specific 4-bit) |
+| `portable` | ✓ | ✓ | `4w`, `8w`, `8da4w`, `8da8w` |
+
+Metal backend uses AOTInductor for Apple GPU acceleration. For the text
+decoder, it uses `StandardSDPA` (standard PyTorch `F.scaled_dot_product_attention`)
+and `StaticKVCache` (using `index_copy_`) instead of XNNPACK's custom ops,
+as AOTI has compatibility issues with custom ops. The offline audio encoder
+uses standard `F.scaled_dot_product_attention` which works on all backends.
+
+**Note:** Metal does not yet support streaming mode (no `--streaming` flag).
+
+#### Metal export example
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend metal \
+    --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder fpa4w \
+    --qlinear fpa4w
+```
+
 ### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model-path` | (required) | Directory with `params.json` + `consolidated.safetensors` |
-| `--backend` | `xnnpack` | `xnnpack` or `portable` |
+| `--backend` | `xnnpack` | `xnnpack`, `metal`, or `portable` |
 | `--output-dir` | `./voxtral_rt_exports` | Output directory |
 | `--max-seq-len` | `4096` | KV cache length |
 | `--delay-tokens` | `6` | Transcription delay in tokens (6 = 480ms) |
-| `--qlinear` | (none) | Decoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`) |
+| `--qlinear` | (none) | Decoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`) |
 | `--qlinear-group-size` | `32` | Group size for decoder linear quantization |
-| `--qlinear-encoder` | (none) | Encoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`) |
+| `--qlinear-encoder` | (none) | Encoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`) |
 | `--qlinear-encoder-group-size` | `32` | Group size for encoder linear quantization |
 | `--qembedding` | (none) | Embedding layer quantization (`8w`) |
 | `--streaming` | off | Export streaming encoder with KV cache |
 | `--max-enc-len` | `750` | Encoder sliding window size (streaming only) |
 
+**Note:** `fpa4w` (floating-point activation, 4-bit weight) quantization requires `--backend metal`.
+
 ## Build
+
+### XNNPACK (CPU)
 
 ```bash
 make voxtral_realtime-cpu
@@ -101,6 +132,15 @@ make voxtral_realtime-cpu
 
 This builds ExecuTorch core libraries with XNNPACK, then the runner binary
 at `cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner`.
+
+### Metal (Apple GPU)
+
+```bash
+make voxtral_realtime-metal
+```
+
+This builds ExecuTorch with Metal backend support. The runner binary is at
+the same path as above. Metal exports can only run on macOS with Apple Silicon.
 
 ## Run
 
