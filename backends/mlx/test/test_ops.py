@@ -4360,6 +4360,67 @@ for _entry in _REDUCTION_OP_TESTS:
     globals()[_cls.__name__] = _cls
 
 
+# --- Global max (aten.max.default) - no dim argument ---
+
+
+class MaxGlobalModel(nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.max(x)
+
+
+@register_test
+class MaxGlobalTest(OpTestCase):
+    name = "max_global"
+
+    def __init__(self, shape=(3, 4), dtype=torch.float32):
+        self.shape = shape
+        self.dtype = dtype
+
+    @classmethod
+    def get_test_configs(cls):
+        return [
+            cls(shape=(16,)),
+            cls(shape=(3, 4)),
+            cls(shape=(2, 3, 4)),
+            cls(shape=(3, 4), dtype=torch.bfloat16),
+        ]
+
+    def create_model(self):
+        return MaxGlobalModel()
+
+    def create_inputs(self):
+        return (torch.randn(self.shape, dtype=self.dtype),)
+
+
+class MinGlobalModel(nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.min(x)
+
+
+@register_test
+class MinGlobalTest(OpTestCase):
+    name = "min_global"
+
+    def __init__(self, shape=(3, 4), dtype=torch.float32):
+        self.shape = shape
+        self.dtype = dtype
+
+    @classmethod
+    def get_test_configs(cls):
+        return [
+            cls(shape=(16,)),
+            cls(shape=(3, 4)),
+            cls(shape=(2, 3, 4)),
+            cls(shape=(3, 4), dtype=torch.bfloat16),
+        ]
+
+    def create_model(self):
+        return MinGlobalModel()
+
+    def create_inputs(self):
+        return (torch.randn(self.shape, dtype=self.dtype),)
+
+
 # =============================================================================
 # TRIANGULAR OPS
 # =============================================================================

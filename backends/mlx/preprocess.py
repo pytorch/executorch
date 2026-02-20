@@ -19,10 +19,9 @@ This module implements the BackendDetails.preprocess() method which:
 from __future__ import annotations
 
 import hashlib
-import logging
-import os
 from typing import ClassVar, final, List
 
+from executorch.backends.mlx._logging import logger
 from executorch.backends.mlx.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.serialization.mlx_graph_serialize import (
     HEADER_LENGTH,
@@ -35,8 +34,6 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from torch.export.exported_program import ExportedProgram
-
-_MLX_DEBUG = os.environ.get("ET_MLX_DEBUG", "") not in ("", "0")
 
 
 @final
@@ -75,10 +72,8 @@ class MLXBackend(BackendDetails):
             PreprocessResult containing the serialized MLX program and
             data_store_output with constant tensor data.
         """
-        if _MLX_DEBUG:
-            logging.info("MLXBackend.preprocess() called")
-            logging.info(f"Edge program:\n{edge_program}")
-            edge_program.graph.print_tabular()
+        logger.debug("MLXBackend.preprocess() called")
+        logger.debug(f"Edge program:\n{edge_program}")
 
         # Build MLXGraph from ExportedProgram
         # Use a deterministic 4-hex prefix derived from the edge program to
@@ -92,17 +87,13 @@ class MLXBackend(BackendDetails):
         # Get constant data as NamedDataStore (ET will own this data)
         named_data_store = builder.get_named_data_store()
 
-        if _MLX_DEBUG:
-            logging.info(
-                f"  named_data_store entries: {len(named_data_store.pte_data)}"
-            )
-            _log_mlx_graph(mlx_graph)
+        logger.debug(f"  named_data_store entries: {len(named_data_store.pte_data)}")
+        _log_mlx_graph(mlx_graph)
 
         # Serialize to bytes (no constant data embedded)
         serialized = serialize_mlx_graph(mlx_graph)
 
-        if _MLX_DEBUG:
-            logging.info(f"MLXBackend.preprocess() complete: {len(serialized)} bytes")
+        logger.debug(f"MLXBackend.preprocess() complete: {len(serialized)} bytes")
 
         return PreprocessResult(
             processed_bytes=serialized,
@@ -130,44 +121,44 @@ def _format_tensor_meta(meta) -> str:
 
 
 def _log_mlx_graph(mlx_graph) -> None:  # noqa: C901
-    """Log MLXGraph contents at INFO level for debugging."""
-    logging.info("MLXGraph:")
-    logging.info(f"  version: {mlx_graph.version}")
-    logging.info(f"  num_constant_tensors: {mlx_graph.num_constant_tensors}")
-    logging.info(f"  num_input_tensors: {mlx_graph.num_input_tensors}")
-    logging.info(f"  num_output_tensors: {mlx_graph.num_output_tensors}")
-    logging.info(
+    """Log MLXGraph contents at DEBUG level for debugging."""
+    logger.debug("MLXGraph:")
+    logger.debug(f"  version: {mlx_graph.version}")
+    logger.debug(f"  num_constant_tensors: {mlx_graph.num_constant_tensors}")
+    logger.debug(f"  num_input_tensors: {mlx_graph.num_input_tensors}")
+    logger.debug(f"  num_output_tensors: {mlx_graph.num_output_tensors}")
+    logger.debug(
         f"  num_mutable_buffer_tensors: {mlx_graph.num_mutable_buffer_tensors}"
     )
-    logging.info(f"  num_temp_tensors: {mlx_graph.num_temp_tensors}")
-    logging.info(f"  num_values: {mlx_graph.num_values}")
-    logging.info(f"  instruction_chains ({len(mlx_graph.instruction_chains)}):")
+    logger.debug(f"  num_temp_tensors: {mlx_graph.num_temp_tensors}")
+    logger.debug(f"  num_values: {mlx_graph.num_values}")
+    logger.debug(f"  instruction_chains ({len(mlx_graph.instruction_chains)}):")
     for c, chain in enumerate(mlx_graph.instruction_chains):
         label = ""
         if c == mlx_graph.main_chain_idx:
             label = " (main)"
         elif c == mlx_graph.init_chain_idx:
             label = " (init)"
-        logging.info(f"    chain {c}{label} ({len(chain.instructions)} instructions):")
+        logger.debug(f"    chain {c}{label} ({len(chain.instructions)} instructions):")
         for i, instr in enumerate(chain.instructions):
-            logging.info(f"      [{i}]: {type(instr.op).__name__}")
+            logger.debug(f"      [{i}]: {type(instr.op).__name__}")
     if mlx_graph.input_map:
-        logging.info(f"  input_map ({len(mlx_graph.input_map)}):")
+        logger.debug(f"  input_map ({len(mlx_graph.input_map)}):")
         for i, slot in enumerate(mlx_graph.input_map):
-            logging.info(f"    [{i}]: {slot}")
+            logger.debug(f"    [{i}]: {slot}")
     if mlx_graph.output_map:
-        logging.info(f"  output_map ({len(mlx_graph.output_map)}):")
+        logger.debug(f"  output_map ({len(mlx_graph.output_map)}):")
         for i, slot in enumerate(mlx_graph.output_map):
-            logging.info(f"    [{i}]: {slot}")
+            logger.debug(f"    [{i}]: {slot}")
     if mlx_graph.mutable_buffer_map:
-        logging.info(f"  mutable_buffer_map ({len(mlx_graph.mutable_buffer_map)}):")
+        logger.debug(f"  mutable_buffer_map ({len(mlx_graph.mutable_buffer_map)}):")
         for i, slot in enumerate(mlx_graph.mutable_buffer_map):
-            logging.info(f"    [{i}]: {slot}")
+            logger.debug(f"    [{i}]: {slot}")
     if mlx_graph.named_slots:
-        logging.info(f"  named_slots ({len(mlx_graph.named_slots)}):")
+        logger.debug(f"  named_slots ({len(mlx_graph.named_slots)}):")
         for ns in mlx_graph.named_slots:
-            logging.info(f"    {ns.name}: {ns.slot}")
+            logger.debug(f"    {ns.name}: {ns.slot}")
     if mlx_graph.tensor_meta:
-        logging.info(f"  tensor_meta ({len(mlx_graph.tensor_meta)}):")
+        logger.debug(f"  tensor_meta ({len(mlx_graph.tensor_meta)}):")
         for i, meta in enumerate(mlx_graph.tensor_meta):
-            logging.info(f"    t{i}: {_format_tensor_meta(meta)}")
+            logger.debug(f"    t{i}: {_format_tensor_meta(meta)}")

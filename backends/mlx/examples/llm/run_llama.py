@@ -99,8 +99,13 @@ def run_inference(
             break
 
     decode_time = time.time() - decode_start
-    tokens_per_sec = (len(generated_tokens) - input_ids.shape[1]) / decode_time
-    logger.info(f"Decode time: {decode_time:.3f}s ({tokens_per_sec:.1f} tokens/sec)")
+    tokens_generated = len(generated_tokens) - input_ids.shape[1]
+    tokens_per_sec = tokens_generated / decode_time if decode_time > 0 else 0
+
+    print(f"\nPrefill time: {prefill_time:.3f}s")
+    print(
+        f"Decode time:  {decode_time:.3f}s ({tokens_generated} tokens, {tokens_per_sec:.1f} tok/s)"
+    )
 
     # Decode prompt and generated text separately
     prompt_tokens = generated_tokens[:prompt_len]

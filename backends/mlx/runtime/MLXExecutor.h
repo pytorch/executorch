@@ -524,6 +524,24 @@ struct ExecutionState {
     return std::get<T>(*opt);
   }
 
+  inline const Value& const_value(Vid id) const {
+    if (isOpLoggingEnabled()) {
+      std::cout << "  in   v" << id.idx << std::flush;
+    }
+    if (id.idx >= values.size()) {
+      throw std::out_of_range("const_value: id out of range");
+    }
+    const auto& opt = values[id.idx];
+    if (!opt) {
+      throw std::runtime_error(
+          "const_value: uninitialized value idx=" + std::to_string(id.idx));
+    }
+    if (isOpLoggingEnabled()) {
+      std::visit([](auto&& arg) { std::cout << "  " << arg << "\n"; }, *opt);
+    }
+    return *opt;
+  }
+
   template <typename T>
   inline void set_value(Vid id, T val) {
     if (isOpLoggingEnabled()) {
@@ -627,7 +645,10 @@ inline float resolve_float(
   if (std::holds_alternative<double>(v)) {
     return static_cast<float>(std::get<double>(v));
   }
-  return st.const_value_ref<float>(std::get<Vid>(v));
+  // The value may be stored as int32_t (from SymInt computations) or float.
+  const auto& val = st.const_value(std::get<Vid>(v));
+  return std::visit(
+      [](auto&& arg) -> float { return static_cast<float>(arg); }, val);
 }
 
 // =============================================================================

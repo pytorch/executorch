@@ -157,32 +157,17 @@ This generates:
 From the executorch root directory:
 
 ```bash
-# For CPU/XNNPACK
-cmake --workflow --preset llm-release
-
-# For Metal (macOS)
-cmake --workflow --preset llm-release-metal
-
-# For MLX (macOS)
-cmake --workflow --preset mlx-release
-```
-
-Then build the parakeet runner:
-
-```bash
-cd examples/models/parakeet
-
 # CPU/XNNPACK build
-cmake --workflow --preset parakeet-cpu
+make parakeet-cpu
 
 # Metal build (macOS)
-cmake --workflow --preset parakeet-metal
+make parakeet-metal
 
 # CUDA build (Linux)
-cmake --workflow --preset parakeet-cuda
+make parakeet-cuda
 
 # MLX build (macOS)
-cmake --workflow --preset parakeet-mlx
+make parakeet-mlx
 ```
 
 ### Running

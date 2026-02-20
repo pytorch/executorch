@@ -21,7 +21,6 @@ Pattern handlers are registered in mlx_patterns.py.
 
 from __future__ import annotations
 
-import logging
 import traceback
 import uuid
 from collections import defaultdict
@@ -41,6 +40,8 @@ from typing import (
 )
 
 import torch
+
+from executorch.backends.mlx._logging import logger
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     FloatOrVid,
     Instruction,
@@ -61,9 +62,6 @@ from executorch.exir.sym_util import eval_shape_upper_bound
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
 from torch.utils import _pytree as pytree
-
-FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 # =============================================================================
@@ -571,8 +569,8 @@ class PatternHandler:
                 )
 
         # Set handlers
-        logging.debug(
-            f"Pattern {self.__class__.__name__} assigning handlers: "
+        logger.debug(
+            f"Pattern {self.__class__.__name__}: "
             f"HEAD={self.head.name}, BODY={[n.name for n in self.body]}"
         )
         P.node_info[self.head].handler = self
@@ -642,7 +640,7 @@ class PatternMatcher:
         for n in self.ep.graph.nodes:
             handler = pattern_cls.maybe_create(self.ep, n)
             if handler is not None:
-                logging.debug(f"Pattern {name} matched at node {n.name}")
+                logger.debug(f"Pattern {name} matched at node {n.name}")
                 self._matches.append(handler)
 
 
@@ -1310,14 +1308,14 @@ class MLXProgramBuilder:
                 if slot in slot_to_tid:
                     tid.idx = slot_to_tid[slot]
                 else:
-                    logging.warning(f"Slot {slot} not found in slot_to_tid mapping")
+                    logger.warning(f"Slot {slot} not found in slot_to_tid mapping")
 
         if hasattr(self, "_vid_slot_map"):
             for vid, slot in self._vid_slot_map:
                 if slot in slot_to_vid:
                     vid.idx = slot_to_vid[slot]
                 else:
-                    logging.warning(f"Slot {slot} not found in slot_to_vid mapping")
+                    logger.warning(f"Slot {slot} not found in slot_to_vid mapping")
 
         return slot_to_tid, slot_to_vid
 
@@ -1564,7 +1562,7 @@ class MLXProgramBuilder:
             key=lambda x: self._slot_to_final_tid.get(x[1], 0),
         )
 
-        logging.info(f"Adding {len(entries)} constants to NamedDataStore...")
+        logger.debug(f"Adding {len(entries)} constants to NamedDataStore...")
         for canonical_name, _slot in entries:
             tensor = self._find_constant_tensor(canonical_name)
             if tensor is None:
@@ -1576,7 +1574,7 @@ class MLXProgramBuilder:
                 data=t,
                 alignment=16,
             )
-        logging.info("Done adding constants to NamedDataStore")
+        logger.debug("Done adding constants to NamedDataStore")
 
         return named_data_store
 
