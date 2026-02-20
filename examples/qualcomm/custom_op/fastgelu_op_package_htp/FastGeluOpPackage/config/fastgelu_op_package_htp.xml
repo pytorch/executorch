@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpDefCollection PackageName="FastGeluOpPackage" Domain="aisw" Version="1.0">
+  <OpDefList>
+    <OpDef>
+      <Name>FastGelu</Name>
+      <Description>
+        <Content>FastGELU: y = 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x^3)))</Content>
+      </Description>
+
+      <Input>
+        <Name>x</Name>
+        <Description><Content>Input tensor</Content></Description>
+        <Mandatory>true</Mandatory>
+        <Datatype>QNN_DATATYPE_FLOAT_32</Datatype>
+        <Datatype>QNN_DATATYPE_UFIXED_POINT_8</Datatype>
+        <Shape>
+          <Rank>ND</Rank>
+          <Layout>UNDEFINED</Layout>
+          <Text>elementwise</Text>
+        </Shape>
+      </Input>
+
+      <Output>
+        <Name>y</Name>
+        <Description><Content>Output tensor</Content></Description>
+        <Mandatory>true</Mandatory>
+        <Datatype>QNN_DATATYPE_FLOAT_32</Datatype>
+        <Datatype>QNN_DATATYPE_UFIXED_POINT_8</Datatype>
+        <Shape>
+          <Rank>ND</Rank>
+          <Layout>UNDEFINED</Layout>
+          <Text>same as input</Text>
+        </Shape>
+      </Output>
+
+      <SupportedBackend>HTP</SupportedBackend>
+    </OpDef>
+  </OpDefList>
+</OpDefCollection>
