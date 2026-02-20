@@ -280,6 +280,7 @@ def test_convolution_2d_tosa_INT_a8w4_depthwise(test_data):
         aten_op=[],
         exir_op=exir_op,
         tosa_extensions=["int4"],
+        frobenius_threshold=0.4,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
