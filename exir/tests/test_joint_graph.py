@@ -10,7 +10,7 @@ import unittest
 import torch
 import torch._dynamo
 
-from executorch.exir import to_edge
+from executorch.exir import EdgeCompileConfig, to_edge
 
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
@@ -122,3 +122,39 @@ class TestJointGraph(unittest.TestCase):
             et.executorch_program.execution_plan[3].values[0].val.int_val,
             3,
         )
+
+    def test_conv(self) -> None:
+        # shows an example of a tuple output not being used in inference only
+        class ModuleTuplePartialReturn(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.m = torch.nn.AdaptiveMaxPool1d(5, return_indices=True)
+
+            def forward(self, x):
+                return self.m(x)[0]
+
+        d = ModuleTuplePartialReturn()
+        ep = torch.export.export(d, (torch.randn(1, 64, 8),))
+        ep = to_edge(
+            ep, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        )
+        ep.to_executorch()
+
+        # shows an example of a tuple output not being used in conv.backward 
+        class ModuleConvTraining(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = torch.nn.Conv2d(3, 6, 5)
+                self.linear = torch.nn.Linear(4704, 10)
+                self.loss = torch.nn.CrossEntropyLoss()
+
+            def forward(self, x, y):
+                return self.loss(self.linear(self.conv1(x).flatten(1)), y)
+
+        m = ModuleConvTraining()
+        ep = torch.export._trace._export(m, (torch.randn(4, 3, 32, 32), torch.ones(4, dtype=torch.int64)), pre_dispatch=True)
+        ep = _export_forward_backward(ep)
+        ep = to_edge(
+            ep, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        )
+        ep.to_executorch()
