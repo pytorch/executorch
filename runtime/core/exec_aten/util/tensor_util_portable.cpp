@@ -117,14 +117,18 @@ static bool two_tensors_same_dim_order(
   if (a.dim() != b.dim()) {
     return false;
   }
-  for (size_t i = 0; i < a.dim_order().size(); ++i) {
+  const auto ndim = a.dim();
+  // Fast path: check if dim_order labels match exactly
+  for (decltype(ndim) i = 0; i < ndim; ++i) {
     if (a.dim_order()[i] != b.dim_order()[i]) {
       goto slow_path;
     }
   }
   return true;
 slow_path:
-  for (size_t i = 0; i < a.dim(); ++i) {
+  // Slow path: labels differ, but strides may still indicate same physical layout
+  // (e.g., C=1 or H=W=1 where NCHW and NHWC are memory-identical)
+  for (decltype(ndim) i = 0; i < ndim; ++i) {
     if (a.strides()[i] != b.strides()[i]) {
       return false;
     }

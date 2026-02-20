@@ -93,6 +93,7 @@ def _fix_out_spec_dim_order(node: Node) -> None:
     For out-variant nodes, set the out kwarg node's TensorSpec.dim_order to the
     layout the op will produce. For layout-transforming ops that return the
     result (no out=), set this node's spec.dim_order from the dim_order kwarg.
+    Also updates spec.stride to be consistent with the new dim_order.
     Fixes Code=18 at runtime (issue #16032).
     """
     # Layout-transforming ops: set this node's spec from dim_order kwarg (return-value case)
@@ -101,7 +102,9 @@ def _fix_out_spec_dim_order(node: Node) -> None:
         if explicit_dim_order is not None:
             spec = node.meta.get("spec")
             if spec is not None:
-                spec.dim_order = list(int(d) for d in explicit_dim_order)
+                new_dim_order = list(int(d) for d in explicit_dim_order)
+                spec.dim_order = new_dim_order
+                spec.stride = tuple(stride_from_dim_order(spec.shape, new_dim_order))
     # Out-variant: set the out node's spec
     out_node = node.kwargs.get("out")
     if not isinstance(out_node, Node):
@@ -112,7 +115,9 @@ def _fix_out_spec_dim_order(node: Node) -> None:
     if _is_layout_transforming_op(node.target):
         explicit_dim_order = node.kwargs.get("dim_order")
         if explicit_dim_order is not None:
-            spec.dim_order = list(int(d) for d in explicit_dim_order)
+            new_dim_order = list(int(d) for d in explicit_dim_order)
+            spec.dim_order = new_dim_order
+            spec.stride = tuple(stride_from_dim_order(spec.shape, new_dim_order))
     elif node.target in _FORMAT_PRESERVING_OPS:
         primary = _get_primary_tensor_input(node)
         if primary is None:
@@ -120,7 +125,9 @@ def _fix_out_spec_dim_order(node: Node) -> None:
         input_val = primary.meta.get("val")
         if not isinstance(input_val, torch.Tensor):
             return
-        spec.dim_order = dim_order_from_stride(input_val)
+        new_dim_order = dim_order_from_stride(input_val)
+        spec.dim_order = new_dim_order
+        spec.stride = tuple(stride_from_dim_order(spec.shape, new_dim_order))
 
 
 # pyre-ignore

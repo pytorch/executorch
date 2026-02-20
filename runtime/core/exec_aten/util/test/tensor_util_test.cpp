@@ -19,6 +19,7 @@ using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::ET_RUNTIME_NAMESPACE::extract_scalar_tensor;
+using executorch::runtime::tensors_have_same_dim_order;
 using executorch::runtime::testing::TensorFactory;
 
 class TensorUtilTest : public ::testing::Test {
