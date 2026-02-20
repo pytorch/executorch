@@ -219,3 +219,15 @@ def is_depthwise_conv(
     return (
         group_input_channels == 1 and group_output_channels % group_input_channels == 0
     )
+
+
+def sanitize_node_name(name: str) -> str:
+    """
+    Modify a (generated) node name to replace invalid characters (. and -) with underscores.
+    """
+    INVALID_CHARS = [".", "-"]
+
+    sanitized = name
+    for c in INVALID_CHARS:
+        sanitized = sanitized.replace(c, "_")
+    return sanitized
