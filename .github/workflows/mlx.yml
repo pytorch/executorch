@@ -10,6 +10,7 @@ on:
       - .github/workflows/mlx.yml
       - backends/mlx/**
       - examples/models/parakeet/**
+      - examples/models/voxtral/**
   workflow_dispatch:
 
 concurrency:
@@ -104,6 +105,107 @@ jobs:
         fi
         echo "::endgroup::"
 
+  test-mlx-voxtral:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-voxtral
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch and build MLX"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} cmake --workflow --preset mlx-release
+        echo "::endgroup::"
+
+        echo "::group::Install Voxtral requirements"
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install transformers "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
+        echo "::endgroup::"
+
+        echo "::group::Export Voxtral model with MLX backend"
+        PYTHONPATH="${PWD}:${PYTHONPATH:-}" \
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.voxtral.export_voxtral_hf \
+          --output-dir /tmp/voxtral_mlx \
+          --dtype bf16 \
+          --quantize-linear int4
+        echo "::endgroup::"
+
+        echo "::group::Build Voxtral MLX runner"
+        cd examples/models/voxtral
+        ${CONDA_RUN} cmake --workflow --preset voxtral-mlx
+        cd ../../..
+        echo "::endgroup::"
+
+        echo "::group::Run Voxtral MLX runner"
+        curl -L https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main/tekken.json -o /tmp/tekken.json
+        curl -L https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav -o /tmp/test_audio.wav
+        OUTPUT=$(./cmake-out/examples/models/voxtral/voxtral_runner \
+          --model_path /tmp/voxtral_mlx/model.pte \
+          --tokenizer_path /tmp/tekken.json \
+          --audio_path /tmp/test_audio.wav \
+          --processor_path /tmp/voxtral_mlx/preprocessor.pte \
+          --prompt "What is happening in this audio?" \
+          --temperature 0 2>&1) || true
+        echo "Runner output:"
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -q "Generated text\|tokens/second\|generated_tokens"; then
+          echo "Success: Voxtral runner produced output"
+        else
+          echo "Failed: Voxtral runner did not produce expected output"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+  test-mlx-whisper:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-whisper
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch and configure MLX build"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} cmake --preset mlx-release
+        echo "::endgroup::"
+
+        echo "::group::Install Whisper requirements"
+        ${CONDA_RUN} pip install transformers soundfile
+        echo "::endgroup::"
+
+        echo "::group::Export Whisper model with MLX backend"
+        PYTHONPATH="${PWD}:${PYTHONPATH:-}" \
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.whisper.export_whisper \
+          --model-id "openai/whisper-tiny" \
+          --output-dir /tmp/whisper_mlx \
+          --dtype bf16 \
+          --quantize-linear int4
+        echo "::endgroup::"
+
+        echo "::group::Run Whisper inference"
+        curl -L https://dldata-public.s3.us-east-2.amazonaws.com/2086-149220-0033.wav -o /tmp/test_audio.wav
+        OUTPUT=$(PYTHONPATH="${PWD}:${PYTHONPATH:-}" \
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.whisper.run_whisper \
+          --model-dir /tmp/whisper_mlx \
+          --audio-file /tmp/test_audio.wav 2>&1)
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -iq "Phoebe"; then
+          echo "Success: 'Phoebe' found in transcription"
+        else
+          echo "Failed: Expected 'Phoebe' not found in transcription"
+          exit 1
+        fi
+        echo "::endgroup::"
+
   test-mlx-llm:
     strategy:
       fail-fast: false
@@ -113,6 +215,8 @@ jobs:
             name: "llama-1b"
           - id: "unsloth/Qwen3-0.6B"
             name: "qwen3-0.6b"
+          - id: "unsloth/gemma-3-1b-it"
+            name: "gemma3-1b"
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       job-name: test-mlx-llm-${{ matrix.model.name }}
