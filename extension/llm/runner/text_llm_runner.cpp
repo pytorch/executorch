@@ -134,8 +134,8 @@ Error TextLLMRunner::generate(
   int64_t max_context_len = metadata_.at(kMaxContextLen);
 
   ET_LOG(
-      Info,
-      "[DEBUG] max_seq_len=%" PRId64 ", max_context_len=%" PRId64
+      Debug,
+      "max_seq_len=%" PRId64 ", max_context_len=%" PRId64
       ", num_prompt_tokens=%d",
       max_seq_len,
       max_context_len,
