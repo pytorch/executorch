@@ -48,6 +48,7 @@ void test_q8ta_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
     add_q8ta_quantize_node(
         graph, fp_input, input_scale, input_zp, packed_int8_input);
 
+    ValueRef activation_str = graph.add_string("none");
     std::vector<ValueRef> linear_args = {
         packed_int8_input,
         input_scale,
@@ -58,6 +59,7 @@ void test_q8ta_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         output_scale,
         output_zp,
         bias_data,
+        activation_str,
         packed_int8_output};
     VK_GET_OP_FN("et_vk.q8ta_linear_gemv.default")(graph, linear_args);
 
@@ -82,6 +84,7 @@ void test_q8ta_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
     add_q8ta_quantize_node(
         graph, fp_input, input_scale, input_zp, packed_int8_input);
 
+    ValueRef activation_str = graph.add_string("none");
     std::vector<ValueRef> linear_args = {
         packed_int8_input,
         input_scale,
@@ -92,6 +95,7 @@ void test_q8ta_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         output_scale,
         output_zp,
         bias_data,
+        activation_str,
         packed_int8_output};
     VK_GET_OP_FN("et_vk.q8ta_linear.default")(graph, linear_args);
 

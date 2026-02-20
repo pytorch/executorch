@@ -848,6 +848,7 @@ def register_q8ta_linear():
             utils.NO_STORAGE,  # output_scale (non tensor)
             utils.NO_STORAGE,  # output_zero_point (non tensor)
             utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # activation (non tensor)
         ],
         outputs_storage=[
             utils.PACKED_INT8_4H4W_BUFFER,
@@ -870,6 +871,7 @@ def register_q8ta_linear_gemv():
             utils.NO_STORAGE,  # output_scale (non tensor)
             utils.NO_STORAGE,  # output_zero_point (non tensor)
             utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # activation (non tensor)
         ],
         outputs_storage=[
             utils.PACKED_INT8_4W_BUFFER,

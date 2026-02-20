@@ -22,15 +22,9 @@ class DecomposeTanPass(ArmPass):
         if op != edge_tan_op:
             return super().call_operator(op, args, kwargs, meta, updated)
         # Skip quantized tan - it is decomposed as one single table op
-        if (
-            len(meta.data.get("input_qparams", [])) > 0
-            and len(meta.data.get("output_qparams", [])) > 0
-        ):
+        if self._is_quantized_meta(meta):
             return super().call_operator(op, args, kwargs, meta, updated)
-        if (
-            len(meta.data.get("input_qparams", [])) > 0
-            or len(meta.data.get("output_qparams", [])) > 0
-        ):
+        if meta.data.get("input_qparams") or meta.data.get("output_qparams"):
             raise RuntimeError(
                 "Mixed quantized and non-quantized inputs/outputs not supported."
             )

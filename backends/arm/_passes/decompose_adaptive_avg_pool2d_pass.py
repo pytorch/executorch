@@ -49,7 +49,7 @@ class DecomposeAdaptiveAvgPool2dPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeAvgPool2dPass}
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op not in (edge_ops + aten_ops):
+        if op not in (edge_ops + aten_ops) or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta, updated)
 
         avg_pool2d_op, slice_op, cat_op = _get_decomposition(op)
