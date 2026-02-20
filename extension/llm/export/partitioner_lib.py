@@ -185,6 +185,12 @@ def get_coreml_partitioner(
     return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
         take_over_mutable_buffer=take_over_mutable_buffer,
+        # Skip embedding ops in coreml delegation due to
+        # compression config conflicts inside coreml
+        skip_ops_for_coreml_delegation=[
+            "quantized_decomposed.embedding_4bit.dtype",
+            "aten.embedding.default",
+        ],
     )
 
 
