@@ -74,6 +74,10 @@ def _is_noop_expand(node: torch.fx.node.Node) -> bool:
     return all(m == 1 for m in multiples) and not changes_rank
 
 
+def _is_view_copy(node: torch.fx.node.Node) -> bool:
+    return node.target == exir_ops.edge.aten.view_copy.default
+
+
 def is_partitioned(
     node: torch.fx.Node,
     tag: str,
@@ -249,17 +253,18 @@ class TOSAPartitioner(Partitioner):
                     reporter,
                 )
 
-            is_noop_partition = all(
+            # Check whether the partition contains only no-op or non-computational ops. Such partitions don't make sense to delegate, and in the worst case may be optimized away during lowering, which can break compilation."
+            is_nocompute_partition = all(
                 _is_noop_clone(node)
                 or _is_noop_alias_copy(node)
-                or _is_noop_detach_copy(node)
                 or _is_noop_expand(node)
                 or _is_noop_to_dim_order_copy(node)
+                or _is_view_copy(node)
                 or node.target in Q_OPS
                 or node.target in DQ_OPS
                 for node in partition.nodes
             )
-            if is_noop_partition:
+            if is_nocompute_partition:
                 reject_partition(
                     "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
                     partition,

@@ -39,6 +39,7 @@ ${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_ar
 ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "0")}
+${layout_declare_spec_const(C, "int", "activation_type", "0")}
 
 ${layout_declare_ubo(B, "ivec4", "output_sizes")}
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
@@ -121,6 +122,15 @@ void main() {
         input_zp,
         weight_sums_tile,
         weight_scales_tile);
+  }
+
+  // Apply ReLU if enabled
+  if (activation_type > 0) {
+    [[unroll]] for (int tile_m = 0; tile_m < TILE_M; ++tile_m) {
+      [[unroll]] for (int tile_n4 = 0; tile_n4 < TILE_N4; ++tile_n4) {
+        out_tile.data[tile_m][tile_n4] = max(out_tile.data[tile_m][tile_n4], vec4(0.0));
+      }
+    }
   }
 
   // Quantize float output tile to int8 and write in PACKED_INT8_4H4W format
