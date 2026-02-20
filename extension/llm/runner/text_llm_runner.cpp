@@ -162,8 +162,8 @@ Error TextLLMRunner::generate(
       config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
 
   ET_LOG(
-      Info,
-      "[DEBUG] config.seq_len=%d, config.max_new_tokens=%d, resolved max_new_tokens=%d",
+      Debug,
+      "config.seq_len=%d, config.max_new_tokens=%d, resolved max_new_tokens=%d",
       config.seq_len,
       config.max_new_tokens,
       max_new_tokens);
