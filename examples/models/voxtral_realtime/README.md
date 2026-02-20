@@ -101,7 +101,7 @@ python export_voxtral_rt.py \
 
 **Note:** Metal 4-bit quantization requires torchao built with experimental MPS (Metal) ops.
 
-You can install torchao with Metal support from the `ao` repo (in executorch/third-party/ao/)
+You can install torchao with Metal support from the `ao` repo (in third-party/ao/)
 ```bash
 USE_CPP=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 pip install . --no-build-isolation
 ```
