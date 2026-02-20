@@ -55,14 +55,17 @@ def define_common_targets(is_fbcode = False):
         srcs = [
             "utils.cpp",
             "conv2d_utils.cpp",
+            "nv_utils.cpp",
         ],
         headers = [
             "utils.h",
             "conv2d_utils.h",
+            "nv_utils.h",
         ],
         exported_headers = [
             "utils.h",
             "conv2d_utils.h",
+            "nv_utils.h",
         ],
         platforms = get_platforms(),
         deps = [
