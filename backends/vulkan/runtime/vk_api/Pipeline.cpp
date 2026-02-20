@@ -82,7 +82,6 @@ VkImageLayout vk_layout(
         default:
           return VK_IMAGE_LAYOUT_GENERAL;
       }
-      break;
     case PipelineStage::TRANSFER:
       switch (access) {
         case MemoryAccessType::READ:
