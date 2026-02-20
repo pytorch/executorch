@@ -185,7 +185,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       multi_modal_runner_ = llm::create_multimodal_runner(
           model_path->toStdString().c_str(),
-          llm::load_tokenizer(tokenizer_path->toStdString()));
+          llm::load_tokenizer(tokenizer_path->toStdString()),
+          std::nullopt,
+          executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
       if (data_files != nullptr) {
         // Convert Java List<String> to C++ std::vector<string>
