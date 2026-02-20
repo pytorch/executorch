@@ -1604,6 +1604,25 @@ Error Method::execute() {
     temp_allocator_->reset();
   }
 
+  // Validate that outputs are set.
+  for (size_t i = 0; i < method_meta().num_outputs(); i++) {
+    auto& output = mutable_value(get_output_index(i));
+    if (!output.isTensor()) {
+      continue;
+    }
+
+    auto tensor_meta = method_meta().output_tensor_meta(i);
+    if (tensor_meta->is_memory_planned()) {
+      continue;
+    }
+
+    auto& t = output.toTensor();
+    if (t.const_data_ptr() == nullptr) {
+      ET_LOG(Error, "Output tensor at index %" ET_PRIsize_t " is not set.", i);
+      return Error::InvalidState;
+    }
+  }
+
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.
   for (step_state_.chain_idx = 0; step_state_.chain_idx < n_chains_;
