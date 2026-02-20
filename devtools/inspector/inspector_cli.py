@@ -48,6 +48,18 @@ def main() -> None:
         required=False,
         help="Provide an optional tsv file path.",
     )
+    parser.add_argument(
+        "--method_name",
+        required=False,
+        default=None,
+        help="Method Name to inspect (used with multi-module exports)",
+    )
+    parser.add_argument(
+        "--module_name",
+        required=False,
+        default=None,
+        help="Module Name to inspect (used with multi-module exports)",
+    )
     parser.add_argument("--compare_results", action="store_true")
 
     args = parser.parse_args()
@@ -58,6 +70,8 @@ def main() -> None:
         debug_buffer_path=args.debug_buffer_path,
         source_time_scale=TimeScale(args.source_time_scale),
         target_time_scale=TimeScale(args.target_time_scale),
+        module_name=args.module_name,
+        method_name=args.method_name,
     )
     inspector.print_data_tabular()
     if args.tsv_path:

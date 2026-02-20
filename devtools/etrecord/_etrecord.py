@@ -691,9 +691,10 @@ def _process_edge_dialect_program(
     elif isinstance(edge_dialect_program, ExirExportedProgram):
         return edge_dialect_program.exported_program
     else:
-        raise RuntimeError(
-            f"Unsupported type of edge_dialect_program passed in {type(edge_dialect_program)}."
-        )
+        if export_modules is None:
+            raise RuntimeError(
+                f"Unsupported type of edge_dialect_program passed in {type(edge_dialect_program)}."
+            )
 
 
 def _process_executorch_program(
