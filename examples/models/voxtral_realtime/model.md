@@ -96,12 +96,16 @@ expect, so there are no transposes between cache update and attention.
 Reference: `examples/models/llama/source_transformation/custom_kv_cache.py`
 (`CustomKVCache`).
 
-### SDPA: separate `nn.Module` + `custom_sdpa` fused kernel
+### SDPA: backend-specific attention implementations
 
 `SDPA` is its own module (not inline code), making it swappable for
-alternative implementations (quantized, CoreML, manual matmul).
+backend-specific implementations.
 
-Two modes (mutually exclusive):
+#### XNNPACK/Portable: `SDPA` with `custom_sdpa` fused kernel
+
+Uses `torch.ops.llama.custom_sdpa` — a custom op that fuses attention
+computation with causal masking. Two modes (mutually exclusive):
+
 - **Causal** (decoder): `custom_sdpa(q, k, v, start_pos, None, 0, True)`.
   Causal masking via `start_pos` + `is_causal=True`.
 - **Explicit mask** (streaming encoder): `custom_sdpa(q, k, v, start_pos, mask, 0, False)`.
@@ -111,6 +115,22 @@ Both modes handle GQA expansion internally and upcast to float32.
 
 Reference: `examples/models/llama/source_transformation/sdpa.py`
 (`SDPACustom`).
+
+#### Metal: `StandardSDPA` with `F.scaled_dot_product_attention`
+
+Metal backend uses AOTInductor (AOTI) which has compatibility issues with
+the `custom_sdpa` custom op. For the text decoder, `StandardSDPA` uses the
+standard PyTorch `F.scaled_dot_product_attention` with explicit attention masks.
+The model's `use_standard_attention` parameter controls which SDPA
+implementation is used. The export script sets this based on `--backend`:
+
+```python
+use_standard_attention = (args.backend == "metal")
+model = load_model(
+    args.model_path,
+    use_standard_attention=use_standard_attention,
+)
+```
 
 ### Attention layout: `[B, T, H, D]` throughout
 
@@ -141,19 +161,29 @@ Uses `F.rms_norm(x, (self.dim,), self.weight, self.eps)` with a stored
 `self.dim` attribute for compatibility with Llama's
 `replace_rms_norm_with_native_rms_norm()` source transformation.
 
-### Encoder attention: standard `F.scaled_dot_product_attention`
+### Encoder attention: backend-specific implementations
+
+#### Offline encoder
 
 The offline encoder has no KV cache (processes full mel at once) and
 no GQA (n_heads == n_kv_heads). Uses `F.scaled_dot_product_attention` with
 `is_causal=True` and standard `[B, H, T, D]` layout. No custom ops needed.
+This works on all backends (XNNPACK, Metal, Portable).
 
 The offline encoder uses full causal attention (no sliding window).
 The model's `params.json` specifies `sliding_window: 750` but this is
-only enforced in the streaming encoder (via `EncoderRingKVCache`). For
-audio shorter than 750 encoder frames (~15s), full causal is equivalent.
+only enforced in the streaming encoder (via KV cache). For audio shorter
+than 750 encoder frames (~15s), full causal is equivalent.
 
-The streaming encoder enforces the trained sliding window — see
-[Encoder KV cache](#encoder-kv-cache).
+#### Streaming encoder
+
+**XNNPACK/Portable only.** The streaming encoder uses `SDPA` (custom_sdpa op)
+with explicit sliding window masks from `EncoderRingKVCache`.
+
+**Metal does not yet support streaming mode.** The custom ops used by
+`StreamingAudioEncoderExport` (`update_cache_with_indices`, `custom_sdpa`)
+are incompatible with AOTI. Future work may add AOTI-compatible streaming
+encoder using `index_copy_` and `F.scaled_dot_product_attention`.
 
 ## Streaming Encoder (`StreamingAudioEncoderExport`)
 
@@ -258,15 +288,36 @@ Quantization is applied per-component after wrapping (following the
 Parakeet pattern), allowing different configs for encoder vs decoder:
 
 ```bash
+# XNNPACK/Portable
 --qlinear-encoder 8w      # encoder linear layers
 --qlinear 8da4w           # decoder linear layers
 --qembedding 8w           # embedding layer
+
+# Metal
+--qlinear-encoder fpa4w   # encoder linear layers
+--qlinear fpa4w           # decoder linear layers
 ```
 
 The streaming encoder references the same module objects that
 `quantize_model_()` mutates in-place, so quantized weights are
 used transparently. Conv1d layers are not quantized (not targeted
 by `quantize_model_`). KV caches and SDPA have no trainable weights.
+
+#### Metal-specific quantization
+
+Metal backend uses `fpa4w` (floating-point activation, 4-bit weight)
+quantization from TorchAO's experimental MPS ops. This uses
+`UIntxWeightOnlyConfig` with HQQ-based quantization parameter selection:
+
+```python
+from torchao.experimental.quant_api import UIntxWeightOnlyConfig
+
+config = UIntxWeightOnlyConfig(
+    group_size=qlinear_group_size,
+    bitwidth=4,
+    uintx_choose_qparams_algorithm="hqq",
+)
+```
 
 ### Export: `strict=True` and `.item()` pattern
 
@@ -348,21 +399,33 @@ VoxtralRealtimeModel
       attention_norm: RMSNorm
       attention: LMAttention
         wq/wk/wv/wo: Linear (no bias)
-        kv_cache: KVCache (update_cache custom op)
-        sdpa: SDPA (custom_sdpa custom op)
+        kv_cache: KVCache (XNNPACK) or StaticKVCache (Metal)
+        sdpa: SDPA (XNNPACK) or StandardSDPA (Metal)
       ffn_norm: RMSNorm
       ada_rms_norm_t_cond: Sequential(Linear, GELU, Linear)
       feed_forward: LMMLP (w1/w2/w3)
     norm: RMSNorm
     output: Linear (tied to tok_embeddings)
 
-StreamingAudioEncoderExport (export wrapper, shares weights with encoder + adapter)
+StreamingAudioEncoderExport (XNNPACK/Portable only - Metal not yet supported)
   conv1: nn.Conv1d (shared from encoder.conv_layers[0].conv)
   conv2: nn.Conv1d (shared from encoder.conv_layers[1].conv)
   layers: 32x CausalEncoderLayer (shared from encoder.layers)
   enc_norm: RMSNorm (shared from encoder.norm)
   adapter: AudioLanguageAdapter (shared from model.adapter)
-  kv_caches: 32x EncoderRingKVCache (owned, ring buffer for sliding window attention)
-  sdpa: SDPA (owned, for streaming attention)
+  kv_caches: 32x EncoderRingKVCache (ring buffer for sliding window attention)
+  sdpa: SDPA (for streaming attention with custom_sdpa op)
   inv_freq: RoPE inverse frequencies (owned, on-the-fly computation)
 ```
+
+### Backend-specific components
+
+| Component | XNNPACK/Portable | Metal |
+|-----------|------------------|-------|
+| Decoder KV cache | `KVCache` (update_cache op) | `StaticKVCache` (index_copy_) |
+| Decoder SDPA | `SDPA` (custom_sdpa op) | `StandardSDPA` (F.scaled_dot_product_attention) |
+| Streaming encoder | ✓ Supported | ✗ Not yet supported |
+
+Metal backend uses standard PyTorch ops (`F.scaled_dot_product_attention`,
+`index_copy_`) instead of custom ops for AOTInductor compatibility. Only
+offline mode is currently supported on Metal.
