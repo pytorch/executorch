@@ -733,3 +733,49 @@ class PybindingsTest(unittest.TestCase):
         )
         with self.assertRaises(RuntimeError):
             executorch_module_bundled_no_data.forward(inputs)
+
+    def test_flat_tensor_data_map(self) -> None:
+        eager_module = ModuleLinear()
+        inputs = eager_module.get_inputs()
+        expected = eager_module(inputs[0])
+        exported_program = export(eager_module, inputs, strict=True)
+        exec_program = to_edge(exported_program).to_executorch(
+            config=ExecutorchBackendConfig(
+                # Move all tensor data to '_default_external_constant' file.
+                external_constants=True,
+            )
+        )
+        program_buffer = exec_program.buffer
+        assert len(exec_program._tensor_data) == 1
+        data_buffer = bytes(exec_program._tensor_data.pop("_default_external_constant"))
+
+        # Test 1: Load FlatTensorDataMap from buffer.
+        program_from_buffer = self.load_prog_fn(program_buffer)
+        data_map_from_buffer = self.runtime._load_flat_tensor_data_map_from_buffer(
+            data_buffer
+        )
+        method = program_from_buffer.load_method(
+            "forward", data_map_from_buffer.get_named_data_map()
+        )
+        executorch_output = method(inputs)[0]
+        self.assertTrue(torch.allclose(expected, executorch_output))
+
+        # Test 2: Load FlatTensorDataMap from file.
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pte_file = os.path.join(tmpdir, "linear.pte")
+            with open(pte_file, "wb") as f:
+                f.write(program_buffer)
+            ptd_file = os.path.join(tmpdir, "linear.ptd")
+            with open(ptd_file, "wb") as ptd:
+                ptd.write(data_buffer)
+
+            program_from_file = self.runtime._load_program(pte_file)
+            data_map_from_file = self.runtime._load_flat_tensor_data_map(ptd_file)
+            method_1 = program_from_file.load_method(
+                "forward", data_map_from_file.get_named_data_map()
+            )
+            executorch_output1 = method_1(inputs)[0]
+            self.assertTrue(torch.allclose(expected, executorch_output1))

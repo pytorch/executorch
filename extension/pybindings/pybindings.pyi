@@ -297,3 +297,60 @@ def _threadpool_get_thread_count() -> int:
         This API is experimental and subject to change without notice.
     """
     ...
+
+@experimental("This API is experimental and subject to change without notice.")
+class FlatTensorDataMap:
+    """FlatTensorDataMap loads external data from a .ptd file.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+
+    def get_named_data_map(self) -> Any:
+        """Get a pointer to the underlying NamedDataMap.
+
+        Returns:
+            A capsule containing a pointer to the internal NamedDataMap
+            that can be passed to ExecuTorchProgram.load_method().
+
+        Warning:
+            The FlatTensorDataMap instance must outlive the returned capsule.
+        """
+        ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _load_flat_tensor_data_map(
+    data_path: str,
+) -> FlatTensorDataMap:
+    """Load a flat tensor data map from a file.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+
+    Args:
+        data_path: Path to the .ptd file with external data.
+
+    Returns:
+        A FlatTensorDataMap instance that can be used with ExecuTorchProgram.load_method().
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _load_flat_tensor_data_map_from_buffer(
+    data_buffer: bytes,
+) -> FlatTensorDataMap:
+    """Load a flat tensor data map from a buffer.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+
+    Args:
+        data_buffer: Buffer holding a .ptd file with external data.
+
+    Returns:
+        A FlatTensorDataMap instance that can be used with ExecuTorchProgram.load_method().
+    """
+    ...

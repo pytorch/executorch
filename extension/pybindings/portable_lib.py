@@ -59,6 +59,8 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     _get_registered_backend_names,  # noqa: F401
     _is_available,  # noqa: F401
     _load_bundled_program_from_buffer,  # noqa: F401
+    _load_flat_tensor_data_map,  # noqa: F401
+    _load_flat_tensor_data_map_from_buffer,  # noqa: F401
     _load_for_executorch,  # noqa: F401
     _load_for_executorch_from_buffer,  # noqa: F401
     _load_for_executorch_from_bundled_program,  # noqa: F401
@@ -71,6 +73,7 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     ExecuTorchMethod,  # noqa: F401
     ExecuTorchModule,  # noqa: F401
     ExecuTorchProgram,  # noqa: F401
+    FlatTensorDataMap,  # noqa: F401
     MethodMeta,  # noqa: F401
     Verification,  # noqa: F401
 )

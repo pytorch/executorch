@@ -8,35 +8,37 @@ MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB = [
 ]
 
 PORTABLE_MODULE_DEPS = [
-    "//executorch/runtime/kernel:operator_registry",
-    "//executorch/runtime/executor:program",
     "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",
-    "//executorch/extension/aten_util:aten_bridge",
     "//executorch/devtools/bundled_program:runtime",
+    "//executorch/devtools/etdump:etdump_flatcc",
+    "//executorch/extension/aten_util:aten_bridge",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
+    "//executorch/extension/flat_tensor:flat_tensor_data_map",
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/extension/module:bundled_module",
     "//executorch/extension/module:module",
     "//executorch/extension/tensor:tensor",
+    "//executorch/runtime/executor:program",
     "//executorch/runtime/executor/test:test_backend_compiler_lib",
-    "//executorch/devtools/etdump:etdump_flatcc",
+    "//executorch/runtime/kernel:operator_registry",
 ] + get_all_cpu_backend_targets()
 
 ATEN_MODULE_DEPS = [
-    "//executorch/runtime/kernel:operator_registry_aten",
-    "//executorch/runtime/executor:program_aten",
     "//executorch/runtime/core/exec_aten:lib_aten",
     "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",
+    "//executorch/devtools/bundled_program:runtime_aten",
+    "//executorch/devtools/etdump:etdump_flatcc",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
+    "//executorch/extension/flat_tensor:flat_tensor_data_map_aten",
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/extension/module:bundled_module_aten",
     "//executorch/extension/module:module_aten",
     "//executorch/extension/tensor:tensor_aten",
-    "//executorch/devtools/bundled_program:runtime_aten",
     "//executorch/runtime/executor/test:test_backend_compiler_lib_aten",
-    "//executorch/devtools/etdump:etdump_flatcc",
+    "//executorch/runtime/executor:program_aten",
+    "//executorch/runtime/kernel:operator_registry_aten",
 ]
 
 # Generated lib for all ATen ops with aten kernel used by models in model inventory

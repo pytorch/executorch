@@ -21,6 +21,7 @@
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/module/module.h>
@@ -82,6 +83,7 @@ using ::executorch::ET_RUNTIME_NAMESPACE::Kernel;
 using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 using ::executorch::ET_RUNTIME_NAMESPACE::Program;
 using ::executorch::extension::BufferDataLoader;
+using ::executorch::extension::FlatTensorDataMap;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
 using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
@@ -1367,9 +1369,21 @@ struct PyProgram final {
     return std::string(res.get());
   }
 
-  std::unique_ptr<PyMethod> load_method(const std::string& method_name) {
+  std::unique_ptr<PyMethod> load_method(
+      const std::string& method_name,
+      py::object named_data_map_obj = py::none()) {
+    const NamedDataMap* named_data_map = nullptr;
+    if (!named_data_map_obj.is_none()) {
+      // Extract pointer from py::capsule.
+      py::capsule named_data_map_capsule =
+          named_data_map_obj.cast<py::capsule>();
+      named_data_map = named_data_map_capsule.get_pointer<const NamedDataMap>();
+    }
     Result<Method> res = state_->program_->load_method(
-        method_name.c_str(), memory_->mem_manager(), event_tracer_.get());
+        method_name.c_str(),
+        memory_->mem_manager(),
+        event_tracer_.get(),
+        named_data_map);
     THROW_IF_ERROR(
         res.error(),
         "Failed to load method %s, error: 0x:%" PRIx32,
@@ -1469,6 +1483,40 @@ py::bool_ is_available(const std::string& backend_name) {
   }
   return backend->is_available();
 }
+
+struct PyFlatTensorDataMap final {
+  explicit PyFlatTensorDataMap(
+      std::unique_ptr<DataLoader> loader,
+      FlatTensorDataMap data_map)
+      : loader_(std::move(loader)), data_map_(std::move(data_map)) {}
+  static std::unique_ptr<PyFlatTensorDataMap> load_from_file(
+      const std::string& path) {
+    auto loader = loader_from_file(path);
+    auto result = FlatTensorDataMap::load(loader.get());
+    THROW_IF_ERROR(result.error(), "Failed to load FlatTensorDataMap");
+    return std::make_unique<PyFlatTensorDataMap>(
+        std::move(loader), std::move(result.get()));
+  }
+  static std::unique_ptr<PyFlatTensorDataMap> load_from_buffer(
+      const py::bytes& buffer) {
+    auto loader = loader_from_buffer(
+        buffer.cast<std::string_view>().data(), py::len(buffer));
+    auto result = FlatTensorDataMap::load(loader.get());
+    THROW_IF_ERROR(result.error(), "Failed to load FlatTensorDataMap");
+    return std::make_unique<PyFlatTensorDataMap>(
+        std::move(loader), std::move(result.get()));
+  }
+
+  // Get a pointer to the underlying NamedDataMap as a py::capsule.
+  // The PyFlatTensorDataMap must outlive this pointer.
+  py::capsule get_named_data_map() {
+    return py::capsule(&data_map_, "NamedDataMap");
+  }
+
+ private:
+  std::unique_ptr<DataLoader> loader_; // Keep DataLoader alive.
+  FlatTensorDataMap data_map_;
+};
 
 } // namespace
 
@@ -1677,6 +1725,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           "load_method",
           &PyProgram::load_method,
           py::arg("method_name"),
+          py::arg("named_data_map") = py::none(),
           call_guard)
       .def(
           "method_meta",
@@ -1728,6 +1777,22 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("name"),
           call_guard)
       .def("method_meta", &PyMethod::method_meta, call_guard);
+
+  m.def(
+      "_load_flat_tensor_data_map",
+      &PyFlatTensorDataMap::load_from_file,
+      py::arg("data_path"),
+      call_guard);
+  m.def(
+      "_load_flat_tensor_data_map_from_buffer",
+      &PyFlatTensorDataMap::load_from_buffer,
+      py::arg("data_buffer"),
+      call_guard);
+  py::class_<PyFlatTensorDataMap>(m, "FlatTensorDataMap")
+      .def(
+          "get_named_data_map",
+          &PyFlatTensorDataMap::get_named_data_map,
+          call_guard);
 }
 
 namespace {
