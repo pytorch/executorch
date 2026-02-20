@@ -41,6 +41,14 @@ BackendInterface* get_backend_class(const char* name) {
   return nullptr;
 }
 
+std::vector<BackendInterface*> get_all_backend_classes() {
+  std::vector<BackendInterface*> backends(num_registered_backends);
+  for (size_t i = 0; i < num_registered_backends; i++) {
+    backends[i] = registered_backends[i].backend;
+  }
+  return backends;
+}
+
 Error register_backend(const Backend& backend) {
   if (num_registered_backends >= kMaxRegisteredBackends) {
     return Error::Internal;
