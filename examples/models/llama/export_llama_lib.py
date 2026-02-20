@@ -773,37 +773,6 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
         )
     )
 
-    if llm_config.model.use_attention_sink:
-        print("Refreshing example inputs for Attention Sink...")
-        if hasattr(edge_manager.model, "get_example_inputs"):
-            # The model is now patched to return (tokens, attn_options, cache_indices)
-            new_inputs = edge_manager.model.get_example_inputs()
-            # We assume these are all positional arguments
-            edge_manager.example_inputs = new_inputs
-            # Clear kwargs since we provide everything positionally
-            edge_manager.example_kwarg_inputs = {}
-            print(f"Updated inputs: {len(new_inputs)} items")
-
-            # Update dynamic shapes if enabled
-            if edge_manager.enable_dynamic_shape:
-                existing_shapes = edge_manager.dynamic_shapes
-                if existing_shapes and len(existing_shapes) == 2:
-                    # Extract the Dim object from the first input (tokens)
-                    # tokens shape dict is {1: Dim(...)}
-                    token_dim = existing_shapes[0][1]
-
-                    # cache_indices is 1D tensor of size seq_len
-                    # Spec should be {0: token_dim}
-                    indices_spec = {0: token_dim}
-
-                    # Relieve static constraint on input_pos
-                    # input_pos spec in existing_shapes[1] is {"input_pos": {0: 1}}
-                    # We change it to {"input_pos": {0: token_dim}}
-                    input_pos_spec = {"input_pos": {0: token_dim}}
-
-                    edge_manager.dynamic_shapes = (existing_shapes[0], input_pos_spec, indices_spec)
-                    print("Updated dynamic_shapes for Attention Sink (patched input_pos)")
-
     return edge_manager
 
 
