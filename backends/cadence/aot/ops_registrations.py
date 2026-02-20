@@ -1134,6 +1134,13 @@ def quantized_conv2d_nchw_per_tensor_meta(
     assert len(in_size) > 2
     assert len(in_size) < 6
 
+    in_channels = input.shape[1]
+    if (in_channels % groups) != 0:
+        raise ValueError("`in_channels` must be divisible by `groups`")
+
+    if (out_channels % groups) != 0:
+        raise ValueError("`out_channels` must be divisible by `groups`")
+
     # Compute the output tensor size
     output_size = (
         get_conv1d_output_size(
