@@ -103,13 +103,6 @@ Before you can start writing any code, you need to get a copy of ExecuTorch code
       * The `origin` entries show your forked GitHub repository. They tell you that when you run `git pull` or `git push`, your changes will go from/to your GitHub fork.
 
       * The `upstream` entries show the main ExecuTorch repository. If you want to sync the latest changes from there, you can run `git fetch upstream`.
-
-    Let's sync from both your fork _and_ the main ExecuTorch branch, getting the latest changes from each of them. To do this, run:
-
-    ```bash
-    git fetch --all --prune
-    ```
-
 4. If you just cloned your fork, your GitHub repository will tell you your branch is up-to-date:
 
     ![](_static/img/new-contributor-guide/synced_fork.png)

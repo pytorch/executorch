@@ -81,7 +81,7 @@ DEFINE_string(
 
 DEFINE_int32(
     debug_buffer_size,
-    20000000, // 20MB
+    100000000, // 100MB
     "Size of the debug buffer in bytes to allocate for intermediate outputs and program outputs logging.");
 
 DEFINE_string(
@@ -424,6 +424,11 @@ int main(int argc, char** argv) {
     int inference_index = 0;
     double elapsed_time = 0;
     while (std::getline(input_list, file_path)) {
+      // to avoid case where \r\n is used as EOL
+      if (!file_path.empty() && file_path.back() == '\r') {
+        file_path.pop_back();
+      }
+
       auto input_files = split(file_path, " ");
       if (input_files.size() == 0) {
         break;

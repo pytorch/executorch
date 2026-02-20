@@ -61,7 +61,7 @@ For more information about OpenVINO build, refer to the [OpenVINO Build Instruct
 
 Follow the steps below to setup your build environment:
 
-1. **Setup ExecuTorch Environment**: Refer to the [Environment Setup](getting-started-setup.md#environment-setup) guide for detailed instructions on setting up the ExecuTorch environment.
+1. **Setup ExecuTorch Environment**: Refer to the [Environment Setup](using-executorch-building-from-source.md#environment-setup) guide for detailed instructions on setting up the ExecuTorch environment.
 
 2. **Setup OpenVINO Backend Environment**
 - Install the dependent libs. Ensure that you are inside `executorch/backends/openvino/` directory
@@ -92,7 +92,7 @@ The exported model will be saved as 'resnet50.pte' in the current directory.
 
 ### Build C++ OpenVINO Examples
 
-After building the OpenVINO backend following the [instructions](#setup) above, the executable will be saved in `<executorch_root>/cmake-out/backends/openvino/`.
+After building the OpenVINO backend following the [instructions](#setup) above, the executable will be saved in `<executorch_root>/cmake-out/`.
 
 The executable requires a model file (`.pte` file generated in the aot step) and the number of inference executions.
 
@@ -101,7 +101,7 @@ The executable requires a model file (`.pte` file generated in the aot step) and
 Run inference with a given model for 10 executions:
 
 ```
-./openvino_executor_runner \
+./executor_runner \
     --model_path=model.pte \
     --num_executions=10
 ```

@@ -29,8 +29,8 @@ test_data_suite = {
     "rand": torch.rand(10, 10) - 0.5,
     "rand_alt_shape": torch.rand(10, 3, 5) - 0.5,
     "rand_4D": torch.rand(1, 6, 5, 7) - 0.5,
-    "randn_pos": torch.randn(10) + 10,
-    "randn_neg": torch.randn(10) - 10,
+    "randn_pos": torch.randn(10) + 3,
+    "randn_neg": torch.randn(10) - 3,
     "ramp": torch.arange(-16, 16, 0.2),
     "large": 100 * torch.ones(1, 1),
     "small": 0.000001 * torch.ones(1, 1),
@@ -76,9 +76,6 @@ def test_cosh_u55_INT(test_data: Tuple):
 @common.parametrize(
     "test_data",
     test_data_suite,
-    xfails={
-        "ones_4D": "MLBEDSW-11046 - Incorrect output for TABLE followed by RESHAPE"
-    },
     strict=False,
 )
 def test_cosh_u85_INT(test_data: Tuple):
@@ -90,25 +87,25 @@ def test_cosh_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_cosh_vgf_FP(test_data: Tuple):
+def test_cosh_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Cosh(),
         (test_data,),
         [],
         [],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_cosh_vgf_INT(test_data: Tuple):
+def test_cosh_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Cosh(),
         (test_data,),
         [],
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

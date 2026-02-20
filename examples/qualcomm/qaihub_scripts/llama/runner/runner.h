@@ -55,7 +55,7 @@ class Runner {
     // inference_end_ms: End of inference/generation.
     long inference_end_ms;
     // Keep a running total of the time spent in sampling.
-    long aggregate_sampling_time_ms;
+    long aggregate_sampling_time_ms = 0;
     // Token count from prompt
     int64_t num_prompt_tokens;
     // Token count from generated (total - prompt)

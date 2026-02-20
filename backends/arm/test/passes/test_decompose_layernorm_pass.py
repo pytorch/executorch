@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,15 +16,13 @@ input_t = Tuple[torch.Tensor]  # Input x
 
 
 class LayerNorm(torch.nn.Module):
-    """
-    Basic layer_norm model using torch.nn.layer_norm layer
-    """
+    """Basic layer_norm model using torch.nn.layer_norm layer."""
 
     def __init__(self):
         super(LayerNorm, self).__init__()
         self.layer_norm = torch.nn.LayerNorm(10)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.layer_norm(x)
         return x
 
@@ -32,7 +30,7 @@ class LayerNorm(torch.nn.Module):
         return (torch.rand(10),)
 
 
-def test_decompose_layernorm_tosa_FP():
+def test_decompose_layer_norm_tosa_FP():
     module = LayerNorm()
     pipeline = PassPipeline[input_t](
         module,

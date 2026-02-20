@@ -24,12 +24,16 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
+    MixedW8A32ConvPattern,
+    MixedW8A32GruPattern,
+    MixedW8A32LinearPattern,
     ReluPattern0,
     ReluPattern1,
     SoftmaxPattern,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
     check_out_zero_point_is_min_range,
+    copy_node_metadata,
     create_zero_bias_int32,
     find_sequential_partitions_aten,
     get_conv_args,
@@ -63,33 +67,18 @@ def get_args_and_kwargs_add(
     dequants_inputs: List[fx.Node],
     quant_node: fx.Node,
 ) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
-    X_scale_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], dequants_inputs[0].args[1]),
-        {"dtype": torch.float},
-    )
-    X_zero_point_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], dequants_inputs[0].args[2]),
-        {"dtype": torch.int32},
-    )
-    Y_scale_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], dequants_inputs[1].args[1]),
-        {"dtype": torch.float},
-    )
-    Y_zero_point_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], dequants_inputs[1].args[2]),
-        {"dtype": torch.int32},
-    )
+    X_scale = dequants_inputs[0].args[1]
+
+    X_zero_point = dequants_inputs[0].args[2]
+    Y_scale = dequants_inputs[1].args[1]
+    Y_zero_point = dequants_inputs[1].args[2]
     args = (
         inputs_inputs[0],
-        X_scale_,
-        X_zero_point_,
+        X_scale,
+        X_zero_point,
         inputs_inputs[1],
-        Y_scale_,
-        Y_zero_point_,
+        Y_scale,
+        Y_zero_point,
         quant_node.args[1],
         quant_node.args[2],
     )
@@ -127,31 +116,12 @@ def get_args_and_kwargs_linear(
     else:
         bias = bias_inputs[0]
 
-    # Create single element tensors for weight_zero_point, out_multiplier, out_shift.
-    # Note that the function expects int32_t, when it would default to int64_t, so
-    # we explicitly require that type.
-    weight_zero_point_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], dequants_weights[0].args[2]),
-        {"dtype": torch.int32},
-    )
-    out_multiplier_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], out_multiplier[0].item()),
-        {"dtype": torch.int32},
-    )
-    out_shift_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], out_shift[0].item()),
-        {"dtype": torch.int32},
-    )
-
     args = tuple(inputs_inputs + weights_inputs + [bias])
     kwargs = {
         "src_zero_point": dequants_inputs[0].args[2],
-        "weight_zero_point": weight_zero_point_,
-        "out_multiplier": out_multiplier_,
-        "out_shift": out_shift_,
+        "weight_zero_point": dequants_weights[0].args[2],
+        "out_multiplier": out_multiplier[0].item(),
+        "out_shift": out_shift[0].item(),
         "out_zero_point": quant_node.args[2],
         "offset": None,
     }
@@ -176,22 +146,8 @@ def get_args_and_kwargs_layer_norm(
     ), "per-channel quantization is not supported for layer norm, both scale and zero_point should be scalars"
 
     # Make the scale and zero_point tensors
-    scale_tensor = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        (
-            [1],
-            dequants_inputs[0].args[1],
-        ),
-        {"dtype": torch.float32},
-    )
-    zero_point_tensor = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        (
-            [1],
-            dequants_inputs[0].args[2],
-        ),
-        {"dtype": torch.int32},
-    )
+    scale = dequants_inputs[0].args[1]
+    zero_point = dequants_inputs[0].args[2]
 
     weight = other_inputs[1] if len(other_inputs) > 1 else None
 
@@ -204,6 +160,15 @@ def get_args_and_kwargs_layer_norm(
             ),
             {"dtype": torch.float32},
         )
+        assert (
+            len(inputs_inputs) == 1
+        ), f"Expected 1 input for layer norm weight, got {len(inputs_inputs)}"
+        assert "val" in inputs_inputs[0].meta, "Missing val metadata on input node"
+        fake_mode = inputs_inputs[0].meta["val"].fake_mode
+        assert fake_mode is not None, "fake_mode is None on input node"
+        with fake_mode:
+            weight.meta["val"] = torch.full(other_inputs[0], 1, dtype=torch.float32)
+        copy_node_metadata(weight, inputs_inputs[0])
 
     bias = other_inputs[2] if len(other_inputs) > 2 else None
 
@@ -216,9 +181,18 @@ def get_args_and_kwargs_layer_norm(
             ),
             {"dtype": torch.float32},
         )
+        assert (
+            len(inputs_inputs) == 1
+        ), f"Expected 1 input for layer norm bias, got {len(inputs_inputs)}"
+        assert "val" in inputs_inputs[0].meta, "Missing val metadata on input node"
+        fake_mode = inputs_inputs[0].meta["val"].fake_mode
+        assert fake_mode is not None, "fake_mode is None on input node"
+        with fake_mode:
+            bias.meta["val"] = torch.full(other_inputs[0], 0, dtype=torch.float32)
+        copy_node_metadata(bias, inputs_inputs[0])
 
     # Make the args and kwargs for the replacement op
-    args = tuple(inputs_inputs + [scale_tensor] + [zero_point_tensor])
+    args = tuple(inputs_inputs + [scale, zero_point])
     kwargs = {
         "normalized_shape": other_inputs[0],
         "weight": weight,
@@ -306,31 +280,6 @@ def get_args_and_kwargs_conv(
 
     (out_multiplier, out_shift) = quantize_tensor_multiplier(requantize_scale_t)
 
-    out_multiplier_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], out_multiplier[0].item()),
-        {"dtype": torch.int32},
-    )
-    out_shift_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], out_shift[0].item()),
-        {"dtype": torch.int32},
-    )
-
-    # Create a single element tensor for the weight zero point
-    weight_zero_point_tensor = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], weight_zero_point),
-        {"dtype": torch.int32},
-    )
-
-    # Create a single element tensor for the bias scale
-    bias_scale_tensor = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], bias_scale),
-        {"dtype": torch.float32},
-    )
-
     # Make the args and kwargs for the replacement op
     args = tuple(inputs_inputs + weights_inputs + [bias])
     kwargs = {
@@ -339,12 +288,12 @@ def get_args_and_kwargs_conv(
         "dilation": dilation,
         "groups": groups,
         "input_zero_point": dequants_inputs[0].args[2],
-        "weight_zero_point": weight_zero_point_tensor,
-        "bias_scale": bias_scale_tensor,
+        "weight_zero_point": weight_zero_point,
+        "bias_scale": bias_scale,
         "out_scale": quant_node.args[1],
         "out_zero_point": quant_node.args[2],
-        "out_multiplier": out_multiplier_,
-        "out_shift": out_shift_,
+        "out_multiplier": out_multiplier[0].item(),
+        "out_shift": out_shift[0].item(),
     }
     return args, kwargs
 
@@ -365,28 +314,35 @@ def get_args_and_kwargs_relu(
     # Make the args and kwargs for the replacement op
     args = tuple(inputs_inputs)
 
-    X_zero_point = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], dequants_inputs[0].args[2]),
-        {"dtype": torch.int32},
-    )
-    out_multiplier_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], out_multiplier[0].item()),
-        {"dtype": torch.int32},
-    )
-    out_shift_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], out_shift[0].item()),
-        {"dtype": torch.int32},
-    )
-
     kwargs = {
-        "X_zero_point": X_zero_point,
+        "X_zero_point": dequants_inputs[0].args[2],
         "out_zero_point": quant_node.args[2],
-        "out_multiplier": out_multiplier_,
-        "out_shift": out_shift_,
+        "out_multiplier": out_multiplier[0].item(),
+        "out_shift": out_shift[0].item(),
     }
+    return args, kwargs
+
+
+def get_args_and_kwargs_mixed_w8a32_linear(
+    graph_module: GraphModule,
+    other_inputs: List[fx.Node],
+    weights_inputs: List[fx.Node],
+    dequants_weights: List[fx.Node],
+    bias_inputs: List[fx.Node],
+    dequants_biases: List[fx.Node],
+) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
+    w_scale_ = dequants_weights[0].args[1]
+    b_scale_ = dequants_biases[0].args[1]
+
+    args = (
+        other_inputs[0],
+        weights_inputs[0],
+        w_scale_,
+        bias_inputs[0],
+        b_scale_,
+    )
+    kwargs = {}
+
     return args, kwargs
 
 
@@ -409,51 +365,130 @@ def get_args_and_kwargs_softmax(
         ),
         {"dtype": torch.int32},
     )
+    assert (
+        len(inputs_inputs) == 1
+    ), f"Expected 1 input for softmax, got {len(inputs_inputs)}"
+    assert "val" in inputs_inputs[0].meta, "Missing val metadata on input node"
+    fake_mode = inputs_inputs[0].meta["val"].fake_mode
+    assert fake_mode is not None, "fake_mode is None on input node"
+    with fake_mode:
+        mask_tensor.meta["val"] = torch.full(mask_shape, 0.0, dtype=torch.int32)
+    copy_node_metadata(mask_tensor, inputs_inputs[0])
     # Make the scale and zero_point tensors
-    in_scale_tensor = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        (
-            [1],
-            dequants_inputs[0].args[1],
-        ),
-        {"dtype": torch.float32},
-    )
-    in_zero_point_tensor = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        (
-            [1],
-            dequants_inputs[0].args[2],
-        ),
-        {"dtype": torch.int32},
-    )
-    out_scale_tensor = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        (
-            [1],
-            quant_node.args[1],
-        ),
-        {"dtype": torch.float32},
-    )
-    out_zero_point_tensor = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        (
-            [1],
-            quant_node.args[2],
-        ),
-        {"dtype": torch.int32},
-    )
+    in_scale = dequants_inputs[0].args[1]
+    in_zero_point = dequants_inputs[0].args[2]
+    out_scale = quant_node.args[1]
+    out_zero_point = quant_node.args[2]
 
     # Make the args and kwargs for the replacement op
     args = (
         inputs_inputs[0],
         mask_tensor,
         op_node.args[1],
-        in_scale_tensor,
-        in_zero_point_tensor,
-        out_scale_tensor,
-        out_zero_point_tensor,
+        in_scale,
+        in_zero_point,
+        out_scale,
+        out_zero_point,
     )
     kwargs = {}
+
+    return args, kwargs
+
+
+def get_args_and_kwargs_mixed_w8a32_conv(
+    graph_module: GraphModule,
+    other_inputs: List[fx.Node],
+    weights_inputs: List[fx.Node],
+    dequants_weights: List[fx.Node],
+    bias_inputs: List[fx.Node],
+    dequants_biases: List[fx.Node],
+    op_node: fx.Node,
+) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
+    # Stride, padding, dilation, groups not supported yet
+    if len(op_node.args) > 3:
+        assert op_node.args[3] == [1]  # Stride
+    if len(op_node.args) > 4:
+        assert op_node.args[4] == [0]  # Padding
+    if len(op_node.args) > 5:
+        assert op_node.args[5] == [1]  # Dilation
+    if len(op_node.args) > 6:
+        assert op_node.args[6] == 1  # Groups
+
+    assert len(dequants_weights) == 1
+    assert len(dequants_biases) == 1
+    W_scale_ = dequants_weights[0].args[1]
+    B_scale_ = dequants_biases[0].args[1]
+
+    transposed_inputs = graph_module.graph.call_function(
+        torch.ops.aten.permute.default,
+        (other_inputs[0], [0, 2, 1]),  # NCL -> NLC
+    )
+    assert "val" in other_inputs[0].meta, "Missing val metadata on input node"
+    original_val = other_inputs[0].meta["val"]
+    assert original_val.fake_mode is not None, "fake_mode is None on input node"
+    with original_val.fake_mode:
+        transposed_inputs.meta["val"] = torch.ops.aten.permute.default(
+            original_val, [0, 2, 1]
+        )
+    copy_node_metadata(transposed_inputs, other_inputs[0])
+
+    transposed_weights = graph_module.graph.call_function(
+        torch.ops.aten.permute.default,
+        (weights_inputs[0], [2, 0, 1]),  # NCL -> LNC
+    )
+    assert "val" in weights_inputs[0].meta, "Missing val metadata on weight node"
+    original_val = weights_inputs[0].meta["val"]
+    assert original_val.fake_mode is not None, "fake_mode is None on weight node"
+    with original_val.fake_mode:
+        transposed_weights.meta["val"] = torch.ops.aten.permute.default(
+            original_val, [2, 0, 1]
+        )
+    copy_node_metadata(transposed_weights, weights_inputs[0])
+
+    args = (
+        transposed_inputs,
+        transposed_weights,
+        W_scale_,
+        bias_inputs[0],
+        B_scale_,
+    )
+    kwargs = {}
+
+    return args, kwargs
+
+
+def get_args_and_kwargs_mixed_w8a32_gru(
+    graph_module: GraphModule,
+    other_inputs: List[fx.Node],
+    weights_inputs: List[fx.Node],
+    dequants_weights: List[fx.Node],
+    bias_inputs: List[fx.Node],
+    dequants_biases: List[fx.Node],
+    op_node: fx.Node,
+) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
+    # Stride, padding, dilation, groups not supported yet
+
+    assert len(dequants_weights) == 2
+    assert len(dequants_biases) == 2
+    w_i_scale = dequants_weights[0].args[1]
+    w_h_scale = dequants_weights[1].args[1]
+    b_i_scale = dequants_biases[0].args[1]
+    b_h_scale = dequants_biases[1].args[1]
+
+    args = (
+        other_inputs[0],
+        other_inputs[1],
+        weights_inputs[0],
+        w_i_scale,
+        weights_inputs[1],
+        w_h_scale,
+        bias_inputs[0],
+        b_i_scale,
+        bias_inputs[1],
+        b_h_scale,
+    )
+    kwargs = {}
+
     return args, kwargs
 
 
@@ -592,6 +627,19 @@ class QuantFusion(ExportPass):
                             torch.ops.aten.transpose.int,
                             (weights_inputs[0], 0, 1),
                         )
+                        assert (
+                            "val" in weights_inputs[0].meta
+                        ), "Missing val metadata on weight node"
+                        original_val = weights_inputs[0].meta["val"]
+                        assert (
+                            original_val.fake_mode is not None
+                        ), "fake_mode is None on weight node"
+                        with original_val.fake_mode:
+                            transposed_weights.meta["val"] = (
+                                torch.ops.aten.transpose.int(original_val, 0, 1)
+                            )
+                        copy_node_metadata(transposed_weights, weights_inputs[0])
+
                         # Call linear with transposed weight
                         args, kwargs = get_args_and_kwargs_linear(
                             graph_module,
@@ -617,6 +665,35 @@ class QuantFusion(ExportPass):
                             quant_node,
                             op_node,
                         )
+                    elif isinstance(pattern, MixedW8A32LinearPattern):
+                        args, kwargs = get_args_and_kwargs_mixed_w8a32_linear(
+                            graph_module,
+                            other_inputs,
+                            weights_inputs,
+                            dequants_weights,
+                            bias_inputs,
+                            dequants_biases,
+                        )
+                    elif isinstance(pattern, MixedW8A32ConvPattern):
+                        args, kwargs = get_args_and_kwargs_mixed_w8a32_conv(
+                            graph_module,
+                            other_inputs,
+                            weights_inputs,
+                            dequants_weights,
+                            bias_inputs,
+                            dequants_biases,
+                            op_node,
+                        )
+                    elif isinstance(pattern, MixedW8A32GruPattern):
+                        args, kwargs = get_args_and_kwargs_mixed_w8a32_gru(
+                            graph_module,
+                            other_inputs,
+                            weights_inputs,
+                            dequants_weights,
+                            bias_inputs,
+                            dequants_biases,
+                            op_node,
+                        )
 
                     fused = graph_module.graph.call_function(
                         pattern.replacement_op(),
@@ -635,6 +712,19 @@ class QuantFusion(ExportPass):
 
             legalize_graph(graph_module)
             graph_module.graph.eliminate_dead_code()
+            nodes_list = list(graph_module.graph.nodes)
+
+            if len(nodes_list) > 0 and nodes_list[-1].op != "output":
+                output_nodes = [n for n in nodes_list if n.op == "output"]
+                output_arg = output_nodes[0].args[0]
+                original_meta = output_nodes[0].meta.copy()
+
+                for out_node in output_nodes:
+                    graph_module.graph.erase_node(out_node)
+
+                new_output_node = graph_module.graph.output(output_arg)
+                new_output_node.meta.update(original_meta)
+
             graph_module.recompile()
         return PassResult(graph_module, True)
 

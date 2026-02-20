@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,7 +11,6 @@ quantization specs consumed by the annotator.
 
 """
 
-# pyre-unsafe
 
 from dataclasses import dataclass
 
@@ -178,14 +177,19 @@ class QuantizationConfig:
             torch.ops.aten.conv2d.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.conv2d.padding,
+            torch.ops.aten.conv_transpose2d.input,
+            torch.ops.aten.conv3d.default,
+            torch.ops.aten.conv3d.padding,
         ]:
             if self.input_activation is None or self.weight is None:
                 raise ValueError(
                     "Input activation and weight QuantizationConfig must be specified."
                 )
-            if self.input_activation.dtype == self.weight.dtype == torch.int8:
-                # This is the default int8 quantization which uses the derived quantization
-                # calculated from the activation and weight scale
+
+            if (self.input_activation.dtype == self.weight.dtype == torch.int8) or (
+                self.input_activation.dtype == torch.int16
+                and self.weight.dtype == torch.int8
+            ):
                 input_act = node.args[0]
                 weight = node.args[1]
 
@@ -199,24 +203,23 @@ class QuantizationConfig:
                 if self.weight is not None:
                     if qscheme == torch.per_channel_symmetric:
                         ch_axis = self.weight.ch_axis
+                        if (
+                            node.target == torch.ops.aten.conv_transpose2d.input
+                            and ch_axis is not None
+                        ):
+                            # Bias is 1-D so channel axis is always 0 even for transpose conv
+                            ch_axis = 0
 
                 quantization_spec = DerivedQuantizationSpec(
                     derived_from=[(input_act, node), (weight, node)],  # type: ignore[list-item]
                     derive_qparams_fn=_derive_qparams_fn,
                     dtype=torch.int32,
-                    quant_min=torch.iinfo(torch.int32).min,
-                    quant_max=torch.iinfo(torch.int32).max - 1,
+                    quant_min=torch.iinfo(torch.int32).min + 1,
+                    quant_max=torch.iinfo(torch.int32).max,
                     qscheme=qscheme,
                     ch_axis=ch_axis,
                 )
                 return quantization_spec  # type: ignore[return-value]
-            elif (
-                self.input_activation.dtype == torch.int16
-                and self.weight.dtype == torch.int8
-            ):
-                # In case the activation is quantized to int16, the bias needs to be
-                # added after the convolution, so use the output quantization for this case.
-                return self.output_activation
             else:
                 raise NotImplementedError(
                     f"Bias quantization of types: i:{self.input_activation.dtype}, w:{self.weight.dtype} not implemented"

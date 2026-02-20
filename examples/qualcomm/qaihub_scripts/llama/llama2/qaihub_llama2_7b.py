@@ -102,6 +102,7 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         runner="examples/qualcomm/qaihub_scripts/llama/qaihub_llama2_7b_runner",
+        target=args.target,
     )
     output_file = "result.txt"
     pos_embs_file = ["freq_cos", "freq_sin"]
@@ -226,13 +227,6 @@ if __name__ == "__main__":
         "--prompt",
         help="user prompts for llama2",
         required=True,
-        type=str,
-    )
-
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="folder path to pre-compiled ptes",
-        default=None,
         type=str,
     )
 

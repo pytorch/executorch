@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +10,7 @@ from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
-    ReplaceScalarWithTensorArgPassTOSAMI,
+    ReplaceScalarWithTensorByProfilePass,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -31,13 +31,17 @@ class DecomposeCoshPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {
         InsertTableOpsPass,
         MatchArgRanksPass,
-        ReplaceScalarWithTensorArgPassTOSAMI,
+        ReplaceScalarWithTensorByProfilePass,
         MatchArgDtypePass,
     }
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op is not edge_cosh:
             return super().call_operator(op, args, kwargs, meta, updated)
+
+        if self._is_quantized_meta(meta):
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta)
 
         x = args
 

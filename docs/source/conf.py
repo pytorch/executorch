@@ -24,7 +24,7 @@ import shutil
 import sys
 from typing import Any
 
-import pytorch_sphinx_theme2  # type: ignore[import-untyped]
+import pytorch_sphinx_theme2  # type: ignore[import-not-found]
 
 # To let us import ./custom_directives.py
 sys.path.insert(0, os.path.abspath("."))
@@ -74,29 +74,46 @@ doxygen_xml_dir = os.path.join(
     "xml",  # {repo_root}/docs/cpp/build/xml
 )
 
-html_favicon = "_static/img/ExecuTorch-Logo-cropped.svg"
+html_favicon = "_static/img/executorch-chip-logo.svg"
 
-# Get ET_VERSION_DOCS during the build.
-et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
-print(f"et_version_docs: {et_version_docs}")
+# Import executorch version
+# Adopted from PyTorch docs pattern
+from executorch import version as et_version  # type: ignore[attr-defined]
 
-# The code below will cut version displayed in the dropdown like this:
-# By default, set to "main".
-# If it's a tag like refs/tags/v1.2.3-rc4 or refs/tags/v1.2.3, then
-# cut to 1.2
-# the version varible is used in layout.html: https://github.com/pytorch/executorch/blob/main/docs/source/_templates/layout.html#L29
-version = release = "main"
-if et_version_docs:
-    if et_version_docs.startswith("refs/tags/v"):
-        version = ".".join(
-            et_version_docs.split("/")[-1].split("-")[0].lstrip("v").split(".")[:2]
-        )
-    elif et_version_docs.startswith("refs/heads/release/"):
-        version = et_version_docs.split("/")[-1]
-print(f"Version: {version}")
-html_title = " ".join((project, version, "documentation"))
+executorch_version = str(et_version.__version__)
 
-html_baseurl = "https://docs.pytorch.org/executorch/"  # needed for sphinx-sitemap
+# Check if this is a release build from environment variable
+# The workflow sets RELEASE=true for tagged releases, RELEASE=false otherwise
+# We need to properly parse the string as a boolean (any non-empty string is truthy in Python)
+RELEASE = os.environ.get("RELEASE", "false").lower() == "true"
+
+# The version info for the project you're documenting, acts as replacement for
+# |version| and |release|, also used in various other places throughout the
+# built documents.
+#
+# The short X.Y version.
+version = "main"
+# The full version, including alpha/beta/rc tags.
+release = "main"
+
+# Customized html_title here.
+# Default is " ".join(project, release, "documentation") if not set
+if RELEASE:
+    # Turn 0.8.0a0+a90e907 into 0.8
+    # Note: the release candidates should no longer have the aHASH suffix, but in any
+    # case we wish to leave only major.minor, even for rc builds.
+    version = ".".join(executorch_version.split("+")[0].split(".")[:2])
+    html_title = " ".join((project, version, "documentation"))
+    release = version
+
+switcher_version = "main" if not RELEASE else version
+
+print(f"executorch_version: {executorch_version}")
+print(f"Version: {version}, RELEASE: {RELEASE}")
+
+html_baseurl = (
+    "https://docs.pytorch.org/executorch/stable/"  # needed for sphinx-sitemap
+)
 sitemap_locales = [None]
 sitemap_excludes = [
     "search.html",
@@ -176,8 +193,6 @@ html_theme_path = [pytorch_sphinx_theme2.get_html_theme_path()]
 # documentation.
 #
 
-switcher_version = version
-
 html_theme_options = {
     "logo": {
         "image_light": "_static/img/et-logo.png",
@@ -220,6 +235,7 @@ html_theme_options = {
     "navbar_start": ["navbar-logo", "version-switcher"],
     "navbar_center": ["navbar-nav"],
     "navbar_end": ["search-field-custom", "theme-switcher", "navbar-icon-links"],
+    "runllm_assistant_id": "1632",
     "navbar_persistent": [],
 }
 
@@ -241,6 +257,7 @@ html_context = {
     "pytorch_project": "executorch",
     "display_version": True,
 }
+
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -264,7 +281,8 @@ redirects = {
     "export-overview": "using-executorch-export.html",
     "runtime-build-and-cross-compilation": "using-executorch-building-from-source.html",
     "tutorials/export-to-executorch-tutorial": "../using-executorch-export.html",
-    "build-run-vulkan": "backends-vulkan.html",
+    "build-run-vulkan": "backends/vulkan/vulkan-overview.html",
+    "backends-vulkan": "backends/vulkan/vulkan-overview.html",
     "executorch-arm-delegate-tutorial": "backends-arm-ethos-u.html",
     "build-run-coreml": "backends-coreml.html",
     "build-run-mediatek-backend": "backends-mediatek.html",

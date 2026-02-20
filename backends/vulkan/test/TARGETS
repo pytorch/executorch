@@ -34,7 +34,6 @@ python_unittest(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/vulkan/_passes:vulkan_passes",
-        "//executorch/backends/vulkan/quantizer:vulkan_quantizer",
         "//executorch/backends/vulkan:vulkan_preprocess",
         "//pytorch/ao:torchao",  # @manual
     ]

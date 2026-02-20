@@ -1,9 +1,7 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-# pyre-unsafe
 """Provide TOSA specification parsing and context utilities.
 
 Use these helpers to parse and validate TOSA profile/extension strings and to
@@ -13,9 +11,73 @@ manage a lowering-time context for the active specification.
 
 import contextvars
 import re
-from typing import List
+from typing import Dict, Generic, List, Set, TypeVar
 
 from packaging.version import Version
+
+T = TypeVar("T")
+
+
+class TosaSpecMapping(Generic[T]):
+    def __init__(self):
+        self._mapping: Dict[TosaSpecification, List[T]] = {}
+
+    def add(self, spec: "TosaSpecification", value: T) -> None:
+        """Adds a value to the mapping for the given TOSA specification.
+
+        The specification is normalized to its canonical form, which means that
+        only the version and profiles are considered, without extensions. This
+        allows for grouping of values under the same TOSA specification
+        regardless of the extensions they may have.
+
+        """
+
+        if spec.is_U55_subset or spec.extensions:
+            raise ValueError(
+                f"TosaSpecMapping does not support extensions, got: {spec}"
+            )
+
+        if isinstance(spec, Tosa_1_00) and len(spec.profiles) > 1:
+            raise ValueError(
+                f"TosaSpecMapping does not support multiple profiles, got: {spec}"
+            )
+
+        norm_spec = spec._canonical_key()
+        if norm_spec not in self._mapping:
+            self._mapping[norm_spec] = []
+        self._mapping[norm_spec].append(value)
+
+    @staticmethod
+    def _get_base_specs(spec: "TosaSpecification") -> List["TosaSpecification"]:
+        # Handles combined TOSA-1.0+FP+INT, etc.
+        if isinstance(spec, Tosa_1_00):
+            profiles: Set[str] = set(spec.profiles)
+            if profiles == {"FP", "INT"}:
+                version = spec.version
+                return [
+                    TosaSpecification.create_from_string(f"TOSA-{version}+FP"),
+                    TosaSpecification.create_from_string(f"TOSA-{version}+INT"),
+                ]
+        return [spec]
+
+    def get(self, spec: "TosaSpecification") -> List[T]:
+        """Returns a list of values associated with the given TOSA
+        specification.
+
+        The specification is normalized to its canonical form, which means that
+        only the version and profiles are considered, without extensions.
+
+        """
+
+        base_specs = self._get_base_specs(spec)
+        result: List[T] = []
+        for base in base_specs:
+            norm_base = base._canonical_key()
+            result.extend(self._mapping.get(norm_base, []))
+        if len(result) == 0:
+            raise KeyError(f"No values found for TOSA specification: {spec}")
+
+        return result  # Do not deduplicate with set(), as values may be unhashable
 
 
 class TosaSpecification:
@@ -35,6 +97,9 @@ class TosaSpecification:
 
     version: Version
     is_U55_subset: bool
+    extensions: List[str]
+    _SUPPORTED_VERSIONS = [Version("1.0"), Version("1.1")]
+    _SUPPORTED_PROFILES = ["INT", "FP"]
 
     def support_integer(self) -> bool:
         """Return True if integer operations are supported."""
@@ -42,6 +107,18 @@ class TosaSpecification:
 
     def support_float(self) -> bool:
         """Return True if floating-point operations are supported."""
+        raise NotImplementedError
+
+    def support_extension(self, extension: str) -> bool:
+        """Return True if an extension is supported and enabled.
+
+        Args:
+            extension (str): Extension name (for example ``int4``, ``bf16``).
+
+        Returns:
+            bool: True if the extension is valid for the active profiles and selected.
+
+        """
         raise NotImplementedError
 
     def __init__(self, version: Version, extras: List[str]):
@@ -53,10 +130,57 @@ class TosaSpecification:
 
         """
         self.version = version
+        self.extensions = []
 
         self.is_U55_subset = "u55" in extras
         if self.is_U55_subset:
             extras.remove("u55")
+
+    @classmethod
+    def _normalize_version(cls, version: Version | str) -> Version:
+        if isinstance(version, Version):
+            parsed = version
+        else:
+            version_str = str(version)
+            if version_str.startswith("TOSA-"):
+                version_str = version_str[len("TOSA-") :]
+            parsed = Version(version_str)
+
+        return Version(f"{parsed.major}.{parsed.minor}")
+
+    @classmethod
+    def all_versions_and_profiles(cls) -> List["TosaSpecification"]:
+        """Return specs for all supported versions and profiles."""
+        specs: List["TosaSpecification"] = []
+        for version in cls._SUPPORTED_VERSIONS:
+            for profile in cls._SUPPORTED_PROFILES:
+                specs.append(cls.create_from_string(f"TOSA-{version}+{profile}"))
+        return specs
+
+    @classmethod
+    def all_versions_for_profile(cls, profile: str) -> List["TosaSpecification"]:
+        """Return specs for all supported versions of a given profile."""
+        normalized = profile.upper()
+        if normalized not in cls._SUPPORTED_PROFILES:
+            raise ValueError(f"Unsupported TOSA profile: {profile}")
+        return [
+            cls.create_from_string(f"TOSA-{version}+{normalized}")
+            for version in cls._SUPPORTED_VERSIONS
+        ]
+
+    @classmethod
+    def all_profiles_for_version(
+        cls, version: Version | str
+    ) -> List["TosaSpecification"]:
+        """Return specs for all supported profiles for a given version."""
+        normalized = cls._normalize_version(version)
+        supported = {(v.major, v.minor) for v in cls._SUPPORTED_VERSIONS}
+        if (normalized.major, normalized.minor) not in supported:
+            raise ValueError(f"Unsupported TOSA version: {version}")
+        return [
+            cls.create_from_string(f"TOSA-{normalized}+{profile}")
+            for profile in cls._SUPPORTED_PROFILES
+        ]
 
     @staticmethod
     def create_from_string(repr: str) -> "TosaSpecification":
@@ -82,13 +206,21 @@ class TosaSpecification:
             extras = match.group(3).split("+")
             if name != "TOSA":
                 raise ValueError(f"Malformed TOSA specification representation: {repr}")
-            match version:
-                case _ if version.major == 1 and version.minor == 0:
+            match version.major, version.minor:
+                case [1, 0]:
                     return Tosa_1_00(version, extras)
+                case [1, 1]:
+                    return Tosa_1_1(version, extras)
                 case _:
                     raise ValueError(f"Wrong TOSA version: {version} from {repr}")
 
         raise ValueError(f"Failed to parse TOSA specification representation: {repr}")
+
+    def _canonical_key(self) -> "TosaSpecification":
+        """Returns a new TosaSpecification instance with only version and
+        profiles (no extensions).
+        """
+        raise NotImplementedError
 
 
 class Tosa_1_00(TosaSpecification):
@@ -127,22 +259,24 @@ class Tosa_1_00(TosaSpecification):
         """
         super().__init__(version, extras)
 
+        cls = self.__class__
+
         # Check that we have at least one profile in the extensions list
-        if [e in Tosa_1_00.available_profiles for e in extras].count(True) == 0:
+        if [e in cls.available_profiles for e in extras].count(True) == 0:
             raise ValueError(
-                f"No profile ({Tosa_1_00.available_profiles}) found in: {extras}."
+                f"No profile ({cls.available_profiles}) found in: {extras}."
             )
 
         # and not more than number of available profiles
-        if [e in Tosa_1_00.available_profiles for e in extras].count(True) > len(
-            Tosa_1_00.available_profiles
+        if [e in cls.available_profiles for e in extras].count(True) > len(
+            cls.available_profiles
         ):
             raise ValueError(
-                f"Too many profiles ({Tosa_1_00.available_profiles}) found in: {extras}."
+                f"Too many profiles ({cls.available_profiles}) found in: {extras}."
             )
 
         # The list contains one profile at least, so pick them
-        self.profiles = [e for e in extras if e in Tosa_1_00.available_profiles]
+        self.profiles = [e for e in extras if e in cls.available_profiles]
         for p in self.profiles:
             extras.remove(p)
 
@@ -152,7 +286,7 @@ class Tosa_1_00(TosaSpecification):
 
         combined_extensions = []
         for p in self.profiles:
-            combined_extensions += Tosa_1_00.valid_extensions[p]
+            combined_extensions += cls.valid_extensions[p]
 
         if not all(e in combined_extensions for e in extras):
             raise ValueError(
@@ -227,11 +361,45 @@ class Tosa_1_00(TosaSpecification):
             bool: True if the extension is valid for the active profiles and selected.
 
         """
+        cls = self.__class__
         for p in self.profiles:
-            if extension in self.valid_extensions[p] and extension in self.extensions:
+            if extension in cls.valid_extensions[p] and extension in self.extensions:
                 return True
-
         return False
+
+    def _canonical_key(self) -> "Tosa_1_00":
+        """Returns a new Tosa_1_00 instance with only major.minor version and
+        profiles (no extensions).
+
+        Patch version is set to zero for normalization.
+
+        """
+        from packaging.version import Version
+
+        norm_version = Version(f"{self.version.major}.{self.version.minor}.0")
+        return Tosa_1_00(norm_version, self.profiles.copy())
+
+
+class Tosa_1_1(Tosa_1_00):
+
+    valid_extensions = {
+        "INT": ["shape", "int64", "int16", "int4", "var", "cf", "u55"],
+        "FP": [
+            "shape",
+            "int64",
+            "bf16",
+            "fp8e4m3",
+            "fp8e5m2",
+            "fft",
+            "var",
+            "cf",
+            "random",
+            "mxfp",
+            "blockscale_ue5m3",
+        ],
+    }
+
+    pass
 
 
 class TosaLoweringContext:
@@ -296,3 +464,21 @@ def get_context_spec() -> TosaSpecification:
         return TosaLoweringContext.tosa_spec_var.get()
     except LookupError:
         raise RuntimeError("Function must be executed within a TosaLoweringContext")
+
+
+def tosa_spec_in_set(spec: TosaSpecification, specs: Set[TosaSpecification]) -> bool:
+    """Check if a specification matches any in a set, considering base specs.
+
+    Args:
+        spec (TosaSpecification): Specification to check.
+        specs (Set[TosaSpecification]): Set of specifications to match against.
+
+    Returns:
+        bool: True if a match is found, False otherwise.
+
+    """
+    base_specs = TosaSpecMapping._get_base_specs(spec)
+    for base in base_specs:
+        if base in specs:
+            return True
+    return False

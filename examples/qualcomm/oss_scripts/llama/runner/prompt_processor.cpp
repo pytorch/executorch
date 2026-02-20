@@ -9,10 +9,11 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.h>
 #include <numeric>
 using executorch::aten::TensorImpl;
+using executorch::runtime::EValue;
 using executorch::runtime::MethodMeta;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorch::runtime::TensorInfo;
-
 namespace example {
 
 template <typename T>
@@ -128,30 +129,31 @@ void PromptProcessor<T>::init_io(
         input_pos_.data, input_pos_.size, input_pos.get());
 
     // [I] kv_cache
+    // Prepare the vector of EValue for kv cache to evict token
+    cache_inputs_.reserve(2 * metadata_.num_layers);
     size_t index = idx; // bypass input_tokens, atten_mask, input_pos
     for (int cache_group = 0; cache_group < 2; ++cache_group) {
-      std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
+      std::vector<std::unique_ptr<TensorImpl>>& cache =
           (cache_group == 0 ? k_cache_in_ : v_cache_in_);
-      std::vector<std::vector<KVCache<T>>> cache_ptrs = (cache_group == 0)
+      std::vector<KVCache<T>> cache_ptrs = (cache_group == 0)
           ? kv_manager_->get_k_cache_()
           : kv_manager_->get_v_cache_();
-      for (int layer = 0; layer < metadata_.num_layers; ++layer) {
-        for (int head = 0; head < metadata_.num_heads; ++head, ++index) {
-          Result<TensorInfo> kv_cache = method_meta->input_tensor_meta(index);
+      for (int layer = 0; layer < metadata_.num_layers; ++layer, ++index) {
+        Result<TensorInfo> kv_cache = method_meta->input_tensor_meta(index);
 
-          T* cache_ptr = cache_ptrs[layer][head].buffer;
+        T* cache_ptr = cache_ptrs[layer].buffer;
 
-          cache[layer].emplace_back(std::make_unique<TensorImpl>(
-              kv_cache->scalar_type(),
-              kv_cache->sizes().size(),
-              const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
-              cache_ptr,
-              const_cast<TensorImpl::DimOrderType*>(
-                  kv_cache->dim_order().data())));
-          input_tensors_.emplace_back(cache[layer][head].get());
-          buffer_manager->add_memory_info(
-              cache_ptr, cache[layer][head]->nbytes(), kv_cache.get());
-        }
+        cache[layer] = std::make_unique<TensorImpl>(
+            kv_cache->scalar_type(),
+            kv_cache->sizes().size(),
+            const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
+            cache_ptr,
+            const_cast<TensorImpl::DimOrderType*>(
+                kv_cache->dim_order().data()));
+        input_tensors_.emplace_back(cache[layer].get());
+        cache_inputs_.emplace_back(input_tensors_.back());
+        buffer_manager->add_memory_info(
+            cache_ptr, cache[layer]->nbytes(), kv_cache.get());
       }
     }
   }
@@ -172,26 +174,23 @@ void PromptProcessor<T>::init_io(
   // [O] kv_cache
   size_t index = 1;
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
-    std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
+    std::vector<std::unique_ptr<TensorImpl>>& cache =
         (cache_group == 0 ? k_cache_out_ : v_cache_out_);
-    std::vector<std::vector<KVCache<T>>> cache_ptrs = (cache_group == 0)
+    std::vector<KVCache<T>> cache_ptrs = (cache_group == 0)
         ? kv_manager_->get_k_cache_()
         : kv_manager_->get_v_cache_();
-    for (int layer = 0; layer < metadata_.num_layers; ++layer) {
-      for (int head = 0; head < metadata_.num_heads; ++head, ++index) {
-        Result<TensorInfo> kv_cache = method_meta->output_tensor_meta(index);
-        T* cache_ptr = cache_ptrs[layer][head].output_buffer;
-        cache[layer].emplace_back(std::make_unique<TensorImpl>(
-            kv_cache->scalar_type(),
-            kv_cache->sizes().size(),
-            const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
-            cache_ptr,
-            const_cast<TensorImpl::DimOrderType*>(
-                kv_cache->dim_order().data())));
-        output_tensors_.emplace_back(cache[layer][head].get());
-        buffer_manager->add_memory_info(
-            cache_ptr, cache[layer][head]->nbytes(), kv_cache.get());
-      }
+    for (int layer = 0; layer < metadata_.num_layers; ++layer, ++index) {
+      Result<TensorInfo> kv_cache = method_meta->output_tensor_meta(index);
+      T* cache_ptr = cache_ptrs[layer].output_buffer;
+      cache[layer] = std::make_unique<TensorImpl>(
+          kv_cache->scalar_type(),
+          kv_cache->sizes().size(),
+          const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
+          cache_ptr,
+          const_cast<TensorImpl::DimOrderType*>(kv_cache->dim_order().data()));
+      output_tensors_.emplace_back(cache[layer].get());
+      buffer_manager->add_memory_info(
+          cache_ptr, cache[layer]->nbytes(), kv_cache.get());
     }
   }
   // Prepare the vector of EValue to run inference
@@ -236,25 +235,28 @@ template <typename T>
 Result<uint64_t> PromptProcessor<T>::prefill(
     std::vector<uint64_t> prompt_tokens,
     int64_t start_pos,
-    bool dump_logits) {
+    bool dump_logits,
+    AttentionSinkRopeRunner* attention_sink_rope_runner) {
   ET_CHECK_MSG(!prompt_tokens.empty(), "Prompt cannot be null");
+
+  int64_t shifted_pos = start_pos;
+  bool enable_attention_sink = attention_sink_rope_runner != nullptr;
 
   // Calculate number of blocks
   int32_t num_prompt_tokens = prompt_tokens.size();
-  if (!is_bert()) {
+  if (is_bert()) {
+    ET_CHECK_MSG(
+        start_pos == 0, "Bert model doesn't support multi-turn conversation.");
+  } else if (!enable_attention_sink) {
     ET_CHECK_MSG(
         (start_pos + num_prompt_tokens) <=
             (metadata_.context_len - metadata_.ar_len),
         "The sequence length exceeds the maximum limit that the prompt processor can handle.");
-  } else {
-    ET_CHECK_MSG(
-        start_pos == 0, "Bert model doesn't support multi-turn conversation.");
   }
 
   // store the token
   int64_t cur_token;
   int64_t prompt_pos = 0;
-  int64_t pos = start_pos;
   int32_t n_update = metadata_.ar_len;
   int num_iters = 1 + ((num_prompt_tokens - 1) / metadata_.ar_len);
   ET_LOG(
@@ -264,20 +266,32 @@ Result<uint64_t> PromptProcessor<T>::prefill(
       metadata_.ar_len,
       num_iters);
 
+  // Initialize attention sink rope runner if given and update position
+  // accordingly
+  if (enable_attention_sink) {
+    ET_CHECK_MSG(
+        attention_sink_rope_runner->set_outputs(method_name_, cache_inputs_) ==
+            executorch::runtime::Error::Ok,
+        "Failed to set output tensor for module %s",
+        method_name_.c_str());
+    shifted_pos =
+        shifted_pos - attention_sink_rope_runner->get_position_shift();
+  }
+
   // Rearrange KV cache first
   kv_manager_->rearrange_cache(metadata_.ar_len);
   std::vector<int32_t> attention_map(metadata_.ar_len);
   std::iota(attention_map.begin(), attention_map.end(), -1);
   // Initialize attention mask with current position
   kv_manager_->init_attention_mask(
-      attention_mask_.data, attention_map, metadata_.ar_len, pos);
+      attention_mask_.data, attention_map, metadata_.ar_len, shifted_pos);
   // Initialize window attention mask with current position
   if (metadata_.cache_mode == CacheMode::HybridCache) {
     kv_manager_->init_attention_mask(
         window_attention_mask_.data,
         attention_map,
         metadata_.ar_len,
-        pos,
+        shifted_pos,
         metadata_.sliding_window);
   }
 
@@ -287,27 +301,34 @@ Result<uint64_t> PromptProcessor<T>::prefill(
           executorch::runtime::Error::Ok,
       "Failed to set output tensor for module %s",
       method_name_.c_str());
+
   for (int i = 0; i < num_iters; ++i) {
-    // Fill in the token and position data
-    prepare_io(prompt_tokens, prompt_pos, pos);
-    // Only update data pointer of the cache to the tensor for SHIFT_POINTER
-    // mode
-    bool updated = kv_manager_->update_cache_tensor(
-        k_cache_in_,
-        k_cache_out_,
-        v_cache_in_,
-        v_cache_out_,
-        metadata_.ar_len,
-        pos);
-    // Only update the output of module for SHIFT_POINTER mode
-    if (updated) {
-      // Update the output of the module
-      ET_CHECK_MSG(
-          decoder_runner_->set_outputs(method_name_, output_tensors_) ==
-              executorch::runtime::Error::Ok,
-          "Failed to set output tensor for module %s",
-          method_name_.c_str());
+    // The current position plus the future generated cache exceeds the cache
+    // size, which means we need to remove eviction_batch_size key-value cache
+    // entries to make room for new tokens.
+    if (enable_attention_sink &&
+        shifted_pos + metadata_.ar_len >
+            metadata_.context_len - metadata_.ar_len) {
+      attention_sink_rope_runner->evict_token(method_name_, cache_inputs_);
+      shifted_pos =
+          shifted_pos - attention_sink_rope_runner->get_eviction_batch_size();
+      // Initialize attention mask with current position
+      kv_manager_->init_attention_mask(
+          attention_mask_.data, attention_map, metadata_.ar_len, shifted_pos);
+      // Initialize window attention mask with current position
+      if (metadata_.cache_mode == CacheMode::HybridCache) {
+        kv_manager_->init_attention_mask(
+            window_attention_mask_.data,
+            attention_map,
+            metadata_.ar_len,
+            shifted_pos,
+            metadata_.sliding_window);
+      }
     }
+
+    // Fill in the token and position data
+    prepare_io(prompt_tokens, prompt_pos, shifted_pos);
+
     // Run inference
     decoder_runner_->step(method_name_, inputs_);
     if (dump_logits) {
@@ -321,21 +342,21 @@ Result<uint64_t> PromptProcessor<T>::prefill(
       n_update = 1 + ((num_prompt_tokens - 1) % metadata_.ar_len);
     }
     // Update KV Cache with the output results
-    kv_manager_->update_cache(metadata_.ar_len, pos, n_update, {});
+    kv_manager_->update_cache(metadata_.ar_len, shifted_pos, n_update, {});
 
     // Update attention mask with current position
     kv_manager_->update_attention_mask(
-        attention_mask_.data, metadata_.ar_len, pos, n_update);
+        attention_mask_.data, metadata_.ar_len, shifted_pos, n_update);
     if (metadata_.cache_mode == CacheMode::HybridCache) {
       kv_manager_->update_attention_mask(
           window_attention_mask_.data,
           metadata_.ar_len,
-          pos,
+          shifted_pos,
           n_update,
           metadata_.sliding_window);
     }
     prompt_pos += metadata_.ar_len;
-    pos += metadata_.ar_len;
+    shifted_pos += metadata_.ar_len;
   }
 
   cur_token = decoder_runner_->logits_to_token(

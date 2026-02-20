@@ -9,22 +9,22 @@ from abc import ABC
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
-from typing import Callable, Dict, Tuple, Type
+from typing import Callable, Dict, Optional, Type
 
-import torch
-from executorch.backends.qualcomm.quantizer.custom_annotation import (
-    annotate_down_proj,
-    annotate_kv_8bit,
-    annotate_output_16a8w,
-    annotate_qkv_proj_sha,
-    StaticLLMQuantConfig,
+from executorch.examples.models.codegen import (
+    convert_weights as convert_codegen_weights,
 )
-from executorch.backends.qualcomm.quantizer.qconfig import (
-    get_ptq_per_channel_quant_config,
-)
-from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-
+from executorch.examples.models.gemma import convert_weights as convert_gemma_weights
+from executorch.examples.models.gemma2 import convert_weights as convert_gemma2_weights
 from executorch.examples.models.gemma3 import convert_weights as convert_gemma3_weights
+
+from executorch.examples.models.glm import convert_weights as convert_glm_weights
+from executorch.examples.models.granite import (
+    convert_weights as convert_granite_weights,
+)
+from executorch.examples.models.internvl3 import (
+    convert_weights as convert_internvl3_weights,
+)
 from executorch.examples.models.phi_4_mini import (
     convert_weights as convert_phi_4_mini_weights,
 )
@@ -38,32 +38,60 @@ from executorch.examples.models.smollm2 import (
 from executorch.examples.models.smollm3 import (
     convert_weights as convert_smollm3_weights,
 )
+from executorch.examples.models.smolvlm import (
+    convert_weights as convert_smolvlm_weights,
+)
 
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     DECODER_MODEL_VERSION,
+    VISION_ENCODER,
+)
+
+from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config import (
+    InternVL3Encoder,
+    MultiModalityConfig,
+    SmolVLMEncoder,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
+    LlamaModel,
+    LlamaModelWithoutEmbedding,
     MultiScopeAwareLlamaModel,
 )
+
+from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
+    CodegenQuantRecipe,
+    Gemma2QuantRecipe,
+    Gemma3QuantRecipe,
+    Gemma_2BQuantRecipe,
+    GLM_1_5B_InstructQuantRecipe,
+    Granite_3_3_2B_InstructQuantRecipe,
+    InternVL3_1B_QuantRecipe,
+    Llama3_1BQuantRecipe,
+    Llama3_3BQuantRecipe,
+    LlamaStories110MQuantRecipe,
+    LlamaStories260KQuantRecipe,
+    Phi4MiniQuantRecipe,
+    Qwen2_5_0_5BQuantRecipe,
+    Qwen2_5_1_5BQuantRecipe,
+    Qwen3_0_6BQuantRecipe,
+    Qwen3_1_7BQuantRecipe,
+    Smollm2QuantRecipe,
+    Smollm3QuantRecipe,
+    SmolVLMQuantRecipe,
+    StaticLLMQuantRecipe,
+)
 from tabulate import tabulate
-from torchao.quantization.pt2e import MinMaxObserver
 
 
 BASE_DIR = os.path.dirname(__file__)
 
 
-LLM_VARIANT_ARCHS = {
+LLM_VARIANT_ARCHS: Dict[str, LlamaModel] = {
     "gemma3-1b": MultiScopeAwareLlamaModel,
+    "smolvlm_500m_instruct": LlamaModelWithoutEmbedding,
+    "internvl3_1b": LlamaModelWithoutEmbedding,
+    "gemma2-2b": MultiScopeAwareLlamaModel,
 }
-annotate_wqkv_sha = partial(
-    annotate_qkv_proj_sha,
-    qkv_tags={
-        StaticLLMQuantConfig.wq_sha,
-        StaticLLMQuantConfig.wk_sha,
-        StaticLLMQuantConfig.wv_sha,
-    },
-)
-annotate_wv_sha = partial(annotate_qkv_proj_sha, qkv_tags={StaticLLMQuantConfig.wv_sha})
 
 
 @dataclass(init=False, frozen=True)
@@ -79,8 +107,6 @@ class LLMModelConfig(ABC):
     transform_weight: Set to true to change Hugging Face weight to improve the performance of RoPE in HTP backend.
     instruct_model: True if the model uses chat templates. Check Hugging Face model card to ensure the model uses chat templates.
     num_sharding: Specify the number of splits by inserting the fallback custom op. The graph will be split evenly by layers.
-    ptq: Set to true to perform PTQ quantization. Support 16a16w, 16a8w, 16a4w, 16a4w_block, 8a8w.
-    group_size: Group size used in block quantization for weight quantization. Will only be used when ptq = 16a4w_block
     masked_softmax: The MaskedSoftmax feature is designed to optimize the LLMs accuracy and performance executed on HTP backend.
                     MaskedSoftmax is used to replace the Softmax(Add(In, Mask)) structure in attention block in LLMs during backend optimization.
                     For more details, please refer to QNN documents. Note that it is only supported starting from QNN 2.35.
@@ -89,7 +115,7 @@ class LLMModelConfig(ABC):
     r1: Enable SpinQuant R1 quantization optimization.
     r2: Enable SpinQuant R2 quantization optimization.
     r3: Enable SpinQuant R3 quantization optimization.
-    custom_annotation: Custom annotation to use when setting quant configs for the model.
+    quant_recipe: Quantization recipe to use when setting quant configs for the model.
     """
 
     repo_id: str
@@ -100,14 +126,12 @@ class LLMModelConfig(ABC):
     transform_weight: bool
     instruct_model: bool
     num_sharding: int
-    ptq: QuantDtype
-    group_size: int
     masked_softmax: bool
     seq_mse_candidates: int
     r1: bool
     r2: bool
     r3: bool
-    custom_annotation: Tuple
+    quant_recipe: StaticLLMQuantRecipe
 
     def __str__(self):  # noqa: C901
         """
@@ -153,29 +177,20 @@ class LLMModelConfig(ABC):
         table = [(k, v) for k, v in attrs.items()]
         return tabulate(table, headers=["Config", "Value"], tablefmt="grid")
 
-    def get_kv_io_bit_width(self) -> int:
-        if self.ptq is None:
-            return 32
-        elif (
-            self.ptq == QuantDtype.use_8a8w
-            or annotate_kv_8bit in self.custom_annotation
-        ):
-            return 8
-        else:
-            # If quantized but not 8a8w or mix_quantization, it has to be 16bit kv io.
-            return 16
-
-    def get_logits_output_bit_width(self) -> int:
-        # We use 16bit logits for all quant config
-        return 32 if self.ptq is None else 16
-
 
 SUPPORTED_LLM_MODELS: Dict[str, LLMModelConfig] = {}
 
 
-def register_llm_model(name: str):
+def register_llm_model(
+    name: str,
+    vision_encoder: Optional[MultiModalityConfig] = None,
+):
     def decorator(cls: Type[LLMModelConfig]):
         cls.decoder_model_version = DECODER_MODEL_VERSION[name]
+        if vision_encoder is not None and issubclass(
+            vision_encoder, MultiModalityConfig
+        ):
+            setattr(cls, VISION_ENCODER, vision_encoder)
         SUPPORTED_LLM_MODELS[name.lower()] = cls()
         return cls()
 
@@ -190,27 +205,13 @@ class LlamaStories260K(LLMModelConfig):
     convert_weights = None
     transform_weight = True
     instruct_model = False
-
     num_sharding = 1
-    # quant config
-    ptq = QuantDtype.use_16a4w
-    group_size = None
     masked_softmax = False
     seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
-    quantization_config_wv_sha_8a4w = get_ptq_per_channel_quant_config(
-        act_dtype=torch.uint8,
-        weight_dtype=torch.int4,
-        act_observer=MinMaxObserver,
-        act_symmetric=True,
-    )
-    custom_annotation = (
-        annotate_kv_8bit,
-        annotate_output_16a8w,
-        partial(annotate_wv_sha, quantization_config=quantization_config_wv_sha_8a4w),
-    )
+    quant_recipe = LlamaStories260KQuantRecipe
 
 
 @register_llm_model("stories110m")
@@ -221,27 +222,13 @@ class LlamaStories110M(LLMModelConfig):
     convert_weights = None
     transform_weight = True
     instruct_model = False
-
     num_sharding = 1
-    # quant config
-    ptq = QuantDtype.use_16a4w
-    group_size = None
     masked_softmax = False
     seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
-    quantization_config_wv_sha_8a4w = get_ptq_per_channel_quant_config(
-        act_dtype=torch.uint8,
-        weight_dtype=torch.int4,
-        act_observer=MinMaxObserver,
-        act_symmetric=True,
-    )
-    custom_annotation = (
-        annotate_kv_8bit,
-        annotate_output_16a8w,
-        partial(annotate_wv_sha, quantization_config=quantization_config_wv_sha_8a4w),
-    )
+    quant_recipe = LlamaStories110MQuantRecipe
 
 
 @register_llm_model("llama3_2-1b_instruct")
@@ -253,26 +240,13 @@ class Llama3_2_1B_Instruct(LLMModelConfig):
     transform_weight = True
     # The Llama3_2 enabled should be instruct, however, Llama's tokenizer does not provide utility to apply chat template.
     instruct_model = False
-
     num_sharding = 1
-    # quant config
-    ptq = QuantDtype.use_16a4w_block
-    group_size = 32
     masked_softmax = False
     seq_mse_candidates = 1000
     r1 = False
     r2 = False
     r3 = False
-    quantization_config_down_proj_16a8w = get_ptq_per_channel_quant_config(
-        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
-    )
-    custom_annotation = (
-        annotate_kv_8bit,
-        annotate_output_16a8w,
-        partial(
-            annotate_down_proj, quantization_config=quantization_config_down_proj_16a8w
-        ),
-    )
+    quant_recipe = Llama3_1BQuantRecipe
 
 
 @register_llm_model("llama3_2-3b_instruct")
@@ -284,20 +258,72 @@ class Llama3_2_3B_Instruct(LLMModelConfig):
     transform_weight = True
     # The Llama3_2 enabled should be instruct, however, Llama's tokenizer does not provide utility to apply chat template.
     instruct_model = False
-
     num_sharding = 4
-    # quant config
-    ptq = QuantDtype.use_16a4w_block
-    group_size = 32
     masked_softmax = False
     seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
-    custom_annotation = (
-        annotate_kv_8bit,
-        annotate_output_16a8w,
+    quant_recipe = Llama3_3BQuantRecipe
+
+
+@register_llm_model("codegen2_1b")
+@dataclass(init=False, frozen=True)
+class Codegen(LLMModelConfig):
+    repo_id: str = "Salesforce/codegen2-1B_P"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/codegen/config/config.json"
     )
+    convert_weights = convert_codegen_weights
+    transform_weight = True
+    instruct_model = False
+    num_sharding = 1
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = CodegenQuantRecipe
+
+
+@register_llm_model("gemma-2b")
+@dataclass(init=False, frozen=True)
+class Gemma_2B(LLMModelConfig):
+    repo_id: str = "google/gemma-2b-it"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/gemma/config/2b_config.json"
+    )
+    convert_weights = convert_gemma_weights
+    transform_weight = False
+    instruct_model = True
+
+    num_sharding = 4
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = Gemma_2BQuantRecipe
+
+
+@register_llm_model("gemma2-2b")
+@dataclass(init=False, frozen=True)
+class Gemma2(LLMModelConfig):
+    repo_id: str = "google/gemma-2-2b-it"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/gemma2/config/2b_config.json"
+    )
+    convert_weights = convert_gemma2_weights
+    transform_weight = False
+    instruct_model = True
+
+    num_sharding = 4
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = Gemma2QuantRecipe
 
 
 @register_llm_model("gemma3-1b")
@@ -310,23 +336,52 @@ class Gemma3(LLMModelConfig):
     convert_weights = convert_gemma3_weights
     transform_weight = False
     instruct_model = True
-
     num_sharding = 1
-    # quant config
-    ptq = QuantDtype.use_16a4w_block
-    group_size = 64
     masked_softmax = True
     seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
-    quantization_config_wv_sha_16a8w = get_ptq_per_channel_quant_config(
-        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+    quant_recipe = Gemma3QuantRecipe
+
+
+@register_llm_model("glm-1_5b")
+@dataclass(init=False, frozen=True)
+class GLM_1_5B(LLMModelConfig):
+    repo_id: str = "THUDM/glm-edge-1.5b-chat"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/glm/config/1_5b_config.json"
     )
-    custom_annotation = (
-        annotate_kv_8bit,
-        partial(annotate_wv_sha, quantization_config=quantization_config_wv_sha_16a8w),
+    convert_weights = convert_glm_weights
+    transform_weight = True
+    instruct_model = True
+    num_sharding = 1
+    group_size = 32
+    masked_softmax = False
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = GLM_1_5B_InstructQuantRecipe
+
+
+@register_llm_model("granite_3_3-2b_instruct")
+@dataclass(init=False, frozen=True)
+class Granite_3_3_2b_Instruct(LLMModelConfig):
+    repo_id: str = "ibm-granite/granite-3.3-2b-instruct"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/granite/config/2b_config.json"
     )
+    convert_weights = convert_granite_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 1
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = Granite_3_3_2B_InstructQuantRecipe
 
 
 @register_llm_model("phi_4_mini")
@@ -339,27 +394,13 @@ class Phi4Mini(LLMModelConfig):
     convert_weights = convert_phi_4_mini_weights
     transform_weight = False
     instruct_model = True
-
     num_sharding = 8
-    # quant config
-    ptq = QuantDtype.use_16a4w_block
-    group_size = 16
     masked_softmax = False
     seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
-    quantization_config_wv_sha_8a4w = get_ptq_per_channel_quant_config(
-        act_dtype=torch.uint8,
-        weight_dtype=torch.int4,
-        act_observer=MinMaxObserver,
-        act_symmetric=True,
-    )
-    custom_annotation = (
-        annotate_kv_8bit,
-        annotate_output_16a8w,
-        partial(annotate_wv_sha, quantization_config=quantization_config_wv_sha_8a4w),
-    )
+    quant_recipe = Phi4MiniQuantRecipe
 
 
 @register_llm_model("qwen2_5-0_5b")
@@ -372,17 +413,13 @@ class Qwen2_5_0_5B(LLMModelConfig):
     convert_weights = convert_qwen2_5_weights
     transform_weight = False
     instruct_model = False
-
     num_sharding = 1
-    # quant config
-    ptq = QuantDtype.use_16a4w_block
-    group_size = 16
     masked_softmax = True
     seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = True
-    custom_annotation = ()
+    quant_recipe = Qwen2_5_0_5BQuantRecipe
 
 
 @register_llm_model("qwen2_5-1_5b")
@@ -395,17 +432,13 @@ class Qwen2_5_1_5B(LLMModelConfig):
     convert_weights = convert_qwen2_5_weights
     transform_weight = False
     instruct_model = False
-
     num_sharding = 1
-    # quant config
-    ptq = QuantDtype.use_16a4w_block
-    group_size = 16
     masked_softmax = True
     seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = True
-    custom_annotation = (annotate_output_16a8w,)
+    quant_recipe = Qwen2_5_1_5BQuantRecipe
 
 
 @register_llm_model("qwen3-0_6b")
@@ -418,24 +451,13 @@ class Qwen3_0_6B(LLMModelConfig):
     convert_weights = convert_qwen3_weights
     transform_weight = False
     instruct_model = True
-
     num_sharding = 1
-    # quant config
-    ptq = QuantDtype.use_16a4w_block
-    group_size = 32
     masked_softmax = True
     seq_mse_candidates = 1000
     r1 = False
     r2 = False
     r3 = False
-    quantization_config_down_proj_16a8w = get_ptq_per_channel_quant_config(
-        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
-    )
-    custom_annotation = (
-        partial(
-            annotate_down_proj, quantization_config=quantization_config_down_proj_16a8w
-        ),
-    )
+    quant_recipe = Qwen3_0_6BQuantRecipe
 
 
 @register_llm_model("qwen3-1_7b")
@@ -448,20 +470,13 @@ class Qwen3_1_7B(LLMModelConfig):
     convert_weights = convert_qwen3_weights
     transform_weight = False
     instruct_model = True
-
     num_sharding = 1
-    # quant config
-    ptq = QuantDtype.use_16a4w_block
-    group_size = 16
     masked_softmax = True
     seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = True
-    custom_annotation = (
-        annotate_kv_8bit,
-        annotate_output_16a8w,
-    )
+    quant_recipe = Qwen3_1_7BQuantRecipe
 
 
 @register_llm_model("smollm2_135m")
@@ -474,17 +489,13 @@ class Smollm2_135M(LLMModelConfig):
     convert_weights = convert_smollm2_weights
     transform_weight = True
     instruct_model = True
-
     num_sharding = 1
-    # quant config
-    ptq = QuantDtype.use_16a8w
-    group_size = None
     masked_softmax = False
     seq_mse_candidates = 0
     r1 = False
     r2 = False
-    r3 = False
-    custom_annotation = ()
+    r3 = True
+    quant_recipe = Smollm2QuantRecipe
 
 
 @register_llm_model("smollm3-3b")
@@ -495,23 +506,54 @@ class Smollm3_3B(LLMModelConfig):
     convert_weights = convert_smollm3_weights
     transform_weight = False
     instruct_model = True
-
     num_sharding = 4
-    # quant config
-    ptq = QuantDtype.use_16a4w_block
-    group_size = 32
     masked_softmax = True
     seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
-    quantization_config_wqkv_sha_16a8w = get_ptq_per_channel_quant_config(
-        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+    quant_recipe = Smollm3QuantRecipe
+
+
+@register_llm_model(
+    "internvl3_1b",
+    vision_encoder=InternVL3Encoder,
+)
+@dataclass(init=False, frozen=True)
+class InternVL3_1B(LLMModelConfig):
+    repo_id: str = "OpenGVLab/InternVL3-1B-hf"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/internvl3/1b_config.json"
     )
-    custom_annotation = (
-        annotate_kv_8bit,
-        annotate_output_16a8w,
-        partial(
-            annotate_wqkv_sha, quantization_config=quantization_config_wqkv_sha_16a8w
-        ),
+    convert_weights = convert_internvl3_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 1
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = InternVL3_1B_QuantRecipe
+
+
+@register_llm_model(
+    "smolvlm_500m_instruct",
+    vision_encoder=SmolVLMEncoder,
+)
+@dataclass(init=False, frozen=True)
+class SmolVLM_500M(LLMModelConfig):
+    repo_id: str = "HuggingFaceTB/SmolVLM-500M-Instruct"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/smolvlm/500M_config.json"
     )
+    convert_weights = convert_smolvlm_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 1
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = SmolVLMQuantRecipe

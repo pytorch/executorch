@@ -398,7 +398,9 @@ function(executorch_load_build_variables)
       EXTENSION_DATA_LOADER_SRCS
       EXTENSION_EVALUE_UTIL_SRCS
       EXTENSION_FLAT_TENSOR_SRCS
+      EXTENSION_MEMORY_ALLOCATOR_SRCS
       EXTENSION_MODULE_SRCS
+      EXTENSION_NAMED_DATA_MAP_SRCS
       EXTENSION_RUNNER_UTIL_SRCS
       EXTENSION_LLM_RUNNER_SRCS
       EXTENSION_TENSOR_SRCS
@@ -430,7 +432,9 @@ function(executorch_load_build_variables)
       _extension_data_loader__srcs
       _extension_evalue_util__srcs
       _extension_flat_tensor__srcs
+      _extension_memory_allocator__srcs
       _extension_module__srcs
+      _extension_named_data_map__srcs
       _extension_runner_util__srcs
       _extension_llm_runner__srcs
       _extension_tensor__srcs

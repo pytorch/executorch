@@ -237,6 +237,13 @@ SECTIONS
     * (ethosu_core_out_queue)
     . = ALIGN(4);
   } > DDR :rom_dram
+  .asan_shadow (NOLOAD) :
+  {
+    . = ALIGN(16);
+    __asan_shadow_start = .;
+    KEEP(*(.asan_shadow))
+    __asan_shadow_end = .;
+  } > DDR :null
   .ddr_noload (NOLOAD) :
   {
     . = ALIGN(16);

@@ -95,19 +95,9 @@ class KVCache(nn.Module):
             torch._check(start_pos < self.max_context_length)
             dim_to_slice = 2
             seq_length = k_val.size(dim_to_slice)
-            # Replace the entry in the cache for this token
-            # The following lines are equivalent to:
-            # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
-            # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
-            # when dim_to_slice is 1
-            # We use .narrow() here to make the compiler happy
-            # pyre-ignore: Incompatible parameter type [6]
-            narrowed_k = self.k_cache.narrow(dim_to_slice, start_pos, seq_length)
-            # pyre-ignore: Incompatible parameter type [6]
-            narrowed_v = self.v_cache.narrow(dim_to_slice, start_pos, seq_length)
-
-            narrowed_k.copy_(k_val)
-            narrowed_v.copy_(v_val)
+            indices = torch.arange(seq_length) + start_pos
+            self.k_cache.index_copy_(dim_to_slice, indices, k_val)
+            self.v_cache.index_copy_(dim_to_slice, indices, v_val)
             return self.k_cache, self.v_cache
         else:
             k_out = self.k_cache
@@ -149,7 +139,7 @@ class SDPA(nn.Module):
         v = v.repeat_interleave(self.n_rep, dim=1)
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
 
-        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+        return y.transpose(1, 2).reshape(bsz, seqlen, self.dim)
 
 
 def _create_causal_mask_for_ring_buffer(
@@ -409,14 +399,17 @@ class AttentionMHA(Attention):
         )
         self.wo = (
             LoRALinear(
-                in_dim=args.n_kv_heads * args.head_dim,
+                in_dim=args.n_heads * args.head_dim,
                 out_dim=args.dim,
                 rank=args.r,
                 alpha=args.lora_alpha,
                 dropout=0.0,
                 use_bias=args.attention_qkv_bias,
             )
-            if args.target_modules is not None and "output_proj" in args.target_modules
+            if args.target_modules is not None
+            and (
+                "output_proj" in args.target_modules or "o_proj" in args.target_modules
+            )
             else nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
         )
 
@@ -511,8 +504,23 @@ class AttentionMHA(Attention):
 
         output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
 
-        output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
+        output = output.transpose(1, 2).reshape(bsz, seqlen, -1)
 
         output = self.wo(output)
 
         return output, None
+
+
+@register_attention("skip")
+class AttentionSkip(Attention):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+        **kwargs: ForwardOptions,
+    ) -> Tuple[torch.Tensor, Optional[Any]]:
+        return x, None

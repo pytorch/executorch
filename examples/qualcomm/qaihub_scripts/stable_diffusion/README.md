@@ -6,7 +6,7 @@ This file provides you the instructions to run Stable-Diffusion-v2.1 with differ
 Please check corresponding section for more information.
 
 ## Stable-Diffusion-v2.1
-The model architecture, scheduler, and time embedding are from the [stabilityai/stable-diffusion-2-1-base](https://huggingface.co/stabilityai/stable-diffusion-2-1-base).
+The model architecture, scheduler, and time embedding are from the [stabilityai/stable-diffusion-2-1-base](https://huggingface.co/stabilityai/stable-diffusion-2-1-base). <!-- @lint-ignore -->
 
 ### Instructions
 #### Step 1: Setup

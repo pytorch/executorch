@@ -1,54 +1,24 @@
 /*
- * Copyright 2023-2025 Arm Limited and/or its affiliates.
+ * Copyright 2023-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
 /*
- * Arm backend for Ethos-U baremetal driver stack, this relies on the
- * ethos-u-core-driver for hardware interaction.
+ * Common Arm backend for Ethos-U. Please see
+ * EthosUBackend_Cortex_*.cpp for specific backends.
  */
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <new>
+#include <string>
+#include <vector>
 
-#include <ethosu_driver.h>
-
-#if defined(ET_EVENT_TRACER_ENABLED)
-#include <executorch/runtime/core/event_tracer.h>
-#include <executorch/runtime/core/event_tracer_hooks.h>
-using executorch::runtime::EventTracer;
-using executorch::runtime::EventTracerEntry;
-
-class EventTraceScope {
- public:
-  EventTraceScope(EventTracer* event_tracer_, const char* name) {
-    event_tracer = event_tracer_;
-    event_tracer_entry_scope = event_tracer->start_profiling(name);
-  }
-  ~EventTraceScope() {
-    event_tracer->end_profiling(event_tracer_entry_scope);
-  }
-
- private:
-  EventTracer* event_tracer;
-  EventTracerEntry event_tracer_entry_scope;
-};
-#define EXECUTORCH_PROF_SCOPE(EVENTTRACER, NAME) \
-  EventTraceScope event_tracer_scope = EventTraceScope(EVENTTRACER, NAME)
-#define EXECUTORCH_PROF_START(EVENTTRACER, SCOPE, NAME) \
-  SCOPE = EVENTTRACER->start_profiling(NAME)
-#define EXECUTORCH_PROF_END(EVENTTRACER, SCOPE) \
-  EVENTTRACER->end_profiling(SCOPE)
-
-#else
-#define EXECUTORCH_PROF_SCOPE(EVENTTRACER, NAME)
-#define EXECUTORCH_PROF_START(EVENTTRACER, SCOPE, NAME)
-#define EXECUTORCH_PROF_END(EVENTTRACER, SCOPE)
-#endif
-
+#include <executorch/backends/arm/runtime/EthosUBackend_Internal.h>
 #include <executorch/backends/arm/runtime/VelaBinStream.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -72,15 +42,9 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 
-#define ETHOSU_NUM_BASE_ADDRS 3
-
 namespace executorch {
 namespace backends {
 namespace arm {
-
-typedef struct {
-  FreeableBuffer* processed;
-} ExecutionHandle;
 
 extern "C" {
 void __attribute__((weak)) EthosUBackend_execute_begin() {}
@@ -126,12 +90,13 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     MemoryAllocator* allocator = context.get_runtime_allocator();
-    ExecutionHandle* handle = allocator->allocateInstance<ExecutionHandle>();
+    ExecutionHandle* handle = new (std::nothrow) ExecutionHandle();
     if (handle == nullptr) {
       return Error::MemoryAllocationFailed;
     }
 
     handle->processed = processed;
+    handle->platform_state = platform_init(compile_specs, allocator);
 
     // Return the same buffer we were passed - this data will be
     // executed directly
@@ -188,6 +153,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     }
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
+    const int input_count = handles.inputs ? handles.inputs->count : 0;
+    const int output_count = handles.outputs ? handles.outputs->count : 0;
+
     MemoryAllocator* temp_allocator = context.get_temp_allocator();
     // Use a temporary allocator for the intermediate tensors of the
     // computation. The allocator is released in runtime/executor/method.cpp at
@@ -217,7 +185,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // Write argument values (from EValue tensor) into Ethos-U scratch
     // TODO(MLETORCH-123): Optimise into direct write from Vela into the SRAM
     //                     or DRAM output for compatible data layouts.
-    for (int i = 0; i < handles.inputs->count; i++) {
+    for (int i = 0; i < input_count; i++) {
       auto tensor_count = 1, io_count = 1;
       auto tensor_in = args[i]->toTensor();
       char* scratch_addr = ethosu_scratch + handles.inputs->io[i].offset;
@@ -286,105 +254,184 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    // Allocate driver handle and synchronously invoke driver
-    auto driver =
-        std::unique_ptr<ethosu_driver, decltype(&ethosu_release_driver)>(
-            ethosu_reserve_driver(), ethosu_release_driver);
-    if (driver == NULL) {
-      ET_LOG(Error, "ethosu_reserve_driver failed");
-      return Error::InvalidState;
-    }
-
-    // Ethos-U low level driver expected order for Ethos U-55, we have
-    // constant weight data, then scratch (which contains input and output)
-    // scratch is written above in this function.
-
-    uint64_t bases[ETHOSU_NUM_BASE_ADDRS] = {
-        static_cast<uint64_t>(
-            reinterpret_cast<uintptr_t>((handles.weight_data))),
-        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch)),
-        static_cast<uint64_t>(
-            reinterpret_cast<uintptr_t>(ethosu_fast_scratch))};
-    size_t bases_size[ETHOSU_NUM_BASE_ADDRS] = {
-        handles.weight_data_size,
-        handles.scratch_data_size,
-        ethosu_fast_scratch_size};
-    int result = 0;
     EXECUTORCH_PROF_START(
         event_tracer, event_tracer_local_scope, "+EthosUBackend::execute()NPU");
-    result = ethosu_invoke_v3(
-        driver.get(),
-        static_cast<const void*>(handles.cmd_data),
-        handles.cmd_data_size,
-        bases,
-        bases_size,
-        ETHOSU_NUM_BASE_ADDRS, /* fixed array of pointers to binary interface*/
-        nullptr);
+    Error platform_status = platform_execute(
+        context,
+        execution_handle,
+        handles,
+        input_count,
+        output_count,
+        args,
+        ethosu_scratch);
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
-
-    if (result != 0) {
-      ET_LOG(Error, "Ethos-U invocation failed error (%d)", result);
-      return Error::InvalidProgram;
-    }
-    int tensor_dim = 0, io_dim = 0;
-    // Write outputs from scratch into EValue pointers
-    for (int i = 0; i < handles.outputs->count; i++) {
-      int tensor_count = 1, io_count = 1;
-      const char* output_addr = ethosu_scratch + handles.outputs->io[i].offset;
-      // Process input EValue into scratch
-      // Outputs are in the index immediately after inputs
-      auto tensor_out = args[handles.inputs->count + i]->toTensor();
-
-      calculate_dimensions(
-          tensor_out, &handles.outputs->io[i], &tensor_count, &io_count);
-
-      // At times the topological order of the outputs may change.
-      // Lets instead ensure that the sum of dimensions match.
-      tensor_dim = tensor_dim + tensor_count;
-      io_dim = io_dim + io_count;
-
-      EXECUTORCH_PROF_SCOPE(
-          event_tracer, "+EthosUBackend::execute()handles.output.memcpy()");
-
-      memcpy(
-          tensor_out.mutable_data_ptr<char>(),
-          static_cast<const char*>(output_addr),
-          tensor_out.nbytes());
-    }
-    if (tensor_dim != io_dim) {
-      ET_LOG(Error, "Total output tensor sizes do not match");
-      ET_LOG(
-          Error, "Program expects size of %d but got %d", tensor_dim, io_dim);
-      return Error::InvalidProgram;
-    }
-    return Error::Ok;
+    return platform_status;
   }
 
   void destroy(DelegateHandle* handle) const override {
-    return;
+    if (handle == nullptr) {
+      return;
+    }
+
+    // Explicitly destroy platform-specific state before releasing the
+    // execution handle to avoid leaking resources such as std::string.
+    auto* exec_handle = reinterpret_cast<ExecutionHandle*>(handle);
+
+    if (exec_handle->platform_state != nullptr) {
+      platform_destroy(exec_handle->platform_state);
+    }
+
+    delete exec_handle;
   }
 
  private:
-  void calculate_dimensions(
-      const executorch::aten::Tensor tensor,
-      VelaIO* io,
-      int* tensor_count,
-      int* io_count) const {
-    for (int i = 0; i < tensor.dim(); i++) {
-      *tensor_count = *tensor_count * tensor.size(i);
-    }
-
-    // The VelaIO type has a shape of fixed size 6
-    for (int i = 0; i < shapeDim; i++) {
-      *io_count = *io_count * io->shape[i];
-    }
-  }
+  // No platform-specific members.
 };
 
+Error copy_with_layout_adjustment(
+    const VelaIO& output_io,
+    int output_index,
+    const char* src,
+    executorch::aten::Tensor& tensor_out,
+    size_t tensor_bytes) {
+  const int elem_size = output_io.elem_size;
+  if (elem_size == 0) {
+    ET_LOG(Error, "Ethos-U output %d reports zero element size", output_index);
+    return Error::InvalidProgram;
+  }
+
+  size_t chunk_count = 1;
+  for (int dim = 0; dim < shapeDim - 1; ++dim) {
+    const int vela_dim = output_io.shape[dim];
+    chunk_count *= static_cast<size_t>(vela_dim == 0 ? 1 : vela_dim);
+  }
+  const int last_dim = output_io.shape[shapeDim - 1];
+  const size_t vela_chunk_elems =
+      static_cast<size_t>(last_dim == 0 ? 1 : last_dim);
+  const size_t vela_chunk_size =
+      vela_chunk_elems * static_cast<size_t>(elem_size);
+
+  if (tensor_bytes % chunk_count != 0) {
+    ET_LOG(
+        Error,
+        "Ethos-U output %d tensor bytes %zu not divisible by chunk count %zu",
+        output_index,
+        tensor_bytes,
+        chunk_count);
+    return Error::InvalidProgram;
+  }
+
+  const size_t chunk_size = tensor_bytes / chunk_count;
+
+  // If Vela writes fewer bytes than the tensor expects we may need to
+  // expand 4-bit data to 8-bit. Ethos-U outputs may be
+  // packed 4-bit values but ExecuTorch tensors are at least 8-bit.
+  if (vela_chunk_size < chunk_size) {
+    if (chunk_size % vela_chunk_size != 0) {
+      ET_LOG(
+          Error,
+          "Ethos-U output %d chunk bytes %zu not divisible by vela chunk bytes %zu",
+          output_index,
+          chunk_size,
+          vela_chunk_size);
+      return Error::InvalidProgram;
+    }
+
+    const size_t expand_factor = chunk_size / vela_chunk_size;
+    if (expand_factor == 2 && elem_size == 1 &&
+        tensor_out.scalar_type() == ScalarType::Char) {
+      const uint8_t* src_bytes = reinterpret_cast<const uint8_t*>(src);
+      int8_t* dest = tensor_out.mutable_data_ptr<int8_t>();
+      const uint8_t* chunk_src = src_bytes;
+      int8_t* chunk_dest = dest;
+      for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
+        for (size_t byte_idx = 0; byte_idx < vela_chunk_size; ++byte_idx) {
+          const uint8_t packed = chunk_src[byte_idx];
+          int8_t low = static_cast<int8_t>(packed & 0x0F);
+          int8_t high = static_cast<int8_t>((packed >> 4) & 0x0F);
+          if (low >= 8) {
+            low -= 16;
+          }
+          if (high >= 8) {
+            high -= 16;
+          }
+          chunk_dest[2 * byte_idx] = low;
+          chunk_dest[2 * byte_idx + 1] = high;
+        }
+        chunk_src += vela_chunk_size;
+        chunk_dest += chunk_size;
+      }
+      return Error::Ok;
+    }
+
+    ET_LOG(
+        Error,
+        "Ethos-U output %d expansion factor %zu with element size %d not supported",
+        output_index,
+        expand_factor,
+        elem_size);
+    return Error::InvalidProgram;
+  }
+
+  if (src == nullptr) {
+    ET_LOG(Error, "Ethos-U padded copy received null buffer");
+    return Error::InvalidState;
+  }
+  char* dest = tensor_out.mutable_data_ptr<char>();
+  if (dest == nullptr) {
+    ET_LOG(Error, "Ethos-U padded copy received null destination");
+    return Error::InvalidState;
+  }
+  const char* src_bytes = src;
+  for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
+    memcpy(dest, src_bytes, chunk_size);
+    src_bytes += vela_chunk_size;
+    dest += chunk_size;
+  }
+  return Error::Ok;
+}
+
+void calculate_dimensions(
+    const executorch::aten::Tensor tensor,
+    VelaIO* io,
+    int* tensor_count,
+    int* io_count) {
+  for (int i = 0; i < tensor.dim(); i++) {
+    *tensor_count = *tensor_count * tensor.size(i);
+  }
+
+  // The VelaIO type has a shape of fixed size 6
+  for (int i = 0; i < shapeDim; i++) {
+    *io_count = *io_count * io->shape[i];
+  }
+}
+
 namespace {
-auto backend = EthosUBackend();
-Backend backend_id{"EthosUBackend", &backend};
-static auto registered = register_backend(backend_id);
+auto EthosUBackend_backend = EthosUBackend();
+Backend EthosUBackend_id{"EthosUBackend", &EthosUBackend_backend};
+static executorch::runtime::Error EthosUBackend_registered =
+    register_backend(EthosUBackend_id);
+
+/**
+ * This function serves as a linker force-include mechanism to ensure the
+ * EthosU backend module gets properly linked into the final executable,
+ * even when it might otherwise be optimized out by the linker due to
+ * linker options that remove unused code or data for example
+ * if you link with --gc-sections
+ * This function can be called from your runner to force the inclusion of
+ * the EthosU backend module. As a bonus it will return the status of the
+ * backend registration, so you can also check if the registration was
+ * successful.
+ */
+
+// Warning: This should not be considered to be an API and might get removed
+// without notice in a future release if a better way to solve this is
+// implemented.
+extern "C" executorch::runtime::Error
+executorch_delegate_EthosUBackend_registered() {
+  return EthosUBackend_registered;
+}
+
 } // namespace
 
 } // namespace arm

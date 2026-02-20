@@ -13,6 +13,7 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
 from executorch.backends.nxp.aten_passes.split_gru_based_on_num_layers import (
     SplitGRUBasedOnNumLayers,
 )
+from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
 
 
 @pytest.fixture(autouse=True)
@@ -94,7 +95,9 @@ def test_gru_splitting__with_bias(num_layers):
     )  # Just 1 `GRU` in the model.
 
     # Run pre-processing passes of the float32 aten dialect program.
-    pytorch_pass_manager = NeutronAtenPassManager([SplitGRUBasedOnNumLayers()])
+    pytorch_pass_manager = NeutronAtenPassManager(
+        neutron_target_spec, [SplitGRUBasedOnNumLayers()]
+    )
     pytorch_pass_manager(exir_program_aten)
 
     post_pass_output = [t.detach() for t in exir_program_aten(*example_input)]
@@ -143,7 +146,9 @@ def test_gru_splitting__no_bias(num_layers):
     )  # Just 1 `GRU` in the model.
 
     # Run pre-processing passes of the float32 aten dialect program.
-    pytorch_pass_manager = NeutronAtenPassManager([SplitGRUBasedOnNumLayers()])
+    pytorch_pass_manager = NeutronAtenPassManager(
+        neutron_target_spec, [SplitGRUBasedOnNumLayers()]
+    )
     pytorch_pass_manager(exir_program_aten)
 
     post_pass_output = [t.detach() for t in exir_program_aten(*example_input)]
@@ -193,7 +198,9 @@ def test_gru_splitting__bidirectional__no_bias(num_layers):
     )  # Just 1 `GRU` in the model.
 
     # Run pre-processing passes of the float32 aten dialect program.
-    pytorch_pass_manager = NeutronAtenPassManager([SplitGRUBasedOnNumLayers()])
+    pytorch_pass_manager = NeutronAtenPassManager(
+        neutron_target_spec, [SplitGRUBasedOnNumLayers()]
+    )
     pytorch_pass_manager(exir_program_aten)
 
     nodes = list(exir_program_aten.graph.nodes)
@@ -239,7 +246,9 @@ def test_gru_splitting__bidirectional__with_bias(num_layers):
     )  # Just 1 `GRU` in the model.
 
     # Run pre-processing passes of the float32 aten dialect program.
-    pytorch_pass_manager = NeutronAtenPassManager([SplitGRUBasedOnNumLayers()])
+    pytorch_pass_manager = NeutronAtenPassManager(
+        neutron_target_spec, [SplitGRUBasedOnNumLayers()]
+    )
     pytorch_pass_manager(exir_program_aten)
 
     nodes = list(exir_program_aten.graph.nodes)

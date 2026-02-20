@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -90,7 +90,7 @@ set(ET_PTE_FILE_PATH
     CACHE PATH "Path to ExecuTorch model pte"
 )
 set(ETHOS_SDK_PATH
-    "${ET_DIR_PATH}/examples/arm/ethos-u-scratch/ethos-u"
+    "${ET_DIR_PATH}/examples/arm/arm-scratch/ethos-u"
     CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
 set(PYTHON_EXECUTABLE
@@ -122,13 +122,20 @@ message(STATUS "SYSTEM_CONFIG is ${SYSTEM_CONFIG}")
 message(STATUS "MEMORY_MODE is ${MEMORY_MODE}")
 message(STATUS "ET_NUM_INFERENCES is ${ET_NUM_INFERENCES}")
 
-# By default, use 2MB of temporary scratch buffer For Dedicated_Sram, use 64MB
-# for the temporary scratch buffer and 384KB for the fast scratch buffer(the
-# cache, applicable only for Ethos-U65 and Ethos-U85)
-set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x200000)
+# By default, use 2MB of temporary scratch buffer. For Dedicated_Sram, use 64MB
+# for the temporary scratch buffer and 384KB for the fast scratch buffer (the
+# cache, applicable only for Ethos-U65 and Ethos-U85). Allow -D overrides.
 if(MEMORY_MODE MATCHES "Dedicated_Sram")
-  set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x4000000)
-  set(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
+  if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+    set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x4000000)
+  endif()
+  if(NOT DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+    set(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
+  endif()
+else()
+  if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+    set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x200000)
+  endif()
 endif()
 message(
   STATUS
@@ -326,11 +333,43 @@ endif()
 
 # Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
 # bin size as we link in a number of other symbols
-target_link_libraries(arm_executor_runner ${arm_executor_runner_link})
+target_link_libraries(arm_executor_runner PUBLIC ${arm_executor_runner_link})
 
 target_link_options(
   arm_executor_runner PUBLIC LINKER:-Map=arm_executor_runner.map
 )
+
+# Sanitizers
+if(CMAKE_BUILD_TYPE MATCHES "UndefinedSanitizer")
+  set(_et_runner_ubsan_flag -fsanitize=undefined)
+  target_compile_options(arm_executor_runner PRIVATE ${_et_runner_ubsan_flag})
+  target_link_options(arm_executor_runner PRIVATE ${_et_runner_ubsan_flag})
+  if(NOT TARGET executorch_ubsan)
+    add_subdirectory(
+      ${ET_DIR_PATH}/examples/arm/ubsan
+      ${CMAKE_CURRENT_BINARY_DIR}/ubsan_runtime
+    )
+  endif()
+  target_link_directories(
+    arm_executor_runner PRIVATE $<TARGET_FILE_DIR:executorch_ubsan>
+  )
+  target_link_libraries(arm_executor_runner PRIVATE executorch_ubsan)
+endif()
+
+if(CMAKE_BUILD_TYPE MATCHES "AddressSanitizer")
+  set(_et_runner_asan_flags -fsanitize=kernel-address -fasan-shadow-offset=0x0)
+  target_compile_options(arm_executor_runner PRIVATE ${_et_runner_asan_flags})
+  target_link_options(arm_executor_runner PRIVATE ${_et_runner_asan_flags})
+  if(NOT TARGET executorch_asan)
+    add_subdirectory(
+      ${ET_DIR_PATH}/examples/arm/asan ${CMAKE_CURRENT_BINARY_DIR}/asan_runtime
+    )
+  endif()
+  target_link_libraries(arm_executor_runner PRIVATE executorch_asan)
+  target_compile_definitions(
+    arm_executor_runner PRIVATE EXECUTORCH_ENABLE_ADDRESS_SANITIZER
+  )
+endif()
 
 # ET headers and generated headers includes
 target_include_directories(

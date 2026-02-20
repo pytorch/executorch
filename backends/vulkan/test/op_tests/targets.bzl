@@ -158,10 +158,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/runtime/core/exec_aten:lib",
             runtime.external_dep_location("libtorch"),
         ],
-        visibility = [
-            "//executorch/backends/vulkan/test/op_tests/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     define_test_targets(
@@ -175,33 +172,6 @@ def define_common_targets(is_fbcode = False):
             ":test_utils",
             "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
             "//executorch/extension/tensor:tensor",
-        ]
-    )
-    define_test_targets(
-        "quantize_test",
-        extra_deps = [
-            ":test_utils",
-            "//executorch/kernels/quantized/cpu:op_quantize",
-            "//executorch/extension/tensor:tensor",
-            "//executorch/extension/aten_util:aten_bridge",
-        ]
-    )
-    define_test_targets(
-        "dequantize_test",
-        extra_deps = [
-            ":test_utils",
-            "//executorch/kernels/quantized/cpu:op_dequantize",
-            "//executorch/extension/tensor:tensor",
-            "//executorch/extension/aten_util:aten_bridge",
-        ]
-    )
-    define_test_targets(
-        "choose_qparams_test",
-        extra_deps = [
-            ":test_utils",
-            "//executorch/kernels/quantized/cpu:op_choose_qparams",
-            "//executorch/extension/tensor:tensor",
-            "//executorch/extension/aten_util:aten_bridge",
         ]
     )
     define_test_targets(

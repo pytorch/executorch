@@ -8,16 +8,12 @@
 
 #pragma once
 
-#include <stdio.h>
 #include <cinttypes>
-#include <cstdint>
 
 #include <c10/util/safe_numerics.h>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
-#include <executorch/runtime/platform/compiler.h>
-#include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 
 namespace executorch {
@@ -59,9 +55,26 @@ class MemoryAllocator {
    */
   MemoryAllocator(uint32_t size, uint8_t* base_address)
       : begin_(base_address),
-        end_(base_address + size),
+        end_(
+            base_address
+                ? (UINTPTR_MAX - reinterpret_cast<uintptr_t>(base_address) >=
+                           size
+                       ? base_address + size
+                       : nullptr)
+                : nullptr),
         cur_(base_address),
-        size_(size) {}
+        size_(size) {
+    ET_CHECK_MSG(
+        base_address || size == 0,
+        "Base address is null but size=%" PRIu32,
+        size);
+    ET_CHECK_MSG(
+        !base_address || size == 0 ||
+            (UINTPTR_MAX - reinterpret_cast<uintptr_t>(base_address) >= size),
+        "Address space overflow in allocator");
+  }
+
+  virtual ~MemoryAllocator() = default;
 
   /**
    * Allocates `size` bytes of memory.
@@ -74,6 +87,10 @@ class MemoryAllocator {
    * @retval nullptr Not enough memory, or `alignment` was not a power of 2.
    */
   virtual void* allocate(size_t size, size_t alignment = kDefaultAlignment) {
+    if ET_UNLIKELY (!begin_ || !end_) {
+      ET_LOG(Error, "allocate() on zero-capacity allocator");
+      return nullptr;
+    }
     if (!isPowerOf2(alignment)) {
       ET_LOG(Error, "Alignment %zu is not a power of 2", alignment);
       return nullptr;
@@ -82,18 +99,17 @@ class MemoryAllocator {
     // The allocation will occupy [start, end), where the start is the next
     // position that's a multiple of alignment.
     uint8_t* start = alignPointer(cur_, alignment);
-    uint8_t* end = start + size;
-
-    // If the end of this allocation exceeds the end of this allocator, print
-    // error messages and return nullptr
-    if (end > end_ || end < start) {
+    size_t padding = static_cast<size_t>(start - cur_);
+    size_t available = static_cast<size_t>(end_ - cur_);
+    if ET_UNLIKELY (padding > available || size > available - padding) {
       ET_LOG(
           Error,
           "Memory allocation failed: %zuB requested (adjusted for alignment), %zuB available",
-          static_cast<size_t>(end - cur_),
-          static_cast<size_t>(end_ - cur_));
+          padding + size,
+          available);
       return nullptr;
     }
+    uint8_t* end = start + size;
 
     // Otherwise, record how many bytes were used, advance cur_ to the new end,
     // and then return start. Note that the number of bytes used is (end - cur_)
@@ -144,8 +160,9 @@ class MemoryAllocator {
     if (overflow) {
       ET_LOG(
           Error,
-          "Failed to allocate list of type %zu: size * sizeof(T) overflowed",
-          size);
+          "Failed to allocate list: size(%zu) * sizeof(T)(%zu) overflowed",
+          size,
+          sizeof(T));
       return nullptr;
     }
     return static_cast<T*>(this->allocate(bytes_size, alignment));
@@ -171,8 +188,6 @@ class MemoryAllocator {
     prof_id_ = EXECUTORCH_TRACK_ALLOCATOR(name);
   }
 
-  virtual ~MemoryAllocator() {}
-
  protected:
   /**
    * Returns the profiler ID for this allocator.
@@ -184,21 +199,18 @@ class MemoryAllocator {
   /**
    * Returns true if the value is an integer power of 2.
    */
-  static bool isPowerOf2(size_t value) {
-    return value > 0 && (value & ~(value - 1)) == value;
+  static constexpr bool isPowerOf2(size_t value) {
+    return value && !(value & (value - 1));
   }
 
   /**
    * Returns the next alignment for a given pointer.
    */
-  static uint8_t* alignPointer(void* ptr, size_t alignment) {
-    intptr_t addr = reinterpret_cast<intptr_t>(ptr);
-    if ((addr & (alignment - 1)) == 0) {
-      // Already aligned.
-      return reinterpret_cast<uint8_t*>(ptr);
-    }
-    addr = (addr | (alignment - 1)) + 1;
-    return reinterpret_cast<uint8_t*>(addr);
+  static inline uint8_t* alignPointer(void* ptr, size_t alignment) {
+    uintptr_t address = reinterpret_cast<uintptr_t>(ptr);
+    uintptr_t mask = static_cast<uintptr_t>(alignment - 1);
+    address = (address + mask) & ~mask;
+    return reinterpret_cast<uint8_t*>(address);
   }
 
  private:

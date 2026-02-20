@@ -814,10 +814,12 @@ template <typename Func>
     const Func& func) {
 #ifdef ET_USE_THREADPOOL
   const ssize_t reduction_size = get_reduced_dim_product(in, dim);
-  const auto grain_size = std::max(
-      static_cast<ssize_t>(1),
-      static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
-          reduction_size);
+  const auto grain_size = reduction_size == 0
+      ? 1
+      : std::max(
+            static_cast<ssize_t>(1),
+            static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
+                reduction_size);
 #else // ET_USE_THREADPOOL
   const auto grain_size = 1;
 #endif // ET_USE_THREADPOOL

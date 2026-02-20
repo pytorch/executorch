@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -169,6 +169,13 @@ xfails = {
     "float_r4_st": "MLETORCH-408: Arithmetic ops can't handle scalars first",
 }
 
+int_inplace_xfails = {
+    "int_r1_ts": "MLETORCH-1708: Numerical error in TFA/quantization",
+    "int_r4_ts": "MLETORCH-1708: Numerical error in TFA/quantization",
+    "float_r1_ts": "MLETORCH-1708: Numerical error in TFA/quantization",
+    "float_r4_ts": "MLETORCH-1708: Numerical error in TFA/quantization",
+}
+
 
 # ADD FP ------------------------------------------------------
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
@@ -209,7 +216,9 @@ def test_add_tensor_tosa_INT_scalar(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", tensor_scalar_tests)
+@common.parametrize(
+    "test_data", tensor_scalar_tests, xfails=int_inplace_xfails, strict=False
+)
 def test_add_tensor_tosa_INT_inplace(test_data):
     """Tests inplace add with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](AddInplace(), test_data, aten_op=[])
@@ -277,7 +286,9 @@ def test_sub_tensor_tosa_INT_scalar(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", tensor_scalar_tests)
+@common.parametrize(
+    "test_data", tensor_scalar_tests, xfails=int_inplace_xfails, strict=False
+)
 def test_sub_tensor_tosa_INT_inplace(test_data):
     """Tests inplace sub with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](SubInplace(), test_data, aten_op=[])
@@ -334,7 +345,9 @@ def test_mul_tensor_tosa_INT_scalar(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", tensor_scalar_tests)
+@common.parametrize(
+    "test_data", tensor_scalar_tests, xfails=int_inplace_xfails, strict=False
+)
 def test_mul_tensor_tosa_INT_inplace(test_data):
     """Tests inplace mul with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](MulInplace(), test_data, aten_op=[])
@@ -387,14 +400,18 @@ def test_div_scalar_tosa_FP(test_data):
 @common.parametrize("test_data", tensor_scalar_tests)
 def test_div_tensor_tosa_INT_scalar(test_data):
     """Tests regular div with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](Div(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](
+        Div(), test_data, aten_op=[], frobenius_threshold=0.5
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests)
 def test_div_tensor_tosa_INT_inplace(test_data):
     """Tests inplace div with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](DivInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](
+        DivInplace(), test_data, aten_op=[], frobenius_threshold=0.5
+    )
     pipeline.run()
 
 
@@ -435,5 +452,4 @@ def test_bitwise_right_shift_tensor_tosa_INT_inplace():
         (torch.IntTensor(5),),
         aten_op="torch.ops.aten.bitwise_right_shift.Tensor",
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

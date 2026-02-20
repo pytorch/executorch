@@ -22,6 +22,11 @@
     - arg_meta: null
       kernel_name: torch::executor::_cdist_forward_out
 
+- op: _conj_physical.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_conj_physical_out
+
 - op: _log_softmax.out
   kernels:
     - arg_meta: null
@@ -206,6 +211,26 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::bitwise_xor_Tensor_out
+
+- func: bitwise_left_shift.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_left_shift_Tensor_out
+
+- func: bitwise_left_shift.Tensor_Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_left_shift_Tensor_Scalar_out
+
+- func: bitwise_right_shift.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_right_shift_Tensor_out
+
+- func: bitwise_right_shift.Tensor_Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_right_shift_Tensor_Scalar_out
 
 - op: bmm.out
   kernels:
@@ -426,6 +451,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::glu_out
+
+- op: grid_sampler_2d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::grid_sampler_2d_out
 
 - op: gt.Scalar_out
   kernels:

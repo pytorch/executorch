@@ -1,0 +1,5 @@
+# @noautodeps
+# add this empty BUCK file to unblock landing. Without this, we get land error like:
+#   "No build file at xplat/executorch/exir/BUCK when resolving target fbsource//xplat/executorch/exir:."
+
+oncall("executorch")

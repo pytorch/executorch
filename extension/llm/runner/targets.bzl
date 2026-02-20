@@ -6,9 +6,7 @@ def define_common_targets():
         exported_headers = [
             "irunner.h",
         ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -16,9 +14,7 @@ def define_common_targets():
         exported_headers = [
             "constants.h",
         ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     for aten in get_aten_mode_options():
@@ -30,9 +26,7 @@ def define_common_targets():
                 "stats.h",
                 "util.h",
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":constants",
                  "//executorch/extension/module:module" + aten_suffix,
@@ -44,9 +38,7 @@ def define_common_targets():
             name = "text_decoder_runner" + aten_suffix,
             exported_headers = ["text_decoder_runner.h"],
             srcs = ["text_decoder_runner.cpp"],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":stats" + aten_suffix,
                 "//executorch/kernels/portable/cpu/util:arange_util" + aten_suffix,
@@ -61,9 +53,7 @@ def define_common_targets():
             name = "text_prefiller" + aten_suffix,
             exported_headers = ["text_prefiller.h"],
             srcs = ["text_prefiller.cpp"],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":text_decoder_runner" + aten_suffix,
                 "//pytorch/tokenizers:headers",
@@ -75,9 +65,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "text_token_generator" + aten_suffix,
             exported_headers = ["text_token_generator.h"],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":text_decoder_runner" + aten_suffix,
                 "//pytorch/tokenizers:headers",
@@ -89,9 +77,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "image_prefiller" + aten_suffix,
             exported_headers = ["image_prefiller.h", "image.h"],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":constants",
                 "//executorch/extension/module:module" + aten_suffix,
@@ -105,6 +91,7 @@ def define_common_targets():
             exported_headers = [
                 "audio.h",
                 "image.h",
+                "wav_loader.h",
                 "multimodal_input.h",
                 "multimodal_runner.h",
                 "multimodal_prefiller.h",
@@ -133,9 +120,7 @@ def define_common_targets():
                 "llm_runner_helper.cpp",
                 "multimodal_runner.cpp",
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             compiler_flags = [
                 "-Wno-missing-prototypes",
             ],

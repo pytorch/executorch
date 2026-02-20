@@ -13,6 +13,12 @@ BUILDDIR      = _build
 html-noplot:
 	$(SPHINXBUILD) -D plot_gallery=0 -b html $(SPHINXOPTS) "$(SOURCEDIR)" "$(BUILDDIR)/html"
 
+html-stable:
+	# Stable differs from 'make html' in that it shows the release version
+	# instead of "main (version)" in the docs and version switcher.
+	# See conf.py for more details.
+	RELEASE=true $(MAKE) html
+
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 

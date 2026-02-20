@@ -32,6 +32,10 @@ class ET_EXPERIMENTAL TextTokenGenerator {
         use_kv_cache_(use_kv_cache),
         stats_(stats) {}
 
+  void set_ignore_eos(bool ignore_eos) {
+    ignore_eos_ = ignore_eos;
+  }
+
   virtual ~TextTokenGenerator() = default;
 
   /**
@@ -110,15 +114,22 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       }
 
       // print the token as string, decode it with the Tokenizer object
-      token_callback(
-          ET_UNWRAP_TOKENIZER(tokenizer_->decode(prev_token, cur_token)));
+      auto decode_result = tokenizer_->decode(prev_token, cur_token);
+      if (!decode_result.ok()) {
+        ET_LOG(
+            Error,
+            "Tokenizers error code %d",
+            static_cast<uint32_t>(decode_result.error()));
+        return ::executorch::runtime::Error::InvalidArgument;
+      }
+      token_callback(std::move(*decode_result));
 
       if (should_stop_) {
         break;
       }
 
       // data-dependent terminating condition: we have n_eos_ number of EOS
-      if (eos_ids_->find(cur_token) != eos_ids_->end()) {
+      if (!ignore_eos_ && eos_ids_->find(cur_token) != eos_ids_->end()) {
         printf("\n");
         ET_LOG(Info, "\nReached to the end of generation");
         break;
@@ -162,6 +173,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
   TextDecoderRunner* text_decoder_runner_;
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
   bool use_kv_cache_;
+  bool ignore_eos_ = false;
 
   // state machine
   bool should_stop_ = false;

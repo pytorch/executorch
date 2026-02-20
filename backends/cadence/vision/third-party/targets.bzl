@@ -16,11 +16,8 @@ def define_common_targets():
             "include/*.h", 
             "include_private/*.h"
         ]),
-        header_namespace = "backends/cadence/vision/third-party",
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        header_namespace = "",
+        visibility = ["PUBLIC"],
         platforms = CXX,
         compatible_with = select({
             "DEFAULT": [],
@@ -28,7 +25,11 @@ def define_common_targets():
         }),
         compiler_flags = select({
             "DEFAULT": ["-UCOMPILER_XTENSA"],  # Ensure COMPILER_XTENSA is not defined for non-Xtensa builds
-            "ovr_config//cpu:xtensa": ["-DCOMPILER_XTENSA"],
+            "ovr_config//cpu:xtensa": [
+                "-DCOMPILER_XTENSA",
+                "-Ixplat/executorch/backends/cadence/vision/third-party/include",
+                "-Ixplat/executorch/backends/cadence/vision/third-party/include_private",
+            ],
         }),
         define_static_target = True,
     )

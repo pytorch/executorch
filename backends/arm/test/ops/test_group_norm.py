@@ -159,7 +159,7 @@ def test_native_group_norm_u85_INT(test_data):
     strict=False,
 )
 @common.SkipIfNoModelConverter
-def test_native_group_norm_vgf_FP(test_data):
+def test_native_group_norm_vgf_no_quant(test_data):
     aten_op = "torch.ops.aten.group_norm.default"
     exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
     model, inp = test_data
@@ -168,7 +168,7 @@ def test_native_group_norm_vgf_FP(test_data):
         model,
         aten_op=aten_op,
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
@@ -185,7 +185,7 @@ def test_native_group_norm_vgf_FP(test_data):
     strict=False,
 )
 @common.SkipIfNoModelConverter
-def test_native_group_norm_vgf_INT(test_data):
+def test_native_group_norm_vgf_quant(test_data):
     aten_op = "torch.ops.aten.sub.Tensor"
     exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
     model, inp = test_data
@@ -194,7 +194,7 @@ def test_native_group_norm_vgf_INT(test_data):
         model,
         aten_op=aten_op,
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+INT",
-        atol=0.1,  # TODO: "MLETORCH-925: Fix numerical issue for aten.native_group_norm"
+        atol=0.1,
+        quantize=True,
     )
     pipeline.run()

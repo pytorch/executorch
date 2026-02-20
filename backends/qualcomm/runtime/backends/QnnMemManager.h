@@ -20,7 +20,7 @@ namespace qnn {
 class QnnMemManager {
  public:
   explicit QnnMemManager(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnContext* context,
       QnnExecuTorchLogLevel log_level)
       : implementation_(implementation),
@@ -39,16 +39,6 @@ class QnnMemManager {
       const std::shared_ptr<TensorWrapper>& tensor_wrapper,
       int32_t mem_fd,
       void* mem_ptr,
-      void* unaligned_custom_mem_base,
-      size_t total_custom_mem_size,
-      size_t tensor_offset,
-      const CustomMemTensorInfo& info);
-
-  // Pre-register custom mem handle from SharedBuffer. Bring forward the
-  // memHandle creating time from execution to initialization.
-  executorch::runtime::Error PreRegisterCustomMemHandle(
-      int32_t mem_fd,
-      void* unaligned_custom_mem_base,
       size_t total_custom_mem_size,
       size_t tensor_offset,
       const CustomMemTensorInfo& info);
@@ -65,7 +55,7 @@ class QnnMemManager {
  private:
   void DeRegisterMem();
 
-  const QnnImplementation& implementation_;
+  QnnImplementation* implementation_;
   QnnContext* context_;
   QnnExecuTorchLogLevel log_level_;
   // Store the registered Qnn_MemHandle_t for de-registration

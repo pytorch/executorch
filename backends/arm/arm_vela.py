@@ -1,9 +1,8 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import os
 import struct
@@ -55,8 +54,8 @@ def vela_compile(
     verbose: bool = False,
     intermediate_path: str | None = None,
 ):
-    """
-    Compile a TOSA graph to a binary stream for ArmBackendEthosU using Vela.
+    """Compile a TOSA graph to a binary stream for ArmBackendEthosU using
+    Vela.
     """
     if not has_vela:
         raise RuntimeError(

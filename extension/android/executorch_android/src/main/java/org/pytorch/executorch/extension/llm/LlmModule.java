@@ -11,6 +11,7 @@ package org.pytorch.executorch.extension.llm;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import java.io.File;
+import java.util.List;
 import org.pytorch.executorch.ExecuTorchRuntime;
 import org.pytorch.executorch.annotations.Experimental;
 
@@ -25,21 +26,37 @@ public class LlmModule {
 
   public static final int MODEL_TYPE_TEXT = 1;
   public static final int MODEL_TYPE_TEXT_VISION = 2;
+  public static final int MODEL_TYPE_MULTIMODAL = 2;
 
   private final HybridData mHybridData;
   private static final int DEFAULT_SEQ_LEN = 128;
   private static final boolean DEFAULT_ECHO = true;
+  private static final float DEFAULT_TEMPERATURE = -1.0f;
+  private static final int DEFAULT_BOS = 0;
+  private static final int DEFAULT_EOS = 0;
 
   @DoNotStrip
   private static native HybridData initHybrid(
-      int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath);
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      List<String> dataFiles,
+      int numBos,
+      int numEos);
 
   /**
    * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
-   * data path.
+   * dataFiles.
    */
   public LlmModule(
-      int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      List<String> dataFiles,
+      int numBos,
+      int numEos) {
     ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
 
     File modelFile = new File(modulePath);
@@ -50,12 +67,65 @@ public class LlmModule {
     if (!tokenizerFile.canRead() || !tokenizerFile.isFile()) {
       throw new RuntimeException("Cannot load tokenizer path " + tokenizerPath);
     }
-    mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, dataPath);
+
+    mHybridData =
+        initHybrid(modelType, modulePath, tokenizerPath, temperature, dataFiles, numBos, numEos);
+  }
+
+  /**
+   * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
+   * dataFiles.
+   */
+  public LlmModule(
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      List<String> dataFiles) {
+    this(modelType, modulePath, tokenizerPath, temperature, dataFiles, DEFAULT_BOS, DEFAULT_EOS);
+  }
+
+  /**
+   * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
+   * data path.
+   */
+  public LlmModule(
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      String dataPath,
+      int numBos,
+      int numEos) {
+    this(
+        modelType,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        dataPath != null ? List.of(dataPath) : List.of(),
+        numBos,
+        numEos);
+  }
+
+  /**
+   * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
+   * data path.
+   */
+  public LlmModule(
+      int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
+    this(modelType, modulePath, tokenizerPath, temperature, dataPath, DEFAULT_BOS, DEFAULT_EOS);
   }
 
   /** Constructs a LLM Module for a model with given model path, tokenizer, temperature. */
   public LlmModule(String modulePath, String tokenizerPath, float temperature) {
-    this(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, null);
+    this(
+        MODEL_TYPE_TEXT,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        List.of(),
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /**
@@ -63,12 +133,19 @@ public class LlmModule {
    * path.
    */
   public LlmModule(String modulePath, String tokenizerPath, float temperature, String dataPath) {
-    this(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, dataPath);
+    this(
+        MODEL_TYPE_TEXT,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        List.of(dataPath),
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /** Constructs a LLM Module for a model with given path, tokenizer, and temperature. */
   public LlmModule(int modelType, String modulePath, String tokenizerPath, float temperature) {
-    this(modelType, modulePath, tokenizerPath, temperature, null);
+    this(modelType, modulePath, tokenizerPath, temperature, List.of(), DEFAULT_BOS, DEFAULT_EOS);
   }
 
   /** Constructs a LLM Module for a model with the given LlmModuleConfig */
@@ -78,7 +155,9 @@ public class LlmModule {
         config.getModulePath(),
         config.getTokenizerPath(),
         config.getTemperature(),
-        config.getDataPath());
+        config.getDataPath(),
+        config.getNumBos(),
+        config.getNumEos());
   }
 
   public void resetNative() {
@@ -92,7 +171,14 @@ public class LlmModule {
    * @param llmCallback callback object to receive results.
    */
   public int generate(String prompt, LlmCallback llmCallback) {
-    return generate(prompt, DEFAULT_SEQ_LEN, llmCallback, DEFAULT_ECHO);
+    return generate(
+        prompt,
+        DEFAULT_SEQ_LEN,
+        llmCallback,
+        DEFAULT_ECHO,
+        DEFAULT_TEMPERATURE,
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /**
@@ -103,7 +189,18 @@ public class LlmModule {
    * @param llmCallback callback object to receive results.
    */
   public int generate(String prompt, int seqLen, LlmCallback llmCallback) {
-    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, DEFAULT_ECHO);
+    return generate(
+        null,
+        0,
+        0,
+        0,
+        prompt,
+        seqLen,
+        llmCallback,
+        DEFAULT_ECHO,
+        DEFAULT_TEMPERATURE,
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /**
@@ -114,7 +211,18 @@ public class LlmModule {
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
   public int generate(String prompt, LlmCallback llmCallback, boolean echo) {
-    return generate(null, 0, 0, 0, prompt, DEFAULT_SEQ_LEN, llmCallback, echo);
+    return generate(
+        null,
+        0,
+        0,
+        0,
+        prompt,
+        DEFAULT_SEQ_LEN,
+        llmCallback,
+        echo,
+        DEFAULT_TEMPERATURE,
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /**
@@ -125,7 +233,30 @@ public class LlmModule {
    * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public native int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo);
+  public int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
+    return generate(
+        prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE, DEFAULT_BOS, DEFAULT_EOS);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param prompt Input prompt
+   * @param seqLen sequence length
+   * @param llmCallback callback object to receive results
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
+   * @param temperature temperature for sampling (use negative value to use module default)
+   * @param numBos number of BOS tokens to prepend
+   * @param numEos number of EOS tokens to append
+   */
+  public native int generate(
+      String prompt,
+      int seqLen,
+      LlmCallback llmCallback,
+      boolean echo,
+      float temperature,
+      int numBos,
+      int numEos);
 
   /**
    * Start generating tokens from the module.
@@ -137,7 +268,10 @@ public class LlmModule {
   public int generate(String prompt, LlmGenerationConfig config, LlmCallback llmCallback) {
     int seqLen = config.getSeqLen();
     boolean echo = config.isEcho();
-    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo);
+    float temperature = config.getTemperature();
+    int numBos = config.getNumBos();
+    int numEos = config.getNumEos();
+    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
   }
 
   /**
@@ -161,13 +295,93 @@ public class LlmModule {
       int seqLen,
       LlmCallback llmCallback,
       boolean echo) {
-    prefillPrompt(prompt);
-    prefillImages(image, width, height, channels);
-    return generate("", llmCallback, echo);
+    return generate(
+        image,
+        width,
+        height,
+        channels,
+        prompt,
+        seqLen,
+        llmCallback,
+        echo,
+        DEFAULT_TEMPERATURE,
+        DEFAULT_BOS,
+        DEFAULT_EOS);
   }
 
   /**
-   * Prefill an LLaVA Module with the given images input.
+   * Start generating tokens from the module.
+   *
+   * @param image Input image as a byte array
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
+   * @param prompt Input prompt
+   * @param seqLen sequence length
+   * @param llmCallback callback object to receive results.
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
+   * @param temperature temperature for sampling (use negative value to use module default)
+   */
+  public int generate(
+      int[] image,
+      int width,
+      int height,
+      int channels,
+      String prompt,
+      int seqLen,
+      LlmCallback llmCallback,
+      boolean echo,
+      float temperature) {
+    return generate(
+        image,
+        width,
+        height,
+        channels,
+        prompt,
+        seqLen,
+        llmCallback,
+        echo,
+        temperature,
+        DEFAULT_BOS,
+        DEFAULT_EOS);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param image Input image as a byte array
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
+   * @param prompt Input prompt
+   * @param seqLen sequence length
+   * @param llmCallback callback object to receive results.
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
+   * @param temperature temperature for sampling (use negative value to use module default)
+   * @param numBos number of BOS tokens to prepend
+   * @param numEos number of EOS tokens to append
+   */
+  public int generate(
+      int[] image,
+      int width,
+      int height,
+      int channels,
+      String prompt,
+      int seqLen,
+      LlmCallback llmCallback,
+      boolean echo,
+      float temperature,
+      int numBos,
+      int numEos) {
+    prefillPrompt(prompt);
+    if (image != null) {
+      prefillImages(image, width, height, channels);
+    }
+    return generate(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
+  }
+
+  /**
+   * Prefill a multimodal Module with the given images input.
    *
    * @param image Input image as a byte array
    * @param width Input image width
@@ -177,7 +391,7 @@ public class LlmModule {
    *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
-  @Deprecated
+  @Experimental
   public long prefillImages(int[] image, int width, int height, int channels) {
     int nativeResult = appendImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
@@ -189,14 +403,104 @@ public class LlmModule {
   private native int appendImagesInput(int[] image, int width, int height, int channels);
 
   /**
-   * Prefill an LLaVA Module with the given text input.
+   * Prefill a multimodal Module with the given images input.
    *
-   * @param prompt The text prompt to LLaVA.
+   * @param image Input normalized image as a float array
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
    * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
    *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
-  @Deprecated
+  @Experimental
+  public long prefillImages(float[] image, int width, int height, int channels) {
+    int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendNormalizedImagesInput(
+      float[] image, int width, int height, int channels);
+
+  /**
+   * Prefill a multimodal Module with the given audio input.
+   *
+   * @param audio Input preprocessed audio as a byte array
+   * @param batch_size Input batch size
+   * @param n_bins Input number of bins
+   * @param n_frames Input number of frames
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public long prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
+    int nativeResult = appendAudioInput(audio, batch_size, n_bins, n_frames);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
+
+  /**
+   * Prefill a multimodal Module with the given audio input.
+   *
+   * @param audio Input preprocessed audio as a float array
+   * @param batch_size Input batch size
+   * @param n_bins Input number of bins
+   * @param n_frames Input number of frames
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public long prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
+    int nativeResult = appendAudioInputFloat(audio, batch_size, n_bins, n_frames);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
+
+  /**
+   * Prefill a multimodal Module with the given raw audio input.
+   *
+   * @param audio Input raw audio as a byte array
+   * @param batch_size Input batch size
+   * @param n_channels Input number of channels
+   * @param n_samples Input number of samples
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public long prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
+    int nativeResult = appendRawAudioInput(audio, batch_size, n_channels, n_samples);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendRawAudioInput(
+      byte[] audio, int batch_size, int n_channels, int n_samples);
+
+  /**
+   * Prefill a multimodal Module with the given text input.
+   *
+   * @param prompt The text prompt to prefill.
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
   public long prefillPrompt(String prompt) {
     int nativeResult = appendTextInput(prompt);
     if (nativeResult != 0) {

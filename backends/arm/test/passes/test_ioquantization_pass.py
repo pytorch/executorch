@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,7 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import EthosU55PipelineIN
 from executorch.exir.passes.quantize_io_pass import QuantizeInputs, QuantizeOutputs
 
 
-input_t = Tuple[torch.Tensor]
+input_t = Tuple[torch.Tensor, torch.Tensor]
 
 
 class SimpleModel(torch.nn.Module):
@@ -27,9 +27,9 @@ class SimpleModel(torch.nn.Module):
 
 
 @common.parametrize("test_data", SimpleModel.test_data)
-def test_ioquantisation_pass_u55_INT(test_data: input_t):
-    """
-    Test the executorch/exir/passes/quanize_io_pass pass works(meaning we don't get Q/DQ nodes) on a simple model
+def test_quantize_io_u55_INT(test_data: input_t):
+    """Test the executorch/exir/passes/quantize_io_pass pass works(meaning we
+    don't get Q/DQ nodes) on a simple model.
     """
     model = SimpleModel()
     pipeline = EthosU55PipelineINT(
@@ -37,7 +37,7 @@ def test_ioquantisation_pass_u55_INT(test_data: input_t):
         test_data,
         aten_ops=[],
         exir_ops=[],
-        use_to_edge_transform_and_lower=False,
+        use_to_edge_transform_and_lower=True,
         run_on_fvp=False,
     )
     pipeline.pop_stage(-1)

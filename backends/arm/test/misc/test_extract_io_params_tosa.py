@@ -40,7 +40,7 @@ class SimpleAdd(torch.nn.Module):
         ),
     ],
 )
-def test_roundtrip_extracts_io_params(
+def test_roundtrip_extracts_io_params_tosa_INT(
     compile_spec_cls: type[TosaCompileSpec] | type[VgfCompileSpec],
     quantizer_cls,
     partitioner_cls,

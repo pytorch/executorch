@@ -322,3 +322,14 @@ TEST_F(CommonShimsTest, IndependentCaches) {
   // Sizes and strides pointers should be different (different caches)
   EXPECT_NE(sizes_ptr1, strides_ptr1);
 }
+
+// Test all dtype functions return correct PyTorch dtype codes
+TEST_F(CommonShimsTest, AllDtypesReturnCorrectValues) {
+  EXPECT_EQ(aoti_torch_dtype_float32(), 6); // PyTorch's float32 dtype code
+  EXPECT_EQ(aoti_torch_dtype_bfloat16(), 15); // PyTorch's bfloat16 dtype code
+  EXPECT_EQ(aoti_torch_dtype_int8(), 1); // PyTorch's int8 dtype code
+  EXPECT_EQ(aoti_torch_dtype_int16(), 2); // PyTorch's int16 dtype code
+  EXPECT_EQ(aoti_torch_dtype_int32(), 3); // PyTorch's int32 dtype code
+  EXPECT_EQ(aoti_torch_dtype_int64(), 4); // PyTorch's int64 dtype code
+  EXPECT_EQ(aoti_torch_dtype_bool(), 11); // PyTorch's bool dtype code
+}

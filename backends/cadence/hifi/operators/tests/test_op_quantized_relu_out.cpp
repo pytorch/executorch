@@ -57,14 +57,14 @@ class HiFiQuantizedReluTest : public OperatorTest {
 
 TEST_F(HiFiQuantizedReluTest, MultiDimensionalTest) {
   TensorFactory<ScalarType::Char> tf_chars;
+  TensorFactory<ScalarType::Int> tf_ints;
   const std::vector<int32_t> sizes{2, 3, 5, 6};
   Tensor quantized_input = tf_chars.full(sizes, -128);
   Tensor quantized_output = tf_chars.full(sizes, 100);
   Tensor in_zero_point = tf_chars.full({1}, 127);
   int64_t out_zero_point = -128;
-  Tensor out_multiplier =
-      TensorFactory<ScalarType::Int>().full({1}, 1077952640);
-  Tensor out_shift = TensorFactory<ScalarType::Int>().full({1}, 5);
+  Tensor out_multiplier = tf_ints.full({1}, 1077952640);
+  Tensor out_shift = tf_ints.full({1}, 5);
 
   quantized_relu_out(
       quantized_input,
@@ -80,14 +80,14 @@ TEST_F(HiFiQuantizedReluTest, MultiDimensionalTest) {
 
 TEST_F(HiFiQuantizedReluTest, OneDimensionalTest) {
   TensorFactory<ScalarType::Char> tf_chars;
+  TensorFactory<ScalarType::Int> tf_ints;
   const std::vector<int32_t> sizes{56};
   Tensor quantized_input = tf_chars.full(sizes, -128);
   Tensor quantized_output = tf_chars.full(sizes, 100);
   Tensor in_zero_point = tf_chars.full({1}, 127);
   int64_t out_zero_point = -128;
-  Tensor out_multiplier =
-      TensorFactory<ScalarType::Int>().full({1}, 1077952640);
-  Tensor out_shift = TensorFactory<ScalarType::Int>().full({1}, 5);
+  Tensor out_multiplier = tf_ints.full({1}, 1077952640);
+  Tensor out_shift = tf_ints.full({1}, 5);
 
   quantized_relu_out(
       quantized_input,

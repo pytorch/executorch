@@ -10,6 +10,13 @@
 
 #include <sstream>
 
+#ifdef ETVK_BOOST_STACKTRACE_AVAILABLE
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif // _GNU_SOURCE
+#include <boost/stacktrace.hpp>
+#endif // ETVK_BOOST_STACKTRACE_AVAILABLE
+
 namespace vkcompute {
 namespace vkapi {
 
@@ -65,6 +72,11 @@ Error::Error(SourceLocation source_location, std::string msg)
   std::ostringstream oss;
   oss << "Exception raised from " << source_location_ << ": ";
   oss << msg_;
+#ifdef ETVK_BOOST_STACKTRACE_AVAILABLE
+  oss << "\n";
+  oss << "Stack trace:\n";
+  oss << boost::stacktrace::stacktrace();
+#endif // ETVK_BOOST_STACKTRACE_AVAILABLE
   what_ = oss.str();
 }
 
@@ -74,6 +86,11 @@ Error::Error(SourceLocation source_location, const char* cond, std::string msg)
   oss << "Exception raised from " << source_location_ << ": ";
   oss << "(" << cond << ") is false! ";
   oss << msg_;
+#ifdef ETVK_BOOST_STACKTRACE_AVAILABLE
+  oss << "\n";
+  oss << "Stack trace:\n";
+  oss << boost::stacktrace::stacktrace();
+#endif // ETVK_BOOST_STACKTRACE_AVAILABLE
   what_ = oss.str();
 }
 

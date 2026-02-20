@@ -50,15 +50,16 @@ void add_transfer_copy_node(
       (transfer_type == TransferType::SELECT ||
        graph.is_scalar_or_none(step_ref));
 
-  vkapi::ParamsBindList param_buffers;
+  vkapi::ParamsBindList param_ubos = {graph.meta_ubo(out), graph.meta_ubo(in)};
+
   if (!param_is_scalar) {
     if (transfer_type == TransferType::SELECT) {
-      param_buffers = {
-          graph.get_or_create_int_param_buffer(index_or_start_ref, 0)};
+      param_ubos.append(
+          graph.get_or_create_int_param_buffer(index_or_start_ref, 0));
     } else { // TransferType::SLICE
-      param_buffers = {
-          graph.get_or_create_int_param_buffer(index_or_start_ref, 0),
-          graph.get_or_create_int_param_buffer(step_ref, 1)};
+      param_ubos.append(
+          graph.get_or_create_int_param_buffer(index_or_start_ref, 0));
+      param_ubos.append(graph.get_or_create_int_param_buffer(step_ref, 1));
     }
   } else {
     transfer_params.index_or_start_ref =
@@ -69,29 +70,12 @@ void add_transfer_copy_node(
   }
 
   std::vector<PushConstantDataInfo> push_constants;
-  push_constants.reserve(graph.is_buffer_storage(out) ? 5 : 3);
-
-  if (graph.is_buffer_storage(out)) {
-    push_constants.emplace_back(graph.sizes_pc_of(in));
-    push_constants.emplace_back(graph.strides_pc_of(out));
-    push_constants.emplace_back(graph.strides_pc_of(in));
-    push_constants.emplace_back(graph.numel_pc_of(out));
-  } else {
-    push_constants.emplace_back(graph.sizes_pc_of(out));
-    push_constants.emplace_back(graph.sizes_pc_of(in));
-  }
-
   if (param_is_scalar) {
     push_constants.emplace_back(&transfer_params, sizeof(transfer_params));
   } else {
     push_constants.emplace_back(
         &transfer_params.dim, sizeof(transfer_params.dim));
   }
-
-  vkapi::SpecVarList spec_vars = {
-      graph.hashed_layout_of(out),
-      graph.hashed_layout_of(in),
-  };
 
   // Determine the shader directly
   std::string kernel_name;
@@ -115,11 +99,11 @@ void add_transfer_copy_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter buffers
-      param_buffers,
+      param_ubos,
       // Push Constants
       push_constants,
       // Specialization Constants
-      spec_vars,
+      {},
       // Resize Args
       resize_args,
       // Resizing Logic

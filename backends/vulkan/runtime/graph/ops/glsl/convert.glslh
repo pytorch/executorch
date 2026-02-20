@@ -1,0 +1,28 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONVERT_GLSLH
+#define CONVERT_GLSLH
+
+// Scalar Conversions
+
+#ifdef T
+
+#if T == float16_t
+
+#define convert_to_T(x) T(clamp(x, -65504, 65504));
+
+#else
+
+#define convert_to_T(x) T(x);
+
+#endif // T == float16_t
+
+#endif // T
+
+#endif // CONVERT_GLSLH

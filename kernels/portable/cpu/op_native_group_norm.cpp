@@ -77,8 +77,8 @@ void group_norm(
     const CTYPE* x = input_data + i * inner_size;
 
     // compute E[X] and Var[x] = E[x^2] - E[x]^2
-    CTYPE sum = reduce_add(x, static_cast<CTYPE>(inner_size));
-    CTYPE sq_sum = vec_powerf(x, static_cast<CTYPE>(inner_size));
+    float sum = reduce_add(x, inner_size);
+    float sq_sum = vec_powerf(x, inner_size);
     double mean_value =
         static_cast<double>(sum) / static_cast<double>(inner_size);
     double variance =
@@ -190,7 +190,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_group_norm_out(
         ret_val);
   }
 
-  constexpr auto name = "native_group_norm.out";
+  static constexpr auto name = "native_group_norm.out";
 
   ET_SWITCH_FLOATHBF16_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
     group_norm<CTYPE>(

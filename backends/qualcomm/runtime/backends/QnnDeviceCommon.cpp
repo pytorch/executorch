@@ -13,7 +13,7 @@ namespace qnn {
 using executorch::runtime::Error;
 
 QnnDevice::~QnnDevice() {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   if (nullptr != handle_) {
     QNN_EXECUTORCH_LOG_INFO("Destroy Qnn device");
@@ -32,7 +32,7 @@ QnnDevice::~QnnDevice() {
 
 Error QnnDevice::Configure() {
   // create qnn device
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   std::vector<const QnnDevice_Config_t*> temp_device_config;

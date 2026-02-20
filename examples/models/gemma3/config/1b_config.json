@@ -12,6 +12,7 @@
   "post_attention_norm": true,
   "post_ffn_norm": true,
   "rope_theta": 1000000.0,
+  "local_rope_theta": 10000.0,
   "use_scaled_rope": false,
   "apply_embedding": true,
   "embedding_scale_factor": 33.941125497,
@@ -19,5 +20,7 @@
   "use_hf_rope": true,
   "attention_qkv_bias": false,
   "use_qk_norm": true,
-  "qk_norm_before_rope": true
+  "qk_norm_before_rope": true,
+  "layer_types": ["sliding_attention","sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention", "sliding_attention","sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention", "sliding_attention","sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention", "sliding_attention","sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention", "sliding_attention","sliding_attention"],
+  "sliding_window": 512
 }

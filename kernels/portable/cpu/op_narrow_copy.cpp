@@ -46,7 +46,7 @@ Tensor& narrow_copy_out(
       out);
 
   if (length != 0) {
-    compute_slice(in, dim, start, length, 1, out);
+    compute_slice(ctx, in, dim, start, length, 1, out);
   }
 
   return out;

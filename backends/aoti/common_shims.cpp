@@ -16,8 +16,10 @@ namespace aoti {
 
 namespace internal {
 // Global storage for tensor metadata
-std::unordered_map<Tensor*, std::vector<int64_t>> tensor_to_sizes;
-std::unordered_map<Tensor*, std::vector<int64_t>> tensor_to_strides;
+AOTI_SHIM_EXPORT std::unordered_map<Tensor*, std::vector<int64_t>>
+    tensor_to_sizes;
+AOTI_SHIM_EXPORT std::unordered_map<Tensor*, std::vector<int64_t>>
+    tensor_to_strides;
 } // namespace internal
 
 extern "C" {
@@ -51,13 +53,32 @@ AOTITorchError aoti_torch_get_storage_offset(
 
 AOTITorchError aoti_torch_get_strides(Tensor* tensor, int64_t** ret_strides) {
   auto it = internal::tensor_to_strides.find(tensor);
+  bool needs_update = false;
+
   if (it == internal::tensor_to_strides.end()) {
+    needs_update = true;
+  } else {
+    // CRITICAL: Multimodal models reuse tensors with different shapes across
+    // executions (e.g., variable-length audio). We MUST validate cached
+    // metadata matches current tensor state, or CUDA kernels will receive
+    // incorrect shapes leading to memory corruption and segfaults.
+    auto tensor_strides = tensor->strides();
+    needs_update = !std::equal(
+        it->second.begin(),
+        it->second.end(),
+        tensor_strides.begin(),
+        tensor_strides.end());
+  }
+
+  if (needs_update) {
     std::vector<int64_t> strides(tensor->dim());
     auto tensor_strides = tensor->strides();
     for (int i = 0; i < tensor->dim(); i++) {
       strides[i] = tensor_strides[i];
     }
-    it = internal::tensor_to_strides.emplace(tensor, std::move(strides)).first;
+    it =
+        internal::tensor_to_strides.insert_or_assign(tensor, std::move(strides))
+            .first;
   }
 
   // For 0D tensors, data() returns nullptr on empty vectors, but we need to
@@ -80,13 +101,31 @@ AOTITorchError aoti_torch_get_dtype(Tensor* tensor, int32_t* ret_dtype) {
 
 AOTITorchError aoti_torch_get_sizes(Tensor* tensor, int64_t** ret_sizes) {
   auto it = internal::tensor_to_sizes.find(tensor);
+  bool needs_update = false;
+
   if (it == internal::tensor_to_sizes.end()) {
+    needs_update = true;
+  } else {
+    // CRITICAL: Multimodal models reuse tensors with different shapes across
+    // executions (e.g., variable-length audio). We MUST validate cached
+    // metadata matches current tensor state, or CUDA kernels will receive
+    // incorrect shapes leading to memory corruption and segfaults.
+    auto tensor_sizes = tensor->sizes();
+    needs_update = !std::equal(
+        it->second.begin(),
+        it->second.end(),
+        tensor_sizes.begin(),
+        tensor_sizes.end());
+  }
+
+  if (needs_update) {
     std::vector<int64_t> sizes(tensor->dim());
     auto tensor_sizes = tensor->sizes();
     for (int i = 0; i < tensor->dim(); i++) {
       sizes[i] = tensor_sizes[i];
     }
-    it = internal::tensor_to_sizes.emplace(tensor, std::move(sizes)).first;
+    it = internal::tensor_to_sizes.insert_or_assign(tensor, std::move(sizes))
+             .first;
   }
 
   // For 0D tensors, data() returns nullptr on empty vectors, but we need to
@@ -127,15 +166,105 @@ int32_t aoti_torch_layout_strided() {
 }
 
 // Dtype constants - these return the PyTorch dtype codes
-// Currently only float32 is supported, but using robust enum-based approach
 int32_t aoti_torch_dtype_float32() {
   return 6; // PyTorch's float32 dtype code
+}
+
+int32_t aoti_torch_dtype_bfloat16() {
+  return 15; // PyTorch's bfloat16 dtype code
+}
+
+int32_t aoti_torch_dtype_uint8() {
+  return 0; // PyTorch's uint8 dtype code
+}
+
+int32_t aoti_torch_dtype_int8() {
+  return 1; // PyTorch's int8 dtype code
+}
+
+int32_t aoti_torch_dtype_int16() {
+  return 2; // PyTorch's int16 dtype code
+}
+
+int32_t aoti_torch_dtype_int32() {
+  return 3; // PyTorch's int32 dtype code
+}
+
+int32_t aoti_torch_dtype_bool() {
+  return 11; // PyTorch's bool dtype code
+}
+
+int32_t aoti_torch_dtype_int64() {
+  return 4; // PyTorch's int64 dtype code
+}
+
+// Dtype utility function needed by Metal backend.
+// Returns the size of the dtype in bytes.
+size_t aoti_torch_dtype_element_size(int32_t dtype) {
+  return dtype_to_element_size(dtype);
 }
 
 // Cleanup functions
 void cleanup_tensor_metadata() {
   internal::tensor_to_sizes.clear();
   internal::tensor_to_strides.clear();
+}
+
+AOTI_SHIM_EXPORT void aoti_torch_warn(
+    const char* func,
+    const char* file,
+    uint32_t line,
+    const char* msg) {
+  ET_LOG(Error, "[%s:%u] %s: %s", file, line, func, msg);
+}
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_storage_size(Tensor* tensor, int64_t* ret_size) {
+  (void)tensor;
+  (void)ret_size;
+  throw std::runtime_error("Not implemented: aoti_torch_get_storage_size");
+  return Error::Internal;
+}
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_clone_preserve_strides(Tensor* self, Tensor** ret_new_tensor) {
+  (void)self;
+  (void)ret_new_tensor;
+  throw std::runtime_error(
+      "Not implemented: aoti_torch_clone_preserve_strides");
+  return Error::Internal;
+}
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_clone(Tensor* self, Tensor** ret_new_tensor) {
+  (void)self;
+  (void)ret_new_tensor;
+  throw std::runtime_error("Not implemented: aoti_torch_clone");
+  return Error::Internal;
+}
+
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob(
+    void* data_ptr,
+    int64_t ndim,
+    const int64_t* sizes,
+    const int64_t* strides,
+    int64_t storage_offset,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    Tensor** ret_new_tensor) {
+  (void)data_ptr;
+  (void)ndim;
+  (void)sizes;
+  (void)strides;
+  (void)storage_offset;
+  (void)dtype;
+  (void)device_type;
+  (void)device_index;
+  (void)ret_new_tensor;
+  throw std::runtime_error(
+      "Not implemented: aoti_torch_create_tensor_from_blob");
+  return Error::Internal;
 }
 
 } // extern "C"

@@ -8,9 +8,7 @@
 
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 extern "C" {
 
@@ -31,6 +29,4 @@ int32_t aoti_torch_device_type_cuda() {
 
 } // extern "C"
 
-} // namespace cuda
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::cuda

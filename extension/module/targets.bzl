@@ -18,14 +18,13 @@ def define_common_targets():
             exported_headers = [
                 "module.h",
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/extension/memory_allocator:malloc_memory_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/data_loader:mmap_data_loader",
                 "//executorch/extension/flat_tensor:flat_tensor_data_map" + aten_suffix,
+                "//executorch/extension/named_data_map:merged_data_map" + aten_suffix,
             ],
             exported_deps = [
                 "//executorch/runtime/executor:program_no_prim_ops" + aten_suffix,
@@ -40,9 +39,7 @@ def define_common_targets():
             exported_headers = [
                 "bundled_module.h",
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",

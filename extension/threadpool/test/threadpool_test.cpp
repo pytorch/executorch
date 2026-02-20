@@ -7,6 +7,7 @@
  */
 
 #include <executorch/extension/threadpool/threadpool.h>
+#include <executorch/runtime/platform/runtime.h>
 
 #include <mutex>
 #include <numeric>
@@ -71,6 +72,8 @@ void run_lambda_with_size(
 } // namespace
 
 TEST(ThreadPoolTest, ParallelAdd) {
+  executorch::runtime::runtime_init();
+
   std::vector<int32_t> a, b, c, c_ref;
   size_t vector_size = 100;
   size_t grain_size = 10;
@@ -111,6 +114,8 @@ TEST(ThreadPoolTest, ParallelAdd) {
 
 // Test parallel reduction where we acquire lock within lambda
 TEST(ThreadPoolTest, ParallelReduce) {
+  executorch::runtime::runtime_init();
+
   std::vector<int32_t> a;
   int32_t c = 0, c_ref = 0;
   size_t vector_size = 100;
@@ -144,6 +149,8 @@ TEST(ThreadPoolTest, ParallelReduce) {
 // Copied from
 // caffe2/aten/src/ATen/test/test_thread_pool_guard.cp
 TEST(TestNoThreadPoolGuard, TestThreadPoolGuard) {
+  executorch::runtime::runtime_init();
+
   auto threadpool_ptr = ::executorch::extension::threadpool::get_pthreadpool();
 
   ASSERT_NE(threadpool_ptr, nullptr);
@@ -173,6 +180,8 @@ TEST(TestNoThreadPoolGuard, TestThreadPoolGuard) {
 }
 
 TEST(TestNoThreadPoolGuard, TestRunWithGuard) {
+  executorch::runtime::runtime_init();
+
   const std::vector<int64_t> array = {1, 2, 3};
 
   auto pool = ::executorch::extension::threadpool::get_threadpool();

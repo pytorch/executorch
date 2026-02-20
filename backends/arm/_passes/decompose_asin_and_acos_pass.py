@@ -1,9 +1,8 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import logging
 from math import pi
@@ -20,7 +19,7 @@ from executorch.backends.arm._passes.decompose_sqrt_pass import DecomposeSqrtPas
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
-    ReplaceScalarWithTensorArgPassTOSAMI,
+    ReplaceScalarWithTensorByProfilePass,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -51,9 +50,8 @@ def get_decomposition(op) -> tuple:
 
 
 class DecomposeAsinAndAcosPass(ArmPass):
-    """
-    This pass decomposes asin and acos into a rational approximation for small values
-    and a transformed rational approximation for large values.
+    """This pass decomposes asin and acos into a rational approximation for
+    small values and a transformed rational approximation for large values.
 
     The decomposition is based on the following mathematical identities:
         if abs(x) < 0.5:
@@ -72,14 +70,14 @@ class DecomposeAsinAndAcosPass(ArmPass):
         ConvertFullLikeToFullPass,
         MatchArgRanksPass,
         MatchArgDtypePass,
-        ReplaceScalarWithTensorArgPassTOSAMI,
+        ReplaceScalarWithTensorByProfilePass,
     }
 
     def _build_polynomial(
         self, coefficients: list[float], variable: torch.Tensor, meta: dict[str, str]
     ) -> torch.Tensor:
-        """
-        Helper function to build polynomial from coefficients and variable.
+        """Helper function to build polynomial from coefficients and
+        variable.
         """
         full_like_op, add_op, mul_op_scalar, mul_op = (
             exir_ops.edge.aten.full_like.default,
@@ -124,6 +122,11 @@ class DecomposeAsinAndAcosPass(ArmPass):
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_asin_op + edge_acos_op):
             return super().call_operator(op, args, kwargs, meta)
+
+        if self._is_quantized_meta(meta):
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta)
+
         logging.info(
             f"Approximating {op}. This may introduce small numerical errors. For details, see {__file__}."
         )

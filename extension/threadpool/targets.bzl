@@ -22,6 +22,7 @@ def define_common_targets():
         name = "threadpool_lib",
         srcs = _THREADPOOL_SRCS,
         deps = [
+            ":cpuinfo_utils",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
@@ -35,13 +36,7 @@ def define_common_targets():
         exported_preprocessor_flags = [
             "-DET_USE_THREADPOOL",
         ],
-        visibility = [
-            "//executorch/...",
-            "//executorch/backends/...",
-            "//executorch/runtime/backend/...",
-            "//executorch/extension/threadpool/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -70,10 +65,7 @@ def define_common_targets():
             # If we don't know what it is, disable threadpool out of caution.
             "DEFAULT": ["//executorch/runtime/kernel:thread_parallel_interface"],
         })),
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -91,11 +83,5 @@ def define_common_targets():
             third_party_dep("pthreadpool"),
             third_party_dep("cpuinfo"),
         ],
-        visibility = [
-            "//executorch/...",
-            "//executorch/backends/...",
-            "//executorch/runtime/backend/...",
-            "//executorch/extension/threadpool/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

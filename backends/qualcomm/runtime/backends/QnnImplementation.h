@@ -11,9 +11,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnFunctionInterface.h>
 
 #include <dlfcn.h>
-#include <mutex>
 #include <string>
-#include <unordered_map>
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -29,32 +27,32 @@ class QnnImplementation {
 
   explicit QnnImplementation(std::string lib_path)
       : lib_path_(std::move(lib_path)){};
+  QnnImplementation(const QnnImplementation&) =
+      delete; // Delete copy constructor
+  QnnImplementation& operator=(const QnnImplementation&) =
+      delete; // Delete assignment operator
+  ~QnnImplementation();
 
   executorch::runtime::Error Load(const QnnSaver_Config_t** saver_config);
 
   const QnnInterface& GetQnnInterface() const;
 
-  executorch::runtime::Error TerminateAllBackends();
+  executorch::runtime::Error Unload();
 
  private:
-  static constexpr const int required_num_providers_{1};
+  static constexpr int required_num_providers_{1};
 
-  static executorch::runtime::Error StartBackend(
+  const QnnInterface_t* StartBackend(
       const std::string& lib_path,
       const QnnSaver_Config_t** saver_config);
 
-  static executorch::runtime::Error InitBackend(
+  executorch::runtime::Error InitBackend(
       void* const lib_handle,
       const QnnSaver_Config_t** saver_config);
 
   std::string lib_path_;
+  void* lib_handle_{nullptr};
   QnnInterface qnn_interface_;
-
-  static std::unordered_map<std::string, BackendIdType> lib_path_to_backend_id_;
-  static std::unordered_map<BackendIdType, const QnnInterface_t*>
-      loaded_backend_;
-  static std::unordered_map<BackendIdType, void*> loaded_lib_handle_;
-  static std::mutex be_init_mutex_;
 };
 } // namespace qnn
 } // namespace backends

@@ -348,6 +348,21 @@ class XNNPReLU(XNNNode2x1):
 
 
 @dataclass
+class XNNSin(XNNNode1x1):
+    pass
+
+
+@dataclass
+class XNNCos(XNNNode1x1):
+    pass
+
+
+@dataclass
+class XNNCopy(XNNNode1x1):
+    pass
+
+
+@dataclass
 class XNNScaledDotProductAttention:
     query_id: int
     key_id: int
@@ -402,6 +417,10 @@ XNodeUnion = Union[
     XNNLog,
     XNNGelu,
     XNNTanh,
+    XNNExp,
+    XNNSin,
+    XNNCopy,
+    XNNCos,
 ]
 
 

@@ -11,20 +11,6 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-struct InputWindow1D {
-  vec4[MAX_WINDOW_WIDTH] data;
-  int len;
-};
-
-InputWindow1D initial_input_window() {
-  InputWindow1D input_window;
-  for (int i = 0; i < MAX_WINDOW_WIDTH; ++i) {
-    input_window.data[i] = vec4(0);
-  }
-  input_window.len = 0;
-  return input_window;
-}
-
 vec4 dequantize(const int packed_texel, const float scale, const int zp) {
   return vec4(unpack_int8x4(packed_texel) - zp) * scale;
 }
@@ -49,108 +35,9 @@ bool in_bounds(
   return true;
 }
 
-InputWindow1D load_input_window(
-    const int w_start,
-    const int w_end,
-    const int h,
-    const int c4,
-    const Conv2dBlockExtents block_extents,
-    const float input_scale,
-    const int input_zp,
-    const ivec4 input_zps) {
-  InputWindow1D input_window = initial_input_window();
-
-  const int block_w_start = div_4(w_start);
-  const int block_w_end = div_4(w_end);
-
-  int window_i = 0;
-  for (int block_w = block_w_start; block_w <= block_w_end; ++block_w) {
-    ivec4 input_block = input_zps;
-
-    if (in_bounds(block_w, h, c4, block_extents)) {
-#ifdef PACKED_INT8_INPUT_BUFFER
-      const int buffer_idx =
-          h * block_extents.data_xz + block_w * block_extents.data.z + c4;
-      input_block = t_packed_int8_input[buffer_idx];
-#else
-      input_block = texelFetch(t_packed_int8_input, ivec3(block_w, h, c4), 0);
-#endif
-    }
-
-    const int loaded_w_start = mul_4(block_w);
-    for (int row = 0; row < 4; ++row) {
-      if (loaded_w_start + row >= w_start && loaded_w_start + row <= w_end) {
-        input_window.data[window_i++] =
-            dequantize(input_block[row], input_scale, input_zp);
-      }
-    }
-  }
-  input_window.len = window_i;
-  return input_window;
-}
-
-struct WeightRow {
-  vec4[MAX_KERNEL_WIDTH] data;
-  int len;
-};
-
-WeightRow initial_weight_row() {
-  WeightRow weight_row;
-  for (int i = 0; i < MAX_KERNEL_WIDTH; ++i) {
-    weight_row.data[i] = vec4(0);
-  }
-  weight_row.len = 0;
-  return weight_row;
-}
-
-WeightRow load_weight_row(
-    const int oc4,
-    const int ky,
-    const int OC4,
-    const int Kw,
-    const int Kw4,
-    const vec4 weight_scales) {
-  WeightRow weight_row = initial_weight_row();
-
-  int k4 = ky * Kw4;
-  int row_idx = 0;
-  for (int w = 0; w < Kw; w += 4) {
-#ifdef WEIGHT_BUFFER
-    const ivec4 weight_block = t_packed_int8_weight[k4 * OC4 + oc4];
-#else
-    const ivec4 weight_block = texelFetch(
-        t_packed_int8_weight, ivec2(oc4, k4), 0);
-#endif
-
-    for (int row = 0; row < 4; ++row) {
-      if (w + row < Kw) {
-        weight_row.data[row_idx++] = dequantize(weight_block[row], weight_scales);
-      }
-    }
-    k4++;
-  }
-  weight_row.len = row_idx;
-  return weight_row;
-}
-
 struct FPOutBlock {
   vec4[4] data;
 };
-
-void perform_conv1d(
-    inout FPOutBlock out_block,
-    const InputWindow1D input_window,
-    const WeightRow weight_row) {
-  for (int out_w = 0; out_w < 4; ++out_w) {
-    [[unroll]] for (int kx = 0; kx < weight_row.len; ++kx) {
-      const int in_w = out_w * conv2d_params.stride.x;
-      out_block.data[out_w] = fma(
-          input_window.data[in_w + kx],
-          weight_row.data[kx],
-          out_block.data[out_w]);
-    }
-  }
-}
 
 ivec4 quantize(
     const vec4 texel, const float inv_scale, const int zp) {
@@ -166,6 +53,50 @@ ivec4 quantize_and_pack(
     packed_block[row] = pack_into_int32(quantized_texel);
   }
   return packed_block;
+}
+
+// Load a 4xint8 block of weights. Equivalent to unpacked_weights[kh][kw][c:c+4].
+int load_weight_1w4c(
+  int kw,  // w coordinate
+  int kh,  // h coordinate
+  int oc4, // channel block
+  int KW4, // kernel width / 4 (rounded up)
+  int OC4  // out channels count / 4 (rounded up)
+  ) {
+
+  // Find the packed block index. Weights are packed as 4W4C tiles.
+  int kw4 = kw / 4; // W block
+  int linear_idx = ((kh * KW4 + kw4) * OC4 + oc4) * 4;
+  int block_x_offset = kw % 4;
+#ifdef WEIGHT_BUFFER
+  return t_packed_int8_weight[linear_idx + block_x_offset];
+#else
+  return texelFetch(t_packed_int8_weight, ivec2(oc4, kh * KW4 + kw4), 0)[block_x_offset];
+#endif
+}
+
+// Load a 4xint8 block of inputs - channel c through c+3 (c = oc4*4) at
+// the given spatial location. Equivalent to unpacked_input[0][c:c+4][h][w].
+int load_input_1w4c(
+  int w,   // w coordinate
+  int h,   // h coordinate
+  int oc4, // channel block
+  int OC4, // out channels / 4 (rounded up)
+  Conv2dBlockExtents block_extents
+) {
+  int block_w = w / 4;
+
+  if (in_bounds(block_w, h, oc4, block_extents) && w >= 0) {
+#ifdef PACKED_INT8_INPUT_BUFFER
+    const int buffer_idx =
+        (h * block_extents.data_xz + block_w * block_extents.data.z + oc4) * 4 + (w % 4);
+    return t_packed_int8_input[buffer_idx];
+#else
+    #error Unimplemented
+#endif
+  } else {
+    return pack_into_int32(ivec4(input_zp));
+  }
 }
 
 #ifdef DEBUG_MODE

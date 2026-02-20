@@ -1,5 +1,107 @@
 # ANE-friendly Llama models
 
+The export script supports two modes: **single method** (default) and **multifunction**.
+
+## Single Method Export (Default)
+
+Exports a model with a fixed sequence length and `generate_full_logits=True`, which is required for lookahead decoding:
+
+```
+python export_static_llm_coreml.py \
+    --checkpoint /path/to/model.pth \
+    --params /path/to/params.json \
+    --output static_llm_coreml_model.pte
+```
+
+To test in python, use:
+
+```
+python run_static_llm.py \
+    --model static_llm_coreml_model.pte \
+    --params /path/to/params.json \
+    --tokenizer /path/to/tokenizer.model \
+    --prompt "Once upon a time" \
+    --max_new_tokens 100 \
+    --lookahead
+```
+
+(Enabling lookahead decoding is optional, but does improve performance.)
+
+## Multifunction Export
+
+Exports a model with separate prefill (seqlen=input_len) and decode (seqlen=1) methods. This mode enables weight sharing across methods and uses `generate_full_logits=False` for more efficient autoregressive generation:
+
+```
+python export_static_llm_coreml.py \
+    --checkpoint /path/to/model.pth \
+    --params /path/to/params.json \
+    --output static_llm_coreml_multifunction.pte \
+    --multifunction
+```
+
+To test the multifunction model in python:
+
+```
+python run_static_llm_multifunction.py \
+    --model static_llm_coreml_multifunction.pte \
+    --params /path/to/params.json \
+    --tokenizer /path/to/tokenizer.model \
+    --prompt "Once upon a time" \
+    --max_new_tokens 100
+```
+
+Key differences between the two modes:
+* **Single method**: Uses fixed seqlen for both prefill and decode, outputs full logits (supports lookahead decoding)
+* **Multifunction**: Separate optimized graphs for prefill (seqlen=input_len) and decode (seqlen=1), outputs only last token logits (more efficient for standard generation), enables CoreML multifunction weight sharing
+
+## Export Options
+
+### Model Paths
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-c`, `--checkpoint` | (required) | Path to model checkpoint (.pth) |
+| `-p`, `--params` | (required) | Path to params.json |
+| `-o`, `--output` | `model.pte` | Output filename for the .pte model |
+
+### Model Configuration
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--max_context_len` | 1024 | Maximum context length |
+| `--input_len` | 32 | Input sequence length per forward pass. In multifunction mode, this is the prefill sequence length. |
+| `--dtype` | `fp16` | Model dtype (`fp16` or `fp32`). The ANE requires fp16. |
+
+### Quantization Options
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-E`, `--embedding_quantize` | `8,0` | Embedding quantization: `<bitwidth>,<groupsize>`, e.g., `4,32` for 4-bit with group size 32, or `8,0` for 8-bit per-channel |
+| `--linear_quantize` | `c4w` | CoreML linear quantization: `b4w` (blockwise 4-bit) or `c4w` (channelwise 4-bit). The ANE requires channelwise. |
+
+### Linear Splitting Options
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--target_split_size` | 1024 | Split linear layers into chunks of this size (helps with ANE performance) |
+| `--max_splits` | 8 | Maximum number of splits for linear layers |
+
+### Export Mode Options
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--multifunction` | disabled | Export as multifunction model with separate prefill (seqlen=input_len) and decode (seqlen=1) methods. Enables weight sharing across methods. |
+| `--no_graph_breaks` | disabled | Disable graph breaks between transformer blocks. Graph breaks help improve ANE performance by keeping model pieces smaller. |
+
+## ANE Optimizations
+
+The static model has several ANE optimizations, including:
+* Splitting linear layers for improved performance (controlled by target_split_size and max_splits args)
+* Splitting the pte into multiple Core ML pieces for improved performance (can be disabled with no_graph_breaks)
+* Re-writing SDPA to avoid 5-D tensors to improve performance.  This also fixes an accuracy bug that was introduced in iOS 26 (addresses this: https://github.com/pytorch/executorch/issues/15833)
+
+We are working on adding a C++ runner as well.
+
+
+# Deprecated (export.py, run.py, and run_lookahead.py)
+
+Below we describe export.py, run.py, and run_lookahead.py.  But these are deprecated and will evenutally be removed because we are unifying around the static model formulation.
+
 This directory contains ANE-friendly Llama models.
 
 Export model with:

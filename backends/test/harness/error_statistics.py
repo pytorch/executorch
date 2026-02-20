@@ -33,7 +33,7 @@ class TensorStatistics:
         return cls(
             shape=tensor.shape,
             numel=tensor.numel(),
-            median=torch.quantile(flattened, q=0.5).item(),
+            median=torch.median(flattened).item(),
             mean=flattened.mean().item(),
             max=flattened.max().item(),
             min=flattened.min().item(),

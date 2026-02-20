@@ -9,6 +9,7 @@ _QUANT_OPS = (
         name = "op_choose_qparams",
         deps = [
             "//executorch/kernels/portable/cpu:vec_ops",
+            "//executorch/extension/threadpool:threadpool",
         ],
     ),
     op_target(
@@ -51,6 +52,9 @@ _QUANT_OPS = (
     ),
     op_target(
         name = "op_quantize",
+        deps = [
+            "//executorch/extension/threadpool:threadpool",
+        ],
     ),
 )
 

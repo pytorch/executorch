@@ -1,6 +1,23 @@
 name: Android Release Artifacts
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version name to be uploaded for AAR release
+        required: false
+        type: string
+        default: ''
+      upload_to_maven:
+        description: Upload the AAR to maven staging repository
+        required: false
+        type: boolean
+        default: false
+      flavor:
+        description: Build flavor
+        required: false
+        type: string
+        default: 'xnnpack'
   workflow_dispatch:
     inputs:
       version:
@@ -15,8 +32,10 @@ on:
         type: choice
         options:
           - "xnnpack"
+          - "xnnpack-no-sme2"
           - "vulkan"
           - "qnn"
+          - "all"
   schedule:
     - cron: 0 10 * * *
 
@@ -25,26 +44,32 @@ jobs:
     name: check-if-aar-exists
     runs-on: ubuntu-22.04
     timeout-minutes: 10
+    outputs:
+      should-skip: ${{ steps.check.outputs.should-skip }}
     steps:
       - name: Check if this RC version is already in S3
+        id: check
         shell: bash
         run: |
           VERSION="${{ inputs.version }}"
           FLAVOR="${{ inputs.flavor }}"
           if [ -z "$VERSION" ]; then
             echo "No version name specified. Will create a snapshot AAR"
+            echo "should-skip=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           if curl -I "https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}-${FLAVOR}/executorch.aar" | grep "200 OK"; then
             echo "AAR already exists at https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}-${FLAVOR}/executorch.aar"
             echo "Will skip build/upload"
-            exit 1
+            echo "should-skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-skip=false" >> $GITHUB_OUTPUT
           fi
 
   build-aar:
     name: build-aar
     needs: check-if-aar-exists
-    if: ${{ !github.event.pull_request.head.repo.fork }}
+    if: ${{ !github.event.pull_request.head.repo.fork && needs.check-if-aar-exists.outputs.should-skip != 'true' }}
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     secrets: inherit
     permissions:
@@ -94,14 +119,18 @@ jobs:
           GRADLE_ARGS+=" -Dflavor=${FLAVOR}"
         fi
 
-        if [[ "$FLAVOR" == "vulkan" || -z "$FLAVOR" ]]; then
+        if [[ "$FLAVOR" == "vulkan" || "$FLAVOR" == "all" || -z "$FLAVOR" ]]; then
           curl -O https://sdk.lunarg.com/sdk/download/1.4.321.1/linux/vulkansdk-linux-x86_64-1.4.321.1.tar.xz
           tar xf vulkansdk-linux-x86_64-1.4.321.1.tar.xz -C /tmp
           export PATH="/tmp/1.4.321.1/x86_64/bin:$PATH"
           export EXECUTORCH_BUILD_VULKAN=ON
         fi
 
-        if [[ "$FLAVOR" == "qnn" ]]; then
+        if [[ "$FLAVOR" == "xnnpack-no-sme2" ]]; then
+          export XNNPACK_ENABLE_ARM_SME2=OFF
+        fi
+
+        if [[ "$FLAVOR" == "qnn" || "$FLAVOR" == "all" ]]; then
           PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
           PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
           export EXECUTORCH_BUILD_QNN=ON

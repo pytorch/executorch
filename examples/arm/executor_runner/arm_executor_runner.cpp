@@ -1,6 +1,6 @@
 /* Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2023-2025 Arm Limited and/or its affiliates.
+ * Copyright 2023-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -87,6 +87,7 @@
 #include <errno.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
@@ -95,6 +96,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <memory>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "arm_memory_allocator.h"
@@ -183,6 +186,7 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
+using executorch::runtime::toString;
 #if defined(ET_BUNDLE_IO)
 using executorch::bundled_program::compute_method_output_error_stats;
 using executorch::bundled_program::ErrorStats;
@@ -314,10 +318,10 @@ void et_pal_emit_log_message(
     ET_UNUSED size_t length) {
   fprintf(
       stderr,
-      "%c [executorch:%s:%zu %s()] %s\n",
+      "%c [executorch:%s:%lu %s()] %s\n",
       level,
       filename,
-      line,
+      static_cast<unsigned long>(line),
       function,
       message);
 }
@@ -337,6 +341,8 @@ void et_pal_free(ET_UNUSED void* ptr) {}
 namespace {
 
 /// Lightweight heapless container that constructs and stores a T in-place.
+/// Useful when you want to avoid heap allocations but need to delay
+/// construction.
 template <typename T>
 class Box {
  public:
@@ -395,6 +401,19 @@ class Box {
   }
 };
 
+template <typename ValueType>
+void fill_tensor_with_default_value(Tensor& tensor) {
+  ValueType fill_value{};
+  if constexpr (std::is_same_v<ValueType, bool>) {
+    fill_value = true;
+  } else {
+    fill_value = ValueType(1);
+  }
+
+  ValueType* data_ptr = tensor.mutable_data_ptr<ValueType>();
+  std::fill(data_ptr, data_ptr + tensor.numel(), fill_value);
+}
+
 Error prepare_input_tensors(
     Method& method,
     MemoryAllocator& allocator,
@@ -410,8 +429,7 @@ Error prepare_input_tensors(
       "Wrong number of inputs allocated compared to method");
 #endif
 
-  EValue* input_evalues =
-      static_cast<EValue*>(allocator.allocate(num_inputs * sizeof(EValue*)));
+  EValue* input_evalues = allocator.allocateList<EValue>(num_inputs);
   ET_CHECK_OR_RETURN_ERROR(
       input_evalues != nullptr,
       MemoryAllocationFailed,
@@ -425,7 +443,10 @@ Error prepare_input_tensors(
     ET_CHECK_OK_OR_RETURN_ERROR(tag.error());
 
     if (tag.get() != Tag::Tensor) {
-      ET_LOG(Debug, "Skipping non-tensor input %zu", i);
+      ET_LOG(
+          Debug,
+          "Skipping non-tensor input %lu",
+          static_cast<unsigned long>(i));
       continue;
     }
     Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
@@ -453,23 +474,18 @@ Error prepare_input_tensors(
       if (input_evalues[i].isTensor()) {
         Tensor& tensor = input_evalues[i].toTensor();
         switch (tensor.scalar_type()) {
-          case ScalarType::Int:
-            std::fill(
-                tensor.mutable_data_ptr<int>(),
-                tensor.mutable_data_ptr<int>() + tensor.numel(),
-                1);
-            break;
-          case ScalarType::Float:
-            std::fill(
-                tensor.mutable_data_ptr<float>(),
-                tensor.mutable_data_ptr<float>() + tensor.numel(),
-                1.0);
-            break;
-          case ScalarType::Char:
-            std::fill(
-                tensor.mutable_data_ptr<int8_t>(),
-                tensor.mutable_data_ptr<int8_t>() + tensor.numel(),
-                1);
+#define HANDLE_SCALAR_TYPE(cpp_type, scalar_name)     \
+  case ScalarType::scalar_name:                       \
+    fill_tensor_with_default_value<cpp_type>(tensor); \
+    break;
+          ET_FORALL_SCALAR_TYPES(HANDLE_SCALAR_TYPE)
+#undef HANDLE_SCALAR_TYPE
+          default:
+            ET_LOG(
+                Error,
+                "Unhandled ScalarType %s",
+                toString(tensor.scalar_type()));
+            err = Error::InvalidArgument;
             break;
         }
       } else {
@@ -503,16 +519,18 @@ std::pair<char*, size_t> read_binary_file(
   char* buffer = static_cast<char*>(allocator.allocate(file_size));
   if (buffer == nullptr) {
     ET_LOG(
-        Fatal, "Failed to allocate input file size:%zu", (uint32_t)file_size);
+        Fatal,
+        "Failed to allocate input file size:%lu",
+        static_cast<unsigned long>(file_size));
     return std::make_pair(nullptr, 0);
   }
   auto read_size = fread(buffer, 1, file_size, fp);
   if (read_size != file_size) {
     ET_LOG(
         Info,
-        "Failed to read whole file (%), read %zu bytes!",
+        "Failed to read whole file (%), read %lu bytes!",
         filename,
-        read_size);
+        static_cast<unsigned long>(read_size));
   }
   fclose(fp);
   return std::make_pair(buffer, read_size);
@@ -533,8 +551,13 @@ struct RunnerContext {
   size_t input_memsize = 0;
   size_t pte_size = 0;
   bool bundle_io = false;
+  Box<BufferDataLoader> loader;
+  Box<Program> program;
   Box<ArmMemoryAllocator> method_allocator;
   Box<ArmMemoryAllocator> temp_allocator;
+  std::vector<Span<uint8_t>> planned_spans;
+  Box<HierarchicalAllocator> planned_memory;
+  Box<MemoryManager> memory_manager;
   Box<Result<Method>> method;
 #if defined(ET_EVENT_TRACER_ENABLED)
   Box<ETDumpGen> etdump_gen;
@@ -574,30 +597,37 @@ void runner_init(
         (unsigned int)status);
   }
 #endif
-  auto loader = BufferDataLoader(program_data, ctx.program_data_len);
-  ET_LOG(Info, "PTE Model data loaded. Size: %lu bytes.", ctx.program_data_len);
+  ctx.loader.reset(program_data, ctx.program_data_len);
+  auto& loader = ctx.loader.value();
+  ET_LOG(
+      Info,
+      "PTE Model data loaded. Size: %lu bytes.",
+      static_cast<unsigned long>(ctx.program_data_len));
 
   // Parse the program file. This is immutable, and can also be reused
   // between multiple execution invocations across multiple threads.
-  Result<Program> program = Program::load(&loader);
-  if (!program.ok()) {
-    ET_LOG(
-        Info,
-        "Program loading failed @ 0x%p: 0x%" PRIx32,
-        program_data,
-        program.error());
-  }
+  Result<Program> program_result = Program::load(&loader);
+  ET_CHECK_MSG(
+      program_result.ok(),
+      "Program loading failed @ %p: 0x%" PRIx32,
+      program_data,
+      program_result.error());
+  ctx.program.reset(std::move(program_result.get()));
+  Program& program = ctx.program.value();
 
-  ET_LOG(Info, "Model buffer loaded, has %lu methods", program->num_methods());
+  ET_LOG(
+      Info,
+      "Model buffer loaded, has %lu methods",
+      static_cast<unsigned long>(program.num_methods()));
 
   {
-    const auto method_name_result = program->get_method_name(0);
+    const auto method_name_result = program.get_method_name(0);
     ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
     ctx.method_name = *method_name_result;
   }
   ET_LOG(Info, "Running method %s", ctx.method_name);
 
-  Result<MethodMeta> method_meta = program->method_meta(ctx.method_name);
+  Result<MethodMeta> method_meta = program.method_meta(ctx.method_name);
   if (!method_meta.ok()) {
     ET_LOG(
         Info,
@@ -609,21 +639,24 @@ void runner_init(
   ET_LOG(
       Info,
       "Setup Method allocator pool. Size: %lu bytes.",
-      method_allocation_pool_size);
+      static_cast<unsigned long>(method_allocation_pool_size));
 
   ctx.method_allocator.reset(
       method_allocation_pool_size, method_allocation_pool);
 
-  std::vector<uint8_t*> planned_buffers; // Owns the memory
-  std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
+  ctx.planned_spans.clear();
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
-
+  ctx.planned_spans.reserve(num_memory_planned_buffers);
   size_t planned_buffer_membase = ctx.method_allocator->used_size();
 
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     size_t buffer_size =
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
-    ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
+    ET_LOG(
+        Info,
+        "Setting up planned buffer %lu, size %lu.",
+        static_cast<unsigned long>(id),
+        static_cast<unsigned long>(buffer_size));
 
     /* Move to it's own allocator when MemoryPlanner is in place. */
     /* Ethos-U driver requires 16 bit alignment. */
@@ -631,23 +664,26 @@ void runner_init(
         ctx.method_allocator->allocate(buffer_size, 16UL));
     ET_CHECK_MSG(
         buffer != nullptr,
-        "Could not allocate memory for memory planned buffer size %zu",
-        buffer_size);
-    planned_buffers.push_back(buffer);
-    planned_spans.push_back({planned_buffers.back(), buffer_size});
+        "Could not allocate memory for memory planned buffer size %lu",
+        static_cast<unsigned long>(buffer_size));
+    ctx.planned_spans.push_back({buffer, buffer_size});
   }
 
   ctx.planned_buffer_memsize =
       ctx.method_allocator->used_size() - planned_buffer_membase;
 
-  HierarchicalAllocator planned_memory(
-      {planned_spans.data(), planned_spans.size()});
+  Span<Span<uint8_t>> planned_memory_span;
+  if (!ctx.planned_spans.empty()) {
+    planned_memory_span =
+        Span<Span<uint8_t>>(ctx.planned_spans.data(), ctx.planned_spans.size());
+  }
+  ctx.planned_memory.reset(planned_memory_span);
 
   ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
 
-  MemoryManager memory_manager(
+  ctx.memory_manager.reset(
       &ctx.method_allocator.value(),
-      &planned_memory,
+      &ctx.planned_memory.value(),
       &ctx.temp_allocator.value());
 
   size_t method_loaded_membase = ctx.method_allocator->used_size();
@@ -699,22 +735,22 @@ void runner_init(
       ctx.debug_buffer = nullptr;
       ET_LOG(
           Error,
-          "ETDump: Could not set_debug_buffer() for output buffer size %zu error:0x%" PRIx32,
-          ET_DEBUG_BUFFER_SIZE,
+          "ETDump: Could not set_debug_buffer() for output buffer size %lu error:0x%" PRIx32,
+          static_cast<unsigned long>(ET_DEBUG_BUFFER_SIZE),
           result.error());
     }
   } else {
     // debug buffer allocation failed
     ET_LOG(
         Error,
-        "ETDump: Could not allocate memory for output buffer size %zu",
-        ET_DEBUG_BUFFER_SIZE);
+        "ETDump: Could not allocate memory for output buffer size %lu",
+        static_cast<unsigned long>(ET_DEBUG_BUFFER_SIZE));
   }
 #endif // defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
 #endif // defined(ET_EVENT_TRACER_ENABLED)
 
-  ctx.method.reset(
-      program->load_method(ctx.method_name, &memory_manager, event_tracer_ptr));
+  ctx.method.reset(program.load_method(
+      ctx.method_name, &ctx.memory_manager.value(), event_tracer_ptr));
 
   if (!ctx.method->ok()) {
     ET_LOG(
@@ -752,7 +788,7 @@ void runner_init(
 #if defined(ET_LOG_DUMP_INPUT)
   {
     std::vector<EValue> inputs((*ctx.method.value())->inputs_size());
-    ET_LOG(Info, "%zu inputs: ", inputs.size());
+    ET_LOG(Info, "%lu inputs: ", static_cast<unsigned long>(inputs.size()));
     Error status = ctx.method.value()->get_inputs(inputs.data(), inputs.size());
     ET_CHECK(status == Error::Ok);
 
@@ -809,50 +845,67 @@ void log_mem_status(RunnerContext& ctx) {
   ET_LOG(
       Info,
       "model_pte_program_size:     %lu bytes. (pte size unknown when not baked into elf)",
-      ctx.program_data_len);
+      static_cast<unsigned long>(ctx.program_data_len));
   ET_LOG(
       Info,
       "model_pte_loaded_size:      %lu bytes. (pte size unknown when not baked into elf)",
-      ctx.pte_size);
+      static_cast<unsigned long>(ctx.pte_size));
 #else
-  ET_LOG(Info, "model_pte_program_size:     %lu bytes.", ctx.program_data_len);
-  ET_LOG(Info, "model_pte_loaded_size:      %lu bytes.", ctx.pte_size);
+  ET_LOG(
+      Info,
+      "model_pte_program_size:     %lu bytes.",
+      static_cast<unsigned long>(ctx.program_data_len));
+  ET_LOG(
+      Info,
+      "model_pte_loaded_size:      %lu bytes.",
+      static_cast<unsigned long>(ctx.pte_size));
 #endif
 
 #if defined(SEMIHOSTING)
   if (ctx.input_file_allocator->size() > 0) {
     ET_LOG(
         Info,
-        "input_file_allocator_used: %zu / %zu free: %zu ( used: %zu %% ) ",
-        ctx.input_file_allocator->used_size(),
-        ctx.input_file_allocator->size(),
-        ctx.input_file_allocator->free_size(),
-        100 * ctx.input_file_allocator->used_size() /
-            ctx.input_file_allocator->size());
+        "input_file_allocator_used: %lu / %lu free: %lu ( used: %lu %% ) ",
+        static_cast<unsigned long>(ctx.input_file_allocator->used_size()),
+        static_cast<unsigned long>(ctx.input_file_allocator->size()),
+        static_cast<unsigned long>(ctx.input_file_allocator->free_size()),
+        static_cast<unsigned long>(
+            100 * ctx.input_file_allocator->used_size() /
+            ctx.input_file_allocator->size()));
   }
 #endif
   if (ctx.method_allocator->size() != 0) {
     size_t method_allocator_used = ctx.method_allocator->used_size();
     ET_LOG(
         Info,
-        "method_allocator_used:     %zu / %zu  free: %zu ( used: %zu %% ) ",
-        method_allocator_used,
-        ctx.method_allocator->size(),
-        ctx.method_allocator->free_size(),
-        100 * method_allocator_used / ctx.method_allocator->size());
+        "method_allocator_used:     %lu / %lu  free: %lu ( used: %lu %% ) ",
+        static_cast<unsigned long>(method_allocator_used),
+        static_cast<unsigned long>(ctx.method_allocator->size()),
+        static_cast<unsigned long>(ctx.method_allocator->free_size()),
+        static_cast<unsigned long>(
+            100 * method_allocator_used / ctx.method_allocator->size()));
     ET_LOG(
         Info,
-        "method_allocator_planned:  %zu bytes",
-        ctx.planned_buffer_memsize);
+        "method_allocator_planned:  %lu bytes",
+        static_cast<unsigned long>(ctx.planned_buffer_memsize));
     ET_LOG(
         Info,
-        "method_allocator_loaded:   %zu bytes",
-        ctx.method_loaded_memsize);
-    ET_LOG(Info, "method_allocator_input:    %zu bytes", ctx.input_memsize);
-    ET_LOG(Info, "method_allocator_executor: %zu bytes", executor_memsize);
+        "method_allocator_loaded:   %lu bytes",
+        static_cast<unsigned long>(ctx.method_loaded_memsize));
+    ET_LOG(
+        Info,
+        "method_allocator_input:    %lu bytes",
+        static_cast<unsigned long>(ctx.input_memsize));
+    ET_LOG(
+        Info,
+        "method_allocator_executor: %lu bytes",
+        static_cast<unsigned long>(executor_memsize));
   }
   if (ctx.temp_allocator->size() > 0) {
-    ET_LOG(Info, "temp_allocator:            %zu", ctx.temp_allocator->size());
+    ET_LOG(
+        Info,
+        "temp_allocator:            %lu",
+        static_cast<unsigned long>(ctx.temp_allocator->size()));
   }
 #if defined(ET_EVENT_TRACER_ENABLED)
 #if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
@@ -860,11 +913,12 @@ void log_mem_status(RunnerContext& ctx) {
     size_t outputdump_len = ctx.etdump_gen->get_data_sink()->get_used_bytes();
     ET_LOG(
         Info,
-        "ETDump_outputs_buffer:     %zu / %zu free: %zu ( used: %zu %% ) ",
-        outputdump_len,
-        ET_DEBUG_BUFFER_SIZE,
-        ET_DEBUG_BUFFER_SIZE - outputdump_len,
-        100 * outputdump_len / ET_DEBUG_BUFFER_SIZE);
+        "ETDump_outputs_buffer:     %lu / %lu free: %lu ( used: %lu %% ) ",
+        static_cast<unsigned long>(outputdump_len),
+        static_cast<unsigned long>(ET_DEBUG_BUFFER_SIZE),
+        static_cast<unsigned long>(ET_DEBUG_BUFFER_SIZE - outputdump_len),
+        static_cast<unsigned long>(
+            100 * outputdump_len / ET_DEBUG_BUFFER_SIZE));
   }
 #endif
 #endif
@@ -872,7 +926,7 @@ void log_mem_status(RunnerContext& ctx) {
 
 void print_outputs(RunnerContext& ctx) {
   std::vector<EValue> outputs(ctx.method.value()->outputs_size());
-  ET_LOG(Info, "%zu outputs: ", outputs.size());
+  ET_LOG(Info, "%lu outputs: ", static_cast<unsigned long>(outputs.size()));
   Error status =
       ctx.method.value()->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
@@ -1007,8 +1061,8 @@ void write_etdump(RunnerContext& ctx) {
     } else {
       ET_LOG(
           Error,
-          "Could not allocate memory etdump base64 encoding size %zu",
-          encoded_etdump_len + 1);
+          "Could not allocate memory etdump base64 encoding size %lu",
+          static_cast<unsigned long>(encoded_etdump_len + 1));
     }
   }
 #else // !defined(SEMIHOSTING)

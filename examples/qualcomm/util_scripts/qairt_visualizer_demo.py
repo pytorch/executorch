@@ -23,7 +23,7 @@ from executorch.examples.qualcomm.utils import (
 
 def main(args) -> None:
     model = SimpleModel()
-    example_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+    example_inputs = [(torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))]
 
     pte_filename = "qnn_simple_model"
     os.makedirs(args.artifact, exist_ok=True)
@@ -31,10 +31,10 @@ def main(args) -> None:
     # lower to QNN
     build_executorch_binary(
         model,
-        example_input,
+        example_inputs[0],
         args.model,
         f"{args.artifact}/{pte_filename}",
-        [example_input],
+        example_inputs,
         quant_dtype=QuantDtype.use_8a8w,
         online_prepare=args.online_prepare,
         optrace=True,
@@ -49,13 +49,14 @@ def main(args) -> None:
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        target=args.target,
     )
     binaries_trace = generate_optrace(
         args.artifact,
         get_soc_to_chipset_map()[args.model],
         adb,
         f"{args.artifact}/{pte_filename}.pte",
-        example_input,
+        example_inputs,
     )
 
     if args.ip and args.port != -1:

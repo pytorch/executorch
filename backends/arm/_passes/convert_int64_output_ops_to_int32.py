@@ -1,15 +1,14 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-# pyre-unsafe
 
 
 import logging
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -22,11 +21,9 @@ from executorch.exir.pass_base import ExportPass, PassResult
 logger = logging.getLogger(__name__)
 
 
-class ConvertInt64OutputOpsToInt32Pass(ExportPass):
-    """
-    Rewrites or removes operations that produce int64 outputs, converting them
-    to int32 where possible.
-
+class ConvertInt64OutputOpsToInt32Pass(ArmPass):
+    """Rewrites or removes operations that produce int64 outputs, converting
+    them to int32 where possible.
 
     Currently, this pass handles casting and argmax operators:
       1. int32 -> int64:
@@ -43,6 +40,7 @@ class ConvertInt64OutputOpsToInt32Pass(ExportPass):
     Note: Overflow checks are applied selectively in this pass. For operators without
     such checks, it is the user's responsibility to ensure that values fit within
     the int32 range.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()

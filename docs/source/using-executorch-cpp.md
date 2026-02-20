@@ -69,7 +69,7 @@ The runner source code can be found in the ExecuTorch repo under [examples/porta
 
 ## Next Steps
 
-- [Runtime API Reference](executorch-runtime-api-reference.md) for documentation on the available C++ runtime APIs.
+- [Runtime API Reference](executorch-runtime-api-reference.rst) for documentation on the available C++ runtime APIs.
 - [Running an ExecuTorch Model Using the Module Extension in C++](extension-module.md) for information on the high-level Module API.
 - [Managing Tensor Memory in C++](extension-tensor.md) for information on high-level tensor APIs.
 - [Running an ExecuTorch Model in C++ Tutorial](running-a-model-cpp-tutorial.md) for information on the low-level runtime APIs.

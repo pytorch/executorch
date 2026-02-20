@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -65,6 +65,7 @@ def test_acos_tosa_INT(test_data: Tuple):
         (test_data(),),
         aten_op=aten_op,
         exir_op=exir_op,
+        frobenius_threshold=0.5,  # MLETORCH-1709
     )
     pipeline.run()
 
@@ -95,27 +96,27 @@ def test_acos_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_acos_vgf_FP(test_data: Tuple):
+def test_acos_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t](
         Acos(),
         (test_data(),),
         [],
         [],
-        tosa_version="TOSA-1.0+FP",
         run_on_vulkan_runtime=True,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_acos_vgf_INT(test_data: Tuple):
+def test_acos_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t](
         Acos(),
         (test_data(),),
         [],
         [],
-        tosa_version="TOSA-1.0+INT",
         run_on_vulkan_runtime=True,
+        quantize=True,
     )
     pipeline.run()

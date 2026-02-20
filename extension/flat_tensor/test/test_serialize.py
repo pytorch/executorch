@@ -10,9 +10,12 @@ import dataclasses
 import math
 import unittest
 
-from typing import List, Optional
+from typing import Dict, List, Optional
+
+import torch
 
 from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._named_data_store import NamedDataStore
 
 from executorch.exir._serialize.data_serializer import (
     DataEntry,
@@ -22,10 +25,11 @@ from executorch.exir._serialize.data_serializer import (
 from executorch.exir._serialize.padding import aligned_size
 
 from executorch.exir.schema import ScalarType
-from executorch.extension.flat_tensor.serialize.flat_tensor_schema import TensorLayout
+from executorch.exir.tensor_layout import TensorLayout
 
 from executorch.extension.flat_tensor.serialize.serialize import (
     _deserialize_to_flat_tensor,
+    _FLATBUFFER_ALIGNMENT,
     FlatTensorConfig,
     FlatTensorHeader,
     FlatTensorSerializer,
@@ -90,8 +94,23 @@ class TestSerialize(unittest.TestCase):
         self.assertEqual(expected.sizes, actual.sizes)
         self.assertEqual(expected.dim_order, actual.dim_order)
 
-    def test_serialize(self) -> None:
-        config = FlatTensorConfig()
+    def _check_named_data_entries(
+        self, reference: Dict[str, DataEntry], actual: Dict[str, DataEntry]
+    ) -> None:
+        self.assertEqual(reference.keys(), actual.keys())
+        SKIP_FIELDS = {"alignment"}  # Fields to ignore in comparison.
+        for key in reference.keys():
+            ref_entry = reference[key]
+            actual_entry = actual[key]
+            for field in dataclasses.fields(ref_entry):
+                if field.name not in SKIP_FIELDS:
+                    self.assertEqual(
+                        getattr(ref_entry, field.name),
+                        getattr(actual_entry, field.name),
+                        f"Named data record {key}.{field.name} does not match.",
+                    )
+
+    def _serialize_with_alignment(self, config: FlatTensorConfig) -> None:
         serializer: DataSerializer = FlatTensorSerializer(config)
         serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
 
@@ -101,14 +120,14 @@ class TestSerialize(unittest.TestCase):
         )
         self.assertTrue(header.is_valid())
 
-        # Header is aligned to config.segment_alignment, which is where the flatbuffer starts.
-        self.assertEqual(
-            header.flatbuffer_offset,
-            aligned_size(FlatTensorHeader.EXPECTED_LENGTH, config.segment_alignment),
-        )
-
         # Flatbuffer is non-empty.
         self.assertTrue(header.flatbuffer_size > 0)
+
+        # Align the flatbuffer to _FLATBUFFER_ALIGNMENT.
+        self.assertEqual(
+            header.flatbuffer_offset,
+            aligned_size(FlatTensorHeader.EXPECTED_LENGTH, _FLATBUFFER_ALIGNMENT),
+        )
 
         # Segment base offset is aligned to config.segment_alignment.
         expected_segment_base_offset = aligned_size(
@@ -161,12 +180,12 @@ class TestSerialize(unittest.TestCase):
         segments = flat_tensor.segments
         self.assertEqual(len(segments), 3)
 
-        # Segment 0 contains fqn1, fqn2; 4 bytes, aligned to config.tensor_alignment.
+        # Segment 0 contains fqn1, fqn2; 4 bytes, aligned to config.segment_alignment.
         self.assertEqual(segments[0].offset, 0)
         self.assertEqual(segments[0].size, len(TEST_BUFFER[0]))
 
-        # Segment 1 contains fqn3; 32 bytes, aligned to config.tensor_alignment.
-        self.assertEqual(segments[1].offset, config.tensor_alignment)
+        # Segment 1 contains fqn3; 32 bytes, aligned to config.segment_alignment.
+        self.assertEqual(segments[1].offset, config.segment_alignment)
         self.assertEqual(segments[1].size, len(TEST_BUFFER[1]))
 
         # Segment 2 contains key0; 17 bytes, aligned to 64.
@@ -175,7 +194,7 @@ class TestSerialize(unittest.TestCase):
         )
         self.assertEqual(
             segments[2].offset,
-            aligned_size(config.tensor_alignment * 3, custom_alignment),
+            aligned_size(config.segment_alignment * 2, custom_alignment),
         )
         self.assertEqual(segments[2].size, len(TEST_BUFFER[2]))
 
@@ -226,6 +245,18 @@ class TestSerialize(unittest.TestCase):
 
         self.assertEqual(segments[2].offset + segments[2].size, len(segment_data))
 
+    def test_serialize_default_alignment(self) -> None:
+        config = FlatTensorConfig()
+        self._serialize_with_alignment(config)
+
+    def test_serialize_align_4096(self) -> None:
+        config = FlatTensorConfig(segment_alignment=4096)
+        self._serialize_with_alignment(config)
+
+    def test_serialize_align_1024(self) -> None:
+        config = FlatTensorConfig(segment_alignment=1024)
+        self._serialize_with_alignment(config)
+
     def test_round_trip(self) -> None:
         # Serialize and then deserialize the test payload. Make sure it's reconstructed
         # properly.
@@ -245,19 +276,51 @@ class TestSerialize(unittest.TestCase):
                 f"Buffer at index {i} does not match.",
             )
 
-        self.assertEqual(
-            TEST_DATA_PAYLOAD.named_data.keys(), deserialized_payload.named_data.keys()
+        self._check_named_data_entries(
+            TEST_DATA_PAYLOAD.named_data, deserialized_payload.named_data
         )
 
-        SKIP_FIELDS = {"alignment"}  # Fields to ignore in comparison.
-        for key in TEST_DATA_PAYLOAD.named_data.keys():
-            reference = TEST_DATA_PAYLOAD.named_data[key]
-            actual = deserialized_payload.named_data[key]
+    def test_deserialize_to_named_data_store_output(self) -> None:
+        store = NamedDataStore()
+        external_tag = "model"
 
-            for field in dataclasses.fields(reference):
-                if field.name not in SKIP_FIELDS:
-                    self.assertEqual(
-                        getattr(reference, field.name),
-                        getattr(actual, field.name),
-                        f"Named data record {key}.{field.name} does not match.",
-                    )
+        tensor_layout = TensorLayout(ScalarType.FLOAT, [1, 2], [0, 1])
+        store.add_named_data(
+            "key0",
+            b"data0",
+            alignment=1,
+            external_tag=external_tag,
+            tensor_layout=tensor_layout,
+        )
+        store.add_named_data(
+            "key1",
+            torch.tensor([[1, 2], [3, 4]], dtype=torch.float32),
+            alignment=1,
+            external_tag=external_tag,
+        )
+
+        output = store.get_named_data_store_output()
+        self.assertEqual(len(output.buffers), 2)
+        self.assertEqual(len(output.pte_data), 0)
+        self.assertEqual(len(output.external_data), 1)
+        self.assertEqual(len(output.external_data[external_tag]), 2)
+
+        # Serialize and deserialize.
+        config = FlatTensorConfig()
+        serializer: DataSerializer = FlatTensorSerializer(config)
+        data_payload = DataPayload(
+            buffers=output.buffers, named_data=output.external_data[external_tag]
+        )
+        serialized_data = serializer.serialize(data_payload)
+
+        output2 = serializer.deserialize_to_named_data_store_output(
+            bytes(serialized_data), external_tag
+        )
+
+        self.assertEqual(output.buffers, output2.buffers)
+        self.assertEqual(len(output.pte_data), 0)
+        self.assertEqual(len(output2.pte_data), 0)
+
+        self._check_named_data_entries(
+            output.external_data[external_tag], output2.external_data[external_tag]
+        )

@@ -13,10 +13,13 @@ namespace executorch::jni_helper {
 void throwExecutorchException(uint32_t errorCode, const std::string& details) {
   // Get the current JNI environment
   auto env = facebook::jni::Environment::current();
+  if (!env) {
+    return;
+  }
 
-  // Find the Java ExecutorchRuntimeException class
-  static auto exceptionClass = facebook::jni::findClassLocal(
-      "org/pytorch/executorch/ExecutorchRuntimeException");
+  // stable/global class ref — safe to cache
+  static const auto exceptionClass =
+      JExecutorchRuntimeException::javaClassStatic();
 
   // Find the static factory method: makeExecutorchException(int, String)
   static auto makeExceptionMethod =

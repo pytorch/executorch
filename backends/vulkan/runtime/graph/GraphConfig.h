@@ -33,8 +33,14 @@ struct GraphConfig final {
   bool enable_local_wg_size_override;
   utils::uvec3 local_wg_size_override;
 
+  // If true, then resize functions should always be called even if input shapes
+  // have not changed.
+  bool has_data_dependent_shapes = false;
   // Whether or not the ComputeGraph should expect input shapes to be dynamic
-  bool expect_dynamic_shapes;
+  bool expect_dynamic_shapes = false;
+  // Used for testing/debugging only. Forces ExecuteNode to trigger the resize
+  // function even if none of the inputs have been updated.
+  bool force_resize = false;
 
   // Execution properties that determine specifics re: how command buffer
   // submission is handled, etc. 0 means this field is not set.
@@ -64,6 +70,10 @@ struct GraphConfig final {
   // If this number is greater than 0 then, during execute create at most this
   // many command buffers.
   size_t execute_max_cmds = 0;
+
+  // If true, then the graph will be executed once immediately after it is
+  // compiled.
+  bool warmup_execute_after_compile = false;
 
   vkapi::Adapter* external_adapter;
 

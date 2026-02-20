@@ -1,9 +1,7 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-# pyre-unsafe
 
 
 import logging
@@ -11,6 +9,7 @@ import logging
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.decompose_embedding_pass import (
     DecomposeEmbeddingPass,
@@ -23,12 +22,12 @@ from torch._subclasses.fake_tensor import FakeTensor
 logger = logging.getLogger(__name__)
 
 
-class InsertInt32CastsAfterInt64PlaceholdersPass(ExportPass):
-    """
-    Insert an int64->int32 cast after each int64 placeholder.
+class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
+    """Insert an int64->int32 cast after each int64 placeholder.
 
     Note: Overflow checks are not applied in this pass. It is the user's responsibility to ensure that values fit within
     the int32 range.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeEmbeddingPass}
@@ -37,13 +36,14 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ExportPass):
     # Key: op overload; Value: zero-based indices of positional args that must be i64.
     I64_INPUT_ARG_POSITIONS = {
         torch.ops.aten.one_hot.default: (0,),
+        torch.ops.aten.index_copy_.default: (2,),
+        torch.ops.aten.index_copy.default: (2,),
     }
 
     def _insert_callsite_i32_to_i64_casts(self, graph_module: torch.fx.GraphModule):
-        """
-        If an operator requires int64 inputs but dtype propagation (via call_operator)
-        produced int32, insert a local int32→int64 cast at the call site to satisfy
-        PyTorch's operator input validation.
+        """If an operator requires int64 inputs but dtype propagation (via
+        call_operator) produced int32, insert a local int32→int64 cast at the
+        call site to satisfy PyTorch's operator input validation.
         """
         modified = False
         graph = graph_module.graph

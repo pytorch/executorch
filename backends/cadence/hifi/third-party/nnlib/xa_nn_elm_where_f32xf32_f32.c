@@ -117,6 +117,7 @@ WORD32 xa_nn_elm_where_f32xf32_f32(FLOAT32 * __restrict__ p_out,
         XT_MOVF_S(a, a2, s);
         XT_SSI(a, (xtfloat *)out, 0);
     }
+    return 0;
 }
 
 static void internal_elm_where_broadcast_f32xf32_f32(FLOAT32 * __restrict__ p_out,

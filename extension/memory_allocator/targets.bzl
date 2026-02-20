@@ -11,12 +11,25 @@ def define_common_targets():
         name = "malloc_memory_allocator",
         exported_headers = [
             "malloc_memory_allocator.h",
+            "memory_allocator_utils.h",
         ],
         exported_deps = [
             "//executorch/runtime/core:memory_allocator",
         ],
-        visibility = [
-            "//executorch/extension/memory_allocator/test/...",
-            "@EXECUTORCH_CLIENTS",
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "cpu_caching_allocator",
+        srcs = [
+            "cpu_caching_malloc_allocator.cpp",
         ],
+        exported_headers = [
+            "cpu_caching_malloc_allocator.h",
+            "memory_allocator_utils.h",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core:memory_allocator",
+        ],
+        visibility = ["PUBLIC"],
     )

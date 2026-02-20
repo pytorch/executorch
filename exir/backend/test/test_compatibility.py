@@ -8,7 +8,7 @@ import unittest
 
 import torch
 from executorch.exir import to_edge
-from executorch.exir._serialize import _serialize_pte_binary
+from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
     AllNodePartitioner,
@@ -58,7 +58,7 @@ class TestCompatibility(unittest.TestCase):
         # Generate the .pte file with the wrong version.
         buff = bytes(
             _serialize_pte_binary(
-                program=prog,
+                pte_file=_PTEFile(program=prog),
             )
         )
 
@@ -105,7 +105,7 @@ class TestCompatibility(unittest.TestCase):
         # Generate the .pte file with the wrong version.
         buff = bytes(
             _serialize_pte_binary(
-                program=prog,
+                pte_file=_PTEFile(program=prog),
             )
         )
 

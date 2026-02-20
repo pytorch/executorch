@@ -36,6 +36,10 @@
 // These are provided for backward compatibility
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 
+#ifdef CUDA_AVAILABLE
+#include <executorch/backends/cuda/runtime/memory_tracker.h>
+#endif
+
 namespace executorch {
 namespace extension {
 namespace llm {
@@ -120,21 +124,6 @@ class ET_EXPERIMENTAL MultimodalRunner {
       std::function<void(const Stats&)> stats_callback = {});
 
   /**
-   * Generate tokens from multimodal inputs with move semantics.
-   * This overload allows efficient transfer of temporary vectors.
-   * @param inputs A vector of MultimodalInput objects (moved).
-   * @param config Generation configuration parameters.
-   * @param token_callback Callback function called for each generated token.
-   * @param stats_callback Callback function for generation statistics.
-   * @return The error code. KV cache position is tracked internally in pos_.
-   */
-  virtual ::executorch::runtime::Error generate(
-      std::vector<MultimodalInput>&& inputs,
-      const GenerationConfig& config,
-      std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {});
-
-  /**
    * Prefill multimodal inputs, for example to reload chat history.
    * @param inputs A vector of MultimodalInput objects containing images and
    * text.
@@ -142,15 +131,6 @@ class ET_EXPERIMENTAL MultimodalRunner {
    */
   virtual ::executorch::runtime::Error prefill(
       const std::vector<MultimodalInput>& inputs);
-
-  /**
-   * Prefill multimodal inputs with move semantics.
-   * This overload allows efficient transfer of temporary vectors.
-   * @param inputs A vector of MultimodalInput objects (moved).
-   * @return The error code. KV cache position is tracked internally in pos_.
-   */
-  virtual ::executorch::runtime::Error prefill(
-      std::vector<MultimodalInput>&& inputs);
 
   inline void stop() {
     text_token_generator_->stop();
@@ -173,6 +153,11 @@ class ET_EXPERIMENTAL MultimodalRunner {
   std::unique_ptr<IOManager> io_manager_;
   std::unique_ptr<TextTokenGenerator> text_token_generator_;
   std::unique_ptr<Stats> stats_;
+
+#ifdef CUDA_AVAILABLE
+  std::unique_ptr<::executorch::backends::cuda::CudaMemoryTracker>
+      cuda_memory_tracker_;
+#endif
 
   // Internal state
   int64_t pos_;

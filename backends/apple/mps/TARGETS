@@ -19,9 +19,7 @@ runtime.python_library(
         "__init__.py",
         "mps_preprocess.py",
     ],
-    visibility = [
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":operators",
         ":serialization",
@@ -49,9 +47,7 @@ runtime.python_library(
     srcs = glob([
         "partition/*.py",
     ]),
-    visibility = [
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":backend",
         "//caffe2:torch",

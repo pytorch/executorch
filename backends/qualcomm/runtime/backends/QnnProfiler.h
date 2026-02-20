@@ -19,7 +19,7 @@ namespace qnn {
 class QnnProfile {
  public:
   explicit QnnProfile(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnBackend* backend,
       const QnnExecuTorchProfileLevel& profile_level);
   ~QnnProfile();
@@ -31,7 +31,7 @@ class QnnProfile {
 
  private:
   Qnn_ProfileHandle_t handle_;
-  const QnnImplementation& implementation_;
+  QnnImplementation* implementation_;
   QnnBackend* backend_;
 };
 } // namespace qnn

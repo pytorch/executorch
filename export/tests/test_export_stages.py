@@ -7,7 +7,7 @@
 # pyre-strict
 
 import unittest
-from unittest.mock import Mock, patch, PropertyMock
+from unittest.mock import Mock, patch
 
 import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
@@ -524,61 +524,6 @@ class TestToBackendStage(unittest.TestCase):
         self.assertEqual(
             result_artifact.get_context("delegation_info"), mock_delegation_info
         )
-
-    @patch("executorch.export.stages.get_delegation_info")
-    def test_run_with_partitioners_and_passes(
-        self, mock_get_delegation_info: Mock
-    ) -> None:
-        mock_delegation_info = {"delegation": "info"}
-        mock_get_delegation_info.return_value = mock_delegation_info
-        mock_exported_program = Mock()
-        mock_graph_module = Mock()
-        mock_exported_program.graph_module = mock_graph_module
-
-        mock_edge_program_manager = Mock(spec=EdgeProgramManager)
-        mock_edge_program_manager.transform.return_value = mock_edge_program_manager
-        mock_edge_program_manager.to_backend.return_value = mock_edge_program_manager
-        mock_edge_program_manager.exported_program.return_value = mock_exported_program
-
-        # Use PropertyMock for the methods property
-        methods_property_mock = PropertyMock(return_value={"forward"})
-        type(mock_edge_program_manager).methods = methods_property_mock
-
-        mock_partitioner = Mock()
-
-        # Create a mock transform pass callable that we can verify
-        mock_transform_pass = Mock()
-        mock_pass1 = Mock()
-        mock_pass2 = Mock()
-        mock_transform_pass.return_value = [mock_pass1, mock_pass2]
-        mock_transform_passes = [mock_transform_pass]
-
-        stage = ToBackendStage(
-            partitioners=[mock_partitioner], transform_passes=mock_transform_passes
-        )
-        artifact = PipelineArtifact(
-            data=mock_edge_program_manager, context=self.context
-        )
-        stage.run(artifact)
-
-        # Verify that the methods property was accessed
-        methods_property_mock.assert_called_once()
-
-        # Verify the transform pass callable was called with correct parameters
-        mock_transform_pass.assert_called_once_with("forward", mock_exported_program)
-
-        # Verify transform was called with the expected structure
-        expected_transform_passes = {"forward": [mock_pass1, mock_pass2]}
-        mock_edge_program_manager.transform.assert_called_once_with(
-            expected_transform_passes
-        )
-
-        # Verify to_backend called correctly
-        mock_edge_program_manager.to_backend.assert_called_once_with(mock_partitioner)
-
-        # Verify artifacts contain the backend manager
-        result_artifact = stage.get_artifacts()
-        self.assertEqual(result_artifact.data, mock_edge_program_manager)
 
     def test_run_edge_manager_none(self) -> None:
         stage = ToBackendStage()

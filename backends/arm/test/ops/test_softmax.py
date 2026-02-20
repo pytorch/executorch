@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,6 +8,7 @@
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.common.pipeline_config import ArmPassPipelineConfig
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -70,7 +71,28 @@ def test_softmax_u55_INT(test_data):
         data,
         [],
     )
+    pipeline.add_stage_after(
+        "quantize", pipeline.tester.check_not, [aten_op, "torch.ops.aten.amax.default"]
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", Softmax.test_data)
+@common.XfailIfNoCorstone300
+def test_softmax_u55_INT_stable(test_data):
+    data, dim = test_data()
+    pipeline = EthosU55PipelineINT[input_t1](
+        Softmax(dim),
+        data,
+        [],
+    )
+    # Override ArmPassPipelineConfig to disable the DecomposeSoftmaxUnstablePass
+    pipeline.tester.compile_spec.set_pass_pipeline_config(ArmPassPipelineConfig())
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
+    pipeline.add_stage_after(
+        "quantize", pipeline.tester.check, ["torch.ops.aten.amax.default"]
+    )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
@@ -91,13 +113,13 @@ def test_softmax_u85_INT(test_data):
 
 @common.parametrize("test_data", Softmax.test_data)
 @common.SkipIfNoModelConverter
-def test_softmax_vgf_FP(test_data):
+def test_softmax_vgf_no_quant(test_data):
     data, dim = test_data()
     pipeline = VgfPipeline[input_t1](
         Softmax(dim),
         data,
         [],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.add_stage_after(
         "to_edge_transform_and_lower", pipeline.tester.check_not, [exir_op]
@@ -107,13 +129,13 @@ def test_softmax_vgf_FP(test_data):
 
 @common.parametrize("test_data", Softmax.test_data)
 @common.SkipIfNoModelConverter
-def test_softmax_vgf_INT(test_data):
+def test_softmax_vgf_quant(test_data):
     data, dim = test_data()
     pipeline = VgfPipeline[input_t1](
         Softmax(dim),
         data,
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests

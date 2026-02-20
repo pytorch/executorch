@@ -39,8 +39,8 @@ void* allocate_temp_memory(KernelRuntimeContext& ctx, size_t size) {
 template <typename T>
 __attribute__((always_inline)) T
 quantize(const float x, float scale, int32_t zero_point) {
-  constexpr float min_val = std::numeric_limits<T>::min();
-  constexpr float max_val = std::numeric_limits<T>::max();
+  constexpr float min_val = static_cast<float>(std::numeric_limits<T>::min());
+  constexpr float max_val = static_cast<float>(std::numeric_limits<T>::max());
   float tmp = roundf(x * scale + zero_point);
   return std::max(std::min(tmp, max_val), min_val);
 }
@@ -56,8 +56,8 @@ void quantize(
   xtfloatx2 scale_vec = (xtfloatx2)scale;
   xtfloatx2 zero_vec = XT_FLOAT_SX2(zero_point, 0);
 
-  constexpr float min_val = std::numeric_limits<T>::min();
-  constexpr float max_val = std::numeric_limits<T>::max();
+  constexpr float min_val = static_cast<float>(std::numeric_limits<T>::min());
+  constexpr float max_val = static_cast<float>(std::numeric_limits<T>::max());
 
   const xtfloatx2* __restrict__ p0 = (const xtfloatx2* __restrict__)x;
   ae_valign va0 = XT_LASX2PP(p0);

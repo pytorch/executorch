@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -54,12 +54,12 @@ test_data_suite = {
     ),
     "op_div_rank4_large_rand": lambda: (
         200 * torch.rand(5, 10, 25, 20),
-        torch.rand(5, 10, 25, 20),
+        torch.rand(5, 10, 25, 20) + 0.1,
         None,
     ),
     "op_div_rank4_negative_large_rand": lambda: (
         (-200) * torch.rand(5, 10, 25, 20),
-        torch.rand(5, 10, 25, 20),
+        torch.rand(5, 10, 25, 20) + 0.1,
         None,
     ),
     "op_div_rank4_large_randn": lambda: (
@@ -127,21 +127,25 @@ def test_div_tensor_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_div_tensor_vgf_FP(test_data: Tuple):
+def test_div_tensor_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
-        Div(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
+        Div(),
+        test_data(),
+        aten_op,
+        exir_op,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_div_tensor_vgf_INT(test_data: Tuple):
+def test_div_tensor_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Div(),
         test_data(),
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

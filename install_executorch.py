@@ -54,6 +54,16 @@ def clean():
     print("Cleaning buck cached state and metadata ...")
     shutil.rmtree(os.path.expanduser("~/.buck/buckd"), ignore_errors=True)
 
+    # tokenizers build cleanup
+    tokenizer_dirs = [
+        "extension/llm/tokenizers/build",
+        "extension/llm/tokenizers/pytorch_tokenizers.egg-info",
+    ]
+
+    for d in tokenizer_dirs:
+        print(f"Cleaning {d}...")
+        shutil.rmtree(d, ignore_errors=True)
+
     # Clean ccache if available
     try:
         result = subprocess.run(["ccache", "--version"], capture_output=True, text=True)

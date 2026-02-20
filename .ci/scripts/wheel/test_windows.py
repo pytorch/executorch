@@ -30,9 +30,7 @@ def test_model_xnnpack(model: Model, quantize: bool) -> None:
 
     if quantize:
         quant_type = MODEL_NAME_TO_OPTIONS[str(model)].quantization
-        model_instance = torch.export.export_for_training(
-            model_instance, example_inputs
-        )
+        model_instance = torch.export.export(model_instance, example_inputs)
         model_instance = quantize_xnn(
             model_instance.module(), example_inputs, quant_type
         )

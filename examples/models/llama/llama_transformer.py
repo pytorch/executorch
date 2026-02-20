@@ -15,9 +15,10 @@ import torch.nn.functional as F
 from executorch.examples.models.llama.attention import (
     Attention,
     ATTENTION_REGISTRY,
+    AttentionSkip,
     ForwardOptions,
 )
-from executorch.examples.models.llama.feed_forward import FeedForward
+from executorch.examples.models.llama.feed_forward import FeedForward, LoRAFeedForward
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
@@ -92,10 +93,19 @@ class TransformerBlock(nn.Module):
         ), "`hidden_dim` must be set in ModelArgs to construct a TransformerBlock."
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
+        elif args.target_modules is not None and (
+            "down_proj" in args.target_modules
+            or "up_proj" in args.target_modules
+            or "gate_proj" in args.target_modules
+        ):
+            self.feed_forward = LoRAFeedForward(args.dim, args.hidden_dim, args)
         else:
             self.feed_forward = FeedForward(dim=args.dim, hidden_dim=args.hidden_dim)
 
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        if isinstance(self.attention, AttentionSkip):
+            self.attention_norm = nn.Identity()
+        else:
+            self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     @classmethod
@@ -117,11 +127,12 @@ class TransformerBlock(nn.Module):
         return TransformerBlock(args, attention)
 
     def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
-        h, attn_options_update = self.attention.forward(
+        h, attn_options_update = self.attention(
             self.attention_norm(x), freqs_cos, freqs_sin, **attn_options
         )
+        if not isinstance(self.attention, AttentionSkip):
+            h = x + h
 
-        h = x + h
         if hasattr(self, "block_sparse_moe"):
             out = h + self.block_sparse_moe(self.ffn_norm(h))
         else:
@@ -261,6 +272,13 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
                     norm_eps=model_args.norm_eps,
                 )
             )
+        elif (
+            model_args.layer_types
+            and model_args.layer_types[layer_id] == "skip_attention"
+        ):
+            attention = AttentionSkip()
+            transformer_block = TransformerBlock(model_args, attention)
+            layers.append(transformer_block)
         else:
             attention = cls(
                 model_args, layer_id, rope, **model_args.attention_kwargs

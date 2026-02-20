@@ -27,7 +27,7 @@ setup_android_ndk() {
     mkdir -p "${NDK_INSTALL_DIR}"
     NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
 
-    curl -Lo "/tmp/${NDK_ZIP}" "https://dl.google.com/android/repository/${NDK_ZIP}"
+    curl --retry 3 --retry-delay 5 --retry-connrefused --continue-at - -Lo "/tmp/${NDK_ZIP}" "https://dl.google.com/android/repository/${NDK_ZIP}"
     unzip -q "/tmp/${NDK_ZIP}" -d "${NDK_INSTALL_DIR}"
     mv "${NDK_INSTALL_DIR}/android-ndk-${NDK_VERSION}" "${NDK_INSTALL_DIR}/ndk"
 
@@ -48,7 +48,7 @@ install_qnn() {
 
   echo "Start installing qnn v${QNN_VERSION}"
   QNN_INSTALLATION_DIR="/tmp/qnn"
-  
+
   if [ -d "${QNN_INSTALLATION_DIR}/${QNN_VERSION}" ]; then
         echo "QNN SDK already installed at ${QNN_INSTALLATION_DIR}/${QNN_VERSION}"
         export QNN_SDK_ROOT="${QNN_INSTALLATION_DIR}/${QNN_VERSION}"
@@ -64,7 +64,7 @@ install_qnn() {
   mkdir -p "${QNN_INSTALLATION_DIR}"
 
   QNN_ZIP_FILE="v${QNN_VERSION}.zip"
-  curl -Lo "/tmp/${QNN_ZIP_FILE}" "${QNN_ZIP_URL}"
+  curl --retry 3 -Lo "/tmp/${QNN_ZIP_FILE}" "${QNN_ZIP_URL}"
   echo "Finishing downloading qnn sdk."
   unzip -qo "/tmp/${QNN_ZIP_FILE}" -d /tmp
   echo "Finishing unzip qnn sdk."
@@ -117,7 +117,7 @@ setup_libcpp() {
   LLVM_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/${BASE_NAME}.tar.xz"
 
   echo "Downloading LLVM from ${LLVM_URL}"
-  curl -fLO "${LLVM_URL}" || {
+  curl --retry 3 -fLO "${LLVM_URL}" || {
       echo "Error: Failed to download LLVM"
       exit 1
   }

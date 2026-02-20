@@ -18,8 +18,12 @@ To follow this guide, you'll need to install ExecuTorch. Please see [Setting Up 
 
 Deploying LLMs to ExecuTorch can be boiled down to a two-step process: (1) exporting the LLM to a `.pte` file and (2) running the `.pte` file using our C++ APIs or Swift/Java bindings.
 
-- [Exporting LLMs](export-llm.md)
+### Exporting
+- [Exporting LLMs](export-llm.md) - Export using ExecuTorch's native `export_llm` API with advanced optimizations
+- [Exporting LLMs with Optimum](export-llm-optimum.md) - Export Hugging Face models with broader architecture support
 - [Exporting custom LLMs](export-custom-llm.md)
+
+### Running
 - [Running with C++](run-with-c-plus-plus.md)
 - [Running on Android (XNNPack)](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android)
 - [Running on Android (Qualcomm)](build-run-llama3-qualcomm-ai-engine-direct-backend.md)

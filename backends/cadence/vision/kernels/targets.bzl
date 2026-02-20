@@ -8,10 +8,7 @@ def define_common_targets():
         exported_headers = [
             "kernels.h",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         platforms = CXX,
         compatible_with = select({
             "DEFAULT": [],

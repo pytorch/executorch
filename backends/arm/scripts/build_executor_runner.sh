@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,8 +10,9 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
 toolchain=arm-none-eabi-gcc
-setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
+setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
+source "${script_dir}/utils.sh"
 
 pte_file=""
 target="ethos-u55-128"
@@ -24,7 +25,7 @@ extra_build_flags=""
 output_folder_set=false
 output_folder="."
 et_build_root="${et_root_dir}/arm_test"
-ethosu_tools_dir=${et_root_dir}/examples/arm/ethos-u-scratch
+ethosu_tools_dir=${et_root_dir}/examples/arm/arm-scratch
 select_ops_list=""
 
 build_bundleio_flags=" -DET_BUNDLE_IO=OFF "
@@ -58,28 +59,28 @@ help() {
 
 for arg in "$@"; do
     case $arg in
-      -h|--help) help ;;
-      --pte=*) pte_file="${arg#*=}";;
-      --target=*) target="${arg#*=}";;
-      --build_type=*) build_type="${arg#*=}";;
-      --bundleio) bundleio=true ;;
-      --system_config=*) system_config="${arg#*=}";;
-      --memory_mode=*) memory_mode="${arg#*=}";;
-      --etdump) build_with_etdump=true ;;
-      --extra_build_flags=*) extra_build_flags="${arg#*=}";;
-      --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
-      --et_build_root=*) et_build_root="${arg#*=}";;
-      --ethosu_tools_dir=*) ethosu_tools_dir="${arg#*=}";;
-      --toolchain=*) toolchain="${arg#*=}";;
-      --select_ops_list=*) select_ops_list="${arg#*=}";;
-      *)
-      ;;
+        -h|--help) help ;;
+        --pte=*) pte_file="${arg#*=}";;
+        --target=*) target="${arg#*=}";;
+        --build_type=*) build_type="${arg#*=}";;
+        --bundleio) bundleio=true ;;
+        --system_config=*) system_config="${arg#*=}";;
+        --memory_mode=*) memory_mode="${arg#*=}";;
+        --etdump) build_with_etdump=true ;;
+        --extra_build_flags=*) extra_build_flags="${arg#*=}";;
+        --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
+        --et_build_root=*) et_build_root="${arg#*=}";;
+        --ethosu_tools_dir=*) ethosu_tools_dir="${arg#*=}";;
+        --toolchain=*) toolchain="${arg#*=}";;
+        --select_ops_list=*) select_ops_list="${arg#*=}";;
+        *)
+        ;;
     esac
 done
 
 if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
-elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
+elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
 else
     echo "Error: Invalid toolchain selection, provided: ${toolchain}"
@@ -98,22 +99,22 @@ source ${setup_path_script}
 if [[ ${pte_file} == "semihosting" ]]; then
     pte_data="-DSEMIHOSTING=ON"
 else
-	if [[ "$pte_file" =~ ^0x[0-9a-fA-F]{1,16}$ ]]; then
-		echo "PTE in memory at ${pte_file}, make sure to put it there on your target before starting."
-		pte_data="-DET_MODEL_PTE_ADDR=${pte_file}"
-		if [ "$output_folder_set" = false ] ; then
-		    # Not locked down to a PTE use 
-		    output_folder=${et_build_root}/${target}_${pte_file}/cmake-out
-		fi
-	else
-		echo "PTE included in elf from file ${pte_file}"
-		pte_file=$(realpath ${pte_file})
-		pte_data="-DET_PTE_FILE_PATH:PATH=${pte_file}"
-		if [ "$output_folder_set" = false ] ; then
-		    # remove file ending
-		    output_folder=${pte_file%.*}/cmake-out
-		fi
-	fi
+    if [[ "$pte_file" =~ ^0x[0-9a-fA-F]{1,16}$ ]]; then
+        echo "PTE in memory at ${pte_file}, make sure to put it there on your target before starting."
+        pte_data="-DET_MODEL_PTE_ADDR=${pte_file}"
+        if [ "$output_folder_set" = false ] ; then
+            # Not locked down to a PTE use
+            output_folder=${et_build_root}/${target}_${pte_file}/cmake-out
+        fi
+    else
+        echo "PTE included in elf from file ${pte_file}"
+        pte_file=$(realpath ${pte_file})
+        pte_data="-DET_PTE_FILE_PATH:PATH=${pte_file}"
+        if [ "$output_folder_set" = false ] ; then
+            # remove file ending
+            output_folder=${pte_file%.*}/cmake-out
+        fi
+    fi
 fi
 ethosu_tools_dir=$(realpath ${ethosu_tools_dir})
 ethos_u_root_dir="$ethosu_tools_dir/ethos-u"
@@ -185,7 +186,9 @@ cmake \
 
 echo "[${BASH_SOURCE[0]}] Configured CMAKE"
 
-cmake --build ${output_folder} -j$(nproc) -- arm_executor_runner
+parallel_jobs="$(get_parallel_jobs)"
+
+cmake --build ${output_folder} -j"${parallel_jobs}" -- arm_executor_runner
 
 echo "[${BASH_SOURCE[0]}] Generated ${toolchain} elf file:"
 find ${output_folder} -name "arm_executor_runner"

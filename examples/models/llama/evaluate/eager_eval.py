@@ -69,8 +69,8 @@ class EagerEvalWrapper(eval_wrapper):
     def tok_encode(self, string: str, **kwargs):  # pyre-ignore
         return self._tokenizer.encode(string, bos=False, eos=False)
 
-    def tok_decode(self, tokens):
-        return self._tokenizer.decode(tokens)
+    def tok_decode(self, tokens, **kwargs):
+        return self._tokenizer.decode([tokens] if isinstance(tokens, int) else tokens)
 
     def _model_call(self, inps):
         if self._use_kv_cache:

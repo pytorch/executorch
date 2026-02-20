@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,19 +8,19 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.add_bias_pass import AddBiasPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 
 from executorch.backends.transforms.utils import create_constant_placeholder
+from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.export.graph_signature import InputKind
 
 
 class DecomposeCumsumPass(ArmPass):
-    """
-    Decomposes cumsum into a 1D convolution with a kernel of ones.
+    """Decomposes cumsum into a 1D convolution with a kernel of ones.
 
     For example, the cumsum of an input tensor [1, 1] is [1, 1 + 1] = [1, 2].
     To decompose this, take the input tensor and pre-padded with len(input)-1 zeros and
@@ -39,9 +39,14 @@ class DecomposeCumsumPass(ArmPass):
        H = <cumsum dim>
        W = <dims after cumsum dim>
     And the convolution is applied over dimension H.
+
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {AddBiasPass}
+    _passes_required_after: Set[Type[ExportPass]] = {RewriteConvPass}
+
+    def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.exported_program = exported_program
 
     def call(self, graph_module):
         graph = graph_module.graph
@@ -96,7 +101,13 @@ class DecomposeCumsumPass(ArmPass):
             with graph.inserting_before(node):
                 # Reshape to 4D with
                 view_args = (input_node, conv_shape)
-                view_node = create_node(graph, view_op, args=view_args, from_node=node)
+                view_node = create_node(
+                    graph,
+                    view_op,
+                    args=view_args,
+                    from_node=node,
+                    inherit_qparams=False,
+                )
 
                 conv_args = (
                     view_node,
@@ -109,7 +120,9 @@ class DecomposeCumsumPass(ArmPass):
                     [0],
                     1,
                 )
-                conv_node = create_node(graph, conv_op, args=conv_args, from_node=node)
+                conv_node = create_node(
+                    graph, conv_op, args=conv_args, from_node=node, inherit_qparams=True
+                )
 
                 # The convolution is inserted after quantization, so we need to set our
                 # own quantization parameters for the weights here. However since the
@@ -124,12 +137,20 @@ class DecomposeCumsumPass(ArmPass):
 
                 slice_args = (conv_node, 2, 0, original_shape[dim])
                 slice_node = create_node(
-                    graph, slice_op, args=slice_args, from_node=node
+                    graph,
+                    slice_op,
+                    args=slice_args,
+                    from_node=node,
+                    inherit_qparams=False,
                 )
 
                 view_original_args = (slice_node, original_shape)
                 view_original_node = create_node(
-                    graph, view_op, args=view_original_args, from_node=node
+                    graph,
+                    view_op,
+                    args=view_original_args,
+                    from_node=node,
+                    inherit_qparams=False,
                 )
 
             # Replace and remove original

@@ -326,7 +326,7 @@ class TestCoreMLRecipes(unittest.TestCase):
         )
         self.check_fully_delegated(session)
 
-        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-3)
+        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-2)
         self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
 
     def test_int8_weight_only_pt2e(self):

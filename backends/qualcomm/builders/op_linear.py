@@ -6,7 +6,7 @@
 
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
 from executorch.backends.qualcomm.utils.constants import (
@@ -18,7 +18,6 @@ from executorch.backends.qualcomm.utils.constants import (
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpFullyConnected, QNN_OP_PACKAGE_NAME_QTI_AISW
-from .utils import get_parameter
 
 
 @register_node_visitor
@@ -31,8 +30,8 @@ class LinearVisitor(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         linear_input_tensors = []
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
@@ -40,7 +39,7 @@ class LinearVisitor(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         linear_input_tensors.append(input_tensor_wrapper)
@@ -55,32 +54,26 @@ class LinearVisitor(NodeVisitor):
             quant_attrs[QCOM_ZERO_POINTS] = quant_attrs[QCOM_ZERO_POINTS].reshape(
                 [-1, 1]
             )
-
-        weight_tensor = get_parameter(weight_node, self.edge_program)
+        weight_tensor = self.get_tensor(weight_node, node)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
             node,
             weight_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            # It will determine correct QNN tensor type in define_tensor.
+            # This param seems unnecessary, which we could possibly remove this in the future.
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         linear_input_tensors.append(weight_tensor_wrapper)
 
         if len(node.args) >= 3:
             bias_node = self.get_node(node.args[2])
-
-            bias_tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
-            bias_tensor = get_parameter(bias_node, self.edge_program)
-            # if bias_node is getitem
-            if bias_tensor is None:
-                bias_tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
-                bias_tensor = bias_node.meta["val"]
-
+            bias_tensor = self.get_tensor(bias_node, node)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
                 node,
                 bias_tensor,
-                bias_tensor_type,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 nodes_to_wrappers,
             )
             linear_input_tensors.append(bias_tensor_wrapper)
@@ -90,11 +83,11 @@ class LinearVisitor(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
-        linear_op = PyQnnWrapper.PyQnnOpWrapper(
+        linear_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpFullyConnected.op_name,

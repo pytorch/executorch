@@ -317,7 +317,9 @@ def convert_to_flatbuffer(xnnpack_graph: XNNGraph) -> bytes:
         schema_path = os.path.join(d, "schema.fbs")
         with open(schema_path, "wb") as schema_file:
             schema_file.write(
-                _resources.read_binary(serialization_package, "schema.fbs")
+                _resources.files(serialization_package)
+                .joinpath("schema.fbs")
+                .read_bytes()
             )
         json_path = os.path.join(d, "schema.json")
         with open(json_path, "wb") as json_file:

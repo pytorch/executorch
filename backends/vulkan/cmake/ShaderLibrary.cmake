@@ -53,6 +53,18 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
     endif()
   endif()
 
+  # Add nthreads argument for shader compilation
+  if(DEFINED EXECUTORCH_VULKAN_SHADER_COMPILE_NTHREADS)
+    list(APPEND GEN_SPV_ARGS "--nthreads"
+         "${EXECUTORCH_VULKAN_SHADER_COMPILE_NTHREADS}"
+    )
+  endif()
+
+  # Ninja cannot expand wildcards (*) in DEPENDS lists.
+  file(GLOB VULKAN_SHADERS "${shaders_path}/*.glsl" "${shaders_path}/*.glslh"
+       "${shaders_path}/*.yaml" "${shaders_path}/*.h"
+  )
+
   add_custom_command(
     COMMENT "Generating Vulkan Compute Shaders"
     OUTPUT ${VULKAN_SHADERGEN_OUT_PATH}/spv.cpp
@@ -63,7 +75,7 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
       --glslc-path=${GLSLC_PATH}
       --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH}/shader_cache/ --env
       ${VULKAN_GEN_ARG_ENV} ${GEN_SPV_ARGS}
-    DEPENDS ${shaders_path}/*
+    DEPENDS ${VULKAN_SHADERS}
             ${EXECUTORCH_ROOT}/backends/vulkan/runtime/gen_vulkan_spv.py
   )
 

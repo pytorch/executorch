@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,14 +8,11 @@
 
 from typing import Tuple
 
-import pytest
-
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
-    get_symmetric_a16w8_quantization_config,
-    TOSAQuantizer,
+    get_symmetric_a8w4_quantization_config,
 )
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -24,8 +21,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 
 aten_op = "torch.ops.aten.linear.default"
 
@@ -60,6 +55,40 @@ test_data_rank1_FP = {
     ),
     "model_linear_rank1_large_randn": lambda: (
         torch.randn(15) * 100,
+        20,
+        True,
+    ),
+}
+
+test_data_rank2_FP = {
+    # test_name: (test_data, out_features, has_bias)
+    "model_linear_rank2_zeros": lambda: (
+        torch.zeros(10, 20),
+        15,
+        True,
+    ),
+    "model_linear_rank2_ones": lambda: (
+        torch.ones(2, 240),
+        960,
+        False,
+    ),
+    "model_linear_rank2_negative_ones": lambda: (
+        torch.ones(10, 20) * (-1),
+        20,
+        True,
+    ),
+    "model_linear_rank2_rand": lambda: (
+        torch.rand(2, 240),
+        960,
+        True,
+    ),
+    "model_linear_rank2_negative_large_rand": lambda: (
+        torch.rand(10, 20) * (-100),
+        30,
+        False,
+    ),
+    "model_linear_rank2_large_randn": lambda: (
+        torch.randn(15, 20) * 100,
         20,
         True,
     ),
@@ -103,6 +132,13 @@ test_data_rank4_FP = {
 test_data_rank1_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (*v(), q))
     for (k, v) in test_data_rank1_FP.items()
+    for q in [True, False]
+}
+
+# Generate a new test set paired with per_channel_quant=True/False.
+test_data_rank2_INT = {
+    f"{k},per_channel_quant={q}": (lambda v=v, q=q: (*v(), q))
+    for (k, v) in test_data_rank2_FP.items()
     for q in [True, False]
 }
 
@@ -168,7 +204,40 @@ def test_linear_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_rank1_INT)
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+def test_linear_tosa_INT_a8w4(test_data: torch.Tensor):
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+    pipeline = TosaPipelineINT[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op,
+        tosa_extensions=["int4"],
+        frobenius_threshold=0.15,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.add_stage_after(
+        "to_edge_transform_and_lower",
+        pipeline.tester.check_dtype_count,
+        {
+            "CONST": {"INT4": 2},
+            "CONV2D": {"INT32": 1},
+            "RESCALE": {"INT8": 1},
+        },
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_data_rank1_INT | test_data_rank2_INT | test_data_rank4_INT,
+)
 @common.XfailIfNoCorstone300
 def test_linear_u55_INT(test_data: torch.Tensor):
     test_data, out_features, has_bias, per_channel_quantization = test_data()
@@ -189,7 +258,7 @@ def test_linear_u55_INT(test_data: torch.Tensor):
 
 @common.parametrize(
     "test_data",
-    test_data_rank1_INT | test_data_rank4_INT,
+    test_data_rank1_INT | test_data_rank2_INT | test_data_rank4_INT,
 )
 @common.XfailIfNoCorstone320
 def test_linear_u85_INT(test_data: torch.Tensor):
@@ -211,75 +280,53 @@ def test_linear_u85_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_rank1_FP | test_data_rank4_FP)
 @common.SkipIfNoModelConverter
-def test_linear_vgf_FP(test_data: torch.Tensor):
+def test_linear_vgf_no_quant(test_data: torch.Tensor):
     test_data, out_features, has_bias = test_data()
     in_features = test_data.shape[-1]
     pipeline = VgfPipeline[input_t1](
-        Linear(
-            in_features=in_features,
-            out_features=out_features,
-            bias=has_bias,
-        ),
+        Linear(in_features=in_features, out_features=out_features, bias=has_bias),
         (test_data,),
         aten_op=aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
 @common.SkipIfNoModelConverter
-def test_linear_vgf_INT(test_data: torch.Tensor):
+def test_linear_vgf_quant(test_data: torch.Tensor):
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
     pipeline = VgfPipeline[input_t1](
-        Linear(
-            in_features=in_features,
-            out_features=out_features,
-            bias=has_bias,
-        ),
+        Linear(in_features=in_features, out_features=out_features, bias=has_bias),
         (test_data,),
         aten_op=aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
+        quantize=True,
     )
     pipeline.run()
 
 
-def get_symmetric_a16w8_linear_quantizer(
-    u55_config=False, per_channel_quantization=False
-):
-    tosa_version = conftest.get_option("tosa_version")
-    tosa_profiles = {
-        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
-    }
-
-    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-    quantizer.set_global(
-        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+@common.SkipIfNoModelConverter
+def test_linear_vgf_quant_a8w4(test_data: torch.Tensor):
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+    pipeline = VgfPipeline[input_t1](
+        Linear(in_features=in_features, out_features=out_features, bias=has_bias),
+        (test_data,),
+        aten_op=aten_op,
+        exir_op=[],
     )
-    quantizer.set_module_type(
-        torch.nn.Linear,
-        get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
     )
-
-    return Quantize(
-        quantizer,
-        get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization
-        ),
-    )
+    pipeline.run()
 
 
-test_data_all_16a8w = test_data_rank1_INT | test_data_rank4_INT
-# TODO: Remove large rand test as they are flaky until sorted out why: MLETORCH-1377
-for k in list(test_data_all_16a8w.keys()):
-    if "large_rand" in k:
-        test_data_all_16a8w.pop(k)
+test_data_all_16a8w = test_data_rank1_INT | test_data_rank2_INT | test_data_rank4_INT
 
 
 @common.parametrize("test_data", test_data_all_16a8w)
@@ -303,23 +350,13 @@ def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
         tosa_extensions=["int16"],
     )
 
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_linear_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
-    )
     # Run the pipeline
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+@common.parametrize("test_data", test_data_all_16a8w)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="Ethos-U55 A16W8 linear: int16 matmul not yet supported; pending backend support or linear->conv1x1 lowering. See: https://github.com/pytorch/executorch/issues/13947",
-    strict=False,
-)
-def test_linear_16a8w_u55_INT16(test_data: torch.Tensor):
+def test_linear_16a8w_u55_INT(test_data: torch.Tensor):
     """Test linear operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
@@ -336,24 +373,14 @@ def test_linear_16a8w_u55_INT16(test_data: torch.Tensor):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
         run_on_fvp=True,
-    )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_linear_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+        a16w8_quantization=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+@common.parametrize("test_data", test_data_all_16a8w)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Ethos-U55 A16W8 linear: int16 matmul not yet supported; pending backend support or linear->conv1x1 lowering. See: https://github.com/pytorch/executorch/issues/13947",
-    strict=False,
-)
-def test_linear_16a8w_u85_INT16(test_data: torch.Tensor):
+def test_linear_16a8w_u85_INT(test_data: torch.Tensor):
     """Test linear operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
@@ -370,12 +397,7 @@ def test_linear_16a8w_u85_INT16(test_data: torch.Tensor):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
         run_on_fvp=True,
+        a16w8_quantization=True,
     )
 
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_linear_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
-    )
     pipeline.run()

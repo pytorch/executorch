@@ -14,8 +14,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Copy.h>
-
 namespace vkcompute {
 
 namespace {

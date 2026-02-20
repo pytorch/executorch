@@ -8,21 +8,27 @@
 
 #version 450 core
 
+${define_required_extensions("texture3d", DTYPE)}
+#extension GL_EXT_control_flow_attributes : require
+
 #define PRECISION ${PRECISION}
 #define UBO_PARAMS ${UBO_PARAMS}
 
-#define VEC4_T ${texel_type(DTYPE)}
-#define T ${buffer_scalar_type(DTYPE)}
+#define VEC4_T ${texel_load_type(DTYPE, "texture3d")}
+#define T ${texel_load_component_type(DTYPE, "texture3d")}
 
 ${define_active_storage_type("texture3d")}
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-#include "indexing_utils.h"
+#include "common.glslh"
+#include "indexing.glslh"
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, "texture3d")}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, "texture3d")}
+
+${layout_declare_ubo(B, "TextureMetadata", "outp")}
+${layout_declare_ubo(B, "TextureMetadata", "inp")}
 
 $if UBO_PARAMS:
   $if OP_NAME == "slice":
@@ -33,8 +39,6 @@ $if UBO_PARAMS:
     ${layout_declare_ubo(B, "int", "index")}
 
 layout(push_constant) uniform restrict Block {
-  ivec4 out_sizes;
-  ivec4 in_sizes;
   int selected_dim;
   $if not UBO_PARAMS:
     $if OP_NAME == "slice":
@@ -45,48 +49,33 @@ layout(push_constant) uniform restrict Block {
       int index;
 };
 
-${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
-const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
-const lowp int out_packed_dim = unhash_packed_dim(out_layout);
-
-${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
-const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
-const lowp int in_packed_dim = unhash_packed_dim(in_layout);
-
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 #include "${OP_NAME}.glslh"
 
 void main() {
-  const ivec3 lpos = ivec3(gl_GlobalInvocationID);
-  ivec4 out_tidx = lpos_to_tidx(lpos, out_sizes, out_axis_map.w, out_packed_dim);
+  const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
 
-  if (any(greaterThanEqual(out_tidx, out_sizes))) {
+  if (out_of_bounds(out_pos, outp)) {
     return;
   }
 
-  if (can_use_fast_path()) {
-    ivec4 in_tidx = out_tidx_to_in_tidx(out_tidx);
-    ivec3 in_pos = tidx_to_pos(in_tidx, in_sizes, in_axis_map, in_packed_dim);
-    VEC4_T in_texel = VEC4_T(load_texel(t_in, in_pos));
+  TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(outp, out_pos);
+  VEC4_T out_texel = VEC4_T(0);
 
-    write_texel_lpos(t_out, lpos, in_texel, out_axis_map);
+  int limit = min(
+      4, outp.sizes[outp.packed_dim] - out_tidx.data[outp.packed_dim]);
+  for (int comp = 0; comp < limit; comp++) {
+    TensorIndex4D in_tidx = out_tidx_to_in_tidx(out_tidx);
+
+    TextureElementIndex in_elem_pos = tensor4d_idx_to_texture_element_idx_simple(
+        inp, in_tidx);
+
+    VEC4_T in_texel = texelFetch(t_in, in_elem_pos.pos, 0);
+    out_texel[comp] = in_texel[in_elem_pos.comp];
+
+    out_tidx.data[outp.packed_dim]++;
   }
-  else {
-    VEC4_T out_texel = VEC4_T(0);
-    for (int texel_i = 0; texel_i < 4; ++texel_i) {
-      ivec4 in_tidx = out_tidx_to_in_tidx(out_tidx);
-      ivec3 in_pos = tidx_to_pos(in_tidx, in_sizes, in_axis_map, in_packed_dim);
-      int element_idx = in_tidx[in_packed_dim] % 4;
 
-      VEC4_T in_texel = VEC4_T(load_texel(t_in, in_pos));
-      T selected_value = T(in_texel[element_idx]);
-
-      out_texel[texel_i] = selected_value;
-
-      out_tidx[out_packed_dim]++;
-    }
-
-    write_texel_lpos(t_out, lpos, out_texel, out_axis_map);
-  }
+  imageStore(t_out, out_pos, out_texel);
 }

@@ -33,8 +33,14 @@ list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
+# include sampler
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/sampler
+  ${CMAKE_CURRENT_BINARY_DIR}/../sampler
+)
+
 set(runner_deps executorch_core extension_module extension_tensor
-                tokenizers::tokenizers
+                extension_llm_sampler tokenizers::tokenizers
 )
 
 # depend on arange_utils
@@ -55,6 +61,25 @@ target_include_directories(
   extension_llm_runner INTERFACE ${_common_include_directories}
 )
 
+# If the project is configured to build with CUDA support, try to find a CUDA
+# runtime (prefer the CUDAToolkit package). If found, expose a compile-time
+# macro so sources can conditionally compile CUDA-aware code.
+if(EXECUTORCH_BUILD_CUDA)
+  # Prefer the modern CMake CUDAToolkit module, fall back to searching for the
+  # CUDA runtime library (cudart) if the package isn't available.
+  find_package(CUDAToolkit QUIET)
+  if(CUDAToolkit_FOUND)
+    target_compile_definitions(extension_llm_runner PUBLIC CUDA_AVAILABLE)
+    target_link_libraries(extension_llm_runner PUBLIC CUDA::cudart)
+    message(STATUS "CUDAToolkit found; defining CUDA_AVAILABLE")
+  else()
+    message(
+      STATUS
+        "CUDA requested (EXECUTORCH_BUILD_CUDA=ON) but no CUDA runtime found"
+    )
+  endif()
+endif()
+
 install(
   TARGETS extension_llm_runner
   EXPORT ExecuTorchTargets
@@ -65,13 +90,6 @@ install(
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/llm/runner
-  FILES_MATCHING
-  PATTERN "*.h"
-)
-# TODO: remove this once we create a proper CMake setup for sampler.
-install(
-  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../sampler/
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/llm/sampler
   FILES_MATCHING
   PATTERN "*.h"
 )

@@ -2,15 +2,23 @@ name: Build Windows Wheels
 
 on:
   pull_request:
+    paths:
+      - .ci/**/*
+      - .github/workflows/build-wheels-windows.yml
+      - examples/**/*
+      - pyproject.toml
+      - setup.py
+    tags:
+      - ciflow/binaries/*
   push:
     branches:
       - nightly
-      - main
       - release/*
     tags:
-        # NOTE: Binary build pipelines should only get triggered on release candidate builds
-        # Release candidate tags look like: v1.11.0-rc1
-        - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
+      # NOTE: Binary build pipelines should only get triggered on release candidate builds
+      # Release candidate tags look like: v1.11.0-rc1
+      - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
+      - ciflow/binaries/*
   workflow_dispatch:
 
 permissions:
@@ -27,7 +35,7 @@ jobs:
       test-infra-ref: main
       with-cuda: disabled
       with-rocm: disabled
-      python-versions: '["3.10", "3.11", "3.12"]'
+      python-versions: '["3.10", "3.11", "3.12", "3.13"]'
 
   build:
     needs: generate-matrix

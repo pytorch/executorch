@@ -137,6 +137,20 @@ def test_adaptive_avg_pool2d_tosa_INT(test_module):
 
 
 @common.parametrize("test_module", test_modules)
+def test_adaptive_avg_pool2d_tosa_INT_a16w8(test_module):
+    """Test adaptive_avg_pool2d with int16 I/O quantization for TOSA INT."""
+    model, input_tensor = test_module()
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        input_tensor,
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone300
 def test_adaptive_avg_pool2d_u55_INT(test_module):
     model, input_tensor = test_module()
@@ -146,6 +160,27 @@ def test_adaptive_avg_pool2d_u55_INT(test_module):
         input_tensor,
         aten_ops=[],
         exir_ops=exir_op,
+    )
+    pipeline.run()
+
+
+# Remove high_channel_count & output_1x1_from_19 due to 2MB SRAM access on U55
+u55_test_modules = test_modules
+for key in ["high_channel_count", "output_1x1_from_19"]:
+    u55_test_modules.pop(key)
+
+
+@common.parametrize("test_module", u55_test_modules)
+@common.XfailIfNoCorstone300
+def test_adaptive_avg_pool2d_u55_INT_a16w8(test_module):
+    """Test adaptive_avg_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    model, input_tensor = test_module()
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        input_tensor,
+        aten_ops=[],
+        exir_ops=exir_op,
+        a16w8_quantization=True,
     )
     pipeline.run()
 
@@ -165,28 +200,43 @@ def test_adaptive_avg_pool2d_u85_INT(test_module):
 
 
 @common.parametrize("test_module", test_modules)
-@common.SkipIfNoModelConverter
-def test_adaptive_avg_pool2d_vgf_FP(test_module):
+@common.XfailIfNoCorstone320
+def test_adaptive_avg_pool2d_u85_INT_a16w8(test_module):
+    """Test adaptive_avg_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     model, input_tensor = test_module()
-    pipeline = VgfPipeline[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         model,
         input_tensor,
-        [],
-        exir_op,
-        tosa_version="TOSA-1.0+FP",
+        aten_ops=[],
+        exir_ops=exir_op,
+        a16w8_quantization=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
 @common.SkipIfNoModelConverter
-def test_adaptive_avg_pool2d_vgf_INT(test_module):
+def test_adaptive_avg_pool2d_vgf_no_quant(test_module):
     model, input_tensor = test_module()
     pipeline = VgfPipeline[input_t](
         model,
         input_tensor,
         [],
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_quant(test_module):
+    model, input_tensor = test_module()
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        [],
+        exir_op,
+        quantize=True,
     )
     pipeline.run()

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -190,6 +191,11 @@ class _ExportPassBase(PassBase):
                 if not hasattr(a, "constant") or a.constant is None:
                     raise ExportPassBaseError(f"Cannot add {a} to graph.")
                 a = a.constant
+            elif isinstance(a, torch.SymInt):
+                if a.node.constant is not None:
+                    return a.node.constant
+                else:
+                    return a
             node = super().create_arg(a)
             if (
                 isinstance(a, torch.Tensor)
@@ -348,6 +354,11 @@ class _ExportPassBase(PassBase):
             elif target == torch.ops.higher_order.map_impl:
                 f, mapped_args, operands = args  # type: ignore[assignment]
                 return self.callback.call_map(f, mapped_args, operands, meta)
+            elif target == torch.ops.higher_order.scan:
+                combine_fn, init, xs, additional_inputs = args  # type: ignore[assignment]
+                return self.callback.call_scan(
+                    combine_fn, init, xs, additional_inputs, meta
+                )
             # For other unregistered HigherOrderOps, just interpret them blindly
             elif isinstance(target, torch._ops.HigherOrderOperator):
                 return self.callback._fx(
@@ -545,6 +556,40 @@ class _ExportPassBase(PassBase):
             meta,
         )
 
+    def call_scan(
+        self,
+        combine_fn: torch.fx.GraphModule,
+        init: List[ProxyValue],
+        xs: List[Argument],
+        additional_inputs: List[ProxyValue],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        # Get the expected x element shapes from the combine_fn's placeholders
+        # The combine_fn expects: (carry..., x_element..., additional_inputs...)
+        combine_fn_placeholders = [
+            n for n in combine_fn.graph.nodes if n.op == "placeholder"
+        ]
+        num_init = len(init)
+        # The x_element placeholders are at indices [num_init : num_init + num_xs]
+        xs_element_data = []
+        for i in range(0, len(xs)):
+            ph = combine_fn_placeholders[num_init + i]
+            # Use the placeholder's val which has the correct shape
+            xs_element_data.append(ph.meta["val"])
+
+        combine_fn_result = self.call_submodule(
+            combine_fn, (*init, *xs_element_data, *additional_inputs)
+        )
+        assert combine_fn_result is not None
+
+        return self._fx(
+            "call_function",
+            torch.ops.higher_order.scan,
+            (combine_fn_result.graph_module, init, xs, additional_inputs),
+            {},
+            meta,
+        )
+
     def call_getitem(
         self, value: ProxyValue, key: int, meta: NodeMetadata
     ) -> ProxyValue:
@@ -593,14 +638,13 @@ class _ExportPassBase(PassBase):
                 ), "Multiple fake tensor mode detected."
                 fake_tensor_mode = i.fake_mode
         if fake_tensor_mode is None:
-            self.tracer.fake_tensor_mode = FakeTensorMode(allow_non_fake_inputs=True)
-            fake_tensor_mode = nullcontext()  # type: ignore[assignment]
+            fake_tensor_mode = FakeTensorMode(allow_non_fake_inputs=True)
             dispatcher_mode = nullcontext()  # type: ignore[assignment]
         else:
             fake_tensor_mode.allow_non_fake_inputs = True
-            self.tracer.fake_tensor_mode = fake_tensor_mode
             dispatcher_mode = enable_python_dispatcher()  # type: ignore[assignment]
-        self.fake_tensor_mode = self.tracer.fake_tensor_mode
+        self.tracer.fake_tensor_mode = fake_tensor_mode
+        self.fake_tensor_mode = fake_tensor_mode
 
         with fake_tensor_mode, dispatcher_mode:  # type: ignore[assignment, union-attr]
             result = self.call_submodule(graph_module, tuple(inputs))

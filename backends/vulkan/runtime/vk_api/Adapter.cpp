@@ -22,7 +22,8 @@ void find_compute_queues(
     const PhysicalDevice& physical_device,
     const uint32_t num_queues_to_create,
     std::vector<VkDeviceQueueCreateInfo>& queue_create_infos,
-    std::vector<std::pair<uint32_t, uint32_t>>& queues_to_get) {
+    std::vector<std::pair<uint32_t, uint32_t>>& queues_to_get,
+    std::vector<std::vector<float>>& queue_priorities) {
   queue_create_infos.reserve(num_queues_to_create);
   queues_to_get.reserve(num_queues_to_create);
 
@@ -36,14 +37,14 @@ void find_compute_queues(
       const uint32_t queues_to_init =
           std::min(remaining_queues, queue_properties.queueCount);
 
-      const std::vector<float> queue_priorities(queues_to_init, 1.0f);
+      queue_priorities.emplace_back(queues_to_init, 1.0f);
       queue_create_infos.push_back({
           VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, // sType
           nullptr, // pNext
           0u, // flags
           family_i, // queueFamilyIndex
           queues_to_init, // queueCount
-          queue_priorities.data(), // pQueuePriorities
+          queue_priorities.back().data(), // pQueuePriorities
       });
 
       for (size_t queue_i = 0; queue_i < queues_to_init; ++queue_i) {
@@ -90,8 +91,13 @@ VkDevice create_logical_device(
 
   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
   std::vector<std::pair<uint32_t, uint32_t>> queues_to_get;
+  std::vector<std::vector<float>> queue_priorities;
   find_compute_queues(
-      physical_device, num_queues_to_create, queue_create_infos, queues_to_get);
+      physical_device,
+      num_queues_to_create,
+      queue_create_infos,
+      queues_to_get,
+      queue_priorities);
 
   // Create the VkDevice
   std::vector<const char*> requested_device_extensions{
@@ -113,9 +119,16 @@ VkDevice create_logical_device(
 #ifdef VK_KHR_shader_integer_dot_product
       VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME,
 #endif /* VK_KHR_shader_integer_dot_product */
-#if defined(VK_KHR_pipeline_executable_properties) && defined(VULKAN_DEBUG)
+#if defined(VK_KHR_pipeline_executable_properties) && \
+    defined(ETVK_INSPECT_PIPELINES)
       VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME,
-#endif /* VK_KHR_pipeline_executable_properties */
+#endif /* VK_KHR_pipeline_executable_properties && ETVK_INSPECT_PIPELINES */
+#ifdef VK_KHR_cooperative_matrix
+      VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,
+#endif /* VK_KHR_cooperative_matrix */
+#ifdef VK_NV_cooperative_matrix2
+      VK_NV_COOPERATIVE_MATRIX_2_EXTENSION_NAME,
+#endif /* VK_NV_cooperative_matrix2 */
   };
 
   std::vector<const char*> enabled_device_extensions;
@@ -171,6 +184,20 @@ VkDevice create_logical_device(
   shader_int_dot_product_features.pNext = extension_list_top;
   extension_list_top = &shader_int_dot_product_features;
 #endif /* VK_KHR_shader_integer_dot_product */
+
+#ifdef VK_KHR_cooperative_matrix
+  VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperative_matrix_features{
+      physical_device.cooperative_matrix_features};
+  cooperative_matrix_features.pNext = extension_list_top;
+  extension_list_top = &cooperative_matrix_features;
+#endif /* VK_KHR_cooperative_matrix */
+
+#ifdef VK_NV_cooperative_matrix2
+  VkPhysicalDeviceCooperativeMatrix2FeaturesNV cooperative_matrix2_features{
+      physical_device.cooperative_matrix2_features};
+  cooperative_matrix2_features.pNext = extension_list_top;
+  extension_list_top = &cooperative_matrix2_features;
+#endif /* VK_NV_cooperative_matrix2 */
 
   device_create_info.pNext = extension_list_top;
 
@@ -259,7 +286,7 @@ Adapter::Adapter(
     const uint32_t num_queues,
     const std::string& cache_data_path)
     : queue_usage_mutex_{},
-      physical_device_(physical_device),
+      physical_device_(instance, physical_device),
       queues_{},
       queue_usage_{},
       queue_mutexes_{},
@@ -276,8 +303,13 @@ Adapter::Adapter(
       owns_device_{false} {
   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
   std::vector<std::pair<uint32_t, uint32_t>> queues_to_get;
+  std::vector<std::vector<float>> queue_priorities;
   find_compute_queues(
-      physical_device_, num_queues, queue_create_infos, queues_to_get);
+      physical_device_,
+      num_queues,
+      queue_create_infos,
+      queues_to_get,
+      queue_priorities);
   populate_queue_info(
       physical_device_, device_.handle, queues_to_get, queues_, queue_usage_);
 }

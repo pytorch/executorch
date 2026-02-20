@@ -9,16 +9,20 @@ def cuda_shim_cpp_unittest(name):
             "test_" + name + ".cpp",
         ],
         deps = [
-            "//executorch/backends/aoti:common_shims",
             "//executorch/backends/cuda/runtime:runtime_shims",
-            "//executorch/extension/tensor:tensor",
+            "//executorch/backends/aoti:aoti_common_slim",
             "//executorch/runtime/core:core",
             "//executorch/runtime/platform:platform",
-            "//executorch/runtime/core/exec_aten:lib",
         ],
+
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
     )
 
 def define_common_targets():
@@ -32,3 +36,8 @@ def define_common_targets():
     cuda_shim_cpp_unittest("aoti_torch_create_tensor_from_blob_v2")
     cuda_shim_cpp_unittest("aoti_torch__reinterpret_tensor")
     cuda_shim_cpp_unittest("aoti_torch_copy_")
+    cuda_shim_cpp_unittest("aoti_torch_cuda_guard")
+    cuda_shim_cpp_unittest("aoti_torch_cuda__weight_int4pack_mm")
+    cuda_shim_cpp_unittest("aoti_torch_new_tensor_handle")
+    cuda_shim_cpp_unittest("aoti_torch_item_bool")
+    cuda_shim_cpp_unittest("aoti_torch_assign_tensors_out")

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,8 +6,11 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
-from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -20,9 +23,7 @@ edge_gelu = (exir_ops.edge.aten.gelu.default,)
 
 
 def _get_gelu_ops(op) -> tuple:
-    """
-    Returns the operators needed to decompose GELU
-    """
+    """Returns the operators needed to decompose GELU."""
 
     if op in edge_gelu:
         return (
@@ -43,11 +44,10 @@ def _get_gelu_ops(op) -> tuple:
     raise RuntimeError(f"Can't get GeLU decomposition ops for op {op}")
 
 
-class DecomposeGeluPass(ExportPass):
-    """
-    This pass decomposes the GELU operator into primitive ops.
-    Aiming to adhere closely to the reference implementations built into
-    ExecuTorch. Including using the same pre-calculated constants.
+class DecomposeGeluPass(ArmPass):
+    """This pass decomposes the GELU operator into primitive ops. Aiming to
+    adhere closely to the reference implementations built into ExecuTorch.
+    Including using the same pre-calculated constants.
 
     This operator has two formulae depending on the value of the
     approximate argument. Examples below include the added full
@@ -81,10 +81,11 @@ class DecomposeGeluPass(ExportPass):
         %op5 = add(%op4, %FULL_1)
         %op6 = mul(%x, %op5)
         %op7 = mul(%op6, %FULL_0_5)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
-        ComputeConstantOpsAOT,
+        ComputeConstantOpsAOTPass,
         InsertTableOpsPass,
         MatchArgDtypePass,
         MatchArgRanksPass,
@@ -92,6 +93,9 @@ class DecomposeGeluPass(ExportPass):
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in torch_gelu + edge_gelu:
+            return super().call_operator(op, args, kwargs, meta)
+        if self._is_quantized_meta(meta):
+            # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 
         full_op, add_op, mul_op, tanh_op, erf_op = _get_gelu_ops(op)
@@ -113,7 +117,10 @@ class DecomposeGeluPass(ExportPass):
         if approximate == "none":
             # Constant mirrors ExecuTorch implementation for parity.
             FULL_SQRT1_2 = super().call_operator(
-                full_op, ([1] * len(shape), 0.70710678118654752440), {}, meta
+                full_op,
+                ([1] * len(shape), 0.70710678118654752440),
+                {"dtype": dtype},
+                meta,
             )
 
             op1 = super().call_operator(mul_op, (input, FULL_SQRT1_2), {}, meta)

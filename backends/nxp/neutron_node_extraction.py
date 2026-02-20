@@ -21,6 +21,7 @@ class NeutronNodeArtifacts:
     microcode: np.ndarray
     weights: np.ndarray
     kernels: np.ndarray
+    payload_version: int
 
 
 def extract_artifacts_from_neutron_node(
@@ -123,7 +124,12 @@ def extract_artifacts_from_neutron_node(
     output_names = []
     output_indices = []
     graph_outputs = sub_graph.OutputsAsNumpy()
+    payload_version = 0
+    # Ignore the extra outputs: scratch and eventually also profile and debug
     node_outputs = neutron_node.OutputsAsNumpy()[:-1]
+    if len(graph_outputs) == len(node_outputs) - 2:
+        payload_version = 1
+        node_outputs = node_outputs[:-2]
     for tensor_idx in node_outputs:
         which_graph_output = np.where(graph_outputs == tensor_idx)[0]
         assert (
@@ -142,4 +148,5 @@ def extract_artifacts_from_neutron_node(
         microcode,
         weights,
         kernels,
+        payload_version,
     )

@@ -162,14 +162,12 @@ void add_matmul_naive_texture3d_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers
-      {
-          graph.sizes_ubo(out),
-          graph.logical_limits_ubo(out),
-          graph.sizes_ubo(mat1),
-          graph.sizes_ubo(mat2),
-      },
-      // Push Constants
       {},
+      // Push Constants
+      {graph.sizes_pc_of(out),
+       graph.sizes_pc_of(mat1),
+       graph.sizes_pc_of(mat2),
+       graph.logical_limits_pc_of(out)},
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(mat1),

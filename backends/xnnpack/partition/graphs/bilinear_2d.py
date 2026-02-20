@@ -7,10 +7,10 @@
 from functools import lru_cache
 from typing import Dict, List
 
-import executorch.exir as exir
 import torch
 
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
+from executorch.exir import to_edge
 
 
 @lru_cache(maxsize=None)
@@ -31,21 +31,19 @@ def _get_bilinear_2d_graphs():
 
     sample_inputs = (torch.randn(1, 3, 4, 4),)
     _bilinear2d_graphs = {}
-    capture_configs = [
-        exir.CaptureConfig(enable_aot=True, _unlift=False),
-        exir.CaptureConfig(enable_aot=True, _unlift=True),
-    ]
     for align_corners in [True, False]:
-        for config in capture_configs:
-            for skip_dim_order_flag in [True, False]:
-                edge = exir.capture(
-                    bilinear2d(align_corners), sample_inputs, config
-                ).to_edge(
-                    config=get_xnnpack_edge_compile_config(
-                        skip_dim_order=skip_dim_order_flag
-                    )
-                )
-                _bilinear2d_graphs[edge.exported_program.graph_module] = align_corners
+        for skip_dim_order_flag in [True, False]:
+            # Use torch.export instead of deprecated exir.capture
+            exported_program = torch.export.export(
+                bilinear2d(align_corners), sample_inputs, strict=True
+            )
+            edge = to_edge(
+                exported_program,
+                compile_config=get_xnnpack_edge_compile_config(
+                    skip_dim_order=skip_dim_order_flag
+                ),
+            )
+            _bilinear2d_graphs[edge.exported_program().graph_module] = align_corners
     return _bilinear2d_graphs
 
 

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -20,7 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-from torchaudio import models
+from torchaudio import models  # type: ignore[import-untyped]
 
 input_t = Tuple[torch.Tensor]  # Input x
 
@@ -72,6 +72,8 @@ def test_w2l_tosa_INT():
         aten_op=[],
         exir_op=TestW2L.all_operators,
         use_to_edge_transform_and_lower=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -111,26 +113,26 @@ def test_w2l_u85_INT():
 
 @common.SkipIfNoModelConverter
 @pytest.mark.slow
-def test_w2l_vgf_INT():
+def test_w2l_vgf_quant():
     pipeline = VgfPipeline[input_t](
         TestW2L.create_model(),
         TestW2L.model_example_inputs,
         aten_op=[],
         exir_op=TestW2L.all_operators,
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_w2l_vgf_FP():
+def test_w2l_vgf_no_quant():
     pipeline = VgfPipeline[input_t](
         TestW2L.create_model(),
         TestW2L.model_example_inputs,
         aten_op=[],
         exir_op=TestW2L.all_operators,
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()

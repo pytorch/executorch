@@ -42,7 +42,8 @@
   vkcompute::api::StagingBuffer staging_buffer_##tensor(    \
       vkcompute::api::context(),                            \
       vkapi::kFloat,                                        \
-      tensor.staging_buffer_numel());                       \
+      tensor.staging_buffer_numel(),                        \
+      vkapi::CopyDirection::HOST_TO_DEVICE);                \
   record_nchw_to_image_op(                                  \
       vkcompute::api::context(), staging_buffer_##tensor.buffer(), tensor);
 
@@ -50,7 +51,8 @@
   vkcompute::api::StagingBuffer staging_buffer_##tensor(      \
       vkcompute::api::context(),                              \
       vkapi::kFloat,                                          \
-      tensor.staging_buffer_numel());                         \
+      tensor.staging_buffer_numel(),                          \
+      vkapi::CopyDirection::DEVICE_TO_HOST);                  \
   record_image_to_nchw_op(                                    \
       vkcompute::api::context(), tensor, staging_buffer_##tensor.buffer());
 
@@ -133,7 +135,8 @@ void record_matmul_texture3d(
     vkcompute::api::Context* context,
     vkcompute::api::vTensor& out,
     vkcompute::api::vTensor& mat1,
-    vkcompute::api::vTensor& mat2);
+    vkcompute::api::vTensor& mat2,
+    bool mat2_is_transposed = false);
 
 //
 // Input & Output Utilities

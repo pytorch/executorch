@@ -16,6 +16,7 @@
 #include <memory>
 #include <string>
 
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/attention_sink_rope_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
@@ -32,12 +33,17 @@ namespace example {
 enum DecoderModelVersion {
   kLlama2 = 0,
   kLlama3,
+  kGemma,
   kGemma3,
+  kGranite,
   kPhi4,
   kQwen2_5,
   kQwen3,
   kSmollm2_135m,
-  kSmollm3
+  kSmollm3,
+  kCodegen,
+  kGlm,
+  kGemma2,
 };
 
 enum KvBitWidth {
@@ -57,11 +63,13 @@ class Runner : public executorch::extension::llm::IRunner {
       const std::string& dump_logits_path,
       const float temperature = 0.8f,
       const int eval_mode = EvalMode::kHybrid,
-      const std::string& kv_updater = "SmartMask",
+      const bool shared_buffer = false,
       const int ngram = 0,
       const int window = 0,
       const int gcap = 0,
-      std::unique_ptr<tokenizers::Tokenizer> tokenizer = nullptr);
+      std::unique_ptr<tokenizers::Tokenizer> tokenizer = nullptr,
+      std::unique_ptr<executorch::extension::Module>
+          attention_sink_rope_module = nullptr);
 
   bool is_loaded() const override;
   executorch::runtime::Error load() override;
@@ -92,6 +100,7 @@ class Runner : public executorch::extension::llm::IRunner {
   };
 
   std::unique_ptr<executorch::extension::Module> module_;
+  std::unique_ptr<executorch::extension::Module> attention_sink_rope_module_;
   int32_t context_len_{0};
 
   int ngram_{0};
@@ -108,13 +117,14 @@ class Runner : public executorch::extension::llm::IRunner {
   std::string dump_logits_path_;
   float temperature_;
   EvalMode eval_mode_;
+  bool shared_buffer_;
 
   DecoderModelVersion decoder_model_version_;
-  KVManagerMode kv_updater_;
   std::unique_ptr<IMemAlloc> buffer_manager_;
   std::unique_ptr<KVManager<T>> kv_manager_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::unique_ptr<DecoderRunner> decoder_runner_;
+  std::unique_ptr<AttentionSinkRopeRunner> attention_sink_rope_runner_;
   std::unique_ptr<PromptProcessor<T>> prompt_processor_;
   std::unique_ptr<TokenGenerator<T>> token_generator_;
 

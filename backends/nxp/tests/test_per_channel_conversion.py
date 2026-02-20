@@ -30,12 +30,19 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelLastPreprocess,
 )
 from executorch.backends.nxp.tests.models import Conv2dModule
-from executorch.backends.nxp.tests.test_quantizer import _get_target_name
+from executorch.exir.dialects._ops import ops as exir_ops
+from parameterized import parameterized
 
 from torch import fx
 from torch._ops import OpOverload
 from torch.export import ExportedProgram
-from torchao.quantization.pt2e import MinMaxObserver, PerChannelMinMaxObserver
+from torchao.quantization.pt2e import (
+    FusedMovingAvgObsFakeQuantize,
+    MinMaxObserver,
+    MovingAverageMinMaxObserver,
+    MovingAveragePerChannelMinMaxObserver,
+    PerChannelMinMaxObserver,
+)
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     QuantizationConfig,
@@ -45,8 +52,8 @@ from torchao.quantization.pt2e.quantizer import (
 
 class Conv2dPatternPerChannel(QuantizationPattern):
 
-    def __init__(self, is_per_channel: bool):
-        super().__init__()
+    def __init__(self, is_per_channel: bool, is_qat: bool):
+        super().__init__(is_qat=is_qat)
         self.is_per_channel = is_per_channel
 
     def partition_types(self) -> list[OpOverload]:
@@ -80,9 +87,20 @@ class Conv2dPatternPerChannel(QuantizationPattern):
             if self.is_per_channel
             else torch.per_tensor_symmetric
         )
-        weight_observer_or_fake_quant_ctr = (
-            PerChannelMinMaxObserver if self.is_per_channel else MinMaxObserver
-        )
+        if self.is_qat:
+            observer = (
+                MovingAveragePerChannelMinMaxObserver
+                if self.is_per_channel
+                else MovingAverageMinMaxObserver
+            )
+            weight_observer_or_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
+                observer=observer
+            )
+        else:
+            weight_observer_or_fake_quant_ctr = (
+                PerChannelMinMaxObserver if self.is_per_channel else MinMaxObserver
+            )
+
         weight_quantization_spec = QuantizationSpec(
             dtype=torch.int8,
             observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
@@ -108,22 +126,31 @@ class TestPerChannelConversion(unittest.TestCase):
         torch.manual_seed(25)
         np.random.seed(25)
 
-    def test_per_channel_convolution(self):
+    @parameterized.expand([("QAT", True), ("PTQ", False)])
+    def test_per_channel_convolution(self, _, use_qat: bool):
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             model = Conv2dModule(
                 in_channels=8, out_channels=32, kernel_size=5, padding=3
             )
             input_shape = (1, 8, 32, 32)
 
-            static_qconfig = QuantizationConfig(act_qspec, act_qspec, wgt_qspec, None)
+            activation_qspec = act_qspec(is_qat=use_qat)
+            static_qconfig = QuantizationConfig(
+                activation_qspec, activation_qspec, wgt_qspec, None
+            )
             _ = to_quantized_edge_program(
                 model,
                 input_shape,
                 get_quantizer_fn=lambda: NeutronAtenQuantizer(
-                    Conv2dPatternPerChannel(is_per_channel=True), static_qconfig
+                    Conv2dPatternPerChannel(is_per_channel=True, is_qat=use_qat),
+                    static_qconfig,
                 ),
+                use_qat=use_qat,
+                use_neutron_for_format_conversion=False,
             )
 
             tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
@@ -144,10 +171,12 @@ class TestPerChannelConversion(unittest.TestCase):
 
             nodes = list(exported_program.graph.nodes)
 
-            assert _get_target_name(nodes[8]).endswith(
-                "quantized_decomposed.dequantize_per_channel.default"
+            assert (
+                nodes[8].target
+                == exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
             )
-            assert _get_target_name(nodes[9]).endswith(
-                "quantized_decomposed.dequantize_per_channel.default"
+            assert (
+                nodes[9].target
+                == exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
             )
-            assert nodes[10].name == "aten_convolution_default"
+            assert nodes[10].target == exir_ops.edge.aten.convolution.default

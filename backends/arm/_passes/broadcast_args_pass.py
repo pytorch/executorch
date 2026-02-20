@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,6 +11,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
+from executorch.backends.arm.tosa.specification import get_context_spec
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -19,9 +20,10 @@ from torch.fx import GraphModule, Node
 
 
 class BroadcastArgsPass(ArmPass):
-    """
-    Pass to manually broadcast arguments by inserting repeats.
+    """Pass to manually broadcast arguments by inserting repeats.
+
     This is done when more than one arg needs broadcasting.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -34,6 +36,9 @@ class BroadcastArgsPass(ArmPass):
     }
 
     def call(self, graph_module: GraphModule) -> PassResult:
+        tosa_spec = get_context_spec()
+        if not tosa_spec.is_U55_subset:
+            return PassResult(graph_module, False)
         for node in graph_module.graph.nodes:
             if node.op != "call_function" or node.target not in self.targeted_ops:
                 continue
@@ -59,6 +64,7 @@ class BroadcastArgsPass(ArmPass):
                             args=(arg, multiples),
                             kwargs={},
                             from_node=node,
+                            inherit_qparams=False,
                         )
                         node.replace_input_with(arg, repeat)
 

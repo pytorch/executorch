@@ -31,6 +31,7 @@ class GeneratedOpBenchmark_{op_name} : public ::benchmark::Fixture {{
   {arg_valuerefs}
 
   void SetUp(::benchmark::State& state) override {{
+    torch::manual_seed(42);
     GraphConfig config;
     config.descriptor_pool_safety_factor = 2.0;
     test_dtype = at::ScalarType(state.range(0));
@@ -166,6 +167,7 @@ class VkBenchmarkGen(CorrectnessTestGen):
 cpp_test_template = """
 #include <iostream>
 #include <ATen/ATen.h>
+#include <torch/torch.h>
 #include <benchmark/benchmark.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
@@ -199,10 +201,12 @@ vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {{
 at::Tensor make_casted_randint_tensor(
     std::vector<int64_t> sizes,
     at::ScalarType dtype = at::kFloat,
-    int low = 0,
-    int high = 10) {{
+    int64_t low = 1,
+    int64_t high = 20) {{
 
-  return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
+  // For some reason range needs to be passed in as explicit variables
+  // otherwise 0s will be generated.
+  return at::randint(1, 20, sizes, at::device(at::kCPU).dtype(dtype));
 }}
 
 at::Tensor make_rand_tensor(
@@ -234,14 +238,14 @@ at::Tensor make_seq_tensor(
 
   std::vector<float> values(n);
   for (int i=0;i<n;i++) {{
-    values[i] = (float) i;
+    values[i] = (float) (i + 1);
   }}
 
   // Clone as original data will be deallocated upon return.
   return at::from_blob(values.data(), sizes, at::kFloat).toType(dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor_1d(std::vector<int64_t> indices) {{
+at::Tensor make_index_tensor_1d(std::vector<int32_t> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{static_cast<int64_t>(indices.size())}};
 
@@ -249,7 +253,7 @@ at::Tensor make_index_tensor_1d(std::vector<int64_t> indices) {{
   return at::from_blob(indices.data(), sizes, dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor_2d(std::vector<std::vector<int64_t>> indices) {{
+at::Tensor make_index_tensor_2d(std::vector<std::vector<int32_t>> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{
     static_cast<int64_t>(indices.size()),
@@ -265,7 +269,7 @@ at::Tensor make_index_tensor_2d(std::vector<std::vector<int64_t>> indices) {{
   return at::from_blob(acc.data(), sizes, dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor_3d(std::vector<std::vector<std::vector<int64_t>>> indices) {{
+at::Tensor make_index_tensor_3d(std::vector<std::vector<std::vector<int32_t>>> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{
     static_cast<int64_t>(indices.size()),

@@ -39,16 +39,7 @@ def define_common_targets(is_xplat = False, platforms = []):
             "runtime/operations/*.h",
         ]),
         "srcs": MPS_BACKEND_BUCK_SRCS,
-        "visibility": [
-            "//executorch/backends/apple/...",
-            "//executorch/examples/...",
-            "//executorch/exir/backend:backend_lib",
-            "//executorch/extension/pybindings/...",
-            "//executorch/runtime/backend/...",
-            "//executorch/devtools/runners/...",
-            "//executorch/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        "visibility": ["PUBLIC"],
         "link_whole": True,
     }
 

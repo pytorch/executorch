@@ -19,6 +19,8 @@ public class LlmModuleConfig {
   private final float temperature;
   private final String dataPath;
   private final int modelType;
+  private final int numBos;
+  private final int numEos;
 
   private LlmModuleConfig(Builder builder) {
     this.modulePath = builder.modulePath;
@@ -26,6 +28,8 @@ public class LlmModuleConfig {
     this.temperature = builder.temperature;
     this.dataPath = builder.dataPath;
     this.modelType = builder.modelType;
+    this.numBos = builder.numBos;
+    this.numEos = builder.numEos;
   }
 
   /** Model type constant for text-only models. */
@@ -33,6 +37,9 @@ public class LlmModuleConfig {
 
   /** Model type constant for text-and-vision multimodal models. */
   public static final int MODEL_TYPE_TEXT_VISION = 2;
+
+  /** Model type constant for generic multimodal models. */
+  public static final int MODEL_TYPE_MULTIMODAL = 2;
 
   /**
    * Creates a new Builder instance for constructing LlmModuleConfig objects.
@@ -80,6 +87,20 @@ public class LlmModuleConfig {
   }
 
   /**
+   * @return Number of BOS tokens to prepend
+   */
+  public int getNumBos() {
+    return numBos;
+  }
+
+  /**
+   * @return Number of EOS tokens to append
+   */
+  public int getNumEos() {
+    return numEos;
+  }
+
+  /**
    * Builder class for constructing LlmModuleConfig instances with optional parameters.
    *
    * <p>The builder provides a fluent interface for configuring model parameters and validates
@@ -91,6 +112,8 @@ public class LlmModuleConfig {
     private float temperature = 0.8f;
     private String dataPath = "";
     private int modelType = MODEL_TYPE_TEXT;
+    private int numBos = 0;
+    private int numEos = 0;
 
     Builder() {}
 
@@ -141,11 +164,33 @@ public class LlmModuleConfig {
     /**
      * Sets the model type (text-only or multimodal).
      *
-     * @param modelType One of MODEL_TYPE_TEXT or MODEL_TYPE_TEXT_VISION
+     * @param modelType One of MODEL_TYPE_TEXT, MODEL_TYPE_TEXT_VISION, MODEL_TYPE_MULTIMODAL
      * @return This builder instance for method chaining
      */
     public Builder modelType(int modelType) {
       this.modelType = modelType;
+      return this;
+    }
+
+    /**
+     * Sets the number of BOS tokens to prepend.
+     *
+     * @param numBos number of BOS tokens
+     * @return This builder instance for method chaining
+     */
+    public Builder numBos(int numBos) {
+      this.numBos = numBos;
+      return this;
+    }
+
+    /**
+     * Sets the number of EOS tokens to append.
+     *
+     * @param numEos number of EOS tokens
+     * @return This builder instance for method chaining
+     */
+    public Builder numEos(int numEos) {
+      this.numEos = numEos;
       return this;
     }
 

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,7 +22,7 @@ import argparse
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar, List, Optional
+from typing import ClassVar, Dict, List, Optional
 
 
 ################################################################################
@@ -39,6 +40,7 @@ class ModelType(str, Enum):
     static_llama = "static_llama"
     qwen2_5_0_5b = "qwen2_5_0_5b"
     qwen2_5_1_5b = "qwen2_5_1_5b"
+    qwen2_5_coder_32b = "qwen2_5_coder_32b"
     qwen3_0_6b = "qwen3_0_6b"
     qwen3_1_7b = "qwen3_1_7b"
     qwen3_4b = "qwen3_4b"
@@ -47,6 +49,7 @@ class ModelType(str, Enum):
     lfm2_350m = "lfm2_350m"
     lfm2_700m = "lfm2_700m"
     lfm2_1_2b = "lfm2_1_2b"
+    lfm2_5_1_2b = "lfm2_5_1_2b"
 
 
 class PreqMode(str, Enum):
@@ -59,6 +62,36 @@ class PreqMode(str, Enum):
 
     preq_8da4w = "8da4w"
     preq_8da4w_out_8da8w = "8da4w_output_8da8w"
+
+
+@dataclass
+class LoraConfig:
+    """LoRA adapter configuration.
+
+    Can be created in two ways:
+
+    1. From an adapter_config JSON file:
+        LoraConfig(
+            adapter_checkpoint="/path/to/adapter.safetensors",
+            adapter_config="/path/to/adapter_config.json",
+        )
+        Note: user is responsible for parsing the config and
+        ensure it doesn't conflict with any explicit values.
+
+    2. With explicit values:
+        LoraConfig(
+            adapter_checkpoint="/path/to/adapter.safetensors",
+            lora_rank=16,
+            lora_alpha=32,
+            target_modules=["q_proj", "v_proj"],
+        )
+    """
+
+    adapter_checkpoint: str
+    adapter_config: Optional[str] = None
+    lora_rank: int = 0
+    lora_alpha: int = 0
+    target_modules: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -76,18 +109,12 @@ class BaseConfig:
             If left empty, the model will either be initialized with random weights
             if it is a Llama model or the weights will be downloaded from HuggingFace
             if it is a non-Llama model.
-        checkpoint_dir: Path to directory containing sharded checkpoint files.
-        adapter_checkpoint: Path to the adapter.pt file from torchtune. Used if
-            the model has trained LoRA adapters. Must provide
-            adapter_config.json.
-        adapter_config: Path to the adapter_config.json file from torchtune.
-            Used if the model has trained LoRA adapters. Must provide adapter.pt.
+        lora_config: LoRA adapter configuration.
         tokenizer_path: Path to the tokenizer file.
         metadata: Json string containing metadata information.
             e.g. '"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
         use_lora: Only for use with QAT. Rank of the LoRA adapter, disabled
             if set to 0.
-        fairseq2: For legacy internal use cases, this is safe to ignore.
         preq_mode: Legacy option to specify how prequantized weights are loaded.
             Going forward, ExecuTorch supports loading weights prequantized through
             TorchAo as-is, without any special handling.
@@ -99,13 +126,10 @@ class BaseConfig:
     model_class: ModelType = ModelType.llama3
     params: Optional[str] = None
     checkpoint: Optional[str] = None
-    checkpoint_dir: Optional[str] = None
-    adapter_checkpoint: Optional[str] = None
-    adapter_config: Optional[str] = None
+    lora_config: Optional[LoraConfig] = None
     tokenizer_path: Optional[str] = None
     metadata: Optional[str] = None
     use_lora: int = 0
-    fairseq2: bool = False
     preq_mode: Optional[PreqMode] = None
     preq_group_size: int = 32
     preq_embedding_quantize: str = "8,0"
@@ -215,9 +239,10 @@ class ExportConfig:
         so_library: Shared library to specify custom quantized operators.
         export_only: Whether to stop right after torch.export() and
             just save the exported .pt2 graph file.
-        foundation_weights_file: configure the foundation weights of a model
-            to be placed in a separate file, external to the PTE. Pass the
-            intended file name here.
+        foundation_weights_file: place the foundation weights of the model into
+            a separate file, external to the PTE. Pass the file name here.
+        lora_weights_file: place the lora weights of the model into a
+            separate file, external to the PTE. Pass the file name here.
     """
 
     max_seq_length: int = 128
@@ -227,6 +252,7 @@ class ExportConfig:
     so_library: Optional[str] = None
     export_only: bool = False
     foundation_weights_file: Optional[str] = None
+    lora_weights_file: Optional[str] = None
 
     def __post_init__(self):
         if self.max_context_length < self.max_seq_length:
@@ -264,6 +290,37 @@ class DebugConfig:
 
 
 ################################################################################
+############################## MultimethodLoraConfig ###########################
+################################################################################
+
+
+@dataclass
+class MultimethodLoraConfig:
+    """Configuration for exporting multiple methods to a single .pte file.
+
+    Maps method names to optional LoRA configurations. A None value means
+    the method uses base model weights.
+
+    Attributes:
+        methods: Dict mapping method names to optional LoRA configs.
+            Empty dict disables multimethod_lora export.
+
+    Example:
+        MultimethodLoraConfig(methods={
+            "forward": None,  # base model
+            "lora_forward": lora_config,  # LoRA variant
+        })
+    """
+
+    methods: Dict[str, Optional[LoraConfig]] = field(default_factory=dict)
+
+    @property
+    def enabled(self) -> bool:
+        """Returns True if multimethod_lora export is configured."""
+        return len(self.methods) > 0
+
+
+################################################################################
 ############################# QuantizationConfig ###############################
 ################################################################################
 
@@ -279,6 +336,8 @@ class Pt2eQuantize(str, Enum):
 
     xnnpack_dynamic = "xnnpack_dynamic"
     xnnpack_dynamic_qc4 = "xnnpack_dynamic_qc4"
+    openvino_4wo = "openvino_4wo"
+    openvino_8wo = "openvino_8wo"
     qnn_8a8w = "qnn_8a8w"
     qnn_16a16w = "qnn_16a16w"
     qnn_16a4w = "qnn_16a4w"
@@ -288,6 +347,7 @@ class Pt2eQuantize(str, Enum):
     coreml_baseline_8a_c8w = "coreml_baseline_8a_c8w"
     coreml_baseline_8a_c4w = "coreml_baseline_8a_c4w"
     vulkan_8w = "vulkan_8w"
+    tosa_8a8w = "tosa_8a8w"
 
 
 class SpinQuant(str, Enum):
@@ -453,6 +513,18 @@ class MPSConfig:
 
 
 @dataclass
+class OpenvinoConfig:
+    """
+    Configures the QNN backend.
+    """
+
+    enabled: bool = False
+    device: str = "CPU"
+    nncf_compression: bool = False
+    nncf_compression_group_size: int = 32
+
+
+@dataclass
 class TorchAOKernelsConfig:
     """
     Configures the torchao-kernels backend.
@@ -460,6 +532,16 @@ class TorchAOKernelsConfig:
 
     use_torchao_kernels_linear: bool = False
     use_torchao_kernels_tied_embedding: bool = False
+
+
+@dataclass
+class TosaConfig:
+    """
+    Configures the TOSA backend.
+    """
+
+    enabled: bool = False
+    version: str = "TOSA-1.0+INT"
 
 
 @dataclass
@@ -474,7 +556,9 @@ class BackendConfig:
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
     mps: MPSConfig = field(default_factory=MPSConfig)
+    openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
+    tosa: TosaConfig = field(default_factory=TosaConfig)
 
 
 ################################################################################
@@ -492,6 +576,9 @@ class LlmConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
+    multimethod_lora: MultimethodLoraConfig = field(
+        default_factory=MultimethodLoraConfig
+    )
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
 
@@ -510,20 +597,19 @@ class LlmConfig:
             llm_config.base.params = args.params
         if hasattr(args, "checkpoint"):
             llm_config.base.checkpoint = args.checkpoint
-        if hasattr(args, "checkpoint_dir"):
-            llm_config.base.checkpoint_dir = args.checkpoint_dir
-        if hasattr(args, "adapter_checkpoint"):
-            llm_config.base.adapter_checkpoint = args.adapter_checkpoint
-        if hasattr(args, "adapter_config"):
-            llm_config.base.adapter_config = args.adapter_config
+        if hasattr(args, "adapter_checkpoint") and args.adapter_checkpoint:
+            if not hasattr(args, "adapter_config") or not args.adapter_config:
+                raise ValueError("--adapter_checkpoint requires --adapter_config")
+            llm_config.base.lora_config = LoraConfig(
+                adapter_checkpoint=args.adapter_checkpoint,
+                adapter_config=args.adapter_config,
+            )
         if hasattr(args, "tokenizer_path"):
             llm_config.base.tokenizer_path = args.tokenizer_path
         if hasattr(args, "metadata"):
             llm_config.base.metadata = args.metadata
         if hasattr(args, "use_lora"):
             llm_config.base.use_lora = args.use_lora
-        if hasattr(args, "fairseq2"):
-            llm_config.base.fairseq2 = args.fairseq2
 
         # PreqMode settings
         if hasattr(args, "preq_mode") and args.preq_mode:
@@ -572,6 +658,8 @@ class LlmConfig:
             llm_config.export.export_only = args.export_only
         if hasattr(args, "foundation_weights_file"):
             llm_config.export.foundation_weights_file = args.foundation_weights_file
+        if hasattr(args, "lora_weights_file"):
+            llm_config.export.lora_weights_file = args.lora_weights_file
 
         # QuantizationConfig
         if hasattr(args, "quantization_mode"):
@@ -642,6 +730,16 @@ class LlmConfig:
         # MPS
         if hasattr(args, "mps"):
             llm_config.backend.mps.enabled = args.mps
+
+        # Openvino
+        if hasattr(args, "openvino"):
+            llm_config.backend.openvino.enabled = args.openvino
+        if hasattr(args, "openvino_device"):
+            llm_config.backend.openvino.device = args.openvino_device
+        if hasattr(args, "nncf_compression"):
+            llm_config.backend.openvino.nncf_compression = args.nncf_compression
+        if hasattr(args, "group_size") and args.group_size:
+            llm_config.backend.openvino.nncf_compression_group_size = args.group_size
 
         # TorchAoKernels
         if any(

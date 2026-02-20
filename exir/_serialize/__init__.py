@@ -8,6 +8,7 @@
 
 from executorch.exir._serialize._program import (
     deserialize_pte_binary as _deserialize_pte_binary,
+    PTEFile as _PTEFile,
     serialize_pte_binary as _serialize_pte_binary,
 )
 
@@ -15,4 +16,5 @@ from executorch.exir._serialize._program import (
 __all__ = [
     "_deserialize_pte_binary",
     "_serialize_pte_binary",
+    "_PTEFile",
 ]

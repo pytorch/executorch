@@ -1,13 +1,14 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, List
 
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -25,8 +26,6 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 class RshiftVisitor(NodeVisitor):
     target = "aten.bitwise_right_shift.Tensor"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def define_node(
         self,
         node: torch.fx.Node,
@@ -34,15 +33,13 @@ class RshiftVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
             self.target,
             [*inputs, output],
             [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()
@@ -56,7 +53,7 @@ class RshiftVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().ARITHMETIC_RIGHT_SHIFT,
+            ts.Op.ARITHMETIC_RIGHT_SHIFT,
             [inputs[0].name, inputs[1].name],
             [output.name],
             attr,

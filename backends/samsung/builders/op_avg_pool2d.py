@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 from typing import cast, Dict, List
 
 import torch
@@ -49,6 +50,7 @@ class AvgPool2dVisitor(NodeVisitor):
         params["stride_w"] = stride[1]
         params["padding"] = "EXPLICIT"
         params["explicit_padding"] = explicit_padding
+        self._update_params_qdtype(node, params)
 
         if len(node.args) > 4:
             ceil_mode = cast(bool, node.args[4])
@@ -64,7 +66,5 @@ class AvgPool2dVisitor(NodeVisitor):
             assert (
                 divisor_override == kernel_size[0] * kernel_size[1]
             ), "Not supported divisor_override which is not equal to pooling region."
-
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
-
         enn_graph.define_op(node.name, "AVGPOOL2D", [input_id], [output_id], params)

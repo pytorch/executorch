@@ -16,6 +16,8 @@ class ConvParameters:
     stride: list[int]
     padding: list[int]
     dilation: list[int]
+    transposed: bool
+    out_padding: list[int]
     groups: int
 
 
@@ -33,6 +35,29 @@ def _get_IO_channels(node: Node | tflite_model.Operator) -> (int, int):
         output_channels = node.tmp_inputs[1].shape[0]  # Output channels of the weights.
 
     return input_channels, output_channels
+
+
+def get_node_tensor_params(node: Node) -> dict:
+    node_tensor_params = {}
+
+    input_tensor = node.args[0]
+    assert len(input_tensor.meta["val"].shape) in [3, 4], "Supports only Conv 1D, 2D."
+    node_tensor_params["batch_size"] = input_tensor.meta["val"].shape[0]
+    node_tensor_params["inp_channels"] = input_tensor.meta["val"].shape[1]
+    node_tensor_params["inp_height"] = input_tensor.meta["val"].shape[2]
+    if len(input_tensor.meta["val"].shape) == 4:
+        node_tensor_params["inp_width"] = input_tensor.meta["val"].shape[3]
+
+    weights = node.args[1]
+    node_tensor_params["out_channels"] = node.meta["val"].shape[1]
+    node_tensor_params["out_height"] = node.meta["val"].shape[2]
+    if len(node.meta["val"].shape) == 4:
+        node_tensor_params["out_width"] = node.meta["val"].shape[3]
+    node_tensor_params["kernel_height"] = weights.meta["val"].shape[2]
+    if len(weights.meta["val"].shape) == 4:
+        node_tensor_params["kernel_width"] = weights.meta["val"].shape[3]
+
+    return node_tensor_params
 
 
 def group_conv_convertible_as_depthwise(node: Node | tflite_model.Operator, group: int):
@@ -70,9 +95,11 @@ class ConvConversionResult:
         weight_tensor: tflite_model.Tensor,
         bias_tensor: tflite_model.Tensor,
         output_tensor: tflite_model.Tensor,
+        output_shape_tensor: tflite_model.Tensor | None = None,
     ):
         self.conv_input_tensor = input_tensor
         self.conv_weight_tensor = weight_tensor
         self.conv_bias_tensor = bias_tensor
         self.conv_output_tensor = output_tensor
+        self.output_shape_tensor = output_shape_tensor
         self.ops_list = OpsList()

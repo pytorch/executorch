@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -55,6 +55,8 @@ def test_asin_tosa_INT(test_data: Tuple):
         (test_data(),),
         aten_op=[],
         exir_op=[],
+        frobenius_threshold=0.6,  # MLETORCH-1709
+        cosine_threshold=0.8,  # MLETORCH-1709
     )
     pipeline.run()
 
@@ -83,23 +85,23 @@ def test_asin_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_asin_vgf_FP(test_data: Tuple):
+def test_asin_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t](
         Asin(),
         (test_data(),),
         aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_asin_vgf_INT(test_data: Tuple):
+def test_asin_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t](
         Asin(),
         (test_data(),),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

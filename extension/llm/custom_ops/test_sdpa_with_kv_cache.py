@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from executorch.extension.llm.custom_ops import custom_ops  # noqa
+from executorch.extension.pybindings.portable_lib import _unsafe_reset_threadpool
 
 
 def is_fbcode():
@@ -45,7 +46,6 @@ def _sdpa_with_kv_cache_ref(q, k, v, k_cache, v_cache, attn_mask, start_pos, seq
 
 
 class SDPATest(unittest.TestCase):
-
     def setUp(self):
         torch.manual_seed(42)
         self.k_cache = torch.zeros((1, 10, 8, 4))
@@ -233,7 +233,6 @@ class SDPATest(unittest.TestCase):
 
 
 class SDPAWithAttentionMaskTest(SDPATest):
-
     def setUp(self):
         SDPATest.setUp(self)
         self.mask = torch.full(
@@ -244,7 +243,6 @@ class SDPAWithAttentionMaskTest(SDPATest):
 
 
 class SDPAWithAttentionMaskLongSequenceTest(SDPATest):
-
     def setUp(self):
         SDPATest.setUp(self)
         max_context_len = 700
@@ -276,14 +274,12 @@ class SDPAWithAttentionMaskLongSequenceTest(SDPATest):
 
 
 class SDPAWithCausalTest(SDPATest):
-
     def setUp(self):
         SDPATest.setUp(self)
         self.is_causal = True
 
 
-class SDPAWithDynamicShape(unittest.TestCase):
-
+class SDPAWithDynamicShapeTest(unittest.TestCase):
     def setUp(self):
         torch.manual_seed(42)
         self.k_cache = torch.zeros((1, 10, 8, 4))
@@ -346,7 +342,6 @@ class SDPAWithDynamicShape(unittest.TestCase):
 
 
 class SDPATestWithMQA(unittest.TestCase):
-
     def setup_caches(self):
         self.k_cache = torch.zeros((1, 5, self.n_heads_kv, 4))
         self.v_cache = torch.zeros((1, 5, self.n_heads_kv, 4))
@@ -415,7 +410,6 @@ class SDPATestWithMQA(unittest.TestCase):
 
 
 class SDPATestCommon(unittest.TestCase):
-
     def setup_caches(self):
         self.k_cache = torch.zeros(
             (self.n_batch, self.max_seq_len, self.n_heads_kv, self.head_dim)
@@ -437,6 +431,10 @@ class SDPATestCommon(unittest.TestCase):
         self.head_dim = 128
         self.max_seq_len = 2048
         self.setup_caches()
+        # This setting is needed to make this test not flaky due to OMP
+        # error of "OMP: Error #131: Thread identifier invalid"
+        # See also test_quantized_sdpa.py for the same workaround
+        _unsafe_reset_threadpool(3)
 
     def _scale_tensor(self, tensor, min_value, max_value, scale=True):
         normalized_tensor = (tensor - tensor.min()) / (tensor.max() - tensor.min())
@@ -532,7 +530,6 @@ class SDPATestCommon(unittest.TestCase):
 
 
 class SDPATestForLargeSeqLength(SDPATestCommon):
-
     def test_sdpa_with_cache_seq_len_130(self):
         n_heads_kv = 8
         n_heads_q = 8
@@ -579,7 +576,6 @@ class SDPATestForLargeSeqLength(SDPATestCommon):
 
 
 class SDPATestForSpeculativeDecode(SDPATestCommon):
-
     def test_sdpa_with_cache_seq_len_130(self):
         n_heads_kv = 32
         n_heads_q = 32

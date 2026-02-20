@@ -92,7 +92,7 @@ Tensor& addmm_out(
           CTYPE,
           op_name,
           utils::SupportedTensorDtypes::REALHBF16>(
-          [alpha_val, beta_val](const auto val_a, const auto val_b) {
+          [alpha_val, beta_val](const auto& val_a, const auto& val_b) {
             return val_a * alpha_val + val_b * beta_val;
           },
           ctx,

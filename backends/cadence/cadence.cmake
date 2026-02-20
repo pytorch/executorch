@@ -41,8 +41,12 @@ set(CMAKE_CROSSCOMPILING TRUE)
 set(CMAKE_C_COMPILER ${TOOLCHAIN_HOME}/bin/${CROSS_COMPILE_TARGET}-clang)
 set(CMAKE_CXX_COMPILER ${TOOLCHAIN_HOME}/bin/${CROSS_COMPILE_TARGET}-clang++)
 
-set(CMAKE_C_FLAGS_INIT "-stdlib=libc++ -mtext-section-literals -mlongcalls")
-set(CMAKE_CXX_FLAGS_INIT "-stdlib=libc++ -mtext-section-literals -mlongcalls")
+set(CMAKE_C_FLAGS_INIT
+    "-stdlib=libc++ -mtext-section-literals -mlongcalls -DET_ENABLE_ENUM_STRINGS=0"
+)
+set(CMAKE_CXX_FLAGS_INIT
+    "-stdlib=libc++ -mtext-section-literals -mlongcalls -DET_ENABLE_ENUM_STRINGS=0"
+)
 # workaround for larger compilation time
 set(CMAKE_CXX_FLAGS_INIT "${CMAKE_CXX_FLAGS_INIT} -fno-strict-aliasing")
 

@@ -9,6 +9,7 @@
 #pragma once
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace example {
 /**
@@ -18,16 +19,26 @@ namespace example {
  */
 class RpcMem final : public IMemAlloc {
  public:
+  RpcMem(
+      const size_t total_cache_size,
+      const size_t total_prompt_processor_io_size,
+      const size_t total_token_generator_io_size);
   /**
    * @brief Constructor to allocate RpcMem with total sizes.
    * @param total_cache_size Total size of the cache.
    * @param total_prompt_processor_io_size Total size for prompt processor I/O.
    * @param total_token_generator_io_size Total size for token generator I/O.
-   */
+   * @param total_embedding_processor_io_size Total size for embedding prompt
+processor I/O.
+   * @param total_embedding_generator_io_size Total size for embedding generator
+I/O.    */
   RpcMem(
       const size_t total_cache_size,
       const size_t total_prompt_processor_io_size,
-      const size_t total_token_generator_io_size);
+      const size_t total_token_generator_io_size,
+      const size_t total_embedding_processor_io_size,
+      const size_t total_embedding_generator_io_size);
+
   // Disable copy constructors, r-value referencing, etc
   RpcMem(const RpcMem&) = delete;
   RpcMem& operator=(const RpcMem&) = delete;
@@ -58,6 +69,7 @@ tensor.
   void* shared_buffer_base_ptr_;
   size_t calculated_offsets_;
   std::unordered_map<std::byte*, size_t> io_pos_map_;
+  std::unordered_set<void*> binded_tensor_addr_set_;
 };
 
 } // namespace example

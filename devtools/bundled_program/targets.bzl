@@ -13,10 +13,7 @@ def define_common_targets():
             name = "runtime" + aten_suffix,
             srcs = ["bundled_program.cpp"],
             exported_headers = ["bundled_program.h"],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/runtime/core/exec_aten/util:dim_order_util" + aten_suffix,
                 "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",

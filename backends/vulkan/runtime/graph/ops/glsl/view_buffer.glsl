@@ -4,7 +4,7 @@
 
 #define T ${buffer_scalar_type(DTYPE)}
 
-${define_required_extensions(DTYPE)}
+${define_required_extensions(STORAGE, DTYPE)}
 
 layout(std430) buffer;
 
@@ -18,6 +18,9 @@ ${layout_declare_ubo(B, "BufferMetadata", "inp")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
+${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
+
 /*
  * The insight behind the view operation is that the contiguous index of each
  * tensor element in the input and output tensors are the same.
@@ -28,17 +31,19 @@ void main() {
     return;
   }
 
-  TensorIndex outp_tidx;
-  linear_idx_to_tensor_idx(outp, outp_bufi, outp_tidx);
+  uint inp_bufi = outp_bufi;
+  if (!is_contiguous(outp_layout) || !is_contiguous(inp_layout)) {
+    TensorIndex outp_tidx = linear_idx_to_tensor_idx(
+        outp, outp_bufi, outp_layout);
 
-  // To map the output to the input, find the input element that has the same
-  // contiguous index as the output element.
-  const uint contig_idx = tensor_idx_to_contiguous_idx(outp, outp_tidx);
+    // To map the output to the input, find the input element that has the same
+    // contiguous index as the output element.
+    const uint contig_idx = tensor_idx_to_contiguous_idx(outp, outp_tidx);
 
-  TensorIndex inp_tidx;
-  contiguous_idx_to_tensor_idx(inp, contig_idx, inp_tidx);
+    TensorIndex inp_tidx = contiguous_idx_to_tensor_idx(inp, contig_idx);
 
-  const uint inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
+    inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
+  }
 
   t_outp[outp_bufi] = t_inp[inp_bufi];
 }

@@ -29,10 +29,7 @@ def define_common_targets(is_fbcode = False):
         ],
         preload_deps = ["//executorch/codegen/tools:selective_build"],
         package_style = "inplace",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.python_library(
@@ -72,10 +69,7 @@ def define_common_targets(is_fbcode = False):
             ":gen_oplist_lib",
         ],
         package_style = "inplace",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.python_library(
@@ -224,10 +218,7 @@ def define_common_targets(is_fbcode = False):
             srcs = ["gen_ops_def.py"],
             main_module = "executorch.codegen.tools.gen_ops_def",
             package_style = "inplace",
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "fbsource//third-party/pypi/pyyaml:pyyaml",
                 ":yaml_util",

@@ -19,6 +19,7 @@ from executorch.backends.nxp.tests.executors import (
 )
 from executorch.backends.nxp.tests.models import LinearModule, MmModule
 from executorch.exir.dialects._ops import ops as exir_ops
+from parameterized import parameterized
 from torch.export import ExportedProgram
 
 
@@ -28,15 +29,18 @@ class TestMmConversion(unittest.TestCase):
         torch.manual_seed(23)
         np.random.seed(42)
 
-    def test_mm_conversion(self):
+    @parameterized.expand([("QAT", True), ("PTQ", False)])
+    def test_mm_conversion(self, _, use_qat: bool):
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             input_shape = (1, 32)
             model = MmModule(input_shape[1])
 
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_qat=use_qat
             ).exported_program()
 
             # Make sure that all nodes were delegated.
@@ -58,15 +62,18 @@ class TestMmConversion(unittest.TestCase):
                 tfl_model=tflite_flatbuffers_model,
             )
 
-    def test_linear_conversion__without_bias(self):
+    @parameterized.expand([("QAT", True), ("PTQ", False)])
+    def test_linear_conversion__without_bias(self, _, use_qat: bool):
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             input_shape = (10, 32)
             model = LinearModule(bias=False)
 
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_qat=use_qat
             ).exported_program()
 
             # Make sure that all nodes were delegated.

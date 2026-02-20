@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -29,7 +29,10 @@ class Unflatten(torch.nn.Module):
         self.sizes = sizes
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.unflatten(x, self.dim, self.sizes)
+        unflatten_op = torch.unflatten(x, self.dim, self.sizes)
+        # Because we treat a single view as a no compute operation and therefore do not partition it,
+        # we want to provide a mul op to verify that it does indeed get partitioned when bundled with another op.
+        return unflatten_op * unflatten_op
 
     test_data: dict[str, test_data_t] = {
         "rand_3d_batch3": (lambda: (Unflatten(1, (-1, 2)), (torch.rand(3, 4, 4),))),
@@ -57,13 +60,7 @@ def test_unflatten_int_tosa_INT(test_data: test_data_t):
     pipeline.run()
 
 
-xfails = {
-    "rand_3d_batch3": "Batch size > 1 currently not supported for FVP tests",
-    "randn_4d_dim1": "Batch size > 1 currently not supported for FVP tests",
-}
-
-
-@common.parametrize("test_data", Unflatten.test_data, xfails=xfails, strict=False)
+@common.parametrize("test_data", Unflatten.test_data, strict=False)
 @common.XfailIfNoCorstone300
 def test_unflatten_int_u55_INT(test_data: test_data_t):
     module, inputs = test_data()
@@ -75,7 +72,7 @@ def test_unflatten_int_u55_INT(test_data: test_data_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Unflatten.test_data, xfails=xfails, strict=False)
+@common.parametrize("test_data", Unflatten.test_data, strict=False)
 @common.XfailIfNoCorstone320
 def test_unflatten_int_u85_INT(test_data: test_data_t):
     module, inputs = test_data()
@@ -89,25 +86,25 @@ def test_unflatten_int_u85_INT(test_data: test_data_t):
 
 @common.parametrize("test_data", Unflatten.test_data)
 @common.SkipIfNoModelConverter
-def test_unflatten_int_vgf_FP(test_data: test_data_t):
+def test_unflatten_int_vgf_no_quant(test_data: test_data_t):
     module, inputs = test_data()
     pipeline = VgfPipeline[input_t](
         module,
         inputs,
         Unflatten.aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Unflatten.test_data)
 @common.SkipIfNoModelConverter
-def test_unflatten_int_vgf_INT(test_data: test_data_t):
+def test_unflatten_int_vgf_quant(test_data: test_data_t):
     module, inputs = test_data()
     pipeline = VgfPipeline[input_t](
         module,
         inputs,
         Unflatten.aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

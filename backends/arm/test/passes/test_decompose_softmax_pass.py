@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,15 +14,13 @@ input_t = Tuple[torch.Tensor]  # Input x
 
 
 class Softmax(torch.nn.Module):
-    """
-    Basic torch.nn.softmax layer model
-    """
+    """Basic torch.nn.softmax layer model."""
 
     def __init__(self):
         super(Softmax, self).__init__()
         self.softmax = torch.nn.Softmax(dim=1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.softmax(x)
         return x
 
@@ -31,15 +29,13 @@ class Softmax(torch.nn.Module):
 
 
 class SoftmaxLog(torch.nn.Module):
-    """
-    Basic torch.nn.log_softmax layer model
-    """
+    """Basic torch.nn.log_softmax layer model."""
 
     def __init__(self):
         super(SoftmaxLog, self).__init__()
         self.softmax = torch.nn.LogSoftmax(dim=1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.softmax(x)
         return x
 
@@ -47,7 +43,7 @@ class SoftmaxLog(torch.nn.Module):
         return (torch.rand(2, 3),)
 
 
-def test_softmax_basic_tosa_FP():
+def test_decompose_softmax_tosa_FP_basic():
     module = Softmax()
     pipeline = PassPipeline[input_t](
         module,
@@ -74,7 +70,7 @@ def test_softmax_basic_tosa_FP():
     pipeline.run()
 
 
-def test_softmax_log_tosa_FP():
+def test_decompose_softmax_tosa_FP_log():
     module = SoftmaxLog()
     pipeline = PassPipeline[input_t](
         module,

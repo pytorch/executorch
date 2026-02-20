@@ -77,7 +77,7 @@ target_compile_options(mpsdelegate PRIVATE "-fno-objc-arc")
 install(
   TARGETS mpsdelegate mps_schema
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

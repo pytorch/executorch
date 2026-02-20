@@ -23,6 +23,9 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
+script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+source "${script_dir}/utils.sh"
+
 if [[ "${ARCH}" == "x86_64" ]]; then
     # FVPs
     corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
@@ -42,7 +45,8 @@ elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
     corstone320_model_dir="Linux64_armv8l_GCC-9.3"
     corstone320_md5_checksum="3889f1d80a6d9861ea4aa6f1c88dd0ae"
 else
-    echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
+    log_step "fvp" "Error: only x86-64 & aarch64/arm64 architecture is supported for now!"
+    exit 1
 fi
 
 function install_fvp() {
@@ -52,7 +56,7 @@ function install_fvp() {
     for fvp in "${fvps[@]}"; do
         cd "${root_dir}"
         if [[ ! -e "FVP_${fvp}.tgz" ]]; then
-            echo "[${FUNCNAME[0]}] Downloading FVP ${fvp}..."
+            log_step "fvp" "Downloading FVP ${fvp}"
             url_variable=${fvp}_url
             fvp_url=${!url_variable}
             curl --output "FVP_${fvp}.tgz" "${fvp_url}"
@@ -61,7 +65,7 @@ function install_fvp() {
             verify_md5 ${fvp_md5_checksum} FVP_${fvp}.tgz || exit 1
         fi
 
-        echo "[${FUNCNAME[0]}] Installing FVP ${fvp}..."
+        log_step "fvp" "Installing FVP ${fvp}"
         rm -rf FVP-${fvp}
         mkdir -p FVP-${fvp}
         cd FVP-${fvp}
@@ -76,7 +80,7 @@ function install_fvp() {
                 ./FVP_Corstone_SSE-320.sh --i-agree-to-the-contained-eula --force --destination ./ --quiet --no-interactive
                 ;;
             *)
-                echo "[${FUNCNAME[0]}] Error: Unknown FVP model ${fvp}. Exiting."
+                log_step "fvp" "Error: Unknown FVP model ${fvp}. Exiting."
                 exit 1
                 ;;
         esac
@@ -89,12 +93,12 @@ function check_fvp_eula () {
 
     if [[ "${eula_acceptance}" -eq 0 ]]; then
         if [[ ${eula_acceptance_by_variable} != "True" ]]; then
-            echo "Must pass argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP."
-            echo "Alternativly set environment variable ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True."
-            echo "Exiting!"
+            log_step "fvp" "Must pass '--i-agree-to-the-contained-eula' to download the FVP"
+            log_step "fvp" "Alternatively set ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True"
+            log_step "fvp" "Exiting due to missing EULA acceptance"
             exit 1
         else
-            echo "Arm EULA for FVP agreed to with ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True environment variable"
+            log_step "fvp" "Arm EULA accepted via ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True"
         fi
     fi
 }
@@ -103,12 +107,10 @@ function setup_fvp() {
     if [[ "${OS}" != "Linux" ]]; then
         # Check if FVP is callable
         if command -v FVP_Corstone_SSE-300_Ethos-U55 &> /dev/null; then
-            echo "[${FUNCNAME[0]}] Info: FVP for MacOS seem to be installed. Continuing..."
+            log_step "fvp" "Detected pre-installed MacOS FVP binaries; continuing"
             return 0  # If true exit gracefully and proceed with setup
         else
-            echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
-            echo "[${FUNCNAME[0]}] Warning: For MacOS, using https://github.com/Arm-Examples/FVPs-on-Mac is recommended."
-            echo "[${FUNCNAME[0]}] Warning:   Follow the instructions and make sure the path is set correctly."
+            log_step "fvp" "Warning: FVP setup only supported on Linux; Mac users should install via https://github.com/Arm-Examples/FVPs-on-Mac and ensure binaries are on PATH"
             return 1  # Throw error. User need to install FVP according to ^^^
         fi
     fi

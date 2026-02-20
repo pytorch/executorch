@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from executorch.extension.llm.custom_ops import custom_ops  # noqa
+from executorch.extension.pybindings.portable_lib import _unsafe_reset_threadpool
 
 
 def is_fbcode():
@@ -40,6 +41,11 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
         self.q_shape = None
         self.kv_shape = None
         self.is_seq_at_dim_2 = True
+        # For some reason 4 threads doesnt work
+        # This setting is needed to make this test not flaky due to OMP
+        # error of "OMP: Error #131: Thread identifier invalid"
+        # Not clear why that happens but having smaller threadpool resolves it
+        _unsafe_reset_threadpool(3)
 
     def _scale_tensor(self, tensor, min_value, max_value, scale=True):
         normalized_tensor = (tensor - tensor.min()) / (tensor.max() - tensor.min())

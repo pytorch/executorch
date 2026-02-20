@@ -1,13 +1,14 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, List
 
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -22,14 +23,14 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def permutation_vector_to_matrix(permutation_vector: list[int]) -> torch.Tensor:
-    """
-    Converts a permutation vector of length N to a NxN matrix that describes the same permutation.
-    for example:
-    (1,0,2)
-    ->
-    [0 1 0]
-    |1 0 0|
-    [0 0 1]
+    """Convert a permutation vector of length N to an N x N matrix.
+
+    Example:
+        (1, 0, 2) ->
+        [0 1 0]
+        [1 0 0]
+        [0 0 1]
+
     """
     N = len(permutation_vector)
     P = torch.zeros(N, N)
@@ -39,13 +40,14 @@ def permutation_vector_to_matrix(permutation_vector: list[int]) -> torch.Tensor:
 
 
 def permutation_matrix_to_vector(permutation_matrix: torch.Tensor) -> list[int]:
-    """
-    Converts a NxN permutation matrix to a permutation vector of length N that describes the same permutation.
-    [0 1 0]
-    |1 0 0|
-    [0 0 1]
-    ->
-    (1,0,2)
+    """Convert an N x N permutation matrix to a permutation vector of length N.
+
+    Example:
+        [0 1 0]
+        [1 0 0]
+        [0 0 1]
+        -> (1, 0, 2)
+
     """
     N = len(permutation_matrix)
     if N != len(permutation_matrix[0]):
@@ -98,8 +100,6 @@ def transform_permutation_vector(permutation_vector: list[int], dim_order: list[
 class PermuteVisitor(NodeVisitor):
     target = "aten.permute_copy.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -110,15 +110,21 @@ class PermuteVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
-            output.tosa_spec,
+            [
+                ts.DType.BOOL,
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.FP16,
+                ts.DType.FP32,
+                ts.DType.BF16,
+            ],
+            self.tosa_spec,
         )
 
         # The permutation vector describes a permutation P in default Pytorch dim_order.
@@ -138,7 +144,7 @@ class PermuteVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().TRANSPOSE,
+            ts.Op.TRANSPOSE,
             [inputs[0].name],
             [output.name],
             attr,

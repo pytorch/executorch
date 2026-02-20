@@ -71,6 +71,11 @@ def generate_node_to_external_map(
         if node.op == "output":
             for output_nodes in node.args:
                 for output_node in output_nodes:
+                    if output_node in node_to_external_map:
+                        raise RuntimeError(
+                            f"Output node '{output_node}' is already in the inputs. "
+                            "This is likely due to pass through arguments, which are not supported in XNNPACK Delegate."
+                        )
                     node_to_external_map[output_node] = ExternalMeta(
                         external_id=len(node_to_external_map),
                         io_type=XNN_VALUE_FLAG_EXTERNAL_OUTPUT,

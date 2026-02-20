@@ -50,6 +50,7 @@ import contextlib
 
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
+import importlib.util
 import logging
 import os
 import re
@@ -57,13 +58,20 @@ import shutil
 import site
 import subprocess
 import sys
-import sysconfig
-import tempfile
-
 from distutils import log  # type: ignore[import-not-found]
 from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path
 from typing import List, Optional
+
+# Clean dynamic import using importlib
+_install_utils_path = Path(__file__).parent / "install_utils.py"
+_spec = importlib.util.spec_from_file_location("install_utils", _install_utils_path)
+if _spec is None:
+    raise ImportError(f"Could not create module spec for {_install_utils_path}")
+install_utils = importlib.util.module_from_spec(_spec)
+if _spec.loader is None:
+    raise ImportError(f"Module spec has no loader for {_install_utils_path}")
+_spec.loader.exec_module(install_utils)
 
 from setuptools import Extension, setup
 from setuptools.command.build import build
@@ -463,77 +471,6 @@ class InstallerBuildExt(build_ext):
         if self._ran_build:
             return
 
-        try:
-            # Following code is for building the Qualcomm backend.
-            from backends.qualcomm.scripts.download_qnn_sdk import (
-                _download_qnn_sdk,
-                is_linux_x86,
-            )
-
-            if is_linux_x86():
-                os.environ["EXECUTORCH_BUILDING_WHEEL"] = "1"
-
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    tmp_path = Path(tmpdir)
-                    sdk_path = _download_qnn_sdk(dst_folder=tmp_path)
-
-                    if not sdk_path:
-                        raise RuntimeError(
-                            "Qualcomm SDK not found, cannot build backend"
-                        )
-
-                    # Determine paths
-                    prj_root = Path(__file__).parent.resolve()
-                    build_sh = prj_root / "backends/qualcomm/scripts/build.sh"
-                    build_root = prj_root / "build-x86"
-
-                    if not build_sh.exists():
-                        raise FileNotFoundError(f"{build_sh} not found")
-
-                    # Run build.sh with SDK path exported
-                    env = dict(**os.environ)
-                    env["QNN_SDK_ROOT"] = str(sdk_path)
-                    subprocess.check_call([str(build_sh), "--skip_aarch64"], env=env)
-
-                    # Copy the main .so into the wheel package
-                    so_src = (
-                        build_root / "backends/qualcomm/libqnn_executorch_backend.so"
-                    )
-                    so_dst = Path(
-                        self.get_ext_fullpath(
-                            "executorch.backends.qualcomm.qnn_backend"
-                        )
-                    )
-                    self.mkpath(str(so_dst.parent))  # ensure destination exists
-                    self.copy_file(str(so_src), str(so_dst))
-                    logging.info(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
-
-                    # Copy Python adaptor .so files
-                    ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
-
-                    so_files = [
-                        (
-                            "executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
-                            prj_root
-                            / f"backends/qualcomm/python/PyQnnManagerAdaptor{ext_suffix}",
-                        ),
-                        (
-                            "executorch.backends.qualcomm.python.PyQnnWrapperAdaptor",
-                            prj_root
-                            / f"backends/qualcomm/python/PyQnnWrapperAdaptor{ext_suffix}",
-                        ),
-                    ]
-
-                    for module_name, so_src in so_files:
-                        so_dst = Path(self.get_ext_fullpath(module_name))
-                        self.mkpath(str(so_dst.parent))
-                        self.copy_file(str(so_src), str(so_dst))
-                        logging.info(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
-
-        except ImportError:
-            logging.error("Fail to build Qualcomm backend")
-            logging.exception("Import error")
-
         if self.editable_mode:
             self._ran_build = True
             self.run_command("build")
@@ -625,7 +562,7 @@ class CustomBuildPy(build_py):
         # package subdirectory.
         if self.editable_mode:
             # In editable mode, the package directory is the original source directory
-            dst_root = self.get_package_dir(".")
+            dst_root = self.get_package_dir("executorch")
         else:
             dst_root = os.path.join(self.build_lib, "executorch")
         # Create the version file.
@@ -762,6 +699,13 @@ class CustomBuild(build):
             item for item in re.split(r"\s+", os.environ.get("CMAKE_ARGS", "")) if item
         ]
 
+        # Check if CUDA is available, and if so, enable building the CUDA
+        # backend by default.
+        if install_utils.is_cuda_available() and install_utils.is_cmake_option_on(
+            cmake_configuration_args, "EXECUTORCH_BUILD_CUDA", default=True
+        ):
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_CUDA=ON"]
+
         with Buck2EnvironmentFixer():
             # Generate the cmake cache from scratch to ensure that the cache state
             # is predictable.
@@ -817,6 +761,10 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
             cmake_build_args += ["--target", "_llm_runner"]
 
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
+            cmake_build_args += ["--target", "aoti_cuda_backend"]
+            cmake_build_args += ["--target", "aoti_common_shims_slim"]
+
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
             cmake_build_args += ["--target", "extension_module"]
 
@@ -829,6 +777,10 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
             cmake_build_args += ["--target", "custom_ops_aot_lib"]
             cmake_build_args += ["--target", "quantized_ops_aot_lib"]
+
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_QNN"):
+            cmake_build_args += ["--target", "qnn_executorch_backend"]
+            cmake_build_args += ["--target", "PyQnnManagerAdaptor"]
 
         # Set PYTHONPATH to the location of the pip package.
         os.environ["PYTHONPATH"] = (
@@ -910,6 +862,25 @@ setup(
             dst="executorch/kernels/quantized/",
             is_dynamic_lib=True,
             dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
+        ),
+        BuiltFile(
+            src_dir="backends/cuda/runtime/",
+            src_name="aoti_cuda_shims.lib",
+            dst="executorch/data/lib/",
+            dependent_cmake_flags=[],
+        ),
+        BuiltFile(
+            src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
+            src_name="qnn_executorch_backend",
+            dst="executorch/backends/qualcomm/",
+            is_dynamic_lib=True,
+            dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
+        ),
+        BuiltExtension(
+            src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
+            src="PyQnnManagerAdaptor.*",
+            modpath="executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
         ),
     ],
 )

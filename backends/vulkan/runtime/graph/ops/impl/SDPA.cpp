@@ -50,7 +50,7 @@ void resize_compute_attn_weights_node(
   std::vector<int64_t> out_sizes = {
       1, // batch
       num_q_heads,
-      seq_len,
+      utils::align_up_4(seq_len),
       utils::align_up_4(context_len)};
 
   graph->virtual_resize(attn_weights, out_sizes);
@@ -282,6 +282,7 @@ void add_sdpa_kv_cache_update_node(
     const ValueRef projected,
     const ValueRef cache) {
   std::string kernel_name("sdpa_kv_cache_update");
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(cache));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(projected));
   add_dtype_suffix(kernel_name, graph.dtype_of(projected));
 
@@ -470,9 +471,30 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(graph.val_is_none(attn_mask));
 
   const int64_t num_q_heads = graph.size_at<int64_t>(-2, q_projected);
-  const int64_t max_seq_len = graph.size_at<int64_t>(-3, q_projected);
-
+  int64_t max_seq_len = graph.size_at<int64_t>(-3, q_projected);
   const int64_t max_context_len = graph.size_at<int32_t>(-3, k_cache);
+
+  const utils::StorageType attn_weights_storage =
+      graph.storage_type_of(q_projected);
+
+  // If using buffer storage for attn weights, we need to ensure that the buffer
+  // numel limit is not exceeded. If needed, manually adjust max_seq_len based
+  // on the buffer numel limit.
+  if (attn_weights_storage == utils::kBuffer) {
+    const int64_t max_buffer_numel = graph.max_buffer_numel();
+    if (num_q_heads * max_seq_len * max_context_len >= max_buffer_numel) {
+      // Compute the maximum possible value for max_seq_len that will hit
+      // the buffer numel limit.
+      max_seq_len = max_buffer_numel / (num_q_heads * max_context_len);
+      // Adjust down to the nearest multiple of 4 to make sure the limit is
+      // not hit.
+      if (max_seq_len % 4 != 0) {
+        max_seq_len = (max_seq_len / 4) * 4;
+      } else {
+        max_seq_len -= 4;
+      }
+    }
+  }
 
   std::vector<int64_t> attn_weight_full_sizes = {
       1, // batch
@@ -484,14 +506,14 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       &graph,
       attn_weight_full_sizes,
       graph.dtype_of(q_projected),
-      graph.storage_type_of(q_projected),
+      attn_weights_storage,
       utils::kWidthPacked);
 
   TmpTensor attn_weights_softmax(
       &graph,
       attn_weight_full_sizes,
       graph.dtype_of(q_projected),
-      graph.storage_type_of(q_projected),
+      attn_weights_storage,
       utils::kWidthPacked);
 
   add_sdpa_compute_attn_weights_node(
@@ -525,10 +547,11 @@ void sdpa_with_kv_cache_impl(
 
   (void)sequence_len;
 
-  const ValueRef k_cache = prepack_standard(
-      graph, k_cache_data, utils::kTexture3D, utils::kWidthPacked);
-  const ValueRef v_cache = prepack_standard(
-      graph, v_cache_data, utils::kTexture3D, utils::kWidthPacked);
+  utils::StorageType cache_storage = graph.storage_type_of(q_projected);
+  const ValueRef k_cache =
+      graph.add_tensor_like(k_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef v_cache =
+      graph.add_tensor_like(v_cache_data, cache_storage, utils::kWidthPacked);
 
   update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
@@ -546,10 +569,51 @@ void sdpa_with_kv_cache_impl(
        out});
 }
 
+void compute_attn_weight_with_kv_cache_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int arg_idx = 0;
+  const ValueRef q_projected = args[arg_idx++];
+  const ValueRef k_projected = args[arg_idx++];
+  const ValueRef v_projected = args[arg_idx++];
+  const ValueRef k_cache_data = args[arg_idx++];
+  const ValueRef v_cache_data = args[arg_idx++];
+  const ValueRef input_pos_symint = args[arg_idx++];
+  const ValueRef sequence_len = args[arg_idx++];
+  const ValueRef attn_mask = args[arg_idx++];
+  (void)attn_mask;
+  const ValueRef dropout_p = args[arg_idx++];
+  (void)dropout_p;
+  const ValueRef is_causal = args[arg_idx++];
+  (void)is_causal;
+  const ValueRef scale = args[arg_idx++];
+  (void)scale;
+
+  // Output tensors
+  const ValueRef out = args[arg_idx++];
+
+  (void)sequence_len;
+
+  const utils::StorageType cache_storage = graph.storage_type_of(q_projected);
+  const ValueRef k_cache =
+      graph.add_tensor_like(k_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef v_cache =
+      graph.add_tensor_like(v_cache_data, cache_storage, utils::kWidthPacked);
+
+  update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
+  update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
+
+  add_sdpa_compute_attn_weights_node(
+      graph, q_projected, k_cache, input_pos_symint, out);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(sdpa_with_kv_cache.default, sdpa_with_kv_cache_impl);
   VK_REGISTER_OP(update_cache.default, update_cache_impl);
   VK_REGISTER_OP(llama.custom_sdpa.default, sdpa_impl);
+  VK_REGISTER_OP(
+      testing.compute_attn_weight_with_kv_cache.default,
+      compute_attn_weight_with_kv_cache_impl);
 }
 
 } // namespace vkcompute

@@ -1,13 +1,14 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
-    for aten in (True, False):
+    for aten in get_aten_mode_options():
         aten_suffix = "_aten" if aten else ""
 
         runtime.cxx_library(
             name = "sampler" + aten_suffix,
             exported_headers = [
                 "sampler.h",
+                "util.h",
             ],
             preprocessor_flags = [
                 "-DUSE_ATEN_LIB",
@@ -15,9 +16,7 @@ def define_common_targets():
             srcs = [
                 "sampler.cpp",
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             external_deps = [
                 "libtorch",
             ] if aten else [],

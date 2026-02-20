@@ -46,12 +46,20 @@ class ModelArgs:
     head_dim: Optional[int] = None  # Optional customized head_dim
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
+    model_architecture: str = (
+        "LlamaForCausalLM"  # This setting is currently only supported for the QNN backend
+    )
+    attention_multiplier: Optional[float] = (
+        None  # Scaling factor 1/sqrt(d_k) in attention formula
+    )
     norm_eps: float = 1e-5
     post_attention_norm: bool = False
     post_ffn_norm: bool = False
     max_batch_size: int = 1
     max_seq_len: int = 2048
     max_context_len: int = 2048
+    use_ffn_norm: bool = True
+    output_bias: bool = False
     moe: bool = False  # True to enable the MoE (Mixture of Experts)
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
@@ -63,10 +71,16 @@ class ModelArgs:
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
     )
+    # Device to use for the model: "cpu" or "cuda" (needed for QAT)
+    # Only used for creating Rope parameters
+    device: str = "cpu"
     # Generate logits for all inputs. When it's True, it would take big memory usage
     # at runtime. Enable it only necessary (e.g., use perplexity tools that requires
     # logits for all input tokens.)
     generate_full_logits: bool = False
+    logits_scaling: Optional[float] = (
+        None  # Scaling factor applied to the logits of model, functioning similarly to a temperature parameter.
+    )
     enable_dynamic_shape: bool = False  # export model with dynamic shape support
     # A dictionary mapping from pruned token-id to original token-id
     input_prune_map: Optional[Dict[int, int]] = None
@@ -77,6 +91,9 @@ class ModelArgs:
     apply_output: bool = True  # Use output layer (unembedding) inside the transformer
     use_qk_norm: bool = False  # apply normalization to q and k in the attention
     qk_norm_before_rope: bool = False  # when to apply qk norm
+    residual_multiplier: Optional[float] = (
+        None  # Scaling factor applied to the residual hidden states
+    )
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     no_rope_layer_interval: Optional[int] = (
         None  # Interval at which to skip RoPE. From Rope to Nope and Back Again: A New Hybrid Attention Strategy (https://huggingface.co/papers/2501.18795).
@@ -84,6 +101,9 @@ class ModelArgs:
     partial_rotary_factor: float = 1.0
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
+    )
+    local_rope_theta: Optional[float] = (
+        None  # For sliding window attention. e.g., gemma3-1b
     )
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
@@ -103,7 +123,8 @@ class ModelArgs:
     # These arguments come directly from a torchtune adapter_config.json file.
     r: Optional[int] = None  # Rank.
     lora_alpha: Optional[int] = None  # Alpha.
-    # Eg. q_proj, k_proj, v_proj, output_proj
+    # Modules that we can apply lora adapters to.
+    # Eg. q_proj, k_proj, v_proj, output_proj/o_proj, down_proj, gate_proj, up_proj
     target_modules: Optional[list] = None
     peft_type: Optional[str] = None  # PEFT type.
     base_model_name_or_path: Optional[str] = None  # Base model name or path.
@@ -113,6 +134,15 @@ class ModelArgs:
     attention_kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
     # Hybrid models can have layer types different from attention
     layer_types: Optional[list] = None
+    model_architecture: Optional[str] = (
+        None  # Architecture of model. For HF models, please refer to the HF model.config.architectures. This is used in QNN backend only for now.
+    )
+    sliding_window: Optional[int] = (
+        None  # sliding window size for sliding window attention
+    )
+    # gemma2 attn and output soft capping
+    final_logit_softcapping: Optional[float] = None
+    attn_logit_softcapping: Optional[float] = None
 
     def __post_init__(self):
         if self.n_kv_heads is None:

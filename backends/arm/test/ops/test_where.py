@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,6 @@
 from typing import List, Tuple
 
 import torch
-
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -45,7 +44,7 @@ class Where(torch.nn.Module):
                     self.shape,
                     dtype=self.dtype[i],
                 )
-            elif self.dtype[i] in [torch.float32]:
+            elif self.dtype[i] in [torch.float16, torch.float32, torch.bfloat16]:
                 inputs[i] = torch.randn(*self.shape).to(self.dtype[i])
             elif self.dtype[i] is torch.bool:
                 inputs[i] = torch.randint(0, 1, self.shape, dtype=torch.bool)
@@ -63,6 +62,30 @@ class Where(torch.nn.Module):
         other_: torch.Tensor,
     ):
         return torch.where(self.condition(input_), input_, other_)
+
+
+class ConstWhere(torch.nn.Module):
+
+    def __init__(self, buffer: torch.Tensor, dtype: torch.dtype):
+        super().__init__()
+        self.buffer = buffer
+        self.dtype = dtype
+        self.min = torch.nn.Buffer(torch.tensor(0.0, dtype=self.dtype))
+        self.input_1 = torch.nn.Buffer(torch.tensor(-1.0, dtype=self.dtype))
+        self.input_2 = torch.nn.Buffer(torch.tensor(1.0, dtype=self.dtype))
+
+    def get_inputs(self):
+        return (torch.rand(self.buffer.size(), dtype=self.dtype),)
+
+    def forward(self, input: torch.Tensor):
+        return (
+            torch.where(
+                self.buffer > self.min,
+                self.input_1,
+                self.input_2,
+            )
+            + input
+        )
 
 
 def tensor_condition(input: torch.Tensor):
@@ -88,6 +111,12 @@ three_dim_tensor_cond = Where(
 float32_tensor_cond = Where(
     1,
     torch.float32,
+    tensor_condition,
+)
+
+float16_tensor_cond = Where(
+    1,
+    torch.float16,
     tensor_condition,
 )
 
@@ -128,6 +157,17 @@ int32_scalar_cond = Where(
     scalar_condition,
 )
 
+const_float32 = ConstWhere(
+    buffer=torch.tensor([[1.0, -1.0], [-1.0, 1.0]]),
+    dtype=torch.float32,
+)
+
+bf16_tensor_cond = Where(
+    1,
+    torch.bfloat16,
+    tensor_condition,
+)
+
 test_modules_common = {
     "two_dim_tensor_cond": lambda: two_dim_tensor_cond,
     "three_dim_tensor_cond": lambda: three_dim_tensor_cond,
@@ -140,6 +180,12 @@ test_modules_common = {
 test_modules_FP = {
     **test_modules_common,
     "float32_tensor_cond_tuple_dtype_bool": lambda: float32_tensor_cond_tuple_dtype_bool,
+    "float16_tensor_cond": lambda: float16_tensor_cond,
+    "const_float32": lambda: const_float32,
+}
+
+test_modules_FP_bf16 = {
+    "bf16_tensor_cond": lambda: bf16_tensor_cond,
 }
 
 test_modules_FP_unsupported_dtype = {
@@ -154,13 +200,15 @@ test_modules_INT = {
 input_t = Tuple[torch.Tensor]
 
 
-@common.parametrize("test_module", test_modules_FP)
+@common.parametrize("test_module", test_modules_FP | test_modules_FP_bf16)
 def test_where_self_tosa_FP(test_module):
+    module = test_module()
     pipeline = TosaPipelineFP[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        module,
+        module.get_inputs(),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -183,7 +231,16 @@ def test_where_self_tosa_INT(test_module):
         test_module().get_inputs(),
         aten_op,
         exir_op,
-        symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+def test_where_self_tosa_INT_constant():
+    test_module = const_float32
+    pipeline = TosaPipelineINT[input_t](
+        test_module,
+        test_module.get_inputs(),
+        [],  # No where op expected as the condition is constant and can be folded into the other two inputs
     )
     pipeline.run()
 
@@ -233,26 +290,26 @@ def test_where_self_u85_INT(test_module):
 
 @common.parametrize("test_module", test_modules_FP)
 @common.SkipIfNoModelConverter
-def test_where_self_vgf_FP(test_module):
+def test_where_self_vgf_no_quant(test_module):
+    module = test_module()
     pipeline = VgfPipeline[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        module,
+        module.get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules_INT)
 @common.SkipIfNoModelConverter
-def test_where_self_vgf_INT(test_module):
+def test_where_self_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
-        symmetric_io_quantization=True,
+        quantize=True,
     )
     pipeline.run()

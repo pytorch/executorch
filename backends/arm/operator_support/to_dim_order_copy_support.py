@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +10,6 @@ profile (integer and/or float).
 
 """
 
-# pyre-unsafe
 import copy
 import logging
 
@@ -46,14 +45,8 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     ]
 
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
     @staticmethod
     def _merge_supported_types(
-        # pyre-ignore[11]
         dtypes1: SupportedTypeDict,
         dtypes2: SupportedTypeDict,
     ) -> SupportedTypeDict:
@@ -82,9 +75,9 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         torch.int64: [torch.bool, torch.int8, torch.int16, torch.int32],
     }
     SUPPORTED_FP_PROFILE_DTYPES: SupportedTypeDict = {
-        torch.int8: [torch.int8, torch.float16, torch.bfloat16, torch.float32],
-        torch.int16: [torch.int16, torch.float16, torch.bfloat16, torch.float32],
-        torch.int32: [torch.int32, torch.float16, torch.bfloat16, torch.float32],
+        torch.int8: [torch.int8, torch.float16, torch.float32],
+        torch.int16: [torch.int16, torch.float16, torch.float32],
+        torch.int32: [torch.int32, torch.float16, torch.float32],
         # INT64 inputs to casts *should* be ok, since they should be rejected by
         # CheckInt64InputsAndOutputs if the cast can't be done AOT.
         torch.int64: [
@@ -92,14 +85,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             torch.int16,
             torch.int32,
             torch.float16,
-            torch.bfloat16,
-            torch.float32,
-        ],
-        torch.bfloat16: [
-            torch.int8,
-            torch.int16,
-            torch.int32,
-            torch.bfloat16,
             torch.float32,
         ],
         torch.float16: [
@@ -114,8 +99,24 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             torch.int8,
             torch.int16,
             torch.int32,
-            torch.bfloat16,
             torch.float16,
+            torch.float32,
+        ],
+    }
+    SUPPORTED_INT_FP_PROFILE_DTYPES: SupportedTypeDict = {
+        torch.bool: [torch.float32],
+    }
+    SUPPORTED_BF16_EXTENSION_DTYPES: SupportedTypeDict = {
+        torch.int8: [torch.bfloat16],
+        torch.int16: [torch.bfloat16],
+        torch.int32: [torch.bfloat16],
+        torch.int64: [torch.bfloat16],
+        torch.float32: [torch.bfloat16],
+        torch.bfloat16: [
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.bfloat16,
             torch.float32,
         ],
     }
@@ -138,6 +139,14 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if tosa_spec.support_float():
             supported_dtypes = self._merge_supported_types(
                 self.SUPPORTED_FP_PROFILE_DTYPES, supported_dtypes
+            )
+        if tosa_spec.support_integer() and tosa_spec.support_float():
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_INT_FP_PROFILE_DTYPES, supported_dtypes
+            )
+        if tosa_spec.support_extension("bf16"):
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_BF16_EXTENSION_DTYPES, supported_dtypes
             )
 
         if len(node.all_input_nodes) != 1:

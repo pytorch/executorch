@@ -18,6 +18,7 @@ import java.nio.DoubleBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;
+import java.nio.ShortBuffer;
 import java.util.Arrays;
 import java.util.Locale;
 import org.pytorch.executorch.annotations.Experimental;
@@ -57,6 +58,7 @@ public abstract class Tensor {
   private static final int BYTE_SIZE_BYTES = 1;
   private static final int INT_SIZE_BYTES = 4;
   private static final int LONG_SIZE_BYTES = 8;
+  private static final int HALF_SIZE_BYTES = 2;
   private static final int FLOAT_SIZE_BYTES = 4;
   private static final int DOUBLE_SIZE_BYTES = 8;
 
@@ -105,6 +107,18 @@ public abstract class Tensor {
     return ByteBuffer.allocateDirect(numElements * LONG_SIZE_BYTES)
         .order(ByteOrder.nativeOrder())
         .asLongBuffer();
+  }
+
+  /**
+   * Allocates a new direct {@link ShortBuffer} with native byte order and specified capacity that
+   * can be used in {@link Tensor#fromBlob(ShortBuffer, long[])}.
+   *
+   * @param numElements capacity (number of elements) of result buffer.
+   */
+  public static ShortBuffer allocateHalfBuffer(int numElements) {
+    return ByteBuffer.allocateDirect(numElements * HALF_SIZE_BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asShortBuffer();
   }
 
   /**
@@ -185,6 +199,23 @@ public abstract class Tensor {
     final FloatBuffer floatBuffer = allocateFloatBuffer((int) numel(shape));
     floatBuffer.put(data);
     return new Tensor_float32(floatBuffer, shape);
+  }
+
+  /**
+   * Creates a new Tensor instance with dtype torch.float16 with specified shape and data as array
+   * of IEEE-754 half-precision values encoded in {@code short}s.
+   *
+   * @param data Tensor elements encoded as 16-bit floats.
+   * @param shape Tensor shape
+   */
+  public static Tensor fromBlob(short[] data, long[] shape) {
+    checkArgument(data != null, ERROR_MSG_DATA_ARRAY_NOT_NULL);
+    checkArgument(shape != null, ERROR_MSG_SHAPE_NOT_NULL);
+    checkShape(shape);
+    checkShapeAndDataCapacityConsistency(data.length, shape);
+    final ShortBuffer shortBuffer = allocateHalfBuffer((int) numel(shape));
+    shortBuffer.put(data);
+    return new Tensor_float16(shortBuffer, shape);
   }
 
   /**
@@ -302,6 +333,26 @@ public abstract class Tensor {
   }
 
   /**
+   * Creates a new Tensor instance with dtype torch.float16 with specified shape and data.
+   *
+   * @param data Direct buffer with native byte order that contains {@code Tensor.numel(shape)}
+   *     elements encoded as IEEE-754 half-precision floats. The buffer is used directly without
+   *     copying.
+   * @param shape Tensor shape
+   */
+  public static Tensor fromBlob(ShortBuffer data, long[] shape) {
+    checkArgument(data != null, ERROR_MSG_DATA_BUFFER_NOT_NULL);
+    checkArgument(shape != null, ERROR_MSG_SHAPE_NOT_NULL);
+    checkShape(shape);
+    checkShapeAndDataCapacityConsistency(data.capacity(), shape);
+    checkArgument(data.isDirect(), ERROR_MSG_DATA_BUFFER_MUST_BE_DIRECT);
+    checkArgument(
+        (data.order() == ByteOrder.nativeOrder()),
+        ERROR_MSG_DATA_BUFFER_MUST_HAVE_NATIVE_BYTE_ORDER);
+    return new Tensor_float16(data, shape);
+  }
+
+  /**
    * Creates a new Tensor instance with dtype torch.int64 with specified shape and data.
    *
    * @param data Direct buffer with native byte order that contains {@code Tensor.numel(shape)}
@@ -339,6 +390,82 @@ public abstract class Tensor {
         (data.order() == ByteOrder.nativeOrder()),
         ERROR_MSG_DATA_BUFFER_MUST_HAVE_NATIVE_BYTE_ORDER);
     return new Tensor_float64(data, shape);
+  }
+
+  /**
+   * Creates a new Tensor instance with given data-type and all elements initialized to one.
+   *
+   * @param shape Tensor shape
+   * @param dtype Tensor data-type
+   */
+  public static Tensor ones(long[] shape, DType dtype) {
+    checkArgument(shape != null, ERROR_MSG_SHAPE_NOT_NULL);
+    checkShape(shape);
+    int numElements = (int) numel(shape);
+    switch (dtype) {
+      case UINT8:
+        byte[] uInt8Data = new byte[numElements];
+        Arrays.fill(uInt8Data, (byte) 1);
+        return Tensor.fromBlobUnsigned(uInt8Data, shape);
+      case INT8:
+        byte[] int8Data = new byte[numElements];
+        Arrays.fill(int8Data, (byte) 1);
+        return Tensor.fromBlob(int8Data, shape);
+      case INT32:
+        int[] int32Data = new int[numElements];
+        Arrays.fill(int32Data, 1);
+        return Tensor.fromBlob(int32Data, shape);
+      case FLOAT:
+        float[] float32Data = new float[numElements];
+        Arrays.fill(float32Data, 1.0f);
+        return Tensor.fromBlob(float32Data, shape);
+      case INT64:
+        long[] int64Data = new long[numElements];
+        Arrays.fill(int64Data, 1L);
+        return Tensor.fromBlob(int64Data, shape);
+      case DOUBLE:
+        double[] float64Data = new double[numElements];
+        Arrays.fill(float64Data, 1.0);
+        return Tensor.fromBlob(float64Data, shape);
+      default:
+        throw new IllegalArgumentException(
+            String.format("Tensor.ones() cannot be used with DType %s", dtype));
+    }
+  }
+
+  /**
+   * Creates a new Tensor instance with given data-type and all elements initialized to zero.
+   *
+   * @param shape Tensor shape
+   * @param dtype Tensor data-type
+   */
+  public static Tensor zeros(long[] shape, DType dtype) {
+    checkArgument(shape != null, ERROR_MSG_SHAPE_NOT_NULL);
+    checkShape(shape);
+    int numElements = (int) numel(shape);
+    switch (dtype) {
+      case UINT8:
+        byte[] uInt8Data = new byte[numElements];
+        return Tensor.fromBlobUnsigned(uInt8Data, shape);
+      case INT8:
+        byte[] int8Data = new byte[numElements];
+        return Tensor.fromBlob(int8Data, shape);
+      case INT32:
+        int[] int32Data = new int[numElements];
+        return Tensor.fromBlob(int32Data, shape);
+      case FLOAT:
+        float[] float32Data = new float[numElements];
+        return Tensor.fromBlob(float32Data, shape);
+      case INT64:
+        long[] int64Data = new long[numElements];
+        return Tensor.fromBlob(int64Data, shape);
+      case DOUBLE:
+        double[] float64Data = new double[numElements];
+        return Tensor.fromBlob(float64Data, shape);
+      default:
+        throw new IllegalArgumentException(
+            String.format("Tensor.zeros() cannot be used with DType %s", dtype));
+    }
   }
 
   @DoNotStrip private HybridData mHybridData;
@@ -386,6 +513,16 @@ public abstract class Tensor {
   public byte[] getDataAsByteArray() {
     throw new IllegalStateException(
         "Tensor of type " + getClass().getSimpleName() + " cannot return data as byte array.");
+  }
+
+  /**
+   * @return a Java short array that contains the tensor data interpreted as IEEE-754 half-precision
+   *     bit patterns. This may be a copy or reference.
+   * @throws IllegalStateException if it is called for a non-float16 tensor.
+   */
+  public short[] getDataAsShortArray() {
+    throw new IllegalStateException(
+        "Tensor of type " + getClass().getSimpleName() + " cannot return data as short array.");
   }
 
   /**
@@ -569,6 +706,74 @@ public abstract class Tensor {
     }
   }
 
+  static class Tensor_float16 extends Tensor {
+    private final ShortBuffer data;
+
+    private Tensor_float16(ShortBuffer data, long[] shape) {
+      super(shape);
+      this.data = data;
+    }
+
+    @Override
+    public DType dtype() {
+      return DType.HALF;
+    }
+
+    @Override
+    Buffer getRawDataBuffer() {
+      return data;
+    }
+
+    @Override
+    public short[] getDataAsShortArray() {
+      data.rewind();
+      short[] arr = new short[data.remaining()];
+      data.get(arr);
+      return arr;
+    }
+
+    @Override
+    public float[] getDataAsFloatArray() {
+      data.rewind();
+      int remaining = data.remaining();
+      float[] arr = new float[remaining];
+      for (int i = 0; i < remaining; i++) {
+        arr[i] = halfBitsToFloat(data.get());
+      }
+      return arr;
+    }
+
+    @Override
+    public String toString() {
+      return String.format("Tensor(%s, dtype=torch.float16)", Arrays.toString(shape));
+    }
+
+    private static float halfBitsToFloat(short halfBits) {
+      int h = halfBits & 0xFFFF;
+      int sign = (h >>> 15) & 0x1;
+      int exp = (h >>> 10) & 0x1F;
+      int mant = h & 0x3FF;
+
+      if (exp == 0) {
+        if (mant == 0) {
+          return sign == 0 ? 0.0f : -0.0f;
+        }
+        float result = mant * 5.9604645e-8f; // 2^-24
+        return sign == 0 ? result : -result;
+      } else if (exp == 0x1F) {
+        if (mant == 0) {
+          return sign == 0 ? Float.POSITIVE_INFINITY : Float.NEGATIVE_INFINITY;
+        }
+        int bits = (sign << 31) | 0x7f800000 | (mant << 13);
+        return Float.intBitsToFloat(bits);
+      } else {
+        int exp32 = exp + 112; // 127 (float bias) - 15 (half bias)
+        int bits = (sign << 31) | (exp32 << 23) | (mant << 13);
+        return Float.intBitsToFloat(bits);
+      }
+    }
+  }
+
   static class Tensor_int64 extends Tensor {
     private final LongBuffer data;
 
@@ -691,6 +896,8 @@ public abstract class Tensor {
 
     if (DType.FLOAT.jniCode == dtype) {
       tensor = new Tensor_float32(data.asFloatBuffer(), shape);
+    } else if (DType.HALF.jniCode == dtype) {
+      tensor = new Tensor_float16(data.asShortBuffer(), shape);
     } else if (DType.INT32.jniCode == dtype) {
       tensor = new Tensor_int32(data.asIntBuffer(), shape);
     } else if (DType.INT64.jniCode == dtype) {
@@ -727,6 +934,11 @@ public abstract class Tensor {
       tensorAsByteArray = new byte[(int) numel()];
       Tensor_int8 thiz = (Tensor_int8) this;
       ByteBuffer.wrap(tensorAsByteArray).put(thiz.getDataAsByteArray());
+    } else if (dtype() == DType.HALF) {
+      dtypeSize = HALF_SIZE_BYTES;
+      tensorAsByteArray = new byte[(int) numel() * dtypeSize];
+      Tensor_float16 thiz = (Tensor_float16) this;
+      ByteBuffer.wrap(tensorAsByteArray).asShortBuffer().put(thiz.getDataAsShortArray());
     } else if (dtype() == DType.INT16) {
       throw new IllegalArgumentException("DType.INT16 is not supported in Java so far");
     } else if (dtype() == DType.INT32) {
@@ -794,6 +1006,8 @@ public abstract class Tensor {
       return new Tensor_uint8(buffer, shape);
     } else if (dtype == DType.INT8.jniCode) {
       return new Tensor_int8(buffer, shape);
+    } else if (dtype == DType.HALF.jniCode) {
+      return new Tensor_float16(buffer.asShortBuffer(), shape);
     } else if (dtype == DType.INT32.jniCode) {
       return new Tensor_int32(buffer.asIntBuffer(), shape);
     } else if (dtype == DType.INT64.jniCode) {

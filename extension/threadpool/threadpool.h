@@ -14,6 +14,24 @@
 
 #include <pthreadpool.h>
 
+#include <executorch/runtime/core/function_ref.h>
+
+/*
+ * Threadpool Options:
+ *
+ * Threadpool size has a sizble affect on performance. By default, the
+ * threadpool will be sized according to the number of performance cores. This
+ * behavior can be overriden with the following build-time options. Note that
+ * these options are mutually exclusive.
+ *
+ * - EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES (flag) - Sizes the threadpool
+ * equal to the number of performance cores on the system. This is the default
+ * behavior.
+ * - EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES (flag) - Sizes the threadpool
+ * equal to the number of logical cores on system. This is the historical
+ * behavior.
+ */
+
 namespace executorch::extension::threadpool {
 
 class ThreadPool final {
@@ -52,13 +70,22 @@ class ThreadPool final {
   bool _unsafe_reset_threadpool(uint32_t num_threads);
 
   /**
+   * INTERNAL: Destroys the threadpool. This is not a thread safe call. When
+   * calling this method, threads of the threadpool might be doing some work.
+   * Some other code may also be holding on to the threadpool pointer, that is
+   * no longer valid.
+   */
+  [[deprecated("This API is experimental and may change without notice.")]]
+  void _unsafe_destroy_threadpool();
+
+  /**
    * Run, in parallel, function fn(task_id) over task_id in range [0, range).
    * This function is blocking.  All input is processed by the time it returns.
    * NoThreadPoolGuard (see threadpool_guard.h) can used to disable use of
    * multiple threads with the scope of the guard When NoThreadPoolGuard is not
    * used all calls to run method are serialized.
    */
-  void run(const std::function<void(size_t)>& fn, size_t range);
+  void run(runtime::FunctionRef<void(size_t)> fn, size_t range);
 
  private:
   friend pthreadpool_t get_pthreadpool();

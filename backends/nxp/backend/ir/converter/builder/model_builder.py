@@ -1,18 +1,20 @@
 #
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2025 NXP
+# Copyright 2023-2026 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
 #
+
 from copy import deepcopy
-from typing import Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 import executorch.backends.nxp.backend.ir.converter.conversion.translator as translator
 import executorch.backends.nxp.backend.ir.logger as logger
 import executorch.backends.nxp.backend.ir.tflite_generator.tflite_model as tflite_model
-
 import numpy as np
+from executorch.backends.nxp.backend.data_format import DataFormat
+from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.converter.builder import (
     quantization_verification,
@@ -32,7 +34,7 @@ from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
     BuiltinOperator,
 )
 from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing import optimizer
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     cast_options,
     dequantize_options,
@@ -47,7 +49,10 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
 from executorch.backends.nxp.backend.ir.tflite_generator.custom_options.flex_transpose_options import (
     FlexTranspose,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer import optimizer
+from executorch.backends.nxp.backend.neutron_operator_support import (
+    transposition_is_supported_on_neutron,
+)
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 
 
 class ModelBuilder:
@@ -59,33 +64,41 @@ class ModelBuilder:
 
     _tfl_model: tflite_model.Model
 
-    _tensor_name_map: Dict  # Mapping 'str' to 'tflT.Tensor'
+    _tensor_name_map: dict  # Mapping 'str' to 'tflT.Tensor'
 
-    # Maps BuiltinOperator to a Dict, mapping version to index. Operators of type 'BuiltinOperator.CUSTOM'
+    # Maps BuiltinOperator to a dict, mapping version to index. Operators of type 'BuiltinOperator.CUSTOM'
     # have their 'version' prepended with its name, for example "FlexErf_1".
-    op_code_type_index_map: Dict[BuiltinOperator, Dict[Union[str, int], int]]
+    op_code_type_index_map: dict[BuiltinOperator, dict[Union[str, int], int]]
 
-    _nchw_tensor_version: Dict  # Mapping 'tflT.Tensor' to 'tflT.Tensor' which is
+    _nchw_tensor_version: dict  # Mapping 'tflT.Tensor' to 'tflT.Tensor' which is
     # equal, but in NCHW format
 
-    _skipped_output_map: Dict  # Mapping 'tflT.Tensor' objects that were outputs
+    _skipped_output_map: dict  # Mapping 'tflT.Tensor' objects that were outputs
     # of skipped operators, to 'tflT.Tensor' outputs of
     # previous operators
 
-    _zeros_tensor_map: Dict  # Mapping 'string' shapes to 'tflT.Tensor' objects
+    _zeros_tensor_map: dict  # Mapping 'string' shapes to 'tflT.Tensor' objects
 
-    _default_conversion_config = ConversionConfig()
+    neutron_target_spec: NeutronTargetSpec
+
+    dim_order_map: dict  # Mapping tensor names to their ExecuTorch `dim_order`.
 
     conversion_config: ConversionConfig
+
+    _default_conversion_config = ConversionConfig()
 
     def __init__(
         self,
         model_version: int,
         model_description: str,
+        neutron_target_spec: NeutronTargetSpec,
+        dim_order_map: dict[str, ...],
         conversion_config: ConversionConfig = _default_conversion_config,
     ) -> None:
         self._tfl_model = tflite_model.Model(model_version, model_description)
+        self.neutron_target_spec = neutron_target_spec
         self.conversion_config = conversion_config
+        self.dim_order_map = dim_order_map
 
         self.op_code_type_index_map = {}
         self._tensor_name_map = {}
@@ -213,7 +226,7 @@ class ModelBuilder:
         new_tensor.shape = translator.channels_last_shape_to_channels_first(
             t_tensor.shape
         )
-        new_tensor.tensor_format = new_tensor.tensor_format.to_node_format()
+        new_tensor.tensor_format = DataFormat.CHANNELS_FIRST
 
         perm = translator.create_channels_last_to_channels_first_permutation(
             t_tensor.rank
@@ -348,7 +361,30 @@ class ModelBuilder:
         for input_tensor in self.get_sub_graph().inputs.tmp_inputs:
 
             if input_tensor.tensor_format.is_channels_last():
+                # The input must be permuted.
+
+                if is_channels_last_dim_order(
+                    self.dim_order_map.get(input_tensor.name, [])
+                ):
+                    # Do NOT insert a Transpose, as the input will already be provided in the channels last format
+                    #  during runtime.
+                    new_inputs.append(input_tensor)
+                    continue
+
                 # Create a Transpose operator and replace the graph input
+
+                new_input_shape = translator.channels_last_shape_to_channels_first(
+                    input_tensor.shape
+                )
+                perm = translator.create_channels_first_to_channels_last_permutation(
+                    input_tensor.rank
+                )
+
+                if not transposition_is_supported_on_neutron(
+                    new_input_shape.vector, list(perm), self.neutron_target_spec
+                ):
+                    new_inputs.append(input_tensor)
+                    continue
 
                 if input_tensor.rank > 6:
                     msg = (
@@ -360,14 +396,9 @@ class ModelBuilder:
                 new_input = self.duplicate_tensor(
                     input_tensor, input_tensor.name + "_channels_first"
                 )
-                new_input.shape = translator.channels_last_shape_to_channels_first(
-                    input_tensor.shape
-                )
-                new_input.tensor_format = input_tensor.tensor_format.to_node_format()
+                new_input.shape = new_input_shape
+                new_input.tensor_format = DataFormat.CHANNELS_FIRST
 
-                perm = translator.create_channels_first_to_channels_last_permutation(
-                    input_tensor.rank
-                )
                 transpose = self._create_transpose_operator(
                     new_input, input_tensor, perm
                 )
@@ -390,7 +421,27 @@ class ModelBuilder:
 
         for output_tensor in self.get_sub_graph().outputs.tmp_outputs:
             if output_tensor.tensor_format.is_channels_last():
+                # The output must be permuted.
+
+                if is_channels_last_dim_order(
+                    self.dim_order_map.get(output_tensor.name, [])
+                ):
+                    # Do NOT insert a Transpose, as the output will be required to be in the channels last format
+                    #  during runtime.
+                    new_outputs.append(output_tensor)
+                    continue
+
                 # Add a Transpose operator, to make the output channels first
+
+                shape = output_tensor.shape.vector
+                perm = translator.create_channels_last_to_channels_first_permutation(
+                    len(shape), True
+                )
+                if not transposition_is_supported_on_neutron(
+                    shape, perm, self.neutron_target_spec
+                ):
+                    new_outputs.append(output_tensor)
+                    continue
 
                 if output_tensor.rank > 6:
                     logger.e(
@@ -439,13 +490,15 @@ class ModelBuilder:
         :return: The final TFLite model.
         """
 
-        if self.conversion_config.keep_io_format:
+        if self.conversion_config.use_neutron_for_format_conversion:
             # If the input or output is channels last, add a Transpose operator, to make is channels first.
             self._make_inputs_channels_first()
             self._make_outputs_channels_first()
 
         # Apply optimizations to the internal TFLite model.
-        optimizer.Optimizer(self, self.conversion_config).optimize(
+        optimizer.Optimizer(
+            self, self.conversion_config, self.neutron_target_spec
+        ).optimize(
             self.conversion_config.optimization_whitelist,
             self.conversion_config.optimization_blacklist,
         )
@@ -471,9 +524,39 @@ class ModelBuilder:
 
         return self._tfl_model
 
-    def _assign_tensor_and_buffer_indices(  # noqa C901
-        self, allow_inputs_stripping: bool
-    ):
+    def _assign_io_tensor_indices(self, inputs, outputs, allow_inputs_stripping: bool):
+        for tensor in outputs.tmp_outputs:
+            try:
+                outputs.append(tensor.tmp_index)
+            except Exception:
+                logger.e(
+                    logger.Code.GENERATED_MODEL_INVALID,
+                    f"The tensor '{tensor.name}' is among the model outputs, but does NOT appear in the graph!",
+                )
+
+        for tensor in inputs.tmp_inputs:
+            try:
+                inputs.append(tensor.tmp_index)
+            except Exception:
+                if allow_inputs_stripping:
+                    logger.i(
+                        f"The input tensor '{tensor.name}' will not be present in generated TFLite graph."
+                    )
+                else:
+                    logger.e(
+                        logger.Code.GENERATED_MODEL_INVALID,
+                        f"The tensor '{tensor.name}' is among the model inputs, but does NOT appear in the graph!",
+                    )
+
+    def _assign_operators_io_tensor_indices(self, operators):
+        for operator in operators.vector:
+            for inputTensor in operator.tmp_inputs:
+                operator.inputs.append(inputTensor.tmp_index)
+
+            for outputTensor in operator.tmp_outputs:
+                operator.outputs.append(outputTensor.tmp_index)
+
+    def _assign_tensor_and_buffer_indices(self, allow_inputs_stripping: bool):
         """Correctly initialize all references via indices in all tensors and buffers."""
 
         # Assign each buffer its index
@@ -494,39 +577,16 @@ class ModelBuilder:
 
         # TODO Remove inputs and outputs that are not in the tensors collection
 
+        subgraph = self.get_sub_graph()
+
         # Assign 'Outputs' and 'Inputs' their tensor indices
-        outputs = self.get_sub_graph().outputs
-        for tensor in outputs.tmp_outputs:
-            try:
-                outputs.append(tensor.tmp_index)
-            except Exception:
-                logger.e(
-                    logger.Code.GENERATED_MODEL_INVALID,
-                    f"The tensor '{tensor.name}' is among the model outputs, but does NOT appear in the graph!",
-                )
-
-        inputs = self.get_sub_graph().inputs
-        for tensor in inputs.tmp_inputs:
-            try:
-                inputs.append(tensor.tmp_index)
-            except Exception:
-                if allow_inputs_stripping:
-                    logger.i(
-                        f"The input tensor '{tensor.name}' will not be present in generated TFLite graph."
-                    )
-                else:
-                    logger.e(
-                        logger.Code.GENERATED_MODEL_INVALID,
-                        f"The tensor '{tensor.name}' is among the model inputs, but does NOT appear in the graph!",
-                    )
-
+        self._assign_io_tensor_indices(
+            inputs=subgraph.inputs,
+            outputs=subgraph.outputs,
+            allow_inputs_stripping=allow_inputs_stripping,
+        )
         # Assign each operator its inputs and outputs indices
-        for operator in self.get_sub_graph().operators.vector:
-            for inputTensor in operator.tmp_inputs:
-                operator.inputs.append(inputTensor.tmp_index)
-
-            for outputTensor in operator.tmp_outputs:
-                operator.outputs.append(outputTensor.tmp_index)
+        self._assign_operators_io_tensor_indices(operators=subgraph.operators)
 
     def _build_operator_code(
         self, op_type: BuiltinOperator, version, custom_code: str = None
@@ -1513,7 +1573,7 @@ class ModelBuilder:
         transpose_output.shape = tflite_model.Shape(
             translator.apply_permutation_to(transpose_output.shape.vector, perm)
         )
-        transpose_output.tensor_format = TensorFormat.CHANNELS_LAST
+        transpose_output.tensor_format = DataFormat.CHANNELS_LAST
 
         transpose = self._create_transpose_operator(
             transpose_input, transpose_output, perm

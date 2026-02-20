@@ -11,8 +11,8 @@ In this tutorial, you will learn how to export an XNNPACK lowered Model and run 
 :::{grid-item-card}  Before you begin it is recommended you go through the following:
 :class-card: card-prerequisites
 * [Setting up ExecuTorch](getting-started-setup.rst)
-* [Model Lowering Tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial)
-* [ExecuTorch XNNPACK Delegate](backends-xnnpack.md)
+* [Model Lowering Tutorial](tutorials/export-to-executorch-tutorial) <!-- @lint-ignore -->
+* [ExecuTorch XNNPACK Delegate](backends/xnnpack/xnnpack-overview.md)
 :::
 ::::
 
@@ -74,7 +74,7 @@ After lowering to the XNNPACK Program, we can then prepare it for executorch and
 
 
 ## Lowering a Quantized Model to XNNPACK
-The XNNPACK delegate can also execute symmetrically quantized models. To understand the quantization flow and learn how to quantize models, refer to [Custom Quantization](quantization-custom-quantization.md) note. For the sake of this tutorial, we will leverage the `quantize()` python helper function conveniently added to the `executorch/executorch/examples` folder.
+The XNNPACK delegate can also execute symmetrically quantized models. To understand the quantization flow and learn how to quantize models, refer to [Quantization Overview](quantization-overview.md). For the sake of this tutorial, we will leverage the `quantize()` python helper function conveniently added to the `executorch/executorch/examples` folder.
 
 ```python
 from torch.export import export

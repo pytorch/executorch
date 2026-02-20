@@ -1,14 +1,15 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 from typing import Tuple
 
-import common
 import pytest
 
 import torch
+
+from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -18,7 +19,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-from torchvision import models, transforms
+from torchvision import models, transforms  # type: ignore[import-untyped]
 
 mv3 = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights)
 mv3 = mv3.eval()
@@ -49,6 +50,8 @@ def test_mv3_tosa_INT():
         use_to_edge_transform_and_lower=True,
         atol=0.5,
         qtol=1,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -85,28 +88,28 @@ def test_mv3_u85_INT():
 
 @common.SkipIfNoModelConverter
 @pytest.mark.slow
-def test_mv3_vgf_INT():
+def test_mv3_vgf_quant():
     pipeline = VgfPipeline[input_t](
         mv3,
         model_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
         atol=0.5,
         qtol=1,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_mv3_vgf_FP():
+def test_mv3_vgf_no_quant():
     pipeline = VgfPipeline[input_t](
         mv3,
         model_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()

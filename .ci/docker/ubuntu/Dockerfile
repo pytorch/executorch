@@ -64,9 +64,10 @@ ENV SCCACHE_S3_KEY_PREFIX executorch
 ENV SCCACHE_REGION us-east-1
 
 ARG TORCH_VERSION
+ARG SKIP_PYTORCH
 COPY ./common/install_pytorch.sh install_pytorch.sh
 COPY ./common/utils.sh utils.sh
-RUN bash ./install_pytorch.sh && rm install_pytorch.sh utils.sh
+RUN if [ -z "${SKIP_PYTORCH}" ]; then bash ./install_pytorch.sh; fi && rm install_pytorch.sh utils.sh
 
 ARG LINTRUNNER
 # Install lintrunner if needed
@@ -83,6 +84,9 @@ RUN if [ -n "${ANDROID_NDK_VERSION}" ]; then bash ./install_android.sh; fi
 RUN rm install_android.sh
 
 ARG ARM_SDK
+COPY ./common/install_arm.sh install_arm.sh
+RUN if [ -n "${ARM_SDK}" ]; then bash ./install_arm.sh; fi
+RUN rm install_arm.sh
 
 ARG ZEPHYR_SDK
 COPY ./common/install_zephyr.sh install_zephyr.sh
@@ -93,6 +97,24 @@ RUN rm install_zephyr.sh utils.sh
 ARG QNN_SDK
 
 ARG MEDIATEK_SDK
+
+ARG CUDA_WINDOWS_CROSS_COMPILE
+ARG CUDA_VERSION
+COPY ./common/install_cuda.sh install_cuda.sh
+COPY ./common/install_cuda_windows_cross_compile.sh install_cuda_windows_cross_compile.sh
+COPY ./common/utils.sh utils.sh
+RUN if [ -n "${CUDA_WINDOWS_CROSS_COMPILE}" ]; then \
+    CUDA_VERSION=${CUDA_VERSION} bash ./install_cuda.sh && \
+    bash ./install_cuda_windows_cross_compile.sh; \
+    fi
+RUN rm -f install_cuda.sh install_cuda_windows_cross_compile.sh utils.sh
+# Set up CUDA environment for Linux compilation (nvcc, etc.)
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+# Ensure system libstdc++ is found before conda's (GLIBCXX_3.4.30 compatibility)
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+# Windows CUDA for cross-compilation
+ENV WINDOWS_CUDA_HOME=/opt/cuda-windows/extracted/cuda_cudart/cudart
 
 USER ci-user
 CMD ["bash"]

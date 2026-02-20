@@ -41,10 +41,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "cortex_m_operators",
         srcs = [],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         platforms = CXX,
         exported_deps = all_op_targets,
     )

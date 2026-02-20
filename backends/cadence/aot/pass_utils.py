@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Set, Type, Union
 
@@ -13,9 +14,10 @@ import torch
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
-from executorch.exir.pass_base import PassBase, PassResult
+from executorch.exir.pass_base import ExportPass, PassBase, PassResult
 
 from torch._ops import OpOverloadPacket
+from torch.fx import Node
 
 
 # Is an overlap in tensor lifetime and storage allowed at the current opt level?
@@ -229,3 +231,50 @@ def set_arg(
 def none_throws(x: Optional[PassResult]) -> PassResult:
     assert x is not None
     return x
+
+
+class RemoveOrReplacePassInterface(ExportPass):
+    @property
+    @abstractmethod
+    def targets(self) -> list[EdgeOpOverload]:
+        """
+        The list of targets to potentially remove or replace.
+        """
+        raise NotImplementedError("`targets` must be implemented")
+
+    @abstractmethod
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        """
+        If the node should be removed/replaced, removes/replaces from the graph. Returns
+        True if the graph was modified, else False.
+        """
+        raise NotImplementedError("`maybe_remove_or_replace` must be implemented")
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        """
+        For each node in targets, if the node should be removed/replaced,
+        removes/replaces from the graph and returns the modified graph and modified
+        set to True.
+        If no node should be removed/replaced, returns a pass result with the original
+        graph module and False for modified.
+        """
+        changed = False
+        for target in self.targets:
+            for module in filter(
+                lambda m: isinstance(m, torch.fx.GraphModule), graph_module.modules()
+            ):
+                for node in module.graph.find_nodes(op="call_function", target=target):
+                    if len(node.users) == 0:
+                        # It is possible that maybe_remove_or_replace would have removed
+                        # this target by starting from a different target. In this case,
+                        # we should ignore it. If it wasn't erased, it will be handled
+                        # in eliminate_dead_code.
+                        continue
+                    changed |= self.maybe_remove_or_replace(node)
+
+        if changed:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return super().call(graph_module)
+
+        return PassResult(graph_module, False)

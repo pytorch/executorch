@@ -6,13 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <api.h>
 #include <executorch/backends/cadence/vision/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <idma_init.h>
+#include <include/api.h>
+#include <include_private/idma_init.h>
 #include <stdio.h>
 
 using executorch::aten::ScalarType;

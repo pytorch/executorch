@@ -570,17 +570,19 @@ for (int i=0; i<out.size(); i++) {{
             return ""
 
         if ref.src_cpp_type == AT_TENSOR:
-            ret_str = f"{self.graph}{self.dot}copy_into_staging("
+            ret_str = f"{self.graph}{self.dot}maybe_cast_and_copy_into_staging("
             ret_str += f"{ref.name}.staging, "
             ret_str += f"{ref.src_cpp_name}.const_data_ptr(), "
-            ret_str += f"{ref.src_cpp_name}.numel());\n"
+            ret_str += f"{ref.src_cpp_name}.numel(), "
+            ret_str += f"from_at_scalartype({ref.src_cpp_name}.scalar_type()));\n"
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             ret_str = ""
             ret_str += f"for (int i=0; i < {ref.name}_io_value_refs.size(); i++) {{\n"
-            ret_str += f"  {self.graph}{self.dot}copy_into_staging("
+            ret_str += f"  {self.graph}{self.dot}maybe_cast_and_copy_into_staging("
             ret_str += f"{ref.name}_io_value_refs[i].staging, "
             ret_str += f"{ref.src_cpp_name}[i].const_data_ptr(), "
-            ret_str += f"{ref.src_cpp_name}[i].numel());\n"
+            ret_str += f"{ref.src_cpp_name}[i].numel(), "
+            ret_str += f"from_at_scalartype({ref.src_cpp_name}[i].scalar_type()));\n"
             ret_str += "}\n"
         else:
             raise AssertionError(f"{ref.src_cpp_type} not expected")
@@ -617,17 +619,19 @@ for (int i=0; i<out.size(); i++) {{
             assert ref.is_out
             ret_str = f"""
 for (int i=0; i<out.size(); i++) {{
-    {self.graph}{self.dot}copy_from_staging(
+    {self.graph}{self.dot}maybe_cast_and_copy_from_staging(
         {ref.io_value_list_name}[i].staging,
         {ref.vk_out}[i].mutable_data_ptr(),
-        {ref.vk_out}[i].numel());
+        {ref.vk_out}[i].numel(),
+        from_at_scalartype({ref.vk_out}[i].scalar_type()));
 }}
 """
             return ret_str
 
         assert ref.src_cpp_type == AT_TENSOR and ref.is_out
-        ret_str = f"{self.graph}{self.dot}copy_from_staging({ref.name}_staging, "
-        ret_str += f"vk_{ref.name}.mutable_data_ptr(), vk_{ref.name}.numel());\n"
+        ret_str = f"{self.graph}{self.dot}maybe_cast_and_copy_from_staging({ref.name}_staging, "
+        ret_str += f"vk_{ref.name}.mutable_data_ptr(), vk_{ref.name}.numel(), "
+        ret_str += f"from_at_scalartype(vk_{ref.name}.scalar_type()));\n"
 
         return ret_str
 

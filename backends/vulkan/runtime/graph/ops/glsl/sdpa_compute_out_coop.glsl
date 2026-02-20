@@ -27,7 +27,7 @@ $if V_CACHE_STORAGE == "buffer":
 
 #define NUM_WORKERS_PER_OUT 64
 
-${define_required_extensions(DTYPE)}
+${define_required_extensions(IO_STORAGE, DTYPE)}
 
 layout(std430) buffer;
 
@@ -81,6 +81,7 @@ void main() {
   const int Q_H = q_projected_sizes.y;
   // sequence length
   const int S = q_projected_sizes.z;
+  const int S_aligned = align_up_4(S);
 
   // number of K/V heads
   const int KV_H = v_cache_sizes.y;
@@ -120,7 +121,7 @@ void main() {
       s,
       q_h,
       context_texel_len,
-      S,
+      S_aligned,
       Q_H);
 
     load_v_cache_tile_no_checks(
@@ -146,7 +147,7 @@ void main() {
         s,
         q_h,
         context_texel_len,
-        S,
+        S_aligned,
         Q_H);
 
       load_v_cache_tile_with_checks(

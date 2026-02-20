@@ -15,6 +15,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace executorch {
 namespace backends {
@@ -34,8 +35,20 @@ inline executorch::aten::ScalarType dtype_to_scalar_type(int32_t dtype) {
   // Convert based on known PyTorch dtype codes (without CUDA-specific
   // dependency)
   switch (dtype) {
+    case 0: // PyTorch's uint8 dtype code
+      return executorch::aten::ScalarType::Byte;
+    case 1: // PyTorch's int8 dtype code
+      return executorch::aten::ScalarType::Char;
+    case 2: // PyTorch's int16 dtype code
+      return executorch::aten::ScalarType::Short;
+    case 3: // PyTorch's int32 dtype code
+      return executorch::aten::ScalarType::Int;
+    case 4: // PyTorch's int64 dtype code
+      return executorch::aten::ScalarType::Long;
     case 6: // PyTorch's float32 dtype code
       return executorch::aten::ScalarType::Float;
+    case 11: // PyTorch's bool dtype code
+      return executorch::aten::ScalarType::Bool;
     case 15: // PyTorch's bfloat16 dtype code
       return executorch::aten::ScalarType::BFloat16;
     // Future support for additional dtypes can be added here
@@ -91,6 +104,64 @@ inline bool is_tensor_contiguous(
 }
 
 } // extern "C"
+
+// Utility function to convert sizes pointer to vector
+inline std::vector<executorch::aten::SizesType> convert_sizes_to_vector(
+    int64_t ndim,
+    const int64_t* sizes_ptr) {
+  std::vector<executorch::aten::SizesType> sizes(ndim);
+  for (int i = 0; i < ndim; i++) {
+    sizes[i] = static_cast<executorch::aten::SizesType>(sizes_ptr[i]);
+  }
+  return sizes;
+}
+
+// Utility function to convert strides pointer to vector or calculate from sizes
+inline std::vector<executorch::aten::StridesType> convert_strides_to_vector(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr) {
+  std::vector<executorch::aten::StridesType> strides(ndim);
+
+  if (strides_ptr != nullptr) {
+    // Use provided strides.
+    for (int64_t i = 0; i < ndim; i++) {
+      strides[i] = static_cast<executorch::aten::StridesType>(strides_ptr[i]);
+    }
+  } else {
+    // Calculate strides from sizes.
+    if (ndim > 0) {
+      strides[ndim - 1] = static_cast<executorch::aten::StridesType>(
+          1); // Last dimension has stride 1
+      for (int64_t i = ndim - 2; i >= 0; i--) {
+        if (sizes_ptr[i + 1] == 0) {
+          strides[i] = strides[i + 1]; // Copy stride when size is 0
+        } else {
+          strides[i] = static_cast<executorch::aten::StridesType>(
+              static_cast<int64_t>(strides[i + 1]) * sizes_ptr[i + 1]);
+        }
+      }
+    }
+  }
+  return strides;
+}
+
+// Check if tensor is in contiguous memory format (NCHW for 4D tensors)
+// Contiguous format means strides decrease from left to right:
+// For NCHW: strides = [C*H*W, H*W, W, 1]
+inline bool is_contiguous_tensor(
+    std::vector<executorch::aten::SizesType>& sizes,
+    std::vector<executorch::aten::StridesType>& strides) {
+  int64_t ndim = static_cast<int64_t>(strides.size());
+  int64_t expected_stride = 1;
+  for (int64_t i = ndim - 1; i >= 0; i--) {
+    if (strides[i] != expected_stride) {
+      return false;
+    }
+    expected_stride *= sizes[i];
+  }
+  return true;
+}
 
 } // namespace aoti
 } // namespace backends

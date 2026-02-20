@@ -24,7 +24,7 @@ class QnnDlcManager;
 class QnnContext {
  public:
   explicit QnnContext(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnBackend* backend,
       QnnDevice* device,
       QnnBackendCache* cache,
@@ -74,7 +74,7 @@ class QnnContext {
 
  private:
   Qnn_ContextHandle_t handle_;
-  const QnnImplementation& implementation_;
+  QnnImplementation* implementation_;
   QnnBackend* backend_;
   QnnDevice* device_;
   QnnBackendCache* cache_;

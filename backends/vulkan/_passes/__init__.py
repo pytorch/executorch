@@ -16,13 +16,9 @@ from executorch.backends.vulkan._passes.remove_asserts import (
     remove_asserts,
     RemoveAssertsTransform,
 )
-from executorch.backends.vulkan._passes.remove_local_scalar_dense_ops import (
-    RemoveLocalScalarDenseOpsTransform,
-)
 from executorch.backends.vulkan._passes.remove_redundant_ops import (
     RemoveRedundantOpsTransform,
 )
-from executorch.backends.vulkan._passes.replace_qdq import ReplaceQDQPass
 from executorch.backends.vulkan._passes.squeeze_unsqueeze_inputs import (
     SqueezeUnsqueezeInputs,
 )
@@ -35,9 +31,7 @@ __all__ = [
     "insert_prepack_nodes",
     "remove_asserts",
     "RemoveAssertsTransform",
-    "RemoveLocalScalarDenseOpsTransform",
     "RemoveRedundantOpsTransform",
-    "ReplaceQDQPass",
     "SqueezeUnsqueezeInputs",
     "TagMemoryMetaPass",
 ]

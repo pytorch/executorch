@@ -9,7 +9,7 @@ Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch.
 
 ## References
 ### Qualcomm AI Engine Direct
-- [Operator Definitions for HTP](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/HtpOpDefSupplement.html)
+- [Operator Definitions for HTP](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/HtpOpDefSupplement.html)
 
 ### PyTorch
 - [ATen Operator Definitions](https://github.com/pytorch/pytorch/tree/main/aten/src/ATen/native)
@@ -40,7 +40,7 @@ In order to conduct PTQ for floating point precision graph, observers are requir
         kernel --> id6(Q_k) --> id7(DQ_k) --> id1(convolution)
         bias --> id8(Q_b) --> id9(DQ_b) --> id1(convolution)
     ```
-Qualcomm backend will consume the generated encodings and lower operators with fixed precision. This tutorial will guide you through the details of inserting observer and some useful utilies.
+Qualcomm backend will consume the generated encodings and lower operators with fixed precision. This tutorial will guide you through the details of inserting observer and some useful utilities.
 
 ### Register Annotation via Operator Type
 Let's start with hooking callback for designated operator target:
@@ -66,7 +66,7 @@ def annotate_xxx(node: Node, quantization_config: QuantizationConfig) -> None:
 - __quantization_config__: data structure describing quantization configurations for IO activation / weight / bias
 
 ### Example of Conv2d Annotation
-Conv2d accepts up to three input tensors: `input activation`, `kernel`, `bias`. There are constraints imposed by [Qualcomm AI Engine Direct Manual](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/HtpOpDefSupplement.html#conv2d).<br/>
+Conv2d accepts up to three input tensors: `input activation`, `kernel`, `bias`. There are constraints imposed by [Qualcomm AI Engine Direct Manual](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/HtpOpDefSupplement.html#conv2d).<br/>
 Take 8-bit fixed point as example:
 - __weight__: must be symmetrically quantized if per-channel observer is applied
 - __bias__: must have `QNN_DATATYPE_SFIXED_POINT_32` and be symmetrically quantized with expected encoding `scales = weight.scales * input.scale`, `offset = 0` if per-channel observer is applied.
@@ -105,7 +105,7 @@ def ptq_per_channel_quant_config(
 
     return quantization_config
 ```
-Here we choose `torch.uint8` + `MinMaxObserver` for better converage of IO activation and apply rules to `weight` w/`PerChannelMinMaxObserver`, `bias` w/`_derived_bias_quant_spec` (a callable method to calculate encoding in desired way) to meet aforementioned constraints. The well-defined `quantizaton_config` will then be shipped to callback for annotation.<br/>
+Here we choose `torch.uint8` + `MinMaxObserver` for better coverage of IO activation and apply rules to `weight` w/`PerChannelMinMaxObserver`, `bias` w/`_derived_bias_quant_spec` (a callable method to calculate encoding in desired way) to meet aforementioned constraints. The well-defined `quantizaton_config` will then be shipped to callback for annotation.<br/>
 
 Now, we can start to fill in the function body:
 - Register annotator
@@ -147,13 +147,13 @@ Now, we can start to fill in the function body:
 
 - Update node's meta with framework compatible data structure
     ```python
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
         )
     ```
-    After done processing `input_qspec_map`, it's required to have it in node's meta with special tag (`QUANT_ANNOTATION_KEY`) for `convert_pt2e` to properly insert observers.
+    After done processing `input_qspec_map`, it's required to have it in node's meta with special tag (`Q_ANNOTATION_KEY`) for `convert_pt2e` to properly insert observers.
 
 ### Common Annotators
 For operators without extra parameters to be observed, there are pre-defined annotation method for convenience:

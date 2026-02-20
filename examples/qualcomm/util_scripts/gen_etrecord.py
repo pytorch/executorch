@@ -61,6 +61,7 @@ def main(args):
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
         device_id=args.device,
         soc_model=args.model,
+        target=args.target,
     )
     adb.push(inputs=[sample_input])
     adb.execute()

@@ -16,6 +16,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <executorch/backends/cadence/common/xt_macros.h>
+
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -184,10 +186,25 @@ Tensor& add_out(
       for (int i = 0; i < b.dim(); i++)
         inp2_shape[i + off_b] = b.size(i);
 
-      xa_nn_elm_add_broadcast_4D_f32xf32_f32(
-          out_data, out_shape, a_data, inp1_shape, b_data, inp2_shape);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_broadcast_4D_f32xf32_f32,
+          out_data,
+          out_shape,
+          a_data,
+          inp1_shape,
+          b_data,
+          inp2_shape);
     } else {
-      xa_nn_elm_add_f32xf32_f32(out_data, a_data, b_data, out.numel());
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_f32xf32_f32,
+          out_data,
+          a_data,
+          b_data,
+          out.numel());
     }
 
     return out;

@@ -226,13 +226,14 @@ void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
   }
 }
 
-void Context::flush() {
+void Context::wait_for_queue() {
   VK_CHECK(vkQueueWaitIdle(queue().handle));
+}
 
+void Context::clear_resources() {
   command_pool_.flush();
   descriptor_pool_.flush();
 
-  // If there is an existing command buffer, invalidate it
   if (cmd_) {
     cmd_.invalidate();
   }
@@ -241,6 +242,11 @@ void Context::flush() {
   std::lock_guard<std::mutex> imagelist_lock(image_clearlist_mutex_);
   buffers_to_clear_.clear();
   images_to_clear_.clear();
+}
+
+void Context::flush() {
+  wait_for_queue();
+  clear_resources();
 }
 
 bool available() {
@@ -288,9 +294,8 @@ Context* context() {
   return context.get();
 }
 
-#ifdef VULKAN_DEBUG
-
-#ifdef VK_KHR_pipeline_executable_properties
+#if defined(VK_KHR_pipeline_executable_properties) && \
+    defined(ETVK_INSPECT_PIPELINES)
 
 VkPipeline Context::get_shader_pipeline(
     const vkapi::ShaderInfo& shader,
@@ -502,9 +507,7 @@ void Context::print_shader_executable_properties(
   }
 }
 
-#endif // VK_KHR_pipeline_executable_properties
-
-#endif // VULKAN_DEBUG
+#endif // VK_KHR_pipeline_executable_properties && ETVK_INSPECT_PIPELINES
 
 } // namespace api
 } // namespace vkcompute

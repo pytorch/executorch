@@ -12,10 +12,7 @@ def define_common_targets():
         exported_headers = [
             "thread_parallel.h",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/extension/threadpool:threadpool",
         ],

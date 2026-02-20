@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/generic/operators/op_quantized_conv2d.h>
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -175,15 +176,16 @@ void xa_opt_quantized_conv2d_nhwc(
     WORD32* __restrict__ p_bias =
         (WORD32* __restrict__)bias.const_data_ptr<int32_t>();
 
-    WORD32 input_height = conv1d ? 1 : input.size(2);
-    WORD32 input_width = conv1d ? input.size(2) : input.size(3);
-    WORD32 input_channels = input.size(1);
-    WORD32 kernel_height = conv1d ? 1 : weight.size(2);
-    WORD32 kernel_width = conv1d ? weight.size(2) : weight.size(3);
-    WORD32 kernel_channels = weight.size(1);
+    // NHWC layout: 4D=[N,H,W,C], 3D=[N,W,C]
+    WORD32 input_height = conv1d ? 1 : input.size(1);
+    WORD32 input_width = conv1d ? input.size(1) : input.size(2);
+    WORD32 input_channels = conv1d ? input.size(2) : input.size(3);
+    WORD32 kernel_height = conv1d ? 1 : weight.size(1);
+    WORD32 kernel_width = conv1d ? weight.size(1) : weight.size(2);
+    WORD32 kernel_channels = conv1d ? weight.size(2) : weight.size(3);
     WORD32 out_channels = weight.size(0);
-    WORD32 out_height = conv1d ? 1 : out.size(2);
-    WORD32 out_width = conv1d ? out.size(2) : out.size(3);
+    WORD32 out_height = conv1d ? 1 : out.size(1);
+    WORD32 out_width = conv1d ? out.size(1) : out.size(2);
     WORD32 batches = input.size(0);
 
     WORD32 x_stride = stride[1];
@@ -306,18 +308,10 @@ void xa_opt_quantized_conv2d_nhwc(
 
       p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
 
-      WORD8* ptr1 = (WORD8*)kernels::allocate_temp_memory(
-          ctx,
-          ((batches * out_channels * out_height * out_width) + 8) *
-              sizeof(WORD8));
-
-      WORD8* p_out_temp = (WORD8*)ALIGN_PTR(ptr1, 8);
-
       for (int _n = 0; _n < batches; _n++) {
         WORD8* in_batch =
             p_inp + _n * input_channels * input_height * input_width;
-        WORD8* out_batch =
-            p_out_temp + _n * out_channels * out_height * out_width;
+        WORD8* out_batch = p_out + _n * out_channels * out_height * out_width;
 
         xa_nn_conv2d_depthwise_per_chan_sym8sxasym8s(
             out_batch,
@@ -435,9 +429,32 @@ void quantized_conv2d_nhwc_out(
     const Tensor& bias_scale,
     double output_scale,
     int64_t output_zero_point,
-    __ET_UNUSED const Tensor& out_multiplier,
-    __ET_UNUSED const Tensor& out_shift,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
     Tensor& out) {
+  // Handle W8A16 heterogeneous type (int16_t activations, int8_t weights)
+  if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      input.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      weight.scalar_type() == ::executorch::aten::ScalarType::Char) {
+    ::impl::generic::native::quantized_conv2d_nhwc_out(
+        ctx,
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+        out);
+    return;
+  }
   const float bias_scale_float = bias_scale.const_data_ptr<float>()[0];
   const int32_t weight_zero_point_int =
       weight_zero_point.const_data_ptr<int32_t>()[0];
@@ -502,8 +519,31 @@ void quantized_conv2d_nhwc_per_tensor_out(
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
     Tensor& out) {
-  bool optimized = 0;
+  // Handle W8A16 heterogeneous type (int16_t activations, int8_t weights)
+  if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      input.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      weight.scalar_type() == ::executorch::aten::ScalarType::Char) {
+    ::impl::generic::native::quantized_conv2d_nhwc_per_tensor_out(
+        ctx,
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+        out);
+    return;
+  }
 
+  bool optimized = 0;
   if ((input.scalar_type() == ScalarType::Char) ||
       (input.scalar_type() == ScalarType::Byte))
     optimized = 1;

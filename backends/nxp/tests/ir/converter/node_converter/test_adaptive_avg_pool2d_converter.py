@@ -16,6 +16,7 @@ from executorch.backends.nxp.tests.models import (
     AdaptiveAvgPool2dConvModule,
 )
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 @pytest.fixture(autouse=True)
@@ -40,14 +41,16 @@ def reseed_model_per_test_run():
     ],
 )
 def test_adaptive_avg_pool_2d_delegated_quant_conversion(
-    mocker, input_shape, output_size
+    mocker, input_shape, output_size, use_qat
 ):
     model = AdaptiveAvgPool2dConvModule(output_size)
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
+    ).exported_program()
     nodes = [str(node) for node in edge_program.graph.nodes]
 
     # Input size is a multiple of output size, can be converted to AveragePool, node is delegated
@@ -84,14 +87,16 @@ def test_adaptive_avg_pool_2d_delegated_quant_conversion(
     ],
 )
 def test_adaptive_avg_pool_2d_non_delegated_quant_conversion(
-    mocker, input_shape, output_size
+    mocker, input_shape, output_size, use_qat
 ):
     model = AdaptiveAvgPool2dConvModule(output_size)
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
+    ).exported_program()
     nodes = list(edge_program.graph.nodes)
 
     # Input size is not a multiple of output size, cannot be converted to AveragePool, node is not delegated
@@ -115,14 +120,16 @@ def test_adaptive_avg_pool_2d_non_delegated_quant_conversion(
     )
 
 
-def test_adaptive_avg_pool_2d_mean_dim_quant_conversion(mocker):
+def test_adaptive_avg_pool_2d_mean_dim_quant_conversion(mocker, use_qat):
     input_shape = (1, 4, 16, 16)
     model = AdaptiveAvgPool2dConvMeanDimModule()
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return

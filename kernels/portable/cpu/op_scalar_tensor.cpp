@@ -22,7 +22,7 @@ scalar_tensor_out(KernelRuntimeContext& ctx, const Scalar& s, Tensor& out) {
 
   ScalarType out_type = out.scalar_type();
 
-  constexpr auto name = "scalar_tensor.out";
+  static constexpr auto name = "scalar_tensor.out";
 
   ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE, [&]() {
     auto opt_val_casted = utils::internal::check_overflow_scalar_cast<CTYPE>(s);

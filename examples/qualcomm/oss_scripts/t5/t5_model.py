@@ -9,15 +9,11 @@ from typing import List, Optional
 import torch
 from tqdm import tqdm
 from transformers import AutoTokenizer, T5Config
-from transformers.cache_utils import (
-    Cache,
-    DynamicCache,
-    EncoderDecoderCache,
-    StaticCache,
-)
+from transformers.cache_utils import DynamicCache, EncoderDecoderCache, StaticCache
+from transformers.masking_utils import create_bidirectional_mask, create_causal_mask
 from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
 from transformers.models.t5.modeling_t5 import T5Attention, T5Stack
-from transformers.utils import is_torchdynamo_compiling, logging
+from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
 
@@ -27,11 +23,10 @@ class CustomT5Stack(T5Stack):
     def __init__(
         self,
         config,
-        embed_tokens=None,
         max_hidden_seq_length=4096,
         max_cache_length=1024,
     ):
-        super().__init__(config, embed_tokens)
+        super().__init__(config)
 
         # ====================Qualcomm Changed=================================
         # Customized position bias computation:
@@ -59,16 +54,18 @@ class CustomT5Stack(T5Stack):
         )
 
         # Create relative position table for decoder
-        self_attn_relative_position_bucket = T5Attention._relative_position_bucket(
-            torch.arange(max_cache_length)[None, :]
-            - torch.arange(max_cache_length)[:, None],
-            bidirectional=(not self.is_decoder),
-            num_buckets=config.relative_attention_num_buckets,
-            max_distance=config.relative_attention_max_distance,
+        decoder_self_attn_relative_position_bucket = (
+            T5Attention._relative_position_bucket(
+                torch.arange(max_cache_length)[None, :]
+                - torch.arange(max_cache_length)[:, None],
+                bidirectional=(not self.is_decoder),
+                num_buckets=config.relative_attention_num_buckets,
+                max_distance=config.relative_attention_max_distance,
+            )
         )
         self.register_buffer(
             "decoder_self_attn_position_bias",
-            self_attn_relative_position_bucket,
+            decoder_self_attn_relative_position_bucket,
         )
         # ========================================================================
 
@@ -79,19 +76,14 @@ class CustomT5Stack(T5Stack):
         encoder_hidden_states=None,
         encoder_attention_mask=None,
         inputs_embeds=None,
-        head_mask=None,
-        cross_attn_head_mask=None,
         past_key_values=None,
         use_cache=None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
         cache_position=None,
+        **kwargs,
     ):
-        # Model parallel
-        if self.model_parallel:
-            torch.cuda.set_device(self.first_device)
-            self.embed_tokens = self.embed_tokens.to(self.first_device)
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         output_attentions = (
             output_attentions
@@ -145,25 +137,19 @@ class CustomT5Stack(T5Stack):
                     f"`use_cache` can only be set to `True` if {self} is used as a decoder"
                 )
 
-        # initialize past_key_values
-        return_legacy_cache = False
-        return_self_attention_cache = False
-        if self.is_decoder and (use_cache or past_key_values is not None):
-            if isinstance(past_key_values, Cache) and not isinstance(
-                past_key_values, EncoderDecoderCache
-            ):
-                return_self_attention_cache = True
+        if self.is_decoder:
+            if use_cache and past_key_values is None:
+                if self.config.is_encoder_decoder:
+                    past_key_values = EncoderDecoderCache(
+                        DynamicCache(config=self.config),
+                        DynamicCache(config=self.config),
+                    )
+                else:
+                    past_key_values = DynamicCache(config=self.config)
+            # ====================Qualcomm Changed=================================
+            else:
                 past_key_values = EncoderDecoderCache(past_key_values, DynamicCache())
-            elif not isinstance(past_key_values, EncoderDecoderCache):
-                return_legacy_cache = True
-                logger.warning_once(
-                    "Passing a tuple of `past_key_values` is deprecated and will be removed in Transformers v4.48.0. "
-                    "You should pass an instance of `EncoderDecoderCache` instead, e.g. "
-                    "`past_key_values=EncoderDecoderCache.from_legacy_cache(past_key_values)`."
-                )
-                past_key_values = EncoderDecoderCache.from_legacy_cache(past_key_values)
-            elif past_key_values is None:
-                past_key_values = EncoderDecoderCache(DynamicCache(), DynamicCache())
+            # =====================================================================
         elif not self.is_decoder:
             # do not pass cache object down the line for encoder stack
             # it messes indexing later in decoder-stack because cache object is modified in-place
@@ -179,58 +165,37 @@ class CustomT5Stack(T5Stack):
                 device=inputs_embeds.device,
             )
 
-        if attention_mask is None and not is_torchdynamo_compiling():
-            # required mask seq length can be calculated via length of past cache
-            mask_seq_length = past_key_values_length + seq_length
-            attention_mask = torch.ones(
-                batch_size, mask_seq_length, device=inputs_embeds.device
-            )
-
         if self.config.is_decoder:
-            causal_mask = self._update_causal_mask(
-                attention_mask,
-                inputs_embeds,
-                cache_position,
-                (
+            attention_mask = create_causal_mask(
+                config=self.config,
+                input_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+                cache_position=cache_position,
+                past_key_values=(
                     past_key_values.self_attention_cache
-                    if past_key_values is not None
-                    else None
+                    if isinstance(past_key_values, EncoderDecoderCache)
+                    else past_key_values
                 ),
-                output_attentions,
             )
-        elif attention_mask is not None:
-            causal_mask = attention_mask[:, None, None, :]
-            causal_mask = causal_mask.to(dtype=inputs_embeds.dtype)
-            causal_mask = (1.0 - causal_mask) * torch.finfo(inputs_embeds.dtype).min
         else:
-            causal_mask = None
+            attention_mask = create_bidirectional_mask(
+                config=self.config,
+                input_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+            )
 
-        # If a 2D or 3D attention mask is provided for the cross-attention
-        # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
+        encoder_extended_attention_mask = None
         if self.is_decoder and encoder_hidden_states is not None:
-            encoder_batch_size, encoder_sequence_length, _ = (
-                encoder_hidden_states.size()
+            encoder_extended_attention_mask = create_bidirectional_mask(
+                config=self.config,
+                input_embeds=inputs_embeds,
+                attention_mask=encoder_attention_mask,
+                encoder_hidden_states=encoder_hidden_states,
             )
-            encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
-            if encoder_attention_mask is None:
-                encoder_attention_mask = torch.ones(
-                    encoder_hidden_shape, device=inputs_embeds.device, dtype=torch.long
-                )
-            encoder_extended_attention_mask = self.invert_attention_mask(
-                encoder_attention_mask
-            )
-        else:
-            encoder_extended_attention_mask = None
 
-        # Prepare head mask if needed
-        head_mask = self.get_head_mask(head_mask, self.config.num_layers)
-        cross_attn_head_mask = self.get_head_mask(
-            cross_attn_head_mask, self.config.num_layers
-        )
         all_hidden_states = () if output_hidden_states else None
         all_attentions = () if output_attentions else None
         all_cross_attentions = () if (output_attentions and self.is_decoder) else None
-
         # ====================Qualcomm Changed=================================
         # The bias is indexed by cache_position to select the correct positions for the current step.
         if self.is_decoder:
@@ -258,10 +223,10 @@ class CustomT5Stack(T5Stack):
         position_bias = position_bias[:, :, -seq_length:, :]
         if self.is_decoder:
             position_bias = (
-                position_bias + causal_mask[:, :, :, : self.max_cache_length]
+                position_bias + attention_mask[:, :, :, : self.max_cache_length]
             )
         else:
-            position_bias = position_bias + causal_mask[:, :, :, :seq_length]
+            position_bias = position_bias + attention_mask[:, :, :, :seq_length]
 
         # For cross-attention in decoder, precompute encoder-decoder position bias as zeros and add encoder attention mask.
         encoder_decoder_position_bias = None
@@ -274,93 +239,43 @@ class CustomT5Stack(T5Stack):
                 encoder_decoder_position_bias
                 + encoder_extended_attention_mask[:, :, :, : self.max_hidden_seq_length]
             )
-        # ========================================================================
+        # =====================================================================
 
         hidden_states = self.dropout(inputs_embeds)
 
-        for i, layer_module in enumerate(self.block):
-            layer_head_mask = head_mask[i]
-            cross_attn_layer_head_mask = cross_attn_head_mask[i]
-            # Model parallel
-            if self.model_parallel:
-                torch.cuda.set_device(hidden_states.device)
-                # Ensure that attention_mask is always on the same device as hidden_states
-                if causal_mask is not None:
-                    causal_mask = causal_mask.to(hidden_states.device)
-                if position_bias is not None:
-                    position_bias = position_bias.to(hidden_states.device)
-                if encoder_hidden_states is not None:
-                    encoder_hidden_states = encoder_hidden_states.to(
-                        hidden_states.device
-                    )
-                if encoder_extended_attention_mask is not None:
-                    encoder_extended_attention_mask = (
-                        encoder_extended_attention_mask.to(hidden_states.device)
-                    )
-                if encoder_decoder_position_bias is not None:
-                    encoder_decoder_position_bias = encoder_decoder_position_bias.to(
-                        hidden_states.device
-                    )
-                if layer_head_mask is not None:
-                    layer_head_mask = layer_head_mask.to(hidden_states.device)
-                if cross_attn_layer_head_mask is not None:
-                    cross_attn_layer_head_mask = cross_attn_layer_head_mask.to(
-                        hidden_states.device
-                    )
+        for layer_module in self.block:
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
-            if self.gradient_checkpointing and self.training:
-                layer_outputs = self._gradient_checkpointing_func(
-                    layer_module.forward,
-                    hidden_states,
-                    causal_mask,
-                    position_bias,
-                    encoder_hidden_states,
-                    encoder_extended_attention_mask,
-                    encoder_decoder_position_bias,
-                    layer_head_mask,
-                    cross_attn_layer_head_mask,
-                    None,  # past_key_value is always None with gradient checkpointing
-                    use_cache,
-                    output_attentions,
-                    return_dict,
-                    cache_position,
-                )
-            else:
-                layer_outputs = layer_module(
-                    hidden_states,
-                    attention_mask=causal_mask,
-                    position_bias=position_bias,
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=encoder_extended_attention_mask,
-                    encoder_decoder_position_bias=encoder_decoder_position_bias,
-                    layer_head_mask=layer_head_mask,
-                    cross_attn_layer_head_mask=cross_attn_layer_head_mask,
-                    past_key_value=past_key_values,
-                    use_cache=use_cache,
-                    output_attentions=output_attentions,
-                    return_dict=return_dict,
-                    cache_position=cache_position,
-                )
+            layer_outputs = layer_module(
+                hidden_states,
+                attention_mask,
+                position_bias,
+                encoder_hidden_states,
+                encoder_extended_attention_mask,
+                encoder_decoder_position_bias,  # as a positional argument for gradient checkpointing
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                return_dict=return_dict,
+                cache_position=cache_position,
+            )
 
-            # layer_outputs is a tuple with:
-            # hidden-states, key-value-states, (self-attention position bias), (self-attention weights), (cross-attention position bias), (cross-attention weights)
-            if use_cache is False:
-                layer_outputs = layer_outputs[:1] + (None,) + layer_outputs[1:]
+            hidden_states = layer_outputs[0]
 
-            hidden_states, next_decoder_cache = layer_outputs[:2]
+            # We share the position biases between the layers - the first layer store them
+            # layer_outputs = hidden-states, key-value-states (self-attention position bias), (self-attention weights),
+            # (cross-attention position bias), (cross-attention weights)
+            position_bias = layer_outputs[1]
+            if self.is_decoder and encoder_hidden_states is not None:
+                encoder_decoder_position_bias = layer_outputs[
+                    3 if output_attentions else 2
+                ]
 
             if output_attentions:
-                all_attentions = all_attentions + (layer_outputs[3],)
+                all_attentions = all_attentions + (layer_outputs[2],)
                 if self.is_decoder:
-                    all_cross_attentions = all_cross_attentions + (layer_outputs[5],)
-
-            # Model Parallel: If it's the last layer for that device, put things on the next device
-            if self.model_parallel:
-                for k, v in self.device_map.items():
-                    if i == v[-1] and "cuda:" + str(k) != self.last_device:
-                        hidden_states = hidden_states.to("cuda:" + str(k + 1))
+                    all_cross_attentions = all_cross_attentions + (layer_outputs[4],)
 
         hidden_states = self.final_layer_norm(hidden_states)
         hidden_states = self.dropout(hidden_states)
@@ -369,18 +284,12 @@ class CustomT5Stack(T5Stack):
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
 
-        next_cache = next_decoder_cache if use_cache else None
-        if return_self_attention_cache:
-            next_cache = past_key_values.self_attention_cache
-        if return_legacy_cache:
-            next_cache = past_key_values.to_legacy_cache()
-
         if not return_dict:
             return tuple(
                 v
                 for v in [
                     hidden_states,
-                    next_cache,
+                    past_key_values,
                     all_hidden_states,
                     all_attentions,
                     all_cross_attentions,
@@ -389,7 +298,7 @@ class CustomT5Stack(T5Stack):
             )
         return BaseModelOutputWithPastAndCrossAttentions(
             last_hidden_state=hidden_states,
-            past_key_values=next_cache,
+            past_key_values=past_key_values,
             hidden_states=all_hidden_states,
             attentions=all_attentions,
             cross_attentions=all_cross_attentions,
@@ -397,24 +306,23 @@ class CustomT5Stack(T5Stack):
 
 
 class Seq2SeqLMEncoderExportableModule(torch.nn.Module):
-    def __init__(self, encoder_model, max_hidden_seq_length):
+    def __init__(self, model, max_hidden_seq_length):
         super().__init__()
-        self.encoder = encoder_model
+        self.config = model.config
+        self.encoder = model.get_encoder()
         self.max_hidden_seq_length = max_hidden_seq_length
 
     def get_example_inputs(self):
         max_hidden_seq_length = self.max_hidden_seq_length
         input_ids = torch.randint(0, max_hidden_seq_length, (1, max_hidden_seq_length))
-        attn_mask = torch.randint(0, max_hidden_seq_length, (1, max_hidden_seq_length))
+        attn_mask = torch.randn((1, 1, 1, max_hidden_seq_length))
         return input_ids, attn_mask
 
     def forward(self, input_ids, attn_mask):
         encoder_outputs = self.encoder(
-            input_ids,
-            attn_mask,
-            return_dict=True,
+            input_ids=input_ids,
+            attention_mask=attn_mask,
         )
-
         return encoder_outputs.last_hidden_state
 
 
@@ -443,15 +351,26 @@ class Seq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
             device="cpu",
             dtype=torch.float32,
         )
+        head_dim = getattr(
+            self.config,
+            "head_dim",
+            self.config.hidden_size // self.config.num_attention_heads,
+        )
+        num_heads = getattr(
+            self.config, "num_key_value_heads", self.config.num_attention_heads
+        )
+        self.static_cache.early_initialization(
+            batch_size, num_heads, head_dim, torch.float32, "cpu"
+        )
 
         # Register cache buffers to make them exportable
-        for i in range(len(self.static_cache.key_cache)):
+        for i in range(len(self.static_cache.layers)):
             self.register_buffer(
-                f"key_cache_{i}", self.static_cache.key_cache[i], persistent=False
+                f"key_cache_{i}", self.static_cache.layers[i].keys, persistent=False
             )
             self.register_buffer(
                 f"value_cache_{i}",
-                self.static_cache.value_cache[i],
+                self.static_cache.layers[i].values,
                 persistent=False,
             )
 
@@ -459,15 +378,14 @@ class Seq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
         max_hidden_seq_length = self.max_hidden_seq_length
         hidden_size = self.config.d_model
         decoder_input_ids = torch.tensor([[0]], dtype=torch.long)
-        min_dtype = torch.finfo(torch.float32).min
         attn_mask = torch.full(
             (1, 1, 1, self.max_static_cache_length),
-            fill_value=min_dtype,
+            fill_value=-255.0,
             dtype=torch.float32,
         )
         attn_mask[..., 0] = 0
-        encoder_hidden_states = torch.randn(1, self.max_hidden_seq_length, hidden_size)
-        encoder_attn_mask = torch.ones((1, max_hidden_seq_length), dtype=torch.long)
+        encoder_hidden_states = torch.randn(1, max_hidden_seq_length, hidden_size)
+        encoder_attn_mask = torch.randn((1, 1, 1, max_hidden_seq_length))
         cache_position = torch.tensor([0], dtype=torch.long)
         return (
             decoder_input_ids,

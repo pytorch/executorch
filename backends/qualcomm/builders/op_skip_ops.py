@@ -6,7 +6,7 @@
 
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
 
@@ -25,7 +25,7 @@ class OpSkipOps(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> None:
         return
 
@@ -41,14 +41,14 @@ class OpGetItem(OpSkipOps):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> None:
         if isinstance(node.args[1], tuple) or isinstance(node.args[1], list):
             raise AssertionError(
                 f"Invalid number of index for {node.name }: {len(node.args[1])}"
             )
         idx = node.args[1]
-        # to fit the format of nodes_to_wrappers, Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
+        # to fit the format of nodes_to_wrappers, Dict[str, Dict[int, PyQnnManager.TensorWrapper]],
         nodes_to_wrappers[node.name] = {
             0: nodes_to_wrappers.get(node.args[0].name).get(idx)
         }

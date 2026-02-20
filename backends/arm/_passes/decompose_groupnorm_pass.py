@@ -1,9 +1,8 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import operator
 from typing import Set, Type
@@ -40,7 +39,7 @@ def get_group_norm_decomposition(op) -> tuple:
             torch.ops.aten.add.Tensor,
             torch.ops.aten.rsqrt.default,
             torch.ops.aten.mul.Tensor,
-            torch.ops.aten.view_copy.default,
+            torch.ops.aten.reshape.default,
         )
     raise RuntimeError(f"Can't get group_norm composition for op {op}")
 
@@ -69,12 +68,18 @@ class DecomposeGroupNormPass(ArmPass):
         SizeAdjustInputPass,
     }
 
+    _TARGET_OPS = {
+        exir_ops.edge.aten.native_group_norm.default,
+        torch.ops.aten.group_norm.default,
+    }
+
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in (
-                exir_ops.edge.aten.native_group_norm.default,
-                torch.ops.aten.group_norm.default,
+            if (
+                node.op != "call_function"
+                or node.target not in DecomposeGroupNormPass._TARGET_OPS
+                or not self.allowed_to_transform(node.meta)
             ):
                 continue
 
@@ -87,13 +92,18 @@ class DecomposeGroupNormPass(ArmPass):
             if isinstance(meta["val"], tuple):
                 shape = meta["val"][0].size()
                 dtype = meta["val"][0].dtype
+                device = meta["val"][0].device
             else:
                 shape = meta["val"].size()
                 dtype = meta["val"].dtype
+                device = meta["val"].device
             match len(args):
                 # MI profile always provides all the args: x, weight, bias, N, C, HxW, group, eps
                 case 8:
                     x, weights, bias, N, C, HxW, group, eps = args
+                # BI profile: affine=[True|False], all args explicit (including cudnn_enabled)
+                case 6:
+                    x, group, weights, bias, eps, _cudnn_enabled = args
                 # BI profile: affine=[True|False], eps!=1e-5
                 case 5:
                     x, group, weights, bias, eps = args
@@ -151,7 +161,7 @@ class DecomposeGroupNormPass(ArmPass):
                     graph_module.graph,
                     full_op,
                     args=(epsilon_reshaped_shape, eps),
-                    kwargs={"dtype": dtype},
+                    kwargs={"dtype": dtype, "device": device},
                     from_node=node,
                 )
                 add0 = create_node(

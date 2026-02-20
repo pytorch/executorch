@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import cast, Dict, List
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -26,8 +26,8 @@ class SplitWithSizes(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
 
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
@@ -36,7 +36,7 @@ class SplitWithSizes(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         input_tensor_wrappers = [input_tensor_wrapper]
@@ -49,7 +49,7 @@ class SplitWithSizes(NodeVisitor):
                 node,
                 node,
                 output_tensor,
-                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 nodes_to_wrappers,
                 wrapper_idx=index,
             )
@@ -75,7 +75,7 @@ class SplitWithSizes(NodeVisitor):
 
         if QCOM_AXIS_ORDER in node.meta:
             dim = node.meta[QCOM_AXIS_ORDER].index(dim)
-        split_op = PyQnnWrapper.PyQnnOpWrapper(
+        split_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpSplit.op_name,
@@ -84,7 +84,7 @@ class SplitWithSizes(NodeVisitor):
         split_op.AddOutputTensors(output_tensor_wrappers)
         split_op.AddTensorParam(
             OpSplit.param_split_index,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(split_indices_shape),
             split_indices_shape,
             np.array(split_indices, dtype=np.uint32),
@@ -93,7 +93,7 @@ class SplitWithSizes(NodeVisitor):
 
         split_op.AddScalarParam(
             OpSplit.param_axis,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(dim)},
         )
         return split_op

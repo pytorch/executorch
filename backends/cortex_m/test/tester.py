@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,43 +8,49 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
-
-from backends.xnnpack.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
-from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
-    QuantizedOpFusionPass,
-)
-
-from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
-    ReplaceQuantNodesPass,
-)
+from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
+from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import (
     Export,
     Quantize,
     RunPasses,
     StageType,
-    ToEdgeTransformAndLower,
+    ToEdge,
     ToExecutorch,
 )
-from executorch.backends.xnnpack._passes import XNNPACKPassManager
+from executorch.exir import EdgeCompileConfig
 
 
 class CortexMQuantize(Quantize):
+    def __init__(self, calibration_samples=None):
+        quantizer = CortexMQuantizer()
+        super().__init__(quantizer, calibration_samples=calibration_samples)
+
+
+class CortexMToEdge(ToEdge):
     def __init__(self):
-        quantizer = XNNPACKQuantizer()
-        config = get_symmetric_quantization_config()
-        super().__init__(quantizer, config)
+        config = EdgeCompileConfig(
+            preserve_ops=[
+                torch.ops.aten.linear.default,
+                torch.ops.aten.hardsigmoid.default,
+                torch.ops.aten.hardsigmoid_.default,
+                torch.ops.aten.hardswish.default,
+                torch.ops.aten.hardswish_.default,
+            ],
+            _check_ir_validity=False,
+            _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
+        )
+        super().__init__(config)
 
 
 class CortexMRunPasses(RunPasses):
     def __init__(self):
         super().__init__(
-            XNNPACKPassManager, pass_list=[QuantizedOpFusionPass, ReplaceQuantNodesPass]
+            CortexMPassManager,
+            CortexMPassManager.pass_list,
         )
 
 
@@ -59,7 +65,7 @@ cortex_m_stage_classes = {
     StageType.QUANTIZE: CortexMQuantize,
     StageType.RUN_PASSES: CortexMRunPasses,
     StageType.SERIALIZE: Serialize,
-    StageType.TO_EDGE_TRANSFORM_AND_LOWER: ToEdgeTransformAndLower,
+    StageType.TO_EDGE: CortexMToEdge,
     StageType.TO_EXECUTORCH: ToExecutorch,
     StageType.SERIALIZE: CortexMSerialize,
 }
@@ -69,25 +75,46 @@ class CortexMTester(TesterBase):
     def __init__(self, module, example_inputs):
         super().__init__(module, example_inputs, cortex_m_stage_classes)
 
-    def test_dialect(self, ops_before_transforms, ops_after_transforms, qtol=0):
+    def test_dialect(
+        self,
+        ops_before_transforms,
+        ops_after_transforms,
+        qtol=0,
+        calibration_samples=None,
+    ):
         """
         Test the python dialect op implementation.
         """
-        self.quantize()
+        if calibration_samples is not None:
+            quantization_stage = CortexMQuantize(
+                calibration_samples=calibration_samples
+            )
+        else:
+            quantization_stage = None
+
+        self.quantize(quantization_stage)
         self.export()
-        self.to_edge_transform_and_lower()
+        self.to_edge()
         self.check_count(ops_before_transforms)
         self.run_passes()
         self.check_count(ops_after_transforms)
         self.run_method_and_compare_outputs(inputs=self.example_inputs, qtol=qtol)
 
-    def test_implementation(self, qtol=0):
+    def test_implementation(self, qtol=0, calibration_samples=None):
         """
         Test the optimized op implementation in simulation
         """
-        self.quantize()
+
+        if calibration_samples is not None:
+            quantization_stage = CortexMQuantize(
+                calibration_samples=calibration_samples
+            )
+        else:
+            quantization_stage = None
+
+        self.quantize(quantization_stage)
         self.export()
-        self.to_edge_transform_and_lower()
+        self.to_edge()
         self.run_passes()
         self.to_executorch()
         self.serialize()
@@ -97,4 +124,10 @@ class CortexMTester(TesterBase):
 @dataclass
 class McuTestCase:
     model: torch.nn.Module
-    example_inputs: tuple[Any]
+    example_inputs: tuple[Any, ...]
+
+
+def ramp_tensor(start: int, end: int, shape: tuple[int, ...]) -> torch.Tensor:
+    return torch.linspace(start, end, steps=torch.prod(torch.tensor(shape))).reshape(
+        shape
+    )

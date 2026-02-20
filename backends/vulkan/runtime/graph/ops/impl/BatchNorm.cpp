@@ -19,6 +19,18 @@
 
 namespace vkcompute {
 
+void resize_batch_norm_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef self = args.at(1).refs.at(0);
+
+  // For batch norm, output dimensions are the same as input dimensions
+  std::vector<int64_t> new_out_sizes = graph->sizes_of(self);
+  graph->virtual_resize(out, new_out_sizes);
+}
+
 ValueRef check_and_prepack_arg(
     ComputeGraph& graph,
     ValueRef arg_ref,
@@ -101,7 +113,7 @@ void add_native_batch_norm_node(
       // Resize Args
       {},
       // Resizing Logic
-      nullptr));
+      resize_batch_norm_node));
 }
 
 void native_batch_norm(ComputeGraph& graph, const std::vector<ValueRef>& args) {

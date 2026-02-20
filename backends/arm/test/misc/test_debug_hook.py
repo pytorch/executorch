@@ -5,10 +5,13 @@
 
 from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import cast
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.debug.schema import DebugHook, DebugSchema
 from executorch.backends.arm.test import common
+
+from torch.fx import Node
 
 
 @dataclass
@@ -28,7 +31,7 @@ def create_mock_node_1():
         name="convolution",
         target="aten.convolution.default",
         graph_id=6052414368,
-        pass_name="ExportedProgram.module()",
+        pass_name="ExportedProgram.module()",  # nosec B106 - static test string, not a secret
         action="create",
         from_node=[],
         _get_action_string=_get_action_str,
@@ -38,7 +41,7 @@ def create_mock_node_1():
         name="convolution",
         target="aten.convolution.default",
         graph_id=5705954832,
-        pass_name="Interpreter_PropagateUnbackedSymInts",
+        pass_name="Interpreter_PropagateUnbackedSymInts",  # nosec B106 - static test string, not a secret
         action="create",
         from_node=[from_node_2],
         _get_action_string=_get_action_str,
@@ -66,7 +69,7 @@ def create_mock_node_2():
         name="convolution",
         target="aten.convolution.default",
         graph_id=5705954832,
-        pass_name="Interpreter_PropagateUnbackedSymInts",
+        pass_name="Interpreter_PropagateUnbackedSymInts",  # nosec B106 - static test string, not a secret
         action="create",
         from_node=[],
         _get_action_string=_get_action_str,
@@ -95,9 +98,9 @@ def create_mock_node_3():
     return fx_node_mock
 
 
-def _compare_tosa_and_schema(debug_event: DebugSchema, tosa_op):
+def _compare_tosa_and_schema(debug_event: DebugSchema, tosa_op: str) -> None:
     tosa_info = debug_event.tosa_info
-
+    assert tosa_info is not None
     assert tosa_info.node_name == tosa_op
 
     # The mapping between op_ids to operator names could change
@@ -157,9 +160,9 @@ TESTCASES = {
 
 
 @common.parametrize("test_data", TESTCASES)
-def test_debug_hook_add_json(test_data: DebugHookTestCase):
+def test_debug_hook_add_json_no_target(test_data: DebugHookTestCase):
     hook = DebugHook(ArmCompileSpec.DebugMode.JSON)
-    hook.add(test_data.mock_node, test_data.tosa_op, test_data.op_id)
+    hook.add(cast(Node, test_data.mock_node), test_data.tosa_op, test_data.op_id)
 
     debug_events = hook._debug_events
     assert len(debug_events) == test_data.expected_events
@@ -170,9 +173,9 @@ def test_debug_hook_add_json(test_data: DebugHookTestCase):
 
 
 @common.parametrize("test_data", TESTCASES)
-def test_debug_hook_add_tosa(test_data: DebugHookTestCase):
+def test_debug_hook_add_tosa_no_target(test_data: DebugHookTestCase):
     hook = DebugHook(ArmCompileSpec.DebugMode.TOSA)
-    hook.add(test_data.mock_node, test_data.tosa_op, test_data.op_id)
+    hook.add(cast(Node, test_data.mock_node), test_data.tosa_op, test_data.op_id)
 
     debug_events = hook._debug_events
     assert len(debug_events) == test_data.expected_events
