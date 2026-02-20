@@ -17,6 +17,7 @@
 #include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
 #include <executorch/extension/llm/runner/stats.h>
+#include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -41,6 +42,101 @@ using namespace executorch::runtime;
       throw std::runtime_error(msg_buf);                          \
     }                                                             \
   })
+
+// Python wrapper class for TextLLMRunner
+class PyTextLLMRunner {
+ public:
+  // Constructor that takes a tokenizer path
+  PyTextLLMRunner(
+      const std::string& model_path,
+      const std::string& tokenizer_path,
+      std::optional<const std::string> data_path = std::nullopt) {
+    // Load tokenizer using the helper function
+    auto tokenizer =
+        load_tokenizer(tokenizer_path, nullptr, std::nullopt, 0, 0);
+    if (!tokenizer) {
+      throw std::runtime_error(
+          "Failed to load tokenizer from: " + tokenizer_path);
+    }
+
+    // Create text llm runner using the helper function
+    runner_ =
+        create_text_llm_runner(model_path, std::move(tokenizer), data_path);
+    if (!runner_) {
+      throw std::runtime_error(
+          "Failed to create text llm runner with model: " + model_path);
+    }
+  }
+
+  void generate(
+      const std::string& prompt,
+      const GenerationConfig& config,
+      py::object token_callback = py::none(),
+      py::object stats_callback = py::none()) {
+    if (!runner_) {
+      throw std::runtime_error("Runner not initialized");
+    }
+
+    // Convert Python callbacks to C++ std::function
+    std::function<void(const std::string&)> cpp_token_callback = nullptr;
+    if (!token_callback.is_none()) {
+      cpp_token_callback = [token_callback](const std::string& token) {
+        py::gil_scoped_acquire acquire;
+        token_callback(token);
+      };
+    }
+
+    std::function<void(const Stats&)> cpp_stats_callback = nullptr;
+    if (!stats_callback.is_none()) {
+      cpp_stats_callback = [stats_callback](const Stats& stats) {
+        py::gil_scoped_acquire acquire;
+        stats_callback(stats);
+      };
+    }
+
+    // Release GIL during generation
+    {
+      py::gil_scoped_release release;
+      Error error = runner_->generate(
+          prompt, config, cpp_token_callback, cpp_stats_callback);
+      THROW_IF_ERROR(error, "Generation failed");
+    }
+  }
+
+  void stop() {
+    if (runner_) {
+      runner_->stop();
+    }
+  }
+
+  void reset() {
+    if (runner_) {
+      runner_->reset();
+    }
+  }
+
+  void prefill(const std::string& prompt, const GenerationConfig& config) {
+    if (!runner_) {
+      throw std::runtime_error("Runner not initialized");
+    }
+    {
+      py::gil_scoped_release release;
+      Error error = runner_->prefill(prompt, config);
+      THROW_IF_ERROR(error, "Prefill failed");
+    }
+  }
+
+  // Note: Since the runner owns the tokenizer and metadata after creation,
+  // we cannot directly access them. This is a limitation of the current design.
+  // For now, we'll return a placeholder value.
+  int32_t get_vocab_size() const {
+    // TODO: Consider exposing metadata through the TextLLMRunner interface
+    return -1; // Indicate that vocab size is not available
+  }
+
+ private:
+  std::unique_ptr<TextLLMRunner> runner_;
+};
 
 // Python wrapper class for MultimodalRunner
 class PyMultimodalRunner {
@@ -599,6 +695,45 @@ PYBIND11_MODULE(_llm_runner, m) {
       },
       "Create a raw audio input from a torch tensor (batch_size, n_channels, n_samples)",
       py::arg("audio_tensor"));
+
+  // Bind PyTextLLMRunner
+  py::class_<PyTextLLMRunner>(m, "TextLLMRunner")
+      // Constructor with tokenizer path
+      .def(
+          py::init<
+              const std::string&,
+              const std::string&,
+              std::optional<const std::string>>(),
+          py::arg("model_path"),
+          py::arg("tokenizer_path"),
+          py::arg("data_path") = py::none(),
+          "Initialize a TextLLMRunner with model and tokenizer paths")
+      .def(
+          "generate",
+          &PyTextLLMRunner::generate,
+          py::arg("prompt"),
+          py::arg("config"),
+          py::arg("token_callback") = py::none(),
+          py::arg("stats_callback") = py::none(),
+          "Generate text from text input with optional callbacks")
+      .def(
+          "prefill",
+          &PyTextLLMRunner::prefill,
+          py::arg("prompt"),
+          py::arg("config"),
+          "Prefill text input (e.g., chat history) without generating tokens")
+      .def("stop", &PyTextLLMRunner::stop, "Stop the current generation")
+      .def(
+          "reset",
+          &PyTextLLMRunner::reset,
+          "Reset the runner state and KV cache")
+      .def(
+          "get_vocab_size",
+          &PyTextLLMRunner::get_vocab_size,
+          "Get the vocabulary size of the model")
+      .def("__repr__", [](const PyTextLLMRunner& runner) {
+        return "<TextLLMRunner>";
+      });
 
   // Bind PyMultimodalRunner
   py::class_<PyMultimodalRunner>(m, "MultimodalRunner")

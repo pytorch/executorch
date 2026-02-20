@@ -9,7 +9,7 @@
 
 show_help() {
   cat << EOF
-Usage: test_model_e2e.sh <device> <hf_model> <quant_name> [model_dir]
+Usage: test_model_e2e.sh <device> <hf_model> <quant_name> [model_dir] [mode]
 
 Build and run end-to-end tests for CUDA/Metal/XNNPACK models.
 
@@ -35,11 +35,18 @@ Arguments:
               Expected files: model.pte, aoti_cuda_blob.ptd (CUDA only)
               Tokenizers and test files will be downloaded to this directory
 
+  mode        Test mode (optional, default: auto-detect based on model and device)
+              Supported modes:
+                - vr-streaming: Voxtral Realtime streaming mode
+                - vr-offline: Voxtral Realtime offline mode
+
 Examples:
   test_model_e2e.sh metal "openai/whisper-small" "non-quantized"
   test_model_e2e.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed" "./model_output"
   test_model_e2e.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./model_output"
   test_model_e2e.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./model_output"
+  test_model_e2e.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "." "vr-streaming"
+  test_model_e2e.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-8da4w" "./model_output" "vr-offline"
 EOF
 }
 
@@ -67,6 +74,26 @@ HF_MODEL="$2"
 QUANT_NAME="$3"
 # Download tokenizers, audio, and image files to this directory
 MODEL_DIR="${4:-.}"
+MODE="${5:-}"
+
+# Validate mode if specified
+if [ -n "$MODE" ]; then
+  case "$MODE" in
+    vr-streaming|vr-offline)
+      # Voxtral Realtime modes require Voxtral Realtime model
+      if [ "$HF_MODEL" != "mistralai/Voxtral-Mini-4B-Realtime-2602" ]; then
+        echo "Error: Mode '$MODE' can only be used with Voxtral Realtime model"
+        echo "Provided model: $HF_MODEL"
+        exit 1
+      fi
+      ;;
+    *)
+      echo "Error: Unsupported mode '$MODE'"
+      echo "Supported modes: vr-streaming, vr-offline"
+      exit 1
+      ;;
+  esac
+fi
 
 echo "Testing model: $HF_MODEL (quantization: $QUANT_NAME)"
 
@@ -92,7 +119,7 @@ case "$HF_MODEL" in
     MODEL_NAME="voxtral"
     RUNNER_TARGET="voxtral_runner"
     RUNNER_PATH="voxtral"
-    EXPECTED_OUTPUT="existence"
+    EXPECTED_OUTPUT="identity"
     PREPROCESSOR="voxtral_preprocessor.pte"
     TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main" # @lint-ignore
     TOKENIZER_FILE="tekken.json"
@@ -180,7 +207,7 @@ if [ "$AUDIO_URL" != "" ]; then
 elif [[ "$MODEL_NAME" == *whisper* ]] || [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   conda install -y -c conda-forge "ffmpeg<8"
   pip install datasets soundfile
-  pip install torchcodec --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+  pip install torchcodec==0.11.0.dev20260217 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
 fi
 
@@ -212,6 +239,13 @@ fi
 # Build runner command with common arguments
 RUNNER_BIN="cmake-out/examples/models/$RUNNER_PATH/$RUNNER_TARGET"
 RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --temperature 0"
+# Patch absolute libomp install name from some torch nightlies to rpath-based
+# lookup so the runner works on macOS images without /opt/llvm-openmp.
+if [ "$(uname -s)" = "Darwin" ] && [ -f "$RUNNER_BIN" ]; then
+  if otool -L "$RUNNER_BIN" | grep -q "/opt/llvm-openmp/lib/libomp.dylib"; then
+    install_name_tool -change /opt/llvm-openmp/lib/libomp.dylib @rpath/libomp.dylib "$RUNNER_BIN"
+  fi
+fi
 # For CUDA, add data_path argument (Metal embeds data in .pte)
 if [ "$DEVICE" = "cuda" ]; then
   RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
@@ -236,7 +270,23 @@ case "$MODEL_NAME" in
     fi
     ;;
   voxtral_realtime)
-    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0 --streaming"
+    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0"
+    # Determine streaming mode based on MODE parameter
+    USE_STREAMING="false"
+    if [ "$MODE" = "vr-streaming" ]; then
+      USE_STREAMING="true"
+    elif [ "$MODE" = "vr-offline" ]; then
+      USE_STREAMING="false"
+    elif [ -z "$MODE" ]; then
+      # Auto-detect: XNNPACK uses streaming, others use offline
+      if [ "$DEVICE" = "xnnpack" ]; then
+        USE_STREAMING="true"
+      fi
+    fi
+    # Add streaming flag if needed
+    if [ "$USE_STREAMING" = "true" ]; then
+      RUNNER_ARGS="$RUNNER_ARGS --streaming"
+    fi
     ;;
 esac
 

@@ -2019,8 +2019,146 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             "ReplaceConvWithChannelLastConvPass",
         )
 
+    def create_depthwise_convolution_graph_module(
+        self,
+    ) -> Tuple[Tuple[torch.Tensor, ...], torch.fx.GraphModule]:
+        """Helper to create a depthwise convolution node.
 
-class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
+        For depthwise convolution, groups == input_channels.
+        Input shape: [N, C, H, W] = [1, 8, 224, 56] (NCHW)
+        Weight shape: [OC, 1, KH, KW] = [16, 1, 3, 3] where OC = C * channel_multiplier
+        """
+        in_channels = 8
+        out_channels = 16
+        x = torch.randint(0, 100, (1, in_channels, 224, 56), dtype=torch.int32)
+        # Depthwise: weight shape is [out_channels, 1, kernel_h, kernel_w]
+        w = torch.randint(0, 100, (out_channels, 1, 3, 3), dtype=torch.int32)
+        b = torch.randn(out_channels)
+        stride = (1, 1)
+        padding = (1, 1)
+        dilation = (1, 1)
+        groups = in_channels  # Depthwise: groups == input_channels
+        input_zero_point = 0
+        w_zero_point = 0
+        b_scale = 10
+        out_scale = 1
+        out_zero_point = 0
+        out_multiplier = 5
+        out_shift = 5
+        args = (
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_zero_point,
+            w_zero_point,
+            b_scale,
+            out_scale,
+            out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+        placeholders = (x, w, b)
+        gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+            args=args,
+        )
+        return placeholders, gm
+
+    def test_depthwise_convolution_weight_shape(self) -> None:
+        """Test that depthwise conv weight is transformed to [KH, KW, OC] format.
+
+        For depthwise convolution with NHWC layout, NNLib expects weights in
+        [KH, KW, OC] format (3D), not [OC, KH, KW, 1] (4D standard NCHW->NHWC).
+
+        The pass should:
+        1. Detect depthwise convolution (groups == input_channels)
+        2. Transform weight from [OC, 1, KH, KW] to [KH, KW, OC] (3D)
+        3. Use permute_copy + squeeze_copy operations
+        """
+        placeholders, gm = self.create_depthwise_convolution_graph_module()
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor), 1
+        )
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.squeeze_copy.dim), 0)
+
+        # Apply replacement pass.
+        p = ReplaceConvWithChannelLastConvPass()
+        gm_after_replacement = p.call(gm).graph_module
+
+        # Verify the quantized_conv2d_nhwc node exists
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+            ),
+            1,
+        )
+
+        # For depthwise conv:
+        # - Input: 1 permute (NCHW -> NHWC)
+        # - Weight: 1 permute ([OC, 1, KH, KW] -> [KH, KW, OC, 1])
+        # - Output: 1 permute (NHWC -> NCHW)
+        # Total: 3 permutes
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
+            3,
+        )
+
+        # For depthwise conv, weight should also have squeeze_copy to go from
+        # [KH, KW, OC, 1] to [KH, KW, OC] (3D)
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.squeeze_copy.dim),
+            1,
+        )
+
+        # Find the weight node being passed to the quantized_conv2d_nhwc
+        for node in gm_after_replacement.graph.nodes:
+            if node.target != exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor:
+                continue
+
+            # The weight argument (index 1) should come from squeeze_copy for depthwise
+            weight_node = node.args[1]
+            self.assertEqual(
+                weight_node.target,
+                exir_ops.edge.aten.squeeze_copy.dim,
+                "Depthwise conv weight should be processed by squeeze_copy",
+            )
+
+            # The squeeze_copy input should come from permute_copy
+            permute_node = weight_node.args[0]
+            self.assertEqual(
+                permute_node.target,
+                exir_ops.edge.aten.permute_copy.default,
+                "squeeze_copy input should come from permute_copy",
+            )
+
+            # Verify the weight shape after transformation is 3D [KH, KW, OC]
+            weight_shape = weight_node.meta["val"].shape
+            self.assertEqual(
+                len(weight_shape),
+                3,
+                f"Depthwise weight should be 3D [KH, KW, OC], got {len(weight_shape)}D",
+            )
+            # Original weight: [16, 1, 3, 3] (OC=16, 1, KH=3, KW=3)
+            # Expected after transform: [3, 3, 16] (KH, KW, OC)
+            self.assertEqual(weight_shape[0], 3)  # KH
+            self.assertEqual(weight_shape[1], 3)  # KW
+            self.assertEqual(weight_shape[2], 16)  # OC
+
+        # Validate numerical accuracy
+        validate(
+            gm,
+            gm_after_replacement,
+            placeholders,
+            "ReplaceConvWithChannelLastConvPass",
+        )
+
     def create_slice_graph(
         self,
         input_shape: Sequence[int],

@@ -16,9 +16,17 @@ With --streaming, produces a streaming .pte instead:
   - text_decoder:       same as above
   - token_embedding:    same as above
 
+Backend support:
+  - XNNPACK (default): Uses custom SDPA op (torch.ops.llama.custom_sdpa) for optimal performance
+  - Metal/AOTI: Automatically switches to standard PyTorch SDPA (F.scaled_dot_product_attention)
+                for text_decoder to avoid AOTI compilation issues. Uses Dim.AUTO for audio encoder
+                dynamic shapes (explicit bounds cause issues with AOTI). All components run on Metal GPU.
+  - Portable: Uses custom SDPA like XNNPACK
+
 Usage:
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --streaming
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal
 """
 
 import argparse
@@ -121,7 +129,7 @@ def _export_decoder_and_embedding(
             "input_embeds": {1: seq_dim},
             "cache_position": {0: seq_dim},
         },
-        strict=False,
+        strict=True,
     )
     print(f"  text_decoder exported (sample input: {sample_embeds.shape})")
 
@@ -142,7 +150,7 @@ def _export_decoder_and_embedding(
         tok_emb,
         (sample_ids,),
         dynamic_shapes={"token_ids": {1: tok_seq_dim}},
-        strict=False,
+        strict=True,
     )
     print(f"  token_embedding exported (sample input: {sample_ids.shape})")
 
@@ -155,6 +163,7 @@ def export_all(
     qlinear=None,
     qlinear_group_size=32,
     qembedding=None,
+    backend="xnnpack",
 ):
     """Export all three model components with per-component quantization."""
     from executorch.extension.llm.export.quantize import quantize_model_
@@ -175,14 +184,25 @@ def export_all(
             qlinear_group_size=qlinear_encoder_group_size,
         )
 
-    _t_mel_base = Dim("_t_mel_base", min=1, max=3000)
-    t_mel_dim = 8 * _t_mel_base
-    sample_mel = torch.randn(1, model.config.num_mel_bins, 160, dtype=param_dtype)
+    # For Metal/AOTI: use max size as sample and Dim.AUTO (explicit bounds cause issues)
+    # For XNNPACK: use small sample with explicit bounds
+    if backend == "metal":
+        max_t_mel = 24000  # 3000 * 8
+        sample_mel = torch.randn(
+            1, model.config.num_mel_bins, max_t_mel, dtype=param_dtype
+        )
+        dynamic_shapes = {"mel": {2: Dim.AUTO}}
+    else:
+        _t_mel_base = Dim("_t_mel_base", min=1, max=3000)
+        t_mel_dim = 8 * _t_mel_base
+        sample_mel = torch.randn(1, model.config.num_mel_bins, 160, dtype=param_dtype)
+        dynamic_shapes = {"mel": {2: t_mel_dim}}
+
     programs["audio_encoder"] = export(
         audio_encoder,
         (sample_mel,),
-        dynamic_shapes={"mel": {2: t_mel_dim}},
-        strict=False,
+        dynamic_shapes=dynamic_shapes,
+        strict=True,
     )
     print(f"  audio_encoder exported (sample input: {sample_mel.shape})")
 
@@ -214,6 +234,7 @@ def export_streaming(
     qlinear=None,
     qlinear_group_size=32,
     qembedding=None,
+    backend="xnnpack",
 ):
     """Export streaming model components with per-component quantization."""
     from executorch.extension.llm.export.quantize import quantize_model_
@@ -247,7 +268,7 @@ def export_streaming(
         streaming_enc,
         (sample_mel_chunk, sample_conv1_state, sample_conv2_state, sample_enc_pos),
         dynamic_shapes=None,
-        strict=False,
+        strict=True,
     )
     print(
         f"  encode_audio_chunk exported (fixed shapes: mel_chunk={sample_mel_chunk.shape})"
@@ -299,6 +320,19 @@ def export_streaming(
     return programs, metadata
 
 
+# Custom decomposition for Metal backend compatibility.
+# This decomposition is necessary to avoid issues with reinterpret_tensor_wrapper
+# when linear layers have biases, which would cause ExecuTorch errors with 0 stride.
+# TODO(manuelcandales): Remove this once ExecuTorch Metal backend supports bias in linear layers.
+def _linear_bias_decomposition(input, weight, bias=None):
+    """Decompose linear with bias into matmul + add."""
+    weight_t = torch.ops.aten.t.default(weight)
+    out = torch.ops.aten.matmul.default(input, weight_t)
+    if bias is not None:
+        return torch.ops.aten.add.Tensor(out, bias)
+    return out
+
+
 def lower_to_executorch(programs, metadata, backend="xnnpack"):
     """Lower exported programs to ExecuTorch."""
     if backend == "xnnpack":
@@ -312,6 +346,24 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
             key: [XnnpackDynamicallyQuantizedPartitioner(), XnnpackPartitioner()]
             for key in programs
         }
+    elif backend == "metal":
+        from executorch.backends.apple.metal.metal_backend import MetalBackend
+        from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+
+        print("\nLowering to ExecuTorch with Metal...")
+
+        # Run decompositions for Metal backend
+        updated_programs = {}
+        for key, ep in programs.items():
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.linear.default: _linear_bias_decomposition}
+            )
+        programs = updated_programs
+
+        partitioner = {}
+        for key in programs:
+            compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
+            partitioner[key] = [MetalPartitioner(compile_specs)]
     else:
         print("\nLowering to ExecuTorch (portable)...")
         partitioner = []
@@ -352,7 +404,7 @@ def main():
     parser.add_argument(
         "--backend",
         default="xnnpack",
-        choices=["portable", "xnnpack"],
+        choices=["portable", "xnnpack", "metal"],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
@@ -375,7 +427,7 @@ def main():
     parser.add_argument(
         "--qlinear",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
         help="Quantize decoder linear layers.",
     )
     parser.add_argument(
@@ -387,7 +439,7 @@ def main():
     parser.add_argument(
         "--qlinear-encoder",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
         help="Quantize encoder linear layers (separate from decoder).",
     )
     parser.add_argument(
@@ -411,18 +463,26 @@ def main():
         "--max-enc-len",
         type=int,
         default=750,
-        help="Max encoder KV cache length for streaming (default: 750, ~15s audio).",
+        help="Encoder sliding window size for streaming (default: 750).",
     )
     args = parser.parse_args()
+
+    # Validate fpa4w quantization requires Metal backend
+    if args.qlinear == "fpa4w" and args.backend != "metal":
+        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
+    if args.qlinear_encoder == "fpa4w" and args.backend != "metal":
+        parser.error("--qlinear-encoder=fpa4w can only be used with --backend=metal")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Load model
     print("Loading model...")
+    use_standard_attention = args.backend == "metal"
     model = load_model(
         args.model_path,
         max_seq_len=args.max_seq_len,
         n_delay_tokens=args.delay_tokens,
+        use_standard_attention=use_standard_attention,
     )
 
     # Untie output/embedding weights before quantization so each layer gets
@@ -440,6 +500,7 @@ def main():
         "qlinear": args.qlinear,
         "qlinear_group_size": args.qlinear_group_size,
         "qembedding": args.qembedding,
+        "backend": args.backend,
     }
     if args.streaming:
         programs, metadata = export_streaming(

@@ -50,6 +50,9 @@ class VoxtralRealtimeConfig:
     downsample_factor: int = 4
     # Runtime
     max_seq_len: int = 4096
+    use_standard_attention: bool = (
+        False  # Use standard PyTorch attention instead of custom ops
+    )
 
     @staticmethod
     def from_params_json(path: str) -> "VoxtralRealtimeConfig":
@@ -316,8 +319,50 @@ class KVCache(nn.Module):
             k_cache, v_cache: (B, max_seq_len, n_kv_heads, head_dim).
         """
         start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+        torch._check(start_pos < self.max_seq_len)
         torch.ops.llama.update_cache(k_val, self.k_cache, start_pos)
         torch.ops.llama.update_cache(v_val, self.v_cache, start_pos)
+        return self.k_cache, self.v_cache
+
+
+class StaticKVCache(nn.Module):
+    """Export-friendly KV cache using index_copy_ for updates.
+
+    Compatible with torch.export and AOTI. Uses [B, H, S, D] layout
+    (matching transformers.StaticCache) for index_copy_ compatibility.
+    """
+
+    def __init__(self, max_seq_len: int, n_kv_heads: int, head_dim: int):
+        super().__init__()
+        self.max_seq_len = max_seq_len
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        # Use [B, H, S, D] layout like transformers.StaticCache
+        cache_shape = (1, n_kv_heads, max_seq_len, head_dim)
+        self.register_buffer("k_cache", torch.zeros(cache_shape))
+        self.register_buffer("v_cache", torch.zeros(cache_shape))
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Write k_val/v_val into cache using index_copy_ (export-friendly).
+
+        Args:
+            input_pos: (seq_len,) position indices [0, 1, 2, ...] or [start_pos] for decode.
+            k_val, v_val: (B, seq_len, n_kv_heads, head_dim).
+        Returns:
+            k_cache, v_cache: (B, n_kv_heads, max_seq_len, head_dim).
+        """
+        # Transpose k_val, v_val from [B, S, H, D] to [B, H, S, D]
+        k_val = k_val.transpose(1, 2)  # [B, n_kv_heads, seq_len, head_dim]
+        v_val = v_val.transpose(1, 2)  # [B, n_kv_heads, seq_len, head_dim]
+
+        # Use index_copy_ on dimension 2 (sequence dimension in [B, H, S, D])
+        # This matches transformers.cache_utils.StaticLayer implementation
+        self.k_cache.index_copy_(2, input_pos, k_val)
+        self.v_cache.index_copy_(2, input_pos, v_val)
+
         return self.k_cache, self.v_cache
 
 
@@ -340,6 +385,7 @@ class SDPA(nn.Module):
         v: torch.Tensor,
         bsz: int,
         seqlen: int,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -347,6 +393,8 @@ class SDPA(nn.Module):
             q: (B, seq_len, n_heads, head_dim).
             k, v: (B, max_seq_len, n_kv_heads, head_dim) — full KV cache.
             bsz, seqlen: batch size and query sequence length.
+            mask: optional (seq_len, max_seq_len) attention mask. If provided,
+                  used instead of causal masking.
         Returns:
             output: (B, seq_len, n_heads * head_dim).
         """
@@ -355,24 +403,113 @@ class SDPA(nn.Module):
         k = k.to(dtype=torch.float32)
         v = v.to(dtype=torch.float32)
         start_pos = input_pos[0].item()
-        y = torch.ops.llama.custom_sdpa(
-            q,
-            k,
-            v,
-            start_pos,
-            None,
-            0,
-            True,
-        )
+        torch._check_is_size(start_pos)
+        if mask is not None:
+            y = torch.ops.llama.custom_sdpa(
+                q,
+                k,
+                v,
+                start_pos,
+                mask.to(dtype=torch.float32),
+                0,
+                False,
+            )
+        else:
+            y = torch.ops.llama.custom_sdpa(
+                q,
+                k,
+                v,
+                start_pos,
+                None,
+                0,
+                True,
+            )
         return y.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
-class LMAttention(nn.Module):
-    """GQA with RoPE, KV cache, and fused SDPA. No biases.
+class StandardSDPA(nn.Module):
+    """Standard scaled dot-product attention using F.scaled_dot_product_attention.
 
-    Data flows in [B, T, H, D] throughout — no transposes in the hot path.
-    GQA expansion is handled inside the custom_sdpa kernel.
-    Causal masking is handled via start_pos — no pre-built mask buffer.
+    Compatible with AOTI/Metal backend. Handles GQA and causal masking using
+    standard PyTorch operations. Works with StaticKVCache that returns [B, H, S, D] layout.
+    """
+
+    def __init__(self, n_heads: int, n_kv_heads: int, head_dim: int):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        self.dim = n_heads * head_dim
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+    ) -> torch.Tensor:
+        """
+        Args:
+            input_pos: (seq_len,) position indices.
+            q: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
+            k, v: (B, n_kv_heads, max_seq_len, head_dim) in [B, H, S, D] layout from StaticKVCache.
+            bsz, seqlen: batch size and query sequence length.
+        Returns:
+            output: (B, seq_len, n_heads * head_dim).
+        """
+        # Convert q from [B, S, H, D] to [B, H, S, D] for F.scaled_dot_product_attention
+        q = q.transpose(1, 2)  # [B, n_heads, seq_len, head_dim]
+        # k, v are already in [B, H, S, D] from StaticKVCache
+
+        # Handle GQA: repeat k/v heads if needed
+        if self.n_heads != self.n_kv_heads:
+            n_rep = self.n_heads // self.n_kv_heads
+            k = k.repeat_interleave(n_rep, dim=1)  # [B, n_heads, max_seq_len, head_dim]
+            v = v.repeat_interleave(n_rep, dim=1)
+
+        # Create causal attention mask
+        # input_pos contains the positions being attended to, e.g., [0,1,2,3] or [pos]
+        # We need a mask of shape [seqlen, max_seq_len]
+        max_seq_len = k.shape[2]
+
+        if seqlen > 1:
+            # Prefill: create causal mask where position i can attend to positions 0..input_pos[i]
+            # Create position matrix for queries and keys
+            q_pos = input_pos.unsqueeze(1)  # [seqlen, 1]
+            k_pos = torch.arange(max_seq_len, device=q.device).unsqueeze(
+                0
+            )  # [1, max_seq_len]
+            # Causal mask: can attend where k_pos <= q_pos
+            # PyTorch convention: True = attend, False = don't attend
+            attn_mask = k_pos <= q_pos  # [seqlen, max_seq_len], True = can attend
+        else:
+            # Decode: single token can attend to all positions up to current position
+            # Current position is input_pos[0]
+            curr_pos = input_pos[0]  # scalar tensor
+            k_pos = torch.arange(max_seq_len, device=q.device)
+            attn_mask = k_pos <= curr_pos  # [max_seq_len], True = can attend
+            attn_mask = attn_mask.unsqueeze(0)  # [1, max_seq_len] for broadcasting
+
+        # Standard SDPA
+        y = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=attn_mask,
+            is_causal=False,  # We handle causal masking explicitly via attn_mask
+        )  # [B, n_heads, seq_len, head_dim]
+
+        # Convert back to [B, S, H, D] and flatten
+        y = y.transpose(1, 2).contiguous()  # [B, seq_len, n_heads, head_dim]
+        return y.view(bsz, seqlen, self.dim)
+
+
+class LMAttention(nn.Module):
+    """GQA with RoPE, KV cache, and SDPA. No biases.
+
+    Supports both custom ops (for XNNPACK) and standard PyTorch ops (for Metal/AOTI).
     """
 
     def __init__(self, config: VoxtralRealtimeConfig, max_seq_len: int):
@@ -381,14 +518,20 @@ class LMAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.head_dim = config.head_dim
         self.dim = config.dim
+        self.use_standard_attention = config.use_standard_attention
 
         self.wq = nn.Linear(config.dim, self.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(self.n_heads * self.head_dim, config.dim, bias=False)
 
-        self.kv_cache = KVCache(max_seq_len, self.n_kv_heads, self.head_dim)
-        self.sdpa = SDPA(self.n_heads, self.head_dim)
+        # Choose KV cache and SDPA based on backend
+        if self.use_standard_attention:
+            self.kv_cache = StaticKVCache(max_seq_len, self.n_kv_heads, self.head_dim)
+            self.sdpa = StandardSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+        else:
+            self.kv_cache = KVCache(max_seq_len, self.n_kv_heads, self.head_dim)
+            self.sdpa = SDPA(self.n_heads, self.head_dim)
 
     def forward(
         self,
@@ -565,6 +708,49 @@ class VoxtralRealtimeModel(nn.Module):
 # ---------------------------------------------------------------------------
 
 
+class EncoderRingKVCache(nn.Module):
+    """Ring buffer KV cache for continuous streaming.
+
+    Uses [B, S, H, D] layout matching the encoder's convention.
+    Buffer is 2x the window size for safe wraparound. Old entries
+    are overwritten when the buffer wraps, enabling unlimited streaming.
+
+    Position tracking is analytic (no mutable state buffer). For buffer
+    slot j after total_written frames:
+        abs_pos[j] = j + ((total_written - 1 - j) // buf_size) * buf_size
+    Negative results indicate unwritten slots.
+    """
+
+    def __init__(self, window_size: int, n_heads: int, head_dim: int):
+        super().__init__()
+        self.window_size = window_size
+        self.buf_size = window_size * 2
+        cache_shape = (1, self.buf_size, n_heads, head_dim)
+        self.register_buffer("k_cache", torch.zeros(cache_shape))
+        self.register_buffer("v_cache", torch.zeros(cache_shape))
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+        seq_len = k_val.size(1)
+        indices = (torch.arange(seq_len, dtype=torch.long) + start_pos) % self.buf_size
+        indices = indices.unsqueeze(0)
+        torch.ops.llama.update_cache_with_indices(k_val, self.k_cache, 0, indices)
+        torch.ops.llama.update_cache_with_indices(v_val, self.v_cache, 0, indices)
+        return self.k_cache, self.v_cache
+
+    def create_causal_mask(self, start_pos: int, seq_len: int) -> torch.Tensor:
+        total_written = start_pos + seq_len
+        j = torch.arange(self.buf_size, dtype=torch.long)
+        cache_pos = j + ((total_written - 1 - j) // self.buf_size) * self.buf_size
+        pos_q = (start_pos + torch.arange(seq_len, dtype=torch.long)).view(-1, 1)
+        delta = pos_q - cache_pos.unsqueeze(0)
+        valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
+        return torch.where(valid, 0.0, float("-inf"))
+
+
 class StreamingAudioEncoderExport(nn.Module):
     """Streaming encoder: processes one 8-mel-frame chunk at a time.
 
@@ -592,10 +778,12 @@ class StreamingAudioEncoderExport(nn.Module):
         self.n_heads = config.enc_n_heads
         self.head_dim = config.enc_head_dim
 
-        # Streaming-specific: encoder KV caches (one per layer)
+        # Ring buffer KV caches for unlimited streaming.
+        # Window size = max_enc_len (encoder sliding window from params.json).
+        # Buffer is 2x internally for safe wraparound.
         self.kv_caches = nn.ModuleList(
             [
-                KVCache(max_enc_len, config.enc_n_heads, config.enc_head_dim)
+                EncoderRingKVCache(max_enc_len, config.enc_n_heads, config.enc_head_dim)
                 for _ in range(config.enc_n_layers)
             ]
         )
@@ -603,12 +791,13 @@ class StreamingAudioEncoderExport(nn.Module):
         # SDPA for encoder MHA (n_heads=32, head_dim=64 -> attn_dim=2048)
         self.sdpa = SDPA(config.enc_n_heads, config.enc_head_dim)
 
-        # RoPE for encoder dimensions
-        freqs_cos, freqs_sin = precompute_freqs_cis(
-            config.enc_head_dim, max_enc_len, config.enc_rope_theta
+        # RoPE inverse frequencies for on-the-fly computation.
+        # No pre-computed buffer — supports unlimited streaming positions.
+        inv_freq = 1.0 / (
+            config.enc_rope_theta
+            ** (torch.arange(0, config.enc_head_dim, 2).float() / config.enc_head_dim)
         )
-        self.register_buffer("freqs_cos", freqs_cos)
-        self.register_buffer("freqs_sin", freqs_sin)
+        self.register_buffer("inv_freq", inv_freq)
 
     def _streaming_encoder_layer(
         self,
@@ -616,10 +805,11 @@ class StreamingAudioEncoderExport(nn.Module):
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
         input_pos: torch.Tensor,
+        mask: torch.Tensor,
         layer: CausalEncoderLayer,
         layer_idx: int,
     ) -> torch.Tensor:
-        """One encoder layer with streaming attention (KV cache + custom_sdpa)."""
+        """One encoder layer with streaming attention (ring buffer KV cache)."""
         h = layer.attention_norm(x)
 
         B, T, _ = h.shape
@@ -630,7 +820,8 @@ class StreamingAudioEncoderExport(nn.Module):
 
         q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
         k, v = self.kv_caches[layer_idx].update(input_pos, k, v)
-        y = self.sdpa(input_pos, q, k, v, B, T)
+
+        y = self.sdpa(input_pos, q, k, v, B, T, mask)
         y = attn.wo(y)
 
         x = x + y
@@ -658,13 +849,20 @@ class StreamingAudioEncoderExport(nn.Module):
 
         x = conv2_out.transpose(1, 2)  # (1, 4, 1280)
 
-        # Encoder transformer with KV cache
-        freqs_cos = self.freqs_cos[enc_input_pos]
-        freqs_sin = self.freqs_sin[enc_input_pos]
+        # Compute RoPE on-the-fly (no buffer size limit)
+        freqs = torch.outer(enc_input_pos.float(), self.inv_freq)
+        freqs_cos = freqs.cos()
+        freqs_sin = freqs.sin()
+
+        # Sliding window mask — identical for all layers, compute once.
+        T = x.size(1)
+        start_pos = enc_input_pos[0].item()
+        torch._check_is_size(start_pos)
+        mask = self.kv_caches[0].create_causal_mask(start_pos, T)
 
         for i, layer in enumerate(self.layers):
             x = self._streaming_encoder_layer(
-                x, freqs_cos, freqs_sin, enc_input_pos, layer, i
+                x, freqs_cos, freqs_sin, enc_input_pos, mask, layer, i
             )
 
         x = self.enc_norm(x)  # (1, 4, 1280)
@@ -730,6 +928,7 @@ def load_model(
     max_seq_len: int = 4096,
     n_delay_tokens: int = 6,
     dtype: torch.dtype = torch.float32,
+    use_standard_attention: bool = False,
 ) -> VoxtralRealtimeModel:
     """Load VoxtralRealtimeModel from a Mistral consolidated checkpoint.
 
@@ -742,16 +941,20 @@ def load_model(
         max_seq_len: Maximum sequence length for KV cache.
         n_delay_tokens: Transcription delay in tokens (default 6 = 480ms).
         dtype: Weight dtype (default: float32).
+        use_standard_attention: Use standard PyTorch attention instead of custom ops
+            (required for Metal/AOTI backends).
     """
     from safetensors import safe_open
 
     model_dir = Path(model_path)
     config = VoxtralRealtimeConfig.from_params_json(str(model_dir / "params.json"))
     config.max_seq_len = max_seq_len
+    config.use_standard_attention = use_standard_attention
 
     print(
         f"Building model on meta device (dim={config.dim}, enc_dim={config.enc_dim}, "
-        f"layers={config.n_layers}, enc_layers={config.enc_n_layers})..."
+        f"layers={config.n_layers}, enc_layers={config.enc_n_layers}, "
+        f"attention={'standard' if use_standard_attention else 'custom'})..."
     )
     with torch.device("meta"):
         model = VoxtralRealtimeModel(config, max_seq_len)

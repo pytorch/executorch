@@ -13,6 +13,13 @@
 
 namespace vkcompute {
 
+enum class ActivationType : uint32_t {
+  kNone = 0,
+  kRelu = 1,
+};
+
+ActivationType activation_type_from_string(const std::string& activation);
+
 bool q8ta_conv2d_check_packed_dim_info(const api::PackedDimInfo& info);
 
 bool q8ta_conv2d_check_4w4c_packed_dim_info(const api::PackedDimInfo& info);
@@ -58,6 +65,7 @@ void add_q8ta_conv2d_dw_node(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef groups,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output);
 
 void add_conv2d_dw_q8ta_q8csw_q8to_4w4c_node(
@@ -97,6 +105,7 @@ void add_q8ta_conv2d_node(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef groups,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output);
 
 void add_q8ta_conv2d_pw_node(
@@ -111,6 +120,7 @@ void add_q8ta_conv2d_pw_node(
     const ValueRef output_zp,
     const ValueRef bias_data,
     const ValueRef packed_bias,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output);
 
 void q8ta_conv2d_im2col(ComputeGraph& graph, const std::vector<ValueRef>& args);

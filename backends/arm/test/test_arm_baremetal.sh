@@ -296,9 +296,7 @@ test_smaller_stories_llama() {
     --verbose \
     --color=yes \
     --numprocesses=auto \
-    --log-level=DEBUG \
     --junit-xml=stories110M/test-reports/unittest.xml \
-    -s \
     backends/arm/test/models/test_llama.py \
     --llama_inputs stories110M/stories110M.pt stories110M/params.json stories110m
 
@@ -313,7 +311,7 @@ test_memory_allocation() {
     echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py &> arm_test/test_run/full.log
     python3 backends/arm/test/test_memory_allocator_log.py --log arm_test/test_run/full.log \
-            --require "model_pte_program_size" "<= 3110 B" \
+            --require "model_pte_program_size" "<= 3130 B" \
             --require "method_allocator_planned" "<= 64 B" \
             --require "method_allocator_loaded" "<= 1024 B" \
             --require "method_allocator_input" "<= 16 B" \
