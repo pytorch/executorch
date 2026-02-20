@@ -498,11 +498,6 @@ class ET_EXPERIMENTAL CudaBackend final
             "Failed to copy GPU output %zu back to CPU ETensor",
             i);
       }
-
-      // if (is_using_shared_cuda_stream()) {
-      //   cudaStreamSynchronize(cuda_stream);
-      // }
-
       // Cleanup gpu_outputs after copying - they are no longer needed
       delete_slimtensor_vector(gpu_outputs);
     } else {
