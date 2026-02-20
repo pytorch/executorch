@@ -58,7 +58,7 @@ class FuseConstantArgsPass(ArmPass):
         special_dtypes = set()
         for input_node in from_nodes:
             special_type = input_node.meta.get(TosaSpecialDtype.meta_key(), None)
-            if special_type and special_type != TosaSpecialDtype.SHAPE:
+            if special_type:
                 special_dtypes.add(special_type)
         if len(special_dtypes) > 1:
             logger.warning(
@@ -75,10 +75,6 @@ class FuseConstantArgsPass(ArmPass):
         constant tensor node with the operations already carried out on the
         data.
         """
-
-        if node.meta.get(TosaSpecialDtype.meta_key(), None) == TosaSpecialDtype.SHAPE:
-            # Skip fusing if special dtype is SHAPE
-            return False
 
         input_nodes = list(node.all_input_nodes)
         qparams = node.meta.get("input_qparams", None)
