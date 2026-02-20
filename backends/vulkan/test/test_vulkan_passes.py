@@ -231,7 +231,7 @@ class TestVulkanPasses(unittest.TestCase):
 
         # The first linear should fuse to q8ta_linear (has output quantization
         # from the second linear's input quantize node)
-        q8ta_linear_count = op_node_count(gm, "et_vk__q8ta_linear__default")
+        q8ta_linear_count = op_node_count(gm, "q8ta_linear.default")
         self.assertGreaterEqual(
             q8ta_linear_count,
             1,
@@ -277,12 +277,86 @@ class TestVulkanPasses(unittest.TestCase):
         gm = ep.graph_module
 
         # With batch size 1, the first linear should fuse to q8ta_linear_gemv
-        q8ta_linear_gemv_count = op_node_count(gm, "et_vk__q8ta_linear_gemv__default")
+        q8ta_linear_gemv_count = op_node_count(gm, "q8ta_linear_gemv.default")
         self.assertGreaterEqual(
             q8ta_linear_gemv_count,
             1,
             "Expected at least one q8ta_linear_gemv op for batch-1 linear fusion",
         )
+
+    def test_fuse_three_chained_q8ta_linears(self):
+        """Test that 3 consecutive quantized linears fuse into q8ta_linear ops with
+        correct quant params at each layer boundary.
+
+        Each linear's input scale/zp (args[1], args[2]) must equal its predecessor's
+        output scale/zp (args[6], args[7]). This is a regression test for a bug where
+        topological pattern replacement caused later linears to read scale/zp from the
+        wrong arg position of the already-replaced q8ta_linear node, producing wildly
+        incorrect quantization parameters (outputs saturating to -128/127).
+        """
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+
+        class ThreeLinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(256, 128, bias=False)
+                self.linear2 = torch.nn.Linear(128, 64, bias=False)
+                self.linear3 = torch.nn.Linear(64, 32, bias=False)
+
+            def forward(self, x):
+                return self.linear3(self.linear2(self.linear1(x)))
+
+        model = ThreeLinearModule()
+        # Batch size 4 to select q8ta_linear (not the gemv variant)
+        sample_inputs = (torch.randn(4, 256),)
+
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        edge_program = quantize_and_lower_module(model, sample_inputs, quantizer)
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        q8ta_nodes = [
+            node
+            for node in gm.graph.nodes
+            if get_target_canonical_name(node) == "q8ta_linear.default"
+        ]
+        self.assertGreaterEqual(
+            len(q8ta_nodes),
+            2,
+            "Expected at least 2 q8ta_linear ops from 3 chained quantized linears",
+        )
+
+        # For each consecutive q8ta_linear pair, the boundary scale/zp must be
+        # consistent: linear_i.output_scale == linear_{i+1}.input_scale.
+        # Before the fix, linear_{i+1}.input_scale was incorrectly read from the
+        # replaced q8ta_linear node's input args instead of the dq node's args.
+        for i in range(len(q8ta_nodes) - 1):
+            self.assertEqual(
+                q8ta_nodes[i].args[6],
+                q8ta_nodes[i + 1].args[1],
+                f"q8ta_linear[{i}].output_scale should equal q8ta_linear[{i + 1}].input_scale",
+            )
+            self.assertEqual(
+                q8ta_nodes[i].args[7],
+                q8ta_nodes[i + 1].args[2],
+                f"q8ta_linear[{i}].output_zero_point should equal q8ta_linear[{i + 1}].input_zero_point",
+            )
 
     def test_fuse_q8ta_linear_gemv_non_aligned_oc(self):
         """Test that quantized linear with non-aligned output channels (not multiple of 4) fuses correctly."""
@@ -323,7 +397,7 @@ class TestVulkanPasses(unittest.TestCase):
         gm = ep.graph_module
 
         # The first linear (OC=9, not multiple of 4) should still fuse
-        q8ta_linear_gemv_count = op_node_count(gm, "et_vk__q8ta_linear_gemv__default")
+        q8ta_linear_gemv_count = op_node_count(gm, "q8ta_linear_gemv.default")
         self.assertGreaterEqual(
             q8ta_linear_gemv_count,
             1,

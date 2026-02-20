@@ -25,6 +25,7 @@ void add_q8ta_linear_node(
     const ValueRef output_zp,
     const ValueRef bias_data,
     const ValueRef packed_bias,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output);
 
 } // namespace vkcompute
