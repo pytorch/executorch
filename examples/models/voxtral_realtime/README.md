@@ -99,6 +99,18 @@ python export_voxtral_rt.py \
     --qlinear fpa4w
 ```
 
+**Note:** Metal 4-bit quantization requires torchao built with experimental MPS (Metal) ops.
+
+You can install torchao with Metal support from the `ao` repo (in executorch/third-party/ao/)
+```bash
+USE_CPP=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 pip install . --no-build-isolation
+```
+
+Alternatively, you can build torchao with Metal support while installing ExecuTorch from source
+```bash
+EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
+```
+
 ### Options
 
 | Flag | Default | Description |
@@ -210,3 +222,19 @@ Ctrl+C stops recording and flushes remaining text.
   `--streaming` flag. Both `--streaming` and `--mic` runner modes
   require a streaming-exported model.
 - **`fpa4w` error**: This quantization requires `--backend metal`.
+- **Metal runner fails with `Library not loaded: @rpath/libc++.1.dylib`**:
+  The AOTInductor-compiled `.so` inside the `.pte` references `libc++` via
+  `@rpath`, which can't be resolved when extracted to a temp directory.
+  Add `/usr/lib` to `DYLD_LIBRARY_PATH` so dyld finds it in the shared cache:
+  ```bash
+  DYLD_LIBRARY_PATH=/usr/lib \
+      cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner ...
+  ```
+- **Metal runner fails with `Library not loaded: libomp.dylib`**:
+  The AOTInductor-compiled `.so` links against OpenMP. Install it via
+  Homebrew and add it to `DYLD_LIBRARY_PATH`:
+  ```bash
+  brew install libomp
+  DYLD_LIBRARY_PATH=/usr/lib:$(brew --prefix libomp)/lib \
+      cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner ...
+  ```
