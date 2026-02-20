@@ -51,10 +51,23 @@ The benchmarking infrastructure currently supports two major use-cases:
 
 ## Scheduling On-Demand Benchmarking
 
+### Via GitHub
 Users can schedule a benchmarking workflow on a pull request through GitHub Actions using the workflow dispatch UI. Follow the steps below to trigger benchmarking:
 1. Access `pytorch/executorch` repository on GitHub and navigate to the "Actions" tab.
 2. Select `android-perf` or `apple-perf` workflow from the list of workflows.
 3. Click "Run workflow" and fill in the required parameters for the model you want to benchmark, e.g. branch name, model name and delegate, and device pool, etc.
+
+### Via Command Line
+1. From this folder, navigate to `/scripts`.
+2. Make sure you have your GITHUB_TOKEN set (classic personal access token, not fine-grained) (`export GITHUB_TOKEN=<YOUR_TOKEN>`)
+3. Run `python benchmark.py --<platform>` with either `--android` or `--ios` as a required platform argument.
+    - Other **Required** arguments:
+        - `--branch`: Branch name to run the benchmark on. Ideally your local branch with changes committed. For example, `--branch main`
+        - `--models`: Comma-separated list of models to benchmark. For example, `--models llama2,metanet` (see [list](https://github.com/pytorch/executorch/blob/0342babc505bcb90244874e9ed9218d90dd67b87/examples/models/__init__.py#L53) for more options or use a valid huggingface model name, e.g. "meta-llama/Llama-3.2-1B")
+3. Use --help to see other optional arguments
+    - `--devices`: Comma-separated list of specific devices to run the benchmark on. Defaults to device pools for approriate platform. For example, `--devices samsung_galaxy_s22,samsung_galaxy_s24`
+    - `--benchmark-configs`: Comma-separated list of benchmark configs to use. For example, `--benchmark-configs xnnpack_q8,hf_xnnpack_fp32,llama3_fb16` (See [list](https://github.com/pytorch/executorch/blob/main/.ci/scripts/gather_benchmark_configs.py#L29-L47) for options)
+
 
 > **Note:** Write permission to the repo will be needed in order to run the on-demand workflow.
 
