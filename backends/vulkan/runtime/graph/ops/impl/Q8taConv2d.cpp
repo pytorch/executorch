@@ -17,6 +17,15 @@
 
 namespace vkcompute {
 
+ActivationType activation_type_from_string(const std::string& activation) {
+  if (activation == "none") {
+    return ActivationType::kNone;
+  } else if (activation == "relu") {
+    return ActivationType::kRelu;
+  }
+  VK_THROW("Unknown activation type: ", activation);
+}
+
 bool q8ta_conv2d_check_packed_dim_info(const api::PackedDimInfo& info) {
   return info.packed_dim == WHCN::kChannelsDim &&
       info.packed_dim_block_size == 4 &&
@@ -231,6 +240,7 @@ void add_q8ta_conv2d_node(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef groups,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output) {
   (void)packed_int8_input_im2col; // Not used in general shader
 
@@ -288,9 +298,10 @@ void add_q8ta_conv2d_node(
       graph.buffer_meta_ubo(packed_int8_input),
       graph.create_params_buffer(conv_params)};
 
-  // Build spec constants: apply_bias + layout constants
+  // Build spec constants: apply_bias, apply_relu + layout constants
   vkapi::SpecVarList spec_constants = {
       apply_bias,
+      activation_type,
       // Layout specialization constants
       graph.hashed_layout_of(packed_int8_input),
       graph.hashed_layout_of(packed_int8_output),
@@ -341,7 +352,11 @@ void q8ta_conv2d_general(
   const ValueRef padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
+
+  uint32_t activation_type_val = static_cast<uint32_t>(
+      activation_type_from_string(graph.extract_string(activation)));
 
   QuantizationConfig weight_quant_config(8, kPerChannel, {});
 
@@ -397,6 +412,7 @@ void q8ta_conv2d_general(
       padding,
       dilation,
       groups,
+      activation_type_val,
       packed_int8_output);
 }
 
