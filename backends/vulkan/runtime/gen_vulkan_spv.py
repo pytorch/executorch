@@ -1091,6 +1091,7 @@ class SPVGenerator:
                     return (spv_out_path, gen_out_path)
 
             vk_version = codegen_params.get("VK_VERSION", "1.1")
+            spv_version = codegen_params.get("SPV_VERSION", None)
             # Only proceed if a GLSL compiler was specified
             if self.glslc_path is not None:
                 cmd_base = [
@@ -1104,6 +1105,9 @@ class SPVGenerator:
                     "-I",
                     output_dir,
                 ]
+                # Add explicit SPIR-V version if specified (for extensions like GL_NV_cooperative_matrix2)
+                if spv_version is not None:
+                    cmd_base.append("--target-spv=spv{}".format(spv_version))
                 cmd = cmd_base + self.glslc_flags
 
                 try:
