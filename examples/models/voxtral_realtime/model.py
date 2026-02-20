@@ -50,7 +50,9 @@ class VoxtralRealtimeConfig:
     downsample_factor: int = 4
     # Runtime
     max_seq_len: int = 4096
-    use_standard_attention: bool = False  # Use standard PyTorch attention instead of custom ops
+    use_standard_attention: bool = (
+        False  # Use standard PyTorch attention instead of custom ops
+    )
 
     @staticmethod
     def from_params_json(path: str) -> "VoxtralRealtimeConfig":
@@ -476,7 +478,9 @@ class StandardSDPA(nn.Module):
             # Prefill: create causal mask where position i can attend to positions 0..input_pos[i]
             # Create position matrix for queries and keys
             q_pos = input_pos.unsqueeze(1)  # [seqlen, 1]
-            k_pos = torch.arange(max_seq_len, device=q.device).unsqueeze(0)  # [1, max_seq_len]
+            k_pos = torch.arange(max_seq_len, device=q.device).unsqueeze(
+                0
+            )  # [1, max_seq_len]
             # Causal mask: can attend where k_pos <= q_pos
             # PyTorch convention: True = attend, False = don't attend
             attn_mask = k_pos <= q_pos  # [seqlen, max_seq_len], True = can attend
@@ -490,7 +494,9 @@ class StandardSDPA(nn.Module):
 
         # Standard SDPA
         y = F.scaled_dot_product_attention(
-            q, k, v,
+            q,
+            k,
+            v,
             attn_mask=attn_mask,
             is_causal=False,  # We handle causal masking explicitly via attn_mask
         )  # [B, n_heads, seq_len, head_dim]

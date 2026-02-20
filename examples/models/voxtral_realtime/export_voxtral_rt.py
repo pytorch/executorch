@@ -188,7 +188,9 @@ def export_all(
     # For XNNPACK: use small sample with explicit bounds
     if backend == "metal":
         max_t_mel = 24000  # 3000 * 8
-        sample_mel = torch.randn(1, model.config.num_mel_bins, max_t_mel, dtype=param_dtype)
+        sample_mel = torch.randn(
+            1, model.config.num_mel_bins, max_t_mel, dtype=param_dtype
+        )
         dynamic_shapes = {"mel": {2: Dim.AUTO}}
     else:
         _t_mel_base = Dim("_t_mel_base", min=1, max=3000)
@@ -474,7 +476,7 @@ def main():
 
     # Load model
     print("Loading model...")
-    use_standard_attention = (args.backend == "metal")
+    use_standard_attention = args.backend == "metal"
     model = load_model(
         args.model_path,
         max_seq_len=args.max_seq_len,
