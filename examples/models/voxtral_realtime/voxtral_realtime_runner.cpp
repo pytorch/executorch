@@ -30,7 +30,8 @@ namespace voxtral_realtime {
 VoxtralRealtimeRunner::VoxtralRealtimeRunner(
     const std::string& model_path,
     const std::string& tokenizer_path,
-    const std::string& preprocessor_path) {
+    const std::string& preprocessor_path,
+    bool warmup) {
   // Load the main model (.pte with audio_encoder, text_decoder,
   // token_embedding methods). Mmap avoids copying the file into memory.
   ET_LOG(Info, "Loading model from: %s", model_path.c_str());
@@ -121,6 +122,66 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
         std::make_unique<Module>(preprocessor_path, Module::LoadMode::Mmap);
     auto pp_error = preprocessor_->load();
     ET_CHECK_MSG(pp_error == Error::Ok, "Failed to load preprocessor.");
+  }
+
+  // Warmup: trigger lazy initialization (XNNPACK workspace allocation, etc.).
+  // For streaming: run a single dummy step through the full pipeline.
+  // For offline: call each method once with minimal inputs (can't use
+  // transcribe() because the offline preprocessor pads to 30-second chunks).
+  if (warmup && preprocessor_) {
+    ET_LOG(Info, "Warming up...");
+    std::vector<float> dummy_audio(static_cast<size_t>(step_samples_), 0.0f);
+
+    if (is_streaming_) {
+      TranscribeConfig warmup_config;
+      warmup_config.max_new_tokens = 1;
+      auto session =
+          create_streaming_session(warmup_config, [](const std::string&) {});
+      session->feed_audio(dummy_audio.data(), step_samples_);
+      session->flush();
+    } else {
+      // Preprocessor
+      auto pp_wav = from_blob(
+          dummy_audio.data(),
+          {static_cast<int>(step_samples_)},
+          ::executorch::aten::ScalarType::Float);
+      auto pp_r =
+          preprocessor_->execute("forward", std::vector<EValue>{*pp_wav});
+      ET_CHECK_MSG(pp_r.ok(), "Warmup: preprocessor failed.");
+
+      // Audio encoder (8 mel frames = minimum valid input)
+      std::vector<float> dummy_mel(
+          static_cast<size_t>(num_mel_bins_ * 8), 0.0f);
+      auto mel_t = from_blob(
+          dummy_mel.data(),
+          {1, static_cast<int>(num_mel_bins_), 8},
+          ::executorch::aten::ScalarType::Float);
+      auto enc_r =
+          model_->execute("audio_encoder", std::vector<EValue>{*mel_t});
+      ET_CHECK_MSG(enc_r.ok(), "Warmup: audio_encoder failed.");
+
+      // Token embedding
+      int64_t dummy_tok = static_cast<int64_t>(bos_id_);
+      auto tok_t =
+          from_blob(&dummy_tok, {1, 1}, ::executorch::aten::ScalarType::Long);
+      auto tok_r =
+          model_->execute("token_embedding", std::vector<EValue>{*tok_t});
+      ET_CHECK_MSG(tok_r.ok(), "Warmup: token_embedding failed.");
+
+      // Text decoder
+      std::vector<float> dummy_emb(static_cast<size_t>(dim_), 0.0f);
+      int64_t dummy_pos = 0;
+      auto emb_t = from_blob(
+          dummy_emb.data(),
+          {1, 1, static_cast<int>(dim_)},
+          ::executorch::aten::ScalarType::Float);
+      auto pos_t =
+          from_blob(&dummy_pos, {1}, ::executorch::aten::ScalarType::Long);
+      auto dec_r =
+          model_->execute("text_decoder", std::vector<EValue>{*emb_t, *pos_t});
+      ET_CHECK_MSG(dec_r.ok(), "Warmup: text_decoder failed.");
+    }
+    ET_LOG(Info, "Warmup complete.");
   }
 }
 
@@ -343,10 +404,9 @@ bool StreamingSession::try_process_step() {
     return false;
   }
 
-  // Guard: encoder/decoder cache capacity.
+  // Guard: decoder cache capacity (encoder uses ring buffer, no limit).
   const int64_t enc_frames_per_chunk = chunk_mel_len / 2;
-  if (enc_frame_pos_ + enc_frames_per_chunk > runner_.max_enc_len_ ||
-      dec_pos_ >= runner_.max_seq_len_) {
+  if (dec_pos_ >= runner_.max_seq_len_) {
     return false;
   }
 
