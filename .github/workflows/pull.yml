@@ -1051,6 +1051,10 @@ jobs:
         
         # Run e2e example with Simulator:
         PYTHON_EXECUTABLE=python bash examples/nxp/run.sh cifar10
+        
+        # Run lightweight model tests: 
+        PYTHON_EXECUTABLE=python pytest -c /dev/null backends/nxp/tests_models/ \
+        --nxp_runner_path "./examples/nxp/executor_runner/build/nxp_executor_runner" 
 
   test-samsung-quantmodels-linux:
     name: test-samsung-quantmodels-linux
