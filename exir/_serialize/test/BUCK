@@ -1,9 +1,10 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_program",
     srcs = [
         "test_program.py",
@@ -15,7 +16,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_flatbuffer",
     srcs = [
         "test_flatbuffer.py",
@@ -25,7 +26,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_cord",
     srcs = [
         "test_cord.py",
@@ -35,7 +36,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_named_data_store",
     srcs = [
         "test_named_data_store.py",
@@ -45,7 +46,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_serialize",
     srcs = [
         "test_serialize.py",
