@@ -719,6 +719,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
     logging.info(f"Checkpoint dtype: {edge_manager.model.checkpoint_dtype}")
     edge_manager = edge_manager.set_output_dir(output_dir_path).source_transform(
         _get_source_transforms(
+            args=args,
             dtype_override=dtype_override,
             checkpoint=llm_config.base.checkpoint,
             checkpoint_dtype=DType.from_torch_dtype(checkpoint_dtype),  # type: ignore
@@ -1503,6 +1504,7 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
 
 
 def _get_source_transforms(  # noqa
+    args: argparse.Namespace,
     dtype_override: DType,
     *,
     checkpoint: Optional[str] = None,
