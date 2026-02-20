@@ -31,8 +31,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 # Find OpenVINO libraries
 find_package(OpenVINO REQUIRED)
 
-# Define OpenVINO backend as a static library
-add_library(openvino_backend STATIC .)
+add_library(openvino_backend .)
 
 # Enable exceptions and RTTI for OpenVINO backend
 target_compile_options(openvino_backend PRIVATE -frtti -fexceptions)
