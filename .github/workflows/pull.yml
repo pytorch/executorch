@@ -720,8 +720,17 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        # placeholder for running test_qnn_delegate.py, can use matrix such that we can trigger different jobs, refers to test-llama-runner-qnn-linux
-        # reminder: make sure each job runs fast
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL="cmake"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+
+        # Run all the QNN tests
+        PYTHON_EXECUTABLE=python bash backends/qualcomm/tests/test_qnn_delegate.py  -compile_only -m SM8650 -b build-x86/ -a /home/chenlai/local --enable_x86_64
 
   test-phi-3-mini-runner-linux:
     name: test-phi-3-mini-runner-linux
