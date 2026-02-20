@@ -731,8 +731,8 @@ class ReplaceConstantPadNdWithSlicePass(RemoveOrReplacePassInterface):
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceAtenConvolutionWithCadenceConvolutionPass(RemoveOrReplacePassInterface):
     """
-    Replace aten convolution op with jarvis-specific convolution op, since the
-    aten version is not supported by jarvis.
+    Replace aten convolution op with cadence-specific convolution op, since the
+    aten version is not supported by cadence.
     Also remove convolution stride if the output size along the strided dimension
     is 1. We can enable more transformations (e.g., conv -> linear replacement)
     for unit-stride convolutions.
