@@ -1778,7 +1778,7 @@ def _get_source_transforms(  # noqa
         elif mlx:
             # MLX backend for Apple Silicon
             # Import MLX source transformations
-            from executorch.backends.apple.mlx.examples.source_transformation import (
+            from executorch.backends.mlx.examples.source_transformation import (
                 get_mlx_source_transforms,
             )
 

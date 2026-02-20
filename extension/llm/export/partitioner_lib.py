@@ -262,11 +262,11 @@ def get_mlx_partitioner():
         ImportError: If the MLX backend is not installed.
     """
     try:
-        from executorch.backends.apple.mlx.partitioner import MLXPartitioner
+        from executorch.backends.mlx.partitioner import MLXPartitioner
     except ImportError:
         raise ImportError(
             "Please install the MLX backend following the instructions at "
-            "executorch/backends/apple/mlx/README.md"
+            "executorch/backends/mlx/README.md"
         )
 
     return MLXPartitioner()

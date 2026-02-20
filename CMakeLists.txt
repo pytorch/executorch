@@ -654,7 +654,7 @@ if(EXECUTORCH_BUILD_MPS)
 endif()
 
 if(EXECUTORCH_BUILD_MLX)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mlx)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mlx)
   list(APPEND _executorch_backends mlxdelegate)
 endif()
 

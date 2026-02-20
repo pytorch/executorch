@@ -8,7 +8,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/test-backend-mlx.yml
-      - backends/apple/mlx/**
+      - backends/mlx/**
   workflow_dispatch:
 
 concurrency:
@@ -38,13 +38,13 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Run op unit tests"
-        ${CONDA_RUN} python -m executorch.backends.apple.mlx.test.run_all_tests --clean-after --isolate
+        ${CONDA_RUN} python -m executorch.backends.mlx.test.run_all_tests --clean-after --isolate
         echo "::endgroup::"
 
         echo "::group::Run multi-thread stress test"
-        ${CONDA_RUN} python backends/apple/mlx/test/export_multi_thread_test_model.py /tmp/multi_thread_test_model.pte
+        ${CONDA_RUN} python backends/mlx/test/export_multi_thread_test_model.py /tmp/multi_thread_test_model.pte
         ET_TESTING_MODEL_PATH=/tmp/multi_thread_test_model.pte \
           ET_TESTING_NUM_THREADS=50 \
           ET_PREDICTIONS_PER_THREAD=100 \
-          ./cmake-out/backends/apple/mlx/test/multi_thread_test_runner
+          ./cmake-out/backends/mlx/test/multi_thread_test_runner
         echo "::endgroup::"

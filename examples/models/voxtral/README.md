@@ -94,12 +94,12 @@ This will generate:
 See the "Building the multimodal runner" section below for instructions on building with Metal support, and the "Running the model" section for runtime instructions.
 
 ## MLX Support (macOS)
-On Apple Silicon, you can export and run Voxtral using the [MLX backend](../../../backends/apple/mlx), which provides accelerated inference via Apple's MLX framework.
+On Apple Silicon, you can export and run Voxtral using the [MLX backend](../../../backends/mlx), which provides accelerated inference via Apple's MLX framework.
 
 ### Exporting with MLX
 The MLX export script produces two `.pte` files — the model and the audio preprocessor — both delegated to MLX:
 ```
-python -m executorch.backends.apple.mlx.examples.voxtral.export_voxtral_hf \
+python -m executorch.backends.mlx.examples.voxtral.export_voxtral_hf \
   --output-dir mlx_voxtral_int4_bf16 \
   --dtype bf16 \
   --quantize-linear int4
