@@ -53,8 +53,8 @@ def test_adaptive_avg_pool2d_tosa_INT(test_data):
     TosaPipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
-        AdaptiveAveragePool2d.aten_op,
-        AdaptiveAveragePool2d.exir_op,
+        [],
+        [],
         symmetric_io_quantization=True,
     ).run()
 
@@ -65,8 +65,8 @@ def test_adaptive_avg_pool2d_u55_INT(test_data):
     EthosU55PipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
-        AdaptiveAveragePool2d.aten_op,
-        AdaptiveAveragePool2d.exir_op,
+        [],
+        [],
         symmetric_io_quantization=True,
     ).run()
 
@@ -77,8 +77,8 @@ def test_adaptive_avg_pool2d_u85_INT(test_data):
     EthosU85PipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
-        AdaptiveAveragePool2d.aten_op,
-        AdaptiveAveragePool2d.exir_op,
+        [],
+        [],
         symmetric_io_quantization=True,
     ).run()
 
@@ -102,8 +102,8 @@ def test_adaptive_avg_pool2d_vgf_quant(test_data):
     pipeline = VgfPipeline[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
-        AdaptiveAveragePool2d.aten_op,
-        AdaptiveAveragePool2d.exir_op,
+        [],
+        [],
         symmetric_io_quantization=True,
         quantize=True,
     )
