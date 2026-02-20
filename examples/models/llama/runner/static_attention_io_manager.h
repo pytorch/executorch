@@ -665,6 +665,7 @@ class StaticAttentionIOManager {
           method, *config_.last_valid_token_pos_index, &last_valid_token_pos_);
     }
 
+    should_stop_decode_ = false;
     while (true) {
       input_buffer[0] = prev_tok;
       if (input_pos_ + 1 > config_.max_context_len) {
@@ -680,6 +681,9 @@ class StaticAttentionIOManager {
           1);
       prev_tok = sample(method);
       if (!token_callback(prev_tok)) {
+        break;
+      }
+      if (should_stop_decode_) {
         break;
       }
     }
@@ -744,6 +748,7 @@ class StaticAttentionIOManager {
         std::max(window_size * (ngram_size - 1), static_cast<size_t>(1));
     size_t n_inference = 0;
     std::fill(input_buffer.begin(), input_buffer.end(), prev_tok);
+    should_stop_decode_ = false;
     while (true) {
       input_buffer[0] = prev_tok;
       // Initialize verification branches.
@@ -852,6 +857,9 @@ class StaticAttentionIOManager {
       if (should_stop) {
         break;
       }
+      if (should_stop_decode_) {
+        break;
+      }
       prev_tok = longest_match.back();
     }
 
@@ -860,6 +868,10 @@ class StaticAttentionIOManager {
         "Generated %zu tokens with %zu inferences(s).",
         n_generated,
         n_inference);
+  }
+
+  void stop_decode() {
+    should_stop_decode_ = true;
   }
 
  private:
@@ -978,6 +990,7 @@ class StaticAttentionIOManager {
     return offsets;
   }
 
+  bool should_stop_decode_ = false;
   StaticAttentionIOConfig config_;
   size_t input_pos_ = 0;
   StaticKVCache<CacheT, CacheAllocatorT> k_caches_;
