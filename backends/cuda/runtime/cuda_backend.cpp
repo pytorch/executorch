@@ -37,6 +37,7 @@
 
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
+#include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
@@ -77,6 +78,7 @@ using slim::c10::DeviceType;
 namespace {
 constexpr char kSkipCopyOutputToCpuForMethod[] =
     "skip_copy_output_to_cpu_for_method";
+constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
 } // anonymous namespace
 
 class ET_EXPERIMENTAL CudaBackend final
@@ -143,6 +145,33 @@ class ET_EXPERIMENTAL CudaBackend final
     return method_in_csv(method_name, skip_copy_method_);
   }
 
+  // Create the shared CUDA stream. Called when use_shared_cuda_stream option
+  // is set to true. The presence of shared_cuda_stream_ indicates shared mode.
+  void create_shared_cuda_stream() {
+    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
+    if (shared_cuda_stream_ != nullptr) {
+      return; // Already created
+    }
+    shared_cuda_stream_ = cuda::create_cuda_stream();
+    if (shared_cuda_stream_ == nullptr) {
+      ET_LOG(Error, "Failed to create shared CUDA stream");
+      return;
+    }
+    ET_LOG(Info, "Created shared CUDA stream: %p", *shared_cuda_stream_);
+  }
+
+  // Get the shared CUDA stream. Returns nullptr if not in shared mode.
+  std::shared_ptr<cudaStream_t> get_shared_cuda_stream() const {
+    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
+    return shared_cuda_stream_;
+  }
+
+  // Check if we're using shared CUDA stream mode.
+  bool is_using_shared_cuda_stream() const {
+    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
+    return shared_cuda_stream_ != nullptr;
+  }
+
   Error load_function_pointers_into_handle(
       void* so_handle,
       AOTIDelegateHandle* handle) const {
@@ -199,6 +228,15 @@ class ET_EXPERIMENTAL CudaBackend final
               Error,
               "Option %s must be a method name string.",
               kSkipCopyOutputToCpuForMethod);
+          return Error::InvalidArgument;
+        }
+      } else if (std::strcmp(option.key, kUseSharedCudaStream) == 0) {
+        if (auto* val = std::get_if<bool>(&option.value)) {
+          if (*val) {
+            create_shared_cuda_stream();
+          }
+        } else {
+          ET_LOG(Error, "Option %s must be a boolean.", kUseSharedCudaStream);
           return Error::InvalidArgument;
         }
       }
@@ -282,7 +320,7 @@ class ET_EXPERIMENTAL CudaBackend final
     processed->Free();
 
     // Create handle and load function pointers into it
-    AOTIDelegateHandle* handle = new AOTIDelegateHandle();
+    cuda::CudaDelegateHandle* handle = new cuda::CudaDelegateHandle();
     handle->so_handle = lib_handle;
     handle->so_path = so_path.string();
     handle->method_name = method_name;
@@ -313,10 +351,31 @@ class ET_EXPERIMENTAL CudaBackend final
           handle->container_handle, static_cast<const uint8_t*>(weights_blob)));
       buffer_res->Free();
     }
-    // Create a CUDA stream for asynchronous execution
-    cudaStream_t cuda_stream;
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamCreate(&cuda_stream));
-    handle->cuda_stream = static_cast<void*>(cuda_stream);
+
+    // Use shared CUDA stream if enabled via options, otherwise create one.
+    // A shared stream ensures proper ordering across multiple methods
+    // (e.g., encoder, decoder, sampler) when using skip-copy optimization.
+    if (is_using_shared_cuda_stream()) {
+      // Shared stream mode: all handles share the same stream.
+      handle->cuda_stream = get_shared_cuda_stream();
+      ET_LOG(
+          Info,
+          "Using shared CUDA stream %p for method %s",
+          handle->get_cuda_stream(),
+          method_name.c_str());
+    } else {
+      // Per-handle stream mode: each handle owns its own stream.
+      handle->cuda_stream = cuda::create_cuda_stream();
+      if (handle->cuda_stream == nullptr) {
+        delete handle;
+        return Error::Internal;
+      }
+      ET_LOG(
+          Info,
+          "Created new CUDA stream %p for method %s",
+          handle->get_cuda_stream(),
+          method_name.c_str());
+    }
 
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
@@ -326,13 +385,15 @@ class ET_EXPERIMENTAL CudaBackend final
       BackendExecutionContext& context,
       DelegateHandle* handle_,
       Span<EValue*> args) const override {
-    AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
+    cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
 
     size_t n_inputs;
     handle->get_num_inputs(handle->container_handle, &n_inputs);
 
     size_t n_outputs;
     handle->get_num_outputs(handle->container_handle, &n_outputs);
+
+    setCurrentCUDAStream(handle->get_cuda_stream(), 0);
 
     ET_CHECK_OR_RETURN_ERROR(
         n_inputs + n_outputs == args.size(),
@@ -406,13 +467,18 @@ class ET_EXPERIMENTAL CudaBackend final
     // expects ETensor* as input/output. We avoid changing its signature since
     // it's shared with the Metal backend. Instead, we reinterpret_cast
     // SlimTensor* to Tensor*
+    //
+    // Get current CUDA stream and pass it to AOTInductorModelContainerRun
+    Result<cudaStream_t> cuda_stream_ret = getCurrentCUDAStream(0);
+    cudaStream_t cuda_stream = cuda_stream_ret.get();
+    ET_CHECK_OK_OR_RETURN_ERROR(cuda_stream_ret.error());
     AOTIRuntimeError error = handle->run(
         handle->container_handle,
         reinterpret_cast<Tensor**>(gpu_inputs.data()),
         n_inputs,
         reinterpret_cast<Tensor**>(gpu_outputs.data()),
         n_outputs,
-        handle->cuda_stream,
+        static_cast<void*>(cuda_stream),
         nullptr);
 
     ET_CHECK_OR_RETURN_ERROR(
@@ -423,22 +489,12 @@ class ET_EXPERIMENTAL CudaBackend final
 
     const bool copy_outputs = !should_skip_copy_for_method(handle->method_name);
 
-    // Synchronize CUDA stream to ensure kernel execution is complete
-    // before accessing output data (either for copy or skip-copy path)
-    cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
-    cudaError_t sync_err = cudaStreamSynchronize(cuda_stream);
-    ET_CHECK_OR_RETURN_ERROR(
-        sync_err == cudaSuccess,
-        Internal,
-        "cudaStreamSynchronize failed: %s",
-        cudaGetErrorString(sync_err));
-
     if (copy_outputs) {
-      // Deep copy GPU SlimTensor results back to CPU ETensors
       for (size_t i = 0; i < n_outputs; i++) {
         auto* cpu_output_tensor = &(args[i + n_inputs]->toTensor());
         ET_CHECK_OK_OR_RETURN_ERROR(
-            copy_slimtensor_to_etensor(gpu_outputs[i], cpu_output_tensor),
+            copy_slimtensor_to_etensor_async(
+                gpu_outputs[i], cpu_output_tensor, cuda_stream),
             "Failed to copy GPU output %zu back to CPU ETensor",
             i);
       }
@@ -483,7 +539,7 @@ class ET_EXPERIMENTAL CudaBackend final
     if (handle_ == nullptr) {
       return;
     }
-    AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
+    cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
 
     // Clean up cached output tensors for this handle
     {
@@ -495,16 +551,10 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
-    // Destroy the CUDA stream if it exists
-    if (handle->cuda_stream != nullptr) {
-      cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
-      cudaError_t stream_err = cudaStreamDestroy(cuda_stream);
-      ET_CHECK_OR_LOG_ERROR(
-          stream_err == cudaSuccess,
-          "Failed to destroy CUDA stream: %s",
-          cudaGetErrorString(stream_err));
-      handle->cuda_stream = nullptr;
-    }
+    // The CUDA stream is managed by shared_ptr in the handle.
+    // It will be automatically destroyed when the last handle using it
+    // is destroyed. Just reset our reference.
+    handle->cuda_stream.reset();
 
     // NOTE: AOTInductorModelContainerDelete does not work correctly with
     // multiple .so files. Deleting one container frees shared resources,
@@ -541,13 +591,22 @@ class ET_EXPERIMENTAL CudaBackend final
   mutable std::mutex skip_copy_method_mutex_;
   std::string skip_copy_method_;
 
+  // Shared CUDA stream for all methods. When set (non-null), all methods use
+  // the same stream to ensure proper ordering (critical for skip-copy
+  // optimization). Created when use_shared_cuda_stream option is set to true.
+  // Managed via shared_ptr so it's automatically cleaned up when last handle
+  // is destroyed.
+  mutable std::mutex cuda_stream_mutex_;
+  std::shared_ptr<cudaStream_t> shared_cuda_stream_ = nullptr;
+
   // Cached output tensors for skip-copy optimization.
   // When skip-copy is enabled, output SlimTensors are cached here to keep
   // the underlying GPU memory alive while the caller processes the results.
-  // Maps each AOTIDelegateHandle* to its vector of cached output tensors.
+  // Maps each CudaDelegateHandle* to its vector of cached output tensors.
   mutable std::mutex cached_outputs_mutex_;
-  mutable std::unordered_map<AOTIDelegateHandle*, std::vector<SlimTensor*>>
-      cached_outputs_;
+  mutable std::
+      unordered_map<cuda::CudaDelegateHandle*, std::vector<SlimTensor*>>
+          cached_outputs_;
 };
 
 } // namespace executorch::backends::cuda
