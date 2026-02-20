@@ -53,3 +53,18 @@ fbcode_target(_kind = python_pytest,
         ":models",
     ]
 )
+
+fbcode_target(_kind = python_pytest,
+    name = "test_batch_norm_fusion",
+    srcs = [
+        "test_batch_norm_fusion.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/nxp:neutron_backend",
+        ":executorch_pipeline",
+        ":models",
+        "fbsource//third-party/pypi/pytest:pytest",
+        "fbsource//third-party/pypi/numpy:numpy",
+    ],
+)
