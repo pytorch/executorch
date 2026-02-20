@@ -272,7 +272,6 @@ if [ "$BUILD_X86_64" = true ]; then
     cmake --build $BUILD_ROOT -j$BUILD_JOB_NUMBER --target install
 
     rm -f $PRJ_ROOT/backends/qualcomm/python/*
-    cp -fv $BUILD_ROOT/backends/qualcomm/Py* "$PRJ_ROOT/backends/qualcomm/python"
     cp -fv "$PRJ_ROOT/schema/program.fbs" "$PRJ_ROOT/exir/_serialize/program.fbs"
     cp -fv "$PRJ_ROOT/schema/scalar_type.fbs" "$PRJ_ROOT/exir/_serialize/scalar_type.fbs"
 
