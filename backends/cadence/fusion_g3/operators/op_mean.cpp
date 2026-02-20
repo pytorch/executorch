@@ -105,7 +105,7 @@ Tensor& mean_out(
     const float* __restrict__ p_inp =
         (const float* __restrict__)in.const_data_ptr<float>();
 
-    int num_elm = in.numel();
+    auto num_elm = in.numel();
 
     int num_inp_dims = in.dim();
     int num_out_dims = out.dim();
