@@ -10,7 +10,6 @@
 # This implementation is torch.export compatible using a ring buffer approach
 # for the sliding window portion while preserving the sink tokens.
 
-import types
 from typing import Optional, Tuple
 
 import torch
@@ -451,24 +450,5 @@ def enable_attention_sink(
         eviction_batch_size=eviction_batch_size,
         max_context_len=max_context_len,
     )
-
-    # Add metadata methods for IOManager detection
-    # These method names must match the constants in constants.h:
-    # kAttentionSinkSize = "attention_sink_size"
-    # kAttentionSinkWindowSize = "attention_sink_window_size"
-    def attention_sink_size(self):
-        return sink_size
-
-    def attention_sink_window_size(self):
-        return window_size
-
-    # Bind methods to module
-    module.attention_sink_size = types.MethodType(attention_sink_size, module)
-    module.attention_sink_window_size = types.MethodType(attention_sink_window_size, module)
-
-    # Note: We do NOT modify get_example_inputs or forward signature.
-    # The ring buffer calculates cache indices internally from input_pos,
-    # so the model can use the standard 2-input signature (tokens, input_pos).
-    # This allows the standard IOManager to work without modification.
 
     return module
