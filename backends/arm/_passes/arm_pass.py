@@ -35,6 +35,16 @@ class ArmPass(ExportPass):
 
         return not disallow_tfa
 
+    def _is_quantized_meta(self, meta: NodeMetadata | dict[str, Any]) -> bool:
+        """Return True when meta indicates fully quantized inputs and outputs."""
+        if isinstance(meta, NodeMetadata):
+            meta_dict = meta.data
+        else:
+            meta_dict = meta
+        input_qparams = meta_dict.get("input_qparams", {})
+        output_qparams = meta_dict.get("output_qparams", {})
+        return bool(input_qparams) and bool(output_qparams)
+
     @property
     @abstractmethod
     def _passes_required_after(self) -> Set[Type[ExportPass]]:
