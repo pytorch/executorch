@@ -306,7 +306,10 @@ void TextLLMRunner::stop() {
 
 void TextLLMRunner::reset() {
   stats_->reset();
-  (void)io_manager_->reset();
+  auto err = io_manager_->reset();
+  if (err != runtime::Error::Ok) {
+    ET_LOG(Error, "IOManager reset failed");
+  }
   pos_ = 0;
 }
 
