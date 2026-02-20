@@ -9,18 +9,6 @@ set -euxo pipefail
 
 # This script is run before building ExecuTorch binaries
 
-if [[ "$(uname -m)" == "aarch64" ]]; then
-  # On some Linux aarch64 systems, the "atomic" library is not found during linking.
-  # To work around this, replace "atomic" with the literal ${ATOMIC_LIB} so the
-  # build system uses the full path to the atomic library.
-  file="extension/llm/tokenizers/third-party/sentencepiece/src/CMakeLists.txt"
-  sed 's/list(APPEND SPM_LIBS "atomic")/list(APPEND SPM_LIBS ${ATOMIC_LIB})/' \
-    "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
-
-  grep -n 'list(APPEND SPM_LIBS ${ATOMIC_LIB})' "$file" && \
-    echo "the file $file has been modified for atomic to use full path"
-fi
-
 # Clone nested submodules for tokenizers - this is a workaround for recursive
 # submodule clone failing due to path length limitations on Windows. Eventually,
 # we should update the core job in test-infra to enable long paths before
@@ -32,7 +20,9 @@ popd
 # On Windows, enable symlinks and re-checkout the current revision to create
 # the symlinked src/ directory. This is needed to build the wheel.
 UNAME_S=$(uname -s)
+IS_WINDOWS=0
 if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
+    IS_WINDOWS=1
     echo "Enabling symlinks on Windows"
     git config core.symlinks true
     git checkout -f HEAD
@@ -43,4 +33,11 @@ fi
 # which does install them. Though we'd need to disable build isolation to be
 # able to see the installed torch package.
 
-"${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
+if [[ $IS_WINDOWS -eq 1 ]]; then
+    # Use a symlink'd path to work around path length limitations when building
+    # dependencies from source.
+    cmd.exe -c "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/setup_symlink.bat"
+    cd /c/_et/executorch/
+else
+    "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
+fi

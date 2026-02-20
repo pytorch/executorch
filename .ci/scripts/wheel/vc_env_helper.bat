@@ -38,24 +38,10 @@ goto start
 :done
 if "%args%" == "" (
     echo Usage: vc_env_helper.bat [command] [args]
-    echo e.g. vc_env_helper.bat cl /c test.cpp
+    echo e.g. vc_env_helper.bat cl /c test.
 )
 
-set work_dir=%CD%
-if exist setup.py (
-    echo "Creating symlink..."
-    REM Setup a symlink to shorten the path length.
-    REM Note that the ET directory has to be named "executorch".
-    cd %GITHUB_WORKSPACE%
-    if not exist et\ (
-        mkdir et
-    )
-    cd et
-    echo Work dir: %work_dir%
-    if not exist executorch\ (
-        mklink /d executorch %work_dir%
-    )
-    cd executorch
-)
+call "%~dp0setup_symlink.bat"
+
 
 %args% || exit /b 1
