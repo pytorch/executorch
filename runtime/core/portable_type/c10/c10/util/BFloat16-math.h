@@ -1,3 +1,10 @@
+/*
+ * Copyright 2025 Arm Limited and/or its affiliates.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #pragma once
 
 #include <c10/util/BFloat16.h>
@@ -181,7 +188,7 @@ template <
     typename T,
     typename std::enable_if_t<c10::is_reduced_floating_point_v<T>, int> = 0>
 inline T rsqrt(T a) {
-  return 1.0 / std::sqrt(float(a));
+  return 1.0f / std::sqrt(float(a));
 }
 template <
     typename T,
