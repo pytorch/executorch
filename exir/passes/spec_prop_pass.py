@@ -72,6 +72,10 @@ _FORMAT_PRESERVING_OPS: frozenset = frozenset({
     torch.ops.aten.rsqrt.out,
 })
 
+assert _LAYOUT_TRANSFORMING_OPS.isdisjoint(_FORMAT_PRESERVING_OPS), (
+    "Op appears in both _LAYOUT_TRANSFORMING_OPS and _FORMAT_PRESERVING_OPS — check classification"
+)
+
 
 def _get_primary_tensor_input(node: Node) -> Optional[Node]:
     """First argument that is an fx.Node with a FakeTensor val (primary input for layout)."""
