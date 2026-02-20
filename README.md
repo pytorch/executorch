@@ -16,7 +16,7 @@
 
 Deploy **LLMs, vision, speech, and multimodal models** with the same PyTorch APIs you already know—accelerating research to production with seamless model export, optimization, and deployment. No manual C++ rewrites. No format conversions. No vendor lock-in.
 
-<details>
+<details>   
   <summary><strong>📘 Table of Contents</strong></summary>
 
 - [Why ExecuTorch?](#why-executorch)
