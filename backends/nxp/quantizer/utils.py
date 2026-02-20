@@ -29,6 +29,10 @@ from torchao.quantization.pt2e.quantize_pt2e import (
     prepare_pt2e,
     prepare_qat_pt2e,
 )
+from executorch.backends.transforms.quantize_fused_convbn_bias_pass import (
+    QuantizeFusedConvBnBiasAtenPass,
+)
+
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY, Quantizer
 
 
@@ -162,14 +166,13 @@ def find_sequential_partitions_aten(
 
 
 def calibrate_and_quantize(
-    model: ExportedProgram | fx.GraphModule,
+    model: ExportedProgram,
     calibration_inputs: Iterable[tuple[torch.Tensor, ...]],
     quantizer: Quantizer,
     is_qat: bool = False,
 ) -> fx.GraphModule:
     """Quantize the provided model.
-
-    :param model: Aten model (or it's GraphModule representation) to quantize.
+    :param model: Aten exported model to quantize.
     :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
                                 input. Or an iterator over such tuples.
     :param quantizer: Quantizer to use.
@@ -179,8 +182,7 @@ def calibrate_and_quantize(
     :return: Quantized GraphModule.
     """
 
-    if isinstance(model, ExportedProgram):
-        model = model.module()
+    model = model.module()
 
     if is_qat:
         m = prepare_qat_pt2e(model, quantizer)
@@ -192,4 +194,5 @@ def calibrate_and_quantize(
         m(*data)
     m = convert_pt2e(m)
 
+    QuantizeFusedConvBnBiasAtenPass()(m)
     return m

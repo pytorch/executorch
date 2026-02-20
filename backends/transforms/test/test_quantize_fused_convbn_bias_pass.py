@@ -6,6 +6,7 @@
 
 from typing import Tuple
 
+import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
@@ -14,11 +15,16 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.backends.transforms.quantize_fused_convbn_bias_pass import (
     QuantizeFusedConvBnBiasAtenPass,
     QuantizeFusedConvBnBiasPass,
 )
 from executorch.backends.xnnpack.test.tester.tester import Quantize
+from executorch.exir import to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch import nn
 from torch.export import export
 from torchao.quantization.pt2e import move_exported_model_to_eval
@@ -147,6 +153,83 @@ def test_quantize_fused_convbn_bias_arm_qat(test_data) -> None:
 
     pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
+
+
+# --- NXP (Neutron) tests ---
+
+
+def _run_nxp_qat_pass(model: nn.Module, use_edge: bool = True) -> None:
+    """Quantize a model with NXP's NeutronQuantizer in QAT mode, optionally convert to
+    edge, and verify that the fused bias is quantized via calibrate_and_quantize."""
+    example_input = model.get_inputs()
+
+    target_spec = NeutronTargetSpec(
+        target="imxrt700", neutron_converter_flavor="SDK_25_12"
+    )
+    quantizer = NeutronQuantizer(target_spec, is_qat=True)
+
+    exported = export(model, example_input, strict=True)
+    quantized_gm = calibrate_and_quantize(
+        model=exported,
+        calibration_inputs=[example_input],
+        quantizer=quantizer,
+        is_qat=True,
+    )
+
+    if use_edge:
+        re_exported = export(quantized_gm, example_input, strict=True)
+        edge_program_manager = to_edge(re_exported)
+        edge_program = edge_program_manager.exported_program()
+        graph = edge_program.graph_module.graph
+        conv_targets = (exir_ops.edge.aten.convolution.default,)
+        dequant_targets = (
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        )
+    else:
+        graph = quantized_gm.graph
+        conv_targets = (
+            torch.ops.aten.convolution.default,
+            torch.ops.aten.conv2d.default,
+        )
+        dequant_targets = (
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_channel.default,
+        )
+
+    _assert_bias_dequantized(graph, conv_targets, dequant_targets)
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        pytest.param(ConvBnNoBias(), id="conv2d_bn_no_bias"),
+        pytest.param(ConvBnReluNoBias(), id="conv2d_bn_relu_no_bias"),
+    ],
+)
+def test_quantize_fused_convbn_bias_nxp_qat(model: nn.Module) -> None:
+    """
+    Test that QuantizeFusedConvBnBiasPass correctly quantizes the bias
+    introduced by BatchNorm fusion during QAT when the original conv has bias=False.
+    Uses the NXP Neutron quantizer with edge dialect.
+    """
+    _run_nxp_qat_pass(model, use_edge=True)
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        pytest.param(ConvBnNoBias(), id="conv2d_bn_no_bias"),
+        pytest.param(ConvBnReluNoBias(), id="conv2d_bn_relu_no_bias"),
+    ],
+)
+def test_quantize_fused_convbn_bias_nxp_qat_aten(model: nn.Module) -> None:
+    """
+    Test that QuantizeFusedConvBnBiasPass correctly quantizes the bias
+    on aten-dialect graphs (without edge conversion).
+    Uses the NXP Neutron quantizer.
+    """
+    _run_nxp_qat_pass(model, use_edge=False)
 
 
 # --- Direct aten pass tests (no NXP dependency) ---
