@@ -500,10 +500,24 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getUsedBackends(
       facebook::jni::alias_ref<jstring> methodName) {
-    auto methodMeta = module_->method_meta(methodName->toStdString()).get();
+    auto method_name = methodName->toStdString();
+    auto methodMetaResult = module_->method_meta(method_name);
+    if (!methodMetaResult.ok()) {
+      std::stringstream ss;
+      ss << "Cannot get method meta for '" << method_name
+         << "' [Native Error: 0x" << std::hex << std::uppercase
+         << static_cast<uint32_t>(methodMetaResult.error()) << "]";
+      jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(methodMetaResult.error()), ss.str());
+      return {};
+    }
+    auto methodMeta = methodMetaResult.get();
     std::unordered_set<std::string> backends;
     for (auto i = 0; i < methodMeta.num_backends(); i++) {
-      backends.insert(methodMeta.get_backend_name(i).get());
+      auto backend_name_result = methodMeta.get_backend_name(i);
+      if (backend_name_result.ok()) {
+        backends.insert(backend_name_result.get());
+      }
     }
 
     facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =
