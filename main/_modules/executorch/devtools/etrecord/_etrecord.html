@@ -29,7 +29,7 @@
 <link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
 
     <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=8f2a1f02" />
-    <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=72e443bf" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/sg_gallery.css?v=61a4c737" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/sg_gallery-binder.css?v=f4aeca0c" />
@@ -63,13 +63,14 @@ window.addEventListener("load", () => mermaid.run());
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/_modules/executorch/devtools/etrecord/_etrecord.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/_modules/executorch/devtools/etrecord/_etrecord.html" />
     <link rel="icon" href="../../../../_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="../../../../genindex.html" />
     <link rel="search" title="Search" href="../../../../search.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
+
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
 <script>
@@ -97,6 +98,32 @@ window.addEventListener("load", () => mermaid.run());
   });
 </script>
 <!-- Conditional CSS for header and footer height adjustment -->
+
+<style>
+  :root {
+    --header-height: 0px !important;
+    --header-height-desktop: 0px !important;
+  }
+  /* Ensure proper mobile layout when LF header is hidden */
+  @media (max-width: 960px) {
+    .bd-header {
+      top: 0 !important;
+      position: sticky !important;
+      z-index: 1020 !important;
+    }
+    .bd-main {
+      padding-top: 0 !important;
+      margin-top: 0 !important;
+    }
+    .bd-article-container {
+      padding-top: 0 !important;
+    }
+    .header-article__inner {
+      padding-top: 1rem !important;
+    }
+
+  }
+</style>
 
 
 <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css" crossorigin="anonymous">
@@ -158,25 +185,112 @@ window.addEventListener("load", () => mermaid.run());
 <!-- End Facebook Pixel Code -->
 <!-- Repository configuration for tutorials -->
 
-<!-- Script to Fix scrolling -->
+
+<!-- Script to Fix scrolling with fast fixed-duration animation -->
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    // Fix anchor scrolling
+    const SCROLL_DURATION = 150; // Fixed duration in ms regardless of distance
+    let lockedTargetId = null; // Lock the TOC to this target until user scrolls manually
+    let isUpdatingToc = false; // Guard against infinite loops
+
+    function smoothScrollTo(targetY, duration, onComplete) {
+      const startY = window.pageYOffset;
+      const difference = targetY - startY;
+      const startTime = performance.now();
+
+      function step(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        // Ease-out cubic for smooth deceleration
+        const easeOut = 1 - Math.pow(1 - progress, 3);
+        window.scrollTo(0, startY + difference * easeOut);
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else if (onComplete) {
+          onComplete();
+        }
+      }
+      requestAnimationFrame(step);
+    }
+
+    function updateTocHighlight(targetId) {
+      if (isUpdatingToc) return; // Prevent infinite loop
+      isUpdatingToc = true;
+
+      // Find the TOC link that points to this target
+      const tocNav = document.querySelector('.bd-toc-nav');
+      if (!tocNav) {
+        isUpdatingToc = false;
+        return;
+      }
+
+      // Remove active class from all TOC items
+      tocNav.querySelectorAll('.nav-link').forEach(link => {
+        link.classList.remove('active');
+        link.parentElement.classList.remove('active');
+      });
+
+      // Add active class to the matching link
+      const matchingLink = tocNav.querySelector(`a[href="#${CSS.escape(targetId)}"]`);
+      if (matchingLink) {
+        matchingLink.classList.add('active');
+        matchingLink.parentElement.classList.add('active');
+      }
+
+      // Use setTimeout to reset the guard after the current call stack
+      setTimeout(function() {
+        isUpdatingToc = false;
+      }, 0);
+    }
+
+    // Watch for ScrollSpy trying to change the active state and override it
+    const tocNav = document.querySelector('.bd-toc-nav');
+    if (tocNav) {
+      const observer = new MutationObserver(function(mutations) {
+        if (lockedTargetId && !isUpdatingToc) {
+          // Force our target to stay highlighted
+          updateTocHighlight(lockedTargetId);
+        }
+      });
+      observer.observe(tocNav, {
+        attributes: true,
+        attributeFilter: ['class'],
+        subtree: true
+      });
+    }
+
+    // Release the lock when user scrolls manually (not programmatically)
+    window.addEventListener('wheel', function() {
+      lockedTargetId = null;
+    });
+    window.addEventListener('touchmove', function() {
+      lockedTargetId = null;
+    });
+
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
       anchor.addEventListener('click', function (e) {
-        e.preventDefault();
         const targetId = this.getAttribute('href').substring(1);
+        if (!targetId) return; // Skip empty hash links
         const targetElement = document.getElementById(targetId);
 
         if (targetElement) {
+          e.preventDefault();
+
+          // Lock the TOC to this target
+          lockedTargetId = targetId;
+
           const headerHeight =
             (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
             (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
 
           const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
-          window.scrollTo({
-            top: targetPosition,
-            behavior: 'smooth'
+
+          // Update TOC highlight immediately
+          updateTocHighlight(targetId);
+
+          smoothScrollTo(targetPosition, SCROLL_DURATION, function() {
+            // Keep it highlighted after scroll
+            updateTocHighlight(targetId);
           });
 
           // Update URL hash without scrolling
@@ -188,6 +302,18 @@ window.addEventListener("load", () => mermaid.run());
 </script>
 
 <script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+<!-- RunLLM Widget Configuration -->
+
+<script>
+  window.runllmConfig = {
+    assistant_id: "1632",
+    name: "Assistant",
+    position: "BOTTOM_RIGHT",
+    keyboard_shortcut: ""
+  };
+</script>
+<script type="text/javascript" src="../../../../_static/js/runllm-widget.js"></script>
+
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -195,350 +321,6 @@ window.addEventListener("load", () => mermaid.run());
   </head>
 
 <body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
-  
-    <div class="container-fluid header-holder tutorials-header" id="header-holder">
-   <div class="header-container-wrapper">
-    <div class="header-container">
-      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
-
-      <div class="main-menu">
-        <ul>
-
-          <li class="main-menu-item">
-          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-                <span>Learn</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/get-started/locally">
-                  <span class=dropdown-title>Get Started</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://docs.pytorch.org/tutorials">
-                  <span class="dropdown-title">Tutorials</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
-                  <span class="dropdown-title">Learn the Basics</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
-                  <span class="dropdown-title">PyTorch Recipes</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
-                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/webinars/">
-                  <span class="dropdown-title">Webinars</span>
-                </a>
-              </div>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-              <span>Community</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://landscape.pytorch.org/" target="_blank">
-                  <span class="dropdown-title">Landscape</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/join-ecosystem">
-                  <span class="dropdown-title">Join the Ecosystem</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/community-hub/">
-                  <span class="dropdown-title">Community Hub</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/">
-                  <span class="dropdown-title">Forums</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
-                  <span class=dropdown-title>Developer Resources</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/contributor-awards/">
-                  <span class="dropdown-title">Contributor Awards</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/community-events/">
-                  <span class="dropdown-title">Community Events</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/programs/ambassadors/">
-                  <span class="dropdown-title">PyTorch Ambassadors</span>
-                </a>
-              </div>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-              <span>Projects</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/projects/pytorch/">
-                  <span class="dropdown-title">PyTorch</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/projects/vllm/">
-                  <span class="dropdown-title">vLLM</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/projects/deepspeed/">
-                  <span class="dropdown-title">DeepSpeed</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/projects/host-your-project/">
-                  <span class="dropdown-title">Host Your Project</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/projects/ray/">
-                  <span class="dropdown-title">RAY</span>
-                </a>
-              </div>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-              <span> Docs</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://docs.pytorch.org/docs/stable/index.html">
-                  <span class="dropdown-title">PyTorch</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/domains">
-                  <span class="dropdown-title">Domains</span>
-                </a>
-              </div>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-              <span>Blogs & News</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
-                  <span class="dropdown-title">Blog</span>
-                </a>
-                 <a class="nav-dropdown-item" href="https://pytorch.org/announcements">
-                  <span class="dropdown-title">Announcements</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/case-studies/">
-                  <span class="dropdown-title">Case Studies</span>
-                <a class="nav-dropdown-item" href="https://pytorch.org/events">
-                  <span class="dropdown-title">Events</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
-                  <span class="dropdown-title">Newsletter</span>
-                </a>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-              <span>About</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
-                  <span class="dropdown-title">PyTorch Foundation</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/members">
-                  <span class="dropdown-title">Members</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
-                  <span class="dropdown-title">Governing Board</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
-                  <span class="dropdown-title">Technical Advisory Council</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
-                  <span class="dropdown-title">Cloud Credit Program</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
-                  <span class="dropdown-title">Staff</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/contact">
-                  <span class="dropdown-title">Contact</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/wp-content/uploads/2025/09/pytorch_brand_guide_091925a.pdf">
-                  <span class="dropdown-title">Brand Guidelines</span>
-                </a>
-              </div>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-            <div class="no-dropdown main-menu-button">
-              <a href="https://pytorch.org/join" data-cta="join">
-                JOIN
-              </a>
-            </div>
-          </li>
-        </ul>
-      </div>
-
-      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu">
-        <i class="fa-solid fa-ellipsis"></i>
-      </a>
-    </div>
-  </div>
- </div>
-
- <!-- Begin Mobile Menu -->
-
-<div class="mobile-main-menu">
-  <div class="container-fluid">
-    <div class="header-container-wrapper">
-      <div class="mobile-main-menu-header-container">
-        <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu">
-        </a>
-      </div>
-    </div>
-  </div>
-
-  <div class="mobile-main-menu-links-container">
-    <div class="main-menu">
-      <ul>
-         <li class="resources-mobile-menu-title">
-           <a>Learn</a>
-         </li>
-         <ul class="resources-mobile-menu-items">
-           <li>
-             <a href="https://pytorch.org/get-started/locally">Get Started</a>
-           </li>
-           <li>
-             <a href="https://docs.pytorch.org/tutorials">Tutorials</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
-           </li>
-           <li>
-            <a href="https://pytorch.org/webinars/">Webinars</a>
-          </li>
-        </ul>
-         <li class="resources-mobile-menu-title">
-           <a>Community</a>
-         </li>
-         <ul class="resources-mobile-menu-items">
-          <li>
-            <a href="https://landscape.pytorch.org/">Landscape</a>
-          </li>
-          <li>
-             <a href="https://pytorch.org/join-ecosystem">Join the Ecosystem</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/community-hub/">Community Hub</a>
-           </li>
-           <li>
-             <a href="https://discuss.pytorch.org/">Forums</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/resources">Developer Resources</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/contributor-awards/">Contributor Awards</a>
-           </li>
-           <li>
-            <a href="https://pytorch.org/community-events/">Community Events</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/programs/ambassadors/">PyTorch Ambassadors</a>
-          </li>
-       </ul>
-
-         <li class="resources-mobile-menu-title">
-           <a>Projects</a>
-         </li>
-
-         <ul class="resources-mobile-menu-items">
-           <li>
-             <a href="https://pytorch.org/projects/pytorch/">PyTorch</a>
-           </li>
-
-           <li>
-             <a href="https://pytorch.org/projects/vllm/">vLLM</a>
-           </li>
-           <li>
-            <a href="https://pytorch.org/projects/deepspeed/">DeepSpeed</a>
-          </li>
-          <li>
-             <a href="https://pytorch.org/projects/host-your-project/">Host Your Project</a>
-           </li>
-         </ul>
-
-         <li class="resources-mobile-menu-title">
-           <a>Docs</a>
-         </li>
-
-         <ul class="resources-mobile-menu-items">
-          <li>
-            <a href="https://docs.pytorch.org/docs/stable/index.html">PyTorch</a>
-          </li>
-
-          <li>
-            <a href="https://pytorch.org/domains">Domains</a>
-          </li>
-        </ul>
-
-        <li class="resources-mobile-menu-title">
-          <a>Blog & News</a>
-        </li>
-
-         <ul class="resources-mobile-menu-items">
-          <li>
-            <a href="https://pytorch.org/blog/">Blog</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/announcements">Announcements</a>
-          </li>
-
-          <li>
-            <a href="https://pytorch.org/case-studies/">Case Studies</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/events">Events</a>
-          </li>
-          <li>
-             <a href="https://pytorch.org/newsletter">Newsletter</a>
-           </li>
-        </ul>
-
-        <li class="resources-mobile-menu-title">
-          <a>About</a>
-        </li>
-
-        <ul class="resources-mobile-menu-items">
-          <li>
-            <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/members">Members</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/governing-board">Governing Board</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/tac">Technical Advisory Council</a>
-         </li>
-         <li>
-             <a href="https://pytorch.org/credits">Cloud Credit Program</a>
-          </li>
-          <li>
-             <a href="https://pytorch.org/staff">Staff</a>
-          </li>
-          <li>
-             <a href="https://pytorch.org/contact">Contact</a>
-          </li>
-        </ul>
-      </ul>
-    </div>
-  </div>
-</div>
-
-<!-- End Mobile Menu -->
   
   
   
@@ -548,7 +330,7 @@ window.addEventListener("load", () => mermaid.run());
   
   
   <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
-  
+
   
   <div id="pst-scroll-pixel-helper"></div>
   
@@ -593,38 +375,77 @@ window.addEventListener("load", () => mermaid.run());
 
   
     <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+
 <div class="bd-header__inner bd-page-width">
   <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
     <span class="fa-solid fa-bars"></span>
   </button>
+
+  
+  <div class="navbar-header-items__mobile-logo">
+    
+
+
+
+
+
+
+
+  
+  
+  
+
+
+<a class="navbar-brand logo" href="../../../../index.html">
+  
+    
+    <img src="../../../../_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
+    
+    
+    <script>document.write(`<img src="../../../../_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    
+  
+</a>
+  </div>
+
   
   
   <div class=" navbar-header-items__start">
     
-      <div class="navbar-item">
+      
+      
+        <div class="navbar-item">
+          
+
+
+
+
+
+
 
   
-    
   
+  
+
 
 <a class="navbar-brand logo" href="../../../../index.html">
   
-  
-  
-  
-  
+    
+    <img src="../../../../_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
     
     
+    <script>document.write(`<img src="../../../../_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    
+  
+</a>
+        </div>
       
     
-    
-    <img src="../../../../_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch main documentation - Home"/>
-    <script>document.write(`<img src="../../../../_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch main documentation - Home"/>`);</script>
-  
-  
-</a></div>
-    
-      <div class="navbar-item">
+      
+      
+        
+        <div class="navbar-item desktop-only-version">
+          
 <script>
 document.write(`
   <div class="version-switcher__container dropdown">
@@ -646,7 +467,9 @@ document.write(`
     </div>
   </div>
 `);
-</script></div>
+</script>
+        </div>
+      
     
   </div>
   
@@ -655,86 +478,505 @@ document.write(`
     <div class="me-auto navbar-header-items__center">
       
         <div class="navbar-item">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <nav>
   <ul class="bd-navbar-elements navbar-nav">
     
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../intro-section.html">
-    Intro
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../quick-start-section.html">
-    Quick Start
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../edge-platforms-section.html">
-    Edge
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../backends-section.html">
-    Backends
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../llm/working-with-llms.html">
-    LLMs
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../advanced-topics-section.html">
-    Advanced
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../tools-section.html">
-    Tools
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../api-section.html">
-    API
-  </a>
-</li>
-
-            <li class="nav-item dropdown">
-                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
-                    More
-                </button>
-                <ul id="pst-nav-more-links" class="dropdown-menu">
-                    
-<li class=" ">
-  <a class="nav-link dropdown-item nav-internal" href="../../../../support-section.html">
-    Support
-  </a>
-</li>
-
-                </ul>
-            </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../intro-section.html">
+              Intro
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-1">
             
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../intro-overview.html">
+                  ExecuTorch Overview
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../intro-how-it-works.html">
+                  How ExecuTorch Works
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../getting-started-architecture.html">
+                  Architecture and Components
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../concepts.html">
+                  Concepts
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../quick-start-section.html">
+              Quick Start
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-2">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../getting-started.html">
+                  Getting Started with ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../using-executorch-building-from-source.html">
+                  Building from Source
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../edge-platforms-section.html">
+              Edge
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-3">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../android-section.html">
+                  Android
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../ios-section.html">
+                  iOS
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../desktop-section.html">
+                  Desktop & Laptop Platforms
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../embedded-section.html">
+                  Embedded Systems
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../backends-section.html">
+              Backends
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-4">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/xnnpack/xnnpack-overview.html">
+                  XNNPACK Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/cuda/cuda-overview.html">
+                  CUDA Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/coreml/coreml-overview.html">
+                  Core ML Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/mps/mps-overview.html">
+                  MPS Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/vulkan/vulkan-overview.html">
+                  Vulkan Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends-qualcomm.html">
+                  Qualcomm AI Engine Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends-mediatek.html">
+                  MediaTek Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/arm-ethos-u/arm-ethos-u-overview.html">
+                  Arm Ethos-U Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/arm-vgf/arm-vgf-overview.html">
+                  Arm VGF Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../build-run-openvino.html">
+                  Building and Running ExecuTorch with OpenVINO Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/nxp/nxp-overview.html">
+                  NXP eIQ Neutron Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends-cadence.html">
+                  Cadence Xtensa Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/samsung/samsung-overview.html">
+                  Samsung Exynos Backend
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../llm/working-with-llms.html">
+              LLMs
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-5">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/getting-started.html">
+                  Deploying LLMs to ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/export-llm.html">
+                  Exporting LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/export-llm-optimum.html">
+                  Exporting LLMs with HuggingFace’s Optimum ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/export-custom-llm.html">
+                  Exporting custom LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/run-with-c-plus-plus.html">
+                  Running LLMs with C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                  Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/run-on-ios.html">
+                  Running LLMs on iOS
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../advanced-topics-section.html">
+              Advanced
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-6">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../quantization-optimization.html">
+                  Quantization & Optimization
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../kernel-library-advanced.html">
+                  Kernel Library Deep Dive
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backend-delegate-advanced.html">
+                  Backend & Delegates
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../runtime-integration-advanced.html">
+                  Runtime & Integration
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../compiler-ir-advanced.html">
+                  Compiler & IR
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../file-formats-advanced.html">
+                  File Formats
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../tools-section.html">
+              Tools
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-7">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../devtools-overview.html">
+                  Introduction to the ExecuTorch Developer Tools
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../bundled-io.html">
+                  Bundled Program – a Tool for ExecuTorch Model Validation
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../etrecord.html">
+                  Prerequisite | ETRecord - ExecuTorch Record
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../etdump.html">
+                  Prerequisite | ETDump - ExecuTorch Dump
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../runtime-profiling.html">
+                  Profiling Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../model-debugging.html">
+                  Debugging Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../model-inspector.html">
+                  Inspector APIs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../memory-planning-inspection.html">
+                  Memory Planning Inspection in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../devtools-tutorial.html">
+                  Developer Tools Usage Tutorials
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../api-section.html">
+              API
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-8">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../export-to-executorch-api-reference.html">
+                  Export API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../executorch-runtime-api-reference.html">
+                  Runtime API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../runtime-python-api-reference.html">
+                  Runtime Python API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../api-life-cycle.html">
+                  API Life Cycle and Deprecation Policy
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../extension-module.html">
+                  Running an ExecuTorch Model Using the Module Extension in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../extension-tensor.html">
+                  Managing Tensor Memory in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../running-a-model-cpp-tutorial.html">
+                  Detailed C++ Runtime APIs Tutorial
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+
+    
+    
+      <li class="nav-item dropdown more-dropdown">
+        <div class="nav-item-with-toggle">
+          <span class="nav-link more-toggle" tabindex="0" role="button" aria-expanded="false" aria-controls="pst-nav-more-links">
+            More
+          </span>
+        </div>
+        <ul id="pst-nav-more-links" class="dropdown-menu">
+          
+            <li class="">
+              <a class="nav-link dropdown-item nav-internal" href="../../../../support-section.html">
+                Support
+              </a>
+            </li>
+          
+        </ul>
+      </li>
+    
   </ul>
-</nav></div>
+</nav>
+</div>
       
     </div>
     
     
     <div class="navbar-header-items__end">
+      
+      
+      
+        <div class="navbar-item"><!-- PyTorch.org site link - desktop only, two-line layout -->
+<!-- Note: The show_pytorch_org_link check is handled in layout.html's navbar_end block -->
+<a href="https://pytorch.org" class="pytorch-site-link nav-link nav-external" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="Go to PyTorch.org">
+  <span class="pytorch-site-link-text">
+    <span>Go to</span>
+    <span>pytorch.org <i class="fa-solid fa-arrow-up-right-from-square external-icon"></i></span>
+  </span>
+</a></div>
       
       
         <div class="navbar-item">
@@ -843,8 +1085,42 @@ document.write(`
       <div class="bd-sidebar-primary bd-sidebar hide-on-wide">
         
 
+
+
+
   
   <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    <div class="sidebar-header-items__start">
+      <div class="navbar-item">
+        
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-3"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-3"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-3"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-3">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script>
+      </div>
+    </div>
+    
+
     
     
       <div class="sidebar-header-items__center">
@@ -852,73 +1128,504 @@ document.write(`
           
           
             <div class="navbar-item">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <nav>
   <ul class="bd-navbar-elements navbar-nav">
     
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../intro-section.html">
-    Intro
-  </a>
-</li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../intro-section.html">
+              Intro
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-1">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../intro-overview.html">
+                  ExecuTorch Overview
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../intro-how-it-works.html">
+                  How ExecuTorch Works
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../getting-started-architecture.html">
+                  Architecture and Components
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../concepts.html">
+                  Concepts
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../quick-start-section.html">
+              Quick Start
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-2">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../getting-started.html">
+                  Getting Started with ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../using-executorch-building-from-source.html">
+                  Building from Source
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../edge-platforms-section.html">
+              Edge
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-3">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../android-section.html">
+                  Android
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../ios-section.html">
+                  iOS
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../desktop-section.html">
+                  Desktop & Laptop Platforms
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../embedded-section.html">
+                  Embedded Systems
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../backends-section.html">
+              Backends
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-4">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/xnnpack/xnnpack-overview.html">
+                  XNNPACK Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/cuda/cuda-overview.html">
+                  CUDA Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/coreml/coreml-overview.html">
+                  Core ML Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/mps/mps-overview.html">
+                  MPS Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/vulkan/vulkan-overview.html">
+                  Vulkan Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends-qualcomm.html">
+                  Qualcomm AI Engine Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends-mediatek.html">
+                  MediaTek Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/arm-ethos-u/arm-ethos-u-overview.html">
+                  Arm Ethos-U Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/arm-vgf/arm-vgf-overview.html">
+                  Arm VGF Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../build-run-openvino.html">
+                  Building and Running ExecuTorch with OpenVINO Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/nxp/nxp-overview.html">
+                  NXP eIQ Neutron Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends-cadence.html">
+                  Cadence Xtensa Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backends/samsung/samsung-overview.html">
+                  Samsung Exynos Backend
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../llm/working-with-llms.html">
+              LLMs
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-5">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/getting-started.html">
+                  Deploying LLMs to ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/export-llm.html">
+                  Exporting LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/export-llm-optimum.html">
+                  Exporting LLMs with HuggingFace’s Optimum ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/export-custom-llm.html">
+                  Exporting custom LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/run-with-c-plus-plus.html">
+                  Running LLMs with C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                  Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../llm/run-on-ios.html">
+                  Running LLMs on iOS
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../advanced-topics-section.html">
+              Advanced
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-6">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../quantization-optimization.html">
+                  Quantization & Optimization
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../kernel-library-advanced.html">
+                  Kernel Library Deep Dive
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../backend-delegate-advanced.html">
+                  Backend & Delegates
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../runtime-integration-advanced.html">
+                  Runtime & Integration
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../compiler-ir-advanced.html">
+                  Compiler & IR
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../file-formats-advanced.html">
+                  File Formats
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../tools-section.html">
+              Tools
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-7">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../devtools-overview.html">
+                  Introduction to the ExecuTorch Developer Tools
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../bundled-io.html">
+                  Bundled Program – a Tool for ExecuTorch Model Validation
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../etrecord.html">
+                  Prerequisite | ETRecord - ExecuTorch Record
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../etdump.html">
+                  Prerequisite | ETDump - ExecuTorch Dump
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../runtime-profiling.html">
+                  Profiling Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../model-debugging.html">
+                  Debugging Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../model-inspector.html">
+                  Inspector APIs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../memory-planning-inspection.html">
+                  Memory Planning Inspection in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../devtools-tutorial.html">
+                  Developer Tools Usage Tutorials
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../api-section.html">
+              API
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-8">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../export-to-executorch-api-reference.html">
+                  Export API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../executorch-runtime-api-reference.html">
+                  Runtime API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../runtime-python-api-reference.html">
+                  Runtime Python API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../api-life-cycle.html">
+                  API Life Cycle and Deprecation Policy
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../extension-module.html">
+                  Running an ExecuTorch Model Using the Module Extension in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../extension-tensor.html">
+                  Managing Tensor Memory in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../running-a-model-cpp-tutorial.html">
+                  Detailed C++ Runtime APIs Tutorial
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="../../../../support-section.html">
+              Support
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-9">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../using-executorch-faqs.html">
+                  Frequently Asked Questions
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../../../contributing.html">
+                  Contributing to ExecuTorch
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
 
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../quick-start-section.html">
-    Quick Start
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../edge-platforms-section.html">
-    Edge
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../backends-section.html">
-    Backends
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../llm/working-with-llms.html">
-    LLMs
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../advanced-topics-section.html">
-    Advanced
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../tools-section.html">
-    Tools
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../api-section.html">
-    API
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="../../../../support-section.html">
-    Support
-  </a>
-</li>
-
+    
+    
   </ul>
-</nav></div>
+</nav>
+</div>
           
         
       </div>
@@ -926,6 +1633,17 @@ document.write(`
     
     
       <div class="sidebar-header-items__end">
+        
+        
+          <div class="navbar-item"><!-- PyTorch.org site link - desktop only, two-line layout -->
+<!-- Note: The show_pytorch_org_link check is handled in layout.html's navbar_end block -->
+<a href="https://pytorch.org" class="pytorch-site-link nav-link nav-external" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="Go to PyTorch.org">
+  <span class="pytorch-site-link-text">
+    <span>Go to</span>
+    <span>pytorch.org <i class="fa-solid fa-arrow-up-right-from-square external-icon"></i></span>
+  </span>
+</a></div>
+        
         
           <div class="navbar-item">
   
@@ -1018,10 +1736,10 @@ document.write(`
   
   <div class="sidebar-primary-items__end sidebar-primary__section">
   </div>
-  
-  <div id="rtd-footer-container"></div>
 
 
+
+<div id="rtd-footer-container"></div>
       </div>
       
       <main id="main-content" class="bd-main" role="main">
@@ -1085,28 +1803,28 @@ document.write(`
 </div>
               
               
-  
+
 <div id="searchbox"></div>
-  <article class="bd-article" id="pytorch-article">
-    <!-- Hidden breadcrumb schema for SEO only -->
-    <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
-      
-      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <link itemprop="item" href="../../../index.html">
-        <meta itemprop="name" content="Module code">
-        <meta itemprop="position" content="1">
-      </div>
-      
-      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <meta itemprop="name" content="executorch.devtools.etrecord._etrecord">
-        <meta itemprop="position" content="2">
-      </div>
+<div id="pytorch-article">
+  <!-- Hidden breadcrumb schema for SEO only -->
+  <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+    
+    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+      <link itemprop="item" href="../../../index.html">
+      <meta itemprop="name" content="Module code">
+      <meta itemprop="position" content="1">
     </div>
+    
+    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+      <meta itemprop="name" content="executorch.devtools.etrecord._etrecord">
+      <meta itemprop="position" content="2">
+    </div>
+  </div>
 
-    
-    
+  
+  
 
-    
+  
               
                 
 <div id="searchbox"></div>
@@ -2023,8 +2741,8 @@ document.write(`
 
                 </article>
               
-  </article>
-  
+</div>
+
               
               
                 <footer class="bd-footer-article">
@@ -2279,7 +2997,7 @@ document.write(`
        "@type": "Article",
        "name": "executorch.devtools.etrecord._etrecord",
        "headline": "executorch.devtools.etrecord._etrecord",
-       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/_modules/executorch/devtools/etrecord/_etrecord.html",
        "articleBody": "Source code for executorch.devtools.etrecord._etrecord # Copyright (c) Meta Platforms, Inc. and affiliates. # All rights reserved. # # This source code is licensed under the BSD-style license found in the # LICENSE file in the root directory of this source tree. # pyre-unsafe import json import os import pickle from typing import BinaryIO, Dict, IO, List, Optional, Union from zipfile import BadZipFile, ZipFile import torch from executorch import exir from executorch.devtools.bundled_program.config import ConfigValue from executorch.devtools.bundled_program.core import BundledProgram from executorch.exir import ( EdgeProgramManager, ExecutorchProgram, ExecutorchProgramManager, ExirExportedProgram, ExportedProgram, ) from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap from executorch.exir.serde.export_serialize import SerializedArtifact from executorch.exir.serde.serialize import deserialize, serialize ProgramInput = ConfigValue ProgramOutput = torch.Tensor try: # breaking change introduced in python 3.11 # pyre-ignore from enum import StrEnum except ImportError: from enum import Enum class StrEnum(str, Enum): pass class ETRecordReservedFileNames(StrEnum): ETRECORD_IDENTIFIER = \"ETRECORD_V0\" EXPORTED_PROGRAM = \"exported_program\" EXPORT_GRAPH_ID = \"export_graph_id\" EDGE_DIALECT_EXPORTED_PROGRAM = \"edge_dialect_exported_program\" ET_DIALECT_GRAPH_MODULE = \"et_dialect_graph_module\" DEBUG_HANDLE_MAP_NAME = \"debug_handle_map\" DELEGATE_MAP_NAME = \"delegate_map\" INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME = \"instruction_id_to_num_outs_map\" REFERENCE_OUTPUTS = \"reference_outputs\" REPRESENTATIVE_INPUTS = \"representative_inputs\" class ETRecord: def __init__( self, exported_program: Optional[ExportedProgram] = None, export_graph_id: Optional[int] = None, edge_dialect_program: Optional[ Union[ExportedProgram, Dict[str, ExportedProgram]] ] = None, graph_map: Optional[Dict[str, ExportedProgram]] = None, _debug_handle_map: Optional[Dict[int, Union[int, List[int]]]] = None, _delegate_map: Optional[ Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]] ] = None, _instruction_id_to_num_outs_map: Optional[ Dict[str, Dict[int, Union[int, List[int]]]] ] = None, _reference_outputs: Optional[Dict[str, List[ProgramOutput]]] = None, _representative_inputs: Optional[List[ProgramInput]] = None, ): \"\"\" Please do not construct an ETRecord object directly. If you want to create an ETRecord for logging AOT information to further analysis, please mark `generate_etrecord` as True in your export api, and get the ETRecord object from the `ExecutorchProgramManager`. For exmaple: ```python exported_program = torch.export.export(model, inputs) edge_program = to_edge_transform_and_lower(exported_program, generate_etrecord=True) executorch_program = edge_program.to_executorch() etrecord = executorch_program.get_etrecord() ``` If user need to create an ETRecord manually, please use the `create_etrecord` function. **EXPERIMENTAL**: This API supports multiple methods. For example: ```python lowered_and_edge = to_edge_transform_and_lower( { \"vision_encoder\": vision_encoder_ep, \"token_embedding\": token_embedding_ep, \"text_decoder\": causal_llm_ep, }, partitioner={ \"vision_encoder\": [XnnpackPartitioner()], \"token_embedding\": [XnnpackPartitioner()], \"text_decoder\": [ XnnpackPartitioner( config_precisions=ConfigPrecisionType.DYNAMIC_QUANT, per_op_mode=True, ), XnnpackPartitioner(), ], }, compile_config=EdgeCompileConfig(_check_ir_validity=False), constant_methods=manager.metadata, generate_etrecord=True, # Enable ETRecord generation for all 3 methods ) ``` \"\"\" self.exported_program = exported_program self.export_graph_id = export_graph_id self.edge_dialect_program = edge_dialect_program self.graph_map = graph_map self.__debug_handle_map = _debug_handle_map # Use private attribute self._delegate_map = _delegate_map self._instruction_id_to_num_outs_map = _instruction_id_to_num_outs_map self._reference_outputs = _reference_outputs self._representative_inputs = _representative_inputs @property def _debug_handle_map(self): return self.__debug_handle_map @_debug_handle_map.setter def _debug_handle_map(self, value): self.__debug_handle_map = value def save(self, path: Union[str, os.PathLike, BinaryIO, IO[bytes]]) -\u003e None: \"\"\" Serialize and save the ETRecord to the specified path for use in Inspector. The ETRecord should contains at least edge dialect program and executorch program information for further analysis, otherwise it will raise an exception. Args: path: Path where the ETRecord file will be saved to. Raises: RuntimeError: If the ETRecord does not contain essential information for Inpector. \"\"\" if isinstance(path, (str, os.PathLike)): # pyre-ignore[6]: In call `os.fspath`, for 1st positional argument, expected `str` but got `Union[PathLike[typing.Any], str]` path = os.fspath(path) if not (self.edge_dialect_program and self._debug_handle_map): raise RuntimeError( \"ETRecord must contain edge dialect program and executorch program to be saved\" ) # Normalize edge_dialect_program to dict format for consistent handling if isinstance(self.edge_dialect_program, ExportedProgram): self._edge_dialect_programs_dict: Dict[str, ExportedProgram] = { \"forward\": self.edge_dialect_program } else: self._edge_dialect_programs_dict = self.edge_dialect_program etrecord_zip = ZipFile(path, \"w\") try: self._write_identifier(etrecord_zip) self._save_programs(etrecord_zip) self._save_graph_map(etrecord_zip) self._save_metadata(etrecord_zip) finally: etrecord_zip.close() def _write_identifier(self, etrecord_zip: ZipFile) -\u003e None: \"\"\"Write the magic file identifier.\"\"\" etrecord_zip.writestr(ETRecordReservedFileNames.ETRECORD_IDENTIFIER, \"\") def _save_programs(self, etrecord_zip: ZipFile) -\u003e None: \"\"\"Save exported program and edge dialect program(s).\"\"\" if self.exported_program is not None: self._save_exported_program( etrecord_zip, ETRecordReservedFileNames.EXPORTED_PROGRAM, \"\", self.exported_program, ) # Save all edge dialect programs (supports multiple methods) for method_name, edge_program in self._edge_dialect_programs_dict.items(): self._save_edge_dialect_program(etrecord_zip, method_name, edge_program) def _save_graph_map(self, etrecord_zip: ZipFile) -\u003e None: \"\"\"Save graph map if present.\"\"\" if self.graph_map is not None: # pyre-ignore[16]: Undefined attribute [16]: `Optional` has no attribute `items`. for module_name, export_module in self.graph_map.items(): if \"/\" in module_name: base_name, method_name = module_name.rsplit(\"/\", 1) self._save_exported_program( etrecord_zip, base_name, method_name, export_module ) else: self._save_exported_program( etrecord_zip, module_name, \"forward\", export_module ) def _save_metadata(self, etrecord_zip: ZipFile) -\u003e None: \"\"\"Save debug maps, reference outputs, and other metadata.\"\"\" if self._debug_handle_map is not None: etrecord_zip.writestr( ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME, json.dumps(self._debug_handle_map), ) if self._delegate_map is not None: etrecord_zip.writestr( ETRecordReservedFileNames.DELEGATE_MAP_NAME, json.dumps(self._delegate_map), ) if self._instruction_id_to_num_outs_map is not None: etrecord_zip.writestr( ETRecordReservedFileNames.INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME, json.dumps(self._instruction_id_to_num_outs_map), ) if self._reference_outputs is not None: etrecord_zip.writestr( ETRecordReservedFileNames.REFERENCE_OUTPUTS, pickle.dumps(self._reference_outputs), ) if self._representative_inputs is not None: etrecord_zip.writestr( ETRecordReservedFileNames.REPRESENTATIVE_INPUTS, pickle.dumps(self._representative_inputs), ) if self.export_graph_id is not None: etrecord_zip.writestr( ETRecordReservedFileNames.EXPORT_GRAPH_ID, json.dumps(self.export_graph_id), ) def copy(self) -\u003e \"ETRecord\": \"\"\" Create a shallow copy of this ETRecord suitable for transformation stages. This creates a new ETRecord instance with the same edge-stage data but without executorch-specific data. Useful when transitioning between transformation stages while preserving immutable snapshot semantics. Returns: ETRecord: A new ETRecord with edge-stage data copied over. \"\"\" return ETRecord( exported_program=self.exported_program, export_graph_id=self.export_graph_id, edge_dialect_program=self.edge_dialect_program, graph_map=self.graph_map, # Explicitly exclude executorch-specific fields for clean separation _debug_handle_map=None, _delegate_map=None, _instruction_id_to_num_outs_map=None, _reference_outputs=None, _representative_inputs=None, ) def _save_exported_program( self, etrecord_zip: ZipFile, module_name: str, method_name: str, ep: ExportedProgram, ) -\u003e None: \"\"\"Save an exported program to the ETRecord zip file.\"\"\" serialized_artifact = serialize(ep) assert isinstance(serialized_artifact.exported_program, bytes) method_name = f\"/{method_name}\" if method_name != \"\" else \"\" base_name = f\"{module_name}{method_name}\" etrecord_zip.writestr(base_name, serialized_artifact.exported_program) etrecord_zip.writestr(f\"{base_name}_state_dict\", serialized_artifact.state_dict) etrecord_zip.writestr(f\"{base_name}_constants\", serialized_artifact.constants) etrecord_zip.writestr( f\"{base_name}_example_inputs\", serialized_artifact.example_inputs ) def _save_edge_dialect_program( self, etrecord_zip: ZipFile, method_name: str, edge_dialect_program: ExportedProgram, ) -\u003e None: \"\"\"Save the edge dialect program to the ETRecord zip file.\"\"\" serialized_artifact = serialize(edge_dialect_program) assert isinstance(serialized_artifact.exported_program, bytes) # Use format: edge_dialect_exported_program/method_name for multi-method support base_name = ( f\"{ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM}/{method_name}\" ) etrecord_zip.writestr(base_name, serialized_artifact.exported_program) etrecord_zip.writestr(f\"{base_name}_state_dict\", serialized_artifact.state_dict) etrecord_zip.writestr(f\"{base_name}_constants\", serialized_artifact.constants) etrecord_zip.writestr( f\"{base_name}_example_inputs\", serialized_artifact.example_inputs ) def add_extra_export_modules( self, extra_recorded_export_modules: Dict[ str, Union[ ExportedProgram, ExirExportedProgram, EdgeProgramManager, ], ], ) -\u003e None: \"\"\" Add extra export modules to the ETRecord after it has been created. This method allows users to add more export modules they want to record to an existing ETRecord instance. The modules will be added to the graph_map and will be included when the ETRecord is saved. Args: extra_recorded_export_modules: A dictionary of graph modules with the key being the user provided name and the value being the corresponding exported module. The exported graph modules can be either the output of `torch.export()` or `exir.to_edge()`. \"\"\" if self.graph_map is None: self.graph_map = {} # Now self.graph_map is guaranteed to be non-None graph_map = self.graph_map for module_name, export_module in extra_recorded_export_modules.items(): _add_module_to_graph_map(graph_map, module_name, export_module) def add_executorch_program( self, executorch_program: Union[ ExecutorchProgram, ExecutorchProgramManager, BundledProgram, ], ) -\u003e None: \"\"\" Add executorch program data to the ETRecord after it has been created. This method allows users to add executorch program data they want to record to an existing ETRecord instance. The executorch program data includes debug handle map, delegate map, reference outputs, and representative inputs that will be included when the ETRecord is saved. Args: executorch_program: The ExecuTorch program for this model returned by the call to `to_executorch()` or the `BundledProgram` of this model. Raises: RuntimeError: If executorch program data already exists in the ETRecord. \"\"\" # Check if executorch program data already exists if ( self._debug_handle_map is not None or self._delegate_map is not None or self._instruction_id_to_num_outs_map is not None or self._reference_outputs is not None or self._representative_inputs is not None ): raise RuntimeError( \"Executorch program data already exists in the ETRecord. \" \"Cannot add executorch program data when it already exists.\" ) # Process executorch program and extract data ( debug_handle_map, delegate_map, instruction_id_to_num_outs_map, reference_outputs, representative_inputs, ) = _process_executorch_program(executorch_program) # Set the extracted data self._debug_handle_map = debug_handle_map self._delegate_map = delegate_map self._instruction_id_to_num_outs_map = instruction_id_to_num_outs_map self._reference_outputs = reference_outputs self._representative_inputs = representative_inputs def add_exported_program( self, exported_program: Optional[Union[ExportedProgram, Dict[str, ExportedProgram]]], ) -\u003e None: \"\"\" Add exported program to the ETRecord after it has been created. This method allows users to add an exported program they want to record to an existing ETRecord instance. The exported program will be included when the ETRecord is saved. Args: exported_program: The exported program for this model returned by the call to `torch.export()` or a dictionary with method names as keys and exported programs as values. Can be None, in which case no exported program data will be added. Raises: RuntimeError: If exported program already exists in the ETRecord. \"\"\" # Check if exported program already exists if self.exported_program is not None or self.export_graph_id is not None: raise RuntimeError( \"Exported program already exists in the ETRecord. \" \"Cannot add exported program when it already exists.\" ) # Process exported program and extract data processed_exported_program, export_graph_id = _process_exported_program( exported_program ) # Set the extracted data self.exported_program = processed_exported_program self.export_graph_id = export_graph_id def add_edge_dialect_program( self, edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram], ) -\u003e None: \"\"\" Add edge dialect program to the ETRecord after it has been created. This method allows users to add an edge dialect program they want to record to an existing ETRecord instance. The edge dialect program will be included when the ETRecord is saved. Args: edge_dialect_program: The edge dialect program for this model returned by the call to `to_edge()` or `EdgeProgramManager` for this model. Raises: RuntimeError: If edge dialect program already exists in the ETRecord. \"\"\" # Check if edge dialect program already exists if self.edge_dialect_program is not None: raise RuntimeError( \"Edge dialect program already exists in the ETRecord. \" \"Cannot add edge dialect program when it already exists.\" ) # Process edge dialect program and extract data processed_edge_dialect_program = _process_edge_dialect_program( edge_dialect_program ) # Set the extracted data self.edge_dialect_program = processed_edge_dialect_program def update_representative_inputs( self, representative_inputs: Union[List[ProgramInput], BundledProgram], ) -\u003e None: \"\"\" Update the representative inputs in the ETRecord. This method allows users to customize the representative inputs that will be included when the ETRecord is saved. The representative inputs can be provided directly as a list or extracted from a BundledProgram. Args: representative_inputs: Either a list of ProgramInput objects or a BundledProgram from which representative inputs will be extracted. \"\"\" if isinstance(representative_inputs, BundledProgram): self._representative_inputs = _get_representative_inputs( representative_inputs ) else: self._representative_inputs = representative_inputs def update_reference_outputs( self, reference_outputs: Union[ Dict[str, List[ProgramOutput]], List[ProgramOutput], BundledProgram ], ) -\u003e None: \"\"\" Update the reference outputs in the ETRecord. This method allows users to customize the reference outputs that will be included when the ETRecord is saved. The reference outputs can be provided directly as a dictionary mapping method names to lists of outputs, as a single list of outputs (which will be treated as {\"forward\": List[ProgramOutput]}), or extracted from a BundledProgram. Args: reference_outputs: Either a dictionary mapping method names to lists of ProgramOutput objects, a single list of ProgramOutput objects (treated as outputs for the \"forward\" method), or a BundledProgram from which reference outputs will be extracted. \"\"\" if isinstance(reference_outputs, BundledProgram): self._reference_outputs = _get_reference_outputs(reference_outputs) elif isinstance(reference_outputs, list): self._reference_outputs = {\"forward\": reference_outputs} else: self._reference_outputs = reference_outputs def _get_reference_outputs( bundled_program: BundledProgram, ) -\u003e Dict[str, List[ProgramOutput]]: \"\"\" Extracts out the expected outputs from the bundled program, keyed by the method names. \"\"\" reference_outputs = {} for method_test_suite in bundled_program.method_test_suites: reference_outputs[method_test_suite.method_name] = [] for test_case in method_test_suite.test_cases: if not test_case.expected_outputs: raise ValueError( f\"Missing at least one set of expected outputs for method {method_test_suite.method_name}.\" ) reference_outputs[method_test_suite.method_name].append( test_case.expected_outputs ) return reference_outputs def _get_representative_inputs( bundled_program: BundledProgram, ) -\u003e Optional[List[ProgramInput]]: \"\"\" Extracts out the inputs from the bundled program, keyed by the method names. \"\"\" for method_test_suite in bundled_program.method_test_suites: if method_test_suite.method_name == \"forward\": if not method_test_suite.test_cases: raise ValueError( \"The \u0027forward\u0027 method is defined, but no corresponding input test cases are provided.\" ) # Get first example input from the forward method test_case = method_test_suite.test_cases[0] return test_case.inputs # If the forward method is not defined, return None to indicate that there are no representative inputs for the model. return None [docs] def generate_etrecord( et_record: Union[str, os.PathLike, BinaryIO, IO[bytes]], edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram], executorch_program: Union[ ExecutorchProgram, ExecutorchProgramManager, BundledProgram, ], exported_program: Optional[ Union[ExportedProgram, Dict[str, ExportedProgram]] ] = None, extra_recorded_export_modules: Optional[ Dict[ str, Union[ ExportedProgram, ExirExportedProgram, EdgeProgramManager, ], ] ] = None, ) -\u003e None: \"\"\" Generates an `ETRecord` from the given objects, serializes it and saves it to the given path. The objects that will be serialized to an `ETRecord` are all the graph modules present in the `extra_recorded_export_modules` dict, the graph module present in the edge dialect program object, and also the graph module present in the ExecuTorch program object, which is the closest graph module representation of what is eventually run on the device. In addition to all the graph modules, we also serialize the program buffer, which the users can provide to the ExecuTorch runtime to run the model, and the debug handle map for Developer Tools usage. Args: et_record: Path to where the `ETRecord` file will be saved to. edge_dialect_program: `EdgeProgramManager` for this model returned by the call to to_edge() executorch_program: The ExecuTorch program for this model returned by the call to `to_executorch()` or the `BundledProgram` of this model exported_program: Optional graph module for this model returned by the call to `torch.export` from nn.Module. extra_recorded_export_modules [Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the value being the corresponding exported module. The exported graph modules can be either the output of `torch.export()` or `exir.to_edge()`. Returns: None \"\"\" etrecord = ETRecord() etrecord.add_exported_program(exported_program) etrecord.add_edge_dialect_program(edge_dialect_program) etrecord.add_executorch_program(executorch_program) # Add extra export modules if user provided if extra_recorded_export_modules is not None: etrecord.add_extra_export_modules(extra_recorded_export_modules) etrecord.save(et_record) def _process_exported_program( exported_program: Optional[Union[ExportedProgram, Dict[str, ExportedProgram]]] ) -\u003e tuple[Optional[ExportedProgram], Optional[int]]: \"\"\"Process exported program and return the processed program and export graph id.\"\"\" processed_exported_program = None export_graph_id = None if exported_program is not None: if isinstance(exported_program, dict) and \"forward\" in exported_program: processed_exported_program = exported_program[\"forward\"] elif isinstance(exported_program, ExportedProgram): processed_exported_program = exported_program if processed_exported_program is not None: export_graph_id = id(processed_exported_program.graph) return processed_exported_program, export_graph_id def _validate_module_name(module_name: str) -\u003e None: \"\"\"Validate that module name is not a reserved name.\"\"\" contains_reserved_name = any( reserved_name in module_name for reserved_name in ETRecordReservedFileNames ) if contains_reserved_name: raise RuntimeError( f\"The name {module_name} provided in the extra_recorded_export_modules dict is a reserved name in the ETRecord namespace.\" ) def _add_module_to_graph_map( graph_map: Dict[str, ExportedProgram], module_name: str, export_module: Union[ExportedProgram, ExirExportedProgram, EdgeProgramManager], ) -\u003e None: \"\"\"Add export module to graph map based on its type.\"\"\" _validate_module_name(module_name) if isinstance(export_module, ExirExportedProgram): graph_map[f\"{module_name}/forward\"] = export_module.exported_program elif isinstance(export_module, ExportedProgram): graph_map[f\"{module_name}/forward\"] = export_module elif isinstance( export_module, (EdgeProgramManager, exir.program._program.EdgeProgramManager), ): for method in export_module.methods: graph_map[f\"{module_name}/{method}\"] = export_module.exported_program( method ) else: raise RuntimeError(f\"Unsupported graph module type. {type(export_module)}\") def _process_edge_dialect_program( edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram] ) -\u003e Union[ExportedProgram, Dict[str, ExportedProgram]]: \"\"\"Process edge dialect program and return the exported program(s). For EdgeProgramManager with multiple methods, returns a Dict[str, ExportedProgram] mapping method names to their exported programs. For single-method cases or ExirExportedProgram, returns a single ExportedProgram. \"\"\" if isinstance( edge_dialect_program, (EdgeProgramManager, exir.program._program.EdgeProgramManager), ): methods = edge_dialect_program.methods if len(methods) == 1: # Single method case - return the ExportedProgram directly method_name = next(iter(methods)) return edge_dialect_program.exported_program(method_name) else: # Multiple methods - return a dict of all methods return { method: edge_dialect_program.exported_program(method) for method in methods } elif isinstance(edge_dialect_program, ExirExportedProgram): return edge_dialect_program.exported_program else: raise RuntimeError( f\"Unsupported type of edge_dialect_program passed in {type(edge_dialect_program)}.\" ) def _process_executorch_program( executorch_program: Union[ ExecutorchProgram, ExecutorchProgramManager, BundledProgram ] ) -\u003e tuple[ Optional[Dict], Optional[Dict], Optional[Dict], Optional[Dict], Optional[List] ]: \"\"\"Process executorch program and return debug maps and bundled program data.\"\"\" if isinstance(executorch_program, BundledProgram): reference_outputs = _get_reference_outputs(executorch_program) representative_inputs = _get_representative_inputs(executorch_program) # pyre-ignore[16]: Item `None` of `typing.Union[None, exir.program._program.ExecutorchProgram, exir.program._program.ExecutorchProgramManager]` has no attribute `debug_handle_map` debug_handle_map = executorch_program.executorch_program.debug_handle_map # pyre-ignore[16]: Item `None` of `typing.Union[None, exir.program._program.ExecutorchProgram, exir.program._program.ExecutorchProgramManager]` has no attribute `debug_handle_map` delegate_map = executorch_program.executorch_program.delegate_map # pyre-ignore[16]: Item `None` of `typing.Union[None, exir.program._program.ExecutorchProgram, exir.program._program.ExecutorchProgramManager]` has no attribute `instruction_id_to_num_outs_map` instruction_id_to_num_outs_map = ( executorch_program.executorch_program.instruction_id_to_num_outs_map ) return ( debug_handle_map, delegate_map, instruction_id_to_num_outs_map, reference_outputs, representative_inputs, ) else: debug_handle_map = executorch_program.debug_handle_map delegate_map = executorch_program.delegate_map instruction_id_to_num_outs_map = ( executorch_program.instruction_id_to_num_outs_map ) return ( debug_handle_map, delegate_map, instruction_id_to_num_outs_map, None, None, ) def parse_etrecord(etrecord_path: str) -\u003e ETRecord: # noqa: C901 \"\"\" Parses an `ETRecord` file and returns an `ETRecord` object that contains the deserialized graph modules, program buffer, and a debug handle map. In the graph map in the returned `ETRecord` object if a model with multiple entry points was provided originally by the user during `ETRecord` generation then each entry point will be stored as a separate graph module in the `ETRecord` object with the name being `the original module name + \"/\" + the name of the entry point`. Args: etrecord_path: Path to the `ETRecord` file. Returns: `ETRecord` object. \"\"\" try: etrecord_zip = ZipFile(etrecord_path, \"r\") except BadZipFile: raise RuntimeError(\"Invalid etrecord file passed in.\") file_list = etrecord_zip.namelist() if ETRecordReservedFileNames.ETRECORD_IDENTIFIER not in file_list: raise RuntimeError( \"ETRecord identifier missing from etrecord file passed in. Either an invalid file was passed in or the file is corrupt.\" ) graph_map: Dict[str, ExportedProgram] = {} edge_dialect_programs: Dict[str, ExportedProgram] = {} debug_handle_map = None delegate_map = None instruction_id_to_num_outs_map = None exported_program = None edge_dialect_program: Optional[ Union[ExportedProgram, Dict[str, ExportedProgram]] ] = None reference_outputs = None representative_inputs = None export_graph_id = 0 serialized_exported_program_files = set() serialized_edge_dialect_program_files = set() serialized_state_dict_files = set() serialized_constants_files = set() serialized_example_inputs_files = set() edge_dialect_prefix = f\"{ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM}/\" for entry in file_list: if entry == ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME: debug_handle_map = json.loads( etrecord_zip.read(ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME) ) elif entry == ETRecordReservedFileNames.DELEGATE_MAP_NAME: delegate_map = json.loads( etrecord_zip.read(ETRecordReservedFileNames.DELEGATE_MAP_NAME) ) elif entry == ETRecordReservedFileNames.INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME: instruction_id_to_num_outs_map = json.loads( etrecord_zip.read( ETRecordReservedFileNames.INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME ) ) elif entry == ETRecordReservedFileNames.ETRECORD_IDENTIFIER: continue elif entry == ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM: # Old format: single edge dialect program (backward compatibility) serialized_artifact = SerializedArtifact( etrecord_zip.read( ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM ), etrecord_zip.read(f\"{entry}_state_dict\"), etrecord_zip.read(f\"{entry}_constants\"), etrecord_zip.read(f\"{entry}_example_inputs\"), ) edge_dialect_program = deserialize(serialized_artifact) elif entry.startswith(edge_dialect_prefix) and not entry.endswith( (\"_state_dict\", \"_constants\", \"_example_inputs\") ): # New format: edge_dialect_exported_program/method_name serialized_edge_dialect_program_files.add(entry) elif entry == ETRecordReservedFileNames.EXPORTED_PROGRAM: serialized_artifact = SerializedArtifact( etrecord_zip.read(ETRecordReservedFileNames.EXPORTED_PROGRAM), etrecord_zip.read(f\"{entry}_state_dict\"), etrecord_zip.read(f\"{entry}_constants\"), etrecord_zip.read(f\"{entry}_example_inputs\"), ) exported_program = deserialize(serialized_artifact) elif entry == ETRecordReservedFileNames.REFERENCE_OUTPUTS: # @lint-ignore PYTHONPICKLEISBAD reference_outputs = pickle.loads( etrecord_zip.read(ETRecordReservedFileNames.REFERENCE_OUTPUTS) ) elif entry == ETRecordReservedFileNames.REPRESENTATIVE_INPUTS: # @lint-ignore PYTHONPICKLEISBAD representative_inputs = pickle.loads( etrecord_zip.read(ETRecordReservedFileNames.REPRESENTATIVE_INPUTS) ) elif entry == ETRecordReservedFileNames.EXPORT_GRAPH_ID: export_graph_id = json.loads( etrecord_zip.read(ETRecordReservedFileNames.EXPORT_GRAPH_ID) ) else: if entry.endswith(\"state_dict\"): serialized_state_dict_files.add(entry) elif entry.endswith(\"constants\"): serialized_constants_files.add(entry) elif entry.endswith(\"example_inputs\"): serialized_example_inputs_files.add(entry) else: serialized_exported_program_files.add(entry) # Parse new format edge dialect programs (multi-method support) for serialized_file in serialized_edge_dialect_program_files: serialized_state_dict_file = f\"{serialized_file}_state_dict\" serialized_constants_file = f\"{serialized_file}_constants\" serialized_example_inputs_file = f\"{serialized_file}_example_inputs\" serialized_artifact = SerializedArtifact( etrecord_zip.read(serialized_file), etrecord_zip.read(serialized_state_dict_file), etrecord_zip.read(serialized_constants_file), etrecord_zip.read(serialized_example_inputs_file), ) # Extract method name from path: edge_dialect_exported_program/method_name -\u003e method_name method_name = serialized_file[len(edge_dialect_prefix) :] edge_dialect_programs[method_name] = deserialize(serialized_artifact) # If we found multi-method edge dialect programs, use them if edge_dialect_programs: if len(edge_dialect_programs) == 1: # Single method - store as ExportedProgram for backward compatibility edge_dialect_program = next(iter(edge_dialect_programs.values())) else: # Multiple methods - store as dict edge_dialect_program = edge_dialect_programs for serialized_file in serialized_exported_program_files: serialized_state_dict_file = f\"{serialized_file}_state_dict\" serialized_constants_file = f\"{serialized_file}_constants\" serialized_example_inputs_file = f\"{serialized_file}_example_inputs\" assert ( serialized_state_dict_file in serialized_state_dict_files ), f\"Could not find corresponding state dict file for {serialized_file}.\" serialized_artifact = SerializedArtifact( etrecord_zip.read(serialized_file), etrecord_zip.read(serialized_state_dict_file), etrecord_zip.read(serialized_constants_file), etrecord_zip.read(serialized_example_inputs_file), ) graph_map[serialized_file] = deserialize(serialized_artifact) return ETRecord( exported_program=exported_program, edge_dialect_program=edge_dialect_program, graph_map=graph_map, _debug_handle_map=debug_handle_map, _delegate_map=delegate_map, _instruction_id_to_num_outs_map=instruction_id_to_num_outs_map, _reference_outputs=reference_outputs, _representative_inputs=representative_inputs, export_graph_id=export_graph_id, )",
        "author": {

@@ -89,57 +89,45 @@ window.mobileMenu = {
     $(document).off('click.ForMobileMenu');
   }
 };
-;// Override "main" with version variable
-document.addEventListener('DOMContentLoaded', function() {
-  // Check if this is the "docs" pytorch_project
-  const metaElement = document.querySelector('meta[name="pytorch_project"]');
-  console.log("PyTorch Project:", metaElement);
-  if (!metaElement || metaElement.getAttribute('content') !== 'docs') {
-    return; // Exit early if not the pytorch docs project
-  }
-  const version = document.documentElement.getAttribute('data-version');
+;/**
+ * RunLLM Widget Integration
+ *
+ * This script loads the RunLLM widget with configurable options.
+ * Configuration is passed from Sphinx conf.py via html_theme_options.
+ *
+ * Usage in conf.py:
+ *   html_theme_options = {
+ *       "runllm_assistant_id": "834",
+ *       "runllm_name": "PyTorch",
+ *       "runllm_position": "BOTTOM_RIGHT",
+ *       "runllm_keyboard_shortcut": "Mod+j",
+ *   }
+ */
 
-  // Function to check and update buttons and dropdown items
-  function updateElements() {
-    // Update buttons
-    const buttons = document.querySelectorAll('.version-switcher__button');
-    let buttonFound = false;
+document.addEventListener("DOMContentLoaded", function () {
+  // Get configuration from window.runllmConfig (set by theme template)
+  var config = window.runllmConfig || {};
 
-    buttons.forEach(btn => {
-      console.log("Found button:", btn.innerText);
-      if (btn.innerText.includes('main')) {
-        btn.innerText = version;
-        if (btn.hasAttribute('data-active-version-name')) {
-          btn.setAttribute('data-active-version-name', version);
-        }
-        buttonFound = true;
-      }
-    });
-
-    // Update dropdown items
-    const dropdownItems = document.querySelectorAll('.dropdown-item.list-group-item');
-    let dropdownFound = false;
-
-    dropdownItems.forEach(item => {
-      if (item.getAttribute('data-version') === 'main') {
-        // Update span text only
-        const span = item.querySelector('span');
-        if (span && span.innerText.includes('main')) {
-          span.innerText = version;
-          dropdownFound = true;
-        }
-      }
-    });
-
-    // If not found, try again after a delay
-    if ((!buttonFound || !dropdownFound) && attempts < 10) {
-      attempts++;
-      setTimeout(updateElements, 500);
-    }
+  // Only load widget if assistant_id is configured
+  if (!config.assistant_id) {
+    console.log("RunLLM widget: No assistant_id configured, skipping widget load");
+    return;
   }
 
-  let attempts = 0;
-  updateElements();
+  var script = document.createElement("script");
+  script.type = "module";
+  script.id = "runllm-widget-script";
+  script.src = "https://widget.runllm.com";
+
+  script.setAttribute("version", "stable");
+  script.setAttribute("crossorigin", "true");
+  script.setAttribute("runllm-keyboard-shortcut", config.keyboard_shortcut || "Mod+j");
+  script.setAttribute("runllm-name", config.name || "Assistant");
+  script.setAttribute("runllm-position", config.position || "BOTTOM_RIGHT");
+  script.setAttribute("runllm-assistant-id", config.assistant_id);
+
+  script.async = true;
+  document.head.appendChild(script);
 });
 ;// A function to open new issue in GitHub based on {{feedback_url}}.
 // Activated when you click the "Send Feedback" button in the footer.
@@ -210,10 +198,7 @@ function openGitHubIssue() {
         }, 500);
     });
 })();
-;// This code replaces the default sphinx gallery download buttons
-// with the 3 download buttons at the top of the page
-
-document.addEventListener('DOMContentLoaded', function() {
+;document.addEventListener('DOMContentLoaded', function() {
   var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
   if (downloadNote.length >= 1) {
       var tutorialUrlArray = $("#tutorial-type").text().split('/');
@@ -257,15 +242,16 @@ document.addEventListener('DOMContentLoaded', function() {
       $("#notebook-link").attr("href", notebookLink);
       $("#github-link").attr("href", githubLink);
 
+      // Show the call-to-action links (hidden by default in CSS)
+      $(".pytorch-call-to-action-links").css("display", "flex");
+
       // Hide the original download links and signature
       $(".sphx-glr-footer").hide();
       $(".sphx-glr-signature").hide();
       $(".sphx-glr-footer, .sphx-glr-download").hide();
       $(".sphx-glr-signature").hide();
-
-  } else {
-      $(".pytorch-call-to-action-links").hide();
   }
+  // No else needed - buttons stay hidden by default via CSS
 });
 ;$(document).ready(function() {
   // Build an array from each tag that's present

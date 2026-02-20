@@ -30,7 +30,7 @@
 <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
 
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
-    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=72e443bf" />
     <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
     <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
@@ -56,7 +56,7 @@
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/using-executorch-ios.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/using-executorch-ios.html" />
     <link rel="icon" href="_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -65,6 +65,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
+
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
 <script>
@@ -92,6 +93,32 @@
   });
 </script>
 <!-- Conditional CSS for header and footer height adjustment -->
+
+<style>
+  :root {
+    --header-height: 0px !important;
+    --header-height-desktop: 0px !important;
+  }
+  /* Ensure proper mobile layout when LF header is hidden */
+  @media (max-width: 960px) {
+    .bd-header {
+      top: 0 !important;
+      position: sticky !important;
+      z-index: 1020 !important;
+    }
+    .bd-main {
+      padding-top: 0 !important;
+      margin-top: 0 !important;
+    }
+    .bd-article-container {
+      padding-top: 0 !important;
+    }
+    .header-article__inner {
+      padding-top: 1rem !important;
+    }
+
+  }
+</style>
 
 
 <link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
@@ -153,25 +180,112 @@
 <!-- End Facebook Pixel Code -->
 <!-- Repository configuration for tutorials -->
 
-<!-- Script to Fix scrolling -->
+
+<!-- Script to Fix scrolling with fast fixed-duration animation -->
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    // Fix anchor scrolling
+    const SCROLL_DURATION = 150; // Fixed duration in ms regardless of distance
+    let lockedTargetId = null; // Lock the TOC to this target until user scrolls manually
+    let isUpdatingToc = false; // Guard against infinite loops
+
+    function smoothScrollTo(targetY, duration, onComplete) {
+      const startY = window.pageYOffset;
+      const difference = targetY - startY;
+      const startTime = performance.now();
+
+      function step(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        // Ease-out cubic for smooth deceleration
+        const easeOut = 1 - Math.pow(1 - progress, 3);
+        window.scrollTo(0, startY + difference * easeOut);
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else if (onComplete) {
+          onComplete();
+        }
+      }
+      requestAnimationFrame(step);
+    }
+
+    function updateTocHighlight(targetId) {
+      if (isUpdatingToc) return; // Prevent infinite loop
+      isUpdatingToc = true;
+
+      // Find the TOC link that points to this target
+      const tocNav = document.querySelector('.bd-toc-nav');
+      if (!tocNav) {
+        isUpdatingToc = false;
+        return;
+      }
+
+      // Remove active class from all TOC items
+      tocNav.querySelectorAll('.nav-link').forEach(link => {
+        link.classList.remove('active');
+        link.parentElement.classList.remove('active');
+      });
+
+      // Add active class to the matching link
+      const matchingLink = tocNav.querySelector(`a[href="#${CSS.escape(targetId)}"]`);
+      if (matchingLink) {
+        matchingLink.classList.add('active');
+        matchingLink.parentElement.classList.add('active');
+      }
+
+      // Use setTimeout to reset the guard after the current call stack
+      setTimeout(function() {
+        isUpdatingToc = false;
+      }, 0);
+    }
+
+    // Watch for ScrollSpy trying to change the active state and override it
+    const tocNav = document.querySelector('.bd-toc-nav');
+    if (tocNav) {
+      const observer = new MutationObserver(function(mutations) {
+        if (lockedTargetId && !isUpdatingToc) {
+          // Force our target to stay highlighted
+          updateTocHighlight(lockedTargetId);
+        }
+      });
+      observer.observe(tocNav, {
+        attributes: true,
+        attributeFilter: ['class'],
+        subtree: true
+      });
+    }
+
+    // Release the lock when user scrolls manually (not programmatically)
+    window.addEventListener('wheel', function() {
+      lockedTargetId = null;
+    });
+    window.addEventListener('touchmove', function() {
+      lockedTargetId = null;
+    });
+
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
       anchor.addEventListener('click', function (e) {
-        e.preventDefault();
         const targetId = this.getAttribute('href').substring(1);
+        if (!targetId) return; // Skip empty hash links
         const targetElement = document.getElementById(targetId);
 
         if (targetElement) {
+          e.preventDefault();
+
+          // Lock the TOC to this target
+          lockedTargetId = targetId;
+
           const headerHeight =
             (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
             (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
 
           const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
-          window.scrollTo({
-            top: targetPosition,
-            behavior: 'smooth'
+
+          // Update TOC highlight immediately
+          updateTocHighlight(targetId);
+
+          smoothScrollTo(targetPosition, SCROLL_DURATION, function() {
+            // Keep it highlighted after scroll
+            updateTocHighlight(targetId);
           });
 
           // Update URL hash without scrolling
@@ -183,6 +297,18 @@
 </script>
 
 <script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+<!-- RunLLM Widget Configuration -->
+
+<script>
+  window.runllmConfig = {
+    assistant_id: "1632",
+    name: "Assistant",
+    position: "BOTTOM_RIGHT",
+    keyboard_shortcut: ""
+  };
+</script>
+<script type="text/javascript" src="_static/js/runllm-widget.js"></script>
+
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -190,350 +316,6 @@
   </head>
 
 <body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
-  
-    <div class="container-fluid header-holder tutorials-header" id="header-holder">
-   <div class="header-container-wrapper">
-    <div class="header-container">
-      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
-
-      <div class="main-menu">
-        <ul>
-
-          <li class="main-menu-item">
-          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-                <span>Learn</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/get-started/locally">
-                  <span class=dropdown-title>Get Started</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://docs.pytorch.org/tutorials">
-                  <span class="dropdown-title">Tutorials</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
-                  <span class="dropdown-title">Learn the Basics</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
-                  <span class="dropdown-title">PyTorch Recipes</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
-                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/webinars/">
-                  <span class="dropdown-title">Webinars</span>
-                </a>
-              </div>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-              <span>Community</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://landscape.pytorch.org/" target="_blank">
-                  <span class="dropdown-title">Landscape</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/join-ecosystem">
-                  <span class="dropdown-title">Join the Ecosystem</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/community-hub/">
-                  <span class="dropdown-title">Community Hub</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/">
-                  <span class="dropdown-title">Forums</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
-                  <span class=dropdown-title>Developer Resources</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/contributor-awards/">
-                  <span class="dropdown-title">Contributor Awards</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/community-events/">
-                  <span class="dropdown-title">Community Events</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/programs/ambassadors/">
-                  <span class="dropdown-title">PyTorch Ambassadors</span>
-                </a>
-              </div>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-              <span>Projects</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/projects/pytorch/">
-                  <span class="dropdown-title">PyTorch</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/projects/vllm/">
-                  <span class="dropdown-title">vLLM</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/projects/deepspeed/">
-                  <span class="dropdown-title">DeepSpeed</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/projects/host-your-project/">
-                  <span class="dropdown-title">Host Your Project</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/projects/ray/">
-                  <span class="dropdown-title">RAY</span>
-                </a>
-              </div>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-              <span> Docs</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://docs.pytorch.org/docs/stable/index.html">
-                  <span class="dropdown-title">PyTorch</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/domains">
-                  <span class="dropdown-title">Domains</span>
-                </a>
-              </div>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-              <span>Blogs & News</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
-                  <span class="dropdown-title">Blog</span>
-                </a>
-                 <a class="nav-dropdown-item" href="https://pytorch.org/announcements">
-                  <span class="dropdown-title">Announcements</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/case-studies/">
-                  <span class="dropdown-title">Case Studies</span>
-                <a class="nav-dropdown-item" href="https://pytorch.org/events">
-                  <span class="dropdown-title">Events</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
-                  <span class="dropdown-title">Newsletter</span>
-                </a>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-              <span>About</span>
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
-                  <span class="dropdown-title">PyTorch Foundation</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/members">
-                  <span class="dropdown-title">Members</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
-                  <span class="dropdown-title">Governing Board</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
-                  <span class="dropdown-title">Technical Advisory Council</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
-                  <span class="dropdown-title">Cloud Credit Program</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
-                  <span class="dropdown-title">Staff</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/contact">
-                  <span class="dropdown-title">Contact</span>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/wp-content/uploads/2025/09/pytorch_brand_guide_091925a.pdf">
-                  <span class="dropdown-title">Brand Guidelines</span>
-                </a>
-              </div>
-            </div>
-          </li>
-
-          <li class="main-menu-item">
-            <div class="no-dropdown main-menu-button">
-              <a href="https://pytorch.org/join" data-cta="join">
-                JOIN
-              </a>
-            </div>
-          </li>
-        </ul>
-      </div>
-
-      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu">
-        <i class="fa-solid fa-ellipsis"></i>
-      </a>
-    </div>
-  </div>
- </div>
-
- <!-- Begin Mobile Menu -->
-
-<div class="mobile-main-menu">
-  <div class="container-fluid">
-    <div class="header-container-wrapper">
-      <div class="mobile-main-menu-header-container">
-        <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu">
-        </a>
-      </div>
-    </div>
-  </div>
-
-  <div class="mobile-main-menu-links-container">
-    <div class="main-menu">
-      <ul>
-         <li class="resources-mobile-menu-title">
-           <a>Learn</a>
-         </li>
-         <ul class="resources-mobile-menu-items">
-           <li>
-             <a href="https://pytorch.org/get-started/locally">Get Started</a>
-           </li>
-           <li>
-             <a href="https://docs.pytorch.org/tutorials">Tutorials</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
-           </li>
-           <li>
-            <a href="https://pytorch.org/webinars/">Webinars</a>
-          </li>
-        </ul>
-         <li class="resources-mobile-menu-title">
-           <a>Community</a>
-         </li>
-         <ul class="resources-mobile-menu-items">
-          <li>
-            <a href="https://landscape.pytorch.org/">Landscape</a>
-          </li>
-          <li>
-             <a href="https://pytorch.org/join-ecosystem">Join the Ecosystem</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/community-hub/">Community Hub</a>
-           </li>
-           <li>
-             <a href="https://discuss.pytorch.org/">Forums</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/resources">Developer Resources</a>
-           </li>
-           <li>
-             <a href="https://pytorch.org/contributor-awards/">Contributor Awards</a>
-           </li>
-           <li>
-            <a href="https://pytorch.org/community-events/">Community Events</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/programs/ambassadors/">PyTorch Ambassadors</a>
-          </li>
-       </ul>
-
-         <li class="resources-mobile-menu-title">
-           <a>Projects</a>
-         </li>
-
-         <ul class="resources-mobile-menu-items">
-           <li>
-             <a href="https://pytorch.org/projects/pytorch/">PyTorch</a>
-           </li>
-
-           <li>
-             <a href="https://pytorch.org/projects/vllm/">vLLM</a>
-           </li>
-           <li>
-            <a href="https://pytorch.org/projects/deepspeed/">DeepSpeed</a>
-          </li>
-          <li>
-             <a href="https://pytorch.org/projects/host-your-project/">Host Your Project</a>
-           </li>
-         </ul>
-
-         <li class="resources-mobile-menu-title">
-           <a>Docs</a>
-         </li>
-
-         <ul class="resources-mobile-menu-items">
-          <li>
-            <a href="https://docs.pytorch.org/docs/stable/index.html">PyTorch</a>
-          </li>
-
-          <li>
-            <a href="https://pytorch.org/domains">Domains</a>
-          </li>
-        </ul>
-
-        <li class="resources-mobile-menu-title">
-          <a>Blog & News</a>
-        </li>
-
-         <ul class="resources-mobile-menu-items">
-          <li>
-            <a href="https://pytorch.org/blog/">Blog</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/announcements">Announcements</a>
-          </li>
-
-          <li>
-            <a href="https://pytorch.org/case-studies/">Case Studies</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/events">Events</a>
-          </li>
-          <li>
-             <a href="https://pytorch.org/newsletter">Newsletter</a>
-           </li>
-        </ul>
-
-        <li class="resources-mobile-menu-title">
-          <a>About</a>
-        </li>
-
-        <ul class="resources-mobile-menu-items">
-          <li>
-            <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/members">Members</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/governing-board">Governing Board</a>
-          </li>
-          <li>
-            <a href="https://pytorch.org/tac">Technical Advisory Council</a>
-         </li>
-         <li>
-             <a href="https://pytorch.org/credits">Cloud Credit Program</a>
-          </li>
-          <li>
-             <a href="https://pytorch.org/staff">Staff</a>
-          </li>
-          <li>
-             <a href="https://pytorch.org/contact">Contact</a>
-          </li>
-        </ul>
-      </ul>
-    </div>
-  </div>
-</div>
-
-<!-- End Mobile Menu -->
   
   
   
@@ -543,7 +325,7 @@
   
   
   <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
-  
+
   
   <div id="pst-scroll-pixel-helper"></div>
   
@@ -588,38 +370,77 @@
 
   
     <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+
 <div class="bd-header__inner bd-page-width">
   <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
     <span class="fa-solid fa-bars"></span>
   </button>
+
+  
+  <div class="navbar-header-items__mobile-logo">
+    
+
+
+
+
+
+
+
+  
+  
+  
+
+
+<a class="navbar-brand logo" href="index.html">
+  
+    
+    <img src="_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
+    
+    
+    <script>document.write(`<img src="_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    
+  
+</a>
+  </div>
+
   
   
   <div class=" navbar-header-items__start">
     
-      <div class="navbar-item">
+      
+      
+        <div class="navbar-item">
+          
+
+
+
+
+
+
 
   
-    
   
+  
+
 
 <a class="navbar-brand logo" href="index.html">
   
-  
-  
-  
-  
+    
+    <img src="_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
     
     
+    <script>document.write(`<img src="_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    
+  
+</a>
+        </div>
       
     
-    
-    <img src="_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch main documentation - Home"/>
-    <script>document.write(`<img src="_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch main documentation - Home"/>`);</script>
-  
-  
-</a></div>
-    
-      <div class="navbar-item">
+      
+      
+        
+        <div class="navbar-item desktop-only-version">
+          
 <script>
 document.write(`
   <div class="version-switcher__container dropdown">
@@ -641,7 +462,9 @@ document.write(`
     </div>
   </div>
 `);
-</script></div>
+</script>
+        </div>
+      
     
   </div>
   
@@ -650,86 +473,505 @@ document.write(`
     <div class="me-auto navbar-header-items__center">
       
         <div class="navbar-item">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <nav>
   <ul class="bd-navbar-elements navbar-nav">
     
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="intro-section.html">
-    Intro
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="quick-start-section.html">
-    Quick Start
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="edge-platforms-section.html">
-    Edge
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="backends-section.html">
-    Backends
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
-    LLMs
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="advanced-topics-section.html">
-    Advanced
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="tools-section.html">
-    Tools
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="api-section.html">
-    API
-  </a>
-</li>
-
-            <li class="nav-item dropdown">
-                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
-                    More
-                </button>
-                <ul id="pst-nav-more-links" class="dropdown-menu">
-                    
-<li class=" ">
-  <a class="nav-link dropdown-item nav-internal" href="support-section.html">
-    Support
-  </a>
-</li>
-
-                </ul>
-            </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="intro-section.html">
+              Intro
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-1">
             
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-overview.html">
+                  ExecuTorch Overview
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-how-it-works.html">
+                  How ExecuTorch Works
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started-architecture.html">
+                  Architecture and Components
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="concepts.html">
+                  Concepts
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="quick-start-section.html">
+              Quick Start
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-2">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
+                  Getting Started with ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-building-from-source.html">
+                  Building from Source
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="edge-platforms-section.html">
+              Edge
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-3">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="android-section.html">
+                  Android
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="ios-section.html">
+                  iOS
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
+                  Desktop & Laptop Platforms
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="embedded-section.html">
+                  Embedded Systems
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="backends-section.html">
+              Backends
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-4">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/xnnpack/xnnpack-overview.html">
+                  XNNPACK Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/cuda/cuda-overview.html">
+                  CUDA Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/coreml/coreml-overview.html">
+                  Core ML Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/mps/mps-overview.html">
+                  MPS Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/vulkan/vulkan-overview.html">
+                  Vulkan Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
+                  Qualcomm AI Engine Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-mediatek.html">
+                  MediaTek Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">
+                  Arm Ethos-U Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-vgf/arm-vgf-overview.html">
+                  Arm VGF Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="build-run-openvino.html">
+                  Building and Running ExecuTorch with OpenVINO Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/nxp/nxp-overview.html">
+                  NXP eIQ Neutron Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-cadence.html">
+                  Cadence Xtensa Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/samsung/samsung-overview.html">
+                  Samsung Exynos Backend
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+              LLMs
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-5">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/getting-started.html">
+                  Deploying LLMs to ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm.html">
+                  Exporting LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm-optimum.html">
+                  Exporting LLMs with HuggingFace’s Optimum ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-custom-llm.html">
+                  Exporting custom LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-with-c-plus-plus.html">
+                  Running LLMs with C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                  Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-ios.html">
+                  Running LLMs on iOS
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="advanced-topics-section.html">
+              Advanced
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-6">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="quantization-optimization.html">
+                  Quantization & Optimization
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
+                  Kernel Library Deep Dive
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backend-delegate-advanced.html">
+                  Backend & Delegates
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-integration-advanced.html">
+                  Runtime & Integration
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="compiler-ir-advanced.html">
+                  Compiler & IR
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="file-formats-advanced.html">
+                  File Formats
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="tools-section.html">
+              Tools
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-7">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-overview.html">
+                  Introduction to the ExecuTorch Developer Tools
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="bundled-io.html">
+                  Bundled Program – a Tool for ExecuTorch Model Validation
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etrecord.html">
+                  Prerequisite | ETRecord - ExecuTorch Record
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etdump.html">
+                  Prerequisite | ETDump - ExecuTorch Dump
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-profiling.html">
+                  Profiling Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-debugging.html">
+                  Debugging Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-inspector.html">
+                  Inspector APIs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="memory-planning-inspection.html">
+                  Memory Planning Inspection in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-tutorial.html">
+                  Developer Tools Usage Tutorials
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="api-section.html">
+              API
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-8">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="export-to-executorch-api-reference.html">
+                  Export API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="executorch-runtime-api-reference.html">
+                  Runtime API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-python-api-reference.html">
+                  Runtime Python API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="api-life-cycle.html">
+                  API Life Cycle and Deprecation Policy
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="extension-module.html">
+                  Running an ExecuTorch Model Using the Module Extension in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="extension-tensor.html">
+                  Managing Tensor Memory in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="running-a-model-cpp-tutorial.html">
+                  Detailed C++ Runtime APIs Tutorial
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+
+    
+    
+      <li class="nav-item dropdown more-dropdown">
+        <div class="nav-item-with-toggle">
+          <span class="nav-link more-toggle" tabindex="0" role="button" aria-expanded="false" aria-controls="pst-nav-more-links">
+            More
+          </span>
+        </div>
+        <ul id="pst-nav-more-links" class="dropdown-menu">
+          
+            <li class="">
+              <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+                Support
+              </a>
+            </li>
+          
+        </ul>
+      </li>
+    
   </ul>
-</nav></div>
+</nav>
+</div>
       
     </div>
     
     
     <div class="navbar-header-items__end">
+      
+      
+      
+        <div class="navbar-item"><!-- PyTorch.org site link - desktop only, two-line layout -->
+<!-- Note: The show_pytorch_org_link check is handled in layout.html's navbar_end block -->
+<a href="https://pytorch.org" class="pytorch-site-link nav-link nav-external" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="Go to PyTorch.org">
+  <span class="pytorch-site-link-text">
+    <span>Go to</span>
+    <span>pytorch.org <i class="fa-solid fa-arrow-up-right-from-square external-icon"></i></span>
+  </span>
+</a></div>
       
       
         <div class="navbar-item">
@@ -840,8 +1082,42 @@ document.write(`
       <div class="bd-sidebar-primary bd-sidebar">
         
 
+
+
+
   
   <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    <div class="sidebar-header-items__start">
+      <div class="navbar-item">
+        
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-3"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-3"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-3"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-3">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script>
+      </div>
+    </div>
+    
+
     
     
       <div class="sidebar-header-items__center">
@@ -849,73 +1125,504 @@ document.write(`
           
           
             <div class="navbar-item">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <nav>
   <ul class="bd-navbar-elements navbar-nav">
     
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="intro-section.html">
-    Intro
-  </a>
-</li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="intro-section.html">
+              Intro
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-1">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-overview.html">
+                  ExecuTorch Overview
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-how-it-works.html">
+                  How ExecuTorch Works
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started-architecture.html">
+                  Architecture and Components
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="concepts.html">
+                  Concepts
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="quick-start-section.html">
+              Quick Start
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-2">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
+                  Getting Started with ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-building-from-source.html">
+                  Building from Source
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="edge-platforms-section.html">
+              Edge
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-3">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="android-section.html">
+                  Android
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="ios-section.html">
+                  iOS
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
+                  Desktop & Laptop Platforms
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="embedded-section.html">
+                  Embedded Systems
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="backends-section.html">
+              Backends
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-4">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/xnnpack/xnnpack-overview.html">
+                  XNNPACK Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/cuda/cuda-overview.html">
+                  CUDA Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/coreml/coreml-overview.html">
+                  Core ML Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/mps/mps-overview.html">
+                  MPS Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/vulkan/vulkan-overview.html">
+                  Vulkan Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
+                  Qualcomm AI Engine Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-mediatek.html">
+                  MediaTek Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">
+                  Arm Ethos-U Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-vgf/arm-vgf-overview.html">
+                  Arm VGF Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="build-run-openvino.html">
+                  Building and Running ExecuTorch with OpenVINO Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/nxp/nxp-overview.html">
+                  NXP eIQ Neutron Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-cadence.html">
+                  Cadence Xtensa Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/samsung/samsung-overview.html">
+                  Samsung Exynos Backend
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+              LLMs
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-5">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/getting-started.html">
+                  Deploying LLMs to ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm.html">
+                  Exporting LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm-optimum.html">
+                  Exporting LLMs with HuggingFace’s Optimum ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-custom-llm.html">
+                  Exporting custom LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-with-c-plus-plus.html">
+                  Running LLMs with C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                  Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-ios.html">
+                  Running LLMs on iOS
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="advanced-topics-section.html">
+              Advanced
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-6">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="quantization-optimization.html">
+                  Quantization & Optimization
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
+                  Kernel Library Deep Dive
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backend-delegate-advanced.html">
+                  Backend & Delegates
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-integration-advanced.html">
+                  Runtime & Integration
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="compiler-ir-advanced.html">
+                  Compiler & IR
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="file-formats-advanced.html">
+                  File Formats
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="tools-section.html">
+              Tools
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-7">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-overview.html">
+                  Introduction to the ExecuTorch Developer Tools
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="bundled-io.html">
+                  Bundled Program – a Tool for ExecuTorch Model Validation
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etrecord.html">
+                  Prerequisite | ETRecord - ExecuTorch Record
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etdump.html">
+                  Prerequisite | ETDump - ExecuTorch Dump
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-profiling.html">
+                  Profiling Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-debugging.html">
+                  Debugging Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-inspector.html">
+                  Inspector APIs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="memory-planning-inspection.html">
+                  Memory Planning Inspection in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-tutorial.html">
+                  Developer Tools Usage Tutorials
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="api-section.html">
+              API
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-8">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="export-to-executorch-api-reference.html">
+                  Export API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="executorch-runtime-api-reference.html">
+                  Runtime API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-python-api-reference.html">
+                  Runtime Python API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="api-life-cycle.html">
+                  API Life Cycle and Deprecation Policy
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="extension-module.html">
+                  Running an ExecuTorch Model Using the Module Extension in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="extension-tensor.html">
+                  Managing Tensor Memory in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="running-a-model-cpp-tutorial.html">
+                  Detailed C++ Runtime APIs Tutorial
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="support-section.html">
+              Support
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-9">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-faqs.html">
+                  Frequently Asked Questions
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="contributing.html">
+                  Contributing to ExecuTorch
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
 
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="quick-start-section.html">
-    Quick Start
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="edge-platforms-section.html">
-    Edge
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="backends-section.html">
-    Backends
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
-    LLMs
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="advanced-topics-section.html">
-    Advanced
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="tools-section.html">
-    Tools
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="api-section.html">
-    API
-  </a>
-</li>
-
-
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="support-section.html">
-    Support
-  </a>
-</li>
-
+    
+    
   </ul>
-</nav></div>
+</nav>
+</div>
           
         
       </div>
@@ -923,6 +1630,17 @@ document.write(`
     
     
       <div class="sidebar-header-items__end">
+        
+        
+          <div class="navbar-item"><!-- PyTorch.org site link - desktop only, two-line layout -->
+<!-- Note: The show_pytorch_org_link check is handled in layout.html's navbar_end block -->
+<a href="https://pytorch.org" class="pytorch-site-link nav-link nav-external" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="Go to PyTorch.org">
+  <span class="pytorch-site-link-text">
+    <span>Go to</span>
+    <span>pytorch.org <i class="fa-solid fa-arrow-up-right-from-square external-icon"></i></span>
+  </span>
+</a></div>
+        
         
           <div class="navbar-item">
   
@@ -1024,10 +1742,10 @@ document.write(`
   
   <div class="sidebar-primary-items__end sidebar-primary__section">
   </div>
-  
-  <div id="rtd-footer-container"></div>
 
 
+
+<div id="rtd-footer-container"></div>
       </div>
       
       <main id="main-content" class="bd-main" role="main">
@@ -1094,34 +1812,34 @@ document.write(`
 </div>
               
               
-  
+
 <div id="searchbox"></div>
-  <article class="bd-article" id="pytorch-article">
-    <!-- Hidden breadcrumb schema for SEO only -->
-    <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
-      
-      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <link itemprop="item" href="edge-platforms-section.html">
-        <meta itemprop="name" content="Edge">
-        <meta itemprop="position" content="1">
-      </div>
-      
-      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <link itemprop="item" href="ios-section.html">
-        <meta itemprop="name" content="iOS">
-        <meta itemprop="position" content="2">
-      </div>
-      
-      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <meta itemprop="name" content="Using ExecuTorch on iOS">
-        <meta itemprop="position" content="3">
-      </div>
+<div id="pytorch-article">
+  <!-- Hidden breadcrumb schema for SEO only -->
+  <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+    
+    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+      <link itemprop="item" href="edge-platforms-section.html">
+      <meta itemprop="name" content="Edge">
+      <meta itemprop="position" content="1">
     </div>
+    
+    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+      <link itemprop="item" href="ios-section.html">
+      <meta itemprop="name" content="iOS">
+      <meta itemprop="position" content="2">
+    </div>
+    
+    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+      <meta itemprop="name" content="Using ExecuTorch on iOS">
+      <meta itemprop="position" content="3">
+    </div>
+  </div>
 
-    
-    
+  
+  
 
-    
+  
               
                 
 <div id="searchbox"></div>
@@ -2014,8 +2732,8 @@ Inputs can be any type conforming to <code class="docutils literal notranslate">
 
                 </article>
               
-  </article>
-  
+</div>
+
               
               
                 <footer class="bd-footer-article">
@@ -2398,7 +3116,7 @@ Inputs can be any type conforming to <code class="docutils literal notranslate">
        "@type": "Article",
        "name": "Using ExecuTorch on iOS",
        "headline": "Using ExecuTorch on iOS",
-       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/using-executorch-ios.html",
        "articleBody": "Using ExecuTorch on iOS# ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTorch also provides backends to leverage Core ML and Metal Performance Shaders (MPS) for hardware-accelerated execution on Apple platforms. Integration# The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection of prebuilt .xcframework binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes: executorch - Core runtime components executorch_llm - LLM-specific runtime components backend_coreml - Core ML backend backend_mps - MPS backend backend_xnnpack - XNNPACK backend kernels_llm - Custom kernels for LLMs kernels_optimized - Accelerated generic CPU kernels kernels_quantized - Quantized kernels kernels_torchao - Quantized CPU kernels from torchao Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target. Note: You may need to add some extra linker flags for the build settings of the components that links against ExecuTorch backends or kernels to let them register properly at the app startup. See the Linkage section for more details. Note: To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the executorch_debug framework. For optimal performance, always link against the Release version of the deliverables (those without the _debug suffix), which have all logging overhead removed. See the Logging section for more details. Swift Package Manager# The prebuilt ExecuTorch runtime, backend, and kernels are available as a Swift PM package. Xcode# In Xcode, go to File \u003e Add Package Dependencies. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format \u201cswiftpm-\u201d, (e.g. \u201cswiftpm-1.0.0\u201d), or a branch name in format \u201cswiftpm-.\u003cyear_month_date\u003e\u201d (e.g. \u201cswiftpm-1.1.0-20251101\u201d) for a nightly build on a specific date. Then select which ExecuTorch framework should link against which target. Click the screenshot below to watch the demo video on how to add the package and run a simple ExecuTorch model on iOS. CLI# Add a package and target dependencies on ExecuTorch to your package file like this: // swift-tools-version:5.9 import PackageDescription let package = Package( name: \"YourPackageName\", platforms: [ .iOS(.v17), .macOS(.v12), ], products: [ .library(name: \"YourPackageName\", targets: [\"YourTargetName\"]), ], dependencies: [ // Use \"swiftpm-\u003cversion\u003e.\u003cyear_month_day\u003e\" branch name for a nightly build. .package(url: \"https://github.com/pytorch/executorch.git\", branch: \"swiftpm-1.0.0\") ], targets: [ .target( name: \"YourTargetName\", dependencies: [ .product(name: \"executorch\", package: \"executorch\"), .product(name: \"backend_xnnpack\", package: \"executorch\"), .product(name: \"kernels_optimized\", package: \"executorch\"), // Add other backends and kernels as needed. ]), linkerSettings: [ // Force load all symbols from static libraries to trigger backends and kernels registration .unsafeFlags([\"-Wl,-all_load\"]) ] ] ) Then check if everything works correctly: cd path/to/your/package swift package resolve # or just build it swift build Building from Source# Another way to integrate the ExecuTorch runtime is to build the necessary components from sources locally and link against them. This is useful when customizing the runtime. Install Xcode 15+ and Command Line Tools: xcode-select --install Clone ExecuTorch: git clone -b viable/strict https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules \u0026\u0026 cd executorch Set up Python 3.10+ and activate a virtual environment: python3 -m venv .venv \u0026\u0026 source .venv/bin/activate \u0026\u0026 pip install --upgrade pip Install the required dependencies, including those needed for the backends like Core ML or MPS, if you plan to build them later: ./install_requirements.sh # CoreML-only requirements: ./backends/apple/coreml/scripts/install_requirements.sh Install CMake: Download the macOS binary distribution from the CMake website, open the .dmg file, move CMake.app to the /Applications directory, and then run the following command to install the CMake command-line tools: sudo /Applications/CMake.app/Contents/bin/cmake-gui --install Use the provided script to build .xcframeworks: The following command will build the ExecuTorch runtime components along with all available kernels and backends for the Apple platform in both Release and Debug modes: ./scripts/build_apple_frameworks.sh After the build finishes successfully, the resulting frameworks can be found in the cmake-out directory. Copy them to your project and link them against your targets. Linkage# ExecuTorch initializes its backends and kernels (operators) during app startup by registering them in a static dictionary. If you encounter errors like \u201cunregistered kernel\u201d or \u201cunregistered backend\u201d at runtime, you may need to explicitly force-load certain components. Use the -all_load or -force_load linker flags in your Xcode build configuration to ensure components are registered early. Here\u2019s an example of a Xcode configuration file (.xcconfig): ET_PLATFORM[sdk=iphonesimulator*] = simulator ET_PLATFORM[sdk=iphoneos*] = ios ET_PLATFORM[sdk=macos*] = macos OTHER_LDFLAGS = $(inherited) \\ -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch_debug_$(ET_PLATFORM).a \\ -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml_$(ET_PLATFORM).a \\ -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps_$(ET_PLATFORM).a \\ -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack_$(ET_PLATFORM).a \\ -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized_$(ET_PLATFORM).a \\ -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized_$(ET_PLATFORM).a Note: In the example above, we link against the Debug version of the ExecuTorch runtime (libexecutorch_debug) to preserve the logs. Normally, that does not impact the performance too much. Nevertheless, remember to link against the release version of the runtime (libexecutorch) for the best performance and no logs. You can assign such a config file to your target in Xcode: Add the .xcconfig file to your project. Navigate to the project\u2019s Info tab. Select the configuration file in the build configurations for Release (or Debug) mode. Runtime API# ExecuTorch provides native Objective-C APIs, automatically bridged to Swift, for interacting with the runtime. These APIs act as wrappers around the core C++ components found in extension/tensor and extension/module, offering a more idiomatic experience for Apple platform developers. Note: These Objective-C/Swift APIs are currently experimental and subject to change. Importing# Once linked against the executorch framework, you can import the necessary components. Objective-C (Objective-C++): // Import the main umbrella header for Module/Tensor/Value wrappers. #import \u003cExecuTorch/ExecuTorch.h\u003e // If using C++ directly alongside Objective-C++, you might still need C++ headers. #import \u003cexecutorch/extension/module/module.h\u003e #import \u003cexecutorch/extension/tensor/tensor.h\u003e Swift: import ExecuTorch Example# Here\u2019s a concise example demonstrating how to load a model, prepare input, run inference, and process output using the Objective-C and Swift API. Imagine you have a MobileNet v3 model (mv3.pte) that takes a [1, 3, 224, 224] float tensor as input and outputs logits. Objective-C: NSString *modelPath = [[NSBundle mainBundle] pathForResource:@\"mv3\" ofType:@\"pte\"]; // Create a module with the model file path. Nothing gets loaded into memory just yet. ExecuTorchModule *module = [[ExecuTorchModule alloc] initWithFilePath:modelPath]; NSError *error; // Optional error output argument to learn about failures. // Force-load the program and \u0027forward\u0027 method. Otherwise, it\u0027s loaded at the first execution. [module loadMethod:@\"forward\" error:\u0026error]; float *imageBuffer = ...; // Existing image buffer. // Create an input tensor referencing the buffer and assuming the given shape and data type. ExecuTorchTensor *inputTensor = [[ExecuTorchTensor alloc] initWithBytesNoCopy:imageBuffer shape:@[@1, @3, @224, @224] dataType:ExecuTorchDataTypeFloat]; // Execute the \u0027forward\u0027 method with the given input tensor and get output values back. NSArray\u003cExecuTorchValue *\u003e *outputs = [module forwardWithTensor:inputTensor error:\u0026error]; // Get the first output value assuming it\u0027s a tensor. ExecuTorchTensor *outputTensor = outputs.firstObject.tensorValue; // Access the output tensor data. [outputTensor bytesWithHandler:^(const void *pointer, NSInteger count, ExecuTorchDataType dataType) { float *logits = (float *)pointer; // Use logits... }]; Swift: let modelPath = Bundle.main.path(forResource: \"mv3\", ofType: \"pte\")! // Create a module with the model file path. Nothing gets loaded into memory just yet. let module = Module(filePath: modelPath) // Force-load the program and \u0027forward\u0027 method. Otherwise, it\u0027s loaded at the first execution. try module.load(\"forward\") let imageBuffer: UnsafeMutableRawPointer = ... // Existing image buffer // Create an input tensor referencing the buffer and assuming the given shape and data type. let inputTensor = Tensor\u003cFloat\u003e(\u0026imageBuffer, shape: [1, 3, 224, 224]) // Execute the \u0027forward\u0027 method with the given input tensor and get an output tensor back. let outputTensor = try Tensor\u003cFloat\u003e(module.forward(inputTensor)) // Copy the tensor data into logits array for easier access. let logits = outputTensor.scalars() // Use logits... Tensor# A tensor is a multi-dimensional array of elements (such as floats or integers) and includes metadata like shape (dimensions) and data type. Tensors are used to feed inputs to a model and retrieve outputs, or for any computation you need to do on raw data. You can create tensors from simple arrays of numbers, inspect their properties, read or modify their contents, and even reshape or copy them. ExecuTorch offers ExecuTorchTensor class in Objective-C and two tensor types in Swift: AnyTensor: A type-erased tensor, bridged from ExecuTorchTensor in Objective-C. You might use it when the tensor\u2019s data type is only known at runtime, for example, when converting from an untyped Value object before casting it to a generic Tensor\u003cT\u003e. Tensor\u003cT: Scalar\u003e: A generic, type-safe wrapper around AnyTensor. This is the recommended type for most use cases in Swift. It ensures the element type (e.g., Float, Int) is known at compile time, providing type-safe access to tensor data and catching type mismatches early. You can convert between them using tensor.anyTensor (to get the underlying AnyTensor) and anyTensor.asTensor() (to convert to a typed Tensor\u003cT\u003e if the data types match). Key Properties:# dataType: The element type (e.g., .float, .int, .byte). In Tensor\u003cT\u003e, this is determined by T. shape: An array of Int describing the size of each dimension. count: The total number of elements. strides: The jump in memory needed to advance one element along each dimension. dimensionOrder: The order of dimensions in memory. shapeDynamism: Indicates if the tensor shape can change (.static, .dynamicBound, .dynamicUnbound). Initialization:# You can create a new tensor from an existing one, either as a view (which shares the same underlying data) or as a copy (which gets its own unique data). View: init(_:) creates a new tensor instance that points to the same memory as the original. Modifying the data through one tensor will affect the other. Copy: copy() creates a completely independent duplicate of the tensor, including its own copy of the data. Objective-C: // Create a view. ExecuTorchTensor *tensorView = [[ExecuTorchTensor alloc] initWithTensor:originalTensor]; // Create a copy. ExecuTorchTensor *tensorCopy = [originalTensor copy]; Swift: // Create a view. let tensorView = Tensor(originalTensor) // Create a copy. let tensorCopy = originalTensor.copy() Tensors can be initialized directly from memory pointers or Data objects. init(bytesNoCopy:...): Creates a tensor that references an existing memory buffer without copying. The buffer\u2019s lifetime must be managed manually and must exceed the tensor\u2019s. init(bytes:...): Creates a tensor by copying data from a memory buffer. init(data:...): Creates a tensor using an NSData (Objective-C) or Data (Swift) object, referencing its bytes without copying. Objective-C: // Create by copying bytes. float data[] = {1.0f, 2.0f, 3.0f, 4.0f}; NSArray\u003cNSNumber *\u003e *shape = @[@2, @2]; ExecuTorchTensor *tensorFromBytes = [[ExecuTorchTensor alloc] initWithBytes:data shape:shape dataType:ExecuTorchDataTypeFloat]; // Create from NSData (no copy). NSData *nsData = [NSData dataWithBytes:data length:sizeof(data)]; ExecuTorchTensor *tensorFromNSData = [[ExecuTorchTensor alloc] initWithData:nsData shape:shape dataType:ExecuTorchDataTypeFloat]; Swift: // Create from a buffer without copying (unsafe). var mutableData: [Float] = [1.0, 2.0, 3.0, 4.0] let tensorNoCopy = mutableData.withUnsafeMutableBytes { pointer in Tensor\u003cFloat\u003e( bytesNoCopy: pointer.baseAddress!, shape: [2, 2] ) } // Create from Data (no copy). let data = Data(bytes: \u0026mutableData, count: mutableData.count * MemoryLayout\u003cFloat\u003e.size) let tensorFromData = Tensor\u003cFloat\u003e(data: data, shape: [2, 2]) The most convenient way to create tensors is from Swift arrays or single scalar values. The Tensor\u003cT\u003e API uses type inference to determine the dataType automatically. objective-c: // Create from an array of scalars. NSArray\u003cNSNumber *\u003e *scalars = @[@(1), @(2), @(3)]; NSArray\u003cNSNumber *\u003e *shape = @[@3]; ExecuTorchTensor *tensorFromScalars = [[ExecuTorchTensor alloc] initWithScalars:scalars shape:shape dataType:ExecuTorchDataTypeInt]; // Create a float scalar tensor. ExecuTorchTensor *scalarTensor = [[ExecuTorchTensor alloc] initWithFloat:3.14f]; Swift: // Create from an array of scalars (infers shape and copies data). let tensor = Tensor([1.0, 2.0, 3.0, 4.0]) // Creates a Tensor\u003cDouble\u003e with shape [4] // Specify shape. let tensorWithShape = Tensor([1, 2, 3, 4, 5, 6], shape: [2, 3]) // Creates Tensor\u003cInt\u003e // Create without copying from an `inout` array. var liveData: [Int32] = [10, 20, 30] let tensorNoCopy = Tensor(\u0026liveData) // Modifying `liveData` affects `tensorNoCopy` // Create an Int scalar tensor. let scalarTensor = Tensor(42) // Infers Tensor\u003cInt\u003e with shape [] Factory Methods:# ExecuTorch provides a rich set of factory methods to create tensors with pre-filled or random data. empty: Creates a tensor with uninitialized data. full: Creates a tensor filled with a specified scalar value. ones: Creates a tensor filled with ones. zeros: Creates a tensor filled with zeros. rand: Creates a tensor with random values uniformly distributed in [0, 1). randn: Creates a tensor with random values from a normal distribution (mean 0, variance 1). randint: Creates a tensor with random integers in a specified range [low, high). Each method has a like: variant that creates a new tensor with the same shape and properties as an existing one. Objective-C: // Create a 2x2 tensor filled with zeros. ExecuTorchTensor *zeros = [ExecuTorchTensor zerosTensorWithShape:@[@2, @2] dataType:ExecuTorchDataTypeFloat]; // Create a tensor of ones with the same shape as `zeros`. ExecuTorchTensor *ones = [ExecuTorchTensor onesTensorLikeTensor:zeros]; Swift: // Create a 2x2 tensor filled with the value 7. let fullTensor = Tensor\u003cInt32\u003e.full(shape: [2, 2], scalar: 7) // Create a 3x3 tensor of ones. let onesTensor = Tensor\u003cFloat\u003e.ones(shape: [3, 3]) // Create a tensor of zeros with the same shape as onesTensor. let zerosTensor = Tensor\u003cFloat\u003e.zeros(like: onesTensor) // Create a tensor with random integers between 10 (inclusive) and 20 (exclusive). let randomInts = Tensor\u003cInt\u003e.randint(low: 10, high: 20, shape: [5]) // Create a 2x2 type-erased tensor filled with zeros and explicit data type. let anyZeros = AnyTensor.zeros(shape: [2, 2], dataType: .float) // Create a 2x3 type-erased tensor filled with random values and explicit data type. let anyRand = AnyTensor.rand(shape: [2, 3], dataType: .double) Accessing Data:# Reading data: scalars(): Returns a copy of the tensor\u2019s elements as a new [T] array. withUnsafeBytes(_:): Provides a type-safe, immutable buffer pointer (UnsafeBufferPointer\u003cT\u003e) for efficient, direct memory access without creating a new array. bytesWithHandler:: The Objective-C and AnyTensor approach, which uses a callback with a raw void * pointer and requires manual type casting. Objective-C: [tensor bytesWithHandler:^(const void *pointer, NSInteger count, ExecuTorchDataType dataType) { if (dataType == ExecuTorchDataTypeFloat) { const float *floatPointer = (const float *)pointer; NSLog(@\"First float element: %f\", floatPointer[0]); } }]; Swift: let tensor = Tensor\u003cFloat\u003e([1.0, 2.0, 3.0, 4.0], shape: [2, 2]) // Get data copy as a Swift array. let scalars = tensor.scalars() print(\"All scalars: \\(scalars)\") // [1.0, 2.0, 3.0, 4.0] // Access data via a buffer pointer. tensor.withUnsafeBytes { buffer in print(\"First float element: \\(buffer.first ?? 0.0)\") } anyTensor.bytes { pointer, count, dataType in // Must check data type and manually cast the pointer for type-erased tensor. if dataType == .float { let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count) print(\"First float element from AnyTensor: \\(buffer.first ?? 0.0)\") } } Modifying Data: withUnsafeMutableBytes(_:): The preferred Swift method. Provides a type-safe, mutable buffer pointer (UnsafeMutableBufferPointer\u003cT\u003e) for in-place modification. mutableBytesWithHandler:: The Objective-C and AnyTensor equivalent. Objective-C: [tensor mutableBytesWithHandler:^(void *pointer, NSInteger count, ExecuTorchDataType dataType) { if (dataType == ExecuTorchDataTypeFloat) { float *floatPointer = (float *)pointer; floatPointer[0] = 100.0f; // Modify the tensor\u0027s data. } }]; Swift: let tensor = Tensor\u003cFloat\u003e([1.0, 2.0, 3.0, 4.0], shape: [2, 2]) // Modify the tensor\u0027s data in place. tensor.withUnsafeMutableBytes { buffer in buffer[1] = 200.0 } // tensor\u0027s data is now [1.0, 200.0, 3.0, 4.0] anyTensor.mutableBytes { pointer, count, dataType in if dataType == .float { let buffer = UnsafeMutableBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count) buffer[0] = 100.0 // Modify the AnyTensor\u0027s data } } Resizing:# Tensors can be resized if their shape dynamism is not .static. Resizing only changes the tensor\u2019s metadata (shape and strides) and does not reallocate or change the underlying data, so the new shape must have the same total number of elements. Objective-C: NSError *error; BOOL success = [tensor resizeToShape:@[@4, @1] error:\u0026error]; if (success) { NSLog(@\"Resized shape: %@\", tensor.shape); } else { NSLog(@\"Resize failed: %@\", error); } Swift: do { try tensor.resize(to: [4, 1]) print(\"Resized shape: \\(tensor.shape)\") } catch { print(\"Resize failed: \\(error)\") } Equality:# You can check if two tensors are equal using the == operator. It compares their data type, shape, strides, dimension order, and all underlying element data. The shapeDynamism property is disregarded in this comparison. Printing:# Tensors conform to CustomStringConvertible in Swift and implement -description in Objective-C, so you can print them directly to the console for easy debugging. Value# The Value class (exposed as ExecuTorchValue in Objective-C) is a dynamic container that can hold different types of data, primarily used for model inputs and outputs. ExecuTorch methods accept and return arrays of Value objects. Key Properties:# tag: Indicates the type of data held (e.g., .tensor, .integer, .string, .boolean). isTensor, isInteger, isString, etc.: Boolean checks for the type. tensor, integer, string, boolean, double: Accessors for the underlying data (return nil or a default value if the tag doesn\u2019t match). Initialization:# Create Value objects directly from the data they should hold. Objective-C: #import \u003cExecuTorch/ExecuTorch.h\u003e ExecuTorchTensor *tensor = [[ExecuTorchTensor alloc] initWithFloat:1.0f]; ExecuTorchValue *tensorValue = [[ExecuTorchValue alloc] valueWithTensor:tensor]; ExecuTorchValue *intValue = [[ExecuTorchValue alloc] valueWithInteger:100]; ExecuTorchValue *stringValue = [[ExecuTorchValue alloc] valueWithString:@\"hello\"]; ExecuTorchValue *boolValue = [[ExecuTorchValue alloc] valueWithBoolean:YES]; ExecuTorchValue *doubleValue = [[ExecuTorchValue alloc] valueWithDouble:3.14]; Swift: import ExecuTorch let tensor = Tensor(2.0) let tensorValue = Value(tensor) let intValue = Value(200) let stringValue = Value(\"world\") let boolValue = Value(false) let doubleValue = Value(2.718) Also, in Swift, all the types that Value can hold conform to the ValueConvertible protocol, so you can create Value objects directly from them without explicitly wrapping them in Value constructors: func processValue(_ value: ValueConvertible) { // ... } processValue(1) // Value\u003cInt\u003e processValue(1.0) // Value\u003cDouble\u003e processValue(\"hello\") // Value\u003cString\u003e processValue(true) // Value\u003cBool\u003e processValue(Tensor(1.0)) // Value\u003cTensor\u003e Module# The Module class (exposed as ExecuTorchModule in Objective-C) represents a loaded ExecuTorch model (.pte file). It provides methods to load the model program, inspect its methods, and execute them for inference. Note: Module and its methods are not thread-safe. If you need to do concurrent inferences from multiple threads, create one Module per thread. Initialization:# Create a Module instance by providing the file path to the .pte model. Initialization itself is lightweight and doesn\u2019t load the program data immediately. You can also specify a ModuleLoadMode to control how the file is loaded, such as using memory mapping for efficiency. Objective-C: #import \u003cExecuTorch/ExecuTorch.h\u003e NSString *modelPath = [[NSBundle mainBundle] pathForResource:@\"model\" ofType:@\"pte\"]; ExecuTorchModule *module = [[ExecuTorchModule alloc] initWithFilePath:modelPath]; // Optional: specify load mode, e.g., memory mapping. ExecuTorchModule *moduleMmap = [[ExecuTorchModule alloc] initWithFilePath:modelPath loadMode:ExecuTorchModuleLoadModeMmap]; Swift: import ExecuTorch let modelPath = Bundle.main.path(forResource: \"model\", ofType: \"pte\")! let module = Module(filePath: modelPath) // Optional: specify load mode, e.g., memory mapping. let moduleMmap = Module(filePath: modelPath, loadMode: .mmap) Loading:# Model loading is deferred until explicitly requested or needed. You can load the entire program or individual methods. While execution calls can trigger loading automatically, it\u2019s often more efficient to load methods explicitly beforehand. load(): Loads the basic program structure. You can specify a ModuleVerification level, though minimal verification is used by default. load(_:): Loads the program structure and prepares a specific method (e.g., \u201cforward\u201d) for execution. This performs necessary setup like backend delegation and is recommended if you know which method you\u2019ll run. isLoaded() / isLoaded(_:): Check loading status. Objective-C: NSError *error; // Loads program and prepares \u0027forward\u0027 for execution. BOOL success = [module loadMethod:@\"forward\" error:\u0026error]; if (success) { NSLog(@\"Forward method loaded: %d\", [module isMethodLoaded:@\"forward\"]); } else { NSLog(@\"Failed to load method: %@\", error); } Swift: do { // Loads program and prepares \u0027forward\u0027 for execution. try module.load(\"forward\") print(\"Forward method loaded: \\(module.isLoaded(\"forward\"))\") } catch { print(\"Failed to load method: \\(error)\") } Inspecting Method Metadata# You can programmatically inspect a method\u2019s contract\u2014its input/output types, tensor shapes, data types, and more\u2014by retrieving its MethodMetadata. This is incredibly useful for building dynamic applications that can adapt to different models without hardcoding dimensions. Objective-c: NSError *error; ExecuTorchMethodMetadata *metadata = [module methodMetadata:@\"forward\" error:\u0026error]; if (metadata) { // Check if the first input is a tensor. ExecuTorchValueTag firstInputTag = [metadata.inputValueTags[0] unsignedIntValue]; if (firstInputTag == ExecuTorchValueTagTensor) { // Get the metadata for the first input tensor. ExecuTorchTensorMetadata *tensorMeta = metadata.inputTensorMetadata[@0]; if (tensorMeta) { NSLog(@\"Expected input shape: %@\", tensorMeta.shape); NSLog(@\"Expected input data type: %ld\", (long)tensorMeta.dataType); // You can now dynamically create a matching input tensor. } } } Swift: do { // Easily inspect the \"forward\" method at runtime. let metadata = try module.methodMetadata(\"forward\") // Check if the first input is a tensor and get its metadata. if metadata.inputValueTags.first == .tensor, let tensorMeta = metadata.inputTensorMetadata[0] { print(\"Expected input shape: \\(tensorMeta.shape)\") print(\"Expected input data type: \\(tensorMeta.dataType)\") // Dynamically create a random tensor that matches the model\u0027s input specs. let input = AnyTensor.rand(shape: tensorMeta.shape, dataType: tensorMeta.dataType) // Use the dynamically created tensor for inference. let outputs = try module.forward(input) print(\"Successfully ran inference with dynamic input.\") } } catch { print(\"Failed to get metadata or run inference: \\(error)\") } Execution:# The Module class offers flexible ways to execute methods. Inputs can be any type conforming to ValueConvertible (like Tensor, Int, Float, Bool, etc.). execute(_:_:): Execute any available method by name with one or more inputs. forward(_:): A convenient shortcut for executing the common \u201cforward\u201d method. The API provides overloads for single inputs, multiple inputs, or no inputs. Outputs are returned in two ways: As an array of Values, letting you inspect and cast results yourself. As your expected type. The generic overloads decode the result directly into your desired Swift type (such as a single Tensor\u003cFloat\u003e, an array, or any custom type conforming to the ValueSequenceConstructible protocol). If the output doesn\u2019t match the expected type (e.g. multiple Values returned when a single object is expected, or a tensor data type mismatch), an invalid type error is thrown. Objective-C: ExecuTorchTensor *inputTensor1 = [[ExecuTorchTensor alloc] initWithScalars:@[@1.0f, @2.0f]]; ExecuTorchTensor *inputTensor2 = [[ExecuTorchTensor alloc] initWithScalars:@[@3.0f, @4.0f]]; ExecuTorchTensor *singleInputTensor = [[ExecuTorchTensor alloc] initWithFloat:5.0f]; NSError *error; // Execute \"forward\" using the shortcut with an array of Tensors. NSArray\u003cExecuTorchValue *\u003e *outputs1 = [module forwardWithTensors:@[inputTensor1, inputTensor2] error:\u0026error]; if (outputs1) { NSLog(@\"Forward output count: %lu\", (unsigned long)outputs1.count); } else { NSLog(@\"Execution failed: %@\", error); } // Execute \"forward\" with a single Tensor input. NSArray\u003cExecuTorchValue *\u003e *outputs2 = [module forwardWithTensor:singleInputTensor error:\u0026error]; if (outputs2) { NSLog(@\"Forward single input output count: %lu\", (unsigned long)outputs2.count); } else { NSLog(@\"Execution failed: %@\", error); } // Execute a potentially different method by name. NSArray\u003cExecuTorchValue *\u003e *outputs3 = [module executeMethod:@\"another_method\" withInput:[[ExecuTorchValue alloc] valueWithTensor:inputTensor1] error:\u0026error]; // Process outputs (assuming first output is a tensor). if (outputs1) { ExecuTorchValue *firstOutput = outputs1.firstObject; if (firstOutput.isTensor) { ExecuTorchTensor *resultTensor = firstOutput.tensorValue; // Process resultTensor. } } Swift: let inputTensor1 = Tensor\u003cFloat\u003e([1.0, 2.0]) let inputTensor2 = Tensor\u003cFloat\u003e([3.0, 4.0]) let singleInputTensor = Tensor\u003cFloat\u003e([5.0]) do { // Execute \"forward\" using the shortcut with an array of Tensors. let outputs1 = try module.forward([inputTensor1, inputTensor2]) print(\"Forward output count: \\(outputs1.count)\") // Execute \"forward\" with a single Tensor input. let outputs2 = try module.forward(singleInputTensor) print(\"Forward single input output count: \\(outputs2.count)\") // Execute a potentially different method by name. let outputs3 = try module.execute(\"another_method\", [inputTensor1]) // Process outputs by converting the first output Value to a typed Tensor\u003cFloat\u003e. if let outputTensor: Tensor\u003cFloat\u003e = outputs1.first?.tensor() { // Now you have a type-safe tensor and can access its data easily. let logits = try outputTensor.scalars() print(\"First 5 logits: \\(logits.prefix(5))\") } // Try casting the outputs to a single typed object. let tensorOutput = try Tensor\u003cFloat\u003e(module.forward(inputTensor1, inputTensor2)) let logits = tensorOutput.scalars() } catch { print(\"Execution failed: \\(error)\") } Method Names:# You can query the available method names in the model after the program is loaded. Objective-C: NSError *error; // Note: methodNames: will load the program if not already loaded. NSSet\u003cNSString *\u003e *names = [module methodNames:\u0026error]; if (names) { NSLog(@\"Available methods: %@\", names); } else { NSLog(@\"Could not get method names: %@\", error); } Swift: do { // Note: methodNames() will load the program if not already loaded. let names = try module.methodNames() print(\"Available methods: \\(names)\") // Output: e.g., {\"forward\"} } catch { print(\"Could not get method names: \\(error)\") } Logging# ExecuTorch provides APIs for logging in Objective-C and Swift via the ExecuTorchLog (Log in Swift) singleton. You can subscribe custom log sinks conforming to the ExecuTorchLogSink (LogSink in Swift) protocol to receive internal ExecuTorch log messages. Note: Logs are stripped in the Release builds of ExecuTorch frameworks. To capture logs, link against the Debug builds (e.g., executorch_debug) during development. Objective-C: #import \u003cExecuTorch/ExecuTorch.h\u003e #import \u003cos/log.h\u003e @interface MyClass : NSObject\u003cExecuTorchLogSink\u003e @end @implementation MyClass - (instancetype)init { self = [super init]; if (self) { #if DEBUG [ExecuTorchLog.sharedLog addSink:self]; #endif } return self; } - (void)dealloc { #if DEBUG [ExecuTorchLog.sharedLog removeSink:self]; #endif } #if DEBUG - (void)logWithLevel:(ExecuTorchLogLevel)level timestamp:(NSTimeInterval)timestamp filename:(NSString *)filename line:(NSUInteger)line message:(NSString *)message { NSString *logMessage = [NSString stringWithFormat:@\"%@:%lu %@\", filename, (unsigned long)line, message]; switch (level) { case ExecuTorchLogLevelDebug: os_log_with_type(OS_LOG_DEFAULT, OS_LOG_TYPE_DEBUG, \"%{public}@\", logMessage); break; case ExecuTorchLogLevelInfo: os_log_with_type(OS_LOG_DEFAULT, OS_LOG_TYPE_INFO, \"%{public}@\", logMessage); break; case ExecuTorchLogLevelError: os_log_with_type(OS_LOG_DEFAULT, OS_LOG_TYPE_ERROR, \"%{public}@\", logMessage); break; case ExecuTorchLogLevelFatal: os_log_with_type(OS_LOG_DEFAULT, OS_LOG_TYPE_FAULT, \"%{public}@\", logMessage); break; default: os_log(OS_LOG_DEFAULT, \"%{public}@\", logMessage); break; } } #endif @end Swift: import ExecuTorch import os.log public class MyClass { public init() { #if DEBUG Log.shared.add(sink: self) #endif } deinit { #if DEBUG Log.shared.remove(sink: self) #endif } } #if DEBUG extension MyClass: LogSink { public func log(level: LogLevel, timestamp: TimeInterval, filename: String, line: UInt, message: String) { let logMessage = \"\\(filename):\\(line) \\(message)\" switch level { case .debug: os_log(.debug, \"%{public}@\", logMessage) case .info: os_log(.info, \"%{public}@\", logMessage) case .error: os_log(.error, \"%{public}@\", logMessage) case .fatal: os_log(.fault, \"%{public}@\", logMessage) default: os_log(\"%{public}@\", logMessage) } } } #endif Note: In the example, the logs are intentionally stripped out when the code is not built for Debug mode, i.e., the DEBUG macro is not defined or equals zero. Debugging# If you are linking against a Debug build of the ExecuTorch frameworks, configure your debugger to map the source code correctly by using the following LLDB command in the debug session: settings append target.source-map /executorch \u003cpath_to_executorch_source_code\u003e Troubleshooting# Slow execution# Ensure the exported model is using an appropriate backend, such as XNNPACK, Core ML, or MPS. If the correct backend is invoked but performance issues persist, confirm that you are linking against the Release build of the backend runtime. For optimal performance, link the ExecuTorch runtime in Release mode too. If debugging is needed, you can keep the ExecuTorch runtime in Debug mode with minimal impact on performance, but preserve logging and debug symbols. Swift PM# If you encounter a checksum mismatch error with Swift PM, clear the package cache using the Xcode menu (File \u003e Packages \u003e Reset Package Caches) or the following command: rm -rf \u003cYouProjectName\u003e.xcodeproj/project.xcworkspace/xcshareddata/swiftpm \\ ~/Library/org.swift.swiftpm \\ ~/Library/Caches/org.swift.swiftpm \\ ~/Library/Caches/com.apple.dt.Xcode \\ ~/Library/Developer/Xcode/DerivedData Note: Ensure Xcode is fully quit before running the terminal command to avoid conflicts with active processes.",
        "author": {
