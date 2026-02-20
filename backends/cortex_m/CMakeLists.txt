@@ -84,7 +84,7 @@ add_library(cortex_m_kernels ${_cortex_m_kernels__srcs})
 target_link_libraries(
   cortex_m_kernels
   PRIVATE cmsis-nn
-  PRIVATE executorch
+  PRIVATE prim_ops_lib
   PRIVATE kernels_util_all_deps
 )
 
