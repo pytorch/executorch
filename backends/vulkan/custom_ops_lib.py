@@ -371,6 +371,7 @@ def q8ta_linear(
     output_scale: float,
     output_zero_point: int,
     bias: Optional[torch.Tensor] = None,
+    activation: str = "none",
 ):
     weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
     weights = torch.ops.quantized_decomposed.dequantize_per_channel(
@@ -390,6 +391,9 @@ def q8ta_linear(
     out = torch.nn.functional.linear(x, weights)
     if bias is not None:
         out = out + bias[: out.shape[-1]]
+
+    if activation == "relu":
+        out = torch.nn.functional.relu(out)
 
     out = torch.ops.quantized_decomposed.quantize_per_tensor(
         out, output_scale, output_zero_point, -128, 127, torch.int8
@@ -410,7 +414,8 @@ lib.define(
         Tensor weight_scales,
         float output_scale,
         int output_zero_point,
-        Tensor? bias = None) -> Tensor
+        Tensor? bias = None,
+        str activation = "none") -> Tensor
     """
 )
 lib.impl(name, q8ta_linear, "CompositeExplicitAutograd")
@@ -431,6 +436,7 @@ def q8ta_linear_gemv(
     output_scale: float,
     output_zero_point: int,
     bias: Optional[torch.Tensor] = None,
+    activation: str = "none",
 ):
     weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
     weights = torch.ops.quantized_decomposed.dequantize_per_channel(
@@ -451,6 +457,9 @@ def q8ta_linear_gemv(
     if bias is not None:
         out = out + bias[: out.shape[-1]]
 
+    if activation == "relu":
+        out = torch.nn.functional.relu(out)
+
     out = torch.ops.quantized_decomposed.quantize_per_tensor(
         out, output_scale, output_zero_point, -128, 127, torch.int8
     )
@@ -470,7 +479,8 @@ lib.define(
         Tensor weight_scales,
         float output_scale,
         int output_zero_point,
-        Tensor? bias = None) -> Tensor
+        Tensor? bias = None,
+        str activation = "none") -> Tensor
     """
 )
 lib.impl(name, q8ta_linear_gemv, "CompositeExplicitAutograd")

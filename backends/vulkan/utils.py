@@ -142,6 +142,15 @@ def is_choose_qparams_node(node: torch.fx.Node) -> bool:
     return "choose_qparams" in node_name
 
 
+def is_dynamic_qscale(node: Any) -> bool:
+    """Check if a scale node is dynamically computed via a choose_qparams op."""
+    return (
+        isinstance(node, torch.fx.Node)
+        and node.target == operator.getitem
+        and is_choose_qparams_node(node.args[0])
+    )
+
+
 def is_dequant_per_channel_node(node: torch.fx.Node) -> bool:
     if node.op != "call_function":
         return False
@@ -997,7 +1006,7 @@ class TensorRepSet:
         for layout in self.valid_buffer_layouts:
             buffer_set.add(PackedDimInfo.from_repr(layout, VkStorageType.BUFFER))
         for layout in self.valid_texture_layouts:
-            texture_set.add(PackedDimInfo.from_repr(layout, VkStorageType.BUFFER))
+            texture_set.add(PackedDimInfo.from_repr(layout, VkStorageType.TEXTURE_3D))
         return buffer_set, texture_set
 
     def has_same_packed_dim_info_set(self, other: "TensorRepSet") -> bool:
@@ -1063,7 +1072,8 @@ class TensorRepSet:
             layout
             for layout in self.valid_texture_layouts
             if other_tex_set
-            and PackedDimInfo.from_repr(layout, VkStorageType.BUFFER) in other_tex_set
+            and PackedDimInfo.from_repr(layout, VkStorageType.TEXTURE_3D)
+            in other_tex_set
         }
         return TensorRepSet(new_buf, new_tex)
 
@@ -1506,6 +1516,14 @@ class OpRepSets:
                 0
             ].constrain_to_compatible_packed_dim(narrowed)
 
+            # Propagate to other synced outputs via packed-dim compatibility
+            if self.sync_outs_repr:
+                for i in range(len(self.outs_repset_list)):
+                    if i != 0:
+                        self.outs_repset_list[i] = self.outs_repset_list[
+                            i
+                        ].constrain_to_compatible_packed_dim(self.outs_repset_list[0])
+
         self.assert_sync_contraints()
         return True
 
@@ -1532,6 +1550,22 @@ class OpRepSets:
                     self.outs_repset_list[i] = self.outs_repset_list[
                         i
                     ].constrain_to_compatible_packed_dim(narrowed)
+
+        # Propagate to primary arg via packed-dim compatibility
+        if self.sync_primary_io_repr:
+            self.args_repset_list[self.primary_arg_idx] = self.args_repset_list[
+                self.primary_arg_idx
+            ].constrain_to_compatible_packed_dim(narrowed)
+
+            # Propagate to other synced args via packed-dim compatibility
+            if self.sync_args_repr:
+                for i in range(len(self.args_repset_list)):
+                    if i != self.primary_arg_idx:
+                        self.args_repset_list[i] = self.args_repset_list[
+                            i
+                        ].constrain_to_compatible_packed_dim(
+                            self.args_repset_list[self.primary_arg_idx]
+                        )
 
         self.assert_sync_contraints()
         return True

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -172,8 +172,8 @@ def test_mv3_selective_quant_float32_tosa_INT():
     inputs = (normalize(torch.randn(1, 3, 224, 224)),)
 
     quantization_annotations = {
-        "aten.adaptive_avg_pool2d.default": {
-            None: 1,
+        "aten.conv2d.default": {
+            None: 14,
         },
     }
 
@@ -182,12 +182,11 @@ def test_mv3_selective_quant_float32_tosa_INT():
         inputs,
         quantizer=get_selective_quantizer_by_module_name(
             {
-                "features.11.block.2.avgpool": None,
+                "conv2d_3": None,
             }
         ),
         qspecs=quantization_annotations,
     )
-
     pipeline.run()
 
 

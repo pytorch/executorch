@@ -90,19 +90,63 @@ class QuantizedLinearMatch(PatternMatch):
         # Identify output node
         self.output_node = self.anchor_node
 
-        # Identify input node
-        (
-            self.fp_input_node,
-            self.quantize_input_node,
-            dq_node,
-        ) = utils.maybe_skip_q_dq_arg_chain(self.anchor_node.args[input_arg_idx])
-        assert self.fp_input_node is not None
-        self.all_nodes.append(self.fp_input_node)
+        # Identify primary input node of the anchor. Due to decomposition of aten.linear
+        # there may be a view_copy node between the original input tensor to the linear
+        # op and the actual linear op node.
+        anchor_primary_input_node = self.anchor_node.args[input_arg_idx]
+        assert isinstance(anchor_primary_input_node, torch.fx.Node)
+
+        # Skip potential view_copy between dq and linear
+        if utils.is_view_copy_node(anchor_primary_input_node):
+            self.all_nodes.append(anchor_primary_input_node)
+            anchor_primary_input_node = anchor_primary_input_node.args[
+                0
+            ]  # pyre-ignore[16]
+
+        # By default, assume that the input tensor is not quantized in any way
+        self.quantize_input_node = None
+        self.dequantize_input_node = None
+        self.pattern_input_node = anchor_primary_input_node
+
+        self.input_scales_node = None
+        self.input_zeros_node = None
+
+        scales_arg_idx = 1
+        zeros_arg_idx = 2
+
+        # If the primary input node comes from a dequantize node, that implies the input
+        # input tensor is quantized (either statically or dynamically).
+        if utils.is_dequant_node(anchor_primary_input_node):
+            # Assume that this is a static quantization pattern; the input to the
+            # pattern is a statically quantized int8 tensor.
+            self.dequantize_input_node = anchor_primary_input_node
+            self.all_nodes.append(self.dequantize_input_node)
+            input_to_dq_node = self.dequantize_input_node.args[0]
+            self.pattern_input_node = input_to_dq_node
+
+            # torchao dequantize has a slightly different function schema
+            if (
+                self.dequantize_input_node.target
+                == exir_ops.edge.torchao.dequantize_affine.default
+            ):
+                scales_arg_idx = 2
+                zeros_arg_idx = 3
+
+            self.input_scales_node = self.dequantize_input_node.args[scales_arg_idx]
+            self.input_zeros_node = self.dequantize_input_node.args[zeros_arg_idx]
+
+            # Check for dynamic quantization: input scales are dynamically
+            # computed via a choose_qparams op
+            if utils.is_quant_node(input_to_dq_node) and utils.is_dynamic_qscale(
+                self.input_scales_node
+            ):
+                self.quantize_input_node = input_to_dq_node
+                self.pattern_input_node = self.quantize_input_node.args[0]
 
         # The implementation has a limitation that input channels must be a
         # multiple of 4. This is to ensure that data loads are aligned well with
         # texel boundaries. If this is not true, then don't match the pattern.
-        in_channels = self.fp_input_node.meta["val"].shape[-1]
+        in_channels = self.pattern_input_node.meta["val"].shape[-1]
         if in_channels % 4 != 0:
             return
 
@@ -123,47 +167,33 @@ class QuantizedLinearMatch(PatternMatch):
                     self.all_nodes.extend(arg_chain)
 
         # If input is not quantized, then we are done
-        if self.quantize_input_node is None:
+        if self.dequantize_input_node is None:
             self.match_found = True
             return
 
-        scales_arg_idx = 1
-        zeros_arg_idx = 2
-
-        # torchao op has a slightly different function schema
-        if (
-            self.quantize_input_node.target
-            == exir_ops.edge.torchao.quantize_affine.default
-        ):
-            scales_arg_idx = 2
-            zeros_arg_idx = 3
-
-        self.input_scales_node = self.quantize_input_node.args[scales_arg_idx]
-        self.input_zeros_node = self.quantize_input_node.args[zeros_arg_idx]
-
-        assert dq_node is not None
-        self.all_nodes.extend(
-            [
-                self.quantize_input_node,
-                dq_node,
-            ]
-        )
-
         # Check if the output is also quantized (q → dq → linear → q pattern)
+        # Also handle fused linear+relu (q → dq → linear → relu → q pattern)
         self.quantize_output_node = None
         self.output_scales_node = None
         self.output_zeros_node = None
+        self.relu_node = None
         if len(self.output_node.users) == 1:
-            output_user = list(self.output_node.users)[0]
-            if utils.is_quant_node(output_user):
-                self.quantize_output_node = output_user
+            cur_node = list(self.output_node.users)[0]
+            if cur_node.target == exir_ops.edge.aten.relu.default:
+                self.relu_node = cur_node
+                if len(cur_node.users) == 1:
+                    cur_node = list(cur_node.users)[0]
+                else:
+                    cur_node = None
+            if cur_node is not None and utils.is_quant_node(cur_node):
+                self.quantize_output_node = cur_node
                 self.output_scales_node = self.quantize_output_node.args[1]
                 self.output_zeros_node = self.quantize_output_node.args[2]
 
         self.match_found = True
 
     def is_weight_only_quantized(self) -> bool:
-        return self.quantize_input_node is None
+        return self.dequantize_input_node is None
 
     def has_output_quantization(self) -> bool:
         return (
@@ -195,7 +225,7 @@ class QuantizedLinearMatch(PatternMatch):
         return scales_shape[0] == weight_shape[-2]
 
     def is_input_static_per_tensor_quantized(self) -> bool:
-        if self.quantize_input_node is None:
+        if self.dequantize_input_node is None:
             return False
 
         # For static quantization per tensor quantization, the scales and zeros
@@ -203,7 +233,7 @@ class QuantizedLinearMatch(PatternMatch):
         return isinstance(self.input_scales_node, float)
 
     def is_input_dynamic_perchannel_quantized(self) -> bool:
-        if self.quantize_input_node is None:
+        if self.dequantize_input_node is None:
             return False
 
         if not isinstance(self.input_scales_node, torch.fx.Node):
@@ -219,7 +249,7 @@ class QuantizedLinearMatch(PatternMatch):
             return False
 
         scales_shape = self.input_scales_node.meta["val"].shape
-        input_shape = self.fp_input_node.meta["val"].shape
+        input_shape = self.pattern_input_node.meta["val"].shape
 
         return input_shape[-2] == scales_shape[-1]
 
@@ -357,7 +387,7 @@ def make_linear_q4gsw_op(
             "call_function",
             exir_ops.edge.et_vk.linear_q4gsw.default,
             args=(
-                match.fp_input_node,
+                match.pattern_input_node,
                 match.weight_node,
                 match.weight_scales_node,
                 group_size,
@@ -421,7 +451,7 @@ def make_linear_dq8ca_q4gsw_op(
             "call_function",
             exir_ops.edge.et_vk.linear_dq8ca_q4gsw.default,
             args=(
-                match.fp_input_node,
+                match.pattern_input_node,
                 match.input_scales_node,
                 match.input_zeros_node,
                 match.weight_node,
@@ -486,7 +516,7 @@ def make_linear_q8ta_q8csw_custom_op(
             "call_function",
             exir_ops.edge.et_vk.linear_q8ta_q8csw.default,
             args=(
-                match.fp_input_node,
+                match.pattern_input_node,
                 match.input_scales_node,
                 match.input_zeros_node,
                 match.weight_node,
@@ -543,7 +573,7 @@ def make_q8ta_linear_custom_op(
         )
 
     # Use gemv variant when batch size is 1
-    input_shape = match.fp_input_node.meta["val"].shape
+    input_shape = match.pattern_input_node.meta["val"].shape
     batch_size = input_shape[-2] if len(input_shape) >= 2 else 1
     if batch_size == 1:
         op_target = exir_ops.edge.et_vk.q8ta_linear_gemv.default
@@ -555,7 +585,7 @@ def make_q8ta_linear_custom_op(
             "call_function",
             op_target,
             args=(
-                match.quantize_input_node,
+                match.pattern_input_node,
                 match.input_scales_node,
                 match.input_zeros_node,
                 match.weight_node,
@@ -564,6 +594,7 @@ def make_q8ta_linear_custom_op(
                 match.output_scales_node,
                 match.output_zeros_node,
                 match.bias_node,
+                "relu" if match.relu_node is not None else "none",
             ),
         )
 
