@@ -35,70 +35,11 @@ from typing import List, Optional
 
 import torch
 
+from executorch.backends.mlx.examples.whisper.args import load_audio
+
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
-
-
-def load_audio(
-    audio_path: Optional[str],
-    use_sample_audio: bool,
-    processor,
-) -> torch.Tensor:
-    """
-    Load and preprocess audio input.
-
-    Returns:
-        input_features: [1, n_mels, n_frames] tensor
-    """
-    if use_sample_audio:
-        logger.info("Loading sample audio from HuggingFace datasets...")
-        try:
-            from datasets import load_dataset
-        except ImportError:
-            logger.error("datasets not installed. Run: pip install datasets")
-            raise
-
-        dataset = load_dataset(
-            "distil-whisper/librispeech_long",
-            "clean",
-            split="validation",
-        )
-        sample = dataset[0]["audio"]
-        audio_array = sample["array"]
-        sampling_rate = sample["sampling_rate"]
-    else:
-        if audio_path is None:
-            raise ValueError(
-                "Either --audio-file or --use-sample-audio must be provided"
-            )
-
-        logger.info(f"Loading audio from: {audio_path}")
-        try:
-            import soundfile as sf
-        except ImportError:
-            logger.error("soundfile not installed. Run: pip install soundfile")
-            raise
-
-        audio_array, sampling_rate = sf.read(audio_path)
-
-    # Process audio to mel spectrogram
-    input_features = processor(
-        audio_array,
-        return_tensors="pt",
-        truncation=False,
-        sampling_rate=sampling_rate,
-    ).input_features
-
-    # Truncate to 30 seconds (3000 frames at 100 frames/sec)
-    max_frames = 3000
-    if input_features.shape[2] > max_frames:
-        logger.info(
-            f"Truncating audio from {input_features.shape[2]} to {max_frames} frames"
-        )
-        input_features = input_features[:, :, :max_frames].contiguous()
-
-    return input_features
 
 
 def run_whisper_inference(  # noqa: C901
@@ -108,6 +49,7 @@ def run_whisper_inference(  # noqa: C901
     max_new_tokens: int = 256,
     language: str = "en",
     task: str = "transcribe",
+    dtype: str = "bf16",
 ) -> str:
     """
     Run Whisper inference using exported ExecuTorch models.
@@ -119,6 +61,7 @@ def run_whisper_inference(  # noqa: C901
         max_new_tokens: Maximum number of tokens to generate
         language: Language code for transcription
         task: "transcribe" or "translate"
+        dtype: Input dtype (must match the dtype used during export)
 
     Returns:
         Transcribed text
@@ -126,12 +69,10 @@ def run_whisper_inference(  # noqa: C901
     from executorch.runtime import Runtime, Verification
     from transformers import AutoProcessor
 
-    # Load metadata
+    # Load metadata (for structural info like num_decoder_layers)
     metadata_path = os.path.join(model_dir, "metadata.json")
     with open(metadata_path, "r") as f:
         metadata = json.load(f)
-
-    logger.info(f"Model: {metadata['model_id']}")
 
     num_layers = metadata["num_decoder_layers"]
 
@@ -146,7 +87,7 @@ def run_whisper_inference(  # noqa: C901
 
     # Cast to model dtype
     dtype_map = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}
-    model_dtype = dtype_map.get(metadata["dtype"], torch.float32)
+    model_dtype = dtype_map.get(dtype, torch.float32)
     input_features = input_features.to(model_dtype)
     logger.info(f"Input dtype: {input_features.dtype}")
 
@@ -178,6 +119,7 @@ def run_whisper_inference(  # noqa: C901
     # Step 1: Run encoder
     # =========================================================================
     logger.info("Running encoder...")
+    overall_start = time.time()
     start_time = time.time()
 
     encoder_outputs = encoder_forward.execute([input_features])
@@ -287,12 +229,16 @@ def run_whisper_inference(  # noqa: C901
         cache_position = cache_position + 1
 
     decode_time = time.time() - decode_start
+    total_time = time.time() - overall_start
     tokens_generated = len(generated_tokens) - 1  # Exclude initial SOT
     tokens_per_sec = tokens_generated / decode_time if decode_time > 0 else 0
 
-    logger.info(f"Decode time: {decode_time:.3f}s")
-    logger.info(f"Tokens generated: {tokens_generated}")
-    logger.info(f"Speed: {tokens_per_sec:.1f} tokens/sec")
+    print(f"\nEncoder time:  {encoder_time:.3f}s")
+    print(f"Cross-KV time: {cross_kv_time:.3f}s")
+    print(
+        f"Decode time:   {decode_time:.3f}s ({tokens_generated} tokens, {tokens_per_sec:.1f} tok/s)"
+    )
+    print(f"Total time:    {total_time:.3f}s")
 
     # Decode to text
     transcript = processor.tokenizer.decode(
@@ -305,41 +251,14 @@ def run_whisper_inference(  # noqa: C901
 
 def main():
     parser = argparse.ArgumentParser(description="Run exported Whisper model")
+    from executorch.backends.mlx.examples.whisper.args import add_run_args
+
+    add_run_args(parser)
     parser.add_argument(
         "--model-dir",
         type=str,
         default="/tmp/whisper_mlx",
         help="Directory containing exported .pte files",
-    )
-    parser.add_argument(
-        "--audio-file",
-        type=str,
-        default=None,
-        help="Path to audio file (WAV, MP3, etc.)",
-    )
-    parser.add_argument(
-        "--use-sample-audio",
-        action="store_true",
-        help="Use sample audio from HuggingFace datasets",
-    )
-    parser.add_argument(
-        "--max-new-tokens",
-        type=int,
-        default=256,
-        help="Maximum number of tokens to generate",
-    )
-    parser.add_argument(
-        "--language",
-        type=str,
-        default="en",
-        help="Language code for transcription",
-    )
-    parser.add_argument(
-        "--task",
-        type=str,
-        choices=["transcribe", "translate"],
-        default="transcribe",
-        help="Task: transcribe or translate",
     )
 
     args = parser.parse_args()
@@ -355,6 +274,7 @@ def main():
         max_new_tokens=args.max_new_tokens,
         language=args.language,
         task=args.task,
+        dtype=args.dtype,
     )
 
     print("\n" + "=" * 60)

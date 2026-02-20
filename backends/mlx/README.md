@@ -10,6 +10,86 @@ The MLX delegate compiles PyTorch models to run on Apple Silicon GPUs via the
 
 > **Adding a new op?** Jump to [How to Add a New Op](#how-to-add-a-new-op).
 
+## Getting Started
+
+The MLX delegate requires **Apple Silicon** (M1 or later) and the **Metal
+compiler**, which ships with Xcode (not the standalone Command Line Tools).
+
+**Check if Metal is available:**
+
+```bash
+xcrun -sdk macosx --find metal
+```
+
+If this prints a path (e.g. `/Applications/Xcode.app/.../metal`), you're set.
+If it errors, you either need to install Xcode from the
+[App Store](https://apps.apple.com/us/app/xcode/id497799835) or
+<https://developer.apple.com/xcode/>, or — if Xcode is already installed but the
+command line developer directory points at Command Line Tools — switch it:
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+```
+
+### Python (pybindings)
+
+The simplest way to get started is to install ExecuTorch with Python bindings.
+From the repo root:
+
+```bash
+python install_executorch.py
+```
+
+This builds and installs the `executorch` pip package with pybindings. On Apple
+Silicon, when the Metal compiler is available, the MLX backend is automatically
+included. You can then export models in Python using the MLX partitioner and run
+them via the ExecuTorch Python API.
+
+### C++ (CMake preset)
+
+To build the C++ runtime with the MLX delegate, use the `mlx-release` CMake
+workflow preset from the repo root:
+
+```bash
+cmake --workflow --preset mlx-release
+```
+
+This configures and builds a Release build of the ExecuTorch runtime with the
+MLX delegate and installs artifacts into `cmake-out/`. The preset enables the
+MLX delegate along with commonly needed extensions (module, data loader, flat
+tensor, LLM runner, etc.).
+
+Downstream C++ apps can then `find_package(executorch)` and link against
+`mlxdelegate` and `mlx`. See
+[`examples/models/llama/CMakeLists.txt`](../../examples/models/llama/CMakeLists.txt)
+for a working example.
+
+There is also an `mlx-debug` preset that enables debug symbols and compiles in
+per-op logging support, which is useful during development:
+
+```bash
+cmake --workflow --preset mlx-debug
+```
+
+The debug build compiles in the logging code, but to actually see per-op output
+you must also set the environment variable when running the binary:
+
+```bash
+ET_MLX_ENABLE_OP_LOGGING=1 ./cmake-out/my_app
+```
+
+### Debugging
+
+Set `ET_MLX_DEBUG=1` during AOT (export/compilation) to see detailed debug
+logging from the partitioner and preprocessor — including ops-to-not-decompose
+lists, graph dumps, per-node support decisions, and serialization details:
+
+```bash
+ET_MLX_DEBUG=1 python -m executorch.backends.mlx.examples.llm.export_llama ...
+```
+
+---
+
 ## Directory Layout
 
 ```

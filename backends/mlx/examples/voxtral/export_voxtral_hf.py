@@ -106,7 +106,9 @@ def export_voxtral_hf(
     max_seq_len: int = 1024,
     dtype: str = "bf16",
     quantize_linear: Optional[str] = None,
-    quantize_linear_group_size: int = 32,
+    quantize_embeddings: Optional[str] = None,
+    linear_group_size: Optional[int] = None,
+    embeddings_group_size: Optional[int] = None,
     max_audio_len: int = 300,
 ) -> None:
     """
@@ -121,7 +123,9 @@ def export_voxtral_hf(
         max_seq_len: Maximum sequence length for KV cache
         dtype: Model dtype ("fp32", "fp16", "bf16")
         quantize_linear: Quantization for linear layers ("int4", "int8", or None)
-        quantize_linear_group_size: Group size for linear quantization
+        quantize_embeddings: Quantization for embedding layers ("int4", "int8", or None)
+        linear_group_size: Group size for linear quantization (default: 32 for int4, 128 for int8)
+        embeddings_group_size: Group size for embedding quantization (default: 32 for int4, 128 for int8)
         max_audio_len: Maximum audio length in seconds for preprocessor
     """
     from optimum.exporters.executorch.tasks.multimodal_text_to_text import (
@@ -149,34 +153,15 @@ def export_voxtral_hf(
     )
 
     # Apply quantization if requested
-    if quantize_linear:
-        logger.info("Applying quantization with TorchAO...")
-        try:
-            from torchao.quantization.granularity import PerGroup
-            from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+    from executorch.backends.mlx.examples.quantization import apply_quantization
 
-            model = exportable.model
-            linear_dtype = torch.int4 if quantize_linear == "int4" else torch.int8
-            config = IntxWeightOnlyConfig(
-                weight_dtype=linear_dtype,
-                granularity=PerGroup(quantize_linear_group_size),
-                intx_choose_qparams_algorithm="hqq_scale_only",
-            )
-
-            logger.info(
-                f"Quantizing linear layers with {quantize_linear} "
-                f"(group_size={quantize_linear_group_size}, algorithm=hqq_scale_only)..."
-            )
-            quantize_(
-                model,
-                config,
-                filter_fn=lambda m, fqn: isinstance(m, torch.nn.Linear),
-            )
-
-            logger.info("Applied quantization successfully")
-        except ImportError:
-            logger.error("TorchAO not installed. Run: pip install torchao")
-            raise
+    apply_quantization(
+        exportable.model,
+        quantize_linear,
+        quantize_embeddings,
+        linear_group_size=linear_group_size,
+        embeddings_group_size=embeddings_group_size,
+    )
 
     logger.info("Exporting model with torch.export...")
     exported_progs = exportable.export()
@@ -246,19 +231,9 @@ def main():
         default="bf16",
         help="Model dtype",
     )
-    parser.add_argument(
-        "--quantize-linear",
-        type=str,
-        choices=["int4", "int8"],
-        default=None,
-        help="Quantization method for linear layers",
-    )
-    parser.add_argument(
-        "--quantize-linear-group-size",
-        type=int,
-        default=32,
-        help="Group size for linear quantization",
-    )
+    from executorch.backends.mlx.examples.quantization import add_quantization_args
+
+    add_quantization_args(parser)
     parser.add_argument(
         "--max-audio-len",
         type=int,
@@ -274,7 +249,9 @@ def main():
         max_seq_len=args.max_seq_len,
         dtype=args.dtype,
         quantize_linear=args.quantize_linear,
-        quantize_linear_group_size=args.quantize_linear_group_size,
+        quantize_embeddings=args.quantize_embeddings,
+        linear_group_size=args.linear_group_size,
+        embeddings_group_size=args.embeddings_group_size,
         max_audio_len=args.max_audio_len,
     )
 

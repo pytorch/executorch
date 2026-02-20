@@ -56,12 +56,9 @@ def _export_with_optimum(
     quantize_linear: Optional[str],
     quantize_embeddings: Optional[str],
     no_tie_word_embeddings: bool = False,
+    linear_group_size: Optional[int] = None,
+    embeddings_group_size: Optional[int] = None,
 ) -> None:
-    """
-    Export using optimum-executorch's CausalLMExportableModule.
-
-    This is the default pipeline when no custom flags are set.
-    """
     import executorch.exir as exir
     from executorch.backends.mlx import MLXPartitioner
     from executorch.exir import EdgeCompileConfig
@@ -79,7 +76,7 @@ def _export_with_optimum(
         max_seq_len=max_seq_len,
     )
 
-    from executorch.backends.mlx.examples.llm.quantize import apply_quantization
+    from executorch.backends.mlx.examples.quantization import apply_quantization
 
     apply_quantization(
         exportable.model,
@@ -89,6 +86,8 @@ def _export_with_optimum(
             exportable.model.config, "tie_word_embeddings", False
         )
         and not no_tie_word_embeddings,
+        linear_group_size=linear_group_size,
+        embeddings_group_size=embeddings_group_size,
     )
 
     logger.info("Exporting model with torch.export...")
@@ -131,6 +130,8 @@ def _export_with_custom_components(
     use_custom_sdpa: bool,
     use_custom_kv_cache: bool,
     no_tie_word_embeddings: bool = False,
+    linear_group_size: Optional[int] = None,
+    embeddings_group_size: Optional[int] = None,
 ) -> None:
     """
     Export using direct HF model with custom MLX components.
@@ -200,7 +201,7 @@ def _export_with_custom_components(
         )
         logger.info("  HFStaticCache installed successfully")
 
-    from executorch.backends.mlx.examples.llm.quantize import apply_quantization
+    from executorch.backends.mlx.examples.quantization import apply_quantization
 
     apply_quantization(
         exportable.model,
@@ -208,6 +209,8 @@ def _export_with_custom_components(
         quantize_embeddings,
         tie_word_embeddings=getattr(model.config, "tie_word_embeddings", False)
         and not no_tie_word_embeddings,
+        linear_group_size=linear_group_size,
+        embeddings_group_size=embeddings_group_size,
     )
 
     logger.info("Exporting model with torch.export...")
@@ -280,6 +283,8 @@ def export_llama_hf(
     use_custom_sdpa: bool = False,
     use_custom_kv_cache: bool = False,
     no_tie_word_embeddings: bool = False,
+    linear_group_size: Optional[int] = None,
+    embeddings_group_size: Optional[int] = None,
 ) -> None:
     """
     Export a HuggingFace Llama model to ExecuTorch with MLX backend.
@@ -309,6 +314,8 @@ def export_llama_hf(
             use_custom_sdpa=use_custom_sdpa,
             use_custom_kv_cache=use_custom_kv_cache,
             no_tie_word_embeddings=no_tie_word_embeddings,
+            linear_group_size=linear_group_size,
+            embeddings_group_size=embeddings_group_size,
         )
     else:
         logger.info("Using optimum-executorch pipeline (no custom components)")
@@ -320,6 +327,8 @@ def export_llama_hf(
             quantize_linear=quantize_linear,
             quantize_embeddings=quantize_embeddings,
             no_tie_word_embeddings=no_tie_word_embeddings,
+            linear_group_size=linear_group_size,
+            embeddings_group_size=embeddings_group_size,
         )
 
 
@@ -352,7 +361,7 @@ def main():
         default="bf16",
         help="Model dtype",
     )
-    from executorch.backends.mlx.examples.llm.quantize import add_quantization_args
+    from executorch.backends.mlx.examples.quantization import add_quantization_args
 
     add_quantization_args(parser)
     parser.add_argument(
@@ -380,6 +389,8 @@ def main():
         use_custom_sdpa=args.use_custom_sdpa,
         use_custom_kv_cache=args.use_custom_kv_cache,
         no_tie_word_embeddings=args.no_tie_word_embeddings,
+        linear_group_size=args.linear_group_size,
+        embeddings_group_size=args.embeddings_group_size,
     )
 
 

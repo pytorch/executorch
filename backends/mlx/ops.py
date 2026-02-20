@@ -1643,6 +1643,49 @@ def _layer_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.native_layer_norm.default])
+def _native_layer_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle native_layer_norm which returns (output, mean, rstd).
+
+    Only the normalized output (index 0) is computed via fast::layer_norm;
+    mean and rstd (indices 1 and 2) are needed only for backward.
+    """
+    # Verify mean/rstd outputs are unused — we only compute the normalized output.
+    for user in n.users:
+        if user.target == operator.getitem and user.args[1] in (1, 2):
+            if len(user.users) > 0:
+                raise ValueError(
+                    f"native_layer_norm output {user.args[1]} (mean/rstd) is used, "
+                    "but only the normalized output (index 0) is supported"
+                )
+
+    args = P.args(n)
+    require_args(args, 2, 5, "aten.native_layer_norm")
+    require_kwargs(P.kwargs(n), set(), "aten.native_layer_norm")
+    x, shape = args[0:2]
+    if len(shape) > 1:
+        raise ValueError(
+            "LayerNorm is only supported when normalizing over the last dimension"
+        )
+    w = args[2] if len(args) > 2 else None
+    bias = args[3] if len(args) > 3 else None
+    eps = args[4] if len(args) > 4 else 1e-5
+
+    # native_layer_norm returns (output, mean, rstd) — allocate all 3 slots
+    output_slots = P.make_or_get_slots(n)
+
+    P.emit(
+        LayerNormNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(output_slots[0]),
+            weight=P.slot_to_tid(w) if w else None,
+            bias=P.slot_to_tid(bias) if bias else None,
+            eps=eps,
+        )
+    )
+    return output_slots
+
+
 @REGISTRY.register(target=[torch.ops.aten.arange.default])
 def _arange_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle arange with just stop, or (start, stop) or (start, stop, step).
@@ -2278,9 +2321,6 @@ def _constant_pad_nd_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), set(), "aten.constant_pad_nd")
     x_node, pad = args[0], args[1]
     value = args[2] if len(args) > 2 else 0
-
-    # Validate pad is static list of ints
-    require_static_ints(list(pad), "pad", "aten.constant_pad_nd")
 
     if not isinstance(value, (int, float)):
         raise ValueError(
@@ -3070,9 +3110,6 @@ def _scalar_tensor_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     )
     scalar_value = args[0]
 
-    # Require static float value (not dynamic)
-    require_static_float(scalar_value, "scalar", "aten.scalar_tensor")
-
     out = P.make_or_get_slot(n)
 
     # Get dtype from kwargs, default to float32
@@ -3090,7 +3127,7 @@ def _scalar_tensor_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         FullNode(
             out=P.slot_to_tid(out),
             shape=[],  # 0-D tensor (scalar)
-            v=FloatOrVid.from_literal(float(scalar_value)),
+            v=P.to_float_or_vid(scalar_value),
             scalar_type=torch_dtype_to_scalar_type(dtype),
         )
     )
@@ -3714,6 +3751,19 @@ def _amax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.max.default])
+def _max_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.max.default - global max (reduce all axes)."""
+    args = P.args(n)
+    require_args(args, 1, 1, "aten.max")
+    require_kwargs(P.kwargs(n), set(), "aten.max")
+    x = args[0]
+
+    out = P.make_or_get_slot(n)
+    P.emit(MaxNode(x=P.slot_to_tid(x), out=P.slot_to_tid(out), axes=[], keepdims=False))
+    return out
+
+
 @REGISTRY.register(target=[torch.ops.aten.amin.default])
 def _amin_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.amin - min of elements along axes."""
@@ -3727,6 +3777,19 @@ def _amin_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     P.emit(
         MinNode(x=P.slot_to_tid(x), out=P.slot_to_tid(out), axes=axes, keepdims=keepdim)
     )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.min.default])
+def _min_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.min.default - global min (reduce all axes)."""
+    args = P.args(n)
+    require_args(args, 1, 1, "aten.min")
+    require_kwargs(P.kwargs(n), set(), "aten.min")
+    x = args[0]
+
+    out = P.make_or_get_slot(n)
+    P.emit(MinNode(x=P.slot_to_tid(x), out=P.slot_to_tid(out), axes=[], keepdims=False))
     return out
 
 

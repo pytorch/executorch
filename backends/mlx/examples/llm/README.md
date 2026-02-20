@@ -1,10 +1,10 @@
-# Llama MLX Example
+# LLM MLX Example
 
-This example demonstrates how to export and run Llama models using the MLX delegate for Apple Silicon.
+This example demonstrates how to export and run LLMs using the MLX delegate for Apple Silicon.
 
 ## Features
 
-- **Export**: Convert HuggingFace Llama models to ExecuTorch format with MLX delegate
+- **Export**: Convert HuggingFace LLMs to ExecuTorch format with MLX delegate
 - **Quantization**: Optional INT4/INT8 weight quantization via TorchAO
 - **KV Cache**: Efficient KV cache implementation for autoregressive generation
 - **Custom Ops**: Uses `mlx::rope` for optimal RoPE execution on MLX
@@ -13,25 +13,29 @@ This example demonstrates how to export and run Llama models using the MLX deleg
 ## Requirements
 
 ```bash
-pip install transformers torchao
+pip install transformers
 ```
 
-For the `export_llm_hf` path (optimum-executorch pipeline):
+For the `export_llm_hf` path (optimum-executorch pipeline), install optimum-executorch after installing ExecuTorch:
 
 ```bash
-pip install transformers torch optimum-executorch
+pip install optimum-executorch
 ```
 
-## Export Scripts
-
-There are two export scripts:
+## Scripts Overview
 
 | Script | Description |
 |--------|-------------|
 | `export_llama` | Custom model wrapper with functional KV cache and `mlx::rope` |
-| `export_llm_hf` | Uses optimum-executorch's `CausalLMExportableModule` pipeline |
+| `run_llama` | Run models exported with `export_llama` |
+| `export_llm_hf` | Uses optimum-executorch pipeline, with optional custom MLX SDPA/KV cache |
+| `run_llm_hf` | Run models exported with `export_llm_hf` |
 
-### `export_llama` (custom wrapper)
+---
+
+## `export_llama`
+
+Custom model wrapper (`LlamaWithFunctionalKV`) with functional KV cache and `mlx::rope`.
 
 ```bash
 # Export Llama 3.2 1B (bf16, no quantization)
@@ -53,7 +57,7 @@ python -m executorch.backends.mlx.examples.llm.export_llama \
     --quantize-embeddings int4
 ```
 
-#### Export Options (`export_llama`)
+### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -64,6 +68,34 @@ python -m executorch.backends.mlx.examples.llm.export_llama \
 | `--quantize-linear` | None | Quantization for linear layers (`int4`, `int8`) |
 | `--quantize-embeddings` | None | Quantization for embedding layers (`int4`, `int8`) |
 | `--no-tie-word-embeddings` | `False` | Disable re-tying lm_head to embedding after quantization |
+
+---
+
+## `run_llama`
+
+Run models exported with `export_llama`. Loads the tokenizer from HuggingFace and applies the chat template before inference.
+
+```bash
+python -m executorch.backends.mlx.examples.llm.run_llama \
+    --pte llama_1b.pte \
+    --model-id unsloth/Llama-3.2-1B-Instruct \
+    --prompt "What is the capital of France?"
+```
+
+### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--pte` | `/tmp/llama_test.pte` | Path to .pte file |
+| `--model-id` | `unsloth/Llama-3.2-1B-Instruct` | HuggingFace model ID (for tokenizer) |
+| `--prompt` | `The quick brown fox` | Input prompt |
+| `--max-new-tokens` | `50` | Maximum tokens to generate |
+
+---
+
+## `export_llm_hf`
+
+Uses optimum-executorch's `CausalLMExportableModule` by default. Optional flags enable custom MLX-optimized components (custom SDPA and/or KV cache).
 
 ```bash
 # Baseline export using optimum-executorch
@@ -79,7 +111,7 @@ python -m executorch.backends.mlx.examples.llm.export_llm_hf \
     --use-custom-kv-cache
 ```
 
-#### Export Options (`export_llm_hf`)
+### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -93,34 +125,11 @@ python -m executorch.backends.mlx.examples.llm.export_llm_hf \
 | `--use-custom-sdpa` | `False` | Use MLX custom SDPA (`mlx::custom_sdpa`) |
 | `--use-custom-kv-cache` | `False` | Use MLX custom KV cache (`mlx::kv_cache_update`) |
 
-## Run Scripts
+---
 
-There are two corresponding run scripts:
+## `run_llm_hf`
 
-| Script | For models exported with | Tokenizer source |
-|--------|--------------------------|------------------|
-| `run_llama` | `export_llama` | Loaded from HuggingFace by model ID |
-| `run_llm_hf` | `export_llm_hf` | Loaded from HuggingFace by model ID |
-
-### `run_llama`
-
-```bash
-python -m executorch.backends.mlx.examples.llm.run_llama \
-    --pte llama_1b.pte \
-    --model-id unsloth/Llama-3.2-1B-Instruct \
-    --prompt "What is the capital of France?"
-```
-
-#### Inference Options (`run_llama`)
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--pte` | `/tmp/llama_test.pte` | Path to .pte file |
-| `--model-id` | `unsloth/Llama-3.2-1B-Instruct` | HuggingFace model ID (for tokenizer) |
-| `--prompt` | `The quick brown fox` | Input prompt |
-| `--max-new-tokens` | `50` | Maximum tokens to generate |
-
-### `run_llm_hf`
+Run models exported with `export_llm_hf`. Supports both full-prompt prefill (dynamic seq len exports) and token-by-token prefill (fixed seq len exports).
 
 ```bash
 python -m executorch.backends.mlx.examples.llm.run_llm_hf \
@@ -129,7 +138,7 @@ python -m executorch.backends.mlx.examples.llm.run_llm_hf \
     --prompt "Explain quantum computing in simple terms"
 ```
 
-#### Inference Options (`run_llm_hf`)
+### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -138,13 +147,15 @@ python -m executorch.backends.mlx.examples.llm.run_llm_hf \
 | `--prompt` | `The quick brown fox` | Input prompt |
 | `--max-new-tokens` | `50` | Maximum tokens to generate |
 
+---
+
 ## Architecture
 
 ### `export_llama` model wrapper
 
 The `export_llama` script uses a custom model wrapper (`LlamaWithFunctionalKV`) that:
 
-1. **Replaces RMSNorm** with `torch.nn.functional.rms_norm` — which maps to MLX's efficient `fast::rms_norm` implementation via the `aten.rms_norm` handler.
+1. **Replaces RMSNorm** with `torch.nn.RMSNorm` — which emits the `aten.rms_norm` op, mapped to MLX's efficient `fast::rms_norm` implementation.
 
 2. **Replaces Attention** with `KVCacheAttention` which:
    - Uses `torch.ops.mlx.rope` for rotary position embeddings
@@ -156,35 +167,9 @@ The `export_llama` script uses a custom model wrapper (`LlamaWithFunctionalKV`) 
    - KV cache updates → MLX's index update ops
    - `dequantize_affine + linear` → MLX's quantized matmul
 
-## Supported Models
+### `export_llm_hf` pipeline
 
-- Llama 3.2 (1B, 3B)
-- Llama 3.1 (8B — requires sufficient memory)
-- Other Llama-architecture models (Mistral, etc.)
+The `export_llm_hf` script uses optimum-executorch's `CausalLMExportableModule` by default. When custom flags are enabled, it uses `TorchExportableModuleWithStaticCache` from HuggingFace transformers, with optional MLX-specific replacements:
 
-## Performance Notes
-
-- **Prefill**: Processes the entire prompt in parallel
-- **Decode**: Generates one token at a time with KV cache
-- **Quantization**: INT4 reduces model size ~4x with minimal quality loss
-- **Memory**: KV cache is pre-allocated based on `--max-seq-len`
-
-## Troubleshooting
-
-### Out of Memory
-
-Reduce `--max-seq-len` or use quantization:
-```bash
-python -m executorch.backends.mlx.examples.llm.export_llama \
-    --max-seq-len 512 \
-    --quantize-linear int4 \
-    --output llama_512.pte
-```
-
-### Slow Generation
-
-Ensure you're using a Mac with Apple Silicon (M1/M2/M3/M4).
-
-### Model Not Found
-
-Install transformers with `pip install transformers` and ensure you have network access to download the model.
+- `--use-custom-sdpa`: Registers `mlx::custom_sdpa` attention implementation
+- `--use-custom-kv-cache`: Replaces HF's `StaticCache` with `HFStaticCache` using `mlx::kv_cache_update`

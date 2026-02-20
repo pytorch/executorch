@@ -15,10 +15,10 @@ graph and marks supported operations for delegation to MLX.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Callable, Dict, List, Tuple, Union
 
 import torch
+from executorch.backends.mlx._logging import logger
 from executorch.backends.mlx.preprocess import MLXBackend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -33,9 +33,6 @@ from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
-
-FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 class MLXOperatorSupport(OperatorSupportBase):
@@ -81,10 +78,10 @@ class MLXOperatorSupport(OperatorSupportBase):
         # Check if builder determined this node is supported
         info = self._builder.node_info.get(node)
         if info is not None and info.supported:
-            logging.debug(f"[SUPPORTED] Node {node.target}")
+            logger.debug(f"[SUPPORTED] Node {node.target}")
             return True
 
-        logging.debug(f"[UNSUPPORTED] Node {node.target}")
+        logger.debug(f"[UNSUPPORTED] Node {node.target}")
         return False
 
 
@@ -125,7 +122,7 @@ class MLXPartitioner(Partitioner):
         # In this case, we should return empty since partitioning is already done
         for node in ep.graph.nodes:
             if node.op == "get_attr" and "lowered_module" in node.name:
-                logging.debug(
+                logger.debug(
                     "MLX ops_to_not_decompose: Graph already partitioned, returning empty"
                 )
                 return ([], None)
@@ -150,7 +147,7 @@ class MLXPartitioner(Partitioner):
                     if node.target not in do_not_decompose:
                         do_not_decompose.append(node.target)
 
-        logging.info(
+        logger.debug(
             f"MLX ops_to_not_decompose: {[str(op) for op in do_not_decompose]}"
         )
         return (do_not_decompose, None)
@@ -178,16 +175,16 @@ class MLXPartitioner(Partitioner):
                 else:
                     unsupported_by_target[target_str] = (1, reason)
 
-        logging.info("=" * 80)
-        logging.info("MLX Partitioner: UNSUPPORTED OPS SUMMARY")
-        logging.info("=" * 80)
+        logger.info("=" * 80)
+        logger.info("MLX Partitioner: UNSUPPORTED OPS SUMMARY")
+        logger.info("=" * 80)
         if unsupported_by_target:
             for target, (count, reason) in unsupported_by_target.items():
-                logging.info(f"  [UNSUPPORTED x{count}] {target}")
-                logging.info(f"      Reason: {reason}")
+                logger.info(f"  [UNSUPPORTED x{count}] {target}")
+                logger.info(f"      Reason: {reason}")
         else:
-            logging.info("  (All call_function nodes are supported!)")
-        logging.info("=" * 80)
+            logger.info("  (All call_function nodes are supported!)")
+        logger.info("=" * 80)
 
         partitions = generate_partitions_from_list_of_nodes(
             edge_program.graph_module,
@@ -239,7 +236,7 @@ class MLXPartitioner(Partitioner):
                         # Add sym_size to partition if not already there
                         if node not in partition_nodes:
                             nodes_to_add.append(node)
-                            logging.debug(
+                            logger.debug(
                                 f"Adding sym_size node {node.name} to partition "
                                 f"(used by {user.name})"
                             )
@@ -264,9 +261,9 @@ class MLXPartitioner(Partitioner):
         """Check if any partitions were found."""
         pl = len(partitions)
         if pl == 0:
-            logging.warning("MLX: Nothing can be partitioned!")
+            logger.warning("MLX: Nothing can be partitioned!")
         else:
-            logging.info(f"MLX: Found {pl} subgraphs to be partitioned.")
+            logger.info(f"MLX: Found {pl} subgraphs to be partitioned.")
         return pl != 0
 
     def partition(self, edge_program: ExportedProgram) -> PartitionResult:

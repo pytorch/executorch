@@ -127,7 +127,11 @@ def run_inference(
     decode_time = time.time() - decode_start
     num_generated = len(generated_tokens) - seq_len
     tokens_per_sec = num_generated / decode_time if decode_time > 0 else 0
-    logger.info(f"Decode time: {decode_time:.3f}s ({tokens_per_sec:.1f} tokens/sec)")
+
+    print(f"\nPrefill time: {prefill_time:.3f}s ({seq_len / prefill_time:.1f} tok/s)")
+    print(
+        f"Decode time:  {decode_time:.3f}s ({num_generated} tokens, {tokens_per_sec:.1f} tok/s)"
+    )
 
     # Decode only the newly generated tokens (not the input prompt)
     new_tokens = generated_tokens[seq_len:]

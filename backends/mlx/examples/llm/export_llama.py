@@ -55,24 +55,17 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-class CustomRMSNorm(nn.Module):
-    """RMSNorm using torch.nn.functional.rms_norm for efficient MLX execution.
+def _to_native_rms_norm(base_rms: nn.Module) -> torch.nn.RMSNorm:
+    """Replace a HuggingFace RMSNorm with torch.nn.RMSNorm for efficient MLX execution.
 
-    This replaces the HuggingFace LlamaRMSNorm (which uses manual variance + rsqrt
-    computation) with the aten rms_norm op. The MLX backend has a handler that maps
-    aten.rms_norm directly to MLX's fast::rms_norm, so this gives us fused execution
-    without needing a custom op.
+    torch.nn.RMSNorm emits the aten rms_norm op, which the MLX backend maps
+    directly to MLX's fast::rms_norm for fused execution.
     """
-
-    def __init__(self, base_rms: nn.Module):
-        super().__init__()
-        self.weight = base_rms.weight
-        self.eps = float(
-            getattr(base_rms, "eps", getattr(base_rms, "variance_epsilon", 1e-5))
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.rms_norm(x, (self.weight.shape[0],), self.weight, self.eps)
+    dim = base_rms.weight.shape[0]
+    eps = float(getattr(base_rms, "eps", getattr(base_rms, "variance_epsilon", 1e-5)))
+    rms_norm = torch.nn.RMSNorm(dim, eps=eps)
+    rms_norm.weight = base_rms.weight
+    return rms_norm
 
 
 # =============================================================================
@@ -315,13 +308,13 @@ class LlamaWithFunctionalKV(nn.Module):
         self.model = base
         self.max_seq_len = max_seq_len
 
-        # Swap RMSNorm modules with custom op version
+        # Swap RMSNorm modules with torch.nn.RMSNorm (emits aten.rms_norm)
         for layer in self.model.model.layers:
-            layer.input_layernorm = CustomRMSNorm(layer.input_layernorm)
-            layer.post_attention_layernorm = CustomRMSNorm(
+            layer.input_layernorm = _to_native_rms_norm(layer.input_layernorm)
+            layer.post_attention_layernorm = _to_native_rms_norm(
                 layer.post_attention_layernorm
             )
-        self.model.model.norm = CustomRMSNorm(self.model.model.norm)
+        self.model.model.norm = _to_native_rms_norm(self.model.model.norm)
 
         # Get config for attention dimensions
         cfg = base.config
@@ -399,6 +392,8 @@ def export_llama_to_mlx(
     quantize_linear: Optional[str] = None,
     quantize_embeddings: Optional[str] = None,
     no_tie_word_embeddings: bool = False,
+    linear_group_size: Optional[int] = None,
+    embeddings_group_size: Optional[int] = None,
 ) -> None:
     """
     Export a Llama model to MLX delegate.
@@ -430,14 +425,19 @@ def export_llama_to_mlx(
     model.eval()
 
     # Apply quantization if requested
-    from executorch.backends.mlx.examples.llm.quantize import apply_quantization
+    from executorch.backends.mlx.examples.quantization import apply_quantization
 
     tie = (
         getattr(base.config, "tie_word_embeddings", False)
         and not no_tie_word_embeddings
     )
     apply_quantization(
-        model.model, quantize_linear, quantize_embeddings, tie_word_embeddings=tie
+        model.model,
+        quantize_linear,
+        quantize_embeddings,
+        tie_word_embeddings=tie,
+        linear_group_size=linear_group_size,
+        embeddings_group_size=embeddings_group_size,
     )
 
     # Prepare example inputs for export
@@ -449,9 +449,7 @@ def export_llama_to_mlx(
     # Set up dynamic shapes for variable sequence length
     dynamic_shapes = {
         "token_ids": {1: torch.export.Dim.AUTO(min=1, max=2048)},
-        "input_pos": {
-            0: torch.export.Dim.AUTO(min=1, max=max_seq_len)
-        },  # Dynamic length
+        "input_pos": None,  # Always shape [1]
     }
 
     logger.info("Exporting model with torch.export...")
@@ -527,7 +525,7 @@ def main():
         default="bf16",
         help="Model dtype (fp32, fp16, bf16)",
     )
-    from executorch.backends.mlx.examples.llm.quantize import add_quantization_args
+    from executorch.backends.mlx.examples.quantization import add_quantization_args
 
     add_quantization_args(parser)
 
@@ -541,6 +539,8 @@ def main():
         quantize_linear=args.quantize_linear,
         quantize_embeddings=args.quantize_embeddings,
         no_tie_word_embeddings=args.no_tie_word_embeddings,
+        linear_group_size=args.linear_group_size,
+        embeddings_group_size=args.embeddings_group_size,
     )
 
 

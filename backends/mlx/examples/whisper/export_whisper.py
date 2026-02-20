@@ -9,9 +9,10 @@
 """
 Export Whisper model to MLX delegate using ExecuTorch.
 
-This script exports three separate programs:
-1. Encoder: Processes audio features -> encoder hidden states
-2. Decoder: Token-by-token generation with static KV cache
+Exports three separate programs:
+- encoder.pte: Audio features → encoder hidden states
+- cross_kv.pte: Encoder hidden states → per-layer cross-attention K/V
+- decoder.pte: Token-by-token generation with self-attention KV cache
 
 The decoder uses:
 - llama.update_cache for self-attention KV cache updates
@@ -21,7 +22,7 @@ Usage:
     python -m executorch.backends.mlx.examples.whisper.export_whisper \
         --model-id "openai/whisper-tiny" \
         --output-dir /tmp/whisper_mlx \
-        --quantize int4
+        --quantize-linear int4
 
 Requirements:
     pip install transformers torchao
@@ -403,6 +404,8 @@ def export_whisper_to_mlx(
     dtype: str = "bf16",
     quantize_linear: Optional[str] = None,
     quantize_embeddings: Optional[str] = None,
+    linear_group_size: Optional[int] = None,
+    embeddings_group_size: Optional[int] = None,
 ) -> None:
     """
     Export Whisper model components to MLX delegate.
@@ -419,6 +422,8 @@ def export_whisper_to_mlx(
         dtype: Model dtype ("fp32", "fp16", "bf16")
         quantize_linear: Quantization method for linear layers ("int4", "int8", or None)
         quantize_embeddings: Quantization method for embedding layers ("int4", "int8", or None)
+        linear_group_size: Group size for linear quantization. Defaults to 32 for int4, 128 for int8.
+        embeddings_group_size: Group size for embedding quantization. Defaults to 32 for int4, 128 for int8.
     """
     from transformers import AutoProcessor, WhisperForConditionalGeneration
 
@@ -462,46 +467,58 @@ def export_whisper_to_mlx(
     decoder_wrapper = WhisperDecoderWithCache(model, max_decoder_seq_len).eval()
 
     # Apply quantization if requested
+    # Whisper has 3 separate wrappers to quantize, and embed_positions must be
+    # excluded from embedding quantization (accessed via indexing).
     if quantize_linear or quantize_embeddings:
-        logger.info("Applying quantization with TorchAO...")
+        from executorch.backends.mlx.examples.quantization import _default_group_size
+
         try:
             from torchao.quantization.granularity import PerGroup
             from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+            from torchao.quantization.quantize_.workflows import (
+                IntxChooseQParamsAlgorithm,
+            )
 
-            # Quantize embedding layers
-            # Note: embed_positions is accessed via indexing which doesn't work with quantized tensors
+            qparams_algorithm = IntxChooseQParamsAlgorithm.HQQ_SCALE_ONLY
+
             if quantize_embeddings:
                 embed_dtype = (
                     torch.int4 if quantize_embeddings == "int4" else torch.int8
                 )
-                embed_group_size = 32 if quantize_embeddings == "int4" else 128
+                embed_gs = embeddings_group_size or _default_group_size(
+                    quantize_embeddings
+                )
                 logger.info(
-                    f"Quantizing embedding layers with {quantize_embeddings} (group size {embed_group_size})..."
+                    f"Quantizing embedding layers with {quantize_embeddings} "
+                    f"(group size {embed_gs})..."
                 )
                 quantize_(
                     decoder_wrapper,
                     IntxWeightOnlyConfig(
                         weight_dtype=embed_dtype,
-                        granularity=PerGroup(embed_group_size),
+                        granularity=PerGroup(embed_gs),
+                        intx_choose_qparams_algorithm=qparams_algorithm,
                     ),
                     lambda m, fqn: isinstance(m, nn.Embedding)
                     and "embed_tokens" in fqn,
                 )
 
-            # Quantize linear layers
             if quantize_linear:
                 linear_dtype = torch.int4 if quantize_linear == "int4" else torch.int8
-                linear_group_size = 32 if quantize_linear == "int4" else 128
+                linear_gs = linear_group_size or _default_group_size(quantize_linear)
+                config = IntxWeightOnlyConfig(
+                    weight_dtype=linear_dtype,
+                    granularity=PerGroup(linear_gs),
+                    intx_choose_qparams_algorithm=qparams_algorithm,
+                )
                 logger.info(
-                    f"Quantizing linear layers with {quantize_linear} (group size {linear_group_size})..."
+                    f"Quantizing linear layers with {quantize_linear} "
+                    f"(group size {linear_gs})..."
                 )
                 for module in [encoder_wrapper, cross_kv_wrapper, decoder_wrapper]:
                     quantize_(
                         module,
-                        IntxWeightOnlyConfig(
-                            weight_dtype=linear_dtype,
-                            granularity=PerGroup(linear_group_size),
-                        ),
+                        config,
                         filter_fn=lambda m, fqn: isinstance(m, nn.Linear),
                     )
 
@@ -636,44 +653,14 @@ def _save_to_pte(ep, output_path: str, name: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Export Whisper model to MLX delegate")
-    parser.add_argument(
-        "--model-id",
-        type=str,
-        default="openai/whisper-tiny",
-        help="HuggingFace model ID",
-    )
+    from executorch.backends.mlx.examples.whisper.args import add_export_args
+
+    add_export_args(parser)
     parser.add_argument(
         "--output-dir",
         type=str,
         default="whisper_mlx",
         help="Output directory for .pte files",
-    )
-    parser.add_argument(
-        "--max-decoder-seq-len",
-        type=int,
-        default=256,
-        help="Maximum decoder sequence length",
-    )
-    parser.add_argument(
-        "--dtype",
-        type=str,
-        choices=["fp32", "fp16", "bf16"],
-        default="bf16",
-        help="Model dtype",
-    )
-    parser.add_argument(
-        "--quantize-linear",
-        type=str,
-        choices=["int4", "int8"],
-        default=None,
-        help="Quantization method for linear layers",
-    )
-    parser.add_argument(
-        "--quantize-embeddings",
-        type=str,
-        choices=["int4", "int8"],
-        default=None,
-        help="Quantization method for embedding layers",
     )
 
     args = parser.parse_args()
@@ -685,6 +672,8 @@ def main():
         dtype=args.dtype,
         quantize_linear=args.quantize_linear,
         quantize_embeddings=args.quantize_embeddings,
+        linear_group_size=args.linear_group_size,
+        embeddings_group_size=args.embeddings_group_size,
     )
 
 
