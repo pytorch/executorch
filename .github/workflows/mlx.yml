@@ -62,9 +62,9 @@ jobs:
       script: |
         set -eux
 
-        echo "::group::Install ExecuTorch and configure MLX build"
+        echo "::group::Install ExecuTorch and build MLX"
         ${CONDA_RUN} python install_executorch.py > /dev/null
-        ${CONDA_RUN} cmake --preset mlx-release
+        ${CONDA_RUN} cmake --workflow --preset mlx-release
         echo "::endgroup::"
 
         echo "::group::Install Parakeet requirements"
@@ -138,6 +138,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Export ${MODEL_NAME} with MLX backend"
+        PYTHONPATH="${PWD}:${PYTHONPATH:-}" \
         ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llm_hf \
           --model-id "${MODEL_ID}" \
           --output /tmp/${MODEL_NAME}.pte \
@@ -146,7 +147,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Run ${MODEL_NAME} inference"
-        OUTPUT=$(${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.run_llm_hf \
+        OUTPUT=$(PYTHONPATH="${PWD}:${PYTHONPATH:-}" \
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.run_llm_hf \
           --pte /tmp/${MODEL_NAME}.pte \
           --model-id "${MODEL_ID}" \
           --prompt "Tell me a story." \

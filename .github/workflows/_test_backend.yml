@@ -36,6 +36,11 @@ on:
         required: false
         type: string
         default: linux.4xlarge.memory
+      runner-macos:
+        description: 'Runner type for macOS jobs'
+        required: false
+        type: string
+        default: macos-m1-stable
 
 jobs:
   test-backend-linux:
@@ -70,7 +75,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       ref: ${{ inputs.ref }}
-      runner: macos-m1-stable
+      runner: ${{ inputs.runner-macos }}
       python-version: "3.12"
       submodules: recursive
       timeout: ${{ inputs.timeout }}
