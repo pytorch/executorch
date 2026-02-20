@@ -143,7 +143,7 @@ class CachePositionsManagerWithSink(nn.Module):
     For sink_size>0: sink tokens (indices 0 to sink_size-1) are NEVER overwritten.
                      Ring buffer only cycles through indices sink_size to cache_size-1.
 
-    IMPORTANT: cache_size should be the actual cache dimension size (sink_size + 2*window_size).
+    IMPORTANT: cache_size should be the actual cache dimension size (sink_size + window_size).
     """
 
     def __init__(self, cache_size: int, sink_size: int = 0):
@@ -202,7 +202,7 @@ class KVCacheWithAttentionSink(KVCache):
     Uses a ring buffer approach for the sliding window portion while keeping
     the first sink_size tokens fixed. This avoids dynamic shape operations.
 
-    Cache layout: [sink: 0 to sink_size-1] [ring_buffer: sink_size to sink_size + window_size*2 - 1]
+    Cache layout: [sink: 0 to sink_size-1] [ring_buffer: sink_size to sink_size + window_size - 1]
     """
 
     def __init__(
@@ -386,12 +386,10 @@ def _replace_attention(
 
         if isinstance(child_module, AttentionMHA):
             kv_cache = child_module.kv_cache
-            # Always use KVCacheWithAttentionSink, even for sink_size=0
-            # This ensures we don't get replaced by CustomKVCache when use_sdpa_with_kv_cache=True
             kv_cache_with_attention_sink = KVCacheWithAttentionSink(
                 n_heads=kv_cache.n_heads,
                 head_dim=kv_cache.head_dim,
-                enable_dynamic_shape=kv_cache.enable_dynamic_shape,
+                enable_dynamic_shape=child_module.enable_dynamic_shape,
                 rope=rope_with_attention_sink,
                 max_batch_size=kv_cache.max_batch_size,
                 window_size=window_size,
@@ -407,10 +405,11 @@ def _replace_attention(
             if "SDPACustom" in child_module.SDPA.__class__.__name__:
                 child_module.SDPA.use_attention_mask = True
 
-            # Replace forward with our custom forward that handles cache_indices
-            child_module.forward = types.MethodType(
-                attention_sink_forward, child_module
-            )
+            # Note: We don't replace the forward method. AttentionMHA.forward
+            # already handles is_ring_buffer=True (see attention.py) by:
+            # 1. Calling kv_cache.update(input_pos, k, v)
+            # 2. Calling kv_cache.create_causal_mask_for_ring_buffer(start_pos, seqlen)
+            # This avoids torch.export issues with monkey-patched forward methods.
 
 
 def enable_attention_sink(
@@ -433,8 +432,8 @@ def enable_attention_sink(
         # Default to kv_cache_size if not specified, but typically should be larger (e.g., 8192)
         max_context_len = sink_size + window_size
 
-    # We update params.max_context_len to reflect the actual buffer size
-    # This ensures export captures the correct cache size in metadata
+    # We update params.max_context_len for RoPE position encoding limit
+    # This ensures the RoPE frequency table is large enough for generation
     params.max_context_len = max_context_len
 
     rope_with_attention_sink = RopeWithAttentionSink(

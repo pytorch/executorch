@@ -20,9 +20,8 @@ inline constexpr auto kUseKVCache = "use_kv_cache";
 inline constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 
 // Attention sink configuration metadata keys
-inline constexpr auto kUseAttentionSink = "use_attention_sink";
-inline constexpr auto kAttentionSinkSize = "attention_sink_size";
-inline constexpr auto kAttentionSinkWindowSize = "attention_sink_window_size";
+inline constexpr auto kAttentionSinkSize = "get_sink_size";
+inline constexpr auto kAttentionSinkWindowSize = "get_window_size";
 
 // Multimodal method name conventions
 inline constexpr auto kVisionEncoderMethod = "vision_encoder";

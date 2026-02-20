@@ -141,40 +141,21 @@ void AttentionSinkIOManager::update_indices_tensor(
     }
   }
 
-  // Wrap in tensor
-  if (!indices_tensor_impl_ || indices_tensor_impl_->size(0) != seq_len) {
-    sizes_vec_ = {static_cast<exec_aten::TensorImpl::SizesType>(seq_len)};
-    dim_order_vec_ = {0};
-    strides_vec_ = {1};
+  // Wrap in tensor (always recreate since vector resize may reallocate)
+  sizes_vec_ = {static_cast<exec_aten::TensorImpl::SizesType>(seq_len)};
+  dim_order_vec_ = {0};
+  strides_vec_ = {1};
 
-    indices_tensor_impl_ = std::make_unique<exec_aten::TensorImpl>(
-        exec_aten::ScalarType::Long,
-        1,
-        sizes_vec_.data(),
-        static_cast<void*>(indices_buffer_.data()),
-        dim_order_vec_.data(),
-        strides_vec_.data(),
-        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
-    indices_tensor_ =
-        std::make_unique<exec_aten::Tensor>(indices_tensor_impl_.get());
-  } else {
-    // Update logic if buffer moved (vector resize might reallocate)
-    // Just re-create to be safe as data ptr is used
-    sizes_vec_ = {static_cast<exec_aten::TensorImpl::SizesType>(seq_len)};
-    dim_order_vec_ = {0};
-    strides_vec_ = {1};
-
-    indices_tensor_impl_ = std::make_unique<exec_aten::TensorImpl>(
-        exec_aten::ScalarType::Long,
-        1,
-        sizes_vec_.data(),
-        static_cast<void*>(indices_buffer_.data()),
-        dim_order_vec_.data(),
-        strides_vec_.data(),
-        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
-    indices_tensor_ =
-        std::make_unique<exec_aten::Tensor>(indices_tensor_impl_.get());
-  }
+  indices_tensor_impl_ = std::make_unique<exec_aten::TensorImpl>(
+      exec_aten::ScalarType::Long,
+      1,
+      sizes_vec_.data(),
+      static_cast<void*>(indices_buffer_.data()),
+      dim_order_vec_.data(),
+      strides_vec_.data(),
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
+  indices_tensor_ =
+      std::make_unique<exec_aten::Tensor>(indices_tensor_impl_.get());
 }
 
 } // namespace llm

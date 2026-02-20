@@ -133,6 +133,14 @@ Error TextLLMRunner::generate(
   int64_t max_seq_len = metadata_.at(kMaxSeqLen);
   int64_t max_context_len = metadata_.at(kMaxContextLen);
 
+  ET_LOG(
+      Info,
+      "[DEBUG] max_seq_len=%" PRId64 ", max_context_len=%" PRId64
+      ", num_prompt_tokens=%d",
+      max_seq_len,
+      max_context_len,
+      num_prompt_tokens);
+
   ET_CHECK_OR_RETURN_ERROR(
       num_prompt_tokens >= 1,
       InvalidArgument,
@@ -152,6 +160,13 @@ Error TextLLMRunner::generate(
   // If user specified seq_len explicitly, use that as the overall token limit.
   int max_new_tokens =
       config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
+
+  ET_LOG(
+      Info,
+      "[DEBUG] config.seq_len=%d, config.max_new_tokens=%d, resolved max_new_tokens=%d",
+      config.seq_len,
+      config.max_new_tokens,
+      max_new_tokens);
 
   ET_LOG(
       Info,
@@ -291,6 +306,7 @@ void TextLLMRunner::stop() {
 
 void TextLLMRunner::reset() {
   stats_->reset();
+  (void)io_manager_->reset();
   pos_ = 0;
 }
 

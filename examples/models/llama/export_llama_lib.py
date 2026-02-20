@@ -1799,8 +1799,7 @@ def _get_source_transforms(  # noqa
 
         # Ensure use_kv_cache is propagated from config
         params_dict["use_kv_cache"] = True # Attention Sink requires KV Cache
-        # ModelArgs might expect other fields usually handled by Llama2Model init
-        # We try to pass minimal set needed for Rope/Attention
+        params_dict["enable_dynamic_shape"] = True  # Required for torch.export
 
         model_args = ModelArgs(**params_dict)
 

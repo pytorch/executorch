@@ -35,7 +35,7 @@ class CachePositionsManagerWithSinkTest(unittest.TestCase):
     """Test the cache positions manager for ring buffer indexing."""
 
     def setUp(self):
-        self.cache_size = 32  # Total cache size (e.g., sink_size + window_size * 2)
+        self.cache_size = 32  # Total cache size (sink_size + window_size)
         # Default: no sink (simple ring buffer)
         self.manager = CachePositionsManagerWithSink(self.cache_size, sink_size=0)
 
@@ -142,7 +142,7 @@ class CausalMaskTest(unittest.TestCase):
         """Sink tokens should always be visible (mask = 0)."""
         cache_size = 32
         sink_size = 4
-        window_size = 14  # cache_size = sink_size + window_size * 2
+        window_size = 28  # cache_size = sink_size + window_size
         
         # Create cache positions where positions 0-3 are sink tokens
         cache_positions = torch.arange(cache_size, dtype=torch.long)
@@ -192,12 +192,12 @@ class CausalMaskTest(unittest.TestCase):
             cache_positions, window_size, sink_size, start_pos, seq_len
         )
         
-        # Positions 16-20 should be visible (within window of 5)
-        for pos in range(16, 21):
+        # Positions 15-20 should be visible (within window of 5, delta <= window_size)
+        for pos in range(15, 21):
             self.assertEqual(mask[0, pos].item(), 0.0, f"Position {pos} should be visible (in window)")
-        
-        # Position 15 should be masked (outside window, not a sink)
-        self.assertEqual(mask[0, 15].item(), float('-inf'), f"Position 15 should be masked (outside window)")
+
+        # Position 14 should be masked (delta=6 > window_size=5, not a sink)
+        self.assertEqual(mask[0, 14].item(), float('-inf'), f"Position 14 should be masked (outside window)")
 
 
 class KVCacheWithAttentionSinkTest(unittest.TestCase):
@@ -205,12 +205,12 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
 
     def setUp(self):
         torch.manual_seed(42)
-        self.window_size = 14
+        self.window_size = 28
         self.sink_size = 4
         self.n_heads = 8
         self.head_dim = 64
         self.max_batch_size = 1
-        
+
         # Create model args with enough context for RoPE
         self.params = ModelArgs(
             use_kv_cache=True,
@@ -220,14 +220,14 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
             n_kv_heads=self.n_heads,
             dim=self.n_heads * self.head_dim,
         )
-        
+
         self.rope = RopeWithAttentionSink(
             params=self.params,
             window_size=self.window_size,
             sink_size=self.sink_size,
             eviction_batch_size=1,
         )
-        
+
         self.kv_cache = KVCacheWithAttentionSink(
             n_heads=self.n_heads,
             head_dim=self.head_dim,
@@ -241,8 +241,8 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
         )
 
     def test_cache_size(self):
-        """Cache should be sink_size + window_size * 2."""
-        expected_size = self.sink_size + self.window_size * 2  # 4 + 28 = 32
+        """Cache should be sink_size + window_size."""
+        expected_size = self.sink_size + self.window_size  # 4 + 28 = 32
         self.assertEqual(self.kv_cache.k_cache.size(2), expected_size)
         self.assertEqual(self.kv_cache.v_cache.size(2), expected_size)
 
@@ -356,19 +356,23 @@ class CausalMaskWithWraparoundTest(unittest.TestCase):
         """Test mask after cache has wrapped around."""
         cache_size = 16
         sink_size = 4
-        window_size = 6  # cache_size = sink_size + window_size * 2
+        window_size = 12  # cache_size = sink_size + window_size
         
         # Simulate cache after generating beyond cache_size:
-        # The ring buffer wraps, so indices 0-15 contain positions that wrap
-        # At position 50, with cache_size=16, the cache contains:
-        # positions 50-15=35 to 49 at various indices
+        # With sink_size=4, ring_size=12, positions wrap with sink-aware formula
         cache_positions = torch.zeros(cache_size, dtype=torch.long)
         # Fill with positions that would exist after generating 50 tokens
-        # idx = pos % cache_size, so:
-        # pos 34-49 occupy indices 2-15 and 0-1
+        # For pos >= sink_size: idx = sink_size + (pos - sink_size) % ring_size
+        ring_size = cache_size - sink_size
         for pos in range(34, 50):
-            idx = pos % cache_size
+            if pos < sink_size:
+                idx = pos
+            else:
+                idx = sink_size + (pos - sink_size) % ring_size
             cache_positions[idx] = pos
+        # Sink positions (0-3) would still hold their original values from initial fill
+        for pos in range(sink_size):
+            cache_positions[pos] = pos
         
         start_pos = 49  # Query at position 49
         seq_len = 1
@@ -377,13 +381,14 @@ class CausalMaskWithWraparoundTest(unittest.TestCase):
             cache_positions, window_size, sink_size, start_pos, seq_len
         )
         
-        # Positions within window (49-6+1=44 to 49) should be visible
+        # Positions within window (49-12=37 to 49) should be visible
+        # Also sink positions (0-3) should be visible
         visible_count = 0
         for i in range(cache_size):
             pos = cache_positions[i].item()
-            if pos >= 44 and pos <= 49:  # In window
-                self.assertEqual(mask[0, i].item(), 0.0, 
-                               f"Position {pos} at idx {i} should be visible (in window)")
+            if (pos >= 37 and pos <= 49) or pos < sink_size:  # In window or sink
+                self.assertEqual(mask[0, i].item(), 0.0,
+                               f"Position {pos} at idx {i} should be visible")
                 visible_count += 1
         
         # Should have some visible tokens
@@ -403,13 +408,13 @@ class CausalMaskWithWraparoundTest(unittest.TestCase):
             cache_positions, window_size, sink_size, start_pos, seq_len
         )
         
-        # Positions 3-10 should be visible (within window of 8)
-        for pos in range(3, 11):
+        # Positions 2-10 should be visible (delta <= window_size=8)
+        for pos in range(2, 11):
             self.assertEqual(mask[0, pos].item(), 0.0, f"Position {pos} should be visible")
-        
-        # Positions 0-2 should be masked (outside window)
-        for pos in range(0, 3):
-            self.assertEqual(mask[0, pos].item(), float('-inf'), 
+
+        # Positions 0-1 should be masked (delta > window_size)
+        for pos in range(0, 2):
+            self.assertEqual(mask[0, pos].item(), float('-inf'),
                            f"Position {pos} should be masked (outside window)")
 
 
@@ -418,11 +423,11 @@ class PrefillTest(unittest.TestCase):
 
     def setUp(self):
         torch.manual_seed(42)
-        self.window_size = 14
+        self.window_size = 28
         self.sink_size = 4
         self.n_heads = 8
         self.head_dim = 64
-        
+
         self.params = ModelArgs(
             use_kv_cache=True,
             enable_dynamic_shape=True,
@@ -431,14 +436,14 @@ class PrefillTest(unittest.TestCase):
             n_kv_heads=self.n_heads,
             dim=self.n_heads * self.head_dim,
         )
-        
+
         self.rope = RopeWithAttentionSink(
             params=self.params,
             window_size=self.window_size,
             sink_size=self.sink_size,
             eviction_batch_size=1,
         )
-        
+
         self.kv_cache = KVCacheWithAttentionSink(
             n_heads=self.n_heads,
             head_dim=self.head_dim,
@@ -495,9 +500,13 @@ class PrefillTest(unittest.TestCase):
             input_pos = torch.tensor([20 + i], dtype=torch.long)
             k_out, v_out = self.kv_cache.update(input_pos, k_decode, v_decode)
             
-            # Verify cache positions are updated
+            # Verify cache positions are updated using sink-aware index
             expected_pos = 20 + i
-            cache_idx = expected_pos % cache_size
+            if expected_pos < self.sink_size:
+                cache_idx = expected_pos
+            else:
+                ring_size = cache_size - self.sink_size
+                cache_idx = self.sink_size + (expected_pos - self.sink_size) % ring_size
             self.assertEqual(
                 self.kv_cache.cache_positions_manager.cache_positions[cache_idx].item(),
                 expected_pos
@@ -584,7 +593,7 @@ class IntegrationTest(unittest.TestCase):
         """Test that cache positions remain consistent during generation."""
         cache_size = 32
         sink_size = 4
-        window_size = 14
+        window_size = 28
         n_heads = 8
         head_dim = 64
         
@@ -625,7 +634,7 @@ class IntegrationTest(unittest.TestCase):
             kv_cache.update(input_pos, k, v)
             
             # Create mask and verify it's valid
-            mask = kv_cache.create_causal_mask_for_ring_buffer(pos, 1)
+            mask = kv_cache.create_causal_mask_for_ring_buffer(torch.tensor(pos, dtype=torch.long), 1)
             
             # Mask should not be all -inf (would mean no tokens to attend to)
             non_inf_count = (mask != float('-inf')).sum().item()

@@ -231,6 +231,7 @@ class Llama2Model(EagerModelBase):
                 sink_size=sink_size,
                 window_size=window_size,
                 eviction_batch_size=eviction_batch_size,
+                max_context_len=default_rope_length,
             )
 
         missing, unexpected = None, None
