@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
@@ -78,6 +79,7 @@ void add_q8ta_linear_node(
     const ValueRef output_zp,
     const ValueRef bias_data,
     const ValueRef packed_bias,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output) {
   // Validate packed dim info matches 4H4W layout
   VK_CHECK_COND(q8ta_linear_check_packed_dim_info(
@@ -127,7 +129,7 @@ void add_q8ta_linear_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {apply_bias},
+      {apply_bias, activation_type},
       // Resize args
       {},
       // Resizing Logic
@@ -149,6 +151,7 @@ void q8ta_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef output_scale = args.at(idx++);
   const ValueRef output_zp = args.at(idx++);
   const ValueRef bias_data = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
 
   const int64_t K = graph.size_at<int64_t>(-1, packed_int8_input);
@@ -178,6 +181,9 @@ void q8ta_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         prepack_standard(graph, bias_data, utils::kBuffer, utils::kWidthPacked);
   }
 
+  uint32_t activation_type_val = static_cast<uint32_t>(
+      activation_type_from_string(graph.extract_string(activation)));
+
   add_q8ta_linear_node(
       graph,
       packed_int8_input,
@@ -190,6 +196,7 @@ void q8ta_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output_zp,
       bias_data,
       packed_bias,
+      activation_type_val,
       packed_int8_output);
 }
 

@@ -231,7 +231,7 @@ class TestVulkanPasses(unittest.TestCase):
 
         # The first linear should fuse to q8ta_linear (has output quantization
         # from the second linear's input quantize node)
-        q8ta_linear_count = op_node_count(gm, "et_vk__q8ta_linear__default")
+        q8ta_linear_count = op_node_count(gm, "q8ta_linear.default")
         self.assertGreaterEqual(
             q8ta_linear_count,
             1,
@@ -277,7 +277,7 @@ class TestVulkanPasses(unittest.TestCase):
         gm = ep.graph_module
 
         # With batch size 1, the first linear should fuse to q8ta_linear_gemv
-        q8ta_linear_gemv_count = op_node_count(gm, "et_vk__q8ta_linear_gemv__default")
+        q8ta_linear_gemv_count = op_node_count(gm, "q8ta_linear_gemv.default")
         self.assertGreaterEqual(
             q8ta_linear_gemv_count,
             1,
