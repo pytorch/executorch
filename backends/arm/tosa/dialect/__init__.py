@@ -12,7 +12,6 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     rescale,
     resize,
     scatter,
-    shape_ops,
     table,
     transpose,
     transpose_conv2d,

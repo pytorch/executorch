@@ -13,7 +13,6 @@ import torch.fx
 import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
-from executorch.backends.arm.tosa.dialect.shape import is_shape_op_node
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.backends.arm.tosa.utils import tosa_shape
@@ -66,8 +65,7 @@ def process_call_function(
             "Is the original torch function supported?"
         ) from e
 
-    tosa_graph = cast(ts.TosaSerializer, tosa_graph)
-    if not output.multiple_output_names and not is_shape_op_node(node):
+    if not output.multiple_output_names:
         tosa_graph.currRegion.currBasicBlock.addTensor(
             output.name, tosa_shape(output.shape, output.dim_order), output.dtype
         )
@@ -94,7 +92,6 @@ def process_inputs(
     tosa_spec: TosaSpecification,
 ):
     """Serialize an input node."""
-
     try:
         tosa_arg = TosaArg(node, tosa_spec)
     except ValueError as e:

@@ -4,14 +4,12 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import copy
 import traceback
 from abc import abstractmethod
 from typing import Any, List, Optional, Set, Type
 
 from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
-from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
-from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
+from executorch.exir.pass_base import ExportPass, NodeMetadata
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -103,19 +101,3 @@ class ArmPass(ExportPass):
             self.call_operator = _call_operator_fn  # type: ignore
         self.submodule_depth -= 1
         return result
-
-    def call_shape_operator(
-        self, op, args: tuple, kwargs: dict, meta: NodeMetadata, update: bool
-    ) -> ProxyValue:
-        """
-        Call operator for shape-producing operators. This function is responsible for marking the output of the operator
-        with the TosaSpecialDtype of SHAPE, so that later passes can identify it as a shape-producing operator and handle it accordingly.
-        """
-        # Copy meta and set TosaSpecialDtype to SHAPE
-        if not isinstance(meta, NodeMetadata):
-            raise TypeError("Expected meta to be of type NodeMetadata")
-        shape_meta = copy.copy(meta)
-        shape_meta.data = dict(meta.data)
-        shape_meta.data[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.SHAPE
-        # Call the super (ArmPass) call operator with updated meta
-        return self.call_operator(op, args, kwargs, shape_meta, update)
