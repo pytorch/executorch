@@ -15,9 +15,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: false
 
-env:
-  CUDA_VERSION: "12.8"
-
 jobs:
   export-model-cuda-windows-artifact:
     name: export-model-cuda-windows-artifact
@@ -44,7 +41,7 @@ jobs:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: ${{ env.CUDA_VERSION }}
+      gpu-arch-version: 12.8
       docker-image: ci-image:executorch-ubuntu-22.04-cuda-windows
       submodules: recursive
       upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-windows-${{ matrix.quant }}
@@ -101,6 +98,9 @@ jobs:
           - "quantized-int4-weight-only"
     with:
       timeout: 240
+      runner: windows.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.8
       submodules: recursive
       download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-windows-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -111,16 +111,16 @@ jobs:
           \$ErrorActionPreference = 'Stop'
           \$PSNativeCommandUseErrorActionPreference = \$true
 
+          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8'
+          \$env:CUDA_PATH = \$env:CUDA_HOME
+          \$env:PATH = \"\$env:CUDA_HOME\bin;\$env:PATH\"
+          nvcc --version
+
           .ci/scripts/setup-windows.ps1
           \$artifactDir = \$env:RUNNER_ARTIFACT_DIR
           if ([string]::IsNullOrWhiteSpace(\$artifactDir)) {
             throw 'RUNNER_ARTIFACT_DIR is empty. Ensure download-artifact is configured for windows_job.yml.'
           }
 
-          .ci/scripts/test_model_e2e_windows.ps1 `
-            -Device cuda-windows `
-            -HfModel '${{ matrix.model.repo }}/${{ matrix.model.name }}' `
-            -QuantName '${{ matrix.quant }}' `
-            -ModelDir \$artifactDir `
-            -ExpectedCudaVersion '${{ env.CUDA_VERSION }}'
+          .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model.repo }}/${{ matrix.model.name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '12.8'
         }"
