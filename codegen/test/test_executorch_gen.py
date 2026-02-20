@@ -9,6 +9,9 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+import shutil
+import subprocess
+import sys
 
 import yaml
 from executorch.codegen.gen import (
@@ -696,3 +699,31 @@ Kernel(
         )
 
         self.assertEqual(expected_str, result)
+
+class TestGenMainArgumentChecks(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.dummy_yaml = os.path.join(self.temp_dir, "dummy.yaml")
+        with open(self.dummy_yaml, "w") as f:
+            f.write("- tag: dummy\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
+
+    def test_lib_name_without_manual_registration_raises(self):
+        script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../gen.py"))
+        result = subprocess.run(
+            [
+                sys.executable,
+                script_path,
+                "--lib-name", "foo",
+                "--tags-path", self.dummy_yaml,
+                "--aten-yaml-path", self.dummy_yaml,
+                "--functions-yaml-path", self.dummy_yaml,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--lib-name can only be used with --manual-registration", result.stderr)
