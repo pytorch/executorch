@@ -3,9 +3,9 @@
 Developer reference for `model.py`. For export/usage instructions see
 [README.md](README.md).
 
-Source: [mistralai/Voxtral-Mini-4B-Realtime-2602](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602)
-
-Reference implementation: [vLLM voxtral_realtime.py](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/models/voxtral_realtime.py)
+The model is written directly with ExecuTorch custom ops rather than using
+source transformations. The patterns come from `examples/models/llama/`,
+`extension/llm/export/builder.py`, and `optimum-executorch`.
 
 ## Architecture
 
@@ -32,32 +32,20 @@ combined_embeds
 (B, seq_len, 131072) = logits
 ```
 
+The model exports three methods (offline mode):
+
+| Method | Input | Output |
+|--------|-------|--------|
+| `audio_encoder` | mel spectrogram `(1, 128, T_mel)` | audio embeddings `(1, T_mel//8, 3072)` |
+| `text_decoder` | embeddings `(1, seq_len, 3072)` + positions `(seq_len,)` | logits `(1, seq_len, 131072)` |
+| `token_embedding` | token IDs `(1, seq_len)` | embeddings `(1, seq_len, 3072)` |
+
+With `--streaming`, `audio_encoder` is replaced by `encode_audio_chunk`
+which takes a mel chunk `(1, 128, 8)` + conv states + encoder positions
+and returns audio embeddings `(1, 1, 3072)` + updated conv states.
+
 Audio and text embeddings are **summed** at each position (not concatenated
 or masked-scatter like the original non-realtime Voxtral).
-
-### Adaptive RMSNorm
-
-Each decoder layer has a time-conditioned FFN norm unique to this model.
-After the standard RMSNorm on the FFN input, a learned scale is applied:
-
-```
-scale = 1 + Sequential(Linear(3072->32), GELU, Linear(32->3072))(t_cond)
-ffn_input = rms_norm(x) * scale
-```
-
-The `t_cond` is a sinusoidal embedding of `n_delay_tokens` (default 6 = 480ms),
-precomputed once and passed to each decoder layer as a constant.
-
-### Differences from original Voxtral (non-realtime)
-
-| Aspect | Voxtral (3B) | Voxtral Realtime (4B) |
-|--------|-------------|----------------------|
-| Encoder | Bidirectional Whisper, LayerNorm, sinusoidal pos | Causal Whisper, RMSNorm, RoPE |
-| FFN | Standard FFN | SwiGLU |
-| Audio + text | masked_scatter (replace placeholders) | element-wise sum |
-| Decoder norm | Standard RMSNorm | Adaptive RMSNorm with t_cond |
-| Streaming | No (30s chunks) | Yes (frame-by-frame) |
-| Embeddings | Separate lm_head | Tied (output = tok_embeddings) |
 
 ## Model Parameters
 
@@ -74,126 +62,147 @@ precomputed once and passed to each decoder layer as a constant.
 | vocab_size | — | 131,072 |
 | total params | ~1B | ~3.4B |
 
-Audio parameters: 16kHz sample rate, 128 mel bins, hop_length=160,
-window_size=400, downsample_factor=4, frame_rate=12.5 fps.
+| Audio Parameter | Value |
+|-----------------|-------|
+| sample_rate | 16,000 Hz |
+| num_mel_bins | 128 |
+| hop_length | 160 |
+| window_size | 400 |
+| downsample_factor | 4 |
+| frame_rate | 12.5 fps |
 
-## ExecuTorch Design Choices
+## Memory Footprint
 
-The model is written directly with ExecuTorch custom ops rather than using
-source transformations. The patterns come from `examples/models/llama/`,
-`extension/llm/export/builder.py`, and `optimum-executorch`.
+Decoder KV cache: 26 layers × 2 (K, V) × 4096 × 8 × 128 × 4 bytes
+≈ 832 MB. Encoder KV caches (streaming): 32 layers × 2 × 1500 × 32 ×
+64 × 4 bytes ≈ 786 MB.
 
-### KV cache: `[B, S, H, D]` layout + `update_cache` custom op
+Runtime memory = model weights (from `.pte`) + KV caches + working
+memory. Weight sizes depend on quantization: ~16 GB (fp32), ~4 GB
+(8w), ~2 GB (4w/8da4w).
 
-Cache shape is `(1, max_seq_len, n_kv_heads, head_dim)`. Uses
-`torch.ops.llama.update_cache(value, cache, start_pos)` which mutates the
-cache in-place. This avoids the `index_put_` + `copy_` pattern that triggers
-a `requires_grad` bug in `SpecPropPass` during `to_executorch()`.
+## Class Hierarchy
 
-The `[B, S, H, D]` layout matches what `update_cache` and `custom_sdpa`
-expect, so there are no transposes between cache update and attention.
+```
+VoxtralRealtimeModel
+  encoder: CausalWhisperEncoder
+    conv_layers: [CausalConv1d, CausalConv1d]
+    layers: 32x CausalEncoderLayer
+      attention_norm: RMSNorm
+      attention: EncoderAttention (wq/wk/wv/wo, F.scaled_dot_product_attention)
+      ffn_norm: RMSNorm
+      feed_forward: EncoderSwiGLU (w1/w2/w3)
+    norm: RMSNorm
+  adapter: AudioLanguageAdapter (w_in/w_out)
+  decoder: MistralDecoder
+    tok_embeddings: Embedding
+    layers: 26x MistralDecoderLayer
+      attention_norm: RMSNorm
+      attention: LMAttention
+        wq/wk/wv/wo: Linear (no bias)
+        kv_cache: KVCache (XNNPACK) or StaticKVCache (Metal)
+        sdpa: SDPA (XNNPACK) or StandardSDPA (Metal)
+      ffn_norm: RMSNorm
+      ada_rms_norm_t_cond: Sequential(Linear, GELU, Linear)
+      feed_forward: LMMLP (w1/w2/w3)
+    norm: RMSNorm
+    output: Linear (tied to tok_embeddings)
 
-Reference: `examples/models/llama/source_transformation/custom_kv_cache.py`
-(`CustomKVCache`).
-
-### SDPA: backend-specific attention implementations
-
-`SDPA` is its own module (not inline code), making it swappable for
-backend-specific implementations.
-
-#### XNNPACK/Portable: `SDPA` with `custom_sdpa` fused kernel
-
-Uses `torch.ops.llama.custom_sdpa` — a custom op that fuses attention
-computation with causal masking. Two modes (mutually exclusive):
-
-- **Causal** (decoder): `custom_sdpa(q, k, v, start_pos, None, 0, True)`.
-  Causal masking via `start_pos` + `is_causal=True`.
-- **Explicit mask** (streaming encoder): `custom_sdpa(q, k, v, start_pos, mask, 0, False)`.
-  Sliding window mask from `EncoderRingKVCache.create_causal_mask()`.
-
-Both modes handle GQA expansion internally and upcast to float32.
-
-Reference: `examples/models/llama/source_transformation/sdpa.py`
-(`SDPACustom`).
-
-#### Metal: `StandardSDPA` with `F.scaled_dot_product_attention`
-
-Metal backend uses AOTInductor (AOTI) which has compatibility issues with
-the `custom_sdpa` custom op. For the text decoder, `StandardSDPA` uses the
-standard PyTorch `F.scaled_dot_product_attention` with explicit attention masks.
-The model's `use_standard_attention` parameter controls which SDPA
-implementation is used. The export script sets this based on `--backend`:
-
-```python
-use_standard_attention = (args.backend == "metal")
-model = load_model(
-    args.model_path,
-    use_standard_attention=use_standard_attention,
-)
+StreamingAudioEncoderExport (XNNPACK/Portable only)
+  conv1: nn.Conv1d (shared from encoder.conv_layers[0].conv)
+  conv2: nn.Conv1d (shared from encoder.conv_layers[1].conv)
+  layers: 32x CausalEncoderLayer (shared from encoder.layers)
+  enc_norm: RMSNorm (shared from encoder.norm)
+  adapter: AudioLanguageAdapter (shared from model.adapter)
+  kv_caches: 32x EncoderRingKVCache (ring buffer for sliding window attention)
+  sdpa: SDPA (for streaming attention with custom_sdpa op)
+  inv_freq: RoPE inverse frequencies (owned, on-the-fly computation)
 ```
 
-### Attention layout: `[B, T, H, D]` throughout
+## Offline Encoder
 
-Q/K/V projections produce `[B, T, H, D]` via `.view()`. RoPE operates on
-`[B, T, H, D]`. Cache stores `[B, S, H, D]`. SDPA receives both in this
-layout. No `transpose(1, 2)` pairs in the decoder attention hot path.
+The offline encoder (`CausalWhisperEncoder`) processes the full mel
+spectrogram at once. No KV cache, no GQA (n_heads == n_kv_heads).
 
-This eliminates the need for `RemoveRedundantTransposes` post-export pass
-that Llama/optimum-executorch require when using `[B, H, S, D]` attention
-with `[B, S, H, D]` cache.
-
-### RoPE: `reshape+unbind` with float32 upcast
-
-```python
-q_r, q_i = q.float().reshape(q.shape[:-1] + (-1, 2)).unbind(-1)
-```
-
-- `reshape+unbind` instead of stride-2 slicing (`x[..., ::2]`) — avoids
-  strided access patterns that produce complex index expressions during export.
-- `.float()` upcast before rotation, `.type_as()` downcast after — prevents
-  precision loss in fp16/bf16 inference.
-
-Reference: `examples/models/llama/rope.py` (`apply_rotary_emb`).
-
-### RMSNorm: `F.rms_norm` with `self.dim`
-
-Uses `F.rms_norm(x, (self.dim,), self.weight, self.eps)` with a stored
-`self.dim` attribute for compatibility with Llama's
-`replace_rms_norm_with_native_rms_norm()` source transformation.
-
-### Encoder attention: backend-specific implementations
-
-#### Offline encoder
-
-The offline encoder has no KV cache (processes full mel at once) and
-no GQA (n_heads == n_kv_heads). Uses `F.scaled_dot_product_attention` with
-`is_causal=True` and standard `[B, H, T, D]` layout. No custom ops needed.
-This works on all backends (XNNPACK, Metal, Portable).
+`EncoderAttention` uses `F.scaled_dot_product_attention` with
+`is_causal=True`, transposing to `[B, H, T, D]` internally. No custom
+ops needed — works on all backends (XNNPACK, Metal, Portable).
 
 The offline encoder uses full causal attention (no sliding window).
 The model's `params.json` specifies `sliding_window: 750` but this is
 only enforced in the streaming encoder (via KV cache). For audio shorter
 than 750 encoder frames (~15s), full causal is equivalent.
 
-#### Streaming encoder
+## Text Decoder
 
-**XNNPACK/Portable only.** The streaming encoder uses `SDPA` (custom_sdpa op)
-with explicit sliding window masks from `EncoderRingKVCache`.
+The text decoder (`MistralDecoder`) is a 26-layer Mistral decoder with
+GQA (32 query heads, 8 KV heads). Backend selection is controlled by the
+`use_standard_attention` config flag, set by the export script:
 
-**Metal does not yet support streaming mode.** The custom ops used by
-`StreamingAudioEncoderExport` (`update_cache_with_indices`, `custom_sdpa`)
-are incompatible with AOTI. Future work may add AOTI-compatible streaming
-encoder using `index_copy_` and `F.scaled_dot_product_attention`.
+```python
+use_standard_attention = (args.backend == "metal")
+```
 
-## Streaming Encoder (`StreamingAudioEncoderExport`)
+### KV cache
 
-For streaming/live transcription, the encoder processes audio incrementally
-(8 mel frames = 80ms per step) instead of the full mel at once.
+**XNNPACK/Portable:** `KVCache` with `[B, S, H, D]` layout. Uses
+`torch.ops.llama.update_cache(value, cache, start_pos)` which mutates
+the cache in-place. This avoids the `index_put_` + `copy_` pattern that
+triggers a `requires_grad` bug in `SpecPropPass` during `to_executorch()`.
+The `[B, S, H, D]` layout matches what `update_cache` and `custom_sdpa`
+expect, so there are no transposes between cache update and attention.
 
-### Architecture
+**Metal:** `StaticKVCache` with `[B, H, S, D]` layout. Uses `index_copy_`
+for cache updates, which is compatible with `torch.export` and AOTI.
 
-`StreamingAudioEncoderExport` shares all weights with the offline encoder
-but uses a different forward path:
+### SDPA
+
+`SDPA` is its own module (not inline code), making it swappable for
+backend-specific implementations.
+
+**XNNPACK/Portable:** `SDPA` uses `torch.ops.llama.custom_sdpa` — a
+fused kernel with causal masking via `start_pos` + `is_causal=True`.
+Handles GQA expansion internally and upcasts to float32.
+
+**Metal:** `StandardSDPA` uses `F.scaled_dot_product_attention` with
+explicit attention masks. AOTInductor has compatibility issues with the
+`custom_sdpa` custom op.
+
+### Attention layout
+
+**XNNPACK/Portable:** Q/K/V projections produce `[B, T, H, D]` via
+`.view()`. RoPE operates on `[B, T, H, D]`. `KVCache` stores
+`[B, S, H, D]`. `SDPA` (custom_sdpa) receives both in this layout — no
+`transpose(1, 2)` in the attention hot path. This eliminates the need for
+`RemoveRedundantTransposes` post-export pass that Llama/optimum-executorch
+require when using `[B, H, S, D]` attention with `[B, S, H, D]` cache.
+
+**Metal:** Q/K/V projections still produce `[B, T, H, D]`, but
+`StaticKVCache` stores `[B, H, S, D]` and `StandardSDPA` transposes q to
+`[B, H, T, D]` for `F.scaled_dot_product_attention`, then transposes back.
+
+### Adaptive RMSNorm
+
+Each decoder layer has a time-conditioned FFN norm unique to this model.
+After the standard RMSNorm on the FFN input, a learned scale is applied:
+
+```
+scale = 1 + Sequential(Linear(3072->32), GELU, Linear(32->3072))(t_cond)
+ffn_input = rms_norm(x) * scale
+```
+
+The `t_cond` is a sinusoidal embedding of `n_delay_tokens` (default 6 = 480ms),
+precomputed once and passed to each decoder layer as a constant.
+The `ada_rms_norm_t_cond` modules add ~5.1M parameters across 26
+layers (26 × (3072×32 + 32×3072) = 26 × 196,608), quantized by
+`--qlinear`.
+
+## Streaming Encoder
+
+For streaming/live transcription, `StreamingAudioEncoderExport` processes
+audio incrementally (8 mel frames = 80ms per step) instead of the full
+mel at once. It shares all weights with the offline encoder but uses a
+different forward path:
 
 ```
 mel_chunk (1, 128, 8)
@@ -207,6 +216,30 @@ mel_chunk (1, 128, 8)
   -> Reshape downsample (1, 1, 5120) -> Adapter (1, 1, 3072)
 -> audio_embeds, new_conv1_state, new_conv2_state
 ```
+
+**XNNPACK/Portable only.** Metal does not yet support streaming mode.
+The custom ops used by `StreamingAudioEncoderExport`
+(`update_cache_with_indices`, `custom_sdpa`) are incompatible with AOTI.
+Adding Metal streaming support would require:
+
+- Replace `EncoderRingKVCache` with an `index_copy_`-based ring buffer
+  (similar to `StaticKVCache` but with modular index arithmetic)
+- Replace `SDPA` (`custom_sdpa`) with `StandardSDPA` using explicit
+  sliding window masks
+- These are the same patterns already used in the Metal text decoder
+
+### Streaming decode loop
+
+Each 80ms step produces one audio embedding `(1, 1, 3072)`. The
+runner (`StreamingSession::decode_step`) then:
+
+1. Looks up the embedding for the previous token via `token_embedding`
+2. Sums audio + token embeddings element-wise (same as offline mode)
+3. Feeds the combined embedding to `text_decoder` at the current position
+4. Samples one token from the output logits
+
+After audio ends, `flush()` continues text-only decoding (token
+embedding only, no audio) until EOS or max tokens.
 
 ### Conv state management
 
@@ -242,6 +275,12 @@ exceeded, enabling streaming of arbitrary length audio.
 - Memory: 32 layers × 2 × 1500 × 32 × 64 × 4 bytes ≈ 786 MB (fp32)
 - Duration: unlimited (ring buffer overwrites old entries, RoPE computed on-the-fly)
 
+**Naming note:** `max_enc_len` in `StreamingAudioEncoderExport` (default
+750, the `--max-enc-len` CLI flag) is the sliding window size for the
+ring buffer. This is unrelated to `max_enc_len=16384` in
+`CausalWhisperEncoder.__init__`, which is the RoPE frequency table size
+for the offline encoder.
+
 Cache writes use `torch.ops.llama.update_cache_with_indices` (a custom op
 that scatter-writes via an indices tensor). Write indices are computed
 analytically: `(arange(seq_len) + start_pos) % buf_size`. No mutable
@@ -253,6 +292,10 @@ slot `j` after `total_written` frames have been stored:
 ```
 abs_pos[j] = j + ((total_written - 1 - j) // buf_size) * buf_size
 ```
+
+For example, with `buf_size=8` after `total_written=10`:
+- Slot 0: `0 + ((9 - 0) // 8) * 8 = 0 + 8 = 8` (wrapped)
+- Slot 3: `3 + ((9 - 3) // 8) * 8 = 3 + 0 = 3` (not yet overwritten)
 
 Negative results indicate unwritten slots. The sliding window mask
 is computed from these positions each step:
@@ -282,7 +325,26 @@ For the first step, the left overlap is zero-padded (matching the
 offline encoder's `center=True` STFT edge behavior). The 2.5ms
 look-ahead introduces negligible latency.
 
-### Per-component quantization
+## Shared Patterns
+
+### RoPE: `reshape+unbind` with float32 upcast
+
+```python
+q_r, q_i = q.float().reshape(q.shape[:-1] + (-1, 2)).unbind(-1)
+```
+
+- `reshape+unbind` instead of stride-2 slicing (`x[..., ::2]`) — avoids
+  strided access patterns that produce complex index expressions during export.
+- `.float()` upcast before rotation, `.type_as()` downcast after — prevents
+  precision loss in fp16/bf16 inference.
+
+### RMSNorm: `F.rms_norm` with `self.dim`
+
+Uses `F.rms_norm(x, (self.dim,), self.weight, self.eps)` with a stored
+`self.dim` attribute for compatibility with Llama's
+`replace_rms_norm_with_native_rms_norm()` source transformation.
+
+## Quantization
 
 Quantization is applied per-component after wrapping (following the
 Parakeet pattern), allowing different configs for encoder vs decoder:
@@ -303,26 +365,23 @@ The streaming encoder references the same module objects that
 used transparently. Conv1d layers are not quantized (not targeted
 by `quantize_model_`). KV caches and SDPA have no trainable weights.
 
-#### Metal-specific quantization
+### Metal-specific quantization
 
 Metal backend uses `fpa4w` (floating-point activation, 4-bit weight)
-quantization from TorchAO's experimental MPS ops. This uses
-`UIntxWeightOnlyConfig` with HQQ-based quantization parameter selection:
+quantization from TorchAO's experimental MPS ops (`UIntxWeightOnlyConfig`
+with HQQ-based parameter selection). See `export_voxtral_rt.py` for the
+exact configuration.
 
-```python
-from torchao.experimental.quant_api import UIntxWeightOnlyConfig
+## Export
 
-config = UIntxWeightOnlyConfig(
-    group_size=qlinear_group_size,
-    bitwidth=4,
-    uintx_choose_qparams_algorithm="hqq",
-)
-```
-
-### Export: `strict=True` and `.item()` pattern
+Each exported method corresponds to a thin wrapper class:
+`AudioEncoderExport`, `TextDecoderExport`, and `TokenEmbeddingExport`
+(defined in `export_voxtral_rt.py`). With `--streaming`,
+`AudioEncoderExport` is replaced by `StreamingAudioEncoderExport`
+(defined in `model.py` since it owns the ring KV caches and conv states).
 
 All exports use `torch.export.export(..., strict=True)`, matching the
-Llama builder (`extension/llm/export/builder.py`) and optimum-executorch.
+Llama builder and optimum-executorch.
 
 `strict=True` is required because the model uses `.item()` to extract
 scalar positions from input tensors (for `update_cache`, `custom_sdpa`,
@@ -337,13 +396,10 @@ Each `.item()` call is guarded with `torch._check_is_size(start_pos)`
 (upper bound for bounded caches like the decoder KV cache). The encoder
 ring buffer has no upper bound since positions are unlimited.
 
-This is the same pattern used by:
-- `examples/models/llama/attention.py` (`KVCache.update`)
-- `optimum-executorch` (`custom_sdpa_with_start_pos_forward`)
-
-## Checkpoint Format
+## Checkpoint
 
 Mistral format: `params.json` + `consolidated.safetensors` (bf16, 8.3 GB).
+Tokenizer: Mistral Tekken format (`tekken.json`, 131K vocab).
 
 ### Memory-efficient loading
 
@@ -360,8 +416,6 @@ of ~34 GB for the full-size model):
    (broken by assign), materialize remaining meta buffers (KV caches as
    zeros), recompute RoPE frequency tables.
 
-Reference: `examples/models/llama/model.py` (`load_model` function).
-
 ### Weight mapping
 
 | Checkpoint prefix | Model prefix |
@@ -374,58 +428,24 @@ Reference: `examples/models/llama/model.py` (`load_model` function).
 | `layers.*` | `decoder.layers.*` |
 | `norm.weight` | `decoder.norm.weight` |
 
-Weights are cast to float32 during loading. `decoder.output.weight` is tied
-to `decoder.tok_embeddings.weight` (not in checkpoint). KV cache, RoPE
-frequency buffers are runtime-initialized.
+Weights are cast to float32 during loading. `decoder.output.weight` is
+not in the checkpoint — it is created by tying to
+`decoder.tok_embeddings.weight` in `VoxtralRealtimeModel.__init__`.
+During export with quantization, the tie is broken (the `if args.qlinear
+or args.qembedding` block in `export_voxtral_rt.py` clones the weight)
+so embedding and output linear get separate quantization configs.
 
-Tokenizer: Mistral Tekken format (`tekken.json`, 131K vocab).
+KV cache and RoPE frequency buffers are runtime-initialized.
 
-## Class Hierarchy
+## References
 
-```
-VoxtralRealtimeModel
-  encoder: CausalWhisperEncoder
-    conv_layers: [CausalConv1d, CausalConv1d]
-    layers: 32x CausalEncoderLayer
-      attention_norm: RMSNorm
-      attention: EncoderAttention (wq/wk/wv/wo, F.scaled_dot_product_attention)
-      ffn_norm: RMSNorm
-      feed_forward: EncoderSwiGLU (w1/w2/w3)
-    norm: RMSNorm
-  adapter: AudioLanguageAdapter (w_in/w_out)
-  decoder: MistralDecoder
-    tok_embeddings: Embedding
-    layers: 26x MistralDecoderLayer
-      attention_norm: RMSNorm
-      attention: LMAttention
-        wq/wk/wv/wo: Linear (no bias)
-        kv_cache: KVCache (XNNPACK) or StaticKVCache (Metal)
-        sdpa: SDPA (XNNPACK) or StandardSDPA (Metal)
-      ffn_norm: RMSNorm
-      ada_rms_norm_t_cond: Sequential(Linear, GELU, Linear)
-      feed_forward: LMMLP (w1/w2/w3)
-    norm: RMSNorm
-    output: Linear (tied to tok_embeddings)
+- Source model: [mistralai/Voxtral-Mini-4B-Realtime-2602](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602)
+- Reference implementation: [vLLM voxtral_realtime.py](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/models/voxtral_realtime.py)
 
-StreamingAudioEncoderExport (XNNPACK/Portable only - Metal not yet supported)
-  conv1: nn.Conv1d (shared from encoder.conv_layers[0].conv)
-  conv2: nn.Conv1d (shared from encoder.conv_layers[1].conv)
-  layers: 32x CausalEncoderLayer (shared from encoder.layers)
-  enc_norm: RMSNorm (shared from encoder.norm)
-  adapter: AudioLanguageAdapter (shared from model.adapter)
-  kv_caches: 32x EncoderRingKVCache (ring buffer for sliding window attention)
-  sdpa: SDPA (for streaming attention with custom_sdpa op)
-  inv_freq: RoPE inverse frequencies (owned, on-the-fly computation)
-```
+Upstream ExecuTorch patterns:
 
-### Backend-specific components
-
-| Component | XNNPACK/Portable | Metal |
-|-----------|------------------|-------|
-| Decoder KV cache | `KVCache` (update_cache op) | `StaticKVCache` (index_copy_) |
-| Decoder SDPA | `SDPA` (custom_sdpa op) | `StandardSDPA` (F.scaled_dot_product_attention) |
-| Streaming encoder | ✓ Supported | ✗ Not yet supported |
-
-Metal backend uses standard PyTorch ops (`F.scaled_dot_product_attention`,
-`index_copy_`) instead of custom ops for AOTInductor compatibility. Only
-offline mode is currently supported on Metal.
+- KV cache: `examples/models/llama/source_transformation/custom_kv_cache.py` (`CustomKVCache`)
+- SDPA: `examples/models/llama/source_transformation/sdpa.py` (`SDPACustom`)
+- RoPE: `examples/models/llama/rope.py` (`apply_rotary_emb`)
+- Model loading: `examples/models/llama/model.py` (`load_model`)
+- Export builder: `extension/llm/export/builder.py`
