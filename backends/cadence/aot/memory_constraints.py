@@ -19,7 +19,7 @@ from executorch.backends.cadence.aot.pass_utils import (
     create_cadence_pass_filter,
     register_cadence_pass,
 )
-from executorch.backends.cadence.aot.utils import get_shape, is_node_in_flattened_output
+from executorch.backends.cadence.aot.compiler_utils import get_shape, is_node_in_flattened_output
 from executorch.exir import memory
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.tensor import num_bytes_from_shape_and_dtype, TensorSpec
