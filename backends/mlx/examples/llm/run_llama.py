@@ -50,6 +50,9 @@ def run_inference(
     input_ids = tokenizer.apply_chat_template(
         messages, return_tensors="pt", add_generation_prompt=True
     )
+    # apply_chat_template may return a list; ensure we have a tensor
+    if not isinstance(input_ids, torch.Tensor):
+        input_ids = torch.tensor([input_ids], dtype=torch.long)
     logger.info(f"Input shape: {input_ids.shape}")
 
     prompt_len = input_ids.shape[1]

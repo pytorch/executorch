@@ -122,14 +122,9 @@ This will generate:
 | `--max-audio-len` | Maximum audio length in seconds for preprocessor (default: `300`) |
 
 ### Building for MLX
-From the ExecuTorch root directory, first build ExecuTorch with the MLX delegate, then build the Voxtral runner:
+From the ExecuTorch root directory:
 ```
-# Step 1: Build ExecuTorch with MLX
-cmake --workflow --preset mlx-release
-
-# Step 2: Build Voxtral runner with MLX
-cd examples/models/voxtral
-cmake --workflow --preset voxtral-mlx
+make voxtral-mlx
 ```
 
 ### Running with MLX

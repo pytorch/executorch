@@ -554,58 +554,36 @@ def _addmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
-@REGISTRY.register(target=[torch.ops.aten.mm.default])
+@REGISTRY.register(
+    target=[
+        torch.ops.aten.mm.default,
+        torch.ops.aten.bmm.default,
+        torch.ops.aten.matmul.default,
+    ]
+)
 def _mm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Handle mm: mat1 @ mat2 (matrix multiplication without bias).
+    """Handle mm/bmm/matmul: matrix multiplication without bias.
 
-    mm(input, mat2) computes: input @ mat2
+    All three ops compute matrix products with different dimension expectations:
+    - mm: 2D x 2D
+    - bmm: 3D x 3D (batched)
+    - matmul: arbitrary dimensions (NumPy semantics)
 
-    We emit AddmmNode with bias=None, which will use the matmul-only path
-    in exec_addmm, avoiding the fused addmm operation.
+    MLX's matmul handles all cases, so we emit AddmmNode with bias=None.
     """
     args = P.args(n)
-    require_args(args, 2, 2, "aten.mm")
-    require_kwargs(P.kwargs(n), set(), "aten.mm")
+    require_args(args, 2, 2, "aten.mm/bmm/matmul")
+    require_kwargs(P.kwargs(n), set(), "aten.mm/bmm/matmul")
     mat1, mat2 = args[0], args[1]
 
     out = P.make_or_get_slot(n)
 
-    # Emit AddmmNode with no bias: uses matmul directly
     P.emit(
         AddmmNode(
             mat1=P.slot_to_tid(mat1),
             mat2=P.slot_to_tid(mat2),
             out=P.slot_to_tid(out),
-            bias=None,  # No bias - will use matmul path
-        )
-    )
-    return out
-
-
-@REGISTRY.register(target=[torch.ops.aten.bmm.default])
-def _bmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Handle bmm: batch matrix multiplication.
-
-    bmm(input, mat2) computes batched matrix multiplication where both inputs are 3D.
-    For example, if input is [B, N, M] and mat2 is [B, M, P], the result is [B, N, P].
-
-    MLX's matmul naturally handles batched operations, so we emit AddmmNode with
-    bias=None which uses the matmul path in exec_addmm.
-    """
-    args = P.args(n)
-    require_args(args, 2, 2, "aten.bmm")
-    require_kwargs(P.kwargs(n), set(), "aten.bmm")
-    mat1, mat2 = args[0], args[1]
-
-    out = P.make_or_get_slot(n)
-
-    # Emit AddmmNode with no bias: uses matmul which handles 3D+ tensors
-    P.emit(
-        AddmmNode(
-            mat1=P.slot_to_tid(mat1),
-            mat2=P.slot_to_tid(mat2),
-            out=P.slot_to_tid(out),
-            bias=None,  # No bias - matmul handles batched operations
+            bias=None,
         )
     )
     return out
@@ -3056,12 +3034,23 @@ def _bitwise_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
 
 
-@REGISTRY.register(target=[torch.ops.aten.logical_and.default])
+@REGISTRY.register(
+    target=[torch.ops.aten.logical_and.default, torch.ops.aten.bitwise_and.Tensor]
+)
 def _logical_and_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Handle aten.logical_and - element-wise logical AND."""
+    """Handle aten.logical_and / aten.bitwise_and on bool tensors."""
     args = P.args(n)
-    require_args(args, 2, 2, "aten.logical_and")
-    require_kwargs(P.kwargs(n), set(), "aten.logical_and")
+    require_args(args, 2, 2, "aten.logical_and/bitwise_and")
+    require_kwargs(P.kwargs(n), set(), "aten.logical_and/bitwise_and")
+
+    # bitwise_and is only equivalent to logical_and for bool tensors.
+    if n.target == torch.ops.aten.bitwise_and.Tensor:
+        dtype = n.args[0].meta.get("val", None)
+        if dtype is not None and hasattr(dtype, "dtype") and dtype.dtype != torch.bool:
+            raise ValueError(
+                f"aten.bitwise_and on non-bool dtype {dtype.dtype} is not supported; "
+                "only bool tensors can be lowered via LogicalAndNode"
+            )
     out = P.make_or_get_slot(n)
     P.emit(
         LogicalAndNode(
