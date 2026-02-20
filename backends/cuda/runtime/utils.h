@@ -89,7 +89,56 @@ inline executorch::runtime::Error _check_tensor_metadata(
 } // namespace
 
 /**
- * Copies data from a SlimTensor to an ETensor.
+ * Copies data from a SlimTensor to an ETensor asynchronously.
+ *
+ * This function converts a SlimTensor back to an ETensor using async copy.
+ * The ETensor is assumed to always reside on CPU, so this handles both
+ * CPU→CPU and GPU→CPU copies. The function will resize the ETensor if needed
+ * and copy the data asynchronously on the provided CUDA stream.
+ *
+ * NOTE: The caller must ensure proper synchronization after calling this
+ * function if the ETensor data is accessed on the CPU side.
+ *
+ * @param slim_tensor Pointer to the source SlimTensor (must not be null).
+ * @param etensor Pointer to the destination ETensor (must not be null).
+ * @param stream The CUDA stream to use for async copy.
+ * @return Error::Ok on success, or an appropriate error code on failure.
+ */
+inline executorch::runtime::Error copy_slimtensor_to_etensor_async(
+    const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
+    executorch::runtime::etensor::Tensor* etensor,
+    cudaStream_t stream) {
+  _check_tensor_metadata(slim_tensor, etensor);
+
+  // Copy data from SlimTensor to ETensor
+  // SlimTensor may be on GPU or CPU, ETensor is always on CPU
+  size_t nbytes = slim_tensor->nbytes();
+  if (nbytes > 0) {
+    void* dst_data = etensor->mutable_data_ptr();
+    const void* src_data = slim_tensor->data_ptr();
+
+    if (slim_tensor->is_cpu()) {
+      // CPU → CPU copy (always synchronous)
+      std::memcpy(dst_data, src_data, nbytes);
+    } else {
+      // GPU → CPU async copy
+      executorch::backends::aoti::slim::DeviceTraits<
+          executorch::backends::aoti::slim::c10::DeviceType::CUDA>::
+          memcpy_async(
+              dst_data,
+              src_data,
+              nbytes,
+              executorch::backends::aoti::slim::CPU_DEVICE,
+              slim_tensor->device(),
+              stream);
+    }
+  }
+
+  return executorch::runtime::Error::Ok;
+}
+
+/**
+ * Copies data from a SlimTensor to an ETensor synchronously.
  *
  * This function converts a SlimTensor back to an ETensor. The ETensor is
  * assumed to always reside on CPU, so this handles both CPU→CPU and GPU→CPU
@@ -115,7 +164,7 @@ inline executorch::runtime::Error copy_slimtensor_to_etensor(
       // CPU → CPU copy
       std::memcpy(dst_data, src_data, nbytes);
     } else {
-      // GPU → CPU copy
+      // GPU → CPU synchronous copy
       executorch::backends::aoti::slim::DeviceTraits<
           executorch::backends::aoti::slim::c10::DeviceType::CUDA>::
           memcpy(
