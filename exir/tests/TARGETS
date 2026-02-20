@@ -501,6 +501,18 @@ python_unittest(
 )
 
 python_unittest(
+    name = "symint_preservation",
+    srcs = [
+        "test_symint_preservation.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
+    ],
+)
+
+python_unittest(
     name = "quantize_io_pass",
     srcs = [
         "test_quantize_io_pass.py",
