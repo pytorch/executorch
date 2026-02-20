@@ -1,4 +1,4 @@
-name: Test MLX Backend Tester
+name: Test MLX Backend
 
 on:
   schedule:
