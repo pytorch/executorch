@@ -376,6 +376,7 @@ def q8ta_conv2d(
     padding: list,
     dilation: list,
     groups: int,
+    activation: str,
 ):
     x = torch.ops.quantized_decomposed.dequantize_per_tensor(
         x, input_scale, input_zero_point, -128, 127, x.dtype
@@ -418,6 +419,9 @@ def q8ta_conv2d(
         x, weights, bias, stride, padding, dilation, groups
     )
 
+    if activation == "relu":
+        out = torch.nn.functional.relu(out)
+
     out = torch.ops.quantized_decomposed.quantize_per_tensor(
         out, output_scale, output_zero_point, -128, 127, torch.int8
     )
@@ -442,7 +446,8 @@ lib.define(
         SymInt[] stride,
         SymInt[] padding,
         SymInt[] dilation,
-        SymInt groups) -> Tensor
+        SymInt groups,
+        str activation) -> Tensor
     """
 )
 lib.impl(name, q8ta_conv2d, "CompositeExplicitAutograd")
@@ -466,7 +471,8 @@ lib.define(
         SymInt[] stride,
         SymInt[] padding,
         SymInt[] dilation,
-        SymInt groups) -> Tensor
+        SymInt groups,
+        str activation) -> Tensor
     """
 )
 lib.impl(name, q8ta_conv2d, "CompositeExplicitAutograd")
@@ -488,6 +494,7 @@ def q8ta_conv2d_dw(
     padding: list,
     dilation: list,
     groups: int,
+    activation: str,
 ):
     x = torch.ops.quantized_decomposed.dequantize_per_tensor(
         x, input_scale, input_zero_point, -128, 127, x.dtype
@@ -514,6 +521,9 @@ def q8ta_conv2d_dw(
         x, weights, bias, stride, padding, dilation, groups
     )
 
+    if activation == "relu":
+        out = torch.nn.functional.relu(out)
+
     out = torch.ops.quantized_decomposed.quantize_per_tensor(
         out, output_scale, output_zero_point, -128, 127, torch.int8
     )
@@ -538,7 +548,8 @@ lib.define(
         SymInt[] stride,
         SymInt[] padding,
         SymInt[] dilation,
-        SymInt groups) -> Tensor
+        SymInt groups,
+        str activation) -> Tensor
     """
 )
 lib.impl(name, q8ta_conv2d_dw, "CompositeExplicitAutograd")
@@ -604,6 +615,41 @@ lib.define(
 )
 lib.impl(name, q8ta_add_impl, "CompositeExplicitAutograd")
 q8ta_add_op = getattr(getattr(torch.ops, namespace), name)
+
+########################
+## q8ta_relu ##
+########################
+
+
+def q8ta_relu_impl(
+    input: torch.Tensor,
+    input_scale: float,
+    input_zero_point: int,
+    output_scale: float,
+    output_zero_point: int,
+):
+    # Dequantize input to float
+    dequant = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input, input_scale, input_zero_point, -128, 127, input.dtype
+    )
+
+    # Apply ReLU
+    result = torch.nn.functional.relu(dequant)
+
+    # Quantize the result back to int8
+    quantized_result = torch.ops.quantized_decomposed.quantize_per_tensor(
+        result, output_scale, output_zero_point, -128, 127, torch.int8
+    )
+
+    return quantized_result
+
+
+name = "q8ta_relu"
+lib.define(
+    f"{name}(Tensor input, float input_scale, int input_zero_point, float output_scale, int output_zero_point) -> Tensor"
+)
+lib.impl(name, q8ta_relu_impl, "CompositeExplicitAutograd")
+q8ta_relu_op = getattr(getattr(torch.ops, namespace), name)
 
 #############################
 ## select_as_symint ##

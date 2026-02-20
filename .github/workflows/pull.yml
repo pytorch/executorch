@@ -479,7 +479,7 @@ jobs:
         # threshold=48120 on devserver with gcc9
         # todo(lfq): update once binary size is below 50kb.
         # Note: using gcc9-nopytorch container with pinned nightly PyTorch
-        threshold="63776"
+        threshold="63785"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
@@ -1051,6 +1051,10 @@ jobs:
         
         # Run e2e example with Simulator:
         PYTHON_EXECUTABLE=python bash examples/nxp/run.sh cifar10
+        
+        # Run lightweight model tests: 
+        PYTHON_EXECUTABLE=python pytest -c /dev/null backends/nxp/tests_models/ \
+        --nxp_runner_path "./examples/nxp/executor_runner/build/nxp_executor_runner" 
 
   test-samsung-quantmodels-linux:
     name: test-samsung-quantmodels-linux

@@ -31,26 +31,28 @@ namespace {
 // Mock classes for dependencies
 class MockTokenizer : public ::tokenizers::Tokenizer {
  public:
-  MOCK_METHOD(::tokenizers::Error, load, (const std::string&), ());
-  MOCK_METHOD(bool, is_loaded, (), (const));
+  MOCK_METHOD(::tokenizers::Error, load, (const std::string&), (override));
+  MOCK_METHOD(bool, is_loaded, (), (const, override));
   MOCK_METHOD(
       ::tokenizers::Result<std::vector<uint64_t>>,
       encode,
       (const std::string&, int8_t, int8_t),
-      (const));
+      (const, override));
   MOCK_METHOD(
       ::tokenizers::Result<std::string>,
       decode,
-      (uint64_t, uint64_t),
-      (const));
+      (uint64_t, uint64_t, bool),
+      (const, override));
   MOCK_METHOD(
       ::tokenizers::Result<std::string>,
       id_to_piece,
       (uint64_t),
-      (const));
-  MOCK_METHOD(uint64_t, bos_tok, (), (const));
-  MOCK_METHOD(uint64_t, eos_tok, (), (const));
-  MOCK_METHOD(uint64_t, vocab_size, (), (const));
+      (const, override));
+  MOCK_METHOD(
+      ::tokenizers::Result<uint64_t>,
+      piece_to_id,
+      (const std::string&),
+      (const, override));
 };
 
 class MockModule : public ::executorch::extension::Module {
@@ -128,7 +130,7 @@ class RunnerTest : public Test {
               std::vector<uint64_t>{1, 2, 3});
         });
 
-    ON_CALL(*tokenizer, decode).WillByDefault([](uint64_t, uint64_t) {
+    ON_CALL(*tokenizer, decode).WillByDefault([](uint64_t, uint64_t, bool) {
       return ::tokenizers::Result<std::string>("token");
     });
 
@@ -136,9 +138,9 @@ class RunnerTest : public Test {
       return ::tokenizers::Result<std::string>("piece");
     });
 
-    ON_CALL(*tokenizer, bos_tok()).WillByDefault(Return(1));
-    ON_CALL(*tokenizer, eos_tok()).WillByDefault(Return(2));
-    ON_CALL(*tokenizer, vocab_size()).WillByDefault(Return(100));
+    ON_CALL(*tokenizer, piece_to_id).WillByDefault([](const std::string&) {
+      return ::tokenizers::Result<uint64_t>(0);
+    });
 
     return tokenizer;
   }

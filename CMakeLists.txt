@@ -45,9 +45,7 @@
 # ~~~
 #
 
-# TODO Lower to 3.24 when XNNPACK dependency is updated to include
-# https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
-cmake_minimum_required(VERSION 3.29)
+cmake_minimum_required(VERSION 3.24)
 project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
@@ -675,7 +673,6 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
-  list(APPEND _executorch_backends coretex_m_backend)
 endif()
 
 # If CUDA, Metal, or pybind will need Torch, find it at root scope first so that
