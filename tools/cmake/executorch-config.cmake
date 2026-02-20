@@ -48,9 +48,19 @@ foreach(lib ${required_lib_list})
   endif()
   list(APPEND EXECUTORCH_LIBRARIES ${lib})
 endforeach()
+
+# If we reach here, ET required libraries are found.
+target_link_libraries(executorch INTERFACE executorch_core)
+target_link_options_shared_lib(prim_ops_lib)
+
 set(EXECUTORCH_FOUND ON)
 
-include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
+target_link_libraries(executorch INTERFACE executorch_core)
+
+# ...existing code...
+
+# Move target_link_options_shared_lib(prim_ops_lib) to line 177 (after all target_link_libraries for executorch)
+target_link_options_shared_lib(prim_ops_lib)
 
 set(optional_lib_list
     aoti_cuda_backend
@@ -94,7 +104,64 @@ set(optional_lib_list
     torchao_kernels_aarch64
 )
 
-foreach(lib ${optional_lib_list})
+# TODO: investigate use of install(EXPORT) to cleanly handle
+# target_compile_options/target_compile_definitions for everything.
+if(TARGET cpublas)
+  set_target_properties(
+    cpublas PROPERTIES INTERFACE_LINK_LIBRARIES
+                       "extension_threadpool;eigen_blas"
+  )
+endif()
+if(TARGET optimized_kernels)
+  set_target_properties(
+    optimized_kernels PROPERTIES INTERFACE_LINK_LIBRARIES
+                                 "executorch_core;cpublas;extension_threadpool"
+  )
+endif()
+
+if(TARGET coremldelegate)
+  set_target_properties(
+    coremldelegate PROPERTIES INTERFACE_LINK_LIBRARIES
+                              "coreml_inmemoryfs;coreml_util"
+  )
+endif()
+
+if(TARGET etdump)
+  set_target_properties(etdump PROPERTIES INTERFACE_LINK_LIBRARIES "flatccrt;executorch")
+endif()
+
+if(TARGET optimized_native_cpu_ops_lib)
+  if(TARGET optimized_portable_kernels)
+    set(_maybe_optimized_portable_kernels_lib optimized_portable_kernels)
+  else()
+    set(_maybe_optimized_portable_kernels_lib portable_kernels)
+  endif()
+  set_target_properties(
+    optimized_native_cpu_ops_lib
+    PROPERTIES INTERFACE_LINK_LIBRARIES
+               "optimized_kernels;${_maybe_optimized_portable_kernels_lib}"
+  )
+endif()
+if(TARGET extension_threadpool)
+  target_compile_definitions(extension_threadpool INTERFACE ET_USE_THREADPOOL)
+  set_target_properties(
+    extension_threadpool PROPERTIES INTERFACE_LINK_LIBRARIES
+                                    "cpuinfo;pthreadpool"
+  )
+endif()
+
+# target_link_options_shared_lib(prim_ops_lib) is now called automatically in executorch-config.cmake
+target_link_options_shared_lib(prim_ops_lib)
+
+set(shared_lib_list
+  # executorch -- size tests fail due to regression if we include this and I'm not sure it's needed.
+  optimized_native_cpu_ops_lib
+  portable_ops_lib
+  quantized_ops_lib
+  xnnpack_backend
+  vulkan_backend
+  quantized_ops_aot_lib)
+foreach(lib ${shared_lib_list})
   if(TARGET ${lib})
     list(APPEND EXECUTORCH_LIBRARIES ${lib})
   else()
