@@ -9,17 +9,23 @@ set -ex
 
 install_ubuntu() {
   apt-get update
-  apt-get install -y zstd
+  apt-get install -y zstd python3-certifi
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+  
+  # Create a cache directory for buck2
+  CACHE_DIR="/tmp/buck2_cache"
+  mkdir -p "${CACHE_DIR}"
 
-  BUCK2=buck2-x86_64-unknown-linux-gnu.zst
-  wget -q "https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/${BUCK2}"
-  zstd -d "${BUCK2}" -o buck2
+  # Run resolve_buck.py to get the buck2 binary
+  BUCK2_PATH=$(python "${REPO_ROOT}/tools/cmake/resolve_buck.py" --cache_dir "${CACHE_DIR}")
 
-  chmod +x buck2
-  mv buck2 /usr/bin/
+  # Move buck2 to /usr/bin/
+  mv "${BUCK2_PATH}" /usr/bin/buck2
+  chmod +x /usr/bin/buck2
 
-  rm "${BUCK2}"
-  # Cleanup package manager
+  # Cleanup
+  rm -rf "${CACHE_DIR}"
   apt-get autoclean && apt-get clean
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 }
