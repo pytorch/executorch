@@ -1,9 +1,8 @@
-# Test ExecuTorch CUDA Windows Cross-Compilation Export
-# This workflow tests model export targeting CUDA Windows using optimum-executorch.
-# It runs on a Linux machine with CUDA and uses the executorch-ubuntu-22.04-cuda-windows
-# Docker image which has mingw and Windows CUDA SDK pre-installed for cross-compilation.
+# Test ExecuTorch CUDA Windows Artifacts
+# This workflow exports models targeting CUDA Windows using optimum-executorch on Linux.
+# Then it runs those exported artifacts on a Windows CI machine.
 
-name: Test CUDA Windows Export
+name: Test CUDA Windows Export and E2E
 
 on:
   pull_request:
@@ -15,6 +14,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: false
+
+env:
+  CUDA_VERSION: "12.8"
 
 jobs:
   export-model-cuda-windows-artifact:
@@ -35,14 +37,14 @@ jobs:
           - repo: "nvidia"
             name: "parakeet-tdt"
         quant:
-            - "non-quantized"
-            - "quantized-int4-weight-only"
+          - "non-quantized"
+          - "quantized-int4-weight-only"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: 12.8
+      gpu-arch-version: ${{ env.CUDA_VERSION }}
       docker-image: ci-image:executorch-ubuntu-22.04-cuda-windows
       submodules: recursive
       upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-windows-${{ matrix.quant }}
@@ -81,3 +83,44 @@ jobs:
         echo "::endgroup::"
 
         source .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+
+  test-model-cuda-windows-e2e:
+    name: test-model-cuda-windows-e2e
+    needs: export-model-cuda-windows-artifact
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "nvidia"
+            name: "parakeet-tdt"
+        quant:
+          - "non-quantized"
+          - "quantized-int4-weight-only"
+    with:
+      timeout: 240
+      submodules: recursive
+      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-windows-${{ matrix.quant }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        conda init powershell
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
+
+          .ci/scripts/setup-windows.ps1
+          \$artifactDir = \$env:RUNNER_ARTIFACT_DIR
+          if ([string]::IsNullOrWhiteSpace(\$artifactDir)) {
+            throw 'RUNNER_ARTIFACT_DIR is empty. Ensure download-artifact is configured for windows_job.yml.'
+          }
+
+          .ci/scripts/test_model_e2e_windows.ps1 `
+            -Device cuda-windows `
+            -HfModel '${{ matrix.model.repo }}/${{ matrix.model.name }}' `
+            -QuantName '${{ matrix.quant }}' `
+            -ModelDir \$artifactDir `
+            -ExpectedCudaVersion '${{ env.CUDA_VERSION }}'
+        }"
