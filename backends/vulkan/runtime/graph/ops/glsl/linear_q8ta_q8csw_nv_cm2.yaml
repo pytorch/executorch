@@ -1,0 +1,35 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Quantized int8 matrix multiplication shader using GL_NV_cooperative_matrix2
+# extension for optimized performance on NVIDIA GPUs with tensor cores.
+#
+# This shader performs int8 activation x int8 weight linear layer with
+# dequantization to produce floating-point output.
+#
+# Computes: output = dequantize(input @ weight^T) + bias
+
+linear_q8ta_q8csw_nv_cm2:
+  parameter_names_with_default_values:
+    DTYPE: float
+    OUTPUT_STORAGE: buffer
+    PACKED_INT8_INPUT_STORAGE: buffer
+    WEIGHT_STORAGE: buffer
+    # Tile sizes for cooperative matrix operations
+    TILE_ROWS: 16
+    TILE_COLS: 16
+    # Use Vulkan 1.3 and SPIR-V 1.6 for GL_NV_cooperative_matrix2 support
+    VK_VERSION: "1.3"
+    SPV_VERSION: "1.6"
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    - NAME: linear_q8ta_q8csw_nv_cm2_buffer_buffer_buffer_float
+      DTYPE: float
+    - NAME: linear_q8ta_q8csw_nv_cm2_buffer_buffer_buffer_half
+      DTYPE: half
