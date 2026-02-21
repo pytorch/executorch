@@ -7,6 +7,8 @@
  */
 
 #include <executorch/runtime/core/portable_type/scalar.h>
+#include <executorch/runtime/core/portable_type/bfloat16.h>
+#include <executorch/runtime/core/portable_type/half.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 
@@ -15,8 +17,16 @@ using executorch::runtime::etensor::Scalar;
 TEST(ScalarTest, ToScalarType) {
   Scalar s_d((double)3.141);
   EXPECT_EQ(s_d.to<double>(), 3.141);
+  EXPECT_EQ(s_d.to<float>(), (float)3.141);
+  EXPECT_EQ(s_d.to<::executorch::runtime::etensor::Half>(), (::executorch::runtime::etensor::Half)3.141);
+  EXPECT_EQ(s_d.to<::executorch::runtime::etensor::BFloat16>(), (::executorch::runtime::etensor::BFloat16)3.141);
+
   Scalar s_i((int64_t)3);
   EXPECT_EQ(s_i.to<int64_t>(), 3);
+  EXPECT_EQ(s_i.to<int32_t>(), 3);
+  EXPECT_EQ(s_i.to<int16_t>(), 3);
+  EXPECT_EQ(s_i.to<int8_t>(), 3);
+  EXPECT_EQ(s_i.to<bool>(), true);
   Scalar s_b(true);
   EXPECT_EQ(s_b.to<bool>(), true);
 }
