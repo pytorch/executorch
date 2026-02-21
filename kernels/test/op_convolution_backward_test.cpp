@@ -23,6 +23,15 @@ using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
 using OptIntArrayRef = executorch::aten::OptionalArrayRef<int64_t>;
 using torch::executor::testing::TensorFactory;
 
+namespace {
+// Helper to convert integer initializer list to vector of target type.
+// Avoids narrowing conversion errors with float16_t on strict compilers.
+template <typename T>
+std::vector<T> make_data(std::initializer_list<int> values) {
+  return std::vector<T>(values.begin(), values.end());
+}
+} // namespace
+
 class OpConvolutionBackwardOutTest : public OperatorTest {
  protected:
   std::tuple<Tensor&, Tensor&, Tensor&> op_convolution_backward_out(
@@ -68,11 +77,12 @@ class OpConvolutionBackwardOutTest : public OperatorTest {
     TensorFactory<DTYPE> tf;
 
     using CTYPE = typename decltype(tf)::ctype;
-    std::vector<CTYPE> grad_output_data = {
+    // clang-format off
+    auto grad_output_data = make_data<CTYPE>({
         10, 12, 87, 13, 34, 87, 55, 22, 48, 33, 29, 38, 60, 49, 88, 30,
         99, 19, 42, 37, 61, 31, 33, 58, 38, 23, 2,  33, 3,  21, 32, 2,
-        30, 72, 10, 67, 92, 19, 11, 16, 65, 37, 60, 74, 4,  19, 45, 37};
-    std::vector<CTYPE> input_data = {
+        30, 72, 10, 67, 92, 19, 11, 16, 65, 37, 60, 74, 4,  19, 45, 37});
+    auto input_data = make_data<CTYPE>({
         9,  89, 45, 39, 25, 2,  97, 55, 80, 24, 18, 33, 28, 89, 19, 16, 19, 33,
         69, 61, 34, 84, 58, 30, 33, 18, 75, 30, 6,  33, 42, 10, 80, 41, 66, 64,
         47, 51, 67, 62, 58, 10, 97, 71, 24, 44, 84, 34, 33, 54, 8,  73, 90, 15,
@@ -96,15 +106,15 @@ class OpConvolutionBackwardOutTest : public OperatorTest {
         45, 64, 58, 92, 44, 42, 7,  28, 94, 4,  8,  22, 22, 31, 75, 44, 3,  70,
         83, 72, 87, 12, 20, 55, 84, 31, 50, 34, 25, 49, 29, 71, 57, 97, 25, 82,
         84, 42, 86, 41, 54, 92, 34, 30, 52, 34, 84, 25, 54, 37, 38, 26, 76, 82,
-        34, 14, 85, 28, 93, 9};
-    std::vector<CTYPE> weight_data = {
+        34, 14, 85, 28, 93, 9});
+    auto weight_data = make_data<CTYPE>({
         2,  54, 9,  37, 0,  47, 70, 9,  84,  69, 56, 79, 25, 35, 54, 13,
         65, 46, 38, 28, 74, 27, 66, 61, 20,  60, 62, 58, 15, 44, 75, 55,
         7,  52, 13, 36, 39, 64, 62, 45, 100, 6,  79, 63, 63, 52, 37, 60,
         78, 12, 69, 2,  74, 56, 93, 39, 62,  22, 55, 67, 68, 74, 12, 69,
         15, 73, 28, 70, 86, 20, 90, 49, 52,  26, 58, 2,  82, 17, 70, 55,
-        54, 83, 70, 11, 27, 9,  5,  42, 34,  62, 29, 94, 69, 81, 54, 4};
-    std::vector<CTYPE> expected_grad_input_data = {
+        54, 83, 70, 11, 27, 9,  5,  42, 34,  62, 29, 94, 69, 81, 54, 4});
+    auto expected_grad_input_data = make_data<CTYPE>({
         1134,  7578,  686,   2682,  0, 4148,  7136,  2406,  8698, 0,
         3759,  6003,  2163,  2395,  0, 2929,  5830,  3469,  6955, 0,
         720,   6201,  495,   2063,  0, 5260,  5989,  3060,  7079, 0,
@@ -146,8 +156,8 @@ class OpConvolutionBackwardOutTest : public OperatorTest {
         152,   927,   287,   1902,  0, 301,   1051,  886,   2346, 0,
         6821,  19615, 4491,  13281, 0, 424,   1146,  999,   2906, 0,
         15177, 15480, 8849,  12442, 0, 1222,  544,   2687,  1859, 0,
-        20215, 9693,  11441, 4964,  0, 1206,  555,   2466,  860,  0};
-    std::vector<CTYPE> expected_grad_weight_data = {
+        20215, 9693,  11441, 4964,  0, 1206,  555,   2466,  860,  0});
+    auto expected_grad_weight_data = make_data<CTYPE>({
         9246,  22073, 12431, 19714, 11179, 19032, 8458,  6495,  18707, 13830,
         20445, 17089, 17124, 18710, 11827, 17236, 16824, 9008,  14086, 18834,
         17419, 16759, 13152, 9339,  13801, 20888, 13976, 27277, 13010, 23949,
@@ -157,8 +167,9 @@ class OpConvolutionBackwardOutTest : public OperatorTest {
         24188, 23619, 13752, 16251, 18741, 19368, 24517, 34261, 27054, 31257,
         21238, 18909, 15776, 16881, 34604, 22534, 28101, 23834, 18479, 16469,
         12852, 16551, 14204, 29983, 20167, 24150, 14281, 17501, 15897, 16019,
-        21661, 32765, 23874, 26527, 20463, 18661};
-    std::vector<CTYPE> expected_grad_bias_data = {363, 438, 585, 501};
+        21661, 32765, 23874, 26527, 20463, 18661});
+    auto expected_grad_bias_data = make_data<CTYPE>({363, 438, 585, 501});
+    // clang-format on
 
     auto grad_output = tf.make({2, 4, 3, 2}, grad_output_data);
     auto input = tf.make({2, 6, 7, 5}, input_data);

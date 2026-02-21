@@ -22,7 +22,7 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
 
     # Enable sanitizers for Debug builds
     if [[ "$BUILD_MODE" == "Debug" ]]; then
-        export EXECUTORCH_USE_SANITIZER=ON
+        export EXECUTORCH_USE_SANITIZER="${EXECUTORCH_USE_SANITIZER:-asan}"
     fi
 
     # We need the runner to test the built library.

@@ -177,7 +177,7 @@ TEST_F(OpUnsqueezeTest, DimOutOfRangeDies) {
   }
 
   for (auto dim : illegal_dims) {
-    ET_LOG(Info, "Checking dim %ld", dim);
+    ET_LOG(Info, "Checking dim %lld", (long long)dim);
     ET_EXPECT_KERNEL_FAILURE(context_, op_unsqueeze_copy_out(input, dim, out));
   }
 }

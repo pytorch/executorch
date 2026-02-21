@@ -34,8 +34,8 @@ build_executorch() {
   fi
 
   SANITIZER_FLAG=""
-  if [[ "${EXECUTORCH_USE_SANITIZER:-OFF}" == "ON" ]]; then
-    SANITIZER_FLAG="-DEXECUTORCH_USE_SANITIZER=ON"
+  if [[ "${EXECUTORCH_USE_SANITIZER:-OFF}" != "OFF" ]]; then
+    SANITIZER_FLAG="-DEXECUTORCH_USE_SANITIZER=${EXECUTORCH_USE_SANITIZER}"
   fi
 
   cmake . \

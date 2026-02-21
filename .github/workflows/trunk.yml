@@ -18,6 +18,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  unittest-linux-tsan:
+    name: unittest-linux-tsan
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -eux
+        export EXECUTORCH_USE_SANITIZER=tsan
+        .ci/scripts/unittest-linux.sh --build-tool cmake --build-mode Debug
+
+  unittest-linux-aarch64-tsan:
+    name: unittest-linux-aarch64-tsan
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.arm64.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc11-aarch64
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -eux
+        export EXECUTORCH_USE_SANITIZER=tsan
+        .ci/scripts/unittest-linux.sh --build-tool cmake --build-mode Debug
+
   test-models-macos-cpu:
     name: test-models-macos-cpu
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
