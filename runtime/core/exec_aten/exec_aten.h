@@ -164,10 +164,6 @@ using torch::executor::compute_numel;
 } // namespace aten
 } // namespace executorch
 
-// DEPRECATED: The exec_aten:: namespace is deprecated. Use executorch::aten::
-// instead.
-namespace exec_aten = executorch::aten;
-
 namespace torch {
 namespace executor {
 using TensorList = ::executorch::aten::TensorList;
