@@ -6,6 +6,7 @@
 
 import copy
 import logging
+from typing import List, Optional
 
 import torch
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -41,13 +42,18 @@ class MemoryFormatOpsPass(ExportPass):
         nkwargs = dict(copy.deepcopy(kwargs))  # orig kwargs are immutable
 
         # get the target memory format for the EdgeOp
-        mem_format = nkwargs.pop("memory_format", torch.contiguous_format)
+        # Default to preserve_format: clone() with no memory_format kwarg should
+        # preserve the input's layout, not force contiguous. Issue #16032.
+        mem_format = nkwargs.pop("memory_format", torch.preserve_format)
 
-        # can always get the shape, assuming rank is specialized
+        # Get input tensor and ndim
+        input_tensor: Optional[torch.Tensor] = None
         if isinstance(args[0], ProxyValue) and args[0].is_tensor():
-            ndim = args[0].to_tensor().dim()
+            input_tensor = args[0].to_tensor()
+            ndim = input_tensor.dim()
         elif isinstance(args[0], torch.Tensor):
-            ndim = args[0].dim()
+            input_tensor = args[0]
+            ndim = input_tensor.dim()
         elif isinstance(args[0], torch.fx.immutable_collections.immutable_list):
             ndim = len(args[0])
         else:
@@ -55,7 +61,20 @@ class MemoryFormatOpsPass(ExportPass):
                 0
             ), f"Expecting a Tensor, a ProxyValue, or a Sequence, but got {type(args[0])}"
 
-        nkwargs["dim_order"] = get_dim_order(mem_format, ndim)
+        # Derive dim_order based on memory format
+        dim_order: List[int]
+        if mem_format in (None, torch.preserve_format):
+            # preserve_format: inherit dim_order from input tensor
+            if input_tensor is not None:
+                dim_order = list(int(d) for d in input_tensor.dim_order())
+            else:
+                # Fallback to contiguous if no input tensor available
+                dim_order = list(range(ndim))
+        else:
+            # Explicit memory format (contiguous_format, channels_last, etc.)
+            dim_order = get_dim_order(mem_format, ndim)
+
+        nkwargs["dim_order"] = dim_order
         logger.debug(
             f"{op.__name__} = rank: {ndim}, memory_format: {mem_format}."
             f" {DimOrderOpsMap[op].__name__} = dim_order: {nkwargs['dim_order']}"
