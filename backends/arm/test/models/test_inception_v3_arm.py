@@ -24,6 +24,9 @@ from torchvision import models, transforms  # type: ignore[import-untyped]
 ic3 = models.inception_v3(weights=models.Inception_V3_Weights)
 ic3 = ic3.eval()
 
+ic3_fp16 = models.inception_v3(weights=models.Inception_V3_Weights).to(torch.float16)
+ic3_fp16 = ic3_fp16.eval()
+
 # Normalization values referenced from here:
 # https://docs.pytorch.org/vision/main/models/generated/torchvision.models.quantization.inception_v3.html
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -40,6 +43,20 @@ def test_ic3_tosa_FP():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@pytest.mark.slow
+def test_ic3_tosa_FP_fp16():
+    inputs_fp16 = tuple(t.to(torch.float16) for t in model_inputs)
+    pipeline = TosaPipelineFP[input_t](
+        ic3_fp16,
+        inputs_fp16,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        atol=1e-2,
     )
     pipeline.run()
 
