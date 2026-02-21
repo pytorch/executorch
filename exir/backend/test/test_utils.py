@@ -14,6 +14,7 @@ from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.backend.utils import (
     format_delegated_graph,
+    get_delegated_payload,
     get_delegates,
     get_non_lowered_nodes,
     is_identical_graph,
@@ -261,4 +262,131 @@ class TestUtils(unittest.TestCase):
             "executorch.exir.dialects.edge._ops.aten.mm.default",
             graph_str,
             "Expect to see the aten.mm in the delegated graph",
+        )
+
+    def test_get_delegated_payload_with_delegates(self):
+        """Test get_delegated_payload returns correct payload for delegated modules."""
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, a, x, b):
+                y = torch.mm(a, x)
+                z = y + b
+                a = z - a
+                y = torch.mm(a, x)
+                z = y + b
+                return z
+
+        m = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+
+        edge = to_edge(export(m, inputs, strict=True)).to_backend(
+            AddMulPartitionerDemo()
+        )
+
+        payloads = get_delegated_payload(edge.exported_program().graph_module)
+
+        # Should have 2 delegates: (mm + add) -> sub -> (mm + add)
+        self.assertEqual(len(payloads), 2)
+
+        # Verify payload structure for each delegate
+        for name, (backend_id, compile_specs, processed_bytes) in payloads.items():
+            # Check delegate name format
+            self.assertTrue(
+                name.startswith("lowered_module_"),
+                f"Delegate name should start with 'lowered_module_', got {name}",
+            )
+
+            # Check backend_id
+            self.assertEqual(
+                backend_id,
+                "BackendWithCompilerDemo",
+                f"Expected backend_id 'BackendWithCompilerDemo', got {backend_id}",
+            )
+
+            # Check compile_specs is a list
+            self.assertIsInstance(
+                compile_specs,
+                list,
+                f"compile_specs should be a list, got {type(compile_specs)}",
+            )
+
+            # Check processed_bytes is bytes
+            self.assertIsInstance(
+                processed_bytes,
+                bytes,
+                f"processed_bytes should be bytes, got {type(processed_bytes)}",
+            )
+
+            # Verify processed_bytes is not empty (backend should produce some output)
+            self.assertGreater(
+                len(processed_bytes),
+                0,
+                "processed_bytes should not be empty",
+            )
+
+    def test_get_delegated_payload_without_delegates(self):
+        """Test get_delegated_payload returns empty dict when no delegates present."""
+
+        class SimpleModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x + 1
+
+        m = SimpleModel()
+        inputs = (torch.randn(2, 2),)
+
+        # Create edge program without delegation
+        edge = to_edge(export(m, inputs, strict=True))
+
+        payloads = get_delegated_payload(edge.exported_program().graph_module)
+
+        # Should have no delegates
+        self.assertEqual(
+            len(payloads),
+            0,
+            "Expected empty payload dict when no delegates present",
+        )
+
+    def test_get_delegated_payload_keys_match_delegates(self):
+        """Test that get_delegated_payload keys match get_delegates node names."""
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, a, x, b):
+                y = torch.mm(a, x)
+                z = y + b
+                a = z - a
+                y = torch.mm(a, x)
+                z = y + b
+                return z
+
+        m = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+
+        edge = to_edge(export(m, inputs, strict=True)).to_backend(
+            AddMulPartitionerDemo()
+        )
+
+        graph_module = edge.exported_program().graph_module
+
+        # Get delegates using existing utility
+        delegate_nodes = get_delegates(graph_module.graph)
+        delegate_names = {node.name for node in delegate_nodes}
+
+        # Get payloads using new utility
+        payloads = get_delegated_payload(graph_module)
+        payload_names = set(payloads.keys())
+
+        # Names should match
+        self.assertEqual(
+            delegate_names,
+            payload_names,
+            f"Delegate names mismatch: {delegate_names} vs {payload_names}",
         )
