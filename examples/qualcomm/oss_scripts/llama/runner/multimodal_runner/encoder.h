@@ -12,6 +12,7 @@
 #include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/log.h>
+#include <list>
 #include <memory>
 #include <string>
 #include <vector>
@@ -28,7 +29,7 @@ class EncoderRunner {
    * @brief Constructor for EncoderRunner
    * @param model_path Path to the encoder model PTE file
    */
-  explicit EncoderRunner(const std::string& model_path);
+  explicit EncoderRunner(executorch::extension::Module* module);
 
   /**
    * @brief Check if the encoder method is loaded
@@ -56,18 +57,11 @@ class EncoderRunner {
   executorch::runtime::Result<executorch::aten::Tensor> encode(
       executorch::extension::TensorPtr& image_tensor);
 
-  /**
-   * @brief Encode image from raw file
-   * @param image_file_path Path to raw image file
-   * @return Result containing the image hidden states tensor
-   */
-  executorch::runtime::Result<executorch::aten::Tensor> encode_from_file(
-      const std::string& image_file_path);
-
  private:
-  std::unique_ptr<executorch::extension::Module> module_;
+  executorch::extension::Module* module_;
   inline static const std::string kEncoderForwardName = "forward";
-  int32_t image_seq_len_;
+  std::list<std::vector<float>> output_buffers_;
+  std::list<executorch::extension::TensorPtr> output_tensors_;
 };
 
 } // namespace example

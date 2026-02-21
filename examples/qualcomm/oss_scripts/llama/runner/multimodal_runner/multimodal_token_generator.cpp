@@ -18,7 +18,7 @@ namespace example {
 template <typename T>
 MultimodalTokenGenerator<T>::MultimodalTokenGenerator(
     tokenizers::Tokenizer* tokenizer,
-    EmbeddingProcessor* embedding_runner,
+    TokenEmbeddingProcessor* tok_embedding_runner,
     DecoderRunner* decoder_runner,
     KVManager<T>* kv_manager,
     const std::string& method_name,
@@ -40,7 +40,7 @@ MultimodalTokenGenerator<T>::MultimodalTokenGenerator(
            metadata.sliding_window,
            metadata.cache_mode},
           stats),
-      embedding_runner_(embedding_runner),
+      tok_embedding_runner_(tok_embedding_runner),
       metadata_(metadata) {
   // Set input_toks_.size to 0 since we use embeddings instead
   input_toks_.size = 0;
@@ -195,9 +195,9 @@ void MultimodalTokenGenerator<T>::prepare_io(
     uint64_t cur_token,
     int64_t start_pos) {
   // Generate embedding for current token using embedding runner
-  embedding_runner_->prefill({cur_token});
+  tok_embedding_runner_->prefill({cur_token});
   const TensorStruct<float>& text_embeddings =
-      embedding_runner_->get_prompt_embeddings();
+      tok_embedding_runner_->get_prompt_embeddings();
   int64_t embedding_dim = text_embeddings.tensor->size(2);
   // Copy embedding to input buffer
   std::memcpy(

@@ -842,18 +842,9 @@ class LlamaModelWithoutEmbedding(LlamaModel):
             use_i64_token=use_i64_token,
         )
 
-        # Initialize modality placeholder token ID
-        # Default value of -1 indicates embeddings come from text encoder
-        # Note: Text encoder modality is not currently supported
-        self.modality_placeholder_token_id = kwargs.get(
-            "modality_placeholder_token_id", -1
-        )
-
-        if self.modality_placeholder_token_id == -1:
-            raise NotImplementedError(
-                "Text encoder modality (modality_placeholder_token_id=-1) is not currently supported. "
-                "Please provide a valid modality_placeholder_token_id in kwargs."
-            )
+        # Set the image token ID from keyword arguments. It defaults to None if not provided.
+        # If an ID is provided, it will be stored in the model's metadata.
+        self.image_token_id = kwargs.get("image_token_id", None)
 
     def forward(
         self,
@@ -943,7 +934,8 @@ class LlamaModelWithoutEmbedding(LlamaModel):
 
     def get_metadata(self):
         meta_data = super().get_metadata()
-        meta_data["modality_placeholder_token_id"] = self.modality_placeholder_token_id
+        if self.image_token_id:
+            meta_data["image_token_id"] = self.image_token_id
         return meta_data
 
 

@@ -12,20 +12,21 @@ PROMPT_EVAL = "prompt_eval"
 TASKS_EVAL = "tasks_eval"
 SQNR_EVAL = "sqnr_eval"
 
-# filenames for vision model
-VISION_ENCODER_INPUT_FILENAME = "vision_encoder_input"
-
-
 # Component identifiers
 AUDIO_ENCODER = "audio_encoder"
 VISION_ENCODER = "vision_encoder"
 TEXT_ENCODER = "text_encoder"
-TEXT_EMBEDDING = "text_embedding"
+TOK_EMBEDDING = "tok_embedding"
 TEXT_DECODER = "text_decoder"
 ATTENTION_SINK_EVICTOR = "attention_sink_evictor"
 
+# Mapping of input flags for the runner
+MODALITY_INPUT_FLAG_MAP = {
+    VISION_ENCODER: "image_path",
+}
+
 # Text embedding graph names
-TEXT_EMBEDDING_GRAPH_NAMES = [
+TOK_EMBEDDING_GRAPH_NAMES = [
     "tok_embedding_kv_forward",
     "tok_embedding_prefill_forward",
 ]

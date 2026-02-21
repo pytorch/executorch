@@ -150,27 +150,24 @@ def process_model_args(
 def get_model_specific_kwargs(control_args: argparse.Namespace, config: LLMModelConfig):
     """
     Retrieve model-specific config required for Static LLaMA.
-        This method handles architecture-specific requirements for both Vision-Language Models (VLMs)
-        and Language-only Models (LLMs), extracting necessary config from HuggingFace configs.
+    This method handles architecture-specific requirements for both Vision-Language Models (VLMs)
+    and Language-only Models (LLMs), extracting necessary config from HuggingFace configs.
 
     """
     kwargs = {}
-
     # Vision-Language Model (VLM)
     # For multimodal models, we need the special token ID that represents image placeholders
     # in the input sequence. This token is used to mark positions where image embeddings
     # should be inserted during inference.
     if hasattr(config, VISION_ENCODER):
         hf_config = AutoConfig.from_pretrained(config.repo_id)
-        kwargs["modality_placeholder_token_id"] = hf_config.image_token_id
-
+        kwargs["image_token_id"] = hf_config.image_token_id
     # TODO: Support Audio modality
-    elif hasattr(config, AUDIO_ENCODER):
+    if hasattr(config, AUDIO_ENCODER):
         raise NotImplementedError(
             "Audio encoder modality is not currently supported. "
-            "Please provide a valid modality_placeholder_token_id in kwargs."
+            "Please provide a valid audio_token_id in kwargs."
         )
-
     return kwargs
 
 
@@ -201,6 +198,7 @@ class Request:
         custom_annotation: Any = ()
         calibration_data: Request.CalibrationData = None
         tokenizer: callable = None
+        skip_quantize: bool = False
 
     method_name: str
     method_data: Dict[str, Data]

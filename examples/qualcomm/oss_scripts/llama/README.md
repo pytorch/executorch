@@ -308,6 +308,37 @@ If you have already compiled a VLM model, you can run inference with pre-generat
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smolvlm_500m_instruct --model_mode kv --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
 ```
 
+### Multi-Turn Conversation with VLM
+
+The framework supports multi-turn conversations with VLMs, allowing you to conduct dialogues that can involve multiple images.
+
+- **Multi-Turn Prompts**: To engage in a conversation, provide multiple prompts sequentially using the `--prompt` argument. Each string will be treated as a separate turn.
+- **Multiple Images**: You can supply multiple images (from URLs or local paths) using the `--image_path` argument.
+- **Flexible Image Placement**: Use the `<image>` token within your prompt to specify exactly where each image's embeddings should be placed. The images provided via `--image_path` will replace the `<image>` tokens in the order they appear.
+
+**Example**:
+
+In this example, the first turn compares two images, the second turn asks a follow-up question about the first image, and the third turn asks for a caption for a third image.
+
+```bash
+# Define image URLs and prompts for a 3-turn conversation
+IMAGE1_URL="https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg"
+IMAGE2_URL="http://images.cocodataset.org/val2017/000000039769.jpg"
+IMAGE3_URL="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg"
+
+PROMPT1="<image><image>Compare these images above and list the differences."
+PROMPT2="Answer the question: What's the main object in first image?"
+PROMPT3="<image>Caption this image."
+
+# Execute the multi-turn conversation
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smolvlm_500m_instruct --model_mode kv --max_seq_len 2048 --prompt "$PROMPT1" "$PROMPT2" "$PROMPT3" --image_path "$IMAGE1_URL" "$IMAGE2_URL" "$IMAGE3_URL"
+```
+
+**How it works:**
+- **Turn 1**: The prompt `"<image><image>Compare these images above and list the differences."` uses the first two images (`$IMAGE1_URL`, `$IMAGE2_URL`).
+- **Turn 2**: The prompt `"Answer the question: What's the main object in first image?"` is a text-only follow-up. The conversation context is maintained from the previous turn.
+- **Turn 3**: The prompt `"<image>Caption this image."` uses the third image (`$IMAGE3_URL`).
+
 ### VLM Processing Details
 
 The VLM inference pipeline consists of:

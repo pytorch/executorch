@@ -1010,13 +1010,18 @@ def parse_skip_delegation_node(args):
     return skip_node_id_set, skip_node_op_set
 
 
-def generate_inputs(dest_path: str, file_name: str, inputs=None):
+def generate_inputs(
+    dest_path: str,
+    input_list_filename: str,
+    inputs=None,
+    prefix_input_filename: str = "",
+):
     input_list_file = None
     input_files = []
 
     def prepare_input_file(tensor, fd, index, sub_index):
         # transform torch.Tensor to raw file
-        input_file_name = f"input_{index}_{sub_index}.raw"
+        input_file_name = f"{prefix_input_filename}_input_{index}_{sub_index}.raw"
         input_file_path = f"{dest_path}/{input_file_name}"
         if not isinstance(tensor, torch.Tensor):
             tensor = torch.tensor(tensor)
@@ -1029,7 +1034,7 @@ def generate_inputs(dest_path: str, file_name: str, inputs=None):
 
     # Prepare input data
     if inputs is not None:
-        input_list_file = f"{dest_path}/{file_name}"
+        input_list_file = f"{dest_path}/{input_list_filename}"
 
         with open(input_list_file, "w") as f:
             for idx, data in enumerate(inputs):

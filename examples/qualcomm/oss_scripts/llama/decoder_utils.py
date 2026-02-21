@@ -41,7 +41,7 @@ def _modality_inputs_merger(
     input_ids: torch.LongTensor,
     inputs_embeds: torch.Tensor,
     image_hidden_states: torch.Tensor,
-    modality_placeholder_token_id,
+    image_token_id,
 ):
     """
     This method aims at merging the token embeddings with the image hidden states into one single sequence of vectors that are fed to the transformer LM.
@@ -53,7 +53,7 @@ def _modality_inputs_merger(
     - To fit the format of that sequence, `input_ids`, `input_embeds`, `attention_mask` are all 3 adapted to insert the image hidden states.
     """
 
-    special_image_mask = input_ids == modality_placeholder_token_id
+    special_image_mask = input_ids == image_token_id
     special_image_mask = (
         special_image_mask.unsqueeze(-1)
         .expand_as(inputs_embeds)
@@ -501,7 +501,7 @@ def _generate(
     pos,
     module: torch.fx.GraphModule,
     tokenizer,
-    text_embedding,
+    tok_embedding,
     ar_len: int,
     max_seq_len: int,
     k_caches,
@@ -527,7 +527,7 @@ def _generate(
 
             if inputs.input_ids is None:
                 # Get text_embedding
-                embedding = text_embedding(tmp_token_list)
+                embedding = tok_embedding(tmp_token_list)
 
             # Prepare tmp_pos (padded with zeros).
             tmp_pos = torch.zeros((1, ar_len), dtype=torch.int32)
@@ -606,7 +606,7 @@ def _generate(
                 )
             else:
                 logits, new_k_caches, new_v_caches = module(
-                    text_embedding(
+                    tok_embedding(
                         torch.tensor(
                             input_tokens, dtype=inputs.input_ids_dtype
                         ).unsqueeze(0)
@@ -667,8 +667,8 @@ def kv_inference(  # noqa: C901
     module: torch.fx.GraphModule,
     tokenizer,
     tok_embedding=None,
-    hidden_states=None,
-    modality_placeholder_token_id=None,
+    hidden_states: Tuple = (),
+    image_token_id=None,
     ar_len=1,
     max_seq_len=512,
     use_i64_token=False,
@@ -679,8 +679,7 @@ def kv_inference(  # noqa: C901
     is_multimodal = all(
         [
             tok_embedding is not None,
-            hidden_states is not None,
-            modality_placeholder_token_id is not None,
+            image_token_id is not None,
         ]
     )
 
@@ -706,8 +705,9 @@ def kv_inference(  # noqa: C901
         # pyre-ignore
         prompt_token_list = prompt.flatten().tolist()
 
-    # 2. forward text embedding
+    # 2. process embedding
     if is_multimodal:
+        # 2.1 forward text embedding
         input_ids = torch.tensor([prompt_token_list])
         input_ids = (
             input_ids.to(torch.int64) if use_i64_token else input_ids.to(torch.int32)
@@ -716,11 +716,12 @@ def kv_inference(  # noqa: C901
         padded_seq_len = max(input_ids_len, ar_len)
         padded_seq_len = ((padded_seq_len + ar_len - 1) // ar_len) * ar_len
 
+        embedding_dim = [p for _, p in tok_embedding.named_parameters()][0].shape[-1]
         text_embeddings = torch.zeros(
             (
                 1,
                 padded_seq_len,
-                hidden_states[0].shape[-1],
+                embedding_dim,
             ),
             dtype=torch.float32,
         )
@@ -745,12 +746,18 @@ def kv_inference(  # noqa: C901
                         :, chunk_start_idx : chunk_start_idx + actual_chunk_len, :
                     ] = embedding
 
-            multimodal_embedding = _modality_inputs_merger(
-                input_ids,
-                text_embeddings[:, :input_ids_len, :],  # Only use actual prompt length
-                torch.cat(hidden_states, dim=1),
-                modality_placeholder_token_id,
-            )
+            # 2.2 merge text and multimodality embedding
+            if hidden_states:
+                multimodal_embedding = _modality_inputs_merger(
+                    input_ids,
+                    text_embeddings[
+                        :, :input_ids_len, :
+                    ],  # Only use actual prompt length
+                    torch.cat(hidden_states, dim=1),
+                    image_token_id,
+                )
+            else:
+                multimodal_embedding = text_embeddings[:, :input_ids_len, :]
 
     # record total input tokens and generated tokens
     total_token_list = prompt_token_list
@@ -809,7 +816,7 @@ def prefill_inference(
     tokenizer,
     tok_embedding=None,
     hidden_states=None,
-    modality_placeholder_token_id=None,
+    image_token_id=None,
     max_seq_len=512,
     use_i64_token=False,
     collect_logits=False,
@@ -818,7 +825,7 @@ def prefill_inference(
         [
             tok_embedding is not None,
             hidden_states is not None,
-            modality_placeholder_token_id is not None,
+            image_token_id is not None,
         ]
     )
 
@@ -863,7 +870,7 @@ def prefill_inference(
                     tmp_token_list,
                     text_embeddings,
                     torch.cat(hidden_states, dim=1),
-                    modality_placeholder_token_id,
+                    image_token_id,
                 )
                 results = module(multimodal_embedding, *atten_mask)
             else:
@@ -891,8 +898,8 @@ def graph_module_inference(
     max_seq_len=512,
     prompt=None,
     tok_embedding=None,
-    hidden_states=None,
-    modality_placeholder_token_id=None,
+    hidden_states: Tuple = (),
+    image_token_id=None,
     tasks=None,
     tasks_limit=1,
     num_fewshot=None,
@@ -923,7 +930,7 @@ def graph_module_inference(
             tokenizer,
             tok_embedding=tok_embedding,
             hidden_states=hidden_states,
-            modality_placeholder_token_id=modality_placeholder_token_id,
+            image_token_id=image_token_id,
             max_seq_len=max_seq_len,
             use_i64_token=use_i64_token,
             collect_logits=False,
@@ -941,7 +948,6 @@ def graph_module_inference(
             use_i64_token=use_i64_token,
             seq_mse_candidates=seq_mse_candidates,
         )
-        # Evaluate the model
         with torch.no_grad():
             eval_results = simple_evaluate(
                 model=calibration_wrapper,

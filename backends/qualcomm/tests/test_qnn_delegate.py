@@ -6661,7 +6661,7 @@ class TestExampleMultimodalityScript(TestQNN):
         sm8650_token_rate: float
         sm8750_token_rate: float
         encoder_pte_size: float
-        text_embedding_pte_size: float
+        tok_embedding_pte_size: float
         decoder_pte_size: float
 
     @dataclass(frozen=True)
@@ -6677,7 +6677,7 @@ class TestExampleMultimodalityScript(TestQNN):
                 sm8650_token_rate=50,
                 sm8750_token_rate=55,
                 encoder_pte_size=110_000_000,  # 110MB
-                text_embedding_pte_size=100_000_000,  # 100MB
+                tok_embedding_pte_size=100_000_000,  # 100MB
                 decoder_pte_size=400_000_000,  # 400MB
                 image_path="https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg",  # New York Bay
                 golden_image_feature="city",
@@ -6687,7 +6687,7 @@ class TestExampleMultimodalityScript(TestQNN):
                 sm8650_token_rate=11,
                 sm8750_token_rate=13,
                 encoder_pte_size=425_000_000,  # 425MB
-                text_embedding_pte_size=300_000_000,  # 300MB
+                tok_embedding_pte_size=300_000_000,  # 300MB
                 decoder_pte_size=550_000_000,  # 550 MB
                 image_path="http://images.cocodataset.org/val2017/000000039769.jpg",  # Two cats lying on a blanket
                 golden_image_feature="cats",
@@ -6759,16 +6759,16 @@ class TestExampleMultimodalityScript(TestQNN):
                     print(f"Answer: {model_out}")
                 if not self.enable_x86_64:
                     encoder_pte_size = msg["encoder_pte_size"]
-                    text_embedding_pte_size = msg["text_embedding_pte_size"]
+                    tok_embedding_pte_size = msg["tok_embedding_pte_size"]
                     decoder_pte_size = msg["pte_size"]
                     self.assertLessEqual(encoder_pte_size, vlm_specs.encoder_pte_size)
                     self.assertLessEqual(
-                        text_embedding_pte_size, vlm_specs.text_embedding_pte_size
+                        tok_embedding_pte_size, vlm_specs.tok_embedding_pte_size
                     )
                     self.assertLessEqual(decoder_pte_size, vlm_specs.decoder_pte_size)
                     print(f"Encoder PTE Size: {encoder_pte_size} bytes")
-                    print(f"Text Embedding PTE Size: {text_embedding_pte_size} bytes")
-                    print(f"Decoder PTE Size: {decoder_pte_size} bytes")
+                    print(f"Token Embedding PTE Size: {tok_embedding_pte_size} bytes")
+                    print(f"Text Decoder PTE Size: {decoder_pte_size} bytes")
 
                 attr_name = f"{self.model.lower()}_token_rate"
                 if (
