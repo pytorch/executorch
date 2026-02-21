@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:native_rules.bzl", "buck_filegroup")
 load("@fbsource//tools/build_defs:fb_xplat_cxx_binary.bzl", "fb_xplat_cxx_binary")
 load(
@@ -11,7 +12,7 @@ load(
 
 oncall("executorch")
 
-buck_filegroup(
+non_fbcode_target(_kind = buck_filegroup,
     name = "gpuinfo_shaders",
     srcs = glob([
         "glsl/*",
@@ -21,14 +22,14 @@ buck_filegroup(
     ],
 )
 
-vulkan_spv_shader_lib(
+non_fbcode_target(_kind = vulkan_spv_shader_lib,
     name = "gpuinfo_shader_lib",
     spv_filegroups = {
         ":gpuinfo_shaders": "glsl",
     },
 )
 
-fb_xplat_cxx_binary(
+non_fbcode_target(_kind = fb_xplat_cxx_binary,
     name = "vulkan_gpuinfo",
     srcs = glob([
         "**/*.cpp",
@@ -54,5 +55,57 @@ fb_xplat_cxx_binary(
         "//arvr/third-party/opencl:runtime",
         "//xplat/executorch/backends/vulkan:vulkan_graph_runtime",
         "//xplat/folly:json",
+    ],
+)
+
+# !!!! fbcode/executorch/backends/vulkan/tools/gpuinfo/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbcode_macros//build_defs:native_rules.bzl", "buck_filegroup")
+load("@fbsource//tools/build_defs:fb_xplat_cxx_binary.bzl", "fb_xplat_cxx_binary")
+load(
+    "@fbsource//tools/build_defs:platform_defs.bzl",
+    "ANDROID",
+)
+load(
+    "@fbsource//xplat/executorch/backends/vulkan:targets.bzl",
+    "vulkan_spv_shader_lib",
+)
+
+
+fbcode_target(_kind = buck_filegroup,
+    name = "gpuinfo_shaders",
+    srcs = glob([
+        "glsl/*",
+    ]),
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+fbcode_target(_kind = vulkan_spv_shader_lib,
+    name = "gpuinfo_shader_lib",
+    is_fbcode = True,
+    spv_filegroups = {
+        ":gpuinfo_shaders": "glsl",
+    },
+)
+
+fbcode_target(_kind = fb_xplat_cxx_binary,
+    name = "vulkan_gpuinfo",
+    srcs = glob([
+        "**/*.cpp",
+    ]),
+    headers = glob([
+        "**/*.h",
+    ]),
+    header_namespace = "/include",
+    include_directories = ["/include"],
+    platforms = ANDROID,
+    raw_headers = glob([
+        "**/*.h",
+    ]),
+    deps = [
+        ":gpuinfo_shader_lib",
+        "//executorch/backends/vulkan:vulkan_graph_runtime",
     ],
 )
