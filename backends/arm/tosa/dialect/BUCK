@@ -6,9 +6,11 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "lib.py",
         "ops_registration.py",
+        "shape.py",
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/arm/tosa:mapping",
         "//executorch/backends/arm/tosa:tosa",
         "//executorch/exir/dialects:lib",
     ],
