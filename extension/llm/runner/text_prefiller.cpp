@@ -76,6 +76,10 @@ TextPrefiller::TextPrefiller(
   // When kv cache is not used, start pos is ignored
   int32_t num_prompt_tokens = prompt_tokens.size();
 
+  // Note: We pass absolute positions to the model. The model's custom ops
+  // (update_cache, sdpa) will handle cache wrapping internally.
+  // This is important because RoPE needs absolute positions for correct embeddings.
+
   // store the token
   uint64_t cur_token;
   if (enable_parallel_prefill_ || !use_kv_cache_) {

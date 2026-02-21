@@ -32,6 +32,16 @@ class ET_EXPERIMENTAL TextTokenGenerator {
         use_kv_cache_(use_kv_cache),
         stats_(stats) {}
 
+  /**
+   * Configure ring buffer mode for continuous generation past context length.
+   * @param is_ring_buffer Whether ring buffer KV cache is enabled.
+   * @param sliding_window_size The size of the sliding window (context length).
+   */
+  void set_ring_buffer_config(bool is_ring_buffer, int64_t sliding_window_size) {
+    is_ring_buffer_ = is_ring_buffer;
+    sliding_window_size_ = sliding_window_size;
+  }
+
   void set_ignore_eos(bool ignore_eos) {
     ignore_eos_ = ignore_eos;
   }
@@ -87,6 +97,10 @@ class ET_EXPERIMENTAL TextTokenGenerator {
 
     // Generate our tokens
     while (pos < start_pos + max_new_tokens) {
+      // Pass absolute position to the model - the model's custom ops will handle
+      // cache wrapping internally. The absolute position is needed for correct
+      // RoPE (Rotary Position Embedding) computation.
+
       // Run the model
       auto logits_res = text_decoder_runner_->step(tokens_managed, pos);
 
@@ -174,6 +188,10 @@ class ET_EXPERIMENTAL TextTokenGenerator {
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
   bool use_kv_cache_;
   bool ignore_eos_ = false;
+
+  // Ring buffer configuration
+  bool is_ring_buffer_ = false;
+  int64_t sliding_window_size_ = 0;
 
   // state machine
   bool should_stop_ = false;
