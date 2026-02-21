@@ -96,6 +96,7 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
       {llm::kMaxContextLen, 128},
       {llm::kUseKVCache, true},
       {llm::kUseSDPAWithKVCache, false},
+      {llm::kUseRingBuffer, true},
   });
 
   // Read metadata from the model
