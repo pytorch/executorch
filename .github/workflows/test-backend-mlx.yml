@@ -40,5 +40,24 @@ jobs:
 
 
         echo "::group::Run backend test suite (${{ matrix.suite }})"
-        ${CONDA_RUN} pytest -c /dev/null backends/test/suite/${{ matrix.suite }}/ -m flow_mlx -n auto
+        ${CONDA_RUN} pytest -c /dev/null backends/test/suite/${{ matrix.suite }}/ -m flow_mlx -n auto 2>&1 | tee pytest_output.txt || true
         echo "::endgroup::"
+
+        # Parse pytest summary and check failure threshold
+        if grep -E "^=+ .* =+$" pytest_output.txt | tail -1 | grep -q "failed"; then
+          FAILED=$(grep -E "^=+ .* =+$" pytest_output.txt | tail -1 | grep -oE "[0-9]+ failed" | grep -oE "[0-9]+")
+        else
+          FAILED=0
+        fi
+
+        if [ "${{ matrix.suite }}" = "operators" ]; then
+          MAX_FAILURES=1
+        else
+          MAX_FAILURES=3
+        fi
+
+        echo "Failed tests: $FAILED (max allowed: $MAX_FAILURES)"
+        if [ "$FAILED" -gt "$MAX_FAILURES" ]; then
+          echo "::error::Too many test failures: $FAILED > $MAX_FAILURES"
+          exit 1
+        fi

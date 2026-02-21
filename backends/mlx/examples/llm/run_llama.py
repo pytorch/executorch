@@ -48,11 +48,16 @@ def run_inference(
     logger.info(f"Encoding prompt: {prompt!r}")
     messages = [{"role": "user", "content": prompt}]
     input_ids = tokenizer.apply_chat_template(
-        messages, return_tensors="pt", add_generation_prompt=True
+        messages, return_tensors="pt", add_generation_prompt=True, tokenize=True
     )
-    # apply_chat_template may return a list; ensure we have a tensor
+    # apply_chat_template may return a list of ints or a string; ensure we have a tensor
     if not isinstance(input_ids, torch.Tensor):
-        input_ids = torch.tensor([input_ids], dtype=torch.long)
+        if isinstance(input_ids, str):
+            # If tokenize=False was used or tokenizer returned a string, tokenize it
+            input_ids = tokenizer.encode(input_ids, return_tensors="pt")
+        else:
+            # It's a list of ints
+            input_ids = torch.tensor([input_ids], dtype=torch.long)
     logger.info(f"Input shape: {input_ids.shape}")
 
     prompt_len = input_ids.shape[1]
