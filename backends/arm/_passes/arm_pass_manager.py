@@ -174,6 +174,9 @@ class ArmPassManager(PassManager):
             case SoftmaxDecompositionConfig.UNSTABLE:
                 skip_set.add(DecomposeSoftmaxPass)
                 skip_set.add(DecomposeMaskedFillPass)
+            case SoftmaxDecompositionConfig.STABLE:
+                skip_set.add(DecomposeSoftmaxUnstablePass)
+                skip_set.add(DecomposeMaskedFillPass)
 
         if config.fuse_duplicate_users is FuseDuplicateUsersConfig.DISABLED:
             skip_set.add(FuseDuplicateUsersPass)

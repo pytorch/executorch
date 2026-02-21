@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from executorch.backends.arm.common.pipeline_config import SoftmaxDecompositionConfig
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.vgf import VgfCompileSpec
@@ -26,6 +27,20 @@ def test_ethos_u_compile_spec_no_target():
     spec_list.pop(0)
     with raises(ValueError, match="No tosa_spec in compile spec."):
         EthosUCompileSpec.from_list(spec_list)
+
+
+def test_ethos_u55_defaults_to_stable_softmax():
+    """Test that EthosUCompileSpec for U55 defaults to STABLE softmax config."""
+    compile_spec = EthosUCompileSpec("ethos-u55-128")
+    pipeline_config = compile_spec.get_pass_pipeline_config()
+    assert pipeline_config.softmax == SoftmaxDecompositionConfig.STABLE
+
+
+def test_ethos_u85_defaults_to_stable_softmax():
+    """Test that EthosUCompileSpec for U85 defaults to MASKED softmax config."""
+    compile_spec = EthosUCompileSpec("ethos-u85-256")
+    pipeline_config = compile_spec.get_pass_pipeline_config()
+    assert pipeline_config.softmax == SoftmaxDecompositionConfig.MASKED
 
 
 def test_vgf_compile_spec_no_target():
