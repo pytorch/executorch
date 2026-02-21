@@ -15,6 +15,19 @@
             "name": "voxtral-realtime-cpu",
             "displayName": "Voxtral Realtime runner (CPU)",
             "inherits": ["voxtral-realtime-base"]
+        },
+        {
+            "name": "voxtral-realtime-metal",
+            "displayName": "Voxtral Realtime runner (Metal)",
+            "inherits": ["voxtral-realtime-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_METAL": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
@@ -22,6 +35,13 @@
             "name": "voxtral-realtime-cpu",
             "displayName": "Build Voxtral Realtime runner (CPU)",
             "configurePreset": "voxtral-realtime-cpu",
+            "targets": ["voxtral_realtime_runner"]
+        },
+        {
+            "name": "voxtral-realtime-metal",
+            "displayName": "Build Voxtral Realtime runner (Metal)",
+            "configurePreset": "voxtral-realtime-metal",
+            "configuration": "Release",
             "targets": ["voxtral_realtime_runner"]
         }
     ],
@@ -37,6 +57,20 @@
                 {
                     "type": "build",
                     "name": "voxtral-realtime-cpu"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-realtime-metal",
+            "displayName": "Configure and build Voxtral Realtime runner (Metal)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-realtime-metal"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-realtime-metal"
                 }
             ]
         }

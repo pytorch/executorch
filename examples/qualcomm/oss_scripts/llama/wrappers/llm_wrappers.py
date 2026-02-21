@@ -824,9 +824,9 @@ class HybridTextDecoder(Component):
             skip_node_op_set={"llama.fallback.default"},
         )
 
-        if self.config.num_sharding > 1 and self.control_args.model_mode == "kv":
-            # weight-sharing based context binaries cannot be opened in x86 host
-            update_spill_fill_size(edge_prog_mgr.exported_program("kv_forward"))
+        if self.config.num_sharding > 1:
+            for graph_name in graph_names:
+                update_spill_fill_size(edge_prog_mgr.exported_program(graph_name))
 
         if self.control_args.verbose:
             for ep in edge_prog_mgr._edge_programs.values():

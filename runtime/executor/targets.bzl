@@ -90,6 +90,7 @@ def define_common_targets():
             ],
             headers = [
                 "platform_memory_allocator.h",
+                "program_validation.h",
             ],
             exported_headers = [
                 "method.h",
@@ -121,7 +122,8 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/schema:program",
-                "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit"
+                "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
+                "//executorch/runtime/core/portable_type/c10/c10:c10",
             ],
             visibility = ["PUBLIC"],
         )
