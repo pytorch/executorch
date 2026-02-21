@@ -711,6 +711,16 @@ class LinearPattern(QuantizationPattern):
             output = []
             activation.meta["quantization_annotation"].input_qspec_map = {}
 
+        # In order for QAT to be numerically correct, there should be no quantization between
+        # linear node and batch norm node.
+        if self.is_qat:
+            linear_users = linear_node.users
+            possibly_bn = (
+                list(linear_users.keys())[0] if len(linear_users) == 1 else None
+            )
+            if possibly_bn and _is_batch_norm(possibly_bn):
+                output = []
+
         return PartitionAnchors(
             inputs=[(linear_node, NodeArgsIdx(0))],
             weights=[(linear_node, NodeArgsIdx(1))],
