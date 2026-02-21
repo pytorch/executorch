@@ -222,6 +222,10 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=efficientnet
   elif [[ "${MODEL_NAME}" == "eurobert" ]]; then
     EXPORT_SCRIPT=eurobert
+  elif [[ "${MODEL_NAME}" == "fbnet" ]]; then
+    pip install timm
+    EXPORT_SCRIPT=fbnet
+    EXTRA_FLAGS="--dataset imagenet-mini/val"
   elif [[ "${MODEL_NAME}" == "focalnet" ]]; then
     EXPORT_SCRIPT=focalnet
   elif [[ "${MODEL_NAME}" == "mobilevit_v1" ]]; then
@@ -251,7 +255,7 @@ test_model_with_qnn() {
     "cvt"|"dit"|"focalnet"|"mobilevit_v2"|"pvt"|"swin")
         SCRIPT_FOLDER=oss_scripts
         ;;
-    "albert"|"bert"|"conv_former"|"distilbert"|"roberta"|"efficientnet"|"mobilevit_v1")
+    "albert"|"bert"|"conv_former"|"distilbert"|"fbnet"|"roberta"|"efficientnet"|"mobilevit_v1")
         pip install evaluate
         SCRIPT_FOLDER=oss_scripts
         # 16bit models will encounter op validation fail on some operations,
