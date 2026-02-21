@@ -76,12 +76,7 @@ Error set_option(
   }
 
   BackendOptionContext backend_option_context;
-  Error result =
-      backend_class->set_option(backend_option_context, backend_options);
-  if (result != Error::Ok) {
-    return result;
-  }
-  return Error::Ok;
+  return backend_class->set_option(backend_option_context, backend_options);
 }
 
 Error get_option(
@@ -93,14 +88,7 @@ Error get_option(
     return Error::NotFound;
   }
   BackendOptionContext backend_option_context;
-  executorch::runtime::Span<BackendOption> backend_options_ref(
-      backend_options.data(), backend_options.size());
-  auto result =
-      backend_class->get_option(backend_option_context, backend_options_ref);
-  if (result != Error::Ok) {
-    return result;
-  }
-  return Error::Ok;
+  return backend_class->get_option(backend_option_context, backend_options);
 }
 
 } // namespace ET_RUNTIME_NAMESPACE

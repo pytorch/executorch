@@ -579,6 +579,12 @@ install(
   PATTERN "*.h"
 )
 install(
+  DIRECTORY runtime/backend/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/backend
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(
   DIRECTORY runtime/platform/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/platform
   FILES_MATCHING
