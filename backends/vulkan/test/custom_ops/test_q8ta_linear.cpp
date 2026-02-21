@@ -136,10 +136,13 @@ static TestCase create_test_case_from_config(
   test_case.add_input_spec(output_zero_point);
   test_case.add_input_spec(bias);
 
+  // Activation (none = no activation)
+  ValueSpec activation = ValueSpec::make_string("none");
+  test_case.add_input_spec(activation);
+
   // Add impl_selector string
   ValueSpec impl_selector_spec = ValueSpec::make_string(impl_selector);
   test_case.add_input_spec(impl_selector_spec);
-
   test_case.add_output_spec(output);
 
   test_case.set_abs_tolerance(output_scale_val + 1e-4f);
@@ -226,6 +229,8 @@ static void q8ta_linear_reference_impl(TestCase& test_case) {
   const ValueSpec& output_scale_spec = test_case.inputs()[idx++];
   const ValueSpec& output_zeros_spec = test_case.inputs()[idx++];
   const ValueSpec& bias_spec = test_case.inputs()[idx++];
+  const ValueSpec& activation_spec = test_case.inputs()[idx++];
+  (void)activation_spec;
   const ValueSpec& impl_selector_spec = test_case.inputs()[idx++];
   (void)impl_selector_spec;
 
