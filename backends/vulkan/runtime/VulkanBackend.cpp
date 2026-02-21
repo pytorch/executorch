@@ -144,6 +144,8 @@ utils::GPUMemoryLayout get_memory_layout(
       return utils::kPackedInt8_4W4C;
     case vkgraph::VkMemoryLayout::PACKED_INT8_4H4W:
       return utils::kPackedInt8_4H4W;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4W:
+      return utils::kPackedInt8_4W;
     case vkgraph::VkMemoryLayout::PACKED_INT8_4C1W:
       return utils::kPackedInt8_4C1W;
     default:
