@@ -64,6 +64,8 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-4B-Realtime-2602"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
@@ -73,6 +75,12 @@ jobs:
         quant:
           - "non-quantized"
           - "quantized-int4-metal"
+        exclude:
+          # Exclude non-quantized for Voxtral Realtime (too large)
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "non-quantized"
     with:
       runner: macos-m2-stable
       python-version: '3.11'
@@ -115,6 +123,8 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-4B-Realtime-2602"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
@@ -124,6 +134,12 @@ jobs:
         quant:
           - "non-quantized"
           - "quantized-int4-metal"
+        exclude:
+          # Exclude non-quantized for Voxtral Realtime (too large)
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "non-quantized"
     with:
       runner: macos-m2-stable
       python-version: '3.11'
