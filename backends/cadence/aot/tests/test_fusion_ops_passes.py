@@ -8,12 +8,16 @@
 
 
 import copy
+import operator
 import unittest
+
+from parameterized import parameterized
 from typing import cast, Final, List, Tuple
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot.fuse_ops import (
+    FuseBatchNormWithConv,
     FuseCascadedTransposeOrPermuteOps,
     FuseCascadedViewOps,
     FuseFullThenReshapePass,
@@ -22,6 +26,7 @@ from executorch.backends.cadence.aot.fuse_ops import (
     FuseMulTensorIntoDequantPass,
     FuseMulTensorIntoQuantPass,
     FuseQuantDequantToRequantizePass,
+    FuseQuantizedBatchNormWithConv,
     FuseTransposeOrPermuteOpPairsPass,
 )
 from executorch.backends.cadence.aot.graph_builder import GraphBuilder
@@ -1123,3 +1128,249 @@ class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: num_forks,
             },
         )
+
+
+class TestFuseBatchNormWithConv(unittest.TestCase):
+    """Tests for FuseBatchNormWithConv pass."""
+
+    def test_pass_runs_without_errors(self) -> None:
+        """Test that the pass can run on a graph without errors.
+
+        Note: This test uses placeholder nodes for weights instead of get_attr nodes,
+        so no actual fusion will occur. This test verifies the pass code compiles
+        and runs correctly. Full integration testing with real models should verify
+        the actual fusion behavior.
+        """
+        builder = GraphBuilder()
+
+        # Create input tensor: (N=1, C=3, H=4, W=4)
+        x_tensor = torch.randn([1, 3, 4, 4], dtype=torch.float32)
+        x = builder.placeholder("x", x_tensor)
+
+        # Create convolution weights: (out_channels=3, in_channels=3, kH=3, kW=3)
+        weight_tensor = torch.randn([3, 3, 3, 3], dtype=torch.float32)
+        weight = builder.placeholder("weight", weight_tensor)
+
+        # Create convolution bias
+        bias_tensor = torch.randn([3], dtype=torch.float32)
+        bias = builder.placeholder("bias", bias_tensor)
+
+        # Create convolution node
+        conv = builder.call_operator(
+            op=exir_ops.edge.aten.convolution.default,
+            args=(
+                x,
+                weight,
+                bias,
+                [1, 1],  # stride
+                [1, 1],  # padding
+                [1, 1],  # dilation
+                False,  # transposed
+                [0, 0],  # output_padding
+                1,  # groups
+            ),
+        )
+
+        # Create batch_norm parameters
+        bn_weight_tensor = torch.ones([3], dtype=torch.float32)
+        bn_weight = builder.placeholder("bn_weight", bn_weight_tensor)
+        bn_bias_tensor = torch.zeros([3], dtype=torch.float32)
+        bn_bias = builder.placeholder("bn_bias", bn_bias_tensor)
+        running_mean_tensor = torch.zeros([3], dtype=torch.float32)
+        running_mean = builder.placeholder("running_mean", running_mean_tensor)
+        running_var_tensor = torch.ones([3], dtype=torch.float32)
+        running_var = builder.placeholder("running_var", running_var_tensor)
+
+        # Create batch_norm node
+        bn = builder.call_operator(
+            op=exir_ops.edge.aten.native_batch_norm.default,
+            args=(
+                conv,
+                bn_weight,
+                bn_bias,
+                running_mean,
+                running_var,
+                False,  # training
+                0.1,  # momentum
+                1e-5,  # eps
+            ),
+        )
+
+        # Get first element of batch_norm output tuple
+        getitem = builder.call_operator(
+            op=operator.getitem,
+            args=(bn, 0),
+        )
+
+        builder.output([getitem])
+        gm = builder.get_graph_module()
+
+        # Verify initial state: has both convolution and batch_norm
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.aten.convolution.default), 1
+        )
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.aten.native_batch_norm.default), 1
+        )
+
+        # Run the fusion pass - should run without errors
+        p = FuseBatchNormWithConv()
+        result = cast(PassResult, p(gm))
+
+        # Verify pass returns a valid PassResult
+        self.assertIsNotNone(result)
+        self.assertIsNotNone(result.graph_module)
+        # Note: modified is False because weights are placeholders, not get_attr nodes.
+        # The pass only fuses when weights are registered module parameters.
+        self.assertFalse(result.modified)
+
+        # Verify nodes are unchanged after pass (no fusion occurred due to placeholder weights)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.convolution.default), 1
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.native_batch_norm.default),
+            1,
+        )
+
+
+class TestFuseQuantizedBatchNormWithConv(unittest.TestCase):
+    @parameterized.expand(
+        [
+            (
+                "conv1d_bn1d",
+                exir_ops.edge.quantized.conv1d.default,
+                exir_ops.edge.quantized.batch_norm1d.default,
+                exir_ops.edge.quantized.conv1d_prepack,
+                (1, 3, 10),  # input shape: (N, C, L)
+                (3, 3, 3),  # weight shape: (out_channels, in_channels, kernel)
+                [1],  # stride
+                [1],  # padding
+                [1],  # dilation
+            ),
+            (
+                "conv2d_bn2d",
+                exir_ops.edge.quantized.conv2d.new,
+                exir_ops.edge.quantized.batch_norm2d.default,
+                exir_ops.edge.quantized.conv2d_prepack,
+                (1, 3, 8, 8),  # input shape: (N, C, H, W)
+                (3, 3, 3, 3),  # weight shape: (out_channels, in_channels, kH, kW)
+                [1, 1],  # stride
+                [1, 1],  # padding
+                [1, 1],  # dilation
+            ),
+        ]
+    )
+    def test_fuse_quantized_conv_bn(
+        self,
+        _name: str,
+        conv_op: EdgeOpOverload,
+        bn_op: EdgeOpOverload,
+        prepack_op: EdgeOpOverload,
+        _input_shape: tuple[int, ...],
+        weight_shape: tuple[int, ...],
+        stride: list[int],
+        padding: list[int],
+        dilation: list[int],
+    ) -> None:
+        """
+        Test that FuseQuantizedBatchNormWithConv pass fuses quantized conv + bn
+        into just the quantized conv op with fused weights.
+        """
+        out_channels = weight_shape[0]
+        scale = 0.1
+        zero_point = 0
+        eps = 1e-5
+        groups = 1
+
+        # Create a quantized weight tensor
+        weight_fp = torch.randn(weight_shape, dtype=torch.float32)
+        weight_quant = torch.quantize_per_tensor(
+            weight_fp, scale=0.1, zero_point=0, dtype=torch.qint8
+        )
+        bias = torch.randn(out_channels, dtype=torch.float32)
+
+        # Create packed params using actual prepack op
+        packed_params = prepack_op(
+            weight_quant, bias, stride, padding, dilation, groups
+        )
+
+        # Create batch norm parameters
+        # Note: Using schema parameter names 'mean' and 'var' to match
+        # quantized::batch_norm1d schema, not 'running_mean'/'running_var'
+        bn_weight = torch.ones(out_channels, dtype=torch.float32)
+        bn_bias = torch.zeros(out_channels, dtype=torch.float32)
+        mean = torch.zeros(out_channels, dtype=torch.float32)
+        var = torch.ones(out_channels, dtype=torch.float32)
+
+        # Create a root module with registered attributes
+        class RootModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.packed_params = packed_params
+                self.register_buffer("bn_weight", bn_weight)
+                self.register_buffer("bn_bias", bn_bias)
+                self.register_buffer("mean", mean)
+                self.register_buffer("var", var)
+
+        root = RootModule()
+
+        # Manually build the graph
+        graph = torch.fx.Graph()
+
+        # Create input placeholder
+        x_node = graph.placeholder("x")
+
+        # Create get_attr nodes for packed params and bn params
+        packed_params_node = graph.get_attr("packed_params")
+        bn_weight_node = graph.get_attr("bn_weight")
+        bn_bias_node = graph.get_attr("bn_bias")
+        mean_node = graph.get_attr("mean")
+        var_node = graph.get_attr("var")
+
+        # Create quantized conv node: (input, packed_params, scale, zero_point)
+        conv_node = graph.call_function(
+            conv_op,
+            args=(x_node, packed_params_node, scale, zero_point),
+        )
+
+        # Create quantized batch_norm node:
+        # (input, weight, bias, mean, var, eps, scale, zero_point)
+        bn_node = graph.call_function(
+            bn_op,
+            args=(
+                conv_node,
+                bn_weight_node,
+                bn_bias_node,
+                mean_node,
+                var_node,
+                eps,
+                scale,
+                zero_point,
+            ),
+        )
+
+        # Output the batch_norm result
+        graph.output(bn_node)
+
+        # Create GraphModule with the root module
+        gm = torch.fx.GraphModule(root, graph)
+
+        # Verify initial graph has both conv and bn
+        self.assertEqual(count_node(gm, conv_op), 1)
+        self.assertEqual(count_node(gm, bn_op), 1)
+
+        # Test the fusion logic directly via maybe_remove_or_replace
+        # This avoids the recompile step which has serialization issues with ScriptObjects
+        p = FuseQuantizedBatchNormWithConv()
+
+        # Find the conv node and call maybe_remove_or_replace
+        for node in gm.graph.nodes:
+            if node.target == conv_op:
+                result = p.maybe_remove_or_replace(node)
+                self.assertTrue(result, "Fusion should succeed for quantized conv+bn pattern")
+                break
+
+        # Verify fusion occurred: bn should be removed, conv remains
+        self.assertEqual(count_node(gm, conv_op), 1)
+        self.assertEqual(count_node(gm, bn_op), 0)
