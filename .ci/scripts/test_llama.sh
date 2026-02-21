@@ -136,6 +136,53 @@ else
   QNN_SDK_ROOT=""
 fi
 
+# Set dynamic max export times
+PLATFORM="x86"
+if [[ "$(uname)" == "Darwin" ]]; then
+    PLATFORM="macos"
+elif [[ "$(uname -m)" == "aarch64" ]] || [[ "$(uname -m)" == "arm64" ]]; then
+    PLATFORM="arm64"
+fi
+
+BUFFER_TIME=25
+
+# Lookup threshold based on platform:dtype:mode
+case "${PLATFORM}:${DTYPE}:${MODE}:${PT2E_QUANTIZE}" in
+
+    # Linux x86 configurations
+    "x86:fp32:portable:")                        ACT_EXPORT_TIME=72 ;;
+    "x86:fp32:xnnpack+custom:")                  ACT_EXPORT_TIME=276 ;;
+    "x86:bf16:portable:")                        ACT_EXPORT_TIME=75 ;;
+    "x86:bf16:custom:")                          ACT_EXPORT_TIME=65 ;;
+    "x86:fp32:xnnpack+custom+qe:")               ACT_EXPORT_TIME=285 ;; 
+    "x86:fp32:xnnpack+custom+quantize_kv:")      ACT_EXPORT_TIME=295 ;;
+    "x86:fp32:xnnpack+quantize_kv:")             ACT_EXPORT_TIME=356 ;;
+    "x86:fp32:qnn:16a16w")                       ACT_EXPORT_TIME=334 ;;
+    "x86:fp32:qnn:8a8w")                         ACT_EXPORT_TIME=81 ;;
+
+    # Linux ARM64 configurations
+    "arm64:fp32:portable:")                      ACT_EXPORT_TIME=124 ;;
+    "arm64:fp32:xnnpack+custom:")                ACT_EXPORT_TIME=483 ;;
+    "arm64:bf16:portable:")                      ACT_EXPORT_TIME=118 ;;
+    "arm64:bf16:custom:")                        ACT_EXPORT_TIME=102 ;;
+    "arm64:fp32:xnnpack+custom+qe:")             ACT_EXPORT_TIME=486 ;;
+    "arm64:fp32:xnnpack+custom+quantize_kv:")    ACT_EXPORT_TIME=521 ;;
+    "arm64:fp32:xnnpack+quantize_kv:")           ACT_EXPORT_TIME=514 ;;
+
+    # macOS configurations
+    "macos:fp32:mps:")                           ACT_EXPORT_TIME=30  ;;
+    "macos:fp32:coreml:")                        ACT_EXPORT_TIME=61  ;;
+    "macos:fp32:xnnpack+custom+quantize_kv:")    ACT_EXPORT_TIME=133 ;;
+
+    # Default fallback for unknown configurations
+    *)
+        ACT_EXPORT_TIME=450
+        echo "Warning: No threshold defined for ${PLATFORM}:${DTYPE}:${MODE}:${PT2E_QUANTIZE}, using default: $((ACT_EXPORT_TIME + BUFFER_TIME))s"
+        ;;
+esac
+
+MAX_EXPORT_TIME=$((ACT_EXPORT_TIME + BUFFER_TIME))
+
 echo "QNN option ${QNN}"
 echo "QNN_SDK_ROOT: ${QNN_SDK_ROOT}"
 
@@ -253,8 +300,23 @@ fi
 if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} model.quantize_kv_cache=true"
 fi
+
+EXPORT_START_TIME=$(date +%s)
+
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm ${EXPORT_ARGS}
+
+EXPORT_END_TIME=$(date +%s)
+EXPORT_DURATION=$((EXPORT_END_TIME - EXPORT_START_TIME))
+echo "Model export completed at $(date +"%Y-%m-%d %H:%M:%S") - Duration: ${EXPORT_DURATION} seconds"
+
+# Check export time against threshold. Default is 500 seconds.
+if [ $EXPORT_DURATION -gt $MAX_EXPORT_TIME ]; then
+    echo "Failure: Export took ${EXPORT_DURATION}s (threshold: ${MAX_EXPORT_TIME}s). This PR may have regressed export time — review changes or bump the threshold if appropriate."
+fi
+
+echo "Success; Export time check passed: ${EXPORT_DURATION}s <= ${MAX_EXPORT_TIME}s"
+
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"
