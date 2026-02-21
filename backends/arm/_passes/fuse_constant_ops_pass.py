@@ -32,9 +32,8 @@ logger = logging.getLogger(__name__)
 
 
 class FuseConstantArgsPass(ArmPass):
-    """
-    Fuses ops with only placeholder parameters into one placeholder parameter node with the op
-    pre-calulcated on its data.
+    """Fuses ops with only placeholder parameters into one placeholder parameter
+    node with the op pre-calulcated on its data.
 
     Original:
         state_dict = {x_tensor_name : data}
@@ -45,6 +44,7 @@ class FuseConstantArgsPass(ArmPass):
         state_dict = {x_tensor_name_fused_const : data.view(...)}
         def f():
             return x
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -58,7 +58,7 @@ class FuseConstantArgsPass(ArmPass):
         special_dtypes = set()
         for input_node in from_nodes:
             special_type = input_node.meta.get(TosaSpecialDtype.meta_key(), None)
-            if special_type:
+            if special_type and special_type != TosaSpecialDtype.SHAPE:
                 special_dtypes.add(special_type)
         if len(special_dtypes) > 1:
             logger.warning(
@@ -71,10 +71,14 @@ class FuseConstantArgsPass(ArmPass):
                 to_node.meta[TosaSpecialDtype.meta_key()] = special_dtype
 
     def _fuse_nodes(self, node) -> bool:
+        """Takes a node with only parameter inputs and replaces it with one
+        constant tensor node with the operations already carried out on the
+        data.
         """
-        Takes a node with only parameter inputs and replaces it with one constant tensor node with
-        the operations already carried out on the data.
-        """
+
+        if node.meta.get(TosaSpecialDtype.meta_key(), None) == TosaSpecialDtype.SHAPE:
+            # Skip fusing if special dtype is SHAPE
+            return False
 
         input_nodes = list(node.all_input_nodes)
         qparams = node.meta.get("input_qparams", None)
@@ -185,8 +189,8 @@ class FuseConstantArgsPass(ArmPass):
 
 
 class ComputeConstantOpsAOTPass(ArmPass):
-    """
-    Evaluates call_functions that produce constant tensor outputs and replaces them with placeholders.
+    """Evaluates call_functions that produce constant tensor outputs and
+    replaces them with placeholders.
 
     Original:
         state_dict = {}
@@ -196,6 +200,7 @@ class ComputeConstantOpsAOTPass(ArmPass):
         state_dict = {node_name_pre_computed : torch.arange(0,10)}
         def f(node_name_pre_computed):
             return node_name_pre_computed
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -216,9 +221,9 @@ class ComputeConstantOpsAOTPass(ArmPass):
         self.exported_program = exported_program
 
     def compute_node_aot(self, node: torch.fx.Node) -> bool:
-        """
-        Takes a node with only parameter inputs and replaces it with one constant tensor node with
-        the operations already carried out on the data.
+        """Takes a node with only parameter inputs and replaces it with one
+        constant tensor node with the operations already carried out on the
+        data.
         """
 
         # Create data from args

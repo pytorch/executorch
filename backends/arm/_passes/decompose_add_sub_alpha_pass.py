@@ -78,7 +78,7 @@ class DecomposeAddSubAlphaPass(ArmPass):
         alpha_full = super().call_operator(
             full_op,
             ((1,), float(alpha)),
-            {"device": meta["val"].device},
+            {"device": meta["val"].device, "dtype": meta["val"].dtype},
             meta,
             updated=True,
         )

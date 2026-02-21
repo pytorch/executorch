@@ -7,18 +7,15 @@
  */
 package org.pytorch.executorch
 
-import android.Manifest
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.rule.GrantPermissionRule
 import java.io.File
 import java.io.IOException
 import java.net.URISyntaxException
 import org.apache.commons.io.FileUtils
 import org.junit.Assert
 import org.junit.Assert.assertArrayEquals
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TensorImageUtils.bitmapToFloat32Tensor
@@ -27,9 +24,6 @@ import org.pytorch.executorch.TestFileUtils.getTestFilePath
 /** Unit tests for [Module]. */
 @RunWith(AndroidJUnit4::class)
 class ModuleE2ETest {
-  @get:Rule
-  var runtimePermissionRule: GrantPermissionRule =
-      GrantPermissionRule.grant(Manifest.permission.READ_EXTERNAL_STORAGE)
 
   @Throws(IOException::class, URISyntaxException::class)
   fun testClassification(filePath: String) {

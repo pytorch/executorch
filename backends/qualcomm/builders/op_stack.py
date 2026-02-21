@@ -9,7 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
@@ -50,11 +50,10 @@ class Stack(NodeVisitor):
         )
         stack_output_tensors = [output_tensor_wrapper]
 
+        # Don't need to check axis_order since stack is a pytorch layout op according to layout transform.
         dim = 0 if len(node.args) == 1 else cast(int, node.args[1])
         if dim < 0:
             dim = dim % len(output_tensor.shape)
-        if QCOM_AXIS_ORDER in node.meta:
-            dim = node.meta[QCOM_AXIS_ORDER].index(dim)
         stack_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,

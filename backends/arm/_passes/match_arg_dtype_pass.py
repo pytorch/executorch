@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,8 +19,9 @@ DTYPE_RANK = {
     torch.int32: 4,
     torch.int64: 5,
     torch.float16: 6,
-    torch.float32: 7,
-    torch.float64: 8,
+    torch.bfloat16: 7,
+    torch.float32: 8,
+    torch.float64: 9,
 }
 
 

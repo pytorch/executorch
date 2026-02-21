@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -45,12 +45,47 @@
 # ~~~
 #
 
-# TODO Lower to 3.24 when XNNPACK dependency is updated to include
-# https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
-cmake_minimum_required(VERSION 3.29)
+cmake_minimum_required(VERSION 3.24)
 project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+
+# --- ExecuTorch Version ---
+# Parse version from version.txt (single source of truth)
+file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
+string(STRIP "${ET_VERSION_STRING}" ET_VERSION_STRING)
+
+# Extract major.minor.patch (handles formats like "1.2.0a0")
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" ET_VERSION_MATCH
+             "${ET_VERSION_STRING}"
+)
+set(ET_VERSION_MAJOR "${CMAKE_MATCH_1}")
+set(ET_VERSION_MINOR "${CMAKE_MATCH_2}")
+set(ET_VERSION_PATCH "${CMAKE_MATCH_3}")
+
+# Validate that version components were successfully extracted
+if("${ET_VERSION_MAJOR}" STREQUAL ""
+   OR "${ET_VERSION_MINOR}" STREQUAL ""
+   OR "${ET_VERSION_PATCH}" STREQUAL ""
+)
+  message(
+    FATAL_ERROR
+      "Failed to parse version from ${EXECUTORCH_ROOT}/version.txt. "
+      "Expected format: MAJOR.MINOR.PATCH (e.g., '1.2.0' or '1.2.0a0'), "
+      "but got: '${ET_VERSION_STRING}'"
+  )
+endif()
+
+message(
+  STATUS
+    "ExecuTorch version: ${ET_VERSION_MAJOR}.${ET_VERSION_MINOR}.${ET_VERSION_PATCH}"
+)
+
+# Generate version.h from template
+configure_file(
+  "${EXECUTORCH_ROOT}/runtime/core/version.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/include/executorch/runtime/core/version.h" @ONLY
+)
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Codegen.cmake)
@@ -73,6 +108,34 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 announce_configured_options(CMAKE_BUILD_TYPE)
+
+# Sanitizer support (ASAN + UBSAN)
+if(EXECUTORCH_USE_SANITIZER)
+  if(MSVC)
+    message(WARNING "Sanitizers are not fully supported on MSVC, skipping")
+  else()
+    set(EXECUTORCH_SANITIZER_FLAGS
+        "-fsanitize=address,undefined -fno-omit-frame-pointer"
+    )
+    # Suppress deprecation warnings on macOS (third-party code like flatcc uses
+    # deprecated sprintf)
+    if(APPLE)
+      set(EXECUTORCH_SANITIZER_FLAGS
+          "${EXECUTORCH_SANITIZER_FLAGS} -Wno-deprecated-declarations"
+      )
+    endif()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS
+        "${CMAKE_EXE_LINKER_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}"
+    )
+    set(CMAKE_SHARED_LINKER_FLAGS
+        "${CMAKE_SHARED_LINKER_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}"
+    )
+    message(STATUS "Sanitizers enabled: address, undefined")
+  endif()
+endif()
+announce_configured_options(EXECUTORCH_USE_SANITIZER)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -121,6 +184,10 @@ endif()
 
 if(EXECUTORCH_ENABLE_BUNDLE_IO)
   add_definitions(-DET_BUNDLE_IO_ENABLED)
+endif()
+
+if(EXECUTORCH_BUILD_CUDA)
+  add_definitions(-DCUDA_AVAILABLE=1)
 endif()
 
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
@@ -306,6 +373,7 @@ endif()
 set(_common_include_directories
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core/portable_type/c10>
 )
@@ -493,6 +561,11 @@ install(
   FILES_MATCHING
   PATTERN "*.h"
 )
+# Install generated version.h
+install(
+  FILES "${CMAKE_CURRENT_BINARY_DIR}/include/executorch/runtime/core/version.h"
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core
+)
 install(
   DIRECTORY runtime/executor/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/executor
@@ -539,8 +612,14 @@ install(FILES tools/cmake/executorch-config.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
 
-if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+if(EXECUTORCH_BUILD_ARM_BAREMETAL
+   OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
+   OR EXECUTORCH_BUILD_VGF
+)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
+endif()
+
+if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   list(APPEND _executorch_backends executorch_delegate_ethos_u)
 endif()
 
@@ -551,6 +630,10 @@ endif()
 if(EXECUTORCH_BUILD_NXP_NEUTRON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/nxp)
   list(APPEND _executorch_backends executorch_delegate_neutron)
+endif()
+
+if(EXECUTORCH_BUILD_NXP_NEUTRON_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/nxp/executor_runner)
 endif()
 
 if(EXECUTORCH_BUILD_COREML)
@@ -590,7 +673,16 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
-  list(APPEND _executorch_backends coretex_m_backend)
+endif()
+
+# If CUDA, Metal, or pybind will need Torch, find it at root scope first so that
+# imported targets (e.g. MKL::MKL) aren't created in child directory scopes and
+# then duplicated when found again at root scope.
+if(EXECUTORCH_BUILD_CUDA
+   OR EXECUTORCH_BUILD_METAL
+   OR EXECUTORCH_BUILD_PYBIND
+)
+  find_package_torch()
 endif()
 
 # Build common AOTI functionality if needed by CUDA or Metal backends
@@ -811,6 +903,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       torch
   )
 
+  # Build common AOTI functionality if needed by CUDA or Metal backends
+  if(EXECUTORCH_BUILD_CUDA)
+    # CUDA uses SlimTensor-based shims
+    list(APPEND _dep_libs aoti_cuda_backend)
+  elseif(EXECUTORCH_BUILD_METAL)
+    # Metal still uses ETensor-based shims (for now)
+    list(APPEND _dep_libs aoti_common)
+  endif()
+
   # RPATH for _portable_lib.so
   set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
 
@@ -969,7 +1070,6 @@ if(EXECUTORCH_BUILD_VULKAN)
 endif()
 
 if(EXECUTORCH_BUILD_VGF)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
   list(APPEND _executorch_backends vgf_backend)
 endif()
 
@@ -1103,6 +1203,21 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+  if(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+    target_sources(
+      executor_runner
+      PRIVATE
+        ${CMAKE_SOURCE_DIR}/examples/arm/executor_runner/ethosu_link_helper.cpp
+    )
+    target_compile_definitions(
+      executor_runner PRIVATE EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1
+    )
+    # Wrap static linking like the delegate_runner to keep images
+    # self-contained.
+    target_link_options(
+      executor_runner PRIVATE -static-libstdc++ -static-libgcc
+    )
+  endif()
 
   # Automatically set when using `emcmake cmake` for Wasm build.
   if(EMSCRIPTEN)

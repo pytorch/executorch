@@ -111,7 +111,7 @@ TEST_F(ExecutorTest, RegistryLookupAndCall) {
   kernel_args[4] = &evalues[3];
 
   KernelRuntimeContext context{};
-  (*func)(context, kernel_args);
+  (*func)(context, Span<EValue*>(kernel_args));
   auto c_ptr = evalues[3].toTensor().const_data_ptr<int32_t>();
   ASSERT_EQ(c_ptr[3], 12);
 }
@@ -199,7 +199,7 @@ TEST_F(ExecutorTest, OpRegistrationWithContext) {
   EValue* kernels[1];
   kernels[0] = &values[0];
   KernelRuntimeContext context{};
-  (*func)(context, kernels);
+  (*func)(context, Span<EValue*>(kernels));
 
   auto val = values[0].toScalar().to<int64_t>();
   ASSERT_EQ(val, 100);

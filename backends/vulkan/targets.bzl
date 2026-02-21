@@ -188,7 +188,7 @@ def define_common_targets(is_fbcode = False):
         if no_volk:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/toolchains:vulkan")
-                deps.append("fbsource//third-party/khronos:vulkan-headers")
+                deps.append("fbsource//third-party/khronos/version-selector:vulkan-headers")
         else:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/volk:volk-header")
@@ -205,7 +205,7 @@ def define_common_targets(is_fbcode = False):
             mac_deps = default_deps
             if link_moltenvk:
                 mac_deps = [
-                    "//third-party/khronos:moltenVK_static"
+                    "//third-party/khronos/version-selector:moltenVK_static_unexported"
                 ]
 
             if debug_mode:

@@ -40,6 +40,7 @@ from .insert_requantize import InsertRequantize
 from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
 from .layout_transform import LayoutTransform
 from .lift_constant_scalar_operands import LiftConstantScalarOperands
+from .recompose_pad_maxpool2d import RecomposePadMaxPool2d
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
 from .recompose_rms_norm import RecomposeRmsNorm
 from .reduce_dynamic_range import ReduceDynamicRange
@@ -87,6 +88,7 @@ __all__ = [
     InsertRequantize,
     LayoutTransform,
     LiftConstantScalarOperands,
+    RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
     ReduceDynamicRange,

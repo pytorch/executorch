@@ -11,7 +11,9 @@
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <cctype>
 #include <cstdio>
 
 #include <array>
@@ -19,11 +21,23 @@
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
+
+// Include SlimTensor headers for CUDA backend
+#include <executorch/backends/aoti/slim/c10/core/Device.h>
+#include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/backends/aoti/slim/core/storage.h>
+#include <executorch/backends/aoti/slim/factory/empty.h>
+#include <executorch/backends/aoti/slim/factory/from_blob.h>
+#include <executorch/backends/aoti/slim/factory/from_etensor.h>
+#include <executorch/backends/aoti/slim/util/array_ref_util.h>
 
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
-#include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
@@ -52,14 +66,59 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
+// SlimTensor type aliases
+using slim::CPU_DEVICE;
+using slim::DEFAULT_CUDA_DEVICE;
+using slim::DeviceTraits;
+using slim::from_etensor;
+using slim::SlimTensor;
+using slim::c10::Device;
+using slim::c10::DeviceType;
+
 namespace {
 constexpr char kSkipCopyOutputToCpuForMethod[] =
     "skip_copy_output_to_cpu_for_method";
-}
+constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
+} // anonymous namespace
 
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
+  // Trim leading/trailing whitespace from a view of the string.
+  static std::string_view trim(std::string_view s) {
+    size_t start = 0;
+    while (start < s.size() &&
+           std::isspace(static_cast<unsigned char>(s[start]))) {
+      ++start;
+    }
+    size_t end = s.size();
+    while (end > start &&
+           std::isspace(static_cast<unsigned char>(s[end - 1]))) {
+      --end;
+    }
+    return s.substr(start, end - start);
+  }
+
+  // Check if method_name appears in a comma-separated list.
+  static bool method_in_csv(
+      const std::string& method_name,
+      const std::string& csv) {
+    size_t pos = 0;
+    while (pos <= csv.size()) {
+      const size_t comma = csv.find(',', pos);
+      const std::string_view token =
+          trim(std::string_view(csv).substr(pos, comma - pos));
+      if (!token.empty() && token == method_name) {
+        return true;
+      }
+      if (comma == std::string::npos) {
+        break;
+      }
+      pos = comma + 1;
+    }
+    return false;
+  }
+
   void set_skip_copy_method(
       const std::array<char, kMaxOptionValueLength>& raw) {
     std::lock_guard<std::mutex> guard(skip_copy_method_mutex_);
@@ -83,7 +142,34 @@ class ET_EXPERIMENTAL CudaBackend final
       return false;
     }
     std::lock_guard<std::mutex> guard(skip_copy_method_mutex_);
-    return method_name == skip_copy_method_;
+    return method_in_csv(method_name, skip_copy_method_);
+  }
+
+  // Create the shared CUDA stream. Called when use_shared_cuda_stream option
+  // is set to true. The presence of shared_cuda_stream_ indicates shared mode.
+  void create_shared_cuda_stream() {
+    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
+    if (shared_cuda_stream_ != nullptr) {
+      return; // Already created
+    }
+    shared_cuda_stream_ = cuda::create_cuda_stream();
+    if (shared_cuda_stream_ == nullptr) {
+      ET_LOG(Error, "Failed to create shared CUDA stream");
+      return;
+    }
+    ET_LOG(Info, "Created shared CUDA stream: %p", *shared_cuda_stream_);
+  }
+
+  // Get the shared CUDA stream. Returns nullptr if not in shared mode.
+  std::shared_ptr<cudaStream_t> get_shared_cuda_stream() const {
+    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
+    return shared_cuda_stream_;
+  }
+
+  // Check if we're using shared CUDA stream mode.
+  bool is_using_shared_cuda_stream() const {
+    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
+    return shared_cuda_stream_ != nullptr;
   }
 
   Error load_function_pointers_into_handle(
@@ -142,6 +228,15 @@ class ET_EXPERIMENTAL CudaBackend final
               Error,
               "Option %s must be a method name string.",
               kSkipCopyOutputToCpuForMethod);
+          return Error::InvalidArgument;
+        }
+      } else if (std::strcmp(option.key, kUseSharedCudaStream) == 0) {
+        if (auto* val = std::get_if<bool>(&option.value)) {
+          if (*val) {
+            create_shared_cuda_stream();
+          }
+        } else {
+          ET_LOG(Error, "Option %s must be a boolean.", kUseSharedCudaStream);
           return Error::InvalidArgument;
         }
       }
@@ -225,7 +320,7 @@ class ET_EXPERIMENTAL CudaBackend final
     processed->Free();
 
     // Create handle and load function pointers into it
-    AOTIDelegateHandle* handle = new AOTIDelegateHandle();
+    cuda::CudaDelegateHandle* handle = new cuda::CudaDelegateHandle();
     handle->so_handle = lib_handle;
     handle->so_path = so_path.string();
     handle->method_name = method_name;
@@ -256,10 +351,31 @@ class ET_EXPERIMENTAL CudaBackend final
           handle->container_handle, static_cast<const uint8_t*>(weights_blob)));
       buffer_res->Free();
     }
-    // Create a CUDA stream for asynchronous execution
-    cudaStream_t cuda_stream;
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamCreate(&cuda_stream));
-    handle->cuda_stream = static_cast<void*>(cuda_stream);
+
+    // Use shared CUDA stream if enabled via options, otherwise create one.
+    // A shared stream ensures proper ordering across multiple methods
+    // (e.g., encoder, decoder, sampler) when using skip-copy optimization.
+    if (is_using_shared_cuda_stream()) {
+      // Shared stream mode: all handles share the same stream.
+      handle->cuda_stream = get_shared_cuda_stream();
+      ET_LOG(
+          Info,
+          "Using shared CUDA stream %p for method %s",
+          handle->get_cuda_stream(),
+          method_name.c_str());
+    } else {
+      // Per-handle stream mode: each handle owns its own stream.
+      handle->cuda_stream = cuda::create_cuda_stream();
+      if (handle->cuda_stream == nullptr) {
+        delete handle;
+        return Error::Internal;
+      }
+      ET_LOG(
+          Info,
+          "Created new CUDA stream %p for method %s",
+          handle->get_cuda_stream(),
+          method_name.c_str());
+    }
 
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
@@ -269,13 +385,15 @@ class ET_EXPERIMENTAL CudaBackend final
       BackendExecutionContext& context,
       DelegateHandle* handle_,
       Span<EValue*> args) const override {
-    AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
+    cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
 
     size_t n_inputs;
     handle->get_num_inputs(handle->container_handle, &n_inputs);
 
     size_t n_outputs;
     handle->get_num_outputs(handle->container_handle, &n_outputs);
+
+    setCurrentCUDAStream(handle->get_cuda_stream(), 0);
 
     ET_CHECK_OR_RETURN_ERROR(
         n_inputs + n_outputs == args.size(),
@@ -285,87 +403,83 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         args.size())
 
-    // NOTE: ExecuTorch tensors are always on CPU/host memory
-    // We need to create GPU copies for CUDA kernel execution
-    std::vector<AOTITensorHandle> gpu_inputs(
-        n_inputs); // GPU copies for kernel execution
-    std::vector<AOTITensorHandle> gpu_outputs(
-        n_outputs); // GPU tensors for kernel output
+    // NOTE: ExecuTorch tensors may be on CPU or GPU due to the skip-copy
+    // optimization. We need to create GPU copies for CUDA kernel execution
+    // using SlimTensor.
+    std::vector<SlimTensor*> gpu_inputs(n_inputs);
+    std::vector<SlimTensor*> gpu_outputs(n_outputs);
 
-    // Process input tensors: ExecuTorch provides CPU tensors, create GPU
-    // copies
+    // Process input tensors: convert ETensor (CPU) to SlimTensor (GPU)
     for (size_t i = 0; i < n_inputs; i++) {
-      // Get tensor dimensions and properties from ExecuTorch CPU tensor
-      auto cpu_tensor = &(args[i]->toTensor());
-      auto sizes = cpu_tensor->sizes();
-      auto scalar_type = cpu_tensor->scalar_type();
+      auto* cpu_tensor = &(args[i]->toTensor());
 
-      // Create GPU tensor with same shape
-      std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
+      // Check if input data is already on GPU (skip-copy optimization for
+      // inputs) This can happen when the caller has pre-staged data on GPU
+      cudaPointerAttributes attributes{};
+      const void* data_ptr = cpu_tensor->const_data_ptr();
+      if (data_ptr != nullptr) {
+        cudaError_t err = cudaPointerGetAttributes(&attributes, data_ptr);
+        if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
+          // Data is already on GPU - wrap it directly without copy
+          auto sizes = cpu_tensor->sizes();
+          auto strides = cpu_tensor->strides();
+          std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
+          std::vector<int64_t> strides_vec(strides.begin(), strides.end());
 
-      AOTITensorHandle gpu_input_handle;
-      Error create_err = aoti_torch_empty_strided(
-          sizes_vec.size(),
-          sizes_vec.data(),
-          nullptr, // use default strides
-          static_cast<int32_t>(scalar_type),
-          1, // device_type = cuda
-          0, // device_index = 0
-          &gpu_input_handle);
+          gpu_inputs[i] = new SlimTensor(slim::from_blob(
+              const_cast<void*>(data_ptr),
+              slim::makeArrayRef(sizes_vec),
+              slim::makeArrayRef(strides_vec),
+              static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
+              DEFAULT_CUDA_DEVICE,
+              0 // storage_offset
+              ));
 
-      ET_CHECK_OR_RETURN_ERROR(
-          create_err == Error::Ok,
-          Internal,
-          "Failed to create GPU tensor for input %d",
-          i);
+          continue;
+        }
+      }
 
-      gpu_inputs[i] = gpu_input_handle;
-
-      // Copy data from CPU to GPU
-      ET_CHECK_OR_RETURN_ERROR(
-          aoti_torch_copy_(gpu_inputs[i], cpu_tensor, 0) == Error::Ok,
-          Internal,
-          "Failed to copy input %d from CPU to GPU",
-          i);
+      // Data is on CPU - use from_etensor to copy to GPU
+      gpu_inputs[i] = new SlimTensor(
+          from_etensor(*cpu_tensor, CPU_DEVICE, DEFAULT_CUDA_DEVICE));
     }
-    // Process output tensors: create GPU counterparts for ExecuTorch CPU
-    // tensors
+
+    // Process output tensors: create GPU SlimTensors for kernel output
     for (size_t i = 0; i < n_outputs; i++) {
-      // Get output tensor dimensions from ExecuTorch CPU tensor
-      auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
+      auto* cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       auto sizes = cpu_output_tensor->sizes();
+      auto strides = cpu_output_tensor->strides();
       auto scalar_type = cpu_output_tensor->scalar_type();
 
-      // Create GPU tensor with same shape for kernel output
       std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
+      std::vector<int64_t> strides_vec(strides.begin(), strides.end());
 
-      AOTITensorHandle gpu_output_handle;
-      Error create_err = aoti_torch_empty_strided(
-          sizes_vec.size(),
-          sizes_vec.data(),
-          nullptr, // use default strides
-          static_cast<int32_t>(scalar_type),
-          1, // device_type = cuda
-          0, // device_index = 0
-          &gpu_output_handle);
-
-      ET_CHECK_OR_RETURN_ERROR(
-          create_err == Error::Ok,
-          Internal,
-          "Failed to create GPU tensor for output %d",
-          i);
-
-      gpu_outputs[i] = gpu_output_handle;
+      gpu_outputs[i] = new SlimTensor(slim::empty_strided(
+          slim::makeArrayRef(sizes_vec),
+          slim::makeArrayRef(strides_vec),
+          static_cast<slim::c10::ScalarType>(scalar_type),
+          DEFAULT_CUDA_DEVICE));
     }
-    // Run AOTI container with GPU tensors
+
+    // Run the AOTI container with SlimTensors.
+    //
+    // NOTE: The handle->run function (defined in aoti_delegate_handle.h)
+    // expects ETensor* as input/output. We avoid changing its signature since
+    // it's shared with the Metal backend. Instead, we reinterpret_cast
+    // SlimTensor* to Tensor*
+    //
+    // Get current CUDA stream and pass it to AOTInductorModelContainerRun
+    Result<cudaStream_t> cuda_stream_ret = getCurrentCUDAStream(0);
+    cudaStream_t cuda_stream = cuda_stream_ret.get();
+    ET_CHECK_OK_OR_RETURN_ERROR(cuda_stream_ret.error());
     AOTIRuntimeError error = handle->run(
         handle->container_handle,
-        gpu_inputs.data(), // Use GPU input tensors
+        reinterpret_cast<Tensor**>(gpu_inputs.data()),
         n_inputs,
-        gpu_outputs.data(), // Use GPU output tensors
+        reinterpret_cast<Tensor**>(gpu_outputs.data()),
         n_outputs,
-        handle->cuda_stream, // Pass the actual CUDA stream
-        nullptr); // proxy_executor_handle can remain nullptr
+        static_cast<void*>(cuda_stream),
+        nullptr);
 
     ET_CHECK_OR_RETURN_ERROR(
         error == Error::Ok,
@@ -376,24 +490,47 @@ class ET_EXPERIMENTAL CudaBackend final
     const bool copy_outputs = !should_skip_copy_for_method(handle->method_name);
 
     if (copy_outputs) {
-      // Copy GPU output results back to CPU output tensors
       for (size_t i = 0; i < n_outputs; i++) {
-        auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
-        // For DYNAMIC_BOUND tensors we try to resize
+        auto* cpu_output_tensor = &(args[i + n_inputs]->toTensor());
         ET_CHECK_OK_OR_RETURN_ERROR(
-            resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
-            "Error resizing tensor at output index %d",
-            i);
-        ET_CHECK_OK_OR_RETURN_ERROR(
-            aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
-            "Failed to copy GPU output %d back to CPU",
+            copy_slimtensor_to_etensor_async(
+                gpu_outputs[i], cpu_output_tensor, cuda_stream),
+            "Failed to copy GPU output %zu back to CPU ETensor",
             i);
       }
+      // Cleanup gpu_outputs after copying - they are no longer needed
+      delete_slimtensor_vector(gpu_outputs);
     } else {
-      for (size_t i = 0; i < n_outputs; i++) {
-        args[i + n_inputs]->toTensor() = *gpu_outputs[i];
+      // Skip-copy optimization: point ETensor directly to GPU data.
+      // The caller is responsible for handling GPU data directly.
+      //
+      // Lifetime management: We cache the newly created GPU tensors and delete
+      // the previous round's tensors, since they are no longer needed.
+      {
+        std::lock_guard<std::mutex> guard(cached_outputs_mutex_);
+        auto& cached_outputs = cached_outputs_[handle];
+
+        // Delete the previous round's tensors since they are no longer in use.
+        delete_slimtensor_vector(cached_outputs);
+
+        for (size_t i = 0; i < n_outputs; i++) {
+          // Cache this output tensor to keep the underlying GPU data alive.
+          cached_outputs.push_back(gpu_outputs[i]);
+
+          // Wrap the GPU SlimTensor data into the ETensor (zero-copy).
+          // This resizes the ETensor to match the SlimTensor shape and sets
+          // its data pointer to point directly to the GPU data.
+          auto* output_etensor = &(args[i + n_inputs]->toTensor());
+          ET_CHECK_OK_OR_RETURN_ERROR(
+              wrap_slimtensor_to_etensor(gpu_outputs[i], output_etensor),
+              "Failed to wrap GPU output %zu into ETensor",
+              i);
+        }
       }
     }
+
+    // Cleanup gpu_inputs - they are no longer needed after kernel execution
+    delete_slimtensor_vector(gpu_inputs);
 
     return Error::Ok;
   }
@@ -402,18 +539,22 @@ class ET_EXPERIMENTAL CudaBackend final
     if (handle_ == nullptr) {
       return;
     }
-    AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
+    cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
 
-    // Destroy the CUDA stream if it exists
-    if (handle->cuda_stream != nullptr) {
-      cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
-      cudaError_t stream_err = cudaStreamDestroy(cuda_stream);
-      ET_CHECK_OR_LOG_ERROR(
-          stream_err == cudaSuccess,
-          "Failed to destroy CUDA stream: %s",
-          cudaGetErrorString(stream_err));
-      handle->cuda_stream = nullptr;
+    // Clean up cached output tensors for this handle
+    {
+      std::lock_guard<std::mutex> guard(cached_outputs_mutex_);
+      auto it = cached_outputs_.find(handle);
+      if (it != cached_outputs_.end()) {
+        delete_slimtensor_vector(it->second);
+        cached_outputs_.erase(it);
+      }
     }
+
+    // The CUDA stream is managed by shared_ptr in the handle.
+    // It will be automatically destroyed when the last handle using it
+    // is destroyed. Just reset our reference.
+    handle->cuda_stream.reset();
 
     // NOTE: AOTInductorModelContainerDelete does not work correctly with
     // multiple .so files. Deleting one container frees shared resources,
@@ -424,9 +565,12 @@ class ET_EXPERIMENTAL CudaBackend final
     // AOTInductorModelContainerDelete(handle->container_handle);
 
     // Now close the shared library
-    auto err = Error::Ok;
     if (handle->so_handle != nullptr) {
-      err = close_library(handle->so_handle);
+      Error err = close_library(handle->so_handle);
+      ET_CHECK_OR_LOG_ERROR(
+          err == Error::Ok,
+          "Failed to close shared library for %s",
+          handle->so_path.c_str());
     }
 
     // Remove the temporary shared library file
@@ -441,12 +585,28 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     delete handle;
-    clear_all_tensors();
   }
 
  private:
   mutable std::mutex skip_copy_method_mutex_;
   std::string skip_copy_method_;
+
+  // Shared CUDA stream for all methods. When set (non-null), all methods use
+  // the same stream to ensure proper ordering (critical for skip-copy
+  // optimization). Created when use_shared_cuda_stream option is set to true.
+  // Managed via shared_ptr so it's automatically cleaned up when last handle
+  // is destroyed.
+  mutable std::mutex cuda_stream_mutex_;
+  std::shared_ptr<cudaStream_t> shared_cuda_stream_ = nullptr;
+
+  // Cached output tensors for skip-copy optimization.
+  // When skip-copy is enabled, output SlimTensors are cached here to keep
+  // the underlying GPU memory alive while the caller processes the results.
+  // Maps each CudaDelegateHandle* to its vector of cached output tensors.
+  mutable std::mutex cached_outputs_mutex_;
+  mutable std::
+      unordered_map<cuda::CudaDelegateHandle*, std::vector<SlimTensor*>>
+          cached_outputs_;
 };
 
 } // namespace executorch::backends::cuda

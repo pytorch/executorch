@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import torch
@@ -88,7 +88,6 @@ class SimpleADB:
         dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
         target="aarch64-android",
-        backend=QnnExecuTorchBackendType.kHtpBackend,
         expected_input_shape=None,
         expected_output_shape=None,
     ):
@@ -98,7 +97,10 @@ class SimpleADB:
         self.workspace = workspace
         self.device_id = device_id
         self.host_id = host_id
-        self.working_dir = Path(self.pte_path[0]).parent.absolute()
+        if len(self.pte_path) > 0:
+            self.working_dir = Path(self.pte_path[0]).parent.absolute()
+        else:
+            self.working_dir = Path.cwd()
         self.input_list_filename = "input_list.txt"
         self.etdump_path = f"{self.workspace}/etdump.etdp"
         self.dump_intermediate_outputs = dump_intermediate_outputs
@@ -109,10 +111,26 @@ class SimpleADB:
         self.shared_buffer = shared_buffer
         self.runner = runner
         self.target = target
-        self.backend = backend
         self.expected_input_shape = expected_input_shape
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
+        self.qnn_backend_library_paths = {
+            QnnExecuTorchBackendType.kHtpBackend: [
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
+                (
+                    f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
+                    f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
+                ),
+                (
+                    f"{self.qnn_sdk}/lib/{self.target}/"
+                    f"libQnnHtpV{self.htp_arch}Stub.so"
+                ),
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
+            ],
+            QnnExecuTorchBackendType.kGpuBackend: [
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
+            ],
+        }
 
     def _adb(self, cmd, output_callback: Optional[Callable[[str], None]] = None):
         if not self.host_id:
@@ -131,40 +149,36 @@ class SimpleADB:
                 cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
             )
 
-    def push(self, inputs=None, input_list=None, files=None, init_env=True):
-        artifacts = []
+    def push(
+        self,
+        inputs=None,
+        input_list=None,
+        files=None,
+        backends: Optional[Set[QnnExecuTorchBackendType]] = None,
+        init_env=True,
+    ):
+        artifacts = [
+            *self.pte_path,
+        ]
         if init_env:
             self._adb(["shell", f"rm -rf {self.workspace}"])
             self._adb(["shell", f"mkdir -p {self.workspace}"])
 
-        # necessary artifacts
-        artifacts = {
-            QnnExecuTorchBackendType.kHtpBackend: [
-                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
-                (
-                    f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
-                    f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
-                ),
-                (
-                    f"{self.qnn_sdk}/lib/{self.target}/"
-                    f"libQnnHtpV{self.htp_arch}Stub.so"
-                ),
-                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
-            ],
-            QnnExecuTorchBackendType.kGpuBackend: [
-                f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
-            ],
-        }[self.backend]
+            if backends is None:
+                backends = {QnnExecuTorchBackendType.kHtpBackend}
 
-        artifacts.extend(
-            [
-                *self.pte_path,
-                f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
-                f"{self.build_path}/{self.runner}",
-                f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-                f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
-            ]
-        )
+            # backend libraries
+            for backend in backends:
+                artifacts.extend(self.qnn_backend_library_paths[backend])
+
+            artifacts.extend(
+                [
+                    f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
+                    f"{self.build_path}/{self.runner}",
+                    f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+                    f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
+                ]
+            )
         with tempfile.TemporaryDirectory() as tmp_dir:
             input_list_file, input_files = generate_inputs(
                 tmp_dir, self.input_list_filename, inputs
@@ -205,6 +219,7 @@ class SimpleADB:
         method_index=0,
         output_callback: Optional[Callable[[str], None]] = None,
     ):
+        self._adb(["shell", f"rm -rf {self.output_folder}"])
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
@@ -240,8 +255,10 @@ class SimpleADB:
             ["shell", f"{qnn_executor_runner_cmds}"], output_callback=output_callback
         )
 
-    def pull(self, output_path, callback=None):
-        self._adb(["pull", "-a", self.output_folder, output_path])
+    def pull(self, host_output_path, device_output_path=None, callback=None):
+        if device_output_path is None:
+            device_output_path = self.output_folder
+        self._adb(["pull", "-a", device_output_path, host_output_path])
         if callback:
             callback()
 
@@ -304,6 +321,7 @@ def make_quantizer(
     per_channel_conv=True,
     per_channel_linear=False,
     act_observer=MovingAverageMinMaxObserver,
+    act_symmetric=False,
     is_qat=False,
     submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     eps=None,
@@ -316,6 +334,7 @@ def make_quantizer(
         is_conv_per_channel=per_channel_conv,
         is_linear_per_channel=per_channel_linear,
         act_observer=act_observer,
+        act_symmetric=act_symmetric,
         eps=eps,
     )
     submodule_qconfig_list = submodule_qconfig_list or []
@@ -472,7 +491,8 @@ def build_executorch_binary(
         else:
             quantizer = custom_quantizer or make_quantizer(quant_dtype=quant_dtype)
             # ptq calibration
-            annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
+            with torch.no_grad():
+                annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
 
         quantized_model = convert_pt2e(annotated_model)
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
@@ -756,7 +776,6 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
                     max_length=self.max_hidden_seq_length,
                     return_tensors="pt",
                 )
-
                 label = tokenizer(
                     target_text,
                     truncation=True,
@@ -766,7 +785,9 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
                 )
                 return {
                     "input_ids": model_input["input_ids"].squeeze(0),
-                    "attention_mask": model_input["attention_mask"].squeeze(0),
+                    "attention_mask": model_input["attention_mask"]
+                    .reshape(1, 1, -1)
+                    .to(torch.float32),
                     "decoder_input_ids": torch.tensor([0], dtype=torch.long),
                     "labels": label["input_ids"].squeeze(0),
                 }
@@ -795,7 +816,7 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
         inputs.append(
             (
                 input_ids.to(torch.long),
-                attention_mask.to(torch.long),
+                torch.where(attention_mask == 0.0, -255.0, 0.0),
                 decoder_input_ids,
             )
         )

@@ -112,3 +112,103 @@ delegated_program = executorch.exir.to_edge_transform_and_lower(
 )
 et_prog = delegated_program.to_executorch()
 ```
+
+### Multifunction Models
+
+Core ML supports multifunction ML Programs, which allow a single model to contain multiple functions that share weights. This is particularly useful for Large Language Models (LLMs) that use different execution paths for prefill (processing the initial prompt) and decode (generating tokens one at a time) phases. By sharing weights between functions, the model size remains manageable while allowing optimized execution paths for each phase.
+
+#### Requirements
+
+- iOS >= 18.0, macOS >= 15.0
+- Xcode >= 16.0
+
+#### Exporting Multifunction Models
+
+To export a multifunction model, pass a dictionary of method names to `ExportedProgram` objects to `to_edge_transform_and_lower`. Enable weight sharing with `MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL`:
+
+```python
+import coremltools as ct
+import torch
+from executorch.backends.apple.coreml.compiler.coreml_preprocess import (
+    CoreMLBackend,
+    MULTIMETHOD_WEIGHT_SHARING_STRATEGY,
+)
+from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+from executorch.exir import to_edge_transform_and_lower
+
+class SimpleModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(16, 16)
+
+    def forward(self, x):
+        return self.linear(x)
+
+model = SimpleModel().eval()
+
+# Create inputs for different sequence lengths
+decode_inputs = (torch.randn(1, 1, 16),)   # seqlen=1 for decode
+prefill_inputs = (torch.randn(1, 64, 16),)  # seqlen=64 for prefill
+
+# Export both methods
+decode_ep = torch.export.export(model, decode_inputs)
+prefill_ep = torch.export.export(model, prefill_inputs)
+
+# Configure compile specs with weight sharing
+compile_specs = CoreMLBackend.generate_compile_specs(
+    minimum_deployment_target=ct.target.iOS18,
+)
+compile_specs.append(
+    CoreMLBackend.generate_multimethod_weight_sharing_strategy_compile_spec(
+        MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
+    )
+)
+
+partitioner = CoreMLPartitioner(compile_specs=compile_specs)
+
+# Lower with multiple methods - pass a dict of {method_name: ExportedProgram}
+edge_manager = to_edge_transform_and_lower(
+    {"forward": decode_ep, "prefill": prefill_ep},
+    partitioner=[partitioner],
+)
+
+et_program = edge_manager.to_executorch()
+
+# Save the multifunction model
+with open("multifunction_model.pte", "wb") as f:
+    et_program.write_to_file(f)
+```
+
+#### Weight Sharing Strategies
+
+- **`POSITIONAL`**: Weights from the first method are shared positionally with subsequent methods. This is the recommended strategy for LLMs where prefill and decode share the same model weights.
+- **`DISABLED`**: Each method has its own copy of weights. Use this when methods have different weights or for debugging.
+
+#### Runtime Behavior
+
+At runtime, the ExecuTorch Core ML delegate automatically:
+
+1. Detects multifunction models based on metadata
+2. Uses `MLModelConfiguration.functionName` (iOS 18+) to select the appropriate function
+3. Shares weights between functions via NamedDataStore to minimize memory usage
+
+Each function in a multifunction model is treated as a separate method in ExecuTorch:
+
+```python
+from executorch.runtime import Runtime
+
+runtime = Runtime.get()
+program = runtime.load_program("multifunction_model.pte")
+
+# List available methods
+print(program.method_names)  # {'forward', 'prefill'}
+
+# Load and execute specific methods
+forward_method = program.load_method("forward")
+decode_output = forward_method.execute(decode_inputs)
+
+prefill_method = program.load_method("prefill")
+prefill_output = prefill_method.execute(prefill_inputs)
+```
+
+For a complete example including KV cache handling, see the [multifunction test](../../../../backends/apple/coreml/test/test_coreml_multifunction.py) and the [LLM export script](../../../../examples/apple/coreml/llama/export_static_llm_coreml.py).

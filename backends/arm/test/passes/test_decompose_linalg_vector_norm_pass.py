@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -64,12 +64,14 @@ modules = {
 
 @common.parametrize("module", modules)
 def test_decompose_linalg_vector_norm_tosa_INT(module: ModuleWithInputs) -> None:
-    """
-    This test creates a PassPipeline that applies the DecomposeLinalgVectorNormPass.
+    """This test creates a PassPipeline that applies the
+    DecomposeLinalgVectorNormPass.
+
     The expected primitive ops vary depending on the norm order:
       - p == 1: should decompose to ABS and SUM.
       - p == 2 (default): should decompose to MUL, SUM, and SQRT.
       - Other p: should decompose to ABS, two instances of POW, and SUM.
+
     """
     ord_val = module.ord if module.ord is not None else 2.0
 

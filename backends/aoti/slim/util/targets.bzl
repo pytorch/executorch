@@ -7,7 +7,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "shared_ptr",
         headers = [
-            "SharedPtr.h",
+            "shared_ptr.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [
@@ -19,7 +19,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "array_ref_util",
         headers = [
-            "ArrayRefUtil.h",
+            "array_ref_util.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [
@@ -31,7 +31,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "size_util",
         headers = [
-            "SizeUtil.h",
+            "size_util.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [

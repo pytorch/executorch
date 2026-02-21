@@ -22,6 +22,7 @@ from executorch.examples.qualcomm.utils import (
     get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
+    make_quantizer,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
     SimpleADB,
@@ -57,9 +58,12 @@ def main(args):
     )
     pte_filename = "efficientnet_qnn"
     backend = get_backend_type(args.backend)
-    quant_dtype = {
+    quantizer = {
         QnnExecuTorchBackendType.kGpuBackend: None,
-        QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a16w,
+        QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
+            quant_dtype=QuantDtype.use_16a16w,
+            eps=2**-20,
+        ),
     }[backend]
     build_executorch_binary(
         module.eval(),
@@ -69,7 +73,7 @@ def main(args):
         inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        quant_dtype=quant_dtype,
+        custom_quantizer=quantizer,
         backend=backend,
         shared_buffer=args.shared_buffer,
         online_prepare=args.online_prepare,
@@ -88,16 +92,15 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
-        backend=backend,
     )
-    adb.push(inputs=inputs)
+    adb.push(inputs=inputs, backends={backend})
     adb.execute()
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []

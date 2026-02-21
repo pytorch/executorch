@@ -14,6 +14,7 @@
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method.h>
+#include <executorch/runtime/executor/program_validation.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/extended_header.h>
 #include <executorch/schema/program_generated.h>
@@ -49,7 +50,8 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   auto execution_plans = program->execution_plan();
   for (size_t i = 0; i < execution_plans->size(); i++) {
     auto plan = execution_plans->GetMutableObject(i);
-    if (std::strcmp(plan->name()->c_str(), method_name) == 0) {
+    if (plan != nullptr && plan->name() != nullptr &&
+        std::strcmp(plan->name()->c_str(), method_name) == 0) {
       return plan;
     }
   }
@@ -149,6 +151,13 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         ok,
         InvalidProgram,
         "Verification failed; data may be truncated or corrupt");
+    const executorch_flatbuffer::Program* flatbuffer_program =
+        executorch_flatbuffer::GetProgram(program_data->data());
+    Error err = validate_program(flatbuffer_program);
+    ET_CHECK_OR_RETURN_ERROR(
+        err == Error::Ok,
+        InvalidProgram,
+        "Program validation failed: likely a corrupt file");
 #else
     ET_LOG(
         Info, "InternalConsistency verification requested but not available");
@@ -401,12 +410,16 @@ Result<const void*> Program::get_constant_buffer_data(
     const auto& constant_buffer = *constant_buffer_ptr;
     const auto* storage = constant_buffer[buffer_index]->storage();
     auto storage_size = storage == nullptr ? 0 : storage->size();
+    // nbytes (requested from the program) should be less than storage_size
+    // (size of the constant buffer from PTE), to prevent reading out of bounds.
+    // in some cases storage size may be larger than nbytes because of padding;
+    // executorch-tensor-alignment, or 16 by default.
     ET_CHECK_OR_RETURN_ERROR(
-        storage_size <= nbytes,
+        nbytes <= storage_size,
         InvalidArgument,
-        "Constant buffer size %zu larger than allocated nbytes %zu",
-        static_cast<size_t>(constant_buffer[buffer_index]->storage()->size()),
-        nbytes);
+        "Requested nbytes %zu exceeds constant buffer storage size %zu",
+        nbytes,
+        static_cast<size_t>(storage_size));
 
     return storage->data();
   }
@@ -425,7 +438,17 @@ Result<const char*> Program::get_output_flattening_encoding(
   if (!plan.ok()) {
     return plan.error();
   }
-  return plan.get()->container_meta_type()->encoded_out_str()->c_str();
+  auto* container_meta_type = plan.get()->container_meta_type();
+  ET_CHECK_OR_RETURN_ERROR(
+      container_meta_type != nullptr,
+      InvalidProgram,
+      "Missing container_meta_type in execution plan");
+  auto* encoded_out_str = container_meta_type->encoded_out_str();
+  ET_CHECK_OR_RETURN_ERROR(
+      encoded_out_str != nullptr,
+      InvalidProgram,
+      "Missing encoded_out_str in container_meta_type");
+  return encoded_out_str->c_str();
 }
 
 Error Program::get_backend_delegate_data(

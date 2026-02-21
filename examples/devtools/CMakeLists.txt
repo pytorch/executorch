@@ -12,6 +12,7 @@ cmake_minimum_required(VERSION 3.19)
 project(devtools_example)
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
+option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
@@ -94,4 +95,15 @@ if(EXECUTORCH_BUILD_COREML)
     example_runner ${PROTOBUF_LITE} ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
     ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
   )
+endif()
+
+if(EXECUTORCH_BUILD_XNNPACK)
+  if(TARGET xnnpack_backend)
+    set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
+    if(TARGET kleidiai)
+      list(APPEND xnnpack_backend_libs kleidiai)
+    endif()
+    target_link_libraries(example_runner ${xnnpack_backend_libs})
+    executorch_target_link_options_shared_lib(xnnpack_backend)
+  endif()
 endif()

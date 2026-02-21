@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,10 +18,15 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
+amin_aten_op = "torch.ops.aten.amin"
+amin_exir_op = "executorch_exir_dialects_edge__ops_aten_amin_default"
+
+min_aten_op = "torch.ops.aten.min"
+min_exir_op = "executorch_exir_dialects_edge__ops_aten_min_default"
+
 
 class Amin(torch.nn.Module):
     input_t = Tuple[Tuple[torch.Tensor], int | Tuple[int], bool]
-    aten_op = ["torch.ops.aten.amin"]
 
     def __init__(self, dim, keep_dims):
         self.dim = dim
@@ -43,10 +48,35 @@ class Amin(torch.nn.Module):
         "rank_4_mult_batches": lambda: ((torch.rand([2, 2, 2, 2]),), (0), True),
     }
 
+    test_data_fp16: Dict = {
+        "rank_2_dim_1_keep_dims_fp16": lambda: (
+            (torch.rand([2, 2], dtype=torch.float16),),
+            (1,),
+            True,
+        ),
+        "rank_4_no_dim_fp16": lambda: (
+            (torch.rand([1, 2, 5, 5], dtype=torch.float16),),
+            None,
+            False,
+        ),
+    }
+
+    test_data_bf16: Dict = {
+        "rank_2_dim_1_keep_dims_bf16": lambda: (
+            (torch.rand([2, 2], dtype=torch.bfloat16),),
+            (1,),
+            True,
+        ),
+        "rank_4_no_dim_bf16": lambda: (
+            (torch.rand([1, 2, 5, 5], dtype=torch.bfloat16),),
+            None,
+            False,
+        ),
+    }
+
 
 class Min(torch.nn.Module):
     input_t = Tuple[Tuple[torch.Tensor], int]
-    aten_op = ["torch.ops.aten.amin"]
 
     def __init__(self, dim):
         self.dim = dim
@@ -63,6 +93,16 @@ class Min(torch.nn.Module):
         "rank_4_dim_3": lambda: ((torch.rand([2, 2, 2, 2]),), 3),
     }
 
+    test_data_fp16: Dict = {
+        "rank_1_dim_0_fp16": lambda: ((torch.rand([10], dtype=torch.float16),), 0),
+        "rank_2_dim_1_fp16": lambda: ((torch.rand([2, 2], dtype=torch.float16),), 1),
+    }
+
+    test_data_bf16: Dict = {
+        "rank_1_dim_0_bf16": lambda: ((torch.rand([10], dtype=torch.bfloat16),), 0),
+        "rank_2_dim_1_bf16": lambda: ((torch.rand([2, 2], dtype=torch.bfloat16),), 1),
+    }
+
 
 class MinWithIndex(torch.nn.Module):
     def __init__(self, dim):
@@ -73,14 +113,21 @@ class MinWithIndex(torch.nn.Module):
         x, i = torch.min(x, self.dim)
         return x, i
 
+    test_data = Min.test_data
+    test_data_fp16 = Min.test_data_fp16
+    test_data_bf16 = Min.test_data_bf16
 
-@common.parametrize("test_data", Amin.test_data)
+
+@common.parametrize(
+    "test_data", Amin.test_data | Amin.test_data_fp16 | Amin.test_data_bf16
+)
 def test_amin_tosa_FP(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
     pipeline = TosaPipelineFP[Amin.input_t](
         Amin(dim, keep_dims),
         data,
-        Amin.aten_op,
+        amin_aten_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -91,7 +138,8 @@ def test_amin_tosa_INT(test_data: Amin.input_t):
     pipeline = TosaPipelineINT[Amin.input_t](
         Amin(dim, keep_dims),
         data,
-        Amin.aten_op,
+        amin_aten_op,
+        frobenius_threshold=0.5,  # Single output value -> frobenius test sensitive to quantization.
     )
     pipeline.run()
 
@@ -101,7 +149,7 @@ def test_amin_u55_INT_not_delegated():
     pipeline = OpNotSupportedPipeline[Amin.input_t](
         Amin(dim, keep_dims),
         data,
-        {" executorch_exir_dialects_edge__ops_aten_amin_default": 1},
+        {"executorch_exir_dialects_edge__ops_aten_amin_default": 1},
         quantize=True,
         u55_subset=True,
     )
@@ -115,15 +163,22 @@ def test_amin_u85_INT(test_data: Amin.input_t):
     pipeline = EthosU85PipelineINT[Amin.input_t](
         Amin(dim, keep_dims),
         data,
-        Amin.aten_op,
+        amin_aten_op,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Min.test_data)
+@common.parametrize(
+    "test_data", Min.test_data | Min.test_data_fp16 | Min.test_data_bf16
+)
 def test_min_dim_tosa_FP_to_amin(test_data: Min.input_t):
     data, dim = test_data()
-    pipeline = TosaPipelineFP[Min.input_t](Min(dim), data, "torch.ops.aten.min")
+    pipeline = TosaPipelineFP[Min.input_t](
+        Min(dim),
+        data,
+        min_aten_op,
+        tosa_extensions=["bf16"],
+    )
     pipeline.run()
 
 
@@ -131,7 +186,7 @@ def test_min_dim_tosa_FP_to_amin(test_data: Min.input_t):
 def test_min_dim_tosa_INT_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     module = Min(dim)
-    pipeline = TosaPipelineINT[Min.input_t](module, data, "torch.ops.aten.amin")
+    pipeline = TosaPipelineINT[Min.input_t](module, data, amin_aten_op)
     pipeline.run()
 
 
@@ -153,14 +208,14 @@ def test_min_dim_tosa_FP_not_delegated():
     pipeline.run()
 
 
-@common.parametrize("test_data", Amin.test_data)
+@common.parametrize("test_data", Amin.test_data | Amin.test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_amin_vgf_no_quant(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
     pipeline = VgfPipeline[Amin.input_t](
         Amin(dim, keep_dims),
         data,
-        Amin.aten_op,
+        amin_aten_op,
         quantize=False,
     )
     pipeline.run()
@@ -173,20 +228,20 @@ def test_amin_vgf_quant(test_data: Amin.input_t):
     pipeline = VgfPipeline[Amin.input_t](
         Amin(dim, keep_dims),
         data,
-        Amin.aten_op,
+        amin_aten_op,
         quantize=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Min.test_data)
+@common.parametrize("test_data", Min.test_data | Min.test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_min_dim_vgf_no_quant_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Min.input_t](
         Min(dim),
         data,
-        "torch.ops.aten.min",
+        min_aten_op,
         quantize=False,
     )
     pipeline.run()
@@ -199,7 +254,36 @@ def test_min_dim_vgf_quant_to_amin(test_data: Min.input_t):
     pipeline = VgfPipeline[Min.input_t](
         Min(dim),
         data,
-        "torch.ops.aten.amin",
+        amin_aten_op,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amin.test_data)
+def test_amin_tosa_INT_a16w8(test_data: Amin.input_t):
+    """Test amin with 16A8W quantization for TOSA INT."""
+    data, dim, keep_dims = test_data()
+    pipeline = TosaPipelineINT[Amin.input_t](
+        Amin(dim, keep_dims),
+        data,
+        amin_aten_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amin.test_data)
+@common.XfailIfNoCorstone320
+def test_amin_u85_INT_a16w8(test_data: Min.input_t):
+    """Test amin with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    data, dim, keep_dims = test_data()
+    pipeline = EthosU85PipelineINT[Amin.input_t](
+        Amin(dim, keep_dims),
+        data,
+        amin_aten_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

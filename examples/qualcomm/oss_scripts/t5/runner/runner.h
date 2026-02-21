@@ -51,7 +51,7 @@ class Runner {
   executorch::runtime::Error load();
   executorch::runtime::Error generate(
       int32_t seq_len,
-      std::vector<std::vector<int64_t>>& inputs,
+      std::vector<std::vector<uint8_t>>& inputs,
       std::function<void(const std::string&)> token_callback = {});
 
  private:

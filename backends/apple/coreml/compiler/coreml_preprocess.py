@@ -13,7 +13,7 @@ from enum import Enum
 
 from pathlib import Path
 
-from typing import Any, Dict, final, List, Optional, Tuple
+from typing import Any, Dict, final, List, Optional, Tuple, Union
 
 import coremltools as ct
 import coremltools.optimize as cto
@@ -44,6 +44,15 @@ class COMPILE_SPEC_KEYS(Enum):
     OP_LINEAR_QUANTIZER_CONFIG = "op_linear_quantizer_config"
     ENUMERATED_SHAPES = "enumerated_shapes"
     PASS_PIPELINE = "pass_pipeline"
+    MULTIMETHOD_WEIGHT_SHARING_STRATEGY = "multimethod_weight_sharing_strategy"
+
+
+class MULTIMETHOD_WEIGHT_SHARING_STRATEGY(Enum):
+    # Methods are processed independently with no weight sharing.
+    DISABLED = "disabled"
+    # Partitions must align positionally across methods; enables weight sharing
+    # via NamedDataStore. Raises an error if partition counts don't match.
+    POSITIONAL = "positional"
 
 
 class MODEL_PATHS(Enum):
@@ -54,13 +63,29 @@ class MODEL_PATHS(Enum):
 
 
 @dataclass
-class ModelMetadata:
-    # The model input names.
+class MethodMetadata:
+    # The method input names.
     inputNames: List[str]
-    # The model output names.
+    # The method output names.
+    outputNames: List[str]
+
+
+@dataclass
+class ModelMetadata:
+    # The model input names (for single-method models).
+    inputNames: List[str]
+    # The model output names (for single-method models).
     outputNames: List[str]
     # The model identifier.
     identifier: str
+
+
+@dataclass
+class MultifunctionModelMetadata:
+    # The model identifier.
+    identifier: str
+    # Per-method metadata (method name -> MethodMetadata).
+    methods: Dict[str, MethodMetadata]
 
 
 @dataclass
@@ -249,6 +274,43 @@ class CoreMLBackend(BackendDetails):
         return ct.PassPipeline.DEFAULT
 
     @staticmethod
+    def generate_multimethod_weight_sharing_strategy_compile_spec(
+        strategy: "MULTIMETHOD_WEIGHT_SHARING_STRATEGY",
+    ) -> CompileSpec:
+        """
+        Returns the compile spec representing the multimethod weight sharing strategy.
+
+        Args:
+            strategy: The weight sharing strategy to use when combining methods.
+                POSITIONAL: Partitions must align positionally across methods; enables
+                    weight sharing via NamedDataStore. Raises error if partitions don't align.
+                DISABLED: Methods are processed independently with no weight sharing.
+        """
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.MULTIMETHOD_WEIGHT_SHARING_STRATEGY.value,
+            strategy.value.encode("utf-8"),
+        )
+
+    @staticmethod
+    def multimethod_weight_sharing_strategy_from_compile_specs(
+        compile_specs: List[CompileSpec],
+    ) -> "MULTIMETHOD_WEIGHT_SHARING_STRATEGY":
+        """
+        Returns the multimethod weight sharing strategy by parsing the list of compile specs.
+        Defaults to POSITIONAL if not specified.
+        """
+        for compile_spec in compile_specs:
+            if (
+                compile_spec.key
+                == COMPILE_SPEC_KEYS.MULTIMETHOD_WEIGHT_SHARING_STRATEGY.value
+            ):
+                return MULTIMETHOD_WEIGHT_SHARING_STRATEGY(
+                    compile_spec.value.decode("utf-8")
+                )
+
+        return MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
+
+    @staticmethod
     def generate_enumerated_shapes_compile_spec(
         ep: ExportedProgram,
         enumerated_shapes: Dict[str, List[List[int]]],
@@ -429,7 +491,10 @@ class CoreMLBackend(BackendDetails):
         )
 
     @staticmethod
-    def save_model_metadata(model_metadata: ModelMetadata, model_dir_path: Path):
+    def save_model_metadata(
+        model_metadata: Union[ModelMetadata, MultifunctionModelMetadata],
+        model_dir_path: Path,
+    ):
         # Store model metadata.
         model_metadata_path = Path(model_dir_path) / MODEL_PATHS.METADATA.value
         model_metadata_json = json.dumps(asdict(model_metadata))
@@ -443,6 +508,84 @@ class CoreMLBackend(BackendDetails):
         model_debug_info_json = json.dumps(asdict(model_debug_info))
         with open(model_debug_info_path, "w") as outfile:
             outfile.write(model_debug_info_json)
+
+    @staticmethod
+    def _convert_to_mlmodel(
+        edge_program: ExportedProgram,
+        compile_specs: List[CompileSpec],
+        skip_model_load: bool = True,
+    ) -> ct.models.MLModel:
+        """
+        Convert an ExportedProgram to a CoreML MLModel.
+
+        Args:
+            edge_program: The edge program to convert
+            compile_specs: Compile specs for this conversion
+            skip_model_load: Whether to skip loading the model (for efficiency)
+
+        Returns:
+            The converted MLModel
+        """
+        model_compute_precision = (
+            CoreMLBackend.model_compute_precision_from_compile_specs(compile_specs)
+        )
+        minimum_deployment_target = (
+            CoreMLBackend.min_deployment_target_from_compile_specs(compile_specs)
+        )
+        compute_units = CoreMLBackend.compute_unit_from_compile_specs(compile_specs)
+        pass_pipeline = CoreMLBackend.pass_pipeline_from_compile_specs(compile_specs)
+        enumerated_shapes = CoreMLBackend.enumerated_shapes_from_compile_specs(
+            compile_specs
+        )
+
+        # If using enumerated shapes, pass inputs explicitly to CoreML's convert()
+        ct_inputs = None
+        if enumerated_shapes is not None:
+            ct_inputs = _get_ct_inputs(edge_program, enumerated_shapes)
+
+            # Check there are not multiple enumerated inputs if iOS is below 18
+            if (minimum_deployment_target is None) or (
+                minimum_deployment_target < ct.target.iOS18
+            ):
+                n_enumerated_inputs = sum(
+                    1
+                    for ct_in in ct_inputs
+                    if isinstance(ct_in.shape, ct.EnumeratedShapes)
+                )
+                if n_enumerated_inputs > 1:
+                    raise ValueError(
+                        f"Your program has {n_enumerated_inputs} enumerated inputs, "
+                        f"but minimum_deployment_target is {minimum_deployment_target}. "
+                        "Multiple enumerated inputs requires iOS18 or later."
+                    )
+
+        mlmodel = ct.convert(
+            model=edge_program,
+            source="pytorch",
+            convert_to="mlprogram",
+            pass_pipeline=pass_pipeline,
+            skip_model_load=skip_model_load,
+            compute_precision=model_compute_precision,
+            minimum_deployment_target=minimum_deployment_target,
+            compute_units=compute_units,
+            inputs=ct_inputs,
+        )
+
+        # Apply quantization if specified
+        op_linear_quantizer_config = (
+            CoreMLBackend.op_linear_quantizer_config_from_compile_specs(compile_specs)
+        )
+        if op_linear_quantizer_config is not None:
+            logger.warning(
+                "Core ML Backend op_linear_quantizer_config API is experimental"
+            )
+            config = cto.coreml.OptimizationConfig(
+                global_config=op_linear_quantizer_config,
+                op_type_configs={"gather": None},
+            )
+            mlmodel = cto.coreml.linear_quantize_weights(mlmodel, config=config)
+
+        return mlmodel
 
     @staticmethod
     def preprocess_model(
@@ -517,72 +660,296 @@ class CoreMLBackend(BackendDetails):
     ) -> PreprocessResult:
         logger.info(f"Edge program: {edge_program}")
         model_type: CoreMLBackend.MODEL_TYPE = (
-            CoreMLBackend.model_type_from_compile_specs(
-                compile_specs,
-            )
+            CoreMLBackend.model_type_from_compile_specs(compile_specs)
         )
-        model_compute_precision: ct.precision = (
-            CoreMLBackend.model_compute_precision_from_compile_specs(compile_specs)
-        )
-        minimum_deployment_target: Optional[ct.target] = (
-            CoreMLBackend.min_deployment_target_from_compile_specs(compile_specs)
-        )
-        compute_units: ct.ComputeUnit = CoreMLBackend.compute_unit_from_compile_specs(
-            compile_specs
-        )
-        op_linear_quantizer_config = (
-            CoreMLBackend.op_linear_quantizer_config_from_compile_specs(compile_specs)
-        )
-        enumerated_shapes = CoreMLBackend.enumerated_shapes_from_compile_specs(
-            compile_specs
-        )
-        pass_pipeline: ct.PassPipeline = CoreMLBackend.pass_pipeline_from_compile_specs(
-            compile_specs
-        )
-
-        # If using enumerated shapes, we need to pass the inputs to CoreML's convert() function
-        # explicitly
-        ct_inputs = None
-        if enumerated_shapes is not None:
-            ct_inputs = _get_ct_inputs(edge_program, enumerated_shapes)
-
-            # Check there are not multiple enumerated inputs if iOS is below 18
-            if (minimum_deployment_target is None) or (
-                minimum_deployment_target < ct.target.iOS18
-            ):
-                n_enumerated_inputs = 0
-                for ct_in in ct_inputs:
-                    if isinstance(ct_in.shape, ct.EnumeratedShapes):
-                        n_enumerated_inputs += 1
-                if n_enumerated_inputs > 1:
-                    raise ValueError(
-                        f"You're program has {n_enumerated_inputs}, but the minimum_deployment_target is set to {minimum_deployment_target}.  Multiple enumerated inputs requires iOS18 or later."
-                    )
 
         # Load the model if MODEL_TYPE is 'COMPILED_MODEL'. This step is necessary because
         # get_compiled_model_path() requires a loaded model.
         skip_model_load = model_type != CoreMLBackend.MODEL_TYPE.COMPILED_MODEL
-        mlmodel = ct.convert(
-            model=edge_program,
-            source="pytorch",
-            convert_to="mlprogram",
-            pass_pipeline=pass_pipeline,
-            skip_model_load=skip_model_load,
-            compute_precision=model_compute_precision,
-            minimum_deployment_target=minimum_deployment_target,
-            compute_units=compute_units,
-            inputs=ct_inputs,
+
+        mlmodel = CoreMLBackend._convert_to_mlmodel(
+            edge_program, compile_specs, skip_model_load=skip_model_load
         )
 
-        if op_linear_quantizer_config is not None:
-            logger.warning(
-                "Core ML Backend op_linear_quantizer_config API is experimental"
-            )
-            config = cto.coreml.OptimizationConfig(
-                global_config=op_linear_quantizer_config,
-                # skip embedding
-                op_type_configs={"gather": None},
-            )
-            mlmodel = cto.coreml.linear_quantize_weights(mlmodel, config=config)
-
         return CoreMLBackend.preprocess_model(mlmodel, model_type=model_type)
+
+    @classmethod
+    def preprocess_multimethod(  # noqa: C901
+        cls,
+        edge_programs: Dict[str, List[ExportedProgram]],
+        compile_specs: Dict[str, List[List[CompileSpec]]],
+    ) -> Dict[str, List[PreprocessResult]]:
+        """
+        Preprocess multiple methods, optionally combining them into CoreML multifunction models.
+
+        The behavior is controlled by the MULTIMETHOD_WEIGHT_SHARING_STRATEGY compile spec:
+
+        POSITIONAL (default):
+            Converts each method's ExportedPrograms to mlpackages, then combines
+            corresponding partitions across methods using CoreML's multifunction API
+            (ct.utils.save_multifunction). This enables weight sharing on disk between
+            methods (e.g., decode and prefill for LLMs).
+
+            For each partition index, we create one multifunction model that combines
+            that partition from all methods. This requires all methods to have the same
+            number of partitions. Raises ValueError if partition counts don't match.
+
+            To avoid duplication, we store the combined model ONCE in NamedDataStore
+            with a unique key. Each method's processed_bytes contains a JSON reference
+            to the model in NamedDataStore.
+
+        DISABLED:
+            Each method is processed independently with no weight sharing. Falls back
+            to the default BackendDetails.preprocess_multimethod() implementation.
+
+        Args:
+            edge_programs: Dictionary mapping method name to list of partitioned ExportedPrograms
+            compile_specs: Dictionary mapping method name to list of CompileSpecs for each partition.
+                The MULTIMETHOD_WEIGHT_SHARING_STRATEGY is read from the first method's first
+                partition compile specs.
+
+        Returns:
+            Dictionary mapping method name to list of PreprocessResults. When using POSITIONAL
+            strategy, each method's processed_bytes contains a JSON reference to the shared
+            model in NamedDataStore.
+        """
+        from executorch.exir._serialize._named_data_store import NamedDataStore
+
+        method_names = list(edge_programs.keys())
+
+        if len(method_names) <= 1:
+            # Fall back to default implementation for single method
+            return super().preprocess_multimethod(edge_programs, compile_specs)
+
+        # Get compile specs from the first method's first partition
+        first_method = method_names[0]
+        first_compile_specs = compile_specs[first_method][0]
+
+        # Check the weight sharing strategy
+        weight_sharing_strategy = (
+            cls.multimethod_weight_sharing_strategy_from_compile_specs(
+                first_compile_specs
+            )
+        )
+
+        if weight_sharing_strategy == MULTIMETHOD_WEIGHT_SHARING_STRATEGY.DISABLED:
+            # Process each method independently with no weight sharing
+            logger.info(
+                "Multimethod weight sharing is DISABLED. Processing methods independently."
+            )
+            return super().preprocess_multimethod(edge_programs, compile_specs)
+
+        assert weight_sharing_strategy == MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
+
+        # POSITIONAL strategy: verify all methods have the same number of partitions
+        num_partitions = len(edge_programs[first_method])
+        for method_name, programs in edge_programs.items():
+            if len(programs) != num_partitions:
+                raise ValueError(
+                    f"Method '{method_name}' has {len(programs)} partitions, but "
+                    f"'{first_method}' has {num_partitions}. POSITIONAL weight sharing "
+                    "strategy requires all methods to have the same number of partitions. "
+                    "Use MULTIMETHOD_WEIGHT_SHARING_STRATEGY.DISABLED if methods should "
+                    "be processed independently."
+                )
+
+        model_type: CoreMLBackend.MODEL_TYPE = cls.model_type_from_compile_specs(
+            first_compile_specs
+        )
+
+        # Create a temporary directory for all the mlpackages
+        temp_dir = Path(tempfile.mkdtemp())
+
+        # Structure: method_mlpackage_paths[method_name][partition_idx] = path
+        method_mlpackage_paths: Dict[str, List[Path]] = {
+            method_name: [] for method_name in method_names
+        }
+
+        # Create a NamedDataStore to hold the shared multifunction models
+        named_data_store = NamedDataStore()
+
+        try:
+            # Convert each method's partitions to mlpackages
+            for method_name in method_names:
+                for partition_idx, edge_program in enumerate(
+                    edge_programs[method_name]
+                ):
+                    method_compile_specs = compile_specs[method_name][partition_idx]
+
+                    logger.info(
+                        f"Converting method '{method_name}' partition {partition_idx} to mlpackage..."
+                    )
+
+                    # Convert to CoreML using shared helper
+                    mlmodel = cls._convert_to_mlmodel(
+                        edge_program, method_compile_specs, skip_model_load=True
+                    )
+
+                    # Save the mlpackage
+                    mlpackage_path = (
+                        temp_dir / f"{method_name}_partition_{partition_idx}.mlpackage"
+                    )
+                    mlmodel.save(str(mlpackage_path))
+                    method_mlpackage_paths[method_name].append(mlpackage_path)
+
+                    logger.info(
+                        f"Saved method '{method_name}' partition {partition_idx} to {mlpackage_path}"
+                    )
+
+            # For each partition index, combine that partition from all methods
+            # into a single multifunction model.
+            # Store combined_processed_bytes[partition_idx] = bytes (for first method)
+            combined_processed_bytes: List[bytes] = []
+            debug_handle_maps: List[Optional[Dict[str, Tuple[int]]]] = []
+            model_keys: List[str] = []  # Keys for NamedDataStore lookup
+
+            for partition_idx in range(num_partitions):
+                logger.info(
+                    f"Combining partition {partition_idx} from all methods into multifunction model..."
+                )
+
+                desc = ct.utils.MultiFunctionDescriptor()
+                for method_name in method_names:
+                    mlpackage_path = method_mlpackage_paths[method_name][partition_idx]
+                    desc.add_function(
+                        str(mlpackage_path),
+                        src_function_name="main",
+                        target_function_name=method_name,
+                    )
+
+                # Set the first method as default
+                desc.default_function_name = first_method
+
+                # Save the combined multifunction model for this partition
+                combined_path = (
+                    temp_dir / f"combined_partition_{partition_idx}.mlpackage"
+                )
+                ct.utils.save_multifunction(desc, str(combined_path))
+
+                logger.info(
+                    f"Saved combined multifunction model for partition {partition_idx} to {combined_path}"
+                )
+
+                # Create output directory for this partition's combined model
+                model_dir_path = temp_dir / f"lowered_module_partition_{partition_idx}"
+                model_dir_path.mkdir(exist_ok=True)
+
+                # Handle model type (compiled vs mlpackage)
+                if model_type == CoreMLBackend.MODEL_TYPE.COMPILED_MODEL:
+                    output_model_path = (
+                        model_dir_path / MODEL_PATHS.COMPILED_MODEL.value
+                    )
+                    combined_model_loaded = ct.models.MLModel(str(combined_path))
+                    compiled_path = combined_model_loaded.get_compiled_model_path()
+                    shutil.move(compiled_path, str(output_model_path))
+                else:
+                    output_model_path = model_dir_path / MODEL_PATHS.MODEL.value
+                    shutil.copytree(str(combined_path), str(output_model_path))
+
+                # For multifunction models, we store all method metadata in a single file
+                # with method names as keys. Each method can have different input/output
+                # names (e.g., masks_1023 vs masks_992).
+                identifier = "executorch_" + str(uuid.uuid4())
+
+                # Extract metadata for each method
+                methods_metadata: Dict[str, MethodMetadata] = {}
+                for method_name in method_names:
+                    method_mlpackage_path = method_mlpackage_paths[method_name][
+                        partition_idx
+                    ]
+                    method_model = ct.models.MLModel(
+                        str(method_mlpackage_path), skip_model_load=True
+                    )
+                    method_spec = method_model.get_spec()
+                    input_names = [inp.name for inp in method_spec.description.input]
+                    output_names = [out.name for out in method_spec.description.output]
+                    methods_metadata[method_name] = MethodMetadata(
+                        inputNames=input_names,
+                        outputNames=output_names,
+                    )
+                    logger.info(
+                        f"Extracted metadata for method '{method_name}' partition {partition_idx}: "
+                        f"{len(input_names)} inputs, {len(output_names)} outputs"
+                    )
+
+                # Create consolidated multifunction metadata
+                multifunction_metadata = MultifunctionModelMetadata(
+                    identifier=identifier,
+                    methods={k: asdict(v) for k, v in methods_metadata.items()},
+                )
+
+                # Save consolidated metadata
+                cls.save_model_metadata(multifunction_metadata, model_dir_path)
+
+                # Note: Debug info is not supported for multifunction models.
+                # The combined model's debug mapping doesn't accurately map back to
+                # individual methods, so we skip it rather than provide incorrect info.
+
+                # Flatten the model directory (with model + metadata) to bytes
+                processed_bytes = (
+                    executorchcoreml.flatten_directory_contents(
+                        str(model_dir_path.resolve())
+                    )
+                    or b""
+                )
+                combined_processed_bytes.append(processed_bytes)
+
+                # Store in NamedDataStore and save the key for later reference
+                model_key = f"coreml_{identifier}"
+                model_keys.append(model_key)
+                named_data_store.add_named_data(model_key, processed_bytes)
+
+                logger.info(
+                    f"Created combined processed bytes for partition {partition_idx} ({len(processed_bytes)} bytes)"
+                )
+                logger.info(f"Stored in NamedDataStore with key '{model_key}'")
+
+                # Debug handle map is not supported for multifunction models
+                debug_handle_maps.append(None)
+
+            # Get the NamedDataStoreOutput to share across PreprocessResults
+            named_data_store_output = named_data_store.get_named_data_store_output()
+
+            # Build PreprocessResults for each method and partition.
+            # All methods get a JSON reference to the model in NamedDataStore.
+            # The model is stored ONLY in NamedDataStore to avoid duplication.
+            # Runtime will detect the JSON reference and load from NamedDataMap.
+            preprocess_results: Dict[str, List[PreprocessResult]] = {
+                method_name: [] for method_name in method_names
+            }
+
+            for partition_idx in range(num_partitions):
+                debug_handle_map = debug_handle_maps[partition_idx]
+
+                for method_name in method_names:
+                    # Create JSON reference for runtime to look up model in NamedDataStore.
+                    # functionName specifies which CoreML function to invoke within the
+                    # multifunction model. The runtime gets the ExecuTorch method name
+                    # separately via BackendInitContext::get_method_name().
+                    #
+                    # We prefix the JSON with a magic number so runtime can identify this
+                    # as a JSON reference rather than raw model bytes.
+                    reference = {
+                        "version": 1,
+                        "key": model_keys[partition_idx],
+                        "functionName": method_name,
+                    }
+                    # Magic number "CMJR" (CoreML JSON Reference) followed by JSON bytes
+                    MAGIC_NUMBER = b"CMJR"
+                    reference_bytes = MAGIC_NUMBER + json.dumps(reference).encode(
+                        "utf-8"
+                    )
+
+                    preprocess_results[method_name].append(
+                        PreprocessResult(
+                            processed_bytes=reference_bytes,
+                            debug_handle_map=debug_handle_map,
+                            data_store_output=named_data_store_output,
+                        )
+                    )
+
+            return preprocess_results
+
+        finally:
+            # Clean up temporary directory
+            shutil.rmtree(str(temp_dir))

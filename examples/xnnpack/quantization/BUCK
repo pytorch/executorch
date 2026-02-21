@@ -1,0 +1,31 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "example",
+    main_function = ".example.main",
+    main_src = "example.py",
+    preload_deps = ["//executorch/kernels/quantized:aot_lib"],
+    deps = [
+        ":quant_utils",
+        "//caffe2:torch",
+        "//executorch/examples/xnnpack:models",
+        "//executorch/extension/export_util:export_util",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "quant_utils",
+    srcs = [
+        "utils.py",
+    ],
+    visibility = [
+        "//executorch/examples/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+    ],
+)

@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -363,7 +363,7 @@ def test_cat__same_shapes_converter_padding_last_dimension(use_qat):
         CatModule(2),
         [input_shape, input_shape],
         target=target,
-        neutron_converter_flavor="SDK_25_09",
+        neutron_converter_flavor="SDK_25_12",
         custom_delegation_options=CustomDelegationOptions(),
         use_qat=use_qat,
     ).exported_program()
@@ -385,7 +385,7 @@ def test_cat__same_shapes__channels_first__padding_channels(use_qat):
         CatConvModule(1),
         [input_shape, input_shape],
         target=target,
-        neutron_converter_flavor="SDK_25_09",
+        neutron_converter_flavor="SDK_25_12",
         custom_delegation_options=CustomDelegationOptions(),
         use_qat=use_qat,
     ).exported_program()

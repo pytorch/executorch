@@ -69,4 +69,4 @@ jobs:
         # Setup install_requirements for llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }}
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }} wikitext_ppl

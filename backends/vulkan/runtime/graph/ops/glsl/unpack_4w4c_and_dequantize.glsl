@@ -8,6 +8,8 @@
 
 #version 450 core
 
+${define_required_extensions(INPUT_STORAGE, DTYPE)}
+
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, INPUT_STORAGE)}
 #define T ${texel_load_component_type(DTYPE, INPUT_STORAGE)}
@@ -23,8 +25,6 @@ $if OUTPUT_STORAGE == "buffer":
   #define OUTPUT_BUFFER
 $if INPUT_STORAGE == "buffer":
   #define INPUT_BUFFER
-
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 

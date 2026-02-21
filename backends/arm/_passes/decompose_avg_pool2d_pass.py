@@ -51,7 +51,7 @@ class DecomposeAvgPool2dPass(ArmPass):
         full_op, cat_op, avgpool_op, mul_op = get_decomposition(op)
 
         x = args[0]
-        full_kwargs = {"device": x.data.device}
+        full_kwargs = {"device": x.data.device, "dtype": x.data.dtype}
         kernel_h, kernel_w = args[1]
         kernel_size = kernel_h * kernel_w
         if len(args) > 2 and args[2] is not None:
