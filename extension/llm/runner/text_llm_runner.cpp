@@ -131,6 +131,24 @@ Error TextLLMRunner::generate(
 
   // Reduce max_context_len by pos_
   int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;
+
+  // When attention sink is enabled, the model handles KV cache eviction
+  // internally. pos_ can exceed max_seq_len (KV cache size) but not
+  // max_context_len (RoPE/position encoding limit).
+  bool use_attention_sink = metadata_.count(kAttentionSinkSize) &&
+      metadata_.at(kAttentionSinkSize) > 0;
+
+  if (use_attention_sink) {
+    ET_LOG(
+        Info,
+        "Attention sink enabled: sink_size=%" PRId64
+        ", window_size=%" PRId64
+        ", pos_=%" PRId64,
+        metadata_.at(kAttentionSinkSize),
+        metadata_.at(kAttentionWindowSize),
+        pos_);
+  }
+
   ET_CHECK_OR_RETURN_ERROR(
       num_prompt_tokens >= 1,
       InvalidArgument,
@@ -143,6 +161,9 @@ Error TextLLMRunner::generate(
       num_prompt_tokens,
       max_context_len);
 
+  // For attention sink, the effective limit for generation is max_context_len
+  // (the RoPE limit). Without attention sink, it's also max_context_len
+  // (which equals max_seq_len for non-attention-sink models).
   // Determine max_new_tokens using the GenerationConfig's resolve method,
   // then subtract pos_ for max_new_tokens.
   int max_new_tokens =

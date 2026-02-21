@@ -41,28 +41,32 @@ class RopeWithAttentionSink(Rope):
             self.apply_rotary_emb_to_k = hf_apply_rotary_emb_to_k
         else:
             self.apply_rotary_emb_to_k = apply_rotary_emb_to_k
+        self.window_size = window_size
+        self.sink_size = sink_size
         self.max_context_length = window_size + sink_size
-        assert self.max_context_length == self.params.max_context_len
+        assert self.max_context_length == self.params.max_seq_len
         self.eviction_batch_size = eviction_batch_size
         self.position_shift = 0
 
     def get_freqs(self, input_pos: Optional[torch.Tensor], seq_len: int):
         assert input_pos is not None
 
-        input_pos_item = input_pos.item()
-        torch._check_is_size(input_pos_item)
-        if input_pos_item + self.position_shift + seq_len > self.max_context_length:
-            # There are not enough spaces in the cache to store the new tokens.
-            # We need to evict some old tokens and shift some recent tokens.
-            num_to_evict = max(
-                input_pos_item
-                + self.position_shift
-                - self.max_context_length
-                + seq_len,
-                self.eviction_batch_size,
-            )
-            self.position_shift -= num_to_evict  # pyre-ignore [8]
-        return super().get_freqs(input_pos + self.position_shift, seq_len)
+        # For torch.export compatibility, use tensor operations without Python control flow.
+        # The cache is a ring buffer where:
+        # - Positions 0..sink_size-1: Always hold sink tokens (initial tokens)
+        # - Positions sink_size..max_seq_len-1: Ring buffer for recent tokens
+        #
+        # For positions beyond cache capacity, wrap into the window region:
+        # cache_pos = sink_size + ((input_pos - sink_size) % window_size)
+
+        # Use torch.where to avoid data-dependent Python if statements
+        cache_pos = torch.where(
+            input_pos < self.max_context_length,
+            input_pos,
+            self.sink_size + ((input_pos - self.sink_size) % self.window_size),
+        )
+
+        return super().get_freqs(cache_pos, seq_len)
 
     def rerotate_k(
         self,
@@ -98,13 +102,14 @@ class RopeWithAttentionSink(Rope):
 
 class KVCacheWithAttentionSink(KVCache):
     """
-    KV cache that supports attention sink. It keeps the initial few tokens as attention sink.
-    For other tokens, it uses a sliding window to keep the most recent tokens.
+    KV cache that supports attention sink using a ring buffer approach.
+    It keeps the initial few tokens as attention sink (positions 0..sink_size-1).
+    For other tokens, it uses a ring buffer (positions sink_size..max_seq_len-1) for recent tokens.
 
     Parameters:
-        window_size: the size of the sliding window
+        window_size: the size of the sliding window (ring buffer portion)
         sink_size: the number of initial tokens to keep as attention sink
-        eviction_batch_size: the number of tokens to evict in batch when there is not enough space in the KV cache
+        eviction_batch_size: (unused in ring buffer approach, kept for API compatibility)
     """
 
     def __init__(
@@ -131,78 +136,31 @@ class KVCacheWithAttentionSink(KVCache):
         self.window_size = window_size
         self.sink_size = sink_size
         self.eviction_batch_size = eviction_batch_size
-        self.position_shift = 0
+        self.max_context_length = window_size + sink_size
 
-    def evict_tokens(self, input_pos: torch.Tensor, seq_len: int) -> int:
+    def evict_tokens(self, input_pos: torch.Tensor, seq_len: int) -> torch.Tensor:
         """
-        Evict old tokens from the cache to make rooms for new tokens.
+        Compute the cache position for the given input position.
+        Uses ring buffer approach - no actual eviction needed, just position mapping.
+
+        For torch.export compatibility, uses tensor operations without Python control flow.
 
         Parameters:
             input_pos: the start position of the incoming token in the actual sequence
             seq_len: the length of the incoming sequence
-            rope: the rope object to use for rerotating k
 
         Returns:
-            the number of tokens to evict from the cache which is also the number of
-            positions to shift for incoming tokens
+            cache_pos: the position in the cache where the token should be stored
         """
-        input_pos_item = input_pos.item()
-        torch._check_is_size(input_pos_item)
-        if input_pos_item + self.position_shift + seq_len > self.max_context_length:
-            # There are not enough spaces in the cache to store the new tokens.
-            # We need to evict some old tokens and shift some recent tokens.
-            num_to_evict = max(
-                input_pos_item
-                + self.position_shift
-                - self.max_context_length
-                + seq_len,
-                self.eviction_batch_size,
-            )
-            num_to_keep = (
-                input_pos_item + self.position_shift - self.sink_size - num_to_evict
-            )
-            num_empty_space = self.window_size - num_to_keep
-            dim_to_slice = 2
-            k_to_keep = self.k_cache.narrow(
-                dim_to_slice,
-                self.sink_size + num_to_evict,  # pyre-ignore [6]
-                num_to_keep,  # pyre-ignore [6]
-            )
-            k_to_keep = self.rope.rerotate_k(
-                k=k_to_keep.transpose(1, 2),
-                original_position=(self.sink_size + num_to_evict),  # pyre-ignore [6]
-                new_position=self.sink_size,
-            ).transpose(1, 2)
-            self.k_cache = torch.cat(
-                [
-                    self.k_cache.narrow(dim_to_slice, 0, self.sink_size),
-                    k_to_keep,
-                    torch.zeros_like(
-                        self.k_cache.narrow(
-                            dim_to_slice, 0, num_empty_space  # pyre-ignore [6]
-                        )
-                    ),
-                ],
-                dim=dim_to_slice,
-            )
-            self.v_cache = torch.cat(
-                [
-                    self.v_cache.narrow(dim_to_slice, 0, self.sink_size),
-                    self.v_cache.narrow(
-                        dim_to_slice,
-                        self.sink_size + num_to_evict,  # pyre-ignore [6]
-                        num_to_keep,  # pyre-ignore [6]
-                    ),
-                    torch.zeros_like(
-                        self.v_cache.narrow(
-                            dim_to_slice, 0, num_empty_space  # pyre-ignore [6]
-                        )
-                    ),
-                ],
-                dim=dim_to_slice,
-            )
-            self.position_shift -= num_to_evict  # pyre-ignore [8]
-        return self.position_shift
+        # Ring buffer position mapping:
+        # - Positions 0..sink_size-1: Direct mapping (sink tokens)
+        # - Positions >= sink_size: Map to sink_size + ((pos - sink_size) % window_size)
+        cache_pos = torch.where(
+            input_pos < self.max_context_length,
+            input_pos,
+            self.sink_size + ((input_pos - self.sink_size) % self.window_size),
+        )
+        return cache_pos
 
 
 def attention_sink_forward(
@@ -224,13 +182,14 @@ def attention_sink_forward(
     k = k.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
     v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
-    # Prepare for space in KV cache and get position shift
-    position_shift = self.kv_cache.evict_tokens(input_pos, seqlen)
+    # Compute cache position using ring buffer mapping
+    cache_pos = self.kv_cache.evict_tokens(input_pos, seqlen)
 
-    # RoPE relative positional embeddings with shifted position in KV cache
+    # RoPE relative positional embeddings
     q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
-    output = self.SDPA(input_pos + position_shift, q, k, v, bsz, seqlen, self.mask)
+    # Use cache_pos directly (already mapped to ring buffer position)
+    output = self.SDPA(cache_pos, q, k, v, bsz, seqlen, self.mask)
     return self.wo(output)
 
 

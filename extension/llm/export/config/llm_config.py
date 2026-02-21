@@ -175,8 +175,10 @@ class ModelConfig:
             dim to take vectorized path in optimized kernels.
         use_attention_sink: Whether to use attention sink to support multi-round
             conversation. Structured as:
+            '<sink_size>,<window_size>' or
             '<sink_size>,<window_size>,<batch_eviction_size>',
-            e.g., '4,2044,1024'.
+            e.g., '4,2044' or '4,2044,1024'.
+            Eviction batch size defaults to 1 if not specified.
         output_prune_map: Path to the output pruning token mapping file (token_map.json).
         input_prune_map: Path to the output pruning token mapping file (token_map.json).
         use_kv_cache: Whether to use KV cache.
@@ -215,9 +217,10 @@ class ModelConfig:
     def _validate_attention_sink(self):
         if self.use_attention_sink:
             attention_sink_params = self.use_attention_sink.split(",")
-            if len(attention_sink_params) != 3:
+            if len(attention_sink_params) not in (2, 3):
                 raise ValueError(
-                    "The value of use_attention_sink must be structured like '<sink_size>,<window_size>,<batch_eviction_size>'"
+                    "The value of use_attention_sink must be structured like "
+                    "'<sink_size>,<window_size>' or '<sink_size>,<window_size>,<batch_eviction_size>'"
                 )
 
 
