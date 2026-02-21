@@ -142,6 +142,15 @@ def is_choose_qparams_node(node: torch.fx.Node) -> bool:
     return "choose_qparams" in node_name
 
 
+def is_dynamic_qscale(node: Any) -> bool:
+    """Check if a scale node is dynamically computed via a choose_qparams op."""
+    return (
+        isinstance(node, torch.fx.Node)
+        and node.target == operator.getitem
+        and is_choose_qparams_node(node.args[0])
+    )
+
+
 def is_dequant_per_channel_node(node: torch.fx.Node) -> bool:
     if node.op != "call_function":
         return False
