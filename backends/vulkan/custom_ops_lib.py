@@ -390,7 +390,7 @@ def q8ta_linear(
 
     out = torch.nn.functional.linear(x, weights)
     if bias is not None:
-        out = out + bias
+        out = out + bias[: out.shape[-1]]
 
     if activation == "relu":
         out = torch.nn.functional.relu(out)
@@ -455,7 +455,7 @@ def q8ta_linear_gemv(
 
     out = torch.nn.functional.linear(x, weights)
     if bias is not None:
-        out = out + bias
+        out = out + bias[: out.shape[-1]]
 
     if activation == "relu":
         out = torch.nn.functional.relu(out)
