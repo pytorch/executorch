@@ -60,6 +60,17 @@ python_unittest(
     ],
 )
 
+python_unittest(
+    name = "test_vulkan_tensor_repr",
+    srcs = [
+        "test_vulkan_tensor_repr.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+    ],
+)
+
 runtime.python_library(
     name = "tester",
     srcs = ["tester.py"],
