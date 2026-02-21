@@ -460,8 +460,8 @@ jobs:
           exit 1
         fi
 
-  test-arm-ootb-linux:
-    name: test-arm-ootb-linux
+  test-arm-backend-ootb-linux:
+    name: test-arm-backend-ootb-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -498,6 +498,32 @@ jobs:
         # Run OOTB tests
         OOTB_TEST=${{ matrix.test_arm_ootb }}
         backends/arm/test/test_arm_ootb.sh $OOTB_TEST
+
+  test-arm-backend-ootb-macos:
+    name: test-arm-backend-ootb-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+        bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
+
+        # Setup environment - this builds ExecuTorch and the runner
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "cmake"
+
+        ${CONDA_RUN} sh .ci/scripts/setup-arm-baremetal-tools.sh
+        ${CONDA_RUN} source examples/arm/ethos-u-scratch/setup_path.sh
+
+        # Install requirements for converting notebooks
+        ${CONDA_RUN} pip install notebook
+
+        # Run OOTB tests
+        ${CONDA_RUN} sh backends/arm/test/test_arm_ootb.sh
 
   test-coreml-delegate:
     name: test-coreml-delegate
