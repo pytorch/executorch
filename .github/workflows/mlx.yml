@@ -125,7 +125,7 @@ jobs:
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
-        ${CONDA_RUN} pip install "transformers>=4.53.3"
+        ${CONDA_RUN} pip install "transformers>=4.56.1" "tokenizers>=0.22.2"
         echo "::endgroup::"
 
         echo "::group::Export Voxtral model with MLX backend"
@@ -177,7 +177,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Install Whisper requirements"
-        ${CONDA_RUN} pip install transformers soundfile datasets
+        ${CONDA_RUN} pip install transformers soundfile datasets librosa
         echo "::endgroup::"
 
         echo "::group::Export Whisper model with MLX backend"
@@ -218,8 +218,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Install Llama requirements"
-          ${CONDA_RUN} pip install "transformers>=4.53.3"
-          echo "::endgroup::"
+        ${CONDA_RUN} pip install "transformers>=4.56.1" "tokenizers>=0.22.2"
+        echo "::endgroup::"
 
         echo "::group::Export Llama 1B with MLX backend"
         ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llama \
