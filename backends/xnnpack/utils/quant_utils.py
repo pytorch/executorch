@@ -6,12 +6,14 @@
 
 import operator
 from itertools import accumulate
-from typing import cast, Union
+from typing import cast, Optional, Union
 
 import torch
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch._ops import OpOverload
 from torch.fx.experimental.symbolic_shapes import free_symbols, has_free_symbols
 
 _Q_OPS = {
@@ -299,3 +301,55 @@ def validate_quant_zeropoints(
         raise ValueError(
             f"Found invalid zeropoint {value}" f" in zero point tensor at index: {idx}"
         )
+
+
+def insert_q_dq_pair(
+    graph: torch.fx.Graph,
+    anchor: torch.fx.Node,
+    q_params: tuple,
+) -> tuple[torch.fx.Node, torch.fx.Node]:
+    """
+    Insert a quantize-dequantize (Q-DQ) pair after the given anchor node.
+
+    The pattern created is:
+    anchor -> quantize -> dequantize -> [anchor's original users]
+
+    Args:
+        graph: The FX graph to modify
+        anchor: The node after which to insert the Q-DQ pair
+        q_params: Quantization parameters (scale, zero_point, dtype, etc.) to use
+                for both the quantize and dequantize operations
+
+    Returns:
+        A tuple of (quantize_node, dequantize_node) that were created
+    """
+
+    # Create quantize node after anchor
+    with graph.inserting_after(anchor):
+        q_node = graph.create_node(
+            "call_function",
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(),
+            kwargs={},
+        )
+        q_node.meta = anchor.meta.copy()
+        # Tag as implicit Q/DQ node for XNNPACK partitioning
+        tag_as_implicit_q_dq(q_node)
+
+    # Create dequantize node after quantize
+    with graph.inserting_after(q_node):
+        dq_node = graph.create_node(
+            "call_function",
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(q_node,) + q_params,
+            kwargs={},
+        )
+        dq_node.meta = q_node.meta.copy()
+        # Tag as implicit Q/DQ node for XNNPACK partitioning
+        tag_as_implicit_q_dq(dq_node)
+
+    # Redirect all uses of anchor to use dequantize instead
+    anchor.replace_all_uses_with(dq_node)
+
+    # Set quantize node args last to avoid replacing its use of anchor
+    q_node.args = (anchor,) + q_params
