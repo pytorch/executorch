@@ -147,4 +147,13 @@ def all_flows() -> dict[str, TestFlow]:
     except Exception as e:
         logger.info(f"Skipping ARM flow registration: {e}")
 
+    try:
+        from executorch.backends.test.suite.flows.cuda import CUDA_TEST_FLOW
+
+        flows += [
+            CUDA_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping CUDA flow registration: {e}")
+
     return {f.name: f for f in flows if f is not None}
