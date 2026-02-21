@@ -45,12 +45,41 @@ To run all registered tests:
 python -m executorch.backends.mlx.test.run_all_tests -j4 --clean-after
 ```
 
-Options:
-- `-j N` / `--parallel N`: Run tests in parallel with N workers
-- `--clean-after`: Clean up generated test files after running
-- `--rebuild`: Rebuild the C++ test runner before running (use after C++ runtime changes)
-- `--list`: List available tests and exit
-- `-v` / `--verbose`: Verbose output
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `-j N` / `--parallel N` | Run tests in parallel with N workers |
+| `--clean-after` | Clean up generated test files after running |
+| `--clean` | Clean up generated test files and exit |
+| `--rebuild` | Rebuild the C++ test runner before running |
+| `--list` | List available tests and exit |
+| `-v` / `--verbose` | Verbose output |
+| `--timeout SECS` | Timeout per test in seconds (default: 300) |
+
+### Memory Management Options
+
+Running many tests can accumulate memory (torch/MLX/Metal allocations). These flags help manage memory:
+
+| Flag | Description |
+|------|-------------|
+| `--isolate` | Run each test in a separate subprocess (sequential mode only). Provides full memory isolation but is slower due to Python/torch import overhead per test. |
+| `--max-tasks-per-worker N` | Recycle parallel workers after N tests (parallel mode only). Workers are terminated and replaced after completing N tests, releasing accumulated memory. |
+
+**Comparison:**
+
+| Mode | Memory Isolation | Speed |
+|------|------------------|-------|
+| `-j 4` | None (workers reused) | Fastest |
+| `-j 4 --max-tasks-per-worker 10` | Bounded (recycled every 10 tests) | Fast |
+| `-j 4 --max-tasks-per-worker 1` | Full (new process per test) | Slower |
+| `--isolate` | Full (subprocess per test) | Slowest (sequential) |
+
+**Recommended for CI with memory constraints:**
+
+```bash
+python -m executorch.backends.mlx.test.run_all_tests -j4 --max-tasks-per-worker 10 --clean-after
+```
 
 ### Run a Specific Test
 

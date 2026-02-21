@@ -47,20 +47,11 @@ def run_inference(
 
     logger.info(f"Encoding prompt: {prompt!r}")
     messages = [{"role": "user", "content": prompt}]
-    input_ids = tokenizer.apply_chat_template(
-        messages, return_tensors="pt", add_generation_prompt=True, tokenize=True
+    formatted_prompt = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
     )
-    # apply_chat_template may return a tensor, list of ints, or string
-    if not isinstance(input_ids, torch.Tensor):
-        if isinstance(input_ids, str):
-            # If tokenize=False was used or tokenizer returned a string, tokenize it
-            encoded = tokenizer.encode(input_ids)
-            input_ids = torch.tensor([encoded], dtype=torch.long)
-        elif isinstance(input_ids, list):
-            # It's a list of ints
-            input_ids = torch.tensor([input_ids], dtype=torch.long)
-        else:
-            raise TypeError(f"Unexpected input_ids type: {type(input_ids)}")
+    input_ids = tokenizer.encode(formatted_prompt)
+    input_ids = torch.tensor([input_ids], dtype=torch.long)
     logger.info(f"Input shape: {input_ids.shape}")
 
     prompt_len = input_ids.shape[1]
