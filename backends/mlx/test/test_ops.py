@@ -9,17 +9,19 @@
 Consolidated op tests for the MLX delegate.
 
 This file contains all op tests organized by category. Each test class inherits
-from OpTestCase and can be run via pytest or the run_all_tests.py script.
+from OpTestCase and can be run via the run_all_tests.py script.
 
 Usage:
-    # Run all tests
-    pytest test_ops.py
+    # Run all tests (with 4 parallel workers, cleanup after)
+    python -m executorch.backends.mlx.test.run_all_tests -j4 --clean-after
 
-    # Run specific test class
-    pytest test_ops.py::TestAdd
+    # Run specific test
+    python -m executorch.backends.mlx.test.run_all_tests add
 
-    # Run via run_all_tests
-    python -m executorch.backends.mlx.test.run_all_tests
+    # List available tests
+    python -m executorch.backends.mlx.test.run_all_tests --list
+
+See README.md in this directory for full documentation.
 """
 
 from typing import Callable, Dict, List, Optional, Tuple

@@ -36,7 +36,7 @@ import importlib
 import multiprocessing
 import subprocess
 import sys
-from concurrent.futures import as_completed, ProcessPoolExecutor
+from multiprocessing import Pool
 from typing import List, Optional, Tuple
 
 from .test_utils import (
@@ -211,15 +211,20 @@ def run_tests_parallel(
     num_workers: int,
     verbose: bool = False,
     timeout: int = DEFAULT_TEST_TIMEOUT,
+    max_tasks_per_worker: Optional[int] = None,
 ) -> Tuple[int, int, List[str]]:
     """
-    Run tests in parallel using ProcessPoolExecutor.
+    Run tests in parallel using multiprocessing.Pool.
 
     Args:
         configs_to_run: List of (config_name, test_instance) tuples.
         num_workers: Number of parallel workers.
         verbose: Whether to print verbose output.
         timeout: Timeout in seconds per test.
+        max_tasks_per_worker: Maximum tasks per worker before recycling.
+            When set, worker processes are terminated and replaced after
+            completing this many tests, which releases accumulated memory
+            (torch/MLX/Metal allocations). None means workers are never recycled.
 
     Returns:
         (passed_count, failed_count, failed_test_names)
@@ -228,43 +233,31 @@ def run_tests_parallel(
     failed = 0
     failed_tests = []
 
-    # Prepare test configs for parallel execution
+    # Prepare test args for parallel execution
     # We pass config names and let subprocesses recreate the test instances
-    test_configs = [(name, {}) for name, _ in configs_to_run]
+    test_args = [("", name, {}, verbose, timeout) for name, _ in configs_to_run]
 
-    print(f"\nRunning {len(test_configs)} tests with {num_workers} workers...\n")
+    recycle_msg = ""
+    if max_tasks_per_worker is not None:
+        recycle_msg = f", recycling workers every {max_tasks_per_worker} tests"
+    print(
+        f"\nRunning {len(test_args)} tests with {num_workers} workers{recycle_msg}...\n"
+    )
 
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        futures = {}
-        for config_name, config_kwargs in test_configs:
-            future = executor.submit(
-                _run_single_test,
-                "",  # test_class_name (not used, we find by config_name)
-                config_name,
-                config_kwargs,
-                verbose,
-                timeout,
-            )
-            futures[future] = config_name
+    with Pool(processes=num_workers, maxtasksperchild=max_tasks_per_worker) as pool:
+        results = pool.starmap(_run_single_test, test_args)
 
-        for future in as_completed(futures):
-            config_name = futures[future]
-            try:
-                result_name, result_passed, error_msg = future.result()
-                if result_passed:
-                    print(f"✓ PASSED: {result_name}")
-                    passed += 1
-                else:
-                    if error_msg:
-                        print(f"✗ FAILED: {result_name} - {error_msg}")
-                    else:
-                        print(f"✗ FAILED: {result_name}")
-                    failed += 1
-                    failed_tests.append(result_name)
-            except Exception as e:
-                print(f"✗ FAILED: {config_name} - Worker exception: {e}")
-                failed += 1
-                failed_tests.append(config_name)
+    for result_name, result_passed, error_msg in results:
+        if result_passed:
+            print(f"✓ PASSED: {result_name}")
+            passed += 1
+        else:
+            if error_msg:
+                print(f"✗ FAILED: {result_name} - {error_msg}")
+            else:
+                print(f"✗ FAILED: {result_name}")
+            failed += 1
+            failed_tests.append(result_name)
 
     return passed, failed, failed_tests
 
@@ -276,6 +269,7 @@ def run_tests(
     timeout: int = DEFAULT_TEST_TIMEOUT,
     clean_after_each: bool = False,
     isolate: bool = False,
+    max_tasks_per_worker: Optional[int] = None,
 ) -> Tuple[int, int, List[str]]:
     """
     Run tests matching the filter.
@@ -288,6 +282,7 @@ def run_tests(
         timeout: Timeout in seconds per test.
         clean_after_each: Whether to clean up test outputs after each test (sequential only).
         isolate: Whether to run each test in a subprocess (sequential only).
+        max_tasks_per_worker: Maximum tasks per worker before recycling (parallel only).
 
     Returns:
         (passed_count, failed_count, failed_test_names)
@@ -324,7 +319,9 @@ def run_tests(
 
     # Run tests
     if parallel > 1:
-        return run_tests_parallel(configs_to_run, parallel, verbose, timeout)
+        return run_tests_parallel(
+            configs_to_run, parallel, verbose, timeout, max_tasks_per_worker
+        )
     else:
         return run_tests_sequential(
             configs_to_run, verbose, timeout, clean_after_each, isolate
@@ -386,6 +383,13 @@ def main():  # noqa: C901
         default=DEFAULT_TEST_TIMEOUT,
         metavar="SECS",
         help=f"Timeout per test in seconds (default: {DEFAULT_TEST_TIMEOUT})",
+    )
+    parser.add_argument(
+        "--max-tasks-per-worker",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Recycle parallel workers after N tests to release memory (default: no recycling)",
     )
     args = parser.parse_args()
 
@@ -457,6 +461,7 @@ def main():  # noqa: C901
         timeout=args.timeout,
         clean_after_each=args.clean_after,
         isolate=args.isolate,
+        max_tasks_per_worker=args.max_tasks_per_worker,
     )
 
     # Print summary

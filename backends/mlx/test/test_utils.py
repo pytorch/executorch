@@ -559,7 +559,9 @@ def find_op_test_runner() -> Path:
     raise FileNotFoundError(
         "Could not find op_test_runner binary. Tried:\n"
         + "\n".join(f"  - {c}" for c in candidates)
-        + "\n\nBuild with: cd cmake-out && cmake --build . --target op_test_runner"
+        + "\n\nBuild with:\n"
+        + "  cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON\n"
+        + "  cmake --build cmake-out --target op_test_runner"
     )
 
 

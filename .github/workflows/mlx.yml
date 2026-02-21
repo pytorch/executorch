@@ -40,7 +40,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Run op unit tests"
-        ${CONDA_RUN} python -m executorch.backends.mlx.test.run_all_tests --clean-after --isolate
+        ${CONDA_RUN} python -m executorch.backends.mlx.test.run_all_tests -j4 --max-tasks-per-worker 10 --clean-after
         echo "::endgroup::"
 
         echo "::group::Run multi-thread stress test"
@@ -125,7 +125,7 @@ jobs:
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
-        ${CONDA_RUN} pip install "transformers>=4.56.1" "tokenizers>=0.22.2"
+        ${CONDA_RUN} pip install "transformers==4.56.1" "tokenizers>=0.22.2"
         echo "::endgroup::"
 
         echo "::group::Export Voxtral model with MLX backend"
