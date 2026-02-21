@@ -110,11 +110,10 @@ void main() {
   if (lid == 0) {
     for (int i = 1; i < WGS; ++i) {
       [[unroll]] for (int tile_n4 = 0; tile_n4 < TILE_N4; ++tile_n4) {
-        partial_accums[0].data[0][tile_n4] +=
+        out_accum.data[0][tile_n4] +=
             partial_accums[i].data[0][tile_n4];
       }
     }
-    out_accum = partial_accums[0];
 
     FPPerOutChannelParams weight_scales_tile;
     load_weight_scales_tile(weight_scales_tile, n4);
