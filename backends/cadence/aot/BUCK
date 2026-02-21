@@ -81,6 +81,7 @@ fbcode_target(_kind = runtime.python_library,
         "pass_utils.py",
     ],
     deps = [
+        "fbsource//third-party/pypi/beartype:beartype",
         ":utils",
         "//caffe2:torch",
         "//executorch/exir:pass_base",
@@ -172,6 +173,19 @@ fbcode_target(_kind = python_unittest,
     deps = [
         ":pass_utils",
         "//executorch/exir:pass_base",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_pass_utils",
+    srcs = [
+        "tests/test_pass_utils.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/beartype:beartype",
+        ":pass_utils",
+        "//caffe2:torch",
     ],
 )
 
