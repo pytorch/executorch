@@ -1267,7 +1267,10 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
 
     # Convert to executorch and save
     first_builder.edge_manager = edge_manager
-    first_builder = first_builder.to_executorch(passes=additional_passes)
+    first_builder = first_builder.to_executorch(
+        passes=additional_passes,
+        share_mutable_buffers=llm_config.multimethod_lora.share_mutable_buffers,
+    )
 
     output_file = _get_output_filename(
         llm_config,

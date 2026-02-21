@@ -8,10 +8,9 @@
 
 import itertools
 import unittest
-from typing import Any, Callable, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import executorch.exir as exir
-
 import torch
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.capture._capture import patch_forward
@@ -37,7 +36,6 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 from executorch.exir.tensor import TensorSpec
 from functorch.experimental.control_flow import map as torch_map
 from parameterized import parameterized
-
 from torch import nn
 from torch.ao.quantization import (  # @manual=//caffe2:torch
     float_qparams_weight_only_qconfig,
@@ -54,7 +52,7 @@ from torch.ao.quantization.quantize_fx import (
     _convert_to_reference_decomposed_fx,
     prepare_fx,
 )
-from torch.export import export
+from torch.export import export, ExportedProgram
 from torch.export.experimental import _export_forward_backward
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Graph, GraphModule, Node
@@ -1162,3 +1160,92 @@ class TestMap(unittest.TestCase):
                         value.val.extra_tensor_info.fully_qualified_name, "state"
                     )
         self.assertEqual(count, 3)
+
+    def test_shared_kv_cache_with_narrow_copy(self) -> None:
+        """Test shared mutable buffers with narrow().copy_() pattern and
+        alloc_graph_input=False. This exercises the spec aliasing path where
+        _inplace_lineage returns True (no copy_ node inserted), causing
+        SpecPropPass to share the same TensorSpec object between placeholder
+        and output nodes."""
+
+        class KVCacheModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear_a = torch.nn.Linear(32, 32, bias=False)
+                self.linear_b = torch.nn.Linear(32, 32, bias=False)
+                self.register_buffer("k_cache", torch.zeros(1, 8, 128, 32))
+                self.register_buffer("v_cache", torch.zeros(1, 8, 128, 32))
+
+            def _update_cache(self, x: torch.Tensor, input_pos: torch.Tensor) -> None:
+                start_pos = input_pos[0].item()
+                torch._check_is_size(start_pos)
+                torch._check(start_pos < 128)
+                seq_len = x.size(2)
+                self.k_cache.narrow(2, start_pos, seq_len).copy_(x)
+                self.v_cache.narrow(2, start_pos, seq_len).copy_(x)
+
+            def forward(self, x: torch.Tensor, input_pos: torch.Tensor) -> torch.Tensor:
+                x = self.linear_a(x)
+                self._update_cache(x, input_pos)
+                return x
+
+            def method_b(
+                self, x: torch.Tensor, input_pos: torch.Tensor
+            ) -> torch.Tensor:
+                x = self.linear_b(x)
+                self._update_cache(x, input_pos)
+                return x
+
+        def export_model() -> Dict[str, ExportedProgram]:
+            model = KVCacheModel().eval()
+            example_inputs = (torch.randn(1, 8, 1, 32), torch.tensor([0]))
+            with torch.no_grad():
+                ep_forward = export(model, example_inputs)
+                with patch_forward(model, model.method_b):
+                    ep_method_b = export(model, example_inputs)
+            return {"forward": ep_forward, "method_b": ep_method_b}
+
+        # Export without sharing (baseline)
+        edge_base = to_edge(export_model())
+        et_base = edge_base.to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False,
+                ),
+            )
+        )
+        # Export with sharing
+        edge_share = to_edge(export_model())
+        et_share = edge_share.to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False,
+                    share_mutable_buffers=True,
+                ),
+            )
+        )
+
+        kv_cache_bytes = 1 * 8 * 128 * 32 * 4  # float32
+        for plan_share, plan_base in zip(
+            et_share.executorch_program.execution_plan,
+            et_base.executorch_program.execution_plan,
+        ):
+            bufsizes_share = plan_share.non_const_buffer_sizes
+            bufsizes_base = plan_base.non_const_buffer_sizes
+
+            # Without sharing: 2 arenas [0, activations_with_kv]
+            self.assertEqual(len(bufsizes_base), 2)
+            # With sharing: 3 arenas [0, activations, shared_kv]
+            self.assertEqual(len(bufsizes_share), 3)
+
+            # Shared arena holds k_cache + v_cache
+            self.assertEqual(bufsizes_share[2], kv_cache_bytes * 2)
+
+            # Activation arena shrunk by exactly the shared arena size
+            self.assertEqual(bufsizes_base[1] - bufsizes_share[1], bufsizes_share[2])
+
+        # Both methods in shared model have the same arena size.
+        self.assertEqual(
+            et_share.executorch_program.execution_plan[0].non_const_buffer_sizes[2],
+            et_share.executorch_program.execution_plan[1].non_const_buffer_sizes[2],
+        )

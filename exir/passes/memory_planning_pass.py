@@ -240,6 +240,13 @@ class MemoryPlanningPass(PassBase):
         # passes/stages is quite natural and avoid yet another 'context' data structure
         # to do the job.
 
+        # Collect mutable buffer specs before apply_algo, because the greedy
+        # algorithm can set mem_id on specs that are shared (same Python object)
+        # between placeholder and output nodes.
+        if self.share_mutable_buffers and graph_signature is not None:
+            self.state.graph_modules.append(graph_module)
+            _insert_mutable_buffer_specs(self.state, graph_module, graph_signature)
+
         _ = apply_algo(
             self.memory_planning_algo,
             graph_module,
@@ -254,9 +261,7 @@ class MemoryPlanningPass(PassBase):
         )
 
         if self.share_mutable_buffers and graph_signature is not None:
-            self.state.graph_modules.append(graph_module)
             _check_default_mem_ids(graph_module)
-            _insert_mutable_buffer_specs(self.state, graph_module, graph_signature)
 
         # TODO: make the verifier do the work recursively to handle
         # control flow
@@ -264,7 +269,7 @@ class MemoryPlanningPass(PassBase):
             graph_module,
             self.alloc_graph_input,
             self.alloc_graph_output,
-            self.alloc_mutable_buffers,
+            self.alloc_mutable_buffers and not self.share_mutable_buffers,
             graph_signature,
         )
 
