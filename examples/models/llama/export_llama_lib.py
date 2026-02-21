@@ -41,6 +41,7 @@ from executorch.extension.llm.export.partitioner_lib import (
     get_vulkan_partitioner,
     get_xnnpack_partitioner,
 )
+from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.extension.llm.export.quantizer_lib import (
     get_coreml_quantizer,
     get_ov_quantizer,
@@ -60,6 +61,7 @@ from .source_transformation.apply_spin_quant_r1_r2 import (
     get_model_with_r1_r2,
 )
 from .source_transformation.attention import replace_attention_to_attention_sha
+from .source_transformation.attention_sink import enable_attention_sink
 from .source_transformation.custom_kv_cache import (
     replace_kv_cache_with_custom_kv_cache,
     replace_kv_cache_with_quantized_kv_cache,
@@ -736,9 +738,16 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             calibration_limit=llm_config.quantization.calibration_limit,
             calibration_seq_length=llm_config.quantization.calibration_seq_length,
             expand_rope_table=llm_config.model.expand_rope_table,
+            # Attention sink models need attention mask for custom SDPA because:
+            # 1. The ring buffer creates a dynamic mask based on cache_positions
+            # 2. Without mask, custom_sdpa uses is_causal=True with start_pos, which
+            #    fails when start_pos exceeds the cache size (positions keep growing)
+            # 3. With mask, custom_sdpa uses is_causal=False and the mask handles
+            #    all masking logic including sliding window and attention sink
             use_custom_sdpa_with_attention_mask=getattr(
                 llm_config.model, "use_custom_sdpa_with_attention_mask", False
-            ),
+            )
+            or bool(llm_config.model.use_attention_sink),
             use_sdpa_with_kv_cache=llm_config.model.use_sdpa_with_kv_cache,
             quantize_kv_cache=llm_config.model.quantize_kv_cache,
             use_kv_cache=llm_config.model.use_kv_cache,
@@ -758,11 +767,16 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             preq_embedding_quantize=llm_config.base.preq_embedding_quantize,
             local_global_attention=llm_config.model.local_global_attention,
             use_torchao_kernels_linear=llm_config.backend.torchao.use_torchao_kernels_linear,
+
             use_torchao_kernels_tied_embedding=llm_config.backend.torchao.use_torchao_kernels_tied_embedding,
+            use_attention_sink=llm_config.model.use_attention_sink,
+            params_path=llm_config.base.params,
+            max_context_len=llm_config.export.max_context_length,
         )
     )
 
     return edge_manager
+
 
 
 def get_quantizer_and_quant_params(llm_config):
@@ -1295,6 +1309,15 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
+    # For attention sink models, the cache_positions buffer must be initialized
+    # to -1 (sentinel for "empty slot"). Without this pass, ExecuTorch only
+    # serializes shape+dtype for mutated buffers, leaving them uninitialized
+    # at runtime, which corrupts the attention mask computation.
+    if llm_config.model.use_attention_sink:
+        additional_passes.append(
+            InitializedMutableBufferPass(["cache_positions"])
+        )
+
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)
     if llm_config.backend.tosa.enabled:
@@ -1460,6 +1483,28 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
         model_class_name,
         llm_config=llm_config,
     )
+
+    # Add attention sink metadata if enabled
+    metadata = _load_llama_model_metadata(
+        llm_config.model.use_kv_cache,
+        llm_config.model.use_sdpa_with_kv_cache,
+        llm_config.model.enable_dynamic_shape,
+        model.max_seq_len,
+        model.max_context_len,
+        model.n_layers,
+        model.vocab_size,
+        llm_config.base.metadata,
+    )
+
+    # Add attention sink metadata if enabled
+    if llm_config.model.use_attention_sink:
+        # Format: sink_size,window_size,eviction_batch_size
+        sink_params = [int(x) for x in llm_config.model.use_attention_sink.split(",")]
+        # IOManager expects these methods to exist returning int.
+        # By adding them to metadata, export_to_edge will generate constant methods.
+        metadata["get_sink_size"] = sink_params[0]
+        metadata["get_window_size"] = sink_params[1]
+
     # Convert dtype override string to actual type.
     dtype_override = DType[llm_config.model.dtype_override.value]
 
@@ -1474,31 +1519,14 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
         example_kwarg_inputs=example_kwarg_inputs,
         dynamic_shapes=dynamic_shapes,
         enable_dynamic_shape=llm_config.model.enable_dynamic_shape,
+        save_exported_program=llm_config.export.export_only,
         calibration_tasks=llm_config.quantization.calibration_tasks,
         calibration_limit=llm_config.quantization.calibration_limit,
         calibration_seq_length=llm_config.quantization.calibration_seq_length,
         calibration_data=llm_config.quantization.calibration_data,
         tokenizer_path=llm_config.base.tokenizer_path,
-        save_exported_program=llm_config.export.export_only,
         verbose=llm_config.debug.verbose,
-        metadata=_load_llama_model_metadata(
-            llm_config.model.use_kv_cache,
-            llm_config.model.use_sdpa_with_kv_cache,
-            llm_config.model.enable_dynamic_shape,
-            # pyre-fixme[6]: For 5th argument expected `ModelArgs` but got
-            #  `Union[Tensor, Module]`.
-            model.max_seq_len,
-            # pyre-fixme[6]: For 6th argument expected `ModelArgs` but got
-            #  `Union[Tensor, Module]`.
-            model.max_context_len,
-            # pyre-fixme[6]: For 7th argument expected `int` but got `Union[Tensor,
-            #  Module]`.
-            model.n_layers,
-            # pyre-fixme[6]: For 8th argument expected `int` but got `Union[Tensor,
-            #  Module]`.
-            model.vocab_size,
-            llm_config.base.metadata,
-        ),
+        metadata=metadata,
     )
 
 
@@ -1537,6 +1565,9 @@ def _get_source_transforms(  # noqa
     use_torchao_kernels_linear: bool = False,
     use_torchao_kernels_tied_embedding: bool = False,
     quantize_with_hqq: bool = True,
+    use_attention_sink: Optional[str] = None,
+    params_path: Optional[str] = None,
+    max_context_len: Optional[int] = None,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     """
     Return a list of functions that transform a graph.
@@ -1647,8 +1678,12 @@ def _get_source_transforms(  # noqa
     if expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
-    use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask
-
+    # Attention sink requires attention mask for custom SDPA to handle ring buffer masking
+    use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask or bool(
+        use_attention_sink
+    )
+    if use_attention_sink:
+        logging.info(f"[Attention Sink] use_attention_mask_for_custom_sdpa = {use_attention_mask_for_custom_sdpa}")
     if use_sdpa_with_kv_cache:
         transforms.append(replace_kv_cache_with_custom_kv_cache)
         # todo: do this optionally
@@ -1721,6 +1756,32 @@ def _get_source_transforms(  # noqa
                 _convert_model_for_aarch64,
                 convert_linear=use_torchao_kernels_linear,
                 convert_tied_embedding=use_torchao_kernels_tied_embedding,
+            )
+        )
+
+    if use_attention_sink:
+        sink_params = [int(x) for x in use_attention_sink.split(",")]
+
+        # Load ModelArgs for attention sink
+        if not params_path:
+             raise ValueError("params_path is required for attention sink")
+        with open(params_path, "r") as f:
+             params_dict = json.load(f)
+
+        # Ensure use_kv_cache is propagated from config
+        params_dict["use_kv_cache"] = True # Attention Sink requires KV Cache
+        params_dict["enable_dynamic_shape"] = True  # Required for torch.export
+
+        model_args = ModelArgs(**params_dict)
+
+        transforms.append(
+            partial(
+                enable_attention_sink,
+                params=model_args,
+                sink_size=sink_params[0],
+                window_size=sink_params[1],
+                eviction_batch_size=sink_params[2],
+                max_context_len=max_context_len,
             )
         )
 

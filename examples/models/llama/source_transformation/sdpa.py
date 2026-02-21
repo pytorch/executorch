@@ -27,6 +27,7 @@ class SDPACustom(torch.nn.Module):
         super().__init__()
         self.dim = dim
         self.use_attention_mask = use_attention_mask
+        print(f"[SDPACustom] Created with use_attention_mask={use_attention_mask}")
 
     def forward(
         self,
@@ -50,11 +51,16 @@ class SDPACustom(torch.nn.Module):
         v = v.to(dtype=torch.float)
 
         if self.use_attention_mask:
+            # When using attention mask, pass 0 as start_pos since:
+            # 1. The mask handles all masking logic (including ring buffer / attention sink)
+            # 2. is_causal=False so start_pos is not used for causal masking
+            # 3. This avoids validation errors when logical position >= cache size
+            #    (e.g., with ring buffer where position 252 exceeds cache_size 252)
             output = torch.ops.llama.custom_sdpa(
                 q,
                 k,
                 v,
-                input_pos[0].item(),
+                0,  # start_pos: not used when mask is provided
                 mask,  # Attention mask
                 0,  # dropout probability. Ignored by the code
                 False,  # is_causal
