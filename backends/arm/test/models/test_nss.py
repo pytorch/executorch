@@ -7,7 +7,6 @@ from typing import Tuple
 
 import pytest
 import torch
-
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -16,8 +15,10 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-
 from huggingface_hub import hf_hub_download
+
+# Skip entire module if ng_model_gym is not installed (requires pydantic)
+pytest.importorskip("ng_model_gym")
 
 from ng_model_gym.usecases.nss.model.model_blocks import (  # type: ignore[import-not-found,import-untyped]
     AutoEncoderV1,
