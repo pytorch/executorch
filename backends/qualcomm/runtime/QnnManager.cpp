@@ -296,6 +296,37 @@ Error QnnManager::InitContext(
   return Error::Ok;
 }
 
+Error QnnManager::InitContextCache() {
+  if (backend_params_ptr_->backend_init_state_ ==
+      BackendInitializeState::UNINITIALIZED) {
+    QNN_EXECUTORCH_LOG_INFO(
+        "Initialize Qnn backend "
+        "parameters for Qnn executorch backend type %d",
+        options_->backend_options()->backend_type());
+    backend_params_ptr_ = QnnBackendFactory().Create(
+        backend_bundle_ptr_->implementation.get(),
+        backend_bundle_ptr_->qnn_backend_ptr.get(),
+        backend_bundle_ptr_->qnn_device_ptr.get(),
+        qnn_context_blob_,
+        options_,
+        qnn_dlc_manager_.get());
+    ET_CHECK_OR_RETURN_ERROR(
+        backend_params_ptr_ != nullptr,
+        Internal,
+        "Failed to load Qnn backend.");
+    // Note: For online_prepare or deserialization, the graph name will be
+    // obtained from the binary.
+    ET_CHECK_OR_RETURN_ERROR(
+        backend_params_ptr_->qnn_backend_cache_ptr_->Configure({}) == Error::Ok,
+        Internal,
+        "Fail to configure Qnn backend cache");
+
+    backend_params_ptr_->backend_init_state_ =
+        BackendInitializeState::INITIALIZED;
+  }
+  return Error::Ok;
+}
+
 Error QnnManager::AllocateTensor(const std::string& graph_name) {
   std::vector<Qnn_Tensor_t> input_tensors =
       backend_params_ptr_->qnn_context_ptr_->GetGraphInputs(graph_name);

@@ -70,6 +70,14 @@ HtpGraphCustomConfig::CreateGraphCustomConfigCommon(
       htp_options_->use_dlbc() ? 1.0 : 0.0;
   ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
 
+  p_custom_config = AllocGraphCustomConfig();
+  p_custom_config->option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+  p_custom_config->optimizationOption.type =
+      QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_SLC_ALLOCATOR;
+  p_custom_config->optimizationOption.floatValue =
+      htp_options_->use_slc_allocator() ? 1.0 : 0.0;
+  ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
+
   return ret;
 }
 } // namespace qnn

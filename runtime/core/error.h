@@ -44,6 +44,9 @@ enum class Error : error_code_t {
   /// Status indicating there are no more steps of execution to run
   EndOfMethod = 0x03,
 
+  /// Status indicating a resource has already been loaded.
+  AlreadyLoaded = 0x04,
+
   /*
    * Logical errors.
    */
@@ -114,6 +117,8 @@ constexpr const char* to_string(const Error error) {
       return "Error::InvalidState";
     case Error::EndOfMethod:
       return "Error::EndOfMethod";
+    case Error::AlreadyLoaded:
+      return "Error::AlreadyLoaded";
     case Error::NotSupported:
       return "Error::NotSupported";
     case Error::NotImplemented:
