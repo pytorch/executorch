@@ -55,6 +55,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         ":aten_passes",
         "//caffe2:torch",
+        "//executorch/backends/transforms:quantize_fused_convbn_bias_pass",
         "//pytorch/ao:torchao",  # @manual
     ],
 )

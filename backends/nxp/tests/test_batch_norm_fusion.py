@@ -25,6 +25,8 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 from executorch.backends.nxp.tests.executors import OverrideTargetSupportCheck
 from torch import nn
 
+from executorch.backends.nxp.tests.models import ConvBNModule
+
 
 @pytest.fixture(autouse=True)
 def reseed_model_per_test_run():
@@ -231,3 +233,24 @@ def test_batch_norm_linear_fusing__full_pipeline(bias: bool):
         node.op == "call_function" and "batch_norm" in node.target.__name__
         for node in nodes
     )
+@pytest.mark.parametrize(
+    "conv_module",
+    ["conv2d"],
+)
+def test_biasless_convbn_fusion_qat(
+    conv_module,
+):
+    if conv_module.startswith("conv1d"):
+        input_shape = (1, 3, 32)
+    elif conv_module.startswith("conv2d"):
+        input_shape = (1, 3, 32, 32)
+    else:  # conv3d
+        input_shape = (1, 3, 32, 32, 32)
+
+    model = ConvBNModule(conv_module, conv_bias=False, bn_affine=True)
+
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=True, use_neutron_for_format_conversion=False
+    ).exported_program()
+
+    assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
