@@ -356,6 +356,71 @@ lib.define(
 lib.impl(name, linear_q8ta_q8csw, "CompositeExplicitAutograd")
 qa_q8csw_linear = getattr(getattr(torch.ops, namespace), name)
 
+##################
+## q8ta_linear ##
+##################
+
+
+def q8ta_linear(
+    x: torch.Tensor,
+    input_scale: float,
+    input_zero_point: int,
+    weights: torch.Tensor,
+    weight_sums: torch.Tensor,
+    weight_scales: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    bias: Optional[torch.Tensor] = None,
+    activation: str = "none",
+):
+    weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
+    weights = torch.ops.quantized_decomposed.dequantize_per_channel(
+        weights,
+        weight_scales,
+        weight_zeros,
+        0,
+        -127,
+        127,
+        torch.int8,
+    )
+
+    x = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        x, input_scale, input_zero_point, -128, 127, x.dtype
+    )
+
+    out = torch.nn.functional.linear(x, weights)
+    if bias is not None:
+        out = out + bias
+
+    if activation == "relu":
+        out = torch.nn.functional.relu(out)
+
+    out = torch.ops.quantized_decomposed.quantize_per_tensor(
+        out, output_scale, output_zero_point, -128, 127, torch.int8
+    )
+
+    return out
+
+
+name = "q8ta_linear"
+lib.define(
+    f"""
+    {name}(
+        Tensor x,
+        float input_scale,
+        int input_zero_point,
+        Tensor weights,
+        Tensor weight_sums,
+        Tensor weight_scales,
+        float output_scale,
+        int output_zero_point,
+        Tensor? bias = None,
+        str activation = "none") -> Tensor
+    """
+)
+lib.impl(name, q8ta_linear, "CompositeExplicitAutograd")
+q8ta_linear_op = getattr(getattr(torch.ops, namespace), name)
+
 ###################
 ## q8ta_conv2d_* ##
 ###################
