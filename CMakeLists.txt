@@ -1023,6 +1023,18 @@ if(EXECUTORCH_BUILD_PYBIND)
     EXPORT ExecuTorchTargets
     LIBRARY DESTINATION executorch/extension/pybindings
   )
+
+  # pybind data_loader module - provides PyDataLoader type for external
+  # pybinding extensions to create custom data loaders
+  pybind11_add_module(
+    data_loader SHARED extension/pybindings/pybindings_data_loader.cpp
+  )
+  target_include_directories(data_loader PRIVATE ${_common_include_directories})
+  target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
+  target_link_libraries(data_loader PRIVATE executorch)
+  install(TARGETS data_loader
+          LIBRARY DESTINATION executorch/extension/pybindings
+  )
 endif()
 
 if(EXECUTORCH_BUILD_WASM)

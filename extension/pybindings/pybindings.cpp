@@ -24,6 +24,7 @@
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/extension/pybindings/pybindings_data_loader.h>
 #include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/extension/threadpool/threadpool.h>
@@ -85,6 +86,8 @@ using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
 using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
+using ::executorch::extension::pybindings::PyDataLoader;
+using ::executorch::extension::pybindings::SharedPtrDataLoader;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
@@ -244,6 +247,29 @@ inline std::unique_ptr<Module> load_module_from_buffer_with_data_file(
       nullptr, // temp_allocator
       std::move(event_tracer), // event_tracer
       std::move(data_loader));
+}
+
+inline std::unique_ptr<Module> load_module_from_data_loader(
+    std::shared_ptr<PyDataLoader> loader,
+    std::optional<const std::string> data_map_path,
+    std::unique_ptr<runtime::EventTracer> event_tracer) {
+  EXECUTORCH_SCOPE_PROF("load_module_from_data_loader");
+
+  if (data_map_path.has_value()) {
+    auto data_map_loader = loader_from_file(data_map_path.value());
+    return std::make_unique<Module>(
+        loader->make_delegating_loader(),
+        nullptr, // memory_allocator
+        nullptr, // temp_allocator
+        std::move(event_tracer), // event_tracer
+        std::move(data_map_loader)); // data_map_loader
+  }
+  return std::make_unique<Module>(
+      loader->make_delegating_loader(),
+      nullptr, // memory_allocator
+      nullptr, // temp_allocator
+      std::move(event_tracer), // event_tracer
+      nullptr); // data_map_loader
 }
 
 inline py::list get_outputs_as_py_list(
@@ -601,6 +627,17 @@ struct PyModule final {
             setup_event_tracer(enable_etdump, debug_buffer_size),
             program_verification)) {}
 
+  explicit PyModule(
+      std::shared_ptr<PyDataLoader> loader,
+      std::optional<const std::string> data_path,
+      bool enable_etdump,
+      size_t debug_buffer_size = 0)
+      : debug_buffer_size_(debug_buffer_size),
+        module_(load_module_from_data_loader(
+            std::move(loader),
+            data_path,
+            setup_event_tracer(enable_etdump, debug_buffer_size))) {}
+
   PyModule(const PyModule&) = delete;
   PyModule& operator=(const PyModule&) = delete;
   PyModule(PyModule&&) = default;
@@ -674,6 +711,17 @@ struct PyModule final {
         enable_etdump,
         debug_buffer_size,
         Program::Verification::InternalConsistency);
+  }
+
+  // Load from an external data loader.
+  // This allows external libraries (like PTEZ) to provide custom data loaders.
+  static std::unique_ptr<PyModule> load_from_data_loader(
+      std::shared_ptr<PyDataLoader> loader,
+      std::optional<const std::string> data_path,
+      bool enable_etdump,
+      size_t debug_buffer_size = 0) {
+    return std::make_unique<PyModule>(
+        std::move(loader), data_path, enable_etdump, debug_buffer_size);
   }
 
   py::list run_method(
@@ -1529,6 +1577,20 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("buffer"),
       py::arg("non_const_pool_size") = kDEFAULT_BUNDLED_INPUT_POOL_SIZE,
       call_guard);
+
+  // Import the PyDataLoader type from the shared module.
+  // This ensures the type is registered once and shared across all modules.
+  py::module_::import("executorch.extension.pybindings.data_loader");
+
+  m.def(
+      "_load_for_executorch_from_data_loader",
+      &PyModule::load_from_data_loader,
+      py::arg("loader"),
+      py::arg("data_path") = py::none(),
+      py::arg("enable_etdump") = false,
+      py::arg("debug_buffer_size") = 0,
+      call_guard);
+
   m.def(
       "_dump_profile_results",
       []() {
