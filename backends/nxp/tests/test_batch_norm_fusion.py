@@ -11,6 +11,9 @@ import torch
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
+from executorch.backends.nxp.backend.edge_program_converter import (
+    EdgeProgramToIRConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import (
     AddMMConverter,
     MMConverter,
@@ -22,8 +25,15 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
     neutron_target_spec,
     to_quantized_edge_program,
 )
-from executorch.backends.nxp.tests.executors import OverrideTargetSupportCheck
+from executorch.backends.nxp.tests.executors import (
+    convert_run_compare,
+    OverrideTargetSupportCheck,
+    ToChannelFirstPreprocess,
+    ToChannelLastPreprocess,
+)
+from executorch.backends.nxp.tests.models import ConvBNModule
 from torch import nn
+from torch.export import ExportedProgram
 
 
 @pytest.fixture(autouse=True)
@@ -230,4 +240,46 @@ def test_batch_norm_linear_fusing__full_pipeline(bias: bool):
     assert not any(
         node.op == "call_function" and "batch_norm" in node.target.__name__
         for node in nodes
+    )
+
+
+@pytest.mark.parametrize(
+    "conv_module",
+    ["conv2d", "conv2d_t"],
+)
+def test_biasless_convbn_fusion_qat(
+    mocker,
+    conv_module,
+):
+    if conv_module.startswith("conv1d"):
+        input_shape = (1, 3, 32)
+    elif conv_module.startswith("conv2d"):
+        input_shape = (1, 3, 32, 32)
+    else:  # conv3d
+        input_shape = (1, 3, 32, 32, 32)
+
+    model = ConvBNModule(conv_module, conv_bias=False, bn_affine=True)
+
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=True, use_neutron_for_format_conversion=False
+    ).exported_program()
+
+    assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
+
+    # Capture generated model
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+
+    # Capture converted program
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+
+    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+
+    convert_run_compare(
+        exported_program,
+        tflite_input_preprocess=ToChannelLastPreprocess(),
+        tfl_model=tflite_flatbuffers_model,
+        tflite_output_preprocess=ToChannelFirstPreprocess(),
+        input_data=input_data,
+        atol=1.0,
     )

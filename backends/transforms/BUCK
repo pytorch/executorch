@@ -1,6 +1,29 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
 fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = python_pytest,
+    name = "test_quantize_fused_convbn_bias_pass",
+    srcs = [
+        "test/test_quantize_fused_convbn_bias_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        ":quantize_fused_convbn_bias_pass",
+        "//executorch/backends/arm/quantizer:arm_quantizer",
+        "//executorch/backends/arm/test:arm_tester_lib",
+        "//executorch/backends/arm/test:arm_tester_serialize",
+        "//executorch/backends/arm/test:common",
+        "//executorch/backends/arm/tosa:tosa",
+        "//executorch/backends/nxp:quantizer",
+        "//executorch/backends/nxp:neutron_backend",
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/exir:lib",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "fbsource//third-party/pypi/pytest:pytest",
+    ],
+)
