@@ -131,6 +131,11 @@ static TestCase create_test_case_from_config(
   test_case.add_input_spec(output_scale);
   test_case.add_input_spec(output_zero_point);
   test_case.add_input_spec(bias);
+
+  // Activation (none = no activation)
+  ValueSpec activation = ValueSpec::make_string("none");
+  test_case.add_input_spec(activation);
+
   test_case.add_output_spec(output);
 
   test_case.set_abs_tolerance(output_scale_val + 1e-4f);

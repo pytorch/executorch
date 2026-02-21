@@ -24,6 +24,7 @@ void test_q8ta_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef output_scale = args.at(idx++);
   const ValueRef output_zp = args.at(idx++);
   const ValueRef bias_data = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
   const ValueRef fp_output = args.at(idx++);
 
   // Create temporary packed int8 tensors for input and output
@@ -59,6 +60,7 @@ void test_q8ta_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output_scale,
       output_zp,
       bias_data,
+      activation,
       packed_int8_output};
   VK_GET_OP_FN("et_vk.q8ta_linear.default")(graph, linear_args);
 
