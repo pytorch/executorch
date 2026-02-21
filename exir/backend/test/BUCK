@@ -67,7 +67,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_backend_with_named_data_map",
     srcs = [
         "test_backend_with_named_data_map.py",
@@ -158,7 +158,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_backends",
     srcs = [
         "test_backends.py",
@@ -190,7 +190,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_to_backend_multi_method",
     srcs = [
         "test_to_backend_multi_method.py",
@@ -243,7 +243,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_debug_handle_map",
     srcs = [
         "test_debug_handle_map.py",
@@ -260,7 +260,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_backends_lifted",
     srcs = [
         "test_backends_lifted.py",
@@ -292,7 +292,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_lowered_backend_module",
     srcs = [
         "test_lowered_backend_module.py",
@@ -317,7 +317,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_graph_partition",
     srcs = [
         "test_graph_partition.py",
@@ -334,7 +334,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_backends_nested",
     srcs = [
         "test_backends_nested.py",
@@ -360,7 +360,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_delegate_map_builder",
     srcs = [
         "test_delegate_map_builder.py",
@@ -374,7 +374,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_utils",
     srcs = [
         "test_utils.py",
@@ -392,7 +392,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_partitioner",
     srcs = [
         "test_partitioner.py",
@@ -418,7 +418,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_passes",
     srcs = [
         "test_passes.py",
@@ -430,7 +430,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_compatibility",
     srcs = [
         "test_compatibility.py",
@@ -449,7 +449,7 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_group_partitioner",
     srcs = [
         "test_group_partitioner.py",

@@ -67,7 +67,7 @@ runtime.python_library(
     ],
 )
 
-python_unittest(
+runtime.python_test(
     name = "tracer",
     srcs = [
         "test_tracer.py",
@@ -176,7 +176,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+runtime.python_test(
     name = "memory_planning",
     srcs = [
         "test_memory_planning.py",
@@ -335,7 +335,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+runtime.python_test(
     name = "capture",
     srcs = [
         "test_capture.py",
