@@ -168,6 +168,36 @@ class EValueTest {
   }
 
   @Test
+  fun testStringSerde() {
+    val evalue = EValue.from("hello")
+    val bytes = evalue.toByteArray()
+
+    val deser = EValue.fromByteArray(bytes)
+    assertTrue(deser.isString)
+    assertEquals("hello", deser.toStr())
+  }
+
+  @Test
+  fun testEmptyStringSerde() {
+    val evalue = EValue.from("")
+    val bytes = evalue.toByteArray()
+
+    val deser = EValue.fromByteArray(bytes)
+    assertTrue(deser.isString)
+    assertEquals("", deser.toStr())
+  }
+
+  @Test
+  fun testUnicodeStringSerde() {
+    val evalue = EValue.from("こんにちは")
+    val bytes = evalue.toByteArray()
+
+    val deser = EValue.fromByteArray(bytes)
+    assertTrue(deser.isString)
+    assertEquals("こんにちは", deser.toStr())
+  }
+
+  @Test
   fun testLongTensorSerde() {
     val data = longArrayOf(1, 2, 3, 4)
     val shape = longArrayOf(2, 2)
