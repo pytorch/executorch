@@ -102,6 +102,7 @@ class QuantizedLinearMatch(PatternMatch):
             anchor_primary_input_node = anchor_primary_input_node.args[
                 0
             ]  # pyre-ignore[16]
+            assert isinstance(anchor_primary_input_node, torch.fx.Node)
 
         # By default, assume that the input tensor is not quantized in any way
         self.quantize_input_node = None
