@@ -30,12 +30,16 @@ struct LinearConfig {
 
 static TestCase create_test_case_from_config(
     const LinearConfig& config,
-    vkapi::ScalarType input_dtype) {
+    vkapi::ScalarType input_dtype,
+    const std::string& impl_selector = "") {
   TestCase test_case;
 
   std::string dtype_str = (input_dtype == vkapi::kFloat) ? "Float" : "Half";
 
   std::string test_name = config.test_case_name + "_Buffer_" + dtype_str;
+  if (!impl_selector.empty()) {
+    test_name += " [" + impl_selector + "]";
+  }
   test_case.set_name(test_name);
 
   test_case.set_operator_name("test_etvk.test_q8ta_linear.default");
@@ -136,6 +140,9 @@ static TestCase create_test_case_from_config(
   ValueSpec activation = ValueSpec::make_string("none");
   test_case.add_input_spec(activation);
 
+  // Add impl_selector string
+  ValueSpec impl_selector_spec = ValueSpec::make_string(impl_selector);
+  test_case.add_input_spec(impl_selector_spec);
   test_case.add_output_spec(output);
 
   test_case.set_abs_tolerance(output_scale_val + 1e-4f);
@@ -159,6 +166,12 @@ static std::vector<TestCase> generate_q8ta_linear_test_cases() {
   }
 
   std::vector<LinearConfig> configs = {
+      // Batch size 1 cases (test both tiled and gemv)
+      {1, 64, 32},
+      {1, 128, 64},
+      {1, 256, 128},
+      {1, 128, 64, false},
+      // Multi-batch cases
       {4, 64, 32},
       {4, 128, 64},
       {4, 256, 128},
@@ -169,6 +182,9 @@ static std::vector<TestCase> generate_q8ta_linear_test_cases() {
       {32, 128, 64, false},
       {32, 256, 128, false},
       // Performance cases
+      {1, 512, 512},
+      {1, 2048, 2048},
+      {1, 512, 9059},
       {256, 2048, 2048},
       {512, 2048, 2048},
       {1024, 2048, 2048},
@@ -187,7 +203,14 @@ static std::vector<TestCase> generate_q8ta_linear_test_cases() {
 
     config.test_case_name = generated_test_case_name;
 
+    // Default (tiled) variant
     test_cases.push_back(create_test_case_from_config(config, vkapi::kFloat));
+
+    // For batch size 1, also test the gemv variant
+    if (config.M == 1) {
+      test_cases.push_back(
+          create_test_case_from_config(config, vkapi::kFloat, "gemv"));
+    }
   }
 
   return test_cases;
@@ -206,6 +229,10 @@ static void q8ta_linear_reference_impl(TestCase& test_case) {
   const ValueSpec& output_scale_spec = test_case.inputs()[idx++];
   const ValueSpec& output_zeros_spec = test_case.inputs()[idx++];
   const ValueSpec& bias_spec = test_case.inputs()[idx++];
+  const ValueSpec& activation_spec = test_case.inputs()[idx++];
+  (void)activation_spec;
+  const ValueSpec& impl_selector_spec = test_case.inputs()[idx++];
+  (void)impl_selector_spec;
 
   ValueSpec& output_spec = test_case.outputs()[0];
 

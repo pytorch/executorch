@@ -25,31 +25,27 @@ void test_q8ta_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef output_zp = args.at(idx++);
   const ValueRef bias_data = args.at(idx++);
   const ValueRef activation = args.at(idx++);
+  const ValueRef impl_selector_str = args.at(idx++);
   const ValueRef fp_output = args.at(idx++);
 
-  // Create temporary packed int8 tensors for input and output
-  // Input uses 4H4W layout to match the linear shader's ivec4 reading pattern
-  // where each ivec4 contains data from 4 rows
-  TmpTensor packed_int8_input(
-      &graph,
-      graph.sizes_of(fp_input),
-      vkapi::kInt8x4,
-      utils::kBuffer,
-      utils::kPackedInt8_4H4W);
+  std::string impl_selector = graph.extract_string(impl_selector_str);
 
-  // Output uses 4H4W layout to match the linear shader's ivec4 writing pattern
+  utils::GPUMemoryLayout layout =
+      impl_selector == "gemv" ? utils::kPackedInt8_4W : utils::kPackedInt8_4H4W;
+
+  TmpTensor packed_int8_input(
+      &graph, graph.sizes_of(fp_input), vkapi::kInt8x4, utils::kBuffer, layout);
+
   TmpTensor packed_int8_output(
       &graph,
       graph.sizes_of(fp_output),
       vkapi::kInt8x4,
       utils::kBuffer,
-      utils::kPackedInt8_4H4W);
+      layout);
 
-  // Quantize floating point input to packed int8
   add_q8ta_quantize_node(
       graph, fp_input, input_scale, input_zp, packed_int8_input);
 
-  // Call the q8ta_linear operator
   std::vector<ValueRef> linear_args = {
       packed_int8_input,
       input_scale,
@@ -62,9 +58,12 @@ void test_q8ta_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       bias_data,
       activation,
       packed_int8_output};
-  VK_GET_OP_FN("et_vk.q8ta_linear.default")(graph, linear_args);
 
-  // Dequantize packed int8 output to floating point
+  std::string op_name = impl_selector == "gemv"
+      ? "et_vk.q8ta_linear_gemv.default"
+      : "et_vk.q8ta_linear.default";
+  VK_GET_OP_FN(op_name)(graph, linear_args);
+
   add_q8ta_dequantize_node(
       graph, packed_int8_output, output_scale, output_zp, fp_output);
 }
