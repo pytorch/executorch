@@ -4,9 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 """Provide quantization annotation logic for Arm backends.
 
-This module computes per-node quantization properties and applies input/output
-annotations to FX graphs using TorchAO qspecs.
-
+This module computes per-node quantization properties and applies
+input/output annotations to FX graphs using TorchAO qspecs.
 """
 
 import logging
@@ -57,7 +56,6 @@ class _OpQuantProperties:
             indexed by argument positions.
         quant_output (Optional[_QuantProperty]): Quantization spec for the
             node's output when applicable.
-
     """
 
     def __init__(self):
@@ -73,7 +71,6 @@ def _as_list(x):
 
     Returns:
         list: ``x`` if already a list; otherwise ``[x]``.
-
     """
     if isinstance(x, (list, tuple)):
         return x
@@ -122,7 +119,6 @@ def _is_ok_for_quantization(
 
     Returns:
         bool: `True` if the node can be quantized, otherwise `False`.
-
     """
     # Check output
     if quant_properties.quant_output is not None:
@@ -182,7 +178,6 @@ def _get_node_target(module: torch.nn.Module | torch.fx.GraphModule, target_str:
 
     Returns:
         Any: Resolved attribute on the module.
-
     """
     targets = target_str.split(".")
     for target in targets[:-1]:
@@ -195,7 +190,6 @@ def _is_large_scalar(node: Node, gm: torch.fx.GraphModule):
 
     Large scalars are skipped because ``torch.histc`` supports values only up
     to a certain upper bound.
-
     """
     HISTC_UPPER_BOUND = 3.4028235e15
     if node.op == "get_attr" and isinstance(node.target, str):
@@ -213,7 +207,8 @@ def _is_large_scalar(node: Node, gm: torch.fx.GraphModule):
 
 
 def _is_non_float_tensor(node: Node) -> bool:
-    """Check if the output of a node has a data type other than `torch.float32`.
+    """Check if the output of a node has a data type other than
+    `torch.float32`.
 
     If the output is not `torch.float32`, quantization cannot be performed, as
     observers only work with floating-point tensors.
@@ -230,7 +225,6 @@ def _is_non_float_tensor(node: Node) -> bool:
           `torch.float32` as its data type.
         - If node.meta["val"] is missing or is not an instance of `FakeTensor`,
           the function returns True.
-
     """
     if "val" in node.meta and isinstance(node.meta["val"], Sequence):
         return any(
@@ -258,7 +252,6 @@ def _annotate_input(node: Node, quant_property: _QuantProperty):
     Raises:
         RuntimeError: If the node is already annotated.
         TypeError: If an input argument is not a ``Node`` instance.
-
     """
     if is_annotated(node):
         raise RuntimeError(
@@ -295,7 +288,6 @@ def _annotate_output(node: Node, quant_property: _QuantProperty):
         RuntimeError: If the node is already annotated.
         ValueError: If ``mark_annotated`` is True, ``optional`` is True, or
             ``index`` is not zero.
-
     """
     if is_annotated(node):
         raise RuntimeError(
@@ -322,7 +314,6 @@ def _match_pattern(
     ``pattern``. If ``filter_fn`` is provided, require all nodes in the chain
     to pass the filter. Each pattern element is a list of disjunctive node
     targets.
-
     """
     if len(pattern) < 1:
         raise ValueError("No pattern provided")
@@ -408,6 +399,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.squeeze_copy.default,
     torch.ops.aten.squeeze_copy.dim,
     torch.ops.aten.squeeze_.dim,
+    torch.ops.aten.squeeze_copy.dims,
     torch.ops.aten.squeeze.dim,
     torch.ops.aten.squeeze.dims,
     torch.ops.aten.unbind.int,
@@ -503,7 +495,6 @@ def get_quant_properties(  # noqa: C901
     Returns:
         _OpQuantProperties | None: Properties to apply, or ``None`` if the
             node is unsupported or not suitable for quantization.
-
     """
     if node.target == torch.ops.aten.conv_transpose2d.input:
         weight_qspec = _adjust_weight_qspec_for_conv_transpose(
@@ -820,7 +811,6 @@ def annotate_graph(  # type: ignore[return]
 
     Returns:
         Optional[List[List[Node]]]: Reserved for future use; currently None.
-
     """
     for node in gm.graph.nodes:
         if node.op != "call_function":
