@@ -37,7 +37,7 @@ fbcode_target(_kind = runtime.python_library,
         "_serialize.py",
         "data_serializer.py",
         "padding.py",
-    ],
+    ] + glob(["generated/**/*.py"]),
     resources = {
         "//executorch/schema:program.fbs": "program.fbs",
         "//executorch/schema:scalar_type.fbs": "scalar_type.fbs",
@@ -48,6 +48,7 @@ fbcode_target(_kind = runtime.python_library,
     # Please ask before changing this.
     visibility = ["PUBLIC"],
     deps = [
+        "fbsource//third-party/pypi/flatbuffers:flatbuffers",
         "//executorch/exir:schema",
         "//executorch/exir:tensor",
         "//executorch/exir:tensor_layout",
