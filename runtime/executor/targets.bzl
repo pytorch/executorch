@@ -1,26 +1,38 @@
 load("@fbsource//xplat/executorch/build:build_variables.bzl", "PROGRAM_NO_PRIM_OPS_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
+def program_verification_enabled():
+    return native.read_config("executorch", "enable_program_verification", "true") == "true"
+
+def logging_enabled():
+    return native.read_config("executorch", "enable_logging", "true") == "true"
+
 def _program_preprocessor_flags():
     """Returns the preprocessor_flags to use when building Program.cpp"""
 
     # The code for flatbuffer verification can add ~30k of .text to the binary.
     # It's a valuable feature, but make it optional for space-constrained
     # systems.
-    enable_verification = native.read_config(
-        "executorch",
-        "enable_program_verification",
-        # Default value
-        "true",
-    )
-    if enable_verification == "false":
-        return ["-DET_ENABLE_PROGRAM_VERIFICATION=0"]
-    elif enable_verification == "true":
-        # Enabled by default.
-        return []
+    flags = []
+    
+    if runtime.is_oss:
+        # OSS builds only check the native.read_config
+        if not program_verification_enabled():
+            flags.append("-DET_ENABLE_PROGRAM_VERIFICATION=0")
+        if not logging_enabled():
+            flags.append("-DET_LOG_ENABLED=0")
+        return flags
     else:
-        fail("executorch.enable_program_verification must be one of 'true' or 'false'; saw '" +
-             enable_verification + "'")
+        # Non-OSS builds: constraint takes priority, then check config in DEFAULT case
+        flags += select({
+            "DEFAULT": ["-DET_ENABLE_PROGRAM_VERIFICATION=0"] if not program_verification_enabled() else [],
+            "fbsource//xplat/executorch/tools/buck/constraints:executorch-program-verification-disabled": ["-DET_ENABLE_PROGRAM_VERIFICATION=0"]
+        })
+        flags += select({
+            "DEFAULT": ["-DET_LOG_ENABLED=0"] if not logging_enabled() else [],
+            "fbsource//xplat/executorch/tools/buck/constraints:executorch-logs-disabled": ["-DET_LOG_ENABLED=0"]
+        })
+    return flags
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
