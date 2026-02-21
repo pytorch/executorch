@@ -195,15 +195,15 @@ def quantized_add_impl(
 # ===================================================================
 lib.define(
     "quantized_mul("
-    "Tensor self, Scalar self_zero_point, "
-    "Tensor other, Scalar other_zero_point, "
-    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift) -> Tensor"
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
 )
 lib.define(
     "quantized_mul.out("
-    "Tensor self, Scalar self_zero_point, "
-    "Tensor other, Scalar other_zero_point, "
-    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift, "
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
