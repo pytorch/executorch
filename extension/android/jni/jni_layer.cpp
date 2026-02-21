@@ -503,7 +503,16 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getUsedBackends(
       facebook::jni::alias_ref<jstring> methodName) {
-    auto methodMeta = module_->method_meta(methodName->toStdString()).get();
+    auto method_name = methodName->toStdString();
+    auto result = module_->method_meta(method_name);
+    if (!result.ok()) {
+      facebook::jni::throwNewJavaException(
+          "java/lang/IllegalArgumentException",
+          "method_meta failed for method %s",
+          method_name.c_str());
+      return {};
+    }
+    auto methodMeta = result.get();
     std::unordered_set<std::string> backends;
     for (auto i = 0; i < methodMeta.num_backends(); i++) {
       backends.insert(methodMeta.get_backend_name(i).get());
