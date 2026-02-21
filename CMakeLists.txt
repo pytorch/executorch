@@ -521,12 +521,12 @@ endif()
 # Does not contain portable kernels or other full operators. Does not contain
 # any backends.
 #
-add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PRIVATE executorch_core)
-target_include_directories(executorch PUBLIC ${_common_include_directories})
-target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
-target_compile_options(executorch PUBLIC ${_common_compile_options})
-executorch_target_link_options_shared_lib(executorch)
+add_library(prim_ops_lib ${_executorch__srcs})
+target_link_libraries(prim_ops_lib PRIVATE executorch_core)
+target_include_directories(prim_ops_lib PUBLIC ${_common_include_directories})
+target_compile_definitions(prim_ops_lib PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+target_compile_options(prim_ops_lib PUBLIC ${_common_compile_options})
+executorch_target_link_options_shared_lib(prim_ops_lib)
 
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
@@ -603,7 +603,7 @@ install(
   PATTERN "*.h"
 )
 install(
-  TARGETS executorch executorch_core
+  TARGETS prim_ops_lib executorch_core
   EXPORT ExecuTorchTargets
   INCLUDES
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
@@ -987,7 +987,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_definitions(util PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 
   target_compile_options(util PUBLIC ${_pybind_compile_options})
-  target_link_libraries(util PRIVATE torch c10 executorch extension_tensor)
+  target_link_libraries(util PRIVATE torch c10 prim_ops_lib extension_tensor)
 
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)

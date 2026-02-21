@@ -40,7 +40,7 @@ add_library(
   bundled_program ${_schema_outputs}
                   ${CMAKE_CURRENT_SOURCE_DIR}/bundled_program.cpp
 )
-target_link_libraries(bundled_program PUBLIC executorch)
+target_link_libraries(bundled_program PUBLIC prim_ops_lib)
 target_include_directories(
   bundled_program
   PUBLIC
