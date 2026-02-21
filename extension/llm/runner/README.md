@@ -173,9 +173,26 @@ The LLM Runner framework provides Python bindings for easy integration with Pyth
 Build the Python bindings as part of the ExecuTorch build:
 
 ```bash
-# Build from source with Python bindings enabled:
-# In executorch root directory
+# Option 1: Use the install script (includes pybindings by default)
 bash install_executorch.sh
+
+# Option 2: Build with CMake directly
+cmake -B cmake-out \
+  -DEXECUTORCH_BUILD_PYBIND=ON \
+  -DCMAKE_INSTALL_PREFIX=cmake-out \
+  cmake/
+cmake --build cmake-out -j$(nproc) --target install
+
+# Option 3: pip install from source (includes pybindings)
+pip install -e . --no-build-isolation
+```
+
+The key CMake flag is `EXECUTORCH_BUILD_PYBIND=ON`, which builds the `_llm_runner` extension module providing `TextLLMRunner`, `MultimodalRunner`, `GenerationConfig`, and related classes.
+
+Verify the installation:
+
+```python
+from executorch.extension.llm.runner import TextLLMRunner, GenerationConfig
 ```
 
 ### Quick Start Examples
