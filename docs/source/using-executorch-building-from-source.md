@@ -100,15 +100,6 @@ python -m executorch.examples.xnnpack.aot_compiler --model_name="mv2" --delegate
    pip install -e . --no-build-isolation
    ```
 
-> **_WARNING:_**
-> Some modules can't be imported directly in editable mode. This is a known [issue](https://github.com/pytorch/executorch/issues/9558) and we are actively working on a fix for this. To work around this:
-> ```bash
-> # This will fail
-> python -c "from executorch.exir import CaptureConfig"
-> # But this will succeed
-> python -c "from executorch.exir.capture import CaptureConfig"
-> ```
-
 > **_NOTE:_**  Cleaning the build system
 >
 > When fetching a new version of the upstream repo (via `git fetch` or `git

@@ -75,6 +75,9 @@ runtime.cxx_library(
     srcs = [
         "cuda_backend.cpp",
     ],
+    headers = [
+        "cuda_delegate_handle.h",
+    ],
     # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
     link_whole = True,
     supports_python_dlopen = True,
