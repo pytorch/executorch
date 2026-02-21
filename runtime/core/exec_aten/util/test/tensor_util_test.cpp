@@ -622,3 +622,130 @@ TEST_F(TensorUtilTest, SameShapesDifferentDimOrder) {
   EXPECT_FALSE(tensors_have_same_dim_order(a, c, b));
   EXPECT_FALSE(tensors_have_same_dim_order(c, b, a));
 }
+
+// Issue #16032: semantic equivalence tests for tensors_have_same_dim_order.
+// These tests verify that tensors with different dim_order labels but
+// semantically equivalent memory layouts are correctly identified.
+
+TEST_F(TensorUtilTest, SemanticEquivalenceDegenerateC1) {
+  using namespace torch::executor;
+  // C=1: NCHW [2,1,4,4] and NHWC [2,1,4,4] have different dim_order labels
+  // but are semantically equivalent because the C dimension has size 1.
+  std::vector<int32_t> sizes = {2, 1, 4, 4};
+  Tensor nchw = tf_float_.ones(sizes);
+  Tensor nhwc = tf_float_.full_channels_last(sizes, 1.0f);
+
+  // Semantic equivalence: should return true because C=1 makes
+  // layouts identical in memory.
+  EXPECT_TRUE(tensors_have_same_dim_order(nchw, nhwc));
+}
+
+TEST_F(TensorUtilTest, SemanticEquivalenceDegenerateHW1) {
+  using namespace torch::executor;
+  // H=W=1: NCHW [2,3,1,1] and NHWC [2,3,1,1] have different dim_order labels
+  // but are semantically equivalent because H and W dimensions have size 1.
+  std::vector<int32_t> sizes = {2, 3, 1, 1};
+  Tensor nchw = tf_float_.ones(sizes);
+  Tensor nhwc = tf_float_.full_channels_last(sizes, 1.0f);
+
+  // Semantic equivalence: should return true because H=W=1 makes
+  // layouts identical in memory.
+  EXPECT_TRUE(tensors_have_same_dim_order(nchw, nhwc));
+}
+
+TEST_F(TensorUtilTest, SemanticEquivalenceNonDegenerateFails) {
+  using namespace torch::executor;
+  // Non-degenerate: NCHW [2,3,4,4] and NHWC [2,3,4,4] have different layouts.
+  // No size-1 dimensions, so semantic equivalence should fail.
+  std::vector<int32_t> sizes = {2, 3, 4, 4};
+  Tensor nchw = tf_float_.ones(sizes);
+  Tensor nhwc = tf_float_.full_channels_last(sizes, 1.0f);
+
+  // Different layouts, should return false
+  EXPECT_FALSE(tensors_have_same_dim_order(nchw, nhwc));
+}
+
+TEST_F(TensorUtilTest, SemanticEquivalencePartialDegenerateFails) {
+  using namespace torch::executor;
+  // Partial degenerate: only H=1, but C and W are non-trivial.
+  // This tests a case where only one spatial dim is 1.
+  std::vector<int32_t> sizes = {2, 3, 1, 4};
+  Tensor nchw = tf_float_.ones(sizes);
+  Tensor nhwc = tf_float_.full_channels_last(sizes, 1.0f);
+
+  // NCHW strides: [12, 4, 4, 1]
+  // NHWC strides: [12, 1, 12, 3]
+  // At dim 1 (C): sizes both 3, strides 4 vs 1 -> different
+  // Should return false
+  EXPECT_FALSE(tensors_have_same_dim_order(nchw, nhwc));
+}
+
+TEST_F(TensorUtilTest, SemanticEquivalenceDifferentRankFails) {
+  using namespace torch::executor;
+  // Different ranks should fail
+  Tensor a = tf_float_.ones({2, 3, 4, 4});
+  Tensor b = tf_float_.ones({2, 3, 4});
+
+  EXPECT_FALSE(tensors_have_same_dim_order(a, b));
+}
+
+TEST_F(TensorUtilTest, SemanticEquivalenceSameLabelsSameResult) {
+  using namespace torch::executor;
+  // Regression: same dim_order labels should still work (fast path)
+  std::vector<int32_t> sizes = {2, 3, 4, 4};
+  Tensor a = tf_float_.ones(sizes);
+  Tensor b = tf_float_.ones(sizes);
+
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b));
+}
+
+TEST_F(TensorUtilTest, SemanticEquivalenceChannelsLastSameResult) {
+  using namespace torch::executor;
+  // Regression: two channels_last tensors should still work (fast path)
+  std::vector<int32_t> sizes = {2, 3, 4, 4};
+  Tensor a = tf_float_.full_channels_last(sizes, 1.0f);
+  Tensor b = tf_float_.full_channels_last(sizes, 2.0f);
+
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b));
+}
+
+TEST_F(TensorUtilTest, SemanticEquivalenceThreeTensors) {
+  using namespace torch::executor;
+  // Test 3-tensor overload with semantic equivalence
+  std::vector<int32_t> sizes = {2, 1, 4, 4}; // C=1 degenerate
+  Tensor nchw1 = tf_float_.ones(sizes);
+  Tensor nchw2 = tf_float_.ones(sizes);
+  Tensor nhwc = tf_float_.full_channels_last(sizes, 1.0f);
+
+  // All three should be semantically equivalent
+  EXPECT_TRUE(tensors_have_same_dim_order(nchw1, nchw2, nhwc));
+}
+
+TEST_F(TensorUtilTest, SemanticEquivalenceAllOnes) {
+  using namespace torch::executor;
+  // All size-1 dimensions: NCHW and NHWC should be equivalent
+  std::vector<int32_t> sizes = {1, 1, 1, 1};
+  Tensor nchw = tf_float_.ones(sizes);
+  Tensor nhwc = tf_float_.full_channels_last(sizes, 1.0f);
+
+  // All dims are size-1, so all are skipped -> equivalent
+  EXPECT_TRUE(tensors_have_same_dim_order(nchw, nhwc));
+}
+
+TEST_F(TensorUtilTest, SemanticEquivalenceZeroDim) {
+  using namespace torch::executor;
+  // 0-dim tensors (scalars) should be equivalent
+  Tensor a = tf_float_.ones({});
+  Tensor b = tf_float_.ones({});
+
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b));
+}
+
+TEST_F(TensorUtilTest, SemanticEquivalenceOneDim) {
+  using namespace torch::executor;
+  // 1-dim tensors should be equivalent (only one possible dim_order)
+  Tensor a = tf_float_.ones({5});
+  Tensor b = tf_float_.ones({5});
+
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b));
+}
