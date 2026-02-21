@@ -7,7 +7,7 @@
 # pyre-strict
 
 from dataclasses import dataclass, field
-from typing import cast, List, Optional, Set, Type
+from typing import cast, List, Optional, Sequence, Set, Type
 
 # Import these for the cadence function signatures.
 import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
@@ -585,7 +585,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
         Returns the indices of the input dimensions that are squeezed in the output if
         view node is a squeeze. Returns an empty list otherwise.
         """
-        input_node = cast(Node, get_arg(view_node, "input"))
+        input_node = get_arg(view_node, "input", Node)
         input_shape = input_node.meta["val"].shape
         output_shape = view_node.meta["val"].shape
 
@@ -645,7 +645,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
         # Update the intermediate slices.
         for slice_node in intermediate_slices:
             slice_rank = len(slice_node.meta["val"].shape)
-            slice_dim = cast(int, get_arg(slice_node, "dim"))
+            slice_dim = get_arg(slice_node, "dim", int)
             if slice_dim < 0:
                 slice_dim += slice_rank
             for squeeze_dim in squeeze_indices:
@@ -654,7 +654,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
             set_arg(slice_node, "dim", slice_dim)
 
         # Skip the initial view node.
-        input_node = cast(Node, get_arg(view_node, "input"))
+        input_node = get_arg(view_node, "input", Node)
         view_node.replace_all_uses_with(input_node)
         return True
 
@@ -755,17 +755,17 @@ class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
         return [exir_ops.edge.aten.slice_copy.Tensor]
 
     def maybe_remove_or_replace(self, node: Node) -> bool:
-        cat_node = cast(Node, get_arg(node, "input"))
-        slice_dim = cast(int, get_arg(node, "dim"))
-        start_idx = cast(int, get_arg(node, "start"))
-        end_idx = cast(int, get_arg(node, "end"))
-        step = cast(int, get_arg(node, "step"))
+        cat_node = get_arg(node, "input", Node)
+        slice_dim = get_arg(node, "dim", int)
+        start_idx = get_arg(node, "start", int)
+        end_idx = get_arg(node, "end", int)
+        step = get_arg(node, "step", int)
 
         if cat_node.target != exir_ops.edge.aten.cat.default or step != 1:
             return False
 
         # Make sure cat and slice happens on the same dimension.
-        cat_dim = cast(int, get_arg(cat_node, "dim"))
+        cat_dim = get_arg(cat_node, "dim", int)
         if cat_dim != slice_dim:
             return False
 
@@ -781,7 +781,7 @@ class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
             end_idx += cat_output_shape[cat_dim]
 
         offset = 0
-        for cat_input_node in cast(List[Node], get_arg(cat_node, "tensors")):
+        for cat_input_node in get_arg(cat_node, "tensors", Sequence[Node]):
             cat_input_shape = cat_input_node.meta["val"].shape
 
             # Check if the slice range overlaps with the cat input range.
