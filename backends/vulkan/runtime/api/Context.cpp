@@ -46,7 +46,11 @@ Context::Context(vkapi::Adapter* adapter, const ContextConfig& config)
       image_clearlist_mutex_{},
       images_to_clear_{},
       preferred_image_tiling_{VK_IMAGE_TILING_OPTIMAL} {
-  if (adapter_p_->linear_tiling_3d_enabled()) {
+  // PowerVR GPUs may report linear tiling support for 3D images but not
+  // handle it correctly in compute shaders (e.g., imageStore may produce
+  // incorrect results). Force optimal tiling on PowerVR for correctness.
+  if (adapter_p_->linear_tiling_3d_enabled() &&
+      adapter_p_->device_type() != vkapi::DeviceType::POWERVR) {
     preferred_image_tiling_ = VK_IMAGE_TILING_LINEAR;
   }
 }

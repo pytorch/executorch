@@ -134,6 +134,8 @@ PhysicalDevice::PhysicalDevice(
     device_type = DeviceType::NVIDIA;
   } else if (device_name.find("mali") != std::string::npos) {
     device_type = DeviceType::MALI;
+  } else if (device_name.find("powervr") != std::string::npos) {
+    device_type = DeviceType::POWERVR;
   }
 }
 

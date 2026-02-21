@@ -137,6 +137,20 @@ VkDevice create_logical_device(
       enabled_device_extensions,
       requested_device_extensions);
 
+  // Enable robustBufferAccess on PowerVR devices to provide more well-defined
+  // behavior for out-of-bounds buffer descriptor accesses. Without this,
+  // PowerVR drivers may return zeros or undefined values for some edge cases
+  // in compute shaders. This has a minor performance cost but improves
+  // correctness.
+  VkPhysicalDeviceFeatures enabled_features{};
+  if (physical_device.device_type == DeviceType::POWERVR) {
+    VkPhysicalDeviceFeatures supported_features{};
+    vkGetPhysicalDeviceFeatures(physical_device.handle, &supported_features);
+    if (supported_features.robustBufferAccess == VK_TRUE) {
+      enabled_features.robustBufferAccess = VK_TRUE;
+    }
+  }
+
   VkDeviceCreateInfo device_create_info{
       VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, // sType
       nullptr, // pNext
@@ -148,7 +162,9 @@ VkDevice create_logical_device(
       static_cast<uint32_t>(
           enabled_device_extensions.size()), // enabledExtensionCount
       enabled_device_extensions.data(), // ppEnabledExtensionNames
-      nullptr, // pEnabledFeatures
+      physical_device.device_type == DeviceType::POWERVR
+          ? &enabled_features
+          : nullptr, // pEnabledFeatures
   };
 
   void* extension_list_top = nullptr;
