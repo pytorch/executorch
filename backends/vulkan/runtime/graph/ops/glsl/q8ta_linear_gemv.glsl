@@ -106,20 +106,14 @@ void main() {
   memoryBarrierShared();
   barrier();
 
-  // Tree reduction to combine partial results
-  for (int i = WGS / 2; i > 0; i /= 2) {
-    if (lid < i) {
-      [[unroll]] for (int tile_n4 = 0; tile_n4 < TILE_N4; ++tile_n4) {
-        partial_accums[lid].data[0][tile_n4] +=
-            partial_accums[lid + i].data[0][tile_n4];
-      }
-    }
-    memoryBarrierShared();
-    barrier();
-  }
-
   // Only the first thread writes the result
   if (lid == 0) {
+    for (int i = 1; i < WGS; ++i) {
+      [[unroll]] for (int tile_n4 = 0; tile_n4 < TILE_N4; ++tile_n4) {
+        partial_accums[0].data[0][tile_n4] +=
+            partial_accums[i].data[0][tile_n4];
+      }
+    }
     out_accum = partial_accums[0];
 
     FPPerOutChannelParams weight_scales_tile;
