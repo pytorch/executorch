@@ -601,7 +601,7 @@ def numpy_type_to_tf_lite(numpy_type: np.dtype) -> TensorType:  # noqa C901
     elif numpy_type == np.int64:
         return TensorType.INT64
 
-    elif numpy_type == np.string_:
+    elif numpy_type == np.bytes_:
         return TensorType.STRING
 
     elif numpy_type == np.bool_:
@@ -659,7 +659,7 @@ def tf_lite_type_to_numpy(tfl_type: TensorType) -> np.ScalarType:  # noqa C901
         return np.dtype(np.int64)
 
     elif tfl_type == TensorType.STRING:
-        return np.dtype(np.string_)
+        return np.dtype(np.bytes_)
 
     elif tfl_type == TensorType.BOOL:
         return np.dtype(np.bool_)
