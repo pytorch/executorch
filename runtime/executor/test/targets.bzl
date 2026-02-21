@@ -196,6 +196,20 @@ def define_common_targets(is_fbcode = False):
         )
 
         runtime.cxx_test(
+            name = "program_validation_test",
+            srcs = [
+                "program_validation_test.cpp",
+            ],
+            deps = [
+                "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:buffer_data_loader",
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/schema:program",
+            ],
+            env = modules_env,
+        )
+
+        runtime.cxx_test(
             name = "kernel_resolution_test",
             srcs = [
                 "kernel_resolution_test.cpp",

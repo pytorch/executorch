@@ -418,7 +418,7 @@ def eval_llama_with_attention_sink(args):
             layer.feed_forward.prepare_feedfoward_conv()
     model = convert_linear_to_conv2d(model)
 
-    _, atten_mask, _, k_caches, v_caches = model.get_example_inputs(use_kv_cache=True)
+    _, atten_mask, _, k_caches, v_caches = model.get_example_inputs()
     eval_data = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
 
     neg_log_likelihoods = []
