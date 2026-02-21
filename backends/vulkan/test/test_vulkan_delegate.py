@@ -2364,6 +2364,7 @@ class TestVulkanBackend(unittest.TestCase):
             quantized_linear_module_gemm, sample_inputs_gemm, atol=1e-2, rtol=1e-2
         )
 
+    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_linear_sequence(self):
         """
         Test a sequence of linear layers quantized with XNNPACK quantization config.

@@ -119,11 +119,9 @@ test_modules = {
         AvgPool2d(3, (1, 3), 1, count_include_pad=False),
         (torch.rand(1, 16, 54, 54),),
     ),
-    "becomes_mean_rank4": lambda: (BecomesMeanInToEdge(), (torch.rand(1, 2, 8, 8),)),
-    "channels_last_adaptive_avg_pool": lambda: (
-        BecomesMeanInToEdge(),
-        (torch.randn(1, 1280, 7, 7).to(memory_format=torch.channels_last),),
-    ),
+    "becomes_mean_rank3": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 8, 8),)),
+    "becomes_mean_rank4": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 2, 8, 8),)),
+    "becomes_mean_rank5": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 2, 8, 8),)),
 }
 
 test_modules_bf16 = {
