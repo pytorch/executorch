@@ -41,6 +41,19 @@
                 "type": "equals",
                 "rhs": "Darwin"
             }
+        },
+        {
+            "name": "voxtral-mlx",
+            "displayName": "Voxtral runner (MLX)",
+            "inherits": ["voxtral-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
@@ -60,6 +73,12 @@
             "name": "voxtral-metal",
             "displayName": "Build Voxtral runner (Metal)",
             "configurePreset": "voxtral-metal",
+            "targets": ["voxtral_runner"]
+        },
+        {
+            "name": "voxtral-mlx",
+            "displayName": "Build Voxtral runner (MLX)",
+            "configurePreset": "voxtral-mlx",
             "targets": ["voxtral_runner"]
         }
     ],
@@ -103,6 +122,20 @@
                 {
                     "type": "build",
                     "name": "voxtral-metal"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-mlx",
+            "displayName": "Configure and build Voxtral runner (MLX)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-mlx"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-mlx"
                 }
             ]
         }

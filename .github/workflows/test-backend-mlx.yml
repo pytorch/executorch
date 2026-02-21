@@ -1,0 +1,63 @@
+name: Test MLX Backend
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    branches:
+      - release/*
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+    paths:
+      - .github/workflows/test-backend-mlx.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  test-mlx:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [models, operators]
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-backend-${{ matrix.suite }}
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+
+        echo "::group::Run backend test suite (${{ matrix.suite }})"
+        ${CONDA_RUN} pytest -c /dev/null backends/test/suite/${{ matrix.suite }}/ -m flow_mlx -n auto 2>&1 | tee pytest_output.txt || true
+        echo "::endgroup::"
+
+        # Parse pytest summary and check failure threshold
+        if grep -E "^=+ .* =+$" pytest_output.txt | tail -1 | grep -q "failed"; then
+          FAILED=$(grep -E "^=+ .* =+$" pytest_output.txt | tail -1 | grep -oE "[0-9]+ failed" | grep -oE "[0-9]+")
+        else
+          FAILED=0
+        fi
+
+        if [ "${{ matrix.suite }}" = "operators" ]; then
+          MAX_FAILURES=1
+        else
+          MAX_FAILURES=3
+        fi
+
+        echo "Failed tests: $FAILED (max allowed: $MAX_FAILURES)"
+        if [ "$FAILED" -gt "$MAX_FAILURES" ]; then
+          echo "::error::Too many test failures: $FAILED > $MAX_FAILURES"
+          exit 1
+        fi

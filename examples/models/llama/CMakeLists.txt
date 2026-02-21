@@ -107,8 +107,13 @@ else()
 endif()
 
 # quantized_ops_lib: Register quantized op kernels into the runtime
-executorch_target_link_options_shared_lib(quantized_ops_lib)
-list(APPEND link_libraries quantized_kernels quantized_ops_lib)
+if(TARGET quantized_ops_lib)
+  list(APPEND link_libraries quantized_kernels quantized_ops_lib)
+  get_target_property(_quantized_imported quantized_ops_lib IMPORTED)
+  if(NOT _quantized_imported)
+    executorch_target_link_options_shared_lib(quantized_ops_lib)
+  endif()
+endif()
 
 if(TARGET custom_ops)
   executorch_target_link_options_shared_lib(custom_ops)
@@ -189,6 +194,12 @@ if(TARGET mpsdelegate)
   executorch_target_link_options_shared_lib(mpsdelegate)
 endif()
 
+# MLX backend
+if(TARGET mlxdelegate)
+  list(APPEND link_libraries mlxdelegate mlx)
+  executorch_target_link_options_shared_lib(mlxdelegate)
+endif()
+
 # Openvino backend
 if(TARGET openvino_backend)
   find_package(OpenVINO REQUIRED)
@@ -216,6 +227,11 @@ if(ANDROID)
 endif()
 
 add_executable(llama_main ${_srcs})
+
+# Copy MLX metallib for runtime if MLX delegate is enabled
+if(TARGET mlxdelegate)
+  executorch_target_copy_mlx_metallib(llama_main)
+endif()
 
 # Only strip symbols for Release and MinSizeRel builds.
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL

@@ -110,7 +110,7 @@
       "inherits": ["common"],
       "cacheVariables": {
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/pybind.cmake",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0"
       },
       "condition": {
         "type": "inList",
@@ -285,6 +285,75 @@
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/arm_baremetal.cmake",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
       }
+    },
+    {
+      "name": "mlx",
+      "displayName": "Build MLX delegate",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/mlx.cmake",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "mlx-release",
+      "displayName": "MLX delegate release build",
+      "inherits": ["mlx"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out",
+        "ET_MLX_ENABLE_OP_LOGGING": "OFF",
+        "ET_MIN_LOG_LEVEL": "Error"
+      }
+    },
+    {
+      "name": "mlx-debug",
+      "displayName": "MLX delegate debug build with op logging",
+      "inherits": ["mlx"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out",
+        "ET_MLX_ENABLE_OP_LOGGING": "ON",
+        "ET_MIN_LOG_LEVEL": "Debug"
+      }
+    },
+    {
+      "name": "llm-mlx",
+      "displayName": "Build LLM libraries with MLX delegate",
+      "inherits": ["llm"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_MLX": "ON",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "llm-release-mlx",
+      "displayName": "LLM release build with MLX delegate",
+      "inherits": ["llm-mlx"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out"
+      }
+    },
+    {
+      "name": "llm-debug-mlx",
+      "displayName": "LLM debug build with MLX delegate",
+      "inherits": ["llm-mlx"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out"
+      }
     }
   ],
   "buildPresets": [
@@ -349,6 +418,42 @@
       "name": "llm-metal-stats-install",
       "displayName": "Build and install LLM extension artifacts with Metal stats",
       "configurePreset": "llm-metal-stats",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "mlx-release-install",
+      "displayName": "Build and install MLX delegate release artifacts",
+      "configurePreset": "mlx-release",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "mlx-debug-install",
+      "displayName": "Build and install MLX delegate debug artifacts",
+      "configurePreset": "mlx-debug",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-release-mlx-install",
+      "displayName": "Build and install LLM extension with MLX delegate",
+      "configurePreset": "llm-release-mlx",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-debug-mlx-install",
+      "displayName": "Build and install LLM extension with MLX delegate (Debug)",
+      "configurePreset": "llm-debug-mlx",
       "targets": [
         "install"
       ],
@@ -451,6 +556,62 @@
         {
           "type": "build",
           "name": "llm-metal-stats-install"
+        }
+      ]
+    },
+    {
+      "name": "mlx-release",
+      "displayName": "Configure, build and install ExecuTorch MLX delegate",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "mlx-release"
+        },
+        {
+          "type": "build",
+          "name": "mlx-release-install"
+        }
+      ]
+    },
+    {
+      "name": "mlx-debug",
+      "displayName": "Configure, build and install ExecuTorch MLX delegate with op logging (Debug)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "mlx-debug"
+        },
+        {
+          "type": "build",
+          "name": "mlx-debug-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-release-mlx",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with MLX delegate",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-mlx"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-mlx-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-debug-mlx",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with MLX delegate (Debug)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-debug-mlx"
+        },
+        {
+          "type": "build",
+          "name": "llm-debug-mlx-install"
         }
       ]
     }

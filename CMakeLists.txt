@@ -45,7 +45,14 @@
 # ~~~
 #
 
-cmake_minimum_required(VERSION 3.24)
+# TODO Lower to 3.24 when XNNPACK dependency is updated to include
+# https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
+cmake_minimum_required(VERSION 3.29)
+
+# Note: CMAKE_OSX_DEPLOYMENT_TARGET should be set by presets or user. MLX
+# requires 14.0+, other backends can target 12.0+. If not set, CMake will use
+# the SDK default.
+
 project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
@@ -646,6 +653,11 @@ if(EXECUTORCH_BUILD_MPS)
   list(APPEND _executorch_backends mpsdelegate)
 endif()
 
+if(EXECUTORCH_BUILD_MLX)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mlx)
+  list(APPEND _executorch_backends mlxdelegate)
+endif()
+
 if(EXECUTORCH_BUILD_NEURON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
   list(APPEND _executorch_backends neuron_backend)
@@ -943,6 +955,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs mpsdelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_MLX)
+    list(APPEND _dep_libs mlxdelegate)
+  endif()
+
   if(EXECUTORCH_BUILD_OPENVINO)
     list(APPEND _dep_libs openvino_backend)
   endif()
@@ -1023,6 +1039,20 @@ if(EXECUTORCH_BUILD_PYBIND)
     EXPORT ExecuTorchTargets
     LIBRARY DESTINATION executorch/extension/pybindings
   )
+
+  # Copy MLX metallib next to _portable_lib.so for editable installs. MLX uses
+  # dladdr() to find the directory containing the library with MLX code, then
+  # looks for mlx.metallib in that directory. When MLX is statically linked into
+  # _portable_lib.so, we need the metallib colocated with it.
+  if(EXECUTORCH_BUILD_MLX AND DEFINED MLX_METALLIB_PATH)
+    add_custom_command(
+      TARGET portable_lib
+      POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MLX_METALLIB_PATH}"
+              "$<TARGET_FILE_DIR:portable_lib>/mlx.metallib"
+      COMMENT "Copying mlx.metallib next to _portable_lib.so for MLX runtime"
+    )
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_WASM)

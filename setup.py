@@ -624,6 +624,26 @@ class CustomBuildPy(build_py):
             # the input file is read-only.
             self.copy_file(src, dst, preserve_mode=False)
 
+        # Copy CMake-generated Python directories that setuptools missed.
+        # Setuptools discovers packages at configuration time, before CMake
+        # runs. Directories created by CMake during the build (e.g. by
+        # generate.py) are not in the package list and must be copied manually.
+        generated_dirs = [
+            "backends/mlx/serialization/_generated",
+        ]
+        for rel_dir in generated_dirs:
+            src_dir = os.path.join("src/executorch", rel_dir)
+            if not os.path.isdir(src_dir):
+                continue
+            dst_dir = os.path.join(dst_root, rel_dir)
+            for dirpath, _dirnames, filenames in os.walk(src_dir):
+                for filename in filenames:
+                    src_file = os.path.join(dirpath, filename)
+                    rel_path = os.path.relpath(src_file, src_dir)
+                    dst_file = os.path.join(dst_dir, rel_path)
+                    self.mkpath(os.path.dirname(dst_file))
+                    self.copy_file(src_file, dst_file, preserve_mode=False)
+
 
 class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
     """Removes HOME from the environment when running as root.
@@ -774,6 +794,9 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREML"):
             cmake_build_args += ["--target", "executorchcoreml"]
 
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_MLX"):
+            cmake_build_args += ["--target", "mlxdelegate"]
+
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
             cmake_build_args += ["--target", "custom_ops_aot_lib"]
             cmake_build_args += ["--target", "quantized_ops_aot_lib"]
@@ -826,6 +849,16 @@ setup(
             src="_portable_lib.cp*" if _is_windows() else "_portable_lib.*",
             modpath="executorch.extension.pybindings._portable_lib",
             dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+        ),
+        # MLX metallib (Metal GPU kernels) must be colocated with _portable_lib.so
+        # because MLX uses dladdr() to find the directory containing the library,
+        # then looks for mlx.metallib in that directory at runtime.
+        # After submodule migration, the path is backends/mlx/mlx/...
+        BuiltFile(
+            src_dir="%CMAKE_CACHE_DIR%/backends/mlx/mlx/mlx/backend/metal/kernels/",
+            src_name="mlx.metallib",
+            dst="executorch/extension/pybindings/",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_MLX"],
         ),
         BuiltExtension(
             src="extension/training/_training_lib.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh

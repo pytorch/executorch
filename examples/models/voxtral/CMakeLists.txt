@@ -45,9 +45,14 @@ executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 
 # CPU-only builds need quantized and custom ops
 if(NOT EXECUTORCH_BUILD_CUDA)
-  list(APPEND link_libraries quantized_ops_lib custom_ops)
-  executorch_target_link_options_shared_lib(quantized_ops_lib)
-  executorch_target_link_options_shared_lib(custom_ops)
+  if(TARGET quantized_ops_lib)
+    list(APPEND link_libraries quantized_ops_lib)
+    executorch_target_link_options_shared_lib(quantized_ops_lib)
+  endif()
+  if(TARGET custom_ops)
+    list(APPEND link_libraries custom_ops)
+    executorch_target_link_options_shared_lib(custom_ops)
+  endif()
 endif()
 
 # XNNPACK
@@ -97,6 +102,42 @@ endif()
 if(EXECUTORCH_BUILD_METAL)
   list(APPEND link_libraries metal_backend)
   executorch_target_link_options_shared_lib(metal_backend)
+endif()
+
+# Link MLX delegate
+if(TARGET mlxdelegate)
+  message(STATUS "Found MLX delegate target")
+  list(APPEND link_libraries mlxdelegate)
+  executorch_target_link_options_shared_lib(mlxdelegate)
+
+  # mlxdelegate depends on mlx library mlx is installed as a static library
+  # alongside mlxdelegate
+  if(TARGET mlx)
+    # Build-time: mlx target is available from FetchContent
+    message(STATUS "Found MLX library target (build-time)")
+    list(APPEND link_libraries mlx)
+  else()
+    # Install-time: find the installed mlx library
+    find_library(
+      MLX_LIBRARY
+      NAMES mlx
+      HINTS "${CMAKE_CURRENT_BINARY_DIR}/../../.." "${CMAKE_FIND_ROOT_PATH}"
+      PATH_SUFFIXES lib REQUIRED
+    )
+    message(STATUS "Found installed MLX library at: ${MLX_LIBRARY}")
+    list(APPEND link_libraries ${MLX_LIBRARY})
+  endif()
+
+  # MLX requires Metal and Foundation frameworks on macOS/iOS
+  if(APPLE)
+    find_library(METAL_FRAMEWORK Metal REQUIRED)
+    find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
+    list(APPEND link_libraries ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
+  endif()
+else()
+  message(
+    STATUS "MLX delegate target not found - MLX backend will not be available"
+  )
 endif()
 
 # Add tokenizers

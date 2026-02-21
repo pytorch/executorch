@@ -1,0 +1,366 @@
+name: MLX
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+  pull_request:
+    paths:
+      - .github/workflows/mlx.yml
+      - backends/mlx/**
+      - examples/models/parakeet/**
+      - examples/models/voxtral/**
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  test-mlx:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch and configure build"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON
+        echo "::endgroup::"
+
+        echo "::group::Build test runners"
+        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        echo "::endgroup::"
+
+        echo "::group::Run op unit tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.test.run_all_tests -j4 --max-tasks-per-worker 10 --clean-after
+        echo "::endgroup::"
+
+        echo "::group::Run multi-thread stress test"
+        ${CONDA_RUN} python backends/mlx/test/export_multi_thread_test_model.py /tmp/multi_thread_test_model.pte
+        ET_TESTING_MODEL_PATH=/tmp/multi_thread_test_model.pte \
+          ET_TESTING_NUM_THREADS=50 \
+          ET_PREDICTIONS_PER_THREAD=100 \
+          ./cmake-out/backends/mlx/test/multi_thread_test_runner
+        echo "::endgroup::"
+
+  test-mlx-parakeet:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-parakeet
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        echo "::group::Install Parakeet requirements"
+        ${CONDA_RUN} pip install -r examples/models/parakeet/install_requirements.txt
+        echo "::endgroup::"
+
+        echo "::group::Export Parakeet model with MLX backend"
+        ${CONDA_RUN} python -m executorch.examples.models.parakeet.export_parakeet_tdt \
+          --backend mlx \
+          --dtype bf16 \
+          --qlinear_encoder 4w \
+          --qlinear_encoder_group_size 128 \
+          --qlinear 4w \
+          --qlinear_group_size 128 \
+          --output-dir /tmp/parakeet_mlx
+        echo "::endgroup::"
+
+        echo "::group::Build Parakeet MLX runner"
+        ${CONDA_RUN} make parakeet-mlx
+        echo "::endgroup::"
+
+        echo "::group::Run Parakeet MLX runner"
+        curl -L https://dldata-public.s3.us-east-2.amazonaws.com/2086-149220-0033.wav -o /tmp/test_audio.wav
+        OUTPUT=$(./cmake-out/examples/models/parakeet/parakeet_runner \
+          --model_path /tmp/parakeet_mlx/model.pte \
+          --audio_path /tmp/test_audio.wav \
+          --tokenizer_path /tmp/parakeet_mlx/tokenizer.model 2>&1)
+        echo "Runner output:"
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -iq "Phoebe"; then
+          echo "Success: 'Phoebe' found in output"
+        else
+          echo "Failed: Expected 'Phoebe' not found in output"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+  test-mlx-voxtral:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
+    with:
+      job-name: test-mlx-voxtral
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      secrets-env: EXECUTORCH_HF_TOKEN
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        echo "::group::Install Voxtral requirements"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0"
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
+        ${CONDA_RUN} pip install "transformers==4.56.1" "tokenizers>=0.22.2"
+        echo "::endgroup::"
+
+        echo "::group::Export Voxtral model with MLX backend"
+        PYTHONPATH="${PWD}:${PYTHONPATH:-}" \
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.voxtral.export_voxtral_hf \
+          --output-dir /tmp/voxtral_mlx \
+          --dtype bf16 \
+          --quantize-linear int4
+        echo "::endgroup::"
+
+        echo "::group::Build Voxtral MLX runner"
+        ${CONDA_RUN} make voxtral-mlx
+        echo "::endgroup::"
+
+        echo "::group::Run Voxtral MLX runner"
+        curl -L https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main/tekken.json -o /tmp/tekken.json
+        curl -L https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav -o /tmp/test_audio.wav
+        OUTPUT=$(./cmake-out/examples/models/voxtral/voxtral_runner \
+          --model_path /tmp/voxtral_mlx/model.pte \
+          --tokenizer_path /tmp/tekken.json \
+          --audio_path /tmp/test_audio.wav \
+          --processor_path /tmp/voxtral_mlx/preprocessor.pte \
+          --prompt "What is happening in this audio?" \
+          --temperature 0 2>&1)
+        echo "Runner output:"
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -iq "poem"; then
+          echo "Success: 'poem' found in output"
+        else
+          echo "Failed: Expected 'poem' not found in output"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+  test-mlx-whisper:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-whisper
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch and configure MLX build"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        echo "::group::Install Whisper requirements"
+        ${CONDA_RUN} pip install transformers soundfile datasets librosa
+        echo "::endgroup::"
+
+        echo "::group::Export Whisper model with MLX backend"
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.whisper.export_whisper \
+          --model-id "openai/whisper-tiny" \
+          --output-dir /tmp/whisper_mlx \
+          --dtype bf16 \
+          --quantize-linear int4
+        echo "::endgroup::"
+
+        echo "::group::Run Whisper inference"
+        OUTPUT=$( ${CONDA_RUN} python -m executorch.backends.mlx.examples.whisper.run_whisper \
+          --model-dir /tmp/whisper_mlx \
+          --use-sample-audio 2>&1)
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -iq "Mr. Quilter"; then
+          echo "Success: 'Mr. Quilter' found in transcription"
+        else
+          echo "Failed: Expected 'Mr. Quilter' not found in transcription"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+  test-mlx-llama:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-llama
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        echo "::group::Install Llama requirements"
+        ${CONDA_RUN} pip install "transformers>=4.56.1" "tokenizers>=0.22.2"
+        echo "::endgroup::"
+
+        echo "::group::Export Llama 1B with MLX backend"
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llama \
+          --model-id "unsloth/Llama-3.2-1B-Instruct" \
+          --output /tmp/llama_1b.pte \
+          --quantize-linear int4 \
+          --quantize-embeddings int4
+        echo "::endgroup::"
+
+        echo "::group::Run Llama 1B inference"
+        OUTPUT=$( ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.run_llama \
+          --pte /tmp/llama_1b.pte \
+          --model-id "unsloth/Llama-3.2-1B-Instruct" \
+          --prompt "What is the capital of France?" \
+          --max-new-tokens 50 2>&1)
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -iq "Paris"; then
+          echo "Success: 'Paris' found in output"
+        else
+          echo "Failed: Expected 'Paris' not found in output"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+  test-mlx-stories110m:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-stories110m
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        echo "::group::Install Llama requirements"
+        ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
+        echo "::endgroup::"
+
+        echo "::group::Build ExecuTorch with MLX delegate"
+        ${CONDA_RUN} cmake --workflow --preset mlx-release
+        echo "::endgroup::"
+
+        echo "::group::Build Llama runner with MLX"
+        pushd examples/models/llama
+        ${CONDA_RUN} cmake --workflow --preset llama-release
+        popd
+        echo "::endgroup::"
+
+        echo "::group::Download stories110M artifacts"
+        curl -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt" --output stories110M.pt
+        curl -Ls "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model" --output tokenizer.model
+        echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
+        echo "::endgroup::"
+
+        echo "::group::Create tokenizer.bin"
+        ${CONDA_RUN} python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
+        echo "::endgroup::"
+
+        echo "::group::Export stories110M with MLX backend via export_llama_lib"
+        ${CONDA_RUN} python -m extension.llm.export.export_llm \
+          base.checkpoint=stories110M.pt \
+          base.params=params.json \
+          model.use_kv_cache=true \
+          model.dtype_override=fp32 \
+          backend.mlx.enabled=true \
+          quantization.qmode=4w \
+          quantization.group_size=32 \
+          export.output_name=/tmp/stories110m_mlx.pte
+        echo "::endgroup::"
+
+        echo "::group::Run inference with C++ llama runner"
+        ./cmake-out/examples/models/llama/llama_main \
+          --model_path=/tmp/stories110m_mlx.pte \
+          --tokenizer_path=tokenizer.bin \
+          --prompt="Once upon a time," \
+          --temperature=0 \
+          --seq_len=10
+        echo "::endgroup::"
+
+  test-mlx-llm:
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - id: "unsloth/Llama-3.2-1B-Instruct"
+            name: "llama-1b"
+          - id: "unsloth/Qwen3-0.6B"
+            name: "qwen3-0.6b"
+          - id: "unsloth/gemma-3-1b-it"
+            name: "gemma3-1b"
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-llm-${{ matrix.model.name }}
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        MODEL_ID="${{ matrix.model.id }}"
+        MODEL_NAME="${{ matrix.model.name }}"
+
+        echo "::group::Install ExecuTorch and configure MLX build"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} cmake --preset mlx-release
+        echo "::endgroup::"
+
+        echo "::group::Install LLM requirements"
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install transformers "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
+        echo "::endgroup::"
+
+        echo "::group::Export ${MODEL_NAME} with MLX backend"
+        PYTHONPATH="${PWD}:${PYTHONPATH:-}" \
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llm_hf \
+          --model-id "${MODEL_ID}" \
+          --output /tmp/${MODEL_NAME}.pte \
+          --quantize-linear int4 \
+          --quantize-embeddings int4
+        echo "::endgroup::"
+
+        echo "::group::Run ${MODEL_NAME} inference"
+        OUTPUT=$(PYTHONPATH="${PWD}:${PYTHONPATH:-}" \
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.run_llm_hf \
+          --pte /tmp/${MODEL_NAME}.pte \
+          --model-id "${MODEL_ID}" \
+          --prompt "What is the capital of France?" \
+          --max-new-tokens 50 2>&1)
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -iq "Paris"; then
+          echo "Success: 'Paris' found in output"
+        else
+          echo "Failed: Expected 'Paris' not found in output"
+          exit 1
+        fi
+        echo "::endgroup::"

@@ -25,7 +25,7 @@ python export_parakeet_tdt.py --audio /path/to/audio.wav
 | Argument | Description |
 |----------|-------------|
 | `--output-dir` | Output directory for exports (default: `./parakeet_tdt_exports`) |
-| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `cuda`, `cuda-windows` (default: `xnnpack`) |
+| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `mlx`, `cuda`, `cuda-windows` (default: `xnnpack`) |
 | `--dtype` | Data type: `fp32`, `bf16`, `fp16` (default: `fp32`). Metal backend supports `fp32` and `bf16` only (no `fp16`). |
 | `--audio` | Path to audio file for transcription test |
 
@@ -132,6 +132,24 @@ This generates:
 - `aoti_cuda_blob.ptd` - CUDA kernel blob required at runtime
 - `tokenizer.model` - SentencePiece tokenizer
 
+### MLX Export (macOS)
+
+Export with MLX backend (bf16, int4 quantized, group size 128):
+```bash
+python export_parakeet_tdt.py \
+    --backend mlx \
+    --dtype bf16 \
+    --qlinear_encoder 4w \
+    --qlinear_encoder_group_size 128 \
+    --qlinear 4w \
+    --qlinear_group_size 128 \
+    --output-dir ./parakeet_mlx_4w
+```
+
+This generates:
+- `model.pte` - The compiled model with MLX delegate (~470 MB)
+- `tokenizer.model` - SentencePiece tokenizer
+
 ## C++ Runner
 
 ### Building
@@ -147,6 +165,9 @@ make parakeet-metal
 
 # CUDA build (Linux)
 make parakeet-cuda
+
+# MLX build (macOS)
+make parakeet-mlx
 ```
 
 ### Running
@@ -172,6 +193,12 @@ DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner 
   --data_path examples/models/parakeet/parakeet_cuda/aoti_cuda_blob.ptd \
   --audio_path /path/to/audio.wav \
   --tokenizer_path examples/models/parakeet/parakeet_cuda/tokenizer.model
+
+# MLX
+./cmake-out/examples/models/parakeet/parakeet_runner \
+  --model_path examples/models/parakeet/parakeet_mlx_4w/model.pte \
+  --audio_path /path/to/audio.wav \
+  --tokenizer_path examples/models/parakeet/parakeet_mlx_4w/tokenizer.model
 ```
 
 ### Runner Arguments

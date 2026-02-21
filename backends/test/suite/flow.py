@@ -53,7 +53,7 @@ class TestFlow:
         return self.name
 
 
-def all_flows() -> dict[str, TestFlow]:
+def all_flows() -> dict[str, TestFlow]:  # noqa: C901
     flows = []
 
     from executorch.backends.test.suite.flows.portable import PORTABLE_TEST_FLOW
@@ -146,5 +146,14 @@ def all_flows() -> dict[str, TestFlow]:
         ]
     except Exception as e:
         logger.info(f"Skipping ARM flow registration: {e}")
+
+    try:
+        from executorch.backends.test.suite.flows.mlx import MLX_TEST_FLOW
+
+        flows += [
+            MLX_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping MLX flow registration: {e}")
 
     return {f.name: f for f in flows if f is not None}

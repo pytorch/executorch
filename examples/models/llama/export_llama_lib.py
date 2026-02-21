@@ -34,6 +34,7 @@ from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
+    get_mlx_partitioner,
     get_mps_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,
@@ -480,6 +481,12 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--mlx",
+        action="store_true",
+        help="Delegate to MLX backend (Apple Silicon). Use with --use_kv_cache=True.",
+    )
+
+    parser.add_argument(
         "--expand_rope_table",
         default=False,
         action="store_true",
@@ -749,6 +756,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             coreml=llm_config.backend.coreml.enabled,
             coreml_ios=llm_config.backend.coreml.ios,
             vulkan=llm_config.backend.vulkan.enabled,
+            mlx=llm_config.backend.mlx.enabled,
             use_qat=llm_config.quantization.use_qat,
             use_lora=llm_config.base.use_lora,
             preq_mode=(
@@ -990,6 +998,53 @@ def _to_edge_and_lower_llama_tosa(
     return builder.to_executorch(passes=additional_passes)
 
 
+def _to_edge_and_lower_llama_mlx(
+    builder_exported,
+    modelname,
+    quantizers,
+    additional_passes,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+    """
+    Lower Llama model to MLX backend using to_edge_transform_and_lower.
+
+    This uses to_edge_transform_and_lower() which calls ops_to_not_decompose()
+    before decomposition, allowing the MLX partitioner to preserve ops like
+    aten.item that would otherwise be decomposed to unsupported ops.
+
+    Uses a simplified ExecutorchBackendConfig (like MLX test_ops.py) to avoid
+    passes that trace into the delegated module and fail on data-dependent shapes.
+    """
+    from executorch.exir.capture._config import ExecutorchBackendConfig
+
+    logging.info("Lowering model using MLX partitioner")
+
+    partitioners = [get_mlx_partitioner()]
+    modelname = f"mlx_{modelname}"
+
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners
+    )
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    # Use simplified config like MLX test_ops.py to avoid passes that trace
+    # into the delegated module (which contains .item() calls that create
+    # data-dependent shapes)
+    builder.export_program = builder.edge_manager.to_executorch(
+        ExecutorchBackendConfig(extract_delegate_segments=True)
+    )
+    logging.info(
+        "Required memory for activation in bytes: {}".format(
+            builder.export_program._emitter_output.program.execution_plan[
+                0
+            ].non_const_buffer_sizes
+        ),
+    )
+    return builder
+
+
 def _to_edge_and_lower_llama(  # noqa: C901
     builder_exported,
     modelname,
@@ -1001,6 +1056,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
     mps: bool = False,
     coreml: bool = False,
     qnn: bool = False,
+    mlx: bool = False,
     dtype_override: str = "fp32",
     enable_dynamic_shape: bool = True,
     use_kv_cache: bool = False,
@@ -1046,6 +1102,10 @@ def _to_edge_and_lower_llama(  # noqa: C901
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
+
+    if mlx:
+        partitioners.append(get_mlx_partitioner())
+        modelname = f"mlx_{modelname}"
 
     if qnn:
         logging.warning(
@@ -1351,6 +1411,14 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             llm_config.backend.tosa.version,
             verbose=llm_config.debug.verbose,
         )
+    elif llm_config.backend.mlx.enabled:
+        builder = _to_edge_and_lower_llama_mlx(
+            builder_exported,
+            modelname,
+            quantizers,
+            additional_passes,
+            verbose=llm_config.debug.verbose,
+        )
     else:
         builder = _to_edge_and_lower_llama(
             builder_exported,
@@ -1363,6 +1431,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             mps=llm_config.backend.mps.enabled,
             coreml=llm_config.backend.coreml.enabled,
             qnn=llm_config.backend.qnn.enabled,
+            mlx=llm_config.backend.mlx.enabled,
             dtype_override=llm_config.model.dtype_override.value,
             enable_dynamic_shape=llm_config.model.enable_dynamic_shape,
             use_kv_cache=llm_config.model.use_kv_cache,
@@ -1528,6 +1597,7 @@ def _get_source_transforms(  # noqa
     coreml: bool = False,
     coreml_ios: int = 15,
     vulkan: bool = False,
+    mlx: bool = False,
     use_qat: bool = False,
     use_lora: int = 0,
     preq_mode: Optional[str] = None,
@@ -1704,6 +1774,21 @@ def _get_source_transforms(  # noqa
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
+
+        elif mlx:
+            # MLX backend for Apple Silicon
+            # Import MLX source transformations
+            from executorch.backends.mlx.examples.source_transformation import (
+                get_mlx_source_transforms,
+            )
+
+            # Get MLX transforms (replaces attention, KV cache, registers custom ops)
+            mlx_transforms = get_mlx_source_transforms(
+                use_mlx_attention=True,
+                use_mlx_kv_cache=True,
+                use_mlx_rope=False,
+            )
+            transforms.extend(mlx_transforms)
 
     if local_global_attention:
         transforms.append(

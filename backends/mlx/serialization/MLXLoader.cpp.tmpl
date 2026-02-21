@@ -1,0 +1,187 @@
+// -*- c++ -*-
+
+#include "MLXLoader.h"
+
+#include <cstring>
+#include <stdexcept>
+
+namespace executorch {
+namespace backends {
+namespace mlx {
+namespace loader {
+
+namespace {
+
+// Header structure for MLX payload
+constexpr size_t kHeaderSize = 24;
+constexpr uint32_t kMagic = 0x30584C4D;  // "MLX0" in little-endian
+
+struct MLXHeader {
+  uint32_t padding;
+  uint32_t magic;
+  uint64_t data_offset;
+  uint64_t data_size;
+};
+
+bool parse_header(const void* data, size_t size, MLXHeader& header) {
+  if (size < kHeaderSize) {
+    return false;
+  }
+  std::memcpy(&header, data, sizeof(MLXHeader));
+  if (header.magic != kMagic) {
+    return false;
+  }
+  return true;
+}
+
+// Helper to convert FlatBuffer vectors to std::vector
+template <typename T>
+std::vector<T> to_vector(const flatbuffers::Vector<T>* fb_vec) {
+  if (!fb_vec) {
+    return {};
+  }
+  return std::vector<T>(fb_vec->begin(), fb_vec->end());
+}
+
+}  // namespace
+
+// =============================================================================
+// load_instruction - AUTO-GENERATED switch statement
+// =============================================================================
+
+Instruction load_instruction(const mlx_delegate::Instruction* fb_instr) {
+  Instruction instr;
+
+  if (!fb_instr || !fb_instr->op()) {
+    instr.op = OpCode::NOOP;
+    instr.node = NoopNode{};
+    return instr;
+  }
+
+  auto op_type = fb_instr->op_type();
+
+  switch (op_type) {
+{{LOAD_INSTRUCTION_CASES}}
+    default: {
+      instr.op = OpCode::NOOP;
+      instr.node = NoopNode{};
+      break;
+    }
+  }
+
+  return instr;
+}
+
+// =============================================================================
+// load_program
+// =============================================================================
+
+MLXProgram load_program(const void* data, size_t size) {
+  MLXHeader header;
+  if (!parse_header(data, size, header)) {
+    throw std::runtime_error("Invalid MLX header");
+  }
+
+  const uint8_t* fb_data = static_cast<const uint8_t*>(data) + kHeaderSize;
+  size_t fb_size = header.data_offset - kHeaderSize;
+
+  flatbuffers::Verifier verifier(fb_data, fb_size);
+  if (!mlx_delegate::VerifyMLXGraphBuffer(verifier)) {
+    throw std::runtime_error("Invalid FlatBuffer data");
+  }
+
+  const auto* fb_graph = mlx_delegate::GetMLXGraph(fb_data);
+  if (!fb_graph) {
+    throw std::runtime_error("Failed to parse MLXGraph");
+  }
+
+  MLXProgram program;
+
+  if (fb_graph->version()) {
+    program.version = fb_graph->version()->str();
+  }
+
+  program.num_constant_tensors = fb_graph->num_constant_tensors();
+  program.num_input_tensors = fb_graph->num_input_tensors();
+  program.num_output_tensors = fb_graph->num_output_tensors();
+  program.num_mutable_buffer_tensors = fb_graph->num_mutable_buffer_tensors();
+  program.num_temp_tensors = fb_graph->num_temp_tensors();
+  program.num_values = fb_graph->num_values();
+
+  if (fb_graph->instruction_chains()) {
+    program.instruction_chains.reserve(fb_graph->instruction_chains()->size());
+    for (size_t c = 0; c < fb_graph->instruction_chains()->size(); ++c) {
+      const auto* fb_chain = fb_graph->instruction_chains()->Get(c);
+      std::vector<Instruction> chain;
+      if (fb_chain && fb_chain->instructions()) {
+        chain.reserve(fb_chain->instructions()->size());
+        for (size_t i = 0; i < fb_chain->instructions()->size(); ++i) {
+          chain.push_back(load_instruction(fb_chain->instructions()->Get(i)));
+        }
+      }
+      program.instruction_chains.push_back(std::move(chain));
+    }
+  }
+
+  program.main_chain_idx = fb_graph->main_chain_idx();
+  program.init_chain_idx = fb_graph->init_chain_idx();
+
+  if (fb_graph->input_map()) {
+    for (size_t i = 0; i < fb_graph->input_map()->size(); ++i) {
+      const auto* slot = fb_graph->input_map()->Get(i);
+      program.input_map.push_back(convert_slot_variant(slot));
+    }
+  }
+
+  if (fb_graph->output_map()) {
+    for (size_t i = 0; i < fb_graph->output_map()->size(); ++i) {
+      const auto* slot = fb_graph->output_map()->Get(i);
+      program.output_map.push_back(convert_slot_variant(slot));
+    }
+  }
+
+  if (fb_graph->mutable_buffer_map()) {
+    for (size_t i = 0; i < fb_graph->mutable_buffer_map()->size(); ++i) {
+      const auto* slot = fb_graph->mutable_buffer_map()->Get(i);
+      program.mutable_buffer_map.push_back(convert_slot_variant(slot));
+    }
+  }
+
+  if (fb_graph->named_slots()) {
+    for (size_t i = 0; i < fb_graph->named_slots()->size(); ++i) {
+      const auto* fb_slot = fb_graph->named_slots()->Get(i);
+      NamedSlot slot;
+      slot.name = fb_slot->name() ? fb_slot->name()->str() : "";
+      slot.slot = convert_slot_variant(fb_slot->slot());
+      program.named_slots.push_back(std::move(slot));
+    }
+  }
+
+  if (fb_graph->tensor_meta()) {
+    for (size_t i = 0; i < fb_graph->tensor_meta()->size(); ++i) {
+      const auto* fb_meta = fb_graph->tensor_meta()->Get(i);
+      if (fb_meta) {
+        TensorMeta meta;
+        if (fb_meta->shape()) {
+          for (size_t j = 0; j < fb_meta->shape()->size(); ++j) {
+            meta.shape.push_back(convert_int_or_vid(fb_meta->shape()->Get(j)));
+          }
+        }
+        meta.scalar_type = static_cast<ScalarType>(fb_meta->scalar_type());
+        if (fb_meta->dim_order()) {
+          meta.dim_order = std::vector<uint8_t>(fb_meta->dim_order()->begin(), fb_meta->dim_order()->end());
+        }
+        program.tensor_meta.push_back(std::move(meta));
+      } else {
+        program.tensor_meta.push_back(std::nullopt);
+      }
+    }
+  }
+
+  return program;
+}
+
+}  // namespace loader
+}  // namespace mlx
+}  // namespace backends
+}  // namespace executorch

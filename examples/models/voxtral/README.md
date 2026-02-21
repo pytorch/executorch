@@ -93,6 +93,53 @@ This will generate:
 
 See the "Building the multimodal runner" section below for instructions on building with Metal support, and the "Running the model" section for runtime instructions.
 
+## MLX Support (macOS)
+On Apple Silicon, you can export and run Voxtral using the [MLX backend](../../../backends/mlx), which provides accelerated inference via Apple's MLX framework.
+
+### Exporting with MLX
+The MLX export script produces two `.pte` files — the model and the audio preprocessor — both delegated to MLX:
+```
+python -m executorch.backends.mlx.examples.voxtral.export_voxtral_hf \
+  --output-dir mlx_voxtral_int4_bf16 \
+  --dtype bf16 \
+  --quantize-linear int4
+```
+
+This will generate:
+- `model.pte` - The exported model with MLX delegate (audio_encoder, token_embedding, text_decoder)
+- `preprocessor.pte` - The mel spectrogram audio preprocessor with MLX delegate
+
+#### Export arguments
+
+| Argument | Description |
+|----------|-------------|
+| `--model-id` | HuggingFace model ID (default: `mistralai/Voxtral-Mini-3B-2507`) |
+| `--output-dir` | Output directory for `.pte` files (default: `voxtral_mlx`) |
+| `--dtype` | Model dtype: `fp32`, `fp16`, `bf16` (default: `bf16`) |
+| `--max-seq-len` | Maximum sequence length for KV cache (default: `1024`) |
+| `--quantize-linear` | Quantization for linear layers: `int4`, `int8` (default: none) |
+| `--quantize-linear-group-size` | Group size for linear quantization (default: `32`) |
+| `--max-audio-len` | Maximum audio length in seconds for preprocessor (default: `300`) |
+
+### Building for MLX
+From the ExecuTorch root directory:
+```
+make voxtral-mlx
+```
+
+### Running with MLX
+```
+./cmake-out/examples/models/voxtral/voxtral_runner \
+  --model_path mlx_voxtral_int4_bf16/model.pte \
+  --tokenizer_path path/to/tekken.json \
+  --prompt "What is happening in this audio?" \
+  --audio_path path/to/audio.wav \
+  --processor_path mlx_voxtral_int4_bf16/preprocessor.pte \
+  --temperature 0
+```
+
+The `tekken.json` tokenizer can be downloaded from [Voxtral's HuggingFace repo](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507), or found in your HuggingFace cache after export at `~/.cache/huggingface/hub/models--mistralai--Voxtral-Mini-3B-2507/`.
+
 # Running the model
 To run the model, we will use the Voxtral runner, which utilizes ExecuTorch's MultiModal runner API.
 The Voxtral runner will do the following things:
