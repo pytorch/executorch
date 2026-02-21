@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
@@ -139,6 +140,15 @@ def is_choose_qparams_node(node: torch.fx.Node) -> bool:
         return False
     node_name = format_target_name(node.target.__name__)  # pyre-ignore
     return "choose_qparams" in node_name
+
+
+def is_dynamic_qscale(node: Any) -> bool:
+    """Check if a scale node is dynamically computed via a choose_qparams op."""
+    return (
+        isinstance(node, torch.fx.Node)
+        and node.target == operator.getitem
+        and is_choose_qparams_node(node.args[0])
+    )
 
 
 def is_dequant_per_channel_node(node: torch.fx.Node) -> bool:
@@ -594,19 +604,90 @@ all_memory_layouts: Set[VkMemoryLayout] = {
 all_quantized_memory_layouts: Set[VkMemoryLayout] = {
     VkMemoryLayout.PACKED_INT8_4W4C,
     VkMemoryLayout.PACKED_INT8_4H4W,
+    VkMemoryLayout.PACKED_INT8_4W,
     VkMemoryLayout.PACKED_INT8_4C1W,
 }
 
-universal_memory_layout_set: Set[VkMemoryLayout] = {
-    VkMemoryLayout.TENSOR_WIDTH_PACKED,
-    VkMemoryLayout.TENSOR_HEIGHT_PACKED,
-    VkMemoryLayout.TENSOR_CHANNELS_PACKED,
-    VkMemoryLayout.PACKED_INT8_4W4C,
-    VkMemoryLayout.PACKED_INT8_4H4W,
-}
+universal_memory_layout_set: Set[VkMemoryLayout] = (
+    all_memory_layouts | all_quantized_memory_layouts
+)
 
 MemoryLayoutSet = Set[VkMemoryLayout]
 MemoryLayoutSetList = Union[MemoryLayoutSet, List[MemoryLayoutSet]]
+
+_LAYOUT_TO_PACKED_DIM: Dict[VkMemoryLayout, int] = {
+    VkMemoryLayout.TENSOR_WIDTH_PACKED: 0,
+    VkMemoryLayout.TENSOR_HEIGHT_PACKED: 1,
+    VkMemoryLayout.TENSOR_CHANNELS_PACKED: 2,
+    VkMemoryLayout.PACKED_INT8_4W4C: 2,
+    VkMemoryLayout.PACKED_INT8_4H4W: 0,
+    VkMemoryLayout.PACKED_INT8_4C1W: 2,
+}
+
+
+def packed_dim_of(layout: VkMemoryLayout) -> int:
+    return _LAYOUT_TO_PACKED_DIM[layout]
+
+
+@dataclass(frozen=True)
+class PackedDimInfo:
+    """
+    Describes how tensor data is organized in physical memory, mirroring the
+    C++ PackedDimInfo struct in runtime/api/containers/Tensor.h.
+    """
+
+    packed_dim: int
+    packed_dim_block_size: int
+
+    @classmethod
+    def from_repr(
+        cls,
+        memory_layout: VkMemoryLayout,
+        storage_type: VkStorageType = VkStorageType.BUFFER,
+    ) -> "PackedDimInfo":
+        """
+        Construct a PackedDimInfo based on a memory layout and storage type,
+        mirroring calculate_packed_dim_info in runtime/api/containers/Tensor.cpp.
+        """
+        is_buffer = storage_type == VkStorageType.BUFFER
+
+        if memory_layout == VkMemoryLayout.TENSOR_WIDTH_PACKED:
+            return cls(
+                packed_dim=0,
+                packed_dim_block_size=1 if is_buffer else 4,
+            )
+        elif memory_layout == VkMemoryLayout.TENSOR_HEIGHT_PACKED:
+            return cls(
+                packed_dim=1,
+                packed_dim_block_size=1 if is_buffer else 4,
+            )
+        elif memory_layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED:
+            return cls(
+                packed_dim=2,
+                packed_dim_block_size=1 if is_buffer else 4,
+            )
+        elif memory_layout == VkMemoryLayout.PACKED_INT8_4W:
+            return cls(
+                packed_dim=0,
+                packed_dim_block_size=4,
+            )
+        elif memory_layout == VkMemoryLayout.PACKED_INT8_4W4C:
+            return cls(
+                packed_dim=2,
+                packed_dim_block_size=4,
+            )
+        elif memory_layout == VkMemoryLayout.PACKED_INT8_4H4W:
+            return cls(
+                packed_dim=0,
+                packed_dim_block_size=4,
+            )
+        elif memory_layout == VkMemoryLayout.PACKED_INT8_4C1W:
+            return cls(
+                packed_dim=2,
+                packed_dim_block_size=4 if is_buffer else 16,
+            )
+        else:
+            raise ValueError(f"Unknown memory layout: {memory_layout}")
 
 
 def within_buffer_limit(node: torch.fx.Node, buffer_limit: int) -> int:
@@ -801,6 +882,11 @@ class TensorRepSet:
     def __ne__(self, other: object) -> bool:
         return not self.__eq__(other)
 
+    def copy(self) -> "TensorRepSet":
+        return TensorRepSet(
+            set(self.valid_buffer_layouts), set(self.valid_texture_layouts)
+        )
+
     def is_empty(self) -> bool:
         """
         A TensorRepSet is "empty" if there are no valid representations of the tensor.
@@ -914,6 +1000,83 @@ class TensorRepSet:
         """
         return not self.is_constrained()
 
+    def _possible_pdis(self) -> Set[PackedDimInfo]:
+        buffer_set = set()
+        texture_set = set()
+        for layout in self.valid_buffer_layouts:
+            buffer_set.add(PackedDimInfo.from_repr(layout, VkStorageType.BUFFER))
+        for layout in self.valid_texture_layouts:
+            texture_set.add(PackedDimInfo.from_repr(layout, VkStorageType.TEXTURE_3D))
+        return buffer_set, texture_set
+
+    def has_same_packed_dim_info_set(self, other: "TensorRepSet") -> bool:
+        """
+        Check if self and other produce the exact same sets of PackedDimInfo
+        for both buffer and texture storage types. Completely empty repsets
+        (no layouts for any storage type) are treated as matching any other
+        repset.
+        """
+        other_buf_set, other_tex_set = other._possible_pdis()
+        buf_set, tex_set = self._possible_pdis()
+
+        # A completely empty repset is compatible with anything
+        if not buf_set and not tex_set:
+            return True
+        if not other_buf_set and not other_tex_set:
+            return True
+
+        return other_buf_set == buf_set and other_tex_set == tex_set
+
+    def has_compatible_packed_dim_info_set(self, other: "TensorRepSet") -> bool:
+        """
+        Check if all PackedDimInfos from other are contained within self's
+        PackedDimInfo sets, i.e. self is a superset of other for both buffer
+        and texture PDI sets.
+        """
+        other_buf_set, other_tex_set = other._possible_pdis()
+        buf_set, tex_set = self._possible_pdis()
+
+        for pdi in other_buf_set:
+            if pdi not in buf_set:
+                return False
+
+        for pdi in other_tex_set:
+            if pdi not in tex_set:
+                return False
+
+        return True
+
+    def constrain_to_compatible_packed_dim(
+        self, other: "TensorRepSet"
+    ) -> "TensorRepSet":
+        """
+        Return a new TensorRepSet containing only layouts from self whose
+        PackedDimInfo is present in other's PackedDimInfo sets. If other is
+        completely empty, return a copy of self unchanged. If other has layouts
+        for only one storage type, layouts for the missing storage type are
+        also removed.
+        """
+        other_buf_set, other_tex_set = other._possible_pdis()
+
+        # Completely empty other means no constraint
+        if not other_buf_set and not other_tex_set:
+            return self.copy()
+
+        new_buf = {
+            layout
+            for layout in self.valid_buffer_layouts
+            if other_buf_set
+            and PackedDimInfo.from_repr(layout, VkStorageType.BUFFER) in other_buf_set
+        }
+        new_tex = {
+            layout
+            for layout in self.valid_texture_layouts
+            if other_tex_set
+            and PackedDimInfo.from_repr(layout, VkStorageType.TEXTURE_3D)
+            in other_tex_set
+        }
+        return TensorRepSet(new_buf, new_tex)
+
 
 def make_tensor_repset(tensor_repr: TensorRepr) -> TensorRepSet:
     """
@@ -927,7 +1090,7 @@ def make_tensor_repset(tensor_repr: TensorRepr) -> TensorRepSet:
         raise RuntimeError(f"Unsupported storage type {tensor_repr.storage_type}")
 
 
-def make_filtered_tensor_repset(
+def filter_invalid_reprs(
     tensor_val: FakeTensor,
     tensor_repset: TensorRepSet,
     texture_limits: ImageExtents,
@@ -955,6 +1118,28 @@ def make_filtered_tensor_repset(
         return TensorRepSet(tensor_repset.valid_buffer_layouts, set())
 
     return TensorRepSet(tensor_repset.valid_buffer_layouts, valid_texture_layouts)
+
+
+def filter_invalid_reprs_for_node_list(
+    arg_repsets: TensorRepSet,
+    arg_node: List[torch.fx.Node],
+    texture_limits: ImageExtents,
+) -> TensorRepSet:
+    """
+    Wrapper around filter_invalid_reprs for a list of nodes. This will happen
+    for the cat operator, where the first argument is a list of nodes.
+    """
+    # For variable length args, assume that they all need to use the same representation
+    # only one repset should be defined
+    common_tensor_repsets = arg_repsets
+
+    for n in arg_node:
+        assert isinstance(n, torch.fx.Node)
+        common_tensor_repsets = common_tensor_repsets.make_intersect(
+            filter_invalid_reprs(n.meta["val"], common_tensor_repsets, texture_limits)
+        )
+
+    return common_tensor_repsets
 
 
 ## Convenience TensorRepSet definitions
@@ -986,6 +1171,8 @@ ANY_STORAGE = TensorRepSet(all_memory_layouts, all_memory_layouts)
 
 PACKED_INT8_BUFFER = TensorRepSet(all_quantized_memory_layouts, set())
 PACKED_INT8_4W4C_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W4C}, set())
+PACKED_INT8_4H4W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4H4W}, set())
+PACKED_INT8_4W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W}, set())
 PACKED_INT8_4C1W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4C1W}, set())
 
 PACKED_INT8_CHANNELS_PACKED_BUFFER = TensorRepSet(
@@ -1138,7 +1325,7 @@ class OpRepSets:
             else:
                 assert not arg_repset.is_empty()
 
-                arg_repset = self.make_valid_tensor_repset_for_arg(
+                arg_repset = self.filter_invalid_reprs_for_arg(
                     arg_repset, arg_node, texture_limits
                 )
 
@@ -1149,7 +1336,7 @@ class OpRepSets:
         outs_repset_list = TensorRepSetList([])
         common_out_repset = ALL_STORAGES_REPSET
         if num_tensors_in_node(op_node) == 1:
-            common_out_repset = make_filtered_tensor_repset(
+            common_out_repset = filter_invalid_reprs(
                 op_node.meta["val"], outputs_repsets[0], texture_limits
             )
             outs_repset_list.append(common_out_repset)
@@ -1157,42 +1344,46 @@ class OpRepSets:
         else:
             for i, val in enumerate(op_node.meta["val"]):
                 assert isinstance(val, FakeTensor)
-                out_repset = make_filtered_tensor_repset(
+                out_repset = filter_invalid_reprs(
                     val, outputs_repsets[i], texture_limits
                 )
 
                 outs_repset_list.append(out_repset)
                 common_out_repset = common_out_repset.make_intersect(out_repset)
 
+        # Apply synchronization rules between the primary input and output
+        primary_repset = NO_STORAGE
+        if self.sync_primary_io_repr:
+            primary_in_repset = (
+                common_arg_repset
+                if self.sync_args_repr
+                else args_repset_list[self.primary_arg_idx]
+            )
+            primary_out_repset = (
+                common_out_repset if self.sync_outs_repr else outs_repset_list[0]
+            )
+            primary_repset = primary_in_repset.make_intersect(primary_out_repset)
+
+            args_repset_list[self.primary_arg_idx] = primary_repset.copy()
+            outs_repset_list[0] = primary_repset.copy()
+
         # Apply synchronization rules; if either all inputs/outputs must use the same
         # representation, then only use a single underlying repset.
         if self.sync_args_repr:
-            args_repset_list = TensorRepSetList([common_arg_repset])
+            common_repset = (
+                primary_repset if self.sync_primary_io_repr else common_arg_repset
+            )
+
+            for i in range(len(args_repset_list)):
+                args_repset_list[i] = common_repset.copy()
 
         if self.sync_outs_repr:
-            outs_repset_list = TensorRepSetList([common_out_repset])
+            common_repset = (
+                primary_repset if self.sync_primary_io_repr else common_out_repset
+            )
 
-        # Finally, apply synchronization rules that sync inputs and outputs. If input
-        # or output repsets are updated, then maintain synchronization rules.
-        if self.sync_primary_io_repr:
-            assert self.primary_arg_idx is not None
-
-            primary_in_repset = args_repset_list[self.primary_arg_idx]
-            primary_out_repset = outs_repset_list[0]
-
-            primary_repset = primary_in_repset.make_intersect(primary_out_repset)
-
-            if self.sync_args_repr:
-                args_repset_list = TensorRepSetList([primary_repset])
-            else:
-                assert self.primary_arg_idx is not None
-                args_repset_list[self.primary_arg_idx] = primary_repset
-
-            if self.sync_outs_repr:
-                outs_repset_list = TensorRepSetList([primary_repset])
-            else:
-                assert self.primary_arg_idx is not None
-                outs_repset_list[0] = primary_repset
+            for i in range(len(outs_repset_list)):
+                outs_repset_list[i] = common_repset.copy()
 
         # Save the resulting repsets
         self.args_repset_list = args_repset_list
@@ -1204,44 +1395,20 @@ class OpRepSets:
     def __str__(self) -> str:
         return f"OpRepSets(ins={self.args_repset_list}, outs={self.outs_repset_list})"
 
-    def make_valid_tensor_repset_for_node_list_arg(
-        self,
-        arg_repsets: TensorRepSet,
-        arg_node: List[torch.fx.Node],
-        texture_limits: ImageExtents,
-    ) -> TensorRepSet:
-        """
-        Wrapper around make_filtered_tensor_repset for a list of nodes. This will happen
-        for the cat operator, where the first argument is a list of nodes.
-        """
-        # For variable length args, assume that they all need to use the same representation
-        # only one repset should be defined
-        common_tensor_repsets = arg_repsets
-
-        for n in arg_node:
-            assert isinstance(n, torch.fx.Node)
-            common_tensor_repsets = common_tensor_repsets.make_intersect(
-                make_filtered_tensor_repset(
-                    n.meta["val"], common_tensor_repsets, texture_limits
-                )
-            )
-
-        return common_tensor_repsets
-
-    def make_valid_tensor_repset_for_arg(
+    def filter_invalid_reprs_for_arg(
         self, arg_repsets: TensorRepSet, arg_node: Any, texture_limits: ImageExtents
     ) -> TensorRepSet:
         """
-        Helper function to call make_filtered_tensor_repset
+        Helper function to call filter_invalid_reprs
         """
         if isinstance(arg_node, torch.fx.Node) and is_single_tensor_node(arg_node):
-            return make_filtered_tensor_repset(
+            return filter_invalid_reprs(
                 arg_node.meta["val"], arg_repsets, texture_limits
             )
         elif isinstance(arg_node, list) and all(
             is_single_tensor_node(n) for n in arg_node
         ):
-            return self.make_valid_tensor_repset_for_node_list_arg(
+            return filter_invalid_reprs_for_node_list(
                 arg_repsets, arg_node, texture_limits
             )
         # Special case for getitem; return the repset of the particular val in the
@@ -1251,7 +1418,7 @@ class OpRepSets:
         ):
             idx = self.op_node.args[1]
             assert isinstance(idx, int)
-            return make_filtered_tensor_repset(
+            return filter_invalid_reprs(
                 arg_node.meta["val"][idx], arg_repsets, texture_limits
             )
 
@@ -1259,15 +1426,32 @@ class OpRepSets:
 
     def assert_sync_contraints(self) -> None:
         if self.sync_args_repr:
-            assert len(self.args_repset_list) == 1
+            for i in range(len(self.args_repset_list)):
+                for j in range(i + 1, len(self.args_repset_list)):
+                    ri = self.args_repset_list[i]
+                    rj = self.args_repset_list[j]
+                    if not ri.is_empty() and not rj.is_empty():
+                        assert ri.has_compatible_packed_dim_info_set(
+                            rj
+                        ), f"Synced arg repsets {i} and {j} have incompatible packed dim info: {ri} vs {rj}"
 
         if self.sync_outs_repr:
-            assert len(self.outs_repset_list) == 1
+            for i in range(len(self.outs_repset_list)):
+                for j in range(i + 1, len(self.outs_repset_list)):
+                    ri = self.outs_repset_list[i]
+                    rj = self.outs_repset_list[j]
+                    if not ri.is_empty() and not rj.is_empty():
+                        assert ri.has_compatible_packed_dim_info_set(
+                            rj
+                        ), f"Synced out repsets {i} and {j} have incompatible packed dim info: {ri} vs {rj}"
 
         if self.sync_primary_io_repr:
-            assert (
-                self.args_repset_list[self.primary_arg_idx] == self.outs_repset_list[0]
-            )
+            primary_arg = self.args_repset_list[self.primary_arg_idx]
+            primary_out = self.outs_repset_list[0]
+            if not primary_arg.is_empty() and not primary_out.is_empty():
+                assert primary_arg.has_compatible_packed_dim_info_set(
+                    primary_out
+                ), f"Primary arg and out repsets have incompatible packed dim info: {primary_arg} vs {primary_out}"
 
     def any_is_empty(self) -> bool:
         return (
@@ -1307,34 +1491,81 @@ class OpRepSets:
             return False
 
         if self.sync_primary_io_repr:
-            if not self.get_out_repset(0).any_in_common(source_repset):
+            if not self.get_out_repset(0).has_compatible_packed_dim_info_set(
+                source_repset
+            ):
                 return False
 
         # If this point is reached, then it is possible to constrain
-        self.args_repset_list[arg_i] = arg_current_repset.make_intersect(source_repset)
+        narrowed = arg_current_repset.make_intersect(source_repset)
+        self.args_repset_list[arg_i] = narrowed
+
+        # Propagate to other synced args via packed-dim compatibility
+        if self.sync_args_repr:
+            for i in range(len(self.args_repset_list)):
+                if i != arg_i:
+                    self.args_repset_list[i] = self.args_repset_list[
+                        i
+                    ].constrain_to_compatible_packed_dim(narrowed)
+
+        # Propagate to output via packed-dim compatibility
         if self.sync_primary_io_repr and (
             arg_i == self.primary_arg_idx or self.sync_args_repr
         ):
-            self.outs_repset_list[0] = arg_current_repset.make_intersect(source_repset)
+            self.outs_repset_list[0] = self.outs_repset_list[
+                0
+            ].constrain_to_compatible_packed_dim(narrowed)
+
+            # Propagate to other synced outputs via packed-dim compatibility
+            if self.sync_outs_repr:
+                for i in range(len(self.outs_repset_list)):
+                    if i != 0:
+                        self.outs_repset_list[i] = self.outs_repset_list[
+                            i
+                        ].constrain_to_compatible_packed_dim(self.outs_repset_list[0])
 
         self.assert_sync_contraints()
         return True
 
-    def try_constrain_with_out_repset(self, repset: TensorRepSet):
-        # Skip for operators that must synchronize the input and output representations
-        # or operators that have more than one output repset
-        if self.sync_primary_io_repr or len(self.outs_repset_list) > 1:
-            return False
-
+    def try_constrain_with_out_repset(self, required_repset: TensorRepSet) -> bool:
+        """
+        Attempt to constrain the output repsets of the tensors participating in this
+        operator based the repset required by a downstream operator.
+        """
         out_current_repset = self.outs_repset_list[0]
 
-        if out_current_repset == repset:
+        if out_current_repset == required_repset:
             return False
 
-        if not out_current_repset.any_in_common(repset):
+        if not out_current_repset.any_in_common(required_repset):
             return False
 
-        self.outs_repset_list[0] = out_current_repset.make_intersect(repset)
+        narrowed = out_current_repset.make_intersect(required_repset)
+        self.outs_repset_list[0] = narrowed
+
+        # Propagate to other synced outputs via packed-dim compatibility
+        if self.sync_outs_repr:
+            for i in range(len(self.outs_repset_list)):
+                if i != 0:
+                    self.outs_repset_list[i] = self.outs_repset_list[
+                        i
+                    ].constrain_to_compatible_packed_dim(narrowed)
+
+        # Propagate to primary arg via packed-dim compatibility
+        if self.sync_primary_io_repr:
+            self.args_repset_list[self.primary_arg_idx] = self.args_repset_list[
+                self.primary_arg_idx
+            ].constrain_to_compatible_packed_dim(narrowed)
+
+            # Propagate to other synced args via packed-dim compatibility
+            if self.sync_args_repr:
+                for i in range(len(self.args_repset_list)):
+                    if i != self.primary_arg_idx:
+                        self.args_repset_list[i] = self.args_repset_list[
+                            i
+                        ].constrain_to_compatible_packed_dim(
+                            self.args_repset_list[self.primary_arg_idx]
+                        )
 
         self.assert_sync_contraints()
         return True
