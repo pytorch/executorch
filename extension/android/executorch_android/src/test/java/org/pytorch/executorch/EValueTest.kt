@@ -188,13 +188,23 @@ class EValueTest {
   }
 
   @Test
-  fun testUnicodeStringSerde() {
-    val evalue = EValue.from("こんにちは")
+  fun testChineseStringSerde() {
+    val evalue = EValue.from("你好世界")
     val bytes = evalue.toByteArray()
 
     val deser = EValue.fromByteArray(bytes)
     assertTrue(deser.isString)
-    assertEquals("こんにちは", deser.toStr())
+    assertEquals("你好世界", deser.toStr())
+  }
+
+  @Test
+  fun testEmojiStringSerde() {
+    val evalue = EValue.from("👋🌍")
+    val bytes = evalue.toByteArray()
+
+    val deser = EValue.fromByteArray(bytes)
+    assertTrue(deser.isString)
+    assertEquals("👋🌍", deser.toStr())
   }
 
   @Test
