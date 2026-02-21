@@ -507,10 +507,18 @@ def make_q8ta_linear_custom_op(
             data=sum_per_output_channel,
         )
 
+    # Use gemv variant when batch size is 1
+    input_shape = match.fp_input_node.meta["val"].shape
+    batch_size = input_shape[-2] if len(input_shape) >= 2 else 1
+    if batch_size == 1:
+        op_target = exir_ops.edge.et_vk.q8ta_linear_gemv.default
+    else:
+        op_target = exir_ops.edge.et_vk.q8ta_linear.default
+
     with graph_module.graph.inserting_before(match.output_node):
         qlinear_node = graph_module.graph.create_node(
             "call_function",
-            exir_ops.edge.et_vk.q8ta_linear.default,
+            op_target,
             args=(
                 match.quantize_input_node,
                 match.input_scales_node,
