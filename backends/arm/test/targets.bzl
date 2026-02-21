@@ -36,6 +36,7 @@ def define_arm_tests():
     # Quantization
     test_files += [
         "quantizer/test_generic_annotater.py",
+        "quantizer/test_quantizable_rnn_gru.py",
     ]
 
     # Misc tests
@@ -73,6 +74,7 @@ def define_arm_tests():
                 "//executorch/backends/arm/tosa:compile_spec",
                 "//executorch/backends/arm/tosa:partitioner",
                 "//executorch/backends/arm:vgf",
+                "//executorch/backends/arm/quantizable:quantizable",
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
