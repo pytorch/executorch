@@ -104,7 +104,8 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::optional<const std::string> data_path,
     float temperature = -1.0f,
-    const std::string& method_name = "forward");
+    const std::string& method_name = "forward",
+    Module::LoadMode load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors);
 
 /**
  * @brief Creates a TextLLMRunner instance with dependency injection
@@ -129,7 +130,8 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::vector<std::string> data_files = {},
     float temperature = -1.0f,
     std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr,
-    const std::string& method_name = "forward");
+    const std::string& method_name = "forward",
+    Module::LoadMode load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors);
 
 /**
  * @brief Creates a MultimodalRunner instance with dependency injection
