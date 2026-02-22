@@ -8,13 +8,13 @@
 
 #version 450 core
 
+${define_required_extensions("buffer", "int8")}
+
 #define PRECISION ${PRECISION}
 
 ${define_active_storage_type(STORAGE)}
 
 #extension GL_EXT_control_flow_attributes : require
-
-${define_required_extensions("int8")}
 
 layout(std430) buffer;
 

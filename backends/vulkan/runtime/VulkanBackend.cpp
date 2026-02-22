@@ -144,6 +144,10 @@ utils::GPUMemoryLayout get_memory_layout(
       return utils::kPackedInt8_4W4C;
     case vkgraph::VkMemoryLayout::PACKED_INT8_4H4W:
       return utils::kPackedInt8_4H4W;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4W:
+      return utils::kPackedInt8_4W;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4C1W:
+      return utils::kPackedInt8_4C1W;
     default:
       break;
   }
@@ -639,6 +643,21 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     const size_t num_inputs = compute_graph->inputs().size();
     bool should_propagate_resize = false;
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracer* event_tracer = context.event_tracer();
+    runtime::EventTracerEntry overall_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_EXECUTE",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracerEntry copy_inputs_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_COPY_INPUTS",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
     for (size_t i = 0; i < num_inputs; i++) {
       const ValueRef iref = compute_graph->inputs()[i].value;
       if (compute_graph->val_is_tensor(iref)) {
@@ -667,13 +686,61 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             compute_graph->get_val_type(iref));
       }
     }
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(
+        event_tracer, copy_inputs_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
 
     if (should_propagate_resize || compute_graph->has_data_dependent_shapes()) {
+#ifdef ET_EVENT_TRACER_ENABLED
+      runtime::EventTracerEntry resize_event_tracer_entry =
+          event_tracer_start_profiling_delegate(
+              event_tracer,
+              "ETVK_RESIZE",
+              /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
       compute_graph->propagate_resize();
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_tracer_end_profiling_delegate(
+          event_tracer, resize_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
     }
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracerEntry execute_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_COMPUTE_GRAPH_EXECUTE",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
     compute_graph->execute();
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(
+        event_tracer, execute_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    compute_graph->context()->querypool().extract_results();
+    for (const auto& r :
+         compute_graph->context()->querypool().get_shader_timestamp_data()) {
+      std::string event_name = "{" + r.kernel_name +
+          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) + "}";
+      event_tracer_log_profiling_delegate(
+          event_tracer,
+          event_name.c_str(),
+          /* delegate_debug_id = */ -1,
+          r.start_time_ns,
+          r.end_time_ns);
+    }
+#endif // ET_EVENT_TRACER_ENABLED
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracerEntry copy_outputs_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_COPY_OUTPUTS",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
       const size_t o = i + num_inputs;
       const ValueRef oref = compute_graph->outputs()[i].value;
@@ -699,21 +766,14 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             compute_graph->get_val_type(oref));
       }
     }
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(
+        event_tracer, copy_outputs_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
 
 #ifdef ET_EVENT_TRACER_ENABLED
-    runtime::EventTracer* event_tracer = context.event_tracer();
-    compute_graph->context()->querypool().extract_results();
-    for (const auto& r :
-         compute_graph->context()->querypool().get_shader_timestamp_data()) {
-      std::string event_name = "{" + r.kernel_name +
-          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) + "}";
-      event_tracer_log_profiling_delegate(
-          event_tracer,
-          event_name.c_str(),
-          /* delegate_debug_id = */ -1,
-          r.start_time_ns,
-          r.end_time_ns);
-    }
+    event_tracer_end_profiling_delegate(
+        event_tracer, overall_event_tracer_entry);
 #endif // ET_EVENT_TRACER_ENABLED
 
     return Error::Ok;

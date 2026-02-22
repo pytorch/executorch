@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -26,9 +26,7 @@ class BitwiseNotVisitor(NodeVisitor):
     target = "aten.bitwise_not.default"
 
     # bitwise_not is not supported on the FP profile
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-    ]
+    tosa_specs = TosaSpecification.all_versions_for_profile("INT")
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -46,7 +44,7 @@ class BitwiseNotVisitor(NodeVisitor):
             self.target,
             [*inputs, output],
             [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()

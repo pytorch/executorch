@@ -54,9 +54,6 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
         ],
         exported_headers = ["serialize.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_external_deps = ["flatbuffers-api"],
     )

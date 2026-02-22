@@ -162,10 +162,11 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
+                AddmmToLinearTransform(),
                 FuseBatchNormPass(program),
+                AddmmToLinearTransform(),
                 FusePatternsPass(),
                 FuseClampPass(),
-                AddmmToLinearTransform(),
                 RemoveRedundantOpsTransform(),
                 FuseQuantizedOpsTransform(),
                 FoldQDQPass(),

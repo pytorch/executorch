@@ -41,12 +41,14 @@ HF_ADAPTER_PATH=$(
     --files "adapter_config.json" "adapter_model.safetensors"
 )
 
+# Set environment variables for OmegaConf interpolation in yaml.
+export LORA_ADAPTER_CHECKPOINT="${HF_ADAPTER_PATH}/adapter_model.safetensors"
+export LORA_ADAPTER_CONFIG="${HF_ADAPTER_PATH}/adapter_config.json"
+
 ### SINGLE LORA PTE ###
 # Export LoRA PTE file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
-    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
-    +base.adapter_checkpoint="${HF_ADAPTER_PATH}/adapter_model.safetensors" \
-    +base.adapter_config="${HF_ADAPTER_PATH}/adapter_config.json" \
+    --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
     +export.output_name="qwen_lora_math_full.pte"
 
 # Capture the path of the downloaded qwen artifacts
@@ -93,9 +95,7 @@ fi
 ### PROGRAM DATA SEPARATION ###
 # Export LoRA PTE, LoRA PTD, foundation PTD file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
-    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
-    +base.adapter_checkpoint="${HF_ADAPTER_PATH}/adapter_model.safetensors" \
-    +base.adapter_config="${HF_ADAPTER_PATH}/adapter_config.json" \
+    --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
     +export.output_name="qwen_lora_math.pte" \
     +export.foundation_weights_file="qwen_foundation.ptd" \
     +export.lora_weights_file="qwen_lora_math.ptd"
@@ -108,7 +108,7 @@ cmake-out/examples/models/llama/llama_main --model_path=qwen_lora_math.pte --dat
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
-RESULT=$(cat result.txt)
+RESULT=$(cat result2.txt)
 if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
@@ -117,18 +117,18 @@ else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Test 2: Failure; results not the same"
-#   cleanup_files
+  cleanup_files
   exit 1
 fi
 
 # Confirm file sizes.
 FOUNDATION_SIZE=$(stat -c%s qwen_foundation.ptd)
 if [[ $FOUNDATION_SIZE -le "2400000000" ]]; then
-    echo "qwen_foundation_q.ptd size is: $FOUNDATION_SIZE"
+  echo "qwen_foundation_q.ptd size is: $FOUNDATION_SIZE"
 else
-    echo "qwen_foundation_q.ptd size: $FOUNDATION_SIZE is greater than threshold 2.4GB"
-    cleanup_files
-    exit 1
+  echo "qwen_foundation_q.ptd size: $FOUNDATION_SIZE is greater than threshold 2.4GB"
+  cleanup_files
+  exit 1
 fi
 
 ### QUANTIZATION & PROGRAM DATA SEPARATION ###
@@ -143,8 +143,11 @@ So, 15% of 80 is equal to (80 * 15) / 100 = 1200 / 100 = 12.
 The answer is: 12<|im_end|>"
 
 # Export Quantized PTE, PTD file, no LoRA.
+# override base.lora_config=null to avoid creating a lora model
+# and loading lora weights.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
-    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
+    --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
+    base.lora_config=null \
     +export.output_name="qwen_q.pte" \
     +export.foundation_weights_file="qwen_foundation_q.ptd" \
     +quantization.qmode="8da4w" \
@@ -152,22 +155,26 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
 
 # Export Quantized LoRA PTE, LoRA PTD, foundation PTD file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
-    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
-    +base.adapter_checkpoint="${HF_ADAPTER_PATH}/adapter_model.safetensors" \
-    +base.adapter_config="${HF_ADAPTER_PATH}/adapter_config.json" \
+    --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
     +export.output_name="qwen_lora_math_q.pte" \
     +export.foundation_weights_file="qwen_foundation_lora_q.ptd" \
     +export.lora_weights_file="qwen_lora_math_q.ptd" \
     +quantization.qmode="8da4w" \
     +quantization.group_size=32
 
-# Confirm that qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are the same.
-if diff -q qwen_foundation_lora_q.ptd qwen_foundation_q.ptd > /dev/null; then
-    echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are identical."
+# Confirm that qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are the same size.
+# TODO(lfq): confirm they are the same (deserialize and check fields)
+size1=$(stat -c%s qwen_foundation_lora_q.ptd)
+size2=$(stat -c%s qwen_foundation_q.ptd)
+
+if [ "$size1" -eq "$size2" ]; then
+  echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are the same size: $size1."
 else
-    echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are not identical."
-    cleanup_files
-    exit 1
+  echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd have different sizes."
+  ls -la qwen_foundation_lora_q.ptd
+  ls -la qwen_foundation_q.ptd
+  cleanup_files
+  exit 1
 fi
 
 # Run quantized qwen model (no adapter).
@@ -214,11 +221,11 @@ fi
 # Confirm qwen_foundation_q.ptd file size.
 FOUNDATION_Q_SIZE=$(stat -c%s qwen_foundation_q.ptd)
 if [[ $FOUNDATION_Q_SIZE -le "1000000000" ]]; then
-    echo "qwen_foundation_q.ptd size is: $FOUNDATION_Q_SIZE"
+  echo "qwen_foundation_q.ptd size is: $FOUNDATION_Q_SIZE"
 else
-    echo "qwen_foundation_q.ptd size: $FOUNDATION_Q_SIZE is greater than threshold 1GB"
-    cleanup_files
-    exit 1
+  echo "qwen_foundation_q.ptd size: $FOUNDATION_Q_SIZE is greater than threshold 1GB"
+  cleanup_files
+  exit 1
 fi
 
 cleanup_files

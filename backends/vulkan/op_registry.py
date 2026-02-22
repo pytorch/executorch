@@ -7,14 +7,13 @@
 # pyre-unsafe
 
 import operator
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import executorch.backends.vulkan.custom_ops_lib  # noqa
 import executorch.backends.vulkan.utils as utils
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
-from torch._subclasses.fake_tensor import FakeTensor
 
 ######################
 ## OpFeatures class ##
@@ -27,6 +26,10 @@ def allow_node(node: torch.fx.Node) -> bool:
 
 class OpFeatures:
     __slots__ = [
+        # Dtype-related slots:
+        "inputs_dtypes",  # DtypeSetList for input tensor dtype constraints
+        "outputs_dtypes",  # DtypeSetList for output tensor dtype constraints
+        # Storage-related slots:
         # Sets of possible (storage types, memory layouts) to use for the input tensor(s)
         "inputs_storage",
         # Sets of possible (storage types, memory layouts) to use for the output tensor(s)
@@ -34,6 +37,8 @@ class OpFeatures:
         # bool indicating if the operator has a resize function, which allows it to
         # support models with dynamic shape
         "supports_resize",
+        # bool indicating if the operator supports tensors with more than 4 dimensions
+        "supports_highdim",
         # bool indicating if the operator handles its own prepacking. If this is True,
         # then the insert_prepack_nodes pass will not insert prepack nodes for the args
         # of the op.
@@ -48,6 +53,8 @@ class OpFeatures:
 
     def __init__(
         self,
+        inputs_dtypes: Optional[Union[utils.DtypeSet, List[utils.DtypeSet]]] = None,
+        outputs_dtypes: Optional[Union[utils.DtypeSet, List[utils.DtypeSet]]] = None,
         inputs_storage: Optional[
             Union[utils.TensorRepSet, List[utils.TensorRepSet]]
         ] = None,
@@ -55,10 +62,20 @@ class OpFeatures:
             Union[utils.TensorRepSet, List[utils.TensorRepSet]]
         ] = None,
         supports_resize: bool = False,
+        supports_highdim: bool = False,
         supports_prepacking: bool = False,
         are_node_inputs_supported_fn: Optional[Callable] = allow_node,
         pick_io_storage_fn: Optional[Callable] = None,
     ):
+        # Dtype initialization
+        self.inputs_dtypes: utils.DtypeSetList = utils.DtypeSetList(
+            inputs_dtypes if inputs_dtypes is not None else utils.ALL_T
+        )
+        self.outputs_dtypes: utils.DtypeSetList = utils.DtypeSetList(
+            outputs_dtypes if outputs_dtypes is not None else self.inputs_dtypes[0]
+        )
+
+        # Storage initialization
         self.inputs_storage: utils.TensorRepSetList = utils.TensorRepSetList(
             inputs_storage if inputs_storage is not None else []
         )
@@ -71,10 +88,22 @@ class OpFeatures:
             self.outputs_storage = utils.TensorRepSetList(self.inputs_storage[0])
 
         self.supports_resize = supports_resize
+        self.supports_highdim = supports_highdim
         self.supports_prepacking = supports_prepacking
 
         self.are_node_inputs_supported_fn = are_node_inputs_supported_fn
         self.pick_io_storage_fn = pick_io_storage_fn
+
+    def check_dtypes(self, node: torch.fx.Node) -> Tuple[bool, str]:
+        """
+        Check if all tensor inputs/outputs have dtypes supported by this operator.
+        Returns (is_valid, reason_string).
+        """
+        return utils.check_node_dtypes(
+            node,
+            self.inputs_dtypes,
+            self.outputs_dtypes,
+        )
 
     def make_op_repsets(
         self,
@@ -118,10 +147,15 @@ def update_features(aten_op):
     return features_decorator
 
 
+# =============================================================================
+# Ephemeral Operators (no C++ dispatch - handled symbolically)
+# =============================================================================
+
+
 @update_features(
     [
         operator.getitem,
-        # Symbolic integer ops
+        # Symbolic integer ops (SymIntOps.cpp - symbolic handling)
         torch.ops.aten.sym_size.int,
         operator.add,
         operator.sub,
@@ -135,66 +169,57 @@ def update_features(aten_op):
         torch.ops.aten.sym_constrain_range_for_size.default,
     ]
 )
-def register_ephemeral_op():
+def register_ephemeral_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_token.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
-    ]
-)
-def register_quantization_op():
-    return OpFeatures(
-        inputs_storage=utils.CONTIGUOUS_BUFFER,
-        supports_resize=True,
-    )
+# =============================================================================
+# UnaryOp.cpp
+# =============================================================================
 
 
 @update_features(
     [
-        exir_ops.edge.torchao.quantize_affine.default,
-        exir_ops.edge.torchao.dequantize_affine.default,
+        exir_ops.edge.aten.abs.default,
+        exir_ops.edge.aten.cos.default,
+        exir_ops.edge.aten.exp.default,
+        exir_ops.edge.aten.gelu.default,
+        exir_ops.edge.aten.hardshrink.default,
+        exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.neg.default,
+        exir_ops.edge.aten.relu.default,
+        exir_ops.edge.aten.sigmoid.default,
+        exir_ops.edge.aten.sin.default,
+        exir_ops.edge.aten.sqrt.default,
+        exir_ops.edge.aten.rsqrt.default,
+        exir_ops.edge.aten.tanh.default,
+        exir_ops.edge.aten.round.default,
+        exir_ops.edge.aten.leaky_relu.default,
     ]
 )
-def register_affine_quantization_op():
+def register_unaryop_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.CONTIGUOUS_BUFFER,
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
-        exir_ops.edge.quantized_decomposed.choose_qparams_per_token_asymmetric.default,
-    ]
-)
-def register_torchao_quantization_op():
+@update_features(exir_ops.edge.aten.clamp.default)
+def register_clamp():
     return OpFeatures(
-        inputs_storage=utils.CONTIGUOUS_BUFFER,
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
     )
 
 
-@update_features(
-    exir_ops.edge.torchao.choose_qparams_affine.default,
-)
-def register_torchao_choose_qparams_affine():
-    return OpFeatures(
-        inputs_storage=utils.CONTIGUOUS_ANY,
-        outputs_storage=[
-            utils.WIDTH_PACKED_TEXTURE,  # scales
-            utils.WIDTH_PACKED_TEXTURE,  # zero_points
-        ],
-        supports_resize=True,
-    )
+# =============================================================================
+# BinaryOp.cpp
+# =============================================================================
 
 
 @update_features(
@@ -213,128 +238,112 @@ def register_torchao_choose_qparams_affine():
         exir_ops.edge.aten.ge.Tensor,
     ]
 )
-def register_binary_op():
+def register_binaryop_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
+        supports_highdim=True,
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.aten.pow.Tensor_Scalar,
-    ]
-)
-def register_binary_scalar_op():
+# =============================================================================
+# BinaryScalarOp.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.pow.Tensor_Scalar)
+def register_pow_tensor_scalar():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
+        supports_highdim=True,
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.aten.abs.default,
-        exir_ops.edge.aten.clamp.default,
-        exir_ops.edge.aten.cos.default,
-        exir_ops.edge.aten.exp.default,
-        exir_ops.edge.aten.gelu.default,
-        exir_ops.edge.aten.hardshrink.default,
-        exir_ops.edge.aten.hardtanh.default,
-        exir_ops.edge.aten.neg.default,
-        exir_ops.edge.aten.relu.default,
-        exir_ops.edge.aten.sigmoid.default,
-        exir_ops.edge.aten.sin.default,
-        exir_ops.edge.aten.sqrt.default,
-        exir_ops.edge.aten.rsqrt.default,
-        exir_ops.edge.aten.tanh.default,
-        exir_ops.edge.aten.round.default,
-        exir_ops.edge.aten.leaky_relu.default,
-    ]
-)
-def register_unary_op():
-    return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
-        supports_resize=True,
-    )
+# =============================================================================
+# ToCopy.cpp
+# =============================================================================
 
 
 @update_features(exir_ops.edge.aten._to_copy.default)
-def register_to_copy_op():
+def register_to_copy():
     def check_to_copy_node(node: torch.fx.Node) -> bool:
-        float_dtypes = [torch.float16, torch.float32]
-
-        if len(node.args) != 1:
-            return False
-
-        in_arg = node.args[0]
-        if not isinstance(in_arg, torch.fx.Node):
-            return False
-
-        in_tensor = in_arg.meta.get("val", None)
-        out_tensor = node.meta.get("val", None)
-
-        if isinstance(in_tensor, FakeTensor) and isinstance(out_tensor, FakeTensor):
-            if out_tensor.dtype in float_dtypes and in_tensor.dtype in float_dtypes:
-                return True
-
-        return False
+        # Only single-arg _to_copy is supported
+        return len(node.args) == 1
 
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        outputs_dtypes=utils.FP_T,
         supports_resize=True,
         are_node_inputs_supported_fn=check_to_copy_node,
     )
 
 
-@update_features(exir_ops.edge.dim_order_ops._to_dim_order_copy.default)
-def register_to_copy_dim_order_op():
+# =============================================================================
+# Softmax.cpp
+# =============================================================================
+
+
+@update_features(
+    [
+        exir_ops.edge.aten._log_softmax.default,
+        exir_ops.edge.aten._softmax.default,
+    ]
+)
+def register_softmax_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.ANY_BUFFER,
+        inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
 
 
-@update_features(exir_ops.edge.dim_order_ops._clone_dim_order.default)
-def register_clone_dim_order_op():
-    # Similar to to_dim_order_copy, _clone_dim_order can be removed as long as the
-    # operator is not changing the dtype, i.e. the operator call is modifying the dim
-    # order only. Therefore, check that the input and output dtypes are the same, if so
-    # the operator is safe to remove.
-    def check_clone_dim_order_node(node: torch.fx.Node) -> bool:
-        in_arg = node.args[0]
-        if not isinstance(in_arg, torch.fx.Node):
-            return False
-
-        in_tensor = in_arg.meta.get("val", None)
-        out_tensor = node.meta.get("val", None)
-
-        if in_tensor.dtype != out_tensor.dtype:
-            return False
-
-        return True
-
-    return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
-        supports_resize=True,
-        are_node_inputs_supported_fn=check_clone_dim_order_node,
-    )
+# =============================================================================
+# MatMul.cpp
+# =============================================================================
 
 
 @update_features(
     [
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.mm.default,
+    ]
+)
+def register_matmul_cpp_ops():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_prepacking=True,
+    )
+
+
+# =============================================================================
+# Linear.cpp
+# =============================================================================
+
+
+@update_features(
+    [
         exir_ops.edge.aten.addmm.default,
         exir_ops.edge.aten.linear.default,
     ]
 )
-def register_mm_op():
+def register_linear_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_prepacking=True,
     )
+
+
+# =============================================================================
+# QuantizedLinearQCSNW.cpp
+# =============================================================================
 
 
 @update_features(
@@ -343,12 +352,18 @@ def register_mm_op():
         exir_ops.edge.et_vk.linear_qcs4w.default,
     ]
 )
-def register_int8_mm_op():
+def register_quantizedlinearqcsnw_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_prepacking=True,
     )
+
+
+# =============================================================================
+# QuantizedLinear.cpp
+# =============================================================================
 
 
 @update_features(
@@ -357,15 +372,16 @@ def register_int8_mm_op():
         exir_ops.edge.et_vk.linear_q4gsw.default,
     ]
 )
-def register_quantized_linear_ops():
+def register_quantizedlinear_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
     )
 
 
 @update_features(exir_ops.edge.et_vk.linear_dq8ca_q4gsw.default)
-def register_linear_dqa_qw_ops():
+def register_linear_dq8ca_q4gsw():
     return OpFeatures(
         inputs_storage=[
             utils.CONTIGUOUS_ANY,  # input
@@ -377,21 +393,141 @@ def register_linear_dqa_qw_ops():
             utils.NO_STORAGE,  # group_size (scalar)
             utils.NO_STORAGE,  # bias (prepacked)
         ],
+        inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
+    )
+
+
+# =============================================================================
+# QuantizeDequantize.cpp
+# =============================================================================
+
+
+@update_features(
+    [
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_token.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
+    ]
+)
+def register_quantizedequantize_cpp_ops():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_BUFFER,
+        supports_resize=True,
     )
 
 
 @update_features(
     [
-        exir_ops.edge.aten._log_softmax.default,
-        exir_ops.edge.aten._softmax.default,
+        exir_ops.edge.torchao.quantize_affine.default,
+        exir_ops.edge.torchao.dequantize_affine.default,
     ]
 )
-def register_softmax_op():
+def register_torchao_quantize_dequantize():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.CONTIGUOUS_BUFFER,
         supports_resize=True,
     )
+
+
+# =============================================================================
+# Q8taQuantizeDequantize.cpp
+# =============================================================================
+
+
+@update_features(
+    [
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    ]
+)
+def register_quantize_per_tensor():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_BUFFER,
+        ],
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    ]
+)
+def register_dequantize_per_tensor():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_BUFFER,
+        ],
+        outputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
+        ],
+    )
+
+
+# =============================================================================
+# ChooseQParams.cpp
+# =============================================================================
+
+
+@update_features(
+    [
+        exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
+        exir_ops.edge.quantized_decomposed.choose_qparams_per_token_asymmetric.default,
+    ]
+)
+def register_chooseqparams_cpp_ops():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_BUFFER,
+        supports_resize=True,
+    )
+
+
+@update_features(exir_ops.edge.torchao.choose_qparams_affine.default)
+def register_torchao_choose_qparams_affine():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        outputs_storage=[
+            utils.WIDTH_PACKED_TEXTURE,  # scales
+            utils.WIDTH_PACKED_TEXTURE,  # zero_points
+        ],
+        supports_resize=True,
+    )
+
+
+# =============================================================================
+# Q8taBinary.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_add.default)
+def register_q8ta_add():
+    return OpFeatures(
+        inputs_storage=utils.PACKED_INT8_BUFFER,
+        supports_resize=False,
+    )
+
+
+# =============================================================================
+# Q8taUnary.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_relu.default)
+def register_q8ta_relu():
+    return OpFeatures(
+        inputs_storage=utils.PACKED_INT8_BUFFER,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
+# =============================================================================
 
 
 def get_dims_reduced(node: torch.fx.Node) -> Union[int, List[int]]:
@@ -509,31 +645,73 @@ def pick_storage_for_reduce(node: torch.fx.Node):
         exir_ops.edge.aten.sum.dim_IntList,
         exir_ops.edge.aten.amax.default,
         exir_ops.edge.aten.amin.default,
+    ]
+)
+def register_reduce_cpp_ops():
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+        are_node_inputs_supported_fn=is_reduce_node_supported,
+        pick_io_storage_fn=pick_storage_for_reduce,
+    )
+
+
+# =============================================================================
+# ArgReduce.cpp
+# =============================================================================
+
+
+@update_features(
+    [
         exir_ops.edge.aten.argmax.default,
         exir_ops.edge.aten.argmin.default,
     ]
 )
-def register_reduce_op():
+def register_argreduce_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
+        supports_highdim=True,
         are_node_inputs_supported_fn=is_reduce_node_supported,
         pick_io_storage_fn=pick_storage_for_reduce,
     )
+
+
+# =============================================================================
+# Pool.cpp
+# =============================================================================
 
 
 @update_features(
     [
         exir_ops.edge.aten.avg_pool2d.default,
         exir_ops.edge.aten.max_pool2d.default,
-        exir_ops.edge.aten.max_pool2d_with_indices.default,
     ]
 )
-def register_2d_pool_op():
+def register_pool_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
+
+
+@update_features(exir_ops.edge.aten.max_pool2d_with_indices.default)
+def register_max_pool2d_with_indices():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        outputs_dtypes=[utils.FP_T, utils.INT_T],
+        supports_resize=True,
+    )
+
+
+# =============================================================================
+# Convolution.cpp
+# =============================================================================
 
 
 @update_features(
@@ -542,7 +720,7 @@ def register_2d_pool_op():
         exir_ops.edge.et_vk.conv_with_clamp.default,
     ]
 )
-def register_convolution_op():
+def register_convolution_cpp_ops():
     def check_conv_node(node: torch.fx.Node) -> bool:
         x = node.args[0]
         assert isinstance(x, torch.fx.Node)
@@ -575,19 +753,24 @@ def register_convolution_op():
             utils.NO_STORAGE,  # output_min (non tensor)
             utils.NO_STORAGE,  # output_max (non tensor)
         ],
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_prepacking=True,
         are_node_inputs_supported_fn=check_conv_node,
     )
 
 
+# =============================================================================
+# Q8taConv2d*.cpp
+# =============================================================================
+
+
 @update_features(
     [
-        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to.default,
-        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to_dw.default,
+        exir_ops.edge.et_vk.q8ta_conv2d_pw.default,
     ]
 )
-def register_quantized_conv_op():
+def register_q8ta_conv_pw_op():
     return OpFeatures(
         inputs_storage=[
             utils.PACKED_INT8_4W4C_BUFFER,  # input
@@ -606,6 +789,9 @@ def register_quantized_conv_op():
             utils.NO_STORAGE,  # groups (non tensor)
             utils.NO_STORAGE,  # original OC count (non tensor)
         ],
+        outputs_storage=[
+            utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
+        ],
         supports_resize=False,
         supports_prepacking=True,
     )
@@ -613,55 +799,98 @@ def register_quantized_conv_op():
 
 @update_features(
     [
-        exir_ops.edge.et_vk.add_q8ta_q8ta_q8to.default,
+        exir_ops.edge.et_vk.q8ta_conv2d.default,
+        exir_ops.edge.et_vk.q8ta_conv2d_dw.default,
     ]
 )
-def register_quantized_binary_op():
+def register_q8ta_conv2d_ops():
     return OpFeatures(
-        inputs_storage=utils.PACKED_INT8_4W4C_BUFFER,
+        inputs_storage=[
+            utils.PACKED_INT8_4C1W_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # kernel_size (non tensor)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # original OC count (non tensor)
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
+        ],
         supports_resize=False,
         supports_prepacking=True,
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-    ]
-)
-def register_quantize_op():
+# =============================================================================
+# Q8taLinear.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_linear.default)
+def register_q8ta_linear():
     return OpFeatures(
         inputs_storage=[
-            utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
+            utils.PACKED_INT8_4H4W_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # activation (non tensor)
         ],
         outputs_storage=[
-            utils.PACKED_INT8_4W4C_BUFFER,
+            utils.PACKED_INT8_4H4W_BUFFER,
         ],
+        supports_resize=False,
+        supports_prepacking=True,
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-    ]
-)
-def register_dequantize_op():
+@update_features(exir_ops.edge.et_vk.q8ta_linear_gemv.default)
+def register_q8ta_linear_gemv():
     return OpFeatures(
         inputs_storage=[
-            utils.PACKED_INT8_4W4C_BUFFER,
+            utils.PACKED_INT8_4W_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # activation (non tensor)
         ],
         outputs_storage=[
-            utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
+            utils.PACKED_INT8_4W_BUFFER,
         ],
+        supports_resize=False,
+        supports_prepacking=True,
     )
+
+
+# =============================================================================
+# SDPA.cpp
+# =============================================================================
 
 
 @update_features("llama::sdpa_with_kv_cache")
-def register_sdpa_with_kv_cache_op():
+def register_sdpa_with_kv_cache():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_prepacking=True,
     )
@@ -673,148 +902,406 @@ def register_sdpa_with_kv_cache_op():
         "llama::custom_sdpa",
     ]
 )
-def register_sdpa_ops():
+def register_sdpa_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
+
+
+# =============================================================================
+# RotaryEmbedding.cpp
+# =============================================================================
 
 
 @update_features(exir_ops.edge.et_vk.apply_rotary_emb.default)
-def register_rotary_emb_op():
+def register_apply_rotary_emb():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
+        supports_highdim=True,
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.aten.permute.default,
-    ]
-)
-def register_view_ops():
+# =============================================================================
+# Permute.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.permute.default)
+def register_permute():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.aten.view_copy.default,
-        exir_ops.edge.aten.squeeze_copy.dims,
-        exir_ops.edge.aten.unsqueeze_copy.default,
-        exir_ops.edge.aten.clone.default,
-        exir_ops.edge.aten.permute_copy.default,
-        exir_ops.edge.aten.gather.default,
-    ]
-)
-def register_view_ops_with_buffer_meta():
+@update_features(exir_ops.edge.aten.permute_copy.default)
+def register_permute_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
+        supports_highdim=True,
     )
+
+
+# =============================================================================
+# View.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.view_copy.default)
+def register_view_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.dim_order_ops._to_dim_order_copy.default)
+def register_to_dim_order_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_BUFFER,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
+# Squeeze.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.squeeze_copy.dims)
+def register_squeeze_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
+# Unsqueeze.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.unsqueeze_copy.default)
+def register_unsqueeze_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
+# Clone.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.clone.default)
+def register_clone():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.dim_order_ops._clone_dim_order.default)
+def register_clone_dim_order():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
+# Gather.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.gather.default)
+def register_gather():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
+# Expand.cpp
+# =============================================================================
 
 
 @update_features(exir_ops.edge.aten.expand_copy.default)
-def register_expand():
-    return OpFeatures(inputs_storage=utils.ANY_BUFFER, supports_resize=False)
+def register_expand_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_BUFFER,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=False,
+        supports_highdim=True,
+    )
 
 
-# Fully featured transfer operators (i.e. operators that copy data from the input
-# tensor(s) to the output tensor(s)), which have memory layout agnostic implementations
-# for both texture and buffer storage types.
+# =============================================================================
+# Concat.cpp
+# =============================================================================
+
+
 @update_features(exir_ops.edge.aten.cat.default)
-def register_cat_op():
+def register_cat():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
     )
 
 
-# Fully featured transfer operators (i.e. operators that copy data from the input
-# tensor(s) to the output tensor(s)), which have memory layout agnostic implementations
-# for both texture and buffer storage types.
-@update_features(
-    [
-        exir_ops.edge.aten.select_copy.int,
-        exir_ops.edge.aten.slice_copy.Tensor,
-        exir_ops.edge.aten.split_with_sizes_copy.default,
-    ]
-)
-def register_transfer_ops():
+# =============================================================================
+# Select.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.select_copy.int)
+def register_select_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
+        supports_highdim=True,
     )
 
 
-# Ops ported from PyTorch Vulkan backend. These ops commonly support channels
-# packed tensors only and do not have a resize function.
+# =============================================================================
+# Slice.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.slice_copy.Tensor)
+def register_slice_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
+# Split.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.split_with_sizes_copy.default)
+def register_split_with_sizes_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
+# Transpose.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.t_copy.default)
+def register_t_copy():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+    )
+
+
+# =============================================================================
+# Flip.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.flip.default)
+def register_flip():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+    )
+
+
+# =============================================================================
+# IndexSelect.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.index_select.default)
+def register_index_select():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+    )
+
+
+# =============================================================================
+# Arange.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.arange.start_step)
+def register_arange():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_T,
+    )
+
+
+# =============================================================================
+# Pad.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.constant_pad_nd.default)
+def register_constant_pad_nd():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+    )
+
+
+# =============================================================================
+# Full.cpp
+# =============================================================================
+
+
 @update_features(
     [
-        # Shape Manipulation
-        exir_ops.edge.aten.t_copy.default,
-        # Indexing and lookup
-        exir_ops.edge.aten.flip.default,
-        exir_ops.edge.aten.index_select.default,
-        # Tensor creation
-        exir_ops.edge.aten.arange.start_step,
-        exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.full.default,
         exir_ops.edge.aten.full_like.default,
         exir_ops.edge.aten.ones.default,
         exir_ops.edge.aten.ones_like.default,
-        exir_ops.edge.aten.scalar_tensor.default,
-        exir_ops.edge.aten.upsample_nearest2d.vec,
-        exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.zeros.default,
         exir_ops.edge.aten.zeros_like.default,
-        exir_ops.edge.et_vk.grid_priors.default,
     ]
 )
-def register_ported_op():
+def register_full_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
 
-# Ops ported from PyTorch Vulkan backend. These ops are in a separate registry because they support all packed dimensions
+# =============================================================================
+# ScalarTensor.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.scalar_tensor.default)
+def register_scalar_tensor():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_T,
+    )
+
+
+# =============================================================================
+# Upsample.cpp
+# =============================================================================
+
+
 @update_features(
     [
-        exir_ops.edge.aten.repeat.default,
+        exir_ops.edge.aten.upsample_nearest2d.vec,
+        exir_ops.edge.aten.upsample_bilinear2d.vec,
     ]
 )
-def register_ported_op_all_packed_dims():
+def register_upsample_cpp_ops():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+    )
+
+
+# =============================================================================
+# GridPriors.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.grid_priors.default)
+def register_grid_priors():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+    )
+
+
+# =============================================================================
+# Repeat.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.repeat.default)
+def register_repeat():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
 
-# Ported ops that support their own prepacking.
-@update_features(
-    [
-        exir_ops.edge.aten.embedding.default,
-        exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-    ]
-)
-def register_ported_ops_with_prepacking():
+# =============================================================================
+# Embedding.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.embedding.default)
+def register_embedding():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=[utils.FP_T, utils.INT_T],
         supports_prepacking=True,
         supports_resize=True,
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.aten.native_group_norm.default,
-    ]
-)
+# =============================================================================
+# BatchNorm.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten._native_batch_norm_legit_no_training.default)
+def register_native_batch_norm_legit_no_training():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
+# GroupNorm.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.native_group_norm.default)
 def register_native_group_norm():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
         outputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE,
             utils.CONTIGUOUS_BUFFER,
@@ -824,15 +1311,16 @@ def register_native_group_norm():
     )
 
 
-# Ported ops that support their own prepacking.
-@update_features(
-    [
-        exir_ops.edge.aten.native_layer_norm.default,
-    ]
-)
-def register_ported_ops_with_prepacking_all_dims():
+# =============================================================================
+# NativeLayerNorm.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.native_layer_norm.default)
+def register_native_layer_norm():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
     )

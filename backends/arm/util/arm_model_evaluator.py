@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -45,10 +45,12 @@ def _get_imagenet_224_transforms():
 def _build_calibration_loader(
     dataset: datasets.ImageFolder, max_items: int
 ) -> DataLoader:
-    """Return a DataLoader over a deterministic, shuffled subset of size <= max_items.
+    """Return a DataLoader over a deterministic, shuffled subset of size <=
+    max_items.
 
     Shuffles with seed: ARM_EVAL_CALIB_SEED (int) or default 1337; then selects first k and
     sorts indices to keep enumeration order stable while content depends on seed.
+
     """
     k = min(max_items, len(dataset))
     seed_env = os.getenv("ARM_EVAL_CALIB_SEED")
@@ -80,6 +82,7 @@ def _load_imagenet_folder(directory: str) -> datasets.ImageFolder:
     """Shared helper to load an ImageNet-layout folder.
 
     Raises FileNotFoundError for a missing directory early to aid debugging.
+
     """
     directory_path = Path(directory)
     if not directory_path.exists():
@@ -89,10 +92,12 @@ def _load_imagenet_folder(directory: str) -> datasets.ImageFolder:
 
 
 class GenericModelEvaluator:
-    """Base evaluator computing quantization error metrics and optional compression ratio.
+    """Base evaluator computing quantization error metrics and optional
+    compression ratio.
 
     Subclasses can extend: provide calibration (get_calibrator) and override evaluate()
     to add domain specific metrics (e.g. top-1 / top-5 accuracy).
+
     """
 
     @staticmethod
@@ -113,6 +118,7 @@ class GenericModelEvaluator:
             log_every: Log running accuracy every N batches.
         Returns:
             (top1_accuracy, topk_accuracy)
+
         """
         # Some exported / quantized models (torchao PT2E) disallow direct eval()/train().
         # Try to switch to eval mode, but degrade gracefully if unsupported.
@@ -188,10 +194,11 @@ class GenericModelEvaluator:
         """Return per-output quantization error statistics.
 
         Metrics (lists per output tensor):
-            max_error
-            max_absolute_error
-            max_percentage_error (safe-divided; zero fp32 elements -> 0%)
-            mean_absolute_error
+            * max_error
+            * max_absolute_error
+            * max_percentage_error (safe-divided; zero fp32 elements -> 0%)
+            * mean_absolute_error
+
         """
         fp32_outputs, _ = tree_flatten(self.fp32_model(*self.example_input))
         quant_outputs, _ = tree_flatten(self.quant_model(*self.example_input))
@@ -247,7 +254,14 @@ class GenericModelEvaluator:
         return output_metrics
 
 
-class MobileNetV2Evaluator(GenericModelEvaluator):
+class ImageNetEvaluator(GenericModelEvaluator):
+    """Shared evaluator behaviour for ImageNet-style classifiers.
+
+    Provides dataset loading, calibration loader and a standard `evaluate` that
+    computes top-1/top-5 accuracy.
+
+    """
+
     REQUIRES_CONFIG = True
 
     def __init__(
@@ -263,17 +277,16 @@ class MobileNetV2Evaluator(GenericModelEvaluator):
         super().__init__(
             model_name, fp32_model, quant_model, example_input, tosa_output_path
         )
-
-        self.__batch_size = batch_size
-        self.__validation_set_path = validation_dataset_path
+        self._batch_size = batch_size
+        self._validation_set_path = validation_dataset_path
 
     @staticmethod
-    def __load_dataset(directory: str) -> datasets.ImageFolder:
+    def _load_dataset(directory: str) -> datasets.ImageFolder:
         return _load_imagenet_folder(directory)
 
     @staticmethod
     def get_calibrator(training_dataset_path: str) -> DataLoader:
-        dataset = MobileNetV2Evaluator.__load_dataset(training_dataset_path)
+        dataset = ImageNetEvaluator._load_dataset(training_dataset_path)
         return _build_calibration_loader(dataset, 1000)
 
     @classmethod
@@ -285,11 +298,7 @@ class MobileNetV2Evaluator(GenericModelEvaluator):
         example_input: Tuple[torch.Tensor],
         tosa_output_path: str | None,
         config: dict[str, Any],
-    ) -> "MobileNetV2Evaluator":
-        """Factory constructing evaluator from a config dict.
-
-        Expected keys: batch_size, validation_dataset_path
-        """
+    ) -> "ImageNetEvaluator":
         return cls(
             model_name,
             fp32_model,
@@ -301,131 +310,9 @@ class MobileNetV2Evaluator(GenericModelEvaluator):
         )
 
     def evaluate(self) -> dict[str, Any]:
-        # Load dataset and compute top-1 / top-5
-        dataset = MobileNetV2Evaluator.__load_dataset(self.__validation_set_path)
-        top1_correct, top5_correct = GenericModelEvaluator.evaluate_topk(
-            self.quant_model, dataset, self.__batch_size, topk=5
-        )
-        output = super().evaluate()
-        output["metrics"]["accuracy"] = {"top-1": top1_correct, "top-5": top5_correct}
-        return output
-
-
-class DeiTTinyEvaluator(GenericModelEvaluator):
-    REQUIRES_CONFIG = True
-
-    def __init__(
-        self,
-        model_name: str,
-        fp32_model: Module,
-        quant_model: Module,
-        example_input: Tuple[torch.Tensor],
-        tosa_output_path: str | None,
-        batch_size: int,
-        validation_dataset_path: str,
-    ) -> None:
-        super().__init__(
-            model_name, fp32_model, quant_model, example_input, tosa_output_path
-        )
-        self.__batch_size = batch_size
-        self.__validation_set_path = validation_dataset_path
-
-    @staticmethod
-    def __load_dataset(directory: str) -> datasets.ImageFolder:
-        return _load_imagenet_folder(directory)
-
-    @staticmethod
-    def get_calibrator(training_dataset_path: str) -> DataLoader:
-        dataset = DeiTTinyEvaluator.__load_dataset(training_dataset_path)
-        return _build_calibration_loader(dataset, 1000)
-
-    @classmethod
-    def from_config(
-        cls,
-        model_name: str,
-        fp32_model: Module,
-        quant_model: Module,
-        example_input: Tuple[torch.Tensor],
-        tosa_output_path: str | None,
-        config: dict[str, Any],
-    ) -> "DeiTTinyEvaluator":
-        """Factory constructing evaluator from a config dict.
-
-        Expected keys: batch_size, validation_dataset_path
-        """
-        return cls(
-            model_name,
-            fp32_model,
-            quant_model,
-            example_input,
-            tosa_output_path,
-            batch_size=config["batch_size"],
-            validation_dataset_path=config["validation_dataset_path"],
-        )
-
-    def evaluate(self) -> dict[str, Any]:
-        # Load dataset and compute top-1 / top-5
-        dataset = DeiTTinyEvaluator.__load_dataset(self.__validation_set_path)
+        dataset = self._load_dataset(self._validation_set_path)
         top1, top5 = GenericModelEvaluator.evaluate_topk(
-            self.quant_model, dataset, self.__batch_size, topk=5
-        )
-        output = super().evaluate()
-        output["metrics"]["accuracy"] = {"top-1": top1, "top-5": top5}
-        return output
-
-
-class ResNet18Evaluator(GenericModelEvaluator):
-    REQUIRES_CONFIG = True
-
-    def __init__(
-        self,
-        model_name: str,
-        fp32_model: Module,
-        quant_model: Module,
-        example_input: Tuple[torch.Tensor],
-        tosa_output_path: str | None,
-        batch_size: int,
-        validation_dataset_path: str,
-    ) -> None:
-        super().__init__(
-            model_name, fp32_model, quant_model, example_input, tosa_output_path
-        )
-        self.__batch_size = batch_size
-        self.__validation_set_path = validation_dataset_path
-
-    @staticmethod
-    def __load_dataset(directory: str) -> datasets.ImageFolder:
-        return _load_imagenet_folder(directory)
-
-    @staticmethod
-    def get_calibrator(training_dataset_path: str) -> DataLoader:
-        dataset = ResNet18Evaluator.__load_dataset(training_dataset_path)
-        return _build_calibration_loader(dataset, 1000)
-
-    @classmethod
-    def from_config(
-        cls,
-        model_name: str,
-        fp32_model: Module,
-        quant_model: Module,
-        example_input: Tuple[torch.Tensor],
-        tosa_output_path: str | None,
-        config: dict[str, Any],
-    ) -> "ResNet18Evaluator":
-        return cls(
-            model_name,
-            fp32_model,
-            quant_model,
-            example_input,
-            tosa_output_path,
-            batch_size=config["batch_size"],
-            validation_dataset_path=config["validation_dataset_path"],
-        )
-
-    def evaluate(self) -> dict[str, Any]:
-        dataset = ResNet18Evaluator.__load_dataset(self.__validation_set_path)
-        top1, top5 = GenericModelEvaluator.evaluate_topk(
-            self.quant_model, dataset, self.__batch_size, topk=5
+            self.quant_model, dataset, self._batch_size, topk=5
         )
         output = super().evaluate()
         output["metrics"]["accuracy"] = {"top-1": top1, "top-5": top5}
@@ -434,9 +321,9 @@ class ResNet18Evaluator(GenericModelEvaluator):
 
 evaluators: dict[str, type[GenericModelEvaluator]] = {
     "generic": GenericModelEvaluator,
-    "mv2": MobileNetV2Evaluator,
-    "deit_tiny": DeiTTinyEvaluator,
-    "resnet18": ResNet18Evaluator,
+    "mv2": ImageNetEvaluator,
+    "deit_tiny": ImageNetEvaluator,
+    "resnet18": ImageNetEvaluator,
 }
 
 

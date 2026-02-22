@@ -18,6 +18,35 @@
 #include <optional>
 #include <exception>
 
+#if (defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000) || \
+    (defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 180000) || \
+    (defined(__TV_OS_VERSION_MAX_ALLOWED) && __TV_OS_VERSION_MAX_ALLOWED >= 180000) || \
+    (defined(__WATCH_OS_VERSION_MAX_ALLOWED) && __WATCH_OS_VERSION_MAX_ALLOWED >= 110000)
+#define ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS 1
+#else
+#define ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS 0
+#endif
+
+#if !ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS
+// When building with an older SDK, declare newer Metal compile option symbols so we can still
+// use them behind runtime availability checks.
+typedef NS_ENUM(NSInteger, MTLMathMode) {
+    MTLMathModeSafe = 0,
+    MTLMathModeRelaxed = 1,
+    MTLMathModeFast = 2,
+};
+
+typedef NS_ENUM(NSInteger, MTLMathFloatingPointFunctions) {
+    MTLMathFloatingPointFunctionsFast = 0,
+    MTLMathFloatingPointFunctionsPrecise = 1,
+};
+
+@interface MTLCompileOptions ()
+@property(readwrite, nonatomic) MTLMathMode mathMode;
+@property(readwrite, nonatomic) MTLMathFloatingPointFunctions mathFloatingPointFunctions;
+@end
+#endif
+
 namespace executorch {
 namespace backends {
 namespace metal {
@@ -111,6 +140,24 @@ void metal_cleanup_resources() {
             ptr_to_mtl_buffer.clear();
         }
     }
+}
+
+bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer) {
+    id<MTLDevice> device = get_metal_device();
+    id<MTLBuffer> subBuffer = [device newBufferWithBytesNoCopy:ptr
+                                                        length:nbytes
+                                                        options:MTLResourceCPUCacheModeWriteCombined | MTLResourceStorageModeShared
+                                                    deallocator:nil];
+    if (!subBuffer) {
+        ET_LOG(Error, "metal_buffer_nocopy: Failed to create no-copy buffer (ptr=%p, nbytes=%zu)", ptr, nbytes);
+        return false;
+    }
+
+    if (map_ptr_to_buffer) {
+        ptr_to_mtl_buffer[ptr] = subBuffer;  // Map contents to buffer
+    }
+
+    return true;
 }
 
 bool metal_is_device_pointer(void* ptr) {
@@ -216,7 +263,13 @@ void ETMetalShaderLibrary::compileLibrary() {
         NSString* sourceString = [NSString stringWithUTF8String:shaderSource_.c_str()];
         NSError* error = nil;
 
-        library_ = [device newLibraryWithSource:sourceString options:nil error:&error];
+        MTLCompileOptions* options = [[MTLCompileOptions new] autorelease];
+        if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+            options.mathMode = MTLMathModeSafe;
+            options.mathFloatingPointFunctions = MTLMathFloatingPointFunctionsPrecise;
+        }
+
+        library_ = [device newLibraryWithSource:sourceString options:options error:&error];
         if (!library_ || error) {
             ET_LOG(Error, "ETMetalShaderLibrary: Failed to compile shader library: %s",
                    error ? [[error localizedDescription] UTF8String] : "unknown error");

@@ -64,7 +64,7 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 model = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
 sample_inputs = (torch.randn(1, 3, 224, 224), )
 
-target_spec = NeutronTargetSpec(target="imxrt700", converter_flavor="SDK_25_09")
+target_spec = NeutronTargetSpec(target="imxrt700", converter_flavor="SDK_25_12")
 quantizer = NeutronQuantizer(neutron_target_spec) # (1)
 
 training_ep = torch.export.export(model, sample_inputs).module() # (2)
@@ -78,7 +78,7 @@ quantized_model = convert_pt2e(prepared_model) # (5)
 compile_spec = generate_neutron_compile_spec(
     "imxrt700",
     operators_not_to_delegate=None,
-    neutron_converter_flavor="SDK_25_06",
+    neutron_converter_flavor="SDK_25_12",
 )
 
 et_program = to_edge_transform_and_lower( # (6)
@@ -95,7 +95,7 @@ from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 
 ...
 
-target_spec = NeutronTargetSpec(target="imxrt700", converter_flavor="SDK_25_09")
+target_spec = NeutronTargetSpec(target="imxrt700", converter_flavor="SDK_25_12")
 quantized_graph_module = calibrate_and_quantize(
     aten_model,
     calibration_inputs,

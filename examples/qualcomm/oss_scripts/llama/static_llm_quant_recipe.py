@@ -110,6 +110,7 @@ class LlamaStories110MQuantRecipe(StaticLLMQuantRecipe):
                 QuantDtype.use_8a4w,
                 False,
                 act_observer=MinMaxObserver,
+                act_symmetric=True,
                 granularity=QuantGranularity.PER_CHANNEL,
             )
             .add_regex(
@@ -253,6 +254,43 @@ class Gemma_2BQuantRecipe(StaticLLMQuantRecipe):
                 {
                     r"layers\..*\.attention\.wv.*",
                     r"output\.conv",
+                },
+                QuantDtype.use_16a8w,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_CHANNEL,
+            )
+        )
+        self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
+
+
+class Gemma2QuantRecipe(StaticLLMQuantRecipe):
+    default_quant_dtype = QuantDtype.use_16a4w
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = (
+            QuantRecipe(
+                self.default_quant_dtype,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_TENSOR,
+                verbose=verbose,
+            )
+            .add_node_target(
+                {
+                    torch.ops.aten.conv2d.default,
+                },
+                QuantDtype.use_16a4w_block,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_BLOCK,
+                extra_kwargs={"block_size": (1, 32, 1, 1)},
+            )
+            .add_regex(
+                {
+                    r"layers\..*\.attention\.wv.*",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -424,6 +462,7 @@ class Phi4MiniQuantRecipe(StaticLLMQuantRecipe):
                 QuantDtype.use_8a4w,
                 False,
                 act_observer=MinMaxObserver,
+                act_symmetric=True,
                 granularity=QuantGranularity.PER_CHANNEL,
             )
             .add_regex(

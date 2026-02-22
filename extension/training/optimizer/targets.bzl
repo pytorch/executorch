@@ -36,7 +36,5 @@ def define_common_targets():
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
             ],  # + kernel_deps,
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )

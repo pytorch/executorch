@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -27,9 +27,9 @@ def _get_decorated_ops(op):
 
 
 class DecorateFp32toInt32CastingPass(ArmPass):
-    """
-    To lower pytorch fp32 -> int32 casting to TOSA,
-    we need to transform the value with Ceil, Floor, and Where.
+    """To lower pytorch fp32 -> int32 casting to TOSA, we need to transform the
+    value with Ceil, Floor, and Where.
+
     Before:
         output = to_dim_order_copy(x, dtype=torch.int32)
     After:
@@ -39,6 +39,7 @@ class DecorateFp32toInt32CastingPass(ArmPass):
         ceil_x = ceil(x)
         decorated_x = where(is_non_negative, floor_x, ceil_x)
         output = to_dim_order_copy(decorated_x, dtype=torch.int32)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()

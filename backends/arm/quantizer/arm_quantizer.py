@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,6 +16,7 @@ import functools
 from typing import Any, Callable, Dict, List, Optional
 
 import torch
+from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 
 from executorch.backends.arm.quantizer import QuantizationConfig
@@ -91,7 +92,7 @@ def get_symmetric_quantization_config(
         bias.
 
     """
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    extra_args: Dict[str, Any] = {"eps": 2**-16}
     if is_qat:
         if is_dynamic:
             act_observer_or_fake_quant_ctr = FakeQuantize
@@ -177,6 +178,14 @@ def get_symmetric_quantization_config(
             bias_quantization_spec,
         )
     return quantization_config
+
+
+def get_symmetric_a8w4_quantization_config(
+    is_per_channel: bool = True, is_qat: bool = True, is_dynamic: bool = False
+):
+    return get_symmetric_quantization_config(
+        is_per_channel, is_qat, is_dynamic, weight_qmin=-7, weight_qmax=7
+    )
 
 
 @functools.lru_cache
@@ -333,6 +342,15 @@ def _get_not_module_type_or_name_filter(
     return not_module_type_or_name_filter
 
 
+def _for_each_filtered_node(
+    model: GraphModule,
+    filter_fn: Callable[[Node], bool],
+):
+    for node in model.graph.nodes:
+        if filter_fn(node):
+            yield node
+
+
 class TOSAQuantizer(Quantizer):
     """Manage quantization annotations for TOSA-compatible backends."""
 
@@ -361,7 +379,9 @@ class TOSAQuantizer(Quantizer):
         self.module_type_config: Dict[Callable, Optional[QuantizationConfig]] = {}
         self.module_name_config: Dict[str, Optional[QuantizationConfig]] = {}
 
-    def set_global(self, quantization_config: QuantizationConfig) -> TOSAQuantizer:
+    def set_global(
+        self, quantization_config: QuantizationConfig | None
+    ) -> TOSAQuantizer:
         """Set quantization_config for submodules not matched by other filters.
 
         Args:
@@ -373,7 +393,7 @@ class TOSAQuantizer(Quantizer):
         return self
 
     def set_module_type(
-        self, module_type: Callable, quantization_config: QuantizationConfig
+        self, module_type: Callable, quantization_config: Optional[QuantizationConfig]
     ) -> TOSAQuantizer:
         """Set quantization_config for submodules with a given module type.
 
@@ -419,6 +439,32 @@ class TOSAQuantizer(Quantizer):
         self.io_config = quantization_config
         return self
 
+    def _set_disallow_tfa_for_nodes(self, model: GraphModule) -> None:
+        """Populate `disallow_tfa` metadata for each FX node.
+
+        Transform-for-annotation passes inspect this flag to decide whether they
+        may transform a node. Typically, a node should not be transformed in
+        case it is not to be quantized, which is relevant for partially
+        quantized models.
+
+        """
+
+        # First, set all nodes according to global config
+        for node in model.graph.nodes:
+            node.meta[DISALLOW_TFA_META_KEY] = self.global_config is None
+
+        # Next, override using module type config to take precedence over global config
+        for module_type, config in self.module_type_config.items():
+            mod_type_filter = _get_module_type_filter(module_type)
+            for node in _for_each_filtered_node(model, mod_type_filter):
+                node.meta[DISALLOW_TFA_META_KEY] = config is None
+
+        # Finally, override using module name config to take precedence over both global and type configs
+        for module_name, config in self.module_name_config.items():
+            mod_name_filter = get_module_name_filter(module_name)
+            for node in _for_each_filtered_node(model, mod_name_filter):
+                node.meta[DISALLOW_TFA_META_KEY] = config is None
+
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         """Transform the graph to prepare it for quantization annotation.
 
@@ -431,6 +477,9 @@ class TOSAQuantizer(Quantizer):
             GraphModule: Transformed model prepared for annotation.
 
         """
+
+        self._set_disallow_tfa_for_nodes(model)
+
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
 
@@ -545,8 +594,50 @@ class TOSAQuantizer(Quantizer):
                 mark_node_as_annotated(node)
 
     def validate(self, model: GraphModule) -> None:
-        """TODO: Implement validation of annotated graph for TOSA backend."""
-        pass
+        """Validate the quantization results. Currently, this includes:
+            - Ensure tensor inputs to each operator live on the same device.
+
+        Args:
+            model (GraphModule): GraphModule being validated.
+        Raises:
+            ValueError: If tensor inputs for any operator span more than one
+                device.
+        """
+        for node in model.graph.nodes:
+            if node.op != "call_function":
+                continue
+
+            devices = set()
+            for arg_node in node.all_input_nodes:
+                meta_val = arg_node.meta.get("val", None)
+                if meta_val is None:
+                    continue
+                if isinstance(meta_val, (tuple, list)):
+                    for tensor in meta_val:
+                        devices.add(
+                            str(
+                                getattr(
+                                    tensor,
+                                    "device",
+                                    f"Could not get device from {tensor}",
+                                )
+                            )
+                        )
+                else:
+                    devices.add(
+                        str(
+                            getattr(
+                                meta_val,
+                                "device",
+                                f"Could not get device from {meta_val}",
+                            )
+                        )
+                    )
+
+                if len(devices) > 1:
+                    raise ValueError(
+                        f"Quantizer detected operator {node.name} with different device inputs: {devices}."
+                    )
 
     def quantize_with_submodules(
         self,
@@ -554,7 +645,8 @@ class TOSAQuantizer(Quantizer):
         calibration_samples: list[tuple],
         is_qat: bool = False,
     ):
-        """Quantizes a GraphModule in a way such that conditional submodules are handled properly.
+        """Quantizes a GraphModule in a way such that conditional submodules are
+        handled properly.
 
         Args:
             model (GraphModule): The model to quantize.

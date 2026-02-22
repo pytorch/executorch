@@ -82,10 +82,7 @@ def define_libs():
             "vec/**/*.h",
         ]),
         header_namespace = "executorch/kernels/optimized",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = select({
             "ovr_config//os:linux": [
                 "fbsource//third-party/sleef:sleef",
@@ -104,10 +101,7 @@ def define_libs():
             "utils/**/*.h",
         ]),
         header_namespace = "executorch/kernels/optimized",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             # Needed to access the ET_INLINE macro
             "//executorch/runtime/platform:compiler",
@@ -123,10 +117,7 @@ def define_libs():
             "blas/**/*.h",
         ]),
         header_namespace = "executorch/kernels/optimized",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         preprocessor_flags = select({
             "ovr_config//os:android-arm64": [
                 "-DET_BUILD_WITH_BLAS",

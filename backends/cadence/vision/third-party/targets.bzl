@@ -17,10 +17,7 @@ def define_common_targets():
             "include_private/*.h"
         ]),
         header_namespace = "",
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         platforms = CXX,
         compatible_with = select({
             "DEFAULT": [],

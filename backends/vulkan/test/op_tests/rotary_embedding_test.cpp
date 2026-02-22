@@ -120,22 +120,42 @@ void test_reference(
   //
 
   graph.propagate_resize();
-  graph.copy_into_staging(r_xq.staging, xq.const_data_ptr(), xq.numel());
-  graph.copy_into_staging(r_xk.staging, xk.const_data_ptr(), xk.numel());
-  graph.copy_into_staging(
-      r_freqs_cos.staging, freqs_cos.const_data_ptr(), freqs_cos.numel());
-  graph.copy_into_staging(
-      r_freqs_sin.staging, freqs_sin.const_data_ptr(), freqs_sin.numel());
+  graph.maybe_cast_and_copy_into_staging(
+      r_xq.staging,
+      xq.const_data_ptr(),
+      xq.numel(),
+      from_at_scalartype(xq.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_xk.staging,
+      xk.const_data_ptr(),
+      xk.numel(),
+      from_at_scalartype(xk.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_cos.staging,
+      freqs_cos.const_data_ptr(),
+      freqs_cos.numel(),
+      from_at_scalartype(freqs_cos.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_sin.staging,
+      freqs_sin.const_data_ptr(),
+      freqs_sin.numel(),
+      from_at_scalartype(freqs_sin.scalar_type()));
 
   graph.execute();
 
   at::Tensor vk_xq_out = at::empty_like(xq_out);
-  graph.copy_from_staging(
-      staging_xq_out, vk_xq_out.mutable_data_ptr(), vk_xq_out.numel());
+  graph.maybe_cast_and_copy_from_staging(
+      staging_xq_out,
+      vk_xq_out.mutable_data_ptr(),
+      vk_xq_out.numel(),
+      from_at_scalartype(vk_xq_out.scalar_type()));
 
   at::Tensor vk_xk_out = at::empty_like(xk_out);
-  graph.copy_from_staging(
-      staging_xk_out, vk_xk_out.mutable_data_ptr(), vk_xk_out.numel());
+  graph.maybe_cast_and_copy_from_staging(
+      staging_xk_out,
+      vk_xk_out.mutable_data_ptr(),
+      vk_xk_out.numel(),
+      from_at_scalartype(vk_xk_out.scalar_type()));
 
   EXPECT_TRUE(at::allclose(xq_out, vk_xq_out, 1e-4, 1e-4));
   EXPECT_TRUE(at::allclose(xk_out, vk_xk_out, 1e-4, 1e-4));

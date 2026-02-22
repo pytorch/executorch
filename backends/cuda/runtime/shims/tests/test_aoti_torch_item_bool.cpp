@@ -7,197 +7,287 @@
  */
 
 #include <cuda_runtime.h>
-#include <executorch/backends/aoti/common_shims.h>
-#include <executorch/backends/cuda/runtime/shims/memory.h>
-#include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
-#include <executorch/backends/cuda/runtime/utils.h>
-#include <executorch/runtime/core/error.h>
-#include <executorch/runtime/platform/platform.h>
 #include <gtest/gtest.h>
 #include <vector>
 
-using namespace executorch::backends::aoti;
-using namespace executorch::backends::cuda;
-using namespace executorch::runtime;
-using executorch::runtime::etensor::Tensor;
+#include <executorch/backends/aoti/common_shims_slim.h>
+#include <executorch/backends/aoti/slim/c10/core/Device.h>
+#include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
+#include <executorch/backends/cuda/runtime/shims/memory.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/platform/platform.h>
 
-// Test fixture for aoti_torch_item_bool tests
-class AOTITorchItemBoolTest : public ::testing::Test {
+using namespace executorch::backends::cuda;
+using namespace executorch::backends::aoti;
+using executorch::runtime::Error;
+
+namespace slim_c10 = executorch::backends::aoti::slim::c10;
+
+namespace {
+
+bool isCudaAvailable() {
+  int device_count = 0;
+  cudaError_t err = cudaGetDeviceCount(&device_count);
+  return (err == cudaSuccess && device_count > 0);
+}
+
+} // namespace
+
+class AOTITorchItemBoolSlimTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    // Initialize ExecuTorch Platform Abstraction Layer
     et_pal_init();
-
-    // Check if CUDA is available
-    int device_count = 0;
-    cudaError_t err = cudaGetDeviceCount(&device_count);
-    if (err != cudaSuccess || device_count == 0) {
-      GTEST_SKIP() << "CUDA not available, skipping CUDA tests";
-    }
-
-    // Clean up any existing cached metadata before each test
-    cleanup_tensor_metadata();
-
-    // Clear any remaining tensors from previous tests
-    clear_all_tensors();
   }
 
-  void TearDown() override {
-    // Clean up metadata
-    cleanup_tensor_metadata();
+  Tensor* createScalarBoolTensor(
+      bool value,
+      int32_t device_type = static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      int32_t device_index = 0) {
+    Tensor* tensor = nullptr;
 
-    // Clear the global tensor storage using the provided function
-    clear_all_tensors();
-  }
-
-  // Helper to create a bool tensor on CUDA with a specific value
-  Tensor* create_cuda_bool_tensor(bool value) {
-    // Create a 0D (scalar) bool tensor
-    std::vector<int64_t> sizes = {}; // 0D tensor
-    std::vector<int64_t> strides = {}; // Empty strides for scalar
-    Tensor* tensor;
+    std::vector<int64_t> sizes = {1};
+    std::vector<int64_t> strides = {1};
 
     AOTITorchError error = aoti_torch_empty_strided(
         sizes.size(),
         sizes.data(),
         strides.data(),
-        static_cast<int32_t>(SupportedDTypes::BOOL),
-        static_cast<int32_t>(SupportedDevices::CUDA),
-        0,
+        static_cast<int32_t>(slim_c10::ScalarType::Bool),
+        device_type,
+        device_index,
         &tensor);
 
     if (error != Error::Ok || tensor == nullptr) {
       return nullptr;
     }
 
-    // Set the value
-    bool host_value = value;
-    cudaError_t cuda_err = cudaMemcpy(
-        tensor->mutable_data_ptr(),
-        &host_value,
-        sizeof(bool),
-        cudaMemcpyHostToDevice);
-
-    if (cuda_err != cudaSuccess) {
-      aoti_torch_delete_tensor_object(tensor);
-      return nullptr;
+    if (device_type == static_cast<int32_t>(slim_c10::DeviceType::CPU)) {
+      bool* data = static_cast<bool*>(tensor->data_ptr());
+      *data = value;
+    } else {
+      cudaMemcpy(
+          tensor->data_ptr(), &value, sizeof(bool), cudaMemcpyHostToDevice);
     }
 
     return tensor;
   }
 
-  // Helper to create a bool tensor on CPU with a specific value
-  Tensor* create_cpu_bool_tensor(bool value) {
-    // Create a 0D (scalar) bool tensor
-    std::vector<int64_t> sizes = {}; // 0D tensor
-    std::vector<int64_t> strides = {}; // Empty strides for scalar
-    Tensor* tensor;
+  Tensor* createTestTensor(
+      const std::vector<int64_t>& sizes,
+      int32_t dtype = static_cast<int32_t>(slim_c10::ScalarType::Float),
+      int32_t device_type = static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      int32_t device_index = 0) {
+    Tensor* tensor = nullptr;
+
+    std::vector<int64_t> strides(sizes.size());
+    if (!sizes.empty()) {
+      strides[sizes.size() - 1] = 1;
+      for (int64_t i = static_cast<int64_t>(sizes.size()) - 2; i >= 0; i--) {
+        strides[i] = strides[i + 1] * sizes[i + 1];
+      }
+    }
 
     AOTITorchError error = aoti_torch_empty_strided(
         sizes.size(),
         sizes.data(),
         strides.data(),
-        static_cast<int32_t>(SupportedDTypes::BOOL),
-        static_cast<int32_t>(SupportedDevices::CPU),
-        0,
+        dtype,
+        device_type,
+        device_index,
         &tensor);
 
-    if (error != Error::Ok || tensor == nullptr) {
-      return nullptr;
-    }
-
-    // Set the value directly
-    bool* data_ptr = static_cast<bool*>(tensor->mutable_data_ptr());
-    *data_ptr = value;
-
-    return tensor;
+    return (error == Error::Ok) ? tensor : nullptr;
   }
 };
 
-// Test extracting true value from CUDA bool tensor
-TEST_F(AOTITorchItemBoolTest, CUDATensorTrueValue) {
-  Tensor* tensor = create_cuda_bool_tensor(true);
+// ============================================================================
+// Basic Functionality Tests
+// ============================================================================
+
+TEST_F(AOTITorchItemBoolSlimTest, TrueValue_CPU) {
+  Tensor* tensor = createScalarBoolTensor(
+      true, static_cast<int32_t>(slim_c10::DeviceType::CPU), 0);
   ASSERT_NE(tensor, nullptr);
 
   bool result = false;
   AOTITorchError error = aoti_torch_item_bool(tensor, &result);
 
   EXPECT_EQ(error, Error::Ok);
-  EXPECT_TRUE(result);
+  EXPECT_EQ(result, true);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
 }
 
-// Test extracting false value from CUDA bool tensor
-TEST_F(AOTITorchItemBoolTest, CUDATensorFalseValue) {
-  Tensor* tensor = create_cuda_bool_tensor(false);
+TEST_F(AOTITorchItemBoolSlimTest, FalseValue_CPU) {
+  Tensor* tensor = createScalarBoolTensor(
+      false, static_cast<int32_t>(slim_c10::DeviceType::CPU), 0);
   ASSERT_NE(tensor, nullptr);
 
   bool result = true;
   AOTITorchError error = aoti_torch_item_bool(tensor, &result);
 
   EXPECT_EQ(error, Error::Ok);
-  EXPECT_FALSE(result);
+  EXPECT_EQ(result, false);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
 }
 
-// Test extracting true value from CPU bool tensor
-TEST_F(AOTITorchItemBoolTest, CPUTensorTrueValue) {
-  Tensor* tensor = create_cpu_bool_tensor(true);
-  ASSERT_NE(tensor, nullptr);
+// ============================================================================
+// Error Handling Tests
+// ============================================================================
 
+TEST_F(AOTITorchItemBoolSlimTest, NullTensor) {
   bool result = false;
-  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
-
-  EXPECT_EQ(error, Error::Ok);
-  EXPECT_TRUE(result);
-}
-
-// Test extracting false value from CPU bool tensor
-TEST_F(AOTITorchItemBoolTest, CPUTensorFalseValue) {
-  Tensor* tensor = create_cpu_bool_tensor(false);
-  ASSERT_NE(tensor, nullptr);
-
-  bool result = true;
-  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
-
-  EXPECT_EQ(error, Error::Ok);
-  EXPECT_FALSE(result);
-}
-
-// Test with null tensor pointer
-TEST_F(AOTITorchItemBoolTest, NullTensorPointer) {
-  bool result;
   AOTITorchError error = aoti_torch_item_bool(nullptr, &result);
+
   EXPECT_EQ(error, Error::InvalidArgument);
 }
 
-// Test with null result pointer
-TEST_F(AOTITorchItemBoolTest, NullResultPointer) {
-  Tensor* tensor = create_cuda_bool_tensor(true);
+TEST_F(AOTITorchItemBoolSlimTest, NullReturnValue) {
+  Tensor* tensor = createScalarBoolTensor(
+      true, static_cast<int32_t>(slim_c10::DeviceType::CPU), 0);
   ASSERT_NE(tensor, nullptr);
 
   AOTITorchError error = aoti_torch_item_bool(tensor, nullptr);
+
   EXPECT_EQ(error, Error::InvalidArgument);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
 }
 
-// Test with non-bool dtype (should fail)
-TEST_F(AOTITorchItemBoolTest, NonBoolDtype) {
-  // Create a float tensor
-  std::vector<int64_t> sizes = {};
-  std::vector<int64_t> strides = {};
-  Tensor* tensor;
+TEST_F(AOTITorchItemBoolSlimTest, MultiElementTensor) {
+  std::vector<int64_t> sizes = {2, 3};
+  Tensor* tensor = createTestTensor(
+      sizes,
+      static_cast<int32_t>(slim_c10::ScalarType::Bool),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(tensor, nullptr);
+  EXPECT_GT(tensor->numel(), 1);
 
-  AOTITorchError error = aoti_torch_empty_strided(
-      sizes.size(),
-      sizes.data(),
-      strides.data(),
-      static_cast<int32_t>(SupportedDTypes::FLOAT32), // Not bool
-      static_cast<int32_t>(SupportedDevices::CUDA),
-      0,
-      &tensor);
+  bool result = false;
+  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
 
-  ASSERT_EQ(error, Error::Ok);
+  EXPECT_EQ(error, Error::InvalidArgument);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
+}
+
+TEST_F(AOTITorchItemBoolSlimTest, WrongDtype_Float) {
+  std::vector<int64_t> sizes = {1};
+  Tensor* tensor = createTestTensor(
+      sizes,
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
   ASSERT_NE(tensor, nullptr);
 
-  bool result;
-  error = aoti_torch_item_bool(tensor, &result);
+  bool result = false;
+  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
+
   EXPECT_EQ(error, Error::InvalidArgument);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
+}
+
+TEST_F(AOTITorchItemBoolSlimTest, WrongDtype_Long) {
+  std::vector<int64_t> sizes = {1};
+  Tensor* tensor = createTestTensor(
+      sizes,
+      static_cast<int32_t>(slim_c10::ScalarType::Long),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(tensor, nullptr);
+
+  bool result = false;
+  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
+
+  EXPECT_EQ(error, Error::InvalidArgument);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
+}
+
+// ============================================================================
+// CUDA Tests
+// ============================================================================
+
+TEST_F(AOTITorchItemBoolSlimTest, TrueValue_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+
+  Tensor* tensor = createScalarBoolTensor(
+      true, static_cast<int32_t>(slim_c10::DeviceType::CUDA), 0);
+  ASSERT_NE(tensor, nullptr);
+  EXPECT_TRUE(tensor->is_cuda());
+
+  bool result = false;
+  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
+
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_EQ(result, true);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
+}
+
+TEST_F(AOTITorchItemBoolSlimTest, FalseValue_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+
+  Tensor* tensor = createScalarBoolTensor(
+      false, static_cast<int32_t>(slim_c10::DeviceType::CUDA), 0);
+  ASSERT_NE(tensor, nullptr);
+  EXPECT_TRUE(tensor->is_cuda());
+
+  bool result = true;
+  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
+
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_EQ(result, false);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
+}
+
+TEST_F(AOTITorchItemBoolSlimTest, MultiElementTensor_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+
+  std::vector<int64_t> sizes = {2, 3};
+  Tensor* tensor = createTestTensor(
+      sizes,
+      static_cast<int32_t>(slim_c10::ScalarType::Bool),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  ASSERT_NE(tensor, nullptr);
+  EXPECT_TRUE(tensor->is_cuda());
+
+  bool result = false;
+  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
+
+  EXPECT_EQ(error, Error::InvalidArgument);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
+}
+
+TEST_F(AOTITorchItemBoolSlimTest, WrongDtype_Float_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+
+  std::vector<int64_t> sizes = {1};
+  Tensor* tensor = createTestTensor(
+      sizes,
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  ASSERT_NE(tensor, nullptr);
+
+  bool result = false;
+  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
+
+  EXPECT_EQ(error, Error::InvalidArgument);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
 }

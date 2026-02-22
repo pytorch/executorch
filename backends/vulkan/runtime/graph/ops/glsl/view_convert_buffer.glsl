@@ -5,8 +5,8 @@
 #define IN_T ${buffer_scalar_type(IN_DTYPE)}
 #define OUT_T ${buffer_scalar_type(OUT_DTYPE)}
 
-${define_required_extensions(IN_DTYPE)}
-${define_required_extensions(OUT_DTYPE)}
+${define_required_extensions("buffer", IN_DTYPE)}
+${define_required_extensions("buffer", OUT_DTYPE)}
 
 layout(std430) buffer;
 

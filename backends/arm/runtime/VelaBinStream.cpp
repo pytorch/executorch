@@ -1,5 +1,5 @@
 /*
- * Copyright 2023, 2025 Arm Limited and/or its affiliates.
+ * Copyright 2023, 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -65,8 +65,10 @@ bool vela_bin_read(const char* data, VelaHandles* handles, int size) {
         return false;
     } else if (!strncmp(b->name, "cmd_data", strlen("cmd_data"))) {
       // This driver magic header confirms a valid command stream in binary
-      if (strncmp(b->data, "COP1", strlen("COP1")))
+      if (strncmp(b->data, "COP1", strlen("COP1")) &&
+          strncmp(b->data, "COP2", strlen("COP2"))) {
         return false;
+      }
       handles->cmd_data = b->data;
       handles->cmd_data_size = b->size;
     } else if (!strncmp(b->name, "weight_data", strlen("weight_data"))) {

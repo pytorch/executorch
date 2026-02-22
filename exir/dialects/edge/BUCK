@@ -1,0 +1,36 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
+# add this empty BUCK file to unblock landing. Without this, we get land error:
+#   "No build file at xplat/executorch/exir/BUCK when resolving target fbsource//xplat/executorch/exir/dialects/edge:."
+
+
+# !!!! fbcode/executorch/exir/dialects/edge/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+
+fbcode_target(_kind = runtime.python_library,
+    name = "lib",
+    srcs = [
+        "_ops.py",
+    ],
+    resources = {
+        ":edge_yaml": "edge.yaml",
+    },
+    deps = [
+        "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
+        "fbsource//third-party/pypi/setuptools:setuptools",
+        "//caffe2:torch",
+        "//caffe2/torchgen:torchgen",
+        "//executorch/exir/dialects/edge/dtype:lib",
+        "//executorch/exir/dialects/edge/op:lib",
+        "//executorch/exir/dialects/edge/spec:lib",
+    ],
+)
+
+fbcode_target(_kind = export_file,
+    name = "edge_yaml",
+    src = "edge.yaml",
+    visibility = ["//executorch/..."],
+)

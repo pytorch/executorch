@@ -167,7 +167,8 @@
         "llm-release"
       ],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_METAL": "ON"
+        "EXECUTORCH_BUILD_METAL": "ON",
+        "EXECUTORCH_METAL_COLLECT_STATS": "OFF"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -196,9 +197,9 @@
         "EXECUTORCH_BUILD_CUDA": "ON"
       },
       "condition": {
-        "lhs": "${hostSystemName}",
-        "type": "equals",
-        "rhs": "Linux"
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
       }
     },
     {
@@ -209,6 +210,26 @@
       ],
       "cacheVariables": {
         "EXECUTORCH_BUILD_METAL": "ON"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "llm-metal-stats",
+      "displayName": "LLM Metal build with stats collection and logging",
+      "inherits": [
+        "llm-release-metal"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL": "ON",
+        "EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL": "ON",
+        "EXECUTORCH_BUILD_EXECUTOR_RUNNER": "ON",
+        "EXECUTORCH_METAL_COLLECT_STATS": "ON",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "EXECUTORCH_LOG_LEVEL": "Info"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -271,6 +292,7 @@
       "name": "llm-release-install",
       "displayName": "Build and install LLM extension release artifacts",
       "configurePreset": "llm-release",
+      "configuration": "Release",
       "targets": [
         "install"
       ],
@@ -280,6 +302,7 @@
       "name": "llm-release-cuda-install",
       "displayName": "Build and install LLM extension release artifacts (CUDA)",
       "configurePreset": "llm-release-cuda",
+      "configuration": "Release",
       "targets": [
         "install"
       ],
@@ -289,6 +312,7 @@
       "name": "llm-release-metal-install",
       "displayName": "Build and install LLM extension release artifacts (Metal)",
       "configurePreset": "llm-release-metal",
+      "configuration": "Release",
       "targets": [
         "install"
       ],
@@ -316,6 +340,15 @@
       "name": "llm-debug-metal-install",
       "displayName": "Build and install LLM extension debug artifacts (Metal)",
       "configurePreset": "llm-debug-metal",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-metal-stats-install",
+      "displayName": "Build and install LLM extension artifacts with Metal stats",
+      "configurePreset": "llm-metal-stats",
       "targets": [
         "install"
       ],
@@ -404,6 +437,20 @@
         {
           "type": "build",
           "name": "llm-debug-metal-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-metal-stats",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Metal stats and logging",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-metal-stats"
+        },
+        {
+          "type": "build",
+          "name": "llm-metal-stats-install"
         }
       ]
     }

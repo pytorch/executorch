@@ -10,18 +10,12 @@ def define_common_targets():
 
     runtime.export_file(
         name = "functions.yaml",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.export_file(
         name = "edge_dialect_aten_op.yaml",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     et_operator_library(
@@ -33,10 +27,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "operators_edge_dialect_aten",
         srcs = [],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/kernels/aten/cpu:cpu",
         ],
@@ -61,8 +52,5 @@ def define_common_targets():
         custom_ops_yaml_target = "//executorch/kernels/aten:edge_dialect_aten_op.yaml",
         define_static_targets = True,
         custom_ops_requires_aot_registration = False,
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

@@ -14,41 +14,40 @@ if [[ -z "${API_KEY}" ]]; then
   exit 1
 fi
 
-OS_NAME="Ubuntu 22.04"
-LITECORE_BASE="https://soc-developer.semiconductor.samsung.com/api/v1/resource/ai-litecore/download"
-DEVICEFARM_BASE="https://soc-developer.semiconductor.samsung.com/api/v1/resource/remotelab/download"
+export DEVICE_CONNECT_ENABLED=1
 
-parse_url() {
-  local json="$1"
-  if command -v jq >/dev/null 2>&1; then
-    jq -r '.data // empty' <<<"$json"
-  else
-    sed -n 's/.*"data":[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$json"
-  fi
-}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-device-connect)
+      export DEVICE_CONNECT_ENABLED=0
+      shift
+      ;;
+    *)
+      # Unknown option
+      shift
+      ;;
+  esac
+done
+
+LITECORE_VERSION="v1.0"
+LITECORE_FILE_NAME="ai-litecore-ubuntu2204-${LITECORE_VERSION}.tar.gz"
+DEVICEFARM_CLI_VERSION="beta-v1.1.0"
+DEVICEFARM_FILE_NAME="devicefarmcli-${DEVICEFARM_CLI_VERSION}.zip"
+
+LITECORE_URL="https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/${LITECORE_FILE_NAME}"
+DEVICEFARM_URL="https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/${DEVICEFARM_FILE_NAME}"
 
 download_and_extract() {
-  local base_url="$1"
-  local version="$2"
-  local out_dir="$3"
-  local out_file="$4"
+  local download_url="$1"
+  local out_dir="$2"
+  local out_file="$3"
 
-  local resp
-  resp=$(curl -fsSL -G \
+  echo "Downloading from ${download_url}..."
+  curl -fsSL --retry 3 \
     -H "apikey: ${API_KEY}" \
-    --data-urlencode "version=${version}" \
-    --data-urlencode "os=${OS_NAME}" \
-    "${base_url}")
+    -o "${out_file}" \
+    "${download_url}"
 
-  local download_url
-  download_url=$(parse_url "$resp")
-  if [[ -z "${download_url}" ]]; then
-    echo "ERROR: It failed to download from ${base_url} ."
-    echo "Response: $resp" >&2
-    exit 1
-  fi
-
-  curl -fsSL -L --retry 3 -o "${out_file}" "${download_url}"
   echo "Download completed: ${out_file}"
 
   mkdir -p "${out_dir}"
@@ -60,7 +59,7 @@ download_and_extract() {
 
   zip)
     echo "Extracting ZIP..."
-    unzip -q -d "${out_dir}" "${out_file}"
+    unzip -qo -d "${out_dir}" "${out_file}"
     ;;
 
   *)
@@ -71,13 +70,12 @@ download_and_extract() {
 }
 
 download_ai_lite_core() {
-  local litecore_version="${1:-1.0}"
-  local litecore_out="/tmp/exynos-ai-litecore-v${litecore_version}.tar.gz"
+  local litecore_version="${1:-${LITECORE_VERSION}}"
+  local litecore_out="/tmp/${LITECORE_FILE_NAME}"
   local litecore_dir="/tmp/exynos_ai_lite_core"
 
   download_and_extract \
-    "${LITECORE_BASE}" \
-    "${litecore_version}" \
+    "${LITECORE_URL}" \
     "${litecore_dir}" \
     "${litecore_out}"
 
@@ -86,13 +84,12 @@ download_ai_lite_core() {
 }
 
 install_devicefarm_cli() {
-  local cli_version="${1:-beta-1.0.8}"
-  local cli_out="/tmp/devicefarm-cli-v${cli_version}.zip"
+  local cli_version="${1:-${DEVICEFARM_CLI_VERSION}}"
+  local cli_out="/tmp/${DEVICEFARM_FILE_NAME}"
   local cli_dir="/tmp/devicefarm_cli"
 
   download_and_extract \
-    "${DEVICEFARM_BASE}" \
-    "${cli_version}" \
+    "${DEVICEFARM_URL}" \
     "${cli_dir}" \
     "${cli_out}"
 
@@ -100,83 +97,59 @@ install_devicefarm_cli() {
   chmod +x "${cli_dir}/devicefarm-cli"
 }
 
-reserve_if_needed() {
+acquire_device() {
+  export DEVICE_ACQUIRED=0
   if ! command -v devicefarm-cli >/dev/null 2>&1; then
     echo "[WARN] devicefarm-cli is not installed." >&2
     return 1
   fi
 
-  local raw_info info_lines
-  raw_info="$(devicefarm-cli -I)"
-
-  info_lines="$(printf '%s\n' "$raw_info" | grep -v '^\\[INFO\\]')"
-
-  local found_count
-
-  found_count=$(printf '%s\n' "$info_lines" \
-    | grep -Eo 'Found available reservations *: *[0-9]+' \
-    | grep -Eo '[0-9]+')
-  [[ -z "$found_count" ]] && found_count=0
-
-  echo "[INFO] Current Reserved Count: $found_count"
-
-  local THRESHOLD_SECONDS=12600
-  local any_below_threshold=0
-
-  if (( found_count > 0 )); then
-    local table_body
-    table_body=$(printf '%s\n' "$info_lines" | sed -n '2,$p')
-
-    while IFS= read -r line; do
-      if [[ "$line" =~ ^[0-9]+[[:space:]]+([0-9]{1,2}:[0-9]{2}:[0-9]{2}) ]]; then
-        local time_str="${BASH_REMATCH[1]}"
-        IFS=: read -r hh mm ss <<<"$time_str"
-        (( seconds = 10#$hh * 3600 + 10#$mm * 60 + 10#$ss ))
-        if (( seconds <= THRESHOLD_SECONDS )); then
-          any_below_threshold=1
-          break
-        fi
-      fi
-    done <<<"$table_body"
-  else
-    any_below_threshold=1
+  echo "[INFO] Enqueue request (-Q)..."
+  # Enqueue device request
+  if ! devicefarm-cli -Q; then
+    echo "::warning::Failed to enqueue device request (-Q)." >&2
+    echo "[WARN] Device queue registration failed - continuing without device." >&2
+    return 0
   fi
 
-  if (( any_below_threshold )); then
-    echo "[INFO] Reserving now."
-    devicefarm-cli -R
-  else
-    echo "[INFO] Don't need to be reserved."
-  fi
+  local interval_sec=60
+  local out status
 
-  local info_after reservation_id max_seconds=0 max_id
+  echo "[INFO] Polling assignment status (-C) every ${interval_sec}s..."
 
-  info_after="$(devicefarm-cli -I)"
+  while true; do
+    out="$(devicefarm-cli -C 2>&1)"
 
-  local body_after
-  body_after=$(printf '%s\n' "$info_after" | grep -v '^\\[INFO\\]' | sed -n '2,$p')
-
-  while IFS= read -r line; do
-    if [[ "$line" =~ ^[0-9]+[[:space:]]+([0-9]{1,2}:[0-9]{2}:[0-9]{2})[[:space:]].*([0-9a-f-]{36})$ ]]; then
-      local time_str="${BASH_REMATCH[1]}"
-      local id="${BASH_REMATCH[2]}"
-      IFS=: read -r hh mm ss <<<"$time_str"
-      (( seconds = 10#$hh * 3600 + 10#$mm * 60 + 10#$ss ))
-      if (( seconds > max_seconds )); then
-        max_seconds=$seconds
-        max_id=$id
-      fi
+    # Determine status: assigned / waiting / unavailable
+    if printf '%s' "$out" | grep -qiE 'waiting|not[[:space:]-]*assigned'; then
+      status="waiting"
+    elif printf '%s' "$out" | grep -qi 'assigned'; then
+      status="assigned"
+    else
+      status="unknown"
     fi
-  done <<<"$body_after"
 
-  reservation_id=$max_id
-
-  if [[ -n "$reservation_id" ]]; then
-    devicefarm-cli -C "$reservation_id"
-    devicefarm-cli -E "ls /"
-  else
-    echo "[WARN] There is no available devices."
-  fi
+    case "$status" in
+      assigned)
+	echo "[INFO] Device assigned."
+	echo "$out"
+	# Execute test command
+	devicefarm-cli -E "ls /" || true
+	export DEVICE_ACQUIRED=1
+	echo "[INFO] Device successfully assigned and connected."
+	return 0
+	;;
+	waiting)
+	  echo "[INFO] Status: $status"
+	  sleep "$interval_sec"
+	  ;;
+	*)
+	  echo "[WARN] Unknown status from -C. Output:"
+	  echo "$out"
+	  return 0
+	  ;;
+     esac
+   done
 }
 
 install_enn_backend() {
@@ -197,10 +170,12 @@ install_enn_backend() {
   export PYTHONPATH="${PYTHONPATH:-}:${EXECUTORCH_ROOT}/.."
 }
 
-litecore_ver="1.0"
-devicefarm_ver="beta-1.0.8"
-
-download_ai_lite_core ${litecore_ver}
-install_devicefarm_cli "${devicefarm_ver}"
+download_ai_lite_core ${LITECORE_VERSION}
 install_enn_backend
-reserve_if_needed
+
+if [[ "${DEVICE_CONNECT_ENABLED}" == "1" ]]; then
+  install_devicefarm_cli "${DEVICEFARM_CLI_VERSION}"
+  acquire_device
+else
+  export DEVICE_ACQUIRED=0
+fi

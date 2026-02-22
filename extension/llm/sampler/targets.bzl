@@ -16,9 +16,7 @@ def define_common_targets():
             srcs = [
                 "sampler.cpp",
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             external_deps = [
                 "libtorch",
             ] if aten else [],

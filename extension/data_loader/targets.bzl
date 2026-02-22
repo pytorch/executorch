@@ -11,14 +11,7 @@ def define_common_targets():
         name = "buffer_data_loader",
         srcs = [],
         exported_headers = ["buffer_data_loader.h"],
-        visibility = [
-            "//executorch/exir/backend/test/...",
-            "//executorch/runtime/executor/test/...",
-            "//executorch/extension/pybindings/...",
-            "//executorch/test/...",
-            "//executorch/extension/data_loader/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:core",
         ],
@@ -28,10 +21,7 @@ def define_common_targets():
         name = "shared_ptr_data_loader",
         srcs = [],
         exported_headers = ["shared_ptr_data_loader.h"],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-            "//executorch/extension/data_loader/test/...",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:core",
         ],
@@ -41,12 +31,7 @@ def define_common_targets():
         name = "file_data_loader",
         srcs = ["file_data_loader.cpp"],
         exported_headers = ["file_data_loader.h"],
-        visibility = [
-            "//executorch/test/...",
-            "//executorch/runtime/executor/test/...",
-            "//executorch/extension/data_loader/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:core",
         ],
@@ -56,12 +41,7 @@ def define_common_targets():
         name = "file_descriptor_data_loader",
         srcs = ["file_descriptor_data_loader.cpp"],
         exported_headers = ["file_descriptor_data_loader.h"],
-        visibility = [
-            "//executorch/test/...",
-            "//executorch/runtime/executor/test/...",
-            "//executorch/extension/data_loader/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:core",
         ],
@@ -83,13 +63,7 @@ def define_common_targets():
             "mman.h",
             "mmap_data_loader.h"
         ],
-        visibility = [
-            "//executorch/test/...",
-            "//executorch/extension/pybindings/...",
-            "//executorch/runtime/executor/test/...",
-            "//executorch/extension/data_loader/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:core",
         ],

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,7 +25,9 @@ aten_logit = torch.ops.aten.logit.default
 
 
 def get_ops(op):
-    """Returns the appropriate operator functions based on the input operator."""
+    """Returns the appropriate operator functions based on the input
+    operator.
+    """
     if op == edge_logit:
         return (
             exir_ops.edge.aten.log.default,
@@ -49,8 +51,7 @@ def get_ops(op):
 
 
 class DecomposeLogitPass(ArmPass):
-    """
-    Decomposes the `logit` operator into a sequence of primitive operations.
+    """Decomposes the `logit` operator into a sequence of primitive operations.
 
     If `eps` is provided, the input tensor `x` is first clamped to the range
     [eps, 1 - eps].
@@ -67,6 +68,7 @@ class DecomposeLogitPass(ArmPass):
         logit(x, eps) becomes:
             y = clamp(x, eps, 1 - eps)
             log(y * reciprocal((-1) * y + 1))
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -76,8 +78,15 @@ class DecomposeLogitPass(ArmPass):
         ReplaceScalarWithTensorByProfilePass,
     }
 
+    _TARGET_OPS = {
+        edge_logit,
+        aten_logit,
+    }
+
     def call_operator(self, op, args, kwargs, meta):
-        if op not in [edge_logit, aten_logit]:
+        if op not in DecomposeLogitPass._TARGET_OPS or not self.allowed_to_transform(
+            meta
+        ):
             return super().call_operator(op, args, kwargs, meta)
 
         X = args[0]

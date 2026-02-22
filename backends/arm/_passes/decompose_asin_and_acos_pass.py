@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -50,9 +50,8 @@ def get_decomposition(op) -> tuple:
 
 
 class DecomposeAsinAndAcosPass(ArmPass):
-    """
-    This pass decomposes asin and acos into a rational approximation for small values
-    and a transformed rational approximation for large values.
+    """This pass decomposes asin and acos into a rational approximation for
+    small values and a transformed rational approximation for large values.
 
     The decomposition is based on the following mathematical identities:
         if abs(x) < 0.5:
@@ -77,8 +76,8 @@ class DecomposeAsinAndAcosPass(ArmPass):
     def _build_polynomial(
         self, coefficients: list[float], variable: torch.Tensor, meta: dict[str, str]
     ) -> torch.Tensor:
-        """
-        Helper function to build polynomial from coefficients and variable.
+        """Helper function to build polynomial from coefficients and
+        variable.
         """
         full_like_op, add_op, mul_op_scalar, mul_op = (
             exir_ops.edge.aten.full_like.default,
@@ -124,11 +123,7 @@ class DecomposeAsinAndAcosPass(ArmPass):
         if op not in (edge_asin_op + edge_acos_op):
             return super().call_operator(op, args, kwargs, meta)
 
-        is_quantized = (
-            len(meta.data.get("input_qparams", {})) > 0
-            and len(meta.data.get("output_qparams", {})) > 0
-        )
-        if is_quantized:
+        if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 

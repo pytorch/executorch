@@ -163,6 +163,10 @@ class KVManager {
     return total_cache_size_;
   }
 
+  int64_t get_head_dim() const {
+    return metadata_.head_dim;
+  }
+
  private:
   // Helper functions to rearrange and update key and value caches
   void rearrange_key(KVCache<T>& k_cache, int32_t ar_len_dst);

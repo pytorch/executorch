@@ -1,0 +1,58 @@
+load("@fbcode_macros//build_defs:native_rules.bzl", "buck_filegroup")
+load("@fbsource//tools/build_defs:fb_xplat_cxx_binary.bzl", "fb_xplat_cxx_binary")
+load(
+    "@fbsource//tools/build_defs:platform_defs.bzl",
+    "ANDROID",
+)
+load(
+    "@fbsource//xplat/executorch/backends/vulkan:targets.bzl",
+    "vulkan_spv_shader_lib",
+)
+
+oncall("executorch")
+
+buck_filegroup(
+    name = "gpuinfo_shaders",
+    srcs = glob([
+        "glsl/*",
+    ]),
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+vulkan_spv_shader_lib(
+    name = "gpuinfo_shader_lib",
+    spv_filegroups = {
+        ":gpuinfo_shaders": "glsl",
+    },
+)
+
+fb_xplat_cxx_binary(
+    name = "vulkan_gpuinfo",
+    srcs = glob([
+        "**/*.cpp",
+    ]),
+    headers = glob([
+        "**/*.h",
+    ]),
+    compiler_flags = select({
+        "DEFAULT": [
+            "-Wno-header-hygiene",
+        ],
+        "ovr_config//compiler:cl": [],
+    }),
+    header_namespace = "/include",
+    include_directories = ["/include"],
+    platforms = ANDROID,
+    raw_headers = glob([
+        "**/*.h",
+    ]),
+    deps = [
+        ":gpuinfo_shader_lib",
+        "//arvr/third-party/opencl:headers",
+        "//arvr/third-party/opencl:runtime",
+        "//xplat/executorch/backends/vulkan:vulkan_graph_runtime",
+        "//xplat/folly:json",
+    ],
+)

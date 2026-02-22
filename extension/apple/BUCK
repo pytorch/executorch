@@ -1,0 +1,44 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "IOS")
+load("@fbsource//tools/build_defs/apple:autoglob.bzl", "EXPORT_UNLESS_INTERNAL")
+load("@fbsource//tools/build_defs/apple:fb_apple_library.bzl", "fb_apple_library")
+load("@fbsource//tools/build_defs/apple:fb_apple_resource.bzl", "fb_apple_resource")
+load("@fbsource//xplat/executorch/build/fb:clients.bzl", "EXECUTORCH_CLIENTS")
+
+oncall("executorch")
+
+non_fbcode_target(_kind = fb_apple_library,
+    name = "ExecuTorch",
+    autoglob_mode = EXPORT_UNLESS_INTERNAL,
+    extension_api_only = True,
+    frameworks = [
+        "Foundation",
+    ],
+    preprocessor_flags = [
+    ] if read_config("executorch", "enable_et_log", "true") == "true" else [
+        "-DET_LOG_ENABLED=0",
+    ],
+    compiler_flags = [
+        "-Wno-switch-enum",  # @cwt-override FIXME[T153556462]
+        "-Wno-switch-default",
+    ],
+    sdks = IOS,
+    test_deps = [
+        ":ExecuTorchTestResource",
+        "//xplat/executorch/kernels/portable:generated_libApple",
+    ],
+    visibility = EXECUTORCH_CLIENTS,
+    deps = [
+        "//xplat/executorch/extension/module:moduleApple",
+        "//xplat/executorch/extension/tensor:tensorApple",
+        "//xplat/executorch/runtime/platform:platformApple",
+    ],
+)
+
+fb_apple_resource(
+    name = "ExecuTorchTestResource",
+    files = [
+        "ExecuTorch/__tests__/resources/add.pte",
+    ],
+    visibility = ["PUBLIC"],
+)

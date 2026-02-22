@@ -18,9 +18,7 @@ def define_common_targets():
             exported_headers = [
                 "module.h",
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/extension/memory_allocator:malloc_memory_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
@@ -41,9 +39,7 @@ def define_common_targets():
             exported_headers = [
                 "bundled_module.h",
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",

@@ -47,11 +47,7 @@ def define_common_targets(is_fbcode = False):
             resources = [
                 "schema.fbs",
             ],
-            visibility = [
-                "//executorch/...",
-                "//executorch/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/exir:graph_module",
                 "//executorch/exir/_serialize:_bindings",

@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -8,8 +9,8 @@
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/compiler.h>
-#include <math.h>
 #include <string.h>
+#include <cmath>
 
 namespace torch {
 namespace executor {
@@ -40,9 +41,9 @@ bool data_is_close(
         return false;
       }
     } else {
-      auto allowed_error = atol + fabs(rtol * b[i]);
-      auto actual_error = fabs(a[i] - b[i]);
-      if (!isfinite(actual_error) || actual_error > allowed_error) {
+      auto allowed_error = atol + std::fabs(rtol * b[i]);
+      auto actual_error = std::fabs(a[i] - b[i]);
+      if (!std::isfinite(actual_error) || actual_error > allowed_error) {
         return false;
       }
     }

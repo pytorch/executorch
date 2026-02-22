@@ -19,7 +19,7 @@ The ExecuTorch project introduces an advanced benchmarking infrastructure design
 
 ## Dashboard
 
-The ExecuTorch Benchmark Dashboard tracks performance metrics for various models across different backend delegates and devices. It enables users to compare metrics, monitor trends, and identify optimizations or regressions in Executorch. The dashboard is accessible at **[ExecuTorch Benchmark Dashboard](https://hud.pytorch.org/benchmark/llms?repoName=pytorch%2Fexecutorch)**.
+The ExecuTorch Benchmark Dashboard tracks performance metrics for various models across different backend delegates and devices. It enables users to compare metrics, monitor trends, and identify optimizations or regressions in Executorch. The dashboard is accessible at **[ExecuTorch Benchmark Dashboard](https://hud.pytorch.org/benchmark/llms?repoName=pytorch%2Fexecutorch)**. <!-- @lint-ignore -->
 
 **Comprehensive Comparisons**:
 - Analyze performance differences between backend delegates (e.g., XNNPACK, CoreML, QNN, MPS) for the same model.

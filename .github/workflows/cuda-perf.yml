@@ -61,7 +61,7 @@ jobs:
         shell: bash
         env:
           # All available models and quantizations
-          ALL_MODELS: 'mistralai/Voxtral-Mini-3B-2507,openai/whisper-small,openai/whisper-medium,openai/whisper-large-v3-turbo,google/gemma-3-4b-it'
+          ALL_MODELS: 'mistralai/Voxtral-Mini-3B-2507,openai/whisper-small,openai/whisper-medium,openai/whisper-large-v3-turbo,google/gemma-3-4b-it,nvidia/parakeet-tdt'
           ALL_QUANTIZATIONS: 'non-quantized,quantized-int4-tile-packed,quantized-int4-weight-only'
           NUM_RUNS: ${{ inputs.num_runs || '50' }}
           RUN_ALL_MODELS: ${{ inputs.run_all_models || 'false' }}
@@ -234,6 +234,12 @@ jobs:
         if [ -f "${RUNNER_ARTIFACT_DIR}/output.wav" ]; then
           cp "${RUNNER_ARTIFACT_DIR}/output.wav" model_artifacts/
         fi
+        if [ -f "${RUNNER_ARTIFACT_DIR}/tokenizer.model" ]; then
+          cp "${RUNNER_ARTIFACT_DIR}/tokenizer.model" model_artifacts/
+        fi
+        if [ -f "${RUNNER_ARTIFACT_DIR}/test_audio.wav" ]; then
+          cp "${RUNNER_ARTIFACT_DIR}/test_audio.wav" model_artifacts/
+        fi
         # Copy tokenizer files
         for file in tokenizer.json tokenizer_config.json special_tokens_map.json; do
           if [ -f "${RUNNER_ARTIFACT_DIR}/$file" ]; then
@@ -285,6 +291,13 @@ jobs:
             IMAGE="docs/source/_static/img/et-logo.png"
             RUNNER_CMD="$RUNNER --model_path model_artifacts/model.pte --data_path model_artifacts/aoti_cuda_blob.ptd --tokenizer_path model_artifacts/ --image_path $IMAGE --temperature 0"
             MODEL_NAME="gemma3_${{ matrix.quant }}"
+            ;;
+          nvidia/parakeet-tdt)
+            RUNNER="cmake-out/examples/models/parakeet/parakeet_runner"
+            AUDIO="model_artifacts/test_audio.wav"
+            TOKENIZER="model_artifacts/tokenizer.model"
+            RUNNER_CMD="$RUNNER --model_path model_artifacts/model.pte --data_path model_artifacts/aoti_cuda_blob.ptd --audio_path $AUDIO --tokenizer_path $TOKENIZER"
+            MODEL_NAME="parakeet_${{ matrix.quant }}"
             ;;
           *)
             echo "Error: Unsupported model '${{ matrix.model }}'"

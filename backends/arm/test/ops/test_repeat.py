@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -70,9 +70,25 @@ test_data_suite_u55_reject = {
     ),
 }
 test_data_suite = test_data_suite_u55 | test_data_suite_u55_reject
+test_data_suite_bf16 = {
+    "2_x_2_bf16": lambda: (Repeat((2, 1)), (torch.randn(3, 4, dtype=torch.bfloat16),)),
+    "4_x_4_bf16": lambda: (
+        Repeat((1, 2, 3, 2)),
+        (torch.randn(1, 1, 2, 2, dtype=torch.bfloat16),),
+    ),
+}
+test_data_suite_fp16 = {
+    "2_x_2_fp16": lambda: (Repeat((2, 1)), (torch.randn(3, 4, dtype=torch.float16),)),
+    "4_x_4_fp16": lambda: (
+        Repeat((1, 2, 3, 2)),
+        (torch.randn(1, 1, 2, 2, dtype=torch.float16),),
+    ),
+}
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 def test_repeat_tosa_FP(test_data: Tuple):
     module, test_data = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -80,6 +96,7 @@ def test_repeat_tosa_FP(test_data: Tuple):
         test_data,
         module.aten_op,
         exir_op=[],
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -136,7 +153,7 @@ def test_repeat_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_repeat_vgf_no_quant(test_data: Tuple):
     module, args = test_data()
@@ -158,5 +175,50 @@ def test_repeat_vgf_quant(test_data: Tuple):
         args,
         module.aten_op,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+def test_repeat_tosa_INT_a16w8(test_data):
+    """Test repeat with 16A8W quantization for TOSA INT."""
+    module, args = test_data()
+    pipeline = TosaPipelineINT[Tuple[torch.Tensor]](
+        module,
+        args,
+        module.aten_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_u55)
+@common.XfailIfNoCorstone300
+def test_repeat_u55_INT_a16w8(test_data):
+    """Test repeat with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    module, args = test_data()
+    pipeline = EthosU55PipelineINT[Tuple[torch.Tensor]](
+        module,
+        args,
+        module.aten_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_repeat_u85_INT_a16w8(test_data):
+    """Test repeat with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    module, args = test_data()
+    pipeline = EthosU85PipelineINT[Tuple[torch.Tensor]](
+        module,
+        args,
+        module.aten_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

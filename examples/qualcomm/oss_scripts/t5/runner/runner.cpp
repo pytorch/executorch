@@ -121,7 +121,7 @@ uint64_t Runner::logits_to_token(
 
 Error Runner::generate(
     int32_t seq_len,
-    std::vector<std::vector<int64_t>>& inputs,
+    std::vector<std::vector<uint8_t>>& inputs,
     std::function<void(const std::string&)> token_callback) {
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();
@@ -136,7 +136,7 @@ Error Runner::generate(
   executorch::extension::TensorPtr prompt_tokens =
       from_blob(inputs[0].data(), {1, hidden_seq_len}, ScalarType::Long);
   executorch::extension::TensorPtr prompt_attn_mask =
-      from_blob(inputs[1].data(), {1, hidden_seq_len}, ScalarType::Long);
+      from_blob(inputs[1].data(), {1, 1, 1, hidden_seq_len}, ScalarType::Float);
 
   auto encoder_output = encoder_->encode(prompt_tokens, prompt_attn_mask);
 

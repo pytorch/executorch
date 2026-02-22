@@ -52,6 +52,9 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
         QNN_EXECUTORCH_LOG_INFO(
             "use_fold_relu in htp_options: %d", htp_options->use_fold_relu());
         QNN_EXECUTORCH_LOG_INFO(
+            "use_slc_allocator in htp_options: %d",
+            htp_options->use_slc_allocator());
+        QNN_EXECUTORCH_LOG_INFO(
             "use_multi_contexts in htp_options: %d",
             htp_options->use_multi_contexts());
         QNN_EXECUTORCH_LOG_INFO(

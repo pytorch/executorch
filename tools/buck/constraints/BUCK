@@ -1,0 +1,63 @@
+load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
+
+oncall("executorch")
+
+# BUCK2 does not require user-defined configurations to set config_setting
+# executorch-max-kernel-num-64 could be utilized by Executorch user apps to define the macro MAX_KERNEL_NUM=64
+# MAX_KERNEL_NUM macro specifies the max number of kernels that can be registered in Executorch.
+
+fb_native.config_setting(
+    name = "executorch-max-kernel-num-64",
+    constraint_values = [
+        ":max-kernel-num-64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fb_native.config_setting(
+    name = "executorch-max-kernel-num-128",
+    constraint_values = [
+        ":max-kernel-num-128",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fb_native.config_setting(
+    name = "executorch-max-kernel-num-256",
+    constraint_values = [
+        ":max-kernel-num-256",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fb_native.constraint_setting(
+    name = "executorch-max-kernel-num",
+    visibility = ["PUBLIC"],
+)
+
+fb_native.constraint_value(
+    name = "max-kernel-num-64",
+    constraint_setting = ":executorch-max-kernel-num",
+    visibility = ["PUBLIC"],
+)
+
+fb_native.constraint_value(
+    name = "max-kernel-num-128",
+    constraint_setting = ":executorch-max-kernel-num",
+    visibility = ["PUBLIC"],
+)
+
+fb_native.constraint_value(
+    name = "max-kernel-num-256",
+    constraint_setting = ":executorch-max-kernel-num",
+    visibility = ["PUBLIC"],
+)
+fb_native.constraint_setting(
+    name = "executorch-event-tracer"
+)
+
+fb_native.constraint_value(
+    name = "event-tracer-enabled",
+    constraint_setting = ":executorch-event-tracer",
+    visibility = ["PUBLIC"],
+)

@@ -47,7 +47,8 @@ template <
         type = true>
 FLOAT_T floor_divide(FLOAT_T a, FLOAT_T b) {
   if (b == 0) {
-    return std::signbit(a) ? -INFINITY : INFINITY;
+    return std::signbit(a) ? static_cast<FLOAT_T>(-INFINITY)
+                           : static_cast<FLOAT_T>(INFINITY);
   }
   const auto mod = std::fmod(a, b);
   auto div = (a - mod) / b;

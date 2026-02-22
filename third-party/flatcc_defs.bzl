@@ -85,7 +85,7 @@ def define_flatcc_targets():
             "include",
         ],
         headers = PUBLIC_HEADERS,
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -166,7 +166,7 @@ def define_flatcc_targets():
             "flatcc/src/compiler/keywords.h",
             "flatcc/src/compiler/codegen_c_sort.h",
         ],
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         deps = [":flatccrt"],
     )
 
@@ -249,7 +249,7 @@ def define_flatcc_targets():
             "flatcc/src/compiler/keywords.h",
             "flatcc/src/compiler/codegen_c_sort.h",
         ]),
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     # FlatCC CLI
@@ -266,5 +266,5 @@ def define_flatcc_targets():
             "flatcc/config",
         ],
         deps = [":flatcc-host"],
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )

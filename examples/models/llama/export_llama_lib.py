@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,19 +16,19 @@ import logging
 import re
 import shlex
 from functools import partial
-
 from importlib import resources as _resources
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Callable, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
 import torch
-
 from executorch.devtools.backend_debug import print_delegation_info
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
 )
+from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import LlmConfig
@@ -37,6 +37,7 @@ from executorch.extension.llm.export.partitioner_lib import (
     get_mps_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,
+    get_tosa_partitioner,
     get_vulkan_partitioner,
     get_xnnpack_partitioner,
 )
@@ -46,10 +47,12 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
+    get_tosa_quantizer,
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from omegaconf import DictConfig
+from torch.export import ExportedProgram
 
 from ..model_factory import EagerModelFactory
 from .source_transformation.apply_spin_quant_r1_r2 import (
@@ -96,6 +99,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "static_llama",
     "qwen2_5_0_5b",
     "qwen2_5_1_5b",
+    "qwen2_5_coder_32b",
     "qwen3_0_6b",
     "qwen3_1_7b",
     "qwen3_4b",
@@ -104,11 +108,13 @@ EXECUTORCH_DEFINED_MODELS = [
     "lfm2_350m",  # hybrid
     "lfm2_700m",  # hybrid
     "lfm2_1_2b",  # hybrid
+    "lfm2_5_1_2b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
     "qwen2_5_0_5b": "Qwen/Qwen2.5-0.5B",
     "qwen2_5_1_5b": "Qwen/Qwen2.5-1.5B",
+    "qwen2_5_coder_32b": "Qwen/Qwen2.5-Coder-32B-Instruct",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM-135M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
@@ -117,6 +123,7 @@ HUGGING_FACE_REPO_IDS = {
     "lfm2_350m": "LiquidAI/LFM2-350M",
     "lfm2_700m": "LiquidAI/LFM2-700M",
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
+    "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
 }
 
 
@@ -210,6 +217,7 @@ def build_args_parser() -> argparse.ArgumentParser:
             "coreml_baseline_8a_c8w",
             "coreml_baseline_8a_c4w",
             "vulkan_8w",
+            "tosa_8a8w",
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
@@ -788,6 +796,11 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.quantization.pt2e_quantize.value
         )
         quantizers.append(coreml_quantizer)
+    if llm_config.backend.tosa.enabled and llm_config.quantization.pt2e_quantize:
+        tosa_quantizer = get_tosa_quantizer(
+            llm_config.backend.tosa.version, llm_config.quantization.pt2e_quantize.value
+        )
+        quantizers.append(tosa_quantizer)
     if llm_config.backend.vulkan.enabled and llm_config.quantization.pt2e_quantize:
         assert (
             len(quantizers) == 0
@@ -842,6 +855,28 @@ def _validate_args(llm_config):
         ):
             raise ValueError(
                 "Shared embedding is only supported with torchao quantization."
+            )
+
+    if llm_config.multimethod_lora.enabled:
+        if llm_config.base.lora_config is not None:
+            raise ValueError(
+                "Cannot use both base.lora_config and multimethod_lora.methods. "
+                "Use multimethod_lora.methods for all LoRA variants."
+            )
+        if llm_config.quantization.pt2e_quantize is not None:
+            raise ValueError(
+                "PT2E quantization is not supported with multimethod_lora export."
+            )
+        if (
+            llm_config.backend.coreml.enabled
+            or llm_config.backend.vulkan.enabled
+            or llm_config.backend.qnn.enabled
+            or llm_config.backend.mps.enabled
+            or llm_config.backend.openvino.enabled
+        ):
+            raise ValueError(
+                "multimethod_lora export only supports XNNPACK backend or portable ops"
+                "Please disable other backends (coreml, vulkan, qnn, mps, openvino)."
             )
 
 
@@ -919,6 +954,31 @@ def _to_edge_and_lower_llama_openvino(
     logging.info("Lowering model using following partitioner(s): ")
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
+
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners
+    )
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
+def _to_edge_and_lower_llama_tosa(
+    builder_exported,
+    modelname,
+    quantizers,
+    additional_passes,
+    tosa_spec,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+    logging.info("Lowering model using TOSA partitioner")
+
+    partitioners = []
+    partitioners.append(get_tosa_partitioner(tosa_spec))
+
+    modelname = f"tosa_{modelname}"
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
@@ -1107,8 +1167,125 @@ def _to_edge_and_lower_llama(  # noqa: C901
     return builder
 
 
+def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List[Partitioner]]:
+    """Get XNNPACK partitioners for multimethod_lora export."""
+    partitioners = []
+
+    if llm_config.backend.xnnpack.enabled:
+        partitioners.append(
+            get_xnnpack_partitioner(dynamic_quant_only_partitioner=True)
+        )
+        if llm_config.backend.xnnpack.extended_ops:
+            partitioners.append(
+                get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+            )
+
+    return partitioners if partitioners else None
+
+
+def _get_output_filename(
+    llm_config: LlmConfig, modelname: str, output_dir: str, dtype: DType
+) -> str:
+    """Determine output filename for the .pte file."""
+    if dtype == DType.fp16:
+        modelname = f"{modelname}_h"
+
+    if llm_config.export.output_name:
+        output_name = llm_config.export.output_name
+        if output_name.endswith(".pte"):
+            return output_name
+        else:
+            return f"{output_dir}/{output_name}.pte"
+    else:
+        return f"{output_dir}/{modelname}.pte"
+
+
+def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
+    """
+    Export multiple methods (base + LoRA variants) to a single .pte file.
+
+    For each method in llm_config.multimethod_lora.methods:
+    - If LoraConfig is None: use base model
+    - If LoraConfig is provided: create model with LoRA weights
+
+    Limitations:
+    - Only XNNPACK backend is supported for multimethod_lora export.
+    - PT2E quantization is not supported.
+    - Each method is exported separately; export time scales linearly
+      with the number of methods.
+    - The final .pte file deduplicates shared weights automatically.
+    """
+    num_methods = len(llm_config.multimethod_lora.methods)
+    logging.info(
+        f"multimethod_lora export: exporting {num_methods} method(s). "
+        "Each method requires separate model instantiation and export."
+    )
+
+    additional_passes = []
+    if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
+        additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
+
+    # Build dict of exported programs
+    method_to_program: Dict[str, ExportedProgram] = {}
+    first_builder = None
+
+    for method_name, lora_config in llm_config.multimethod_lora.methods.items():
+        logging.info(f"Exporting method: {method_name}")
+
+        # Create a copy of config with this method's LoRA setting
+        method_config = copy.deepcopy(llm_config)
+        method_config.base.lora_config = lora_config
+        # Disable multimethod_lora to avoid infinite recursion
+        method_config.multimethod_lora.methods = {}
+
+        # Load and prepare model for this method
+        builder = _prepare_for_llama_export(method_config)
+        builder = builder.export()
+        builder.run_canonical_optimizations()
+
+        # Get the exported program
+        exported_program = builder._export(builder.pre_autograd_graph_module)
+        method_to_program[method_name] = exported_program
+
+        if first_builder is None:
+            first_builder = builder
+
+    assert first_builder is not None, "No methods to export"
+
+    # Get partitioners based on backend config
+    partitioners = _get_xnnpack_partitioners(llm_config)
+
+    # Lower all methods together using multimethod_lora API
+    edge_config = first_builder._get_edge_config()
+    edge_manager = to_edge_transform_and_lower(
+        method_to_program,
+        partitioner=partitioners,
+        compile_config=edge_config,
+        constant_methods=first_builder.metadata,
+        generate_etrecord=llm_config.debug.generate_etrecord,
+    )
+
+    # Convert to executorch and save
+    first_builder.edge_manager = edge_manager
+    first_builder = first_builder.to_executorch(passes=additional_passes)
+
+    output_file = _get_output_filename(
+        llm_config,
+        first_builder.modelname,
+        first_builder.output_dir,
+        first_builder.dtype,
+    )
+    first_builder.save_to_pte(output_file)
+
+    return first_builder
+
+
 def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     _validate_args(llm_config)
+
+    # Check for multimethod_lora export
+    if llm_config.multimethod_lora.enabled:
+        return _export_llama_multimethod(llm_config)
 
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
         llm_config
@@ -1119,7 +1296,10 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
     # export_to_edge
-    builder_exported = _prepare_for_llama_export(llm_config).export()
+    builder_manager = _prepare_for_llama_export(llm_config)
+    if llm_config.backend.tosa.enabled:
+        builder_manager.skip_dim_order = False
+    builder_exported = builder_manager.export()
     builder_exported.run_canonical_optimizations()
     modelname = builder_exported.modelname
 
@@ -1162,6 +1342,15 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             openvino_device=llm_config.backend.openvino.device,
             verbose=llm_config.debug.verbose,
         )
+    elif llm_config.backend.tosa.enabled:
+        builder = _to_edge_and_lower_llama_tosa(
+            builder_exported,
+            modelname,
+            quantizers,
+            additional_passes,
+            llm_config.backend.tosa.version,
+            verbose=llm_config.debug.verbose,
+        )
     else:
         builder = _to_edge_and_lower_llama(
             builder_exported,
@@ -1201,23 +1390,12 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     if llm_config.debug.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
 
-    if builder.dtype == DType.fp16:
-        modelname = f"{modelname}_h"
-
-    if llm_config.export.output_name:
-        modelname = llm_config.export.output_name
-        if modelname.endswith(".pte"):
-            output_file = modelname
-            modelname = modelname[:-4]
-            print(f"modelname: {modelname}")
-            print(f"output_file: {output_file}")
-        else:
-            output_file = f"{builder.output_dir}/{modelname}.pte"
-            print(f"modelname: {modelname}")
-            print(f"output_file: {output_file}")
-    else:
-        output_file = f"{builder.output_dir}/{modelname}.pte"
-
+    output_file = _get_output_filename(
+        llm_config,
+        modelname,
+        builder.output_dir,
+        builder.dtype,
+    )
     builder.save_to_pte(output_file)
     return builder
 

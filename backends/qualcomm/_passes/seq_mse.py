@@ -56,7 +56,8 @@ class SeqMseModule(torch.nn.Module):
             groups = 1 if len(aten_op.args) < 7 else aten_op.args[6]
             has_bias = self.nominal_bias is not None
             module = torch.nn.Conv2d(
-                in_channels=self.nominal_weight.shape[1],
+                in_channels=self.nominal_weight.shape[1]
+                * groups,  # equivalent to input_tensor.shape[1]
                 out_channels=self.nominal_weight.shape[0],
                 kernel_size=self.nominal_weight.shape[-2:],
                 stride=stride,

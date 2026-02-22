@@ -12,7 +12,7 @@ See the sections below for requirements and exact commands.
 
 ## Requirements
 
-- Python 3.10+ with `executorch` and the dependencies in `requirements-examples.txt`.
+- Python 3.10+ with `executorch` and the dependencies in `examples/arm/image_classification_example/requirements.txt`.
 - Internet access to download pretrained weights and the Oxford-IIIT Pet dataset.
 
 ## Fine-tuning DEiT Tiny

@@ -38,8 +38,8 @@ class NormalizeWhileInitialArgsPass(ArmPass):
     The clone is neccessary to avoid issues with aliasing.
     """
 
-    def __init__(self, use_exir_clone: bool) -> None:
-        super().__init__()
+    def __init__(self, use_exir_clone: bool, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         if use_exir_clone:
             self.clone_op = exir_ops.edge.aten.alias_copy.default
         else:

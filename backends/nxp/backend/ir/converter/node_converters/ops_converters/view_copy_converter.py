@@ -1,9 +1,10 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
 
 from executorch.backends.nxp.backend.edge_helper import (
     get_non_qdq_users,
@@ -20,7 +21,6 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
-    is_not_qdq_node,
     NodeConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reshape_transposition import (
@@ -33,7 +33,6 @@ from executorch.backends.nxp.backend.neutron_operator_support import (
     transposition_is_supported_on_neutron,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 from torch.fx.passes.infra.partitioner import Partition
@@ -72,13 +71,6 @@ class ViewCopyConverter(NodeConverter):
             partition for partition in partition_list if node in partition.nodes
         ]
         assert len(view_copy_partitions) == 1
-        non_q_dq_partition_nodes = list(
-            filter(is_not_qdq_node, view_copy_partitions[0].nodes)
-        )
-
-        if len(non_q_dq_partition_nodes) == 1:
-            # The `view_copy` cannot be the only node in a partition.
-            return False
 
         input_format = node.args[0].meta[NXP_NODE_FORMAT]
         output_format = node.meta[NXP_NODE_FORMAT]

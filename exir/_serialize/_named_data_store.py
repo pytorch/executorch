@@ -7,14 +7,30 @@
 # pyre-strict
 
 import hashlib
-
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 import torch
-
 from executorch.exir._serialize.data_serializer import DataEntry
 from executorch.exir.tensor_layout import TensorLayout
+
+
+def _tensor_to_bytes(tensor: torch.Tensor) -> bytes:
+    """Convert tensor to bytes using the fastest method available.
+
+    Uses numpy().tobytes() which is faster than bytes(untyped_storage())
+    for C-contiguous tensors. Falls back to untyped_storage() for
+    non-contiguous tensors (e.g., channels_last) to preserve memory layout.
+    """
+    if not tensor.is_contiguous():
+        # For non-C-contiguous tensors (e.g., channels_last), use untyped_storage
+        # to preserve the actual memory layout
+        return bytes(tensor.untyped_storage())
+    if tensor.dtype == torch.bfloat16:
+        # BFloat16 is not supported by numpy, extract raw bytes via view
+        return tensor.view(torch.uint16).numpy().tobytes()
+    else:
+        return tensor.numpy().tobytes()
 
 
 @dataclass
@@ -115,8 +131,8 @@ class NamedDataStore:
         ):
             raise ValueError(
                 f"Duplicate key {key} with different data. "
-                f"Existing data: {self.buffers[buffer_idx]}. "
-                f"New data: {data}."
+                f"Existing data size: {len(self.buffers[buffer_idx])} bytes. "
+                f"New data size: {len(data)} bytes."
             )
         else:
             # Key doesn't exist; check if the data exists.
@@ -169,7 +185,7 @@ class NamedDataStore:
                     f"Tensor {key} is a torch.Tensor, with tensor_layout {real_tensor_layout}. The provided tensor layout {tensor_layout} does not match."
                 )
             tensor_layout = real_tensor_layout
-            byte_data = bytes(data.untyped_storage())
+            byte_data = _tensor_to_bytes(data)
         else:
             byte_data = data
 

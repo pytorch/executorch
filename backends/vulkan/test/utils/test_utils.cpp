@@ -528,7 +528,8 @@ void fill_vtensor(
     std::fill(data.begin(), data.end(), val);
   }
 
-  graph.copy_into_staging(idx.staging, data.data(), data.size());
+  graph.maybe_cast_and_copy_into_staging(
+      idx.staging, data.data(), data.size(), vkapi::kFloat);
 }
 
 void extract_vtensor(api::vTensor& vten, std::vector<float>& data) {
@@ -613,8 +614,11 @@ void execute_graph_and_check_output(
     IOValueRef out_ioval = graph.outputs().at(i);
     std::vector<float> output_data(
         graph.staging_buffer_numel_of(out_ioval.value));
-    graph.copy_from_staging(
-        out_ioval.staging, output_data.data(), output_data.size());
+    graph.maybe_cast_and_copy_from_staging(
+        out_ioval.staging,
+        output_data.data(),
+        output_data.size(),
+        vkapi::kFloat);
 
     for (size_t j = 0; j < graph.numel_of(out_ioval.value); ++j) {
       CHECK_VALUE(output_data, j, expected_outputs.at(i));

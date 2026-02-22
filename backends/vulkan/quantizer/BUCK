@@ -1,0 +1,21 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "vulkan_quantizer",
+    srcs = ["vulkan_quantizer.py"],
+    deps = [
+        ":vulkan_quantizer_utils",
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "vulkan_quantizer_utils",
+    srcs = ["vulkan_quantizer_utils.py"],
+    deps = [
+        "//caffe2:torch",
+    ],
+)

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,6 +8,7 @@
 from .quantization_configs import (  # noqa
     CMSIS_SOFTMAX_SCALE,
     CMSIS_SOFTMAX_ZERO_POINT,
+    CortexMQuantizationConfig,
     INT8_ACTIVATION_PER_CHANNEL_QSPEC,
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_PER_CHANNEL_CONFIG,
@@ -14,6 +16,4 @@ from .quantization_configs import (  # noqa
     INT8_WEIGHT_PER_CHANNEL_QSPEC,
     INT8_WEIGHT_PER_TENSOR_QSPEC,
     SOFTMAX_OUTPUT_FIXED_QSPEC,
-    SOFTMAX_PER_TENSOR_CONFIG,
 )
-from .quantizer import CortexMQuantizer, SharedQspecQuantizer  # noqa
