@@ -12,6 +12,7 @@ from typing import Callable, Optional, Protocol, TypeVar
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.backends.cadence.aot.utils import is_depthwise_conv
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
@@ -1104,17 +1105,12 @@ def quantized_conv2d_nhwc_per_tensor(
 
     # Convert to NCHW format to reuse the existing implementation
     in_channels = input_tensor.shape[-1]
-    # Depthwise weights have one fewer dimension than the input because the IC
-    # dimension (always 1) was squeezed out during the NCHW->NHWC conversion in
-    # replace_ops.py.  E.g. 2D depthwise: weight is [KH, KW, OC] (3D) while
-    # input is [N, H, W, C] (4D).  A regular conv with in_channels==groups==1
-    # still has 4D weights [OC, KH, KW, IC].
-    is_depthwise = in_channels == groups and weight.dim() < input_tensor.dim()
+    depthwise = is_depthwise_conv(groups, in_channels)
 
     if len(input_tensor.shape) == 3:
         # 1D conv: input is [N, L, C] -> [N, C, L]
         input_tensor = input_tensor.movedim(-1, 1).contiguous()
-        if is_depthwise:
+        if depthwise:
             # 1D depthwise: weight is [K, OC] -> [OC, 1, K]
             weight = weight.permute(1, 0).unsqueeze(1).contiguous()
         else:
@@ -1124,7 +1120,7 @@ def quantized_conv2d_nhwc_per_tensor(
     else:
         # 2D conv: input is [N, H, W, C] -> [N, C, H, W]
         input_tensor = input_tensor.movedim(-1, -3)
-        if is_depthwise:
+        if depthwise:
             # 2D depthwise: weight is [KH, KW, OC] -> [OC, 1, KH, KW]
             weight = weight.permute(2, 0, 1).unsqueeze(1).contiguous()
         else:
