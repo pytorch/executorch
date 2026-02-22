@@ -14,6 +14,7 @@ import executorch.backends.cadence.aot.ref_implementations  # noqa
 import numpy as np
 import torch
 from executorch.backends.cadence.aot.typing_stubs import expand
+from executorch.backends.cadence.aot.utils import is_depthwise_conv
 
 from executorch.exir.scalar_type import ScalarType
 
@@ -942,12 +943,22 @@ class TestRefImplementations(unittest.TestCase):
         assert memory_format in [torch.contiguous_format, torch.channels_last]
 
         if memory_format == torch.channels_last:
+            in_channels = input_tensor.shape[1]  # NCHW still at this point
+            depthwise = is_depthwise_conv(groups, in_channels)
             if input_tensor.ndim == 3:
                 input_tensor = input_tensor.movedim(1, -1)
-                weight = weight.movedim(1, -1)
+                if depthwise:
+                    # [OC, 1, K] -> [K, OC] (squeeze IC, move OC to end)
+                    weight = weight.squeeze(1).movedim(0, -1)
+                else:
+                    weight = weight.movedim(1, -1)
             else:
                 input_tensor = input_tensor.movedim(-3, -1)
-                weight = weight.movedim(-3, -1)
+                if depthwise:
+                    # [OC, 1, KH, KW] -> [KH, KW, OC] (squeeze IC, move OC to end)
+                    weight = weight.squeeze(1).movedim(0, -1)
+                else:
+                    weight = weight.movedim(-3, -1)
 
         convs = [
             (
