@@ -140,17 +140,17 @@ class SimpleADB:
         self.expected_input_shape = expected_input_shape
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
-        self.qnn_backend_library_paths = {}
-        
-        
-        self.qnn_backend_library_paths = {}
+        self.backend_library_paths = {}
+
         if self.direct_mode_build_path:
-            self.qnn_backend_library_paths.update(
+            direct_general_artifacts = [
+                f"{self.build_path}/examples/qualcomm/direct_executor_runner/libqnn_executorch_stub.so",
+                f"{self.direct_mode_build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+                f"{self.direct_mode_build_path}/backends/qualcomm/qnn_executorch/direct_mode/libqnn_executorch_skel.so",
+            ]
+            self.backend_library_paths.update(
                 {
                     QnnExecuTorchBackendType.kHtpBackend: [
-                        f"{self.build_path}/examples/qualcomm/direct_executor_runner/libqnn_executorch_stub.so",
-                        f"{self.direct_mode_build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-                        f"{self.direct_mode_build_path}/backends/qualcomm/qnn_executorch/direct_mode/libqnn_executorch_skel.so",
                         f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/unsigned/libQnnHtpV{self.htp_arch}.so",
                         f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/unsigned/libQnnSystem.so",
                         f"{self.hexagon_tools_root}/Tools/target/hexagon/lib/v{self.htp_arch}/G0/pic/libc++abi.so.1",
@@ -158,8 +158,15 @@ class SimpleADB:
                     ]
                 }
             )
+            for _, library_paths in self.backend_library_paths.items():
+                library_paths.extend(direct_general_artifacts)
         else:
-            self.qnn_backend_library_paths.update(
+            traditional_general_artifacts = [
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
+                f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
+            ]
+            self.backend_library_paths.update(
                 {
                     QnnExecuTorchBackendType.kHtpBackend: [
                         f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
@@ -178,6 +185,8 @@ class SimpleADB:
                     ],
                 }
             )
+            for _, library_paths in self.backend_library_paths.items():
+                library_paths.extend(traditional_general_artifacts)
 
     def _adb(self, cmd, output_callback: Optional[Callable[[str], None]] = None):
         if not self.host_id:
@@ -215,7 +224,7 @@ class SimpleADB:
 
             # backend libraries
             for backend in backends:
-                artifacts.extend(self.qnn_backend_library_paths[backend])
+                artifacts.extend(self.backend_library_paths[backend])
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             input_list_file, input_files = generate_inputs(

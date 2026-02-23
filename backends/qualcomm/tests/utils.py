@@ -205,6 +205,7 @@ class TestQNN(unittest.TestCase):
                 target=cls.target,
             )
             adb.push(
+                backends={get_backend_type(cls.backend)},
                 init_env=True,
             )
 
