@@ -10,6 +10,7 @@ package org.pytorch.executorch;
 
 import com.facebook.jni.annotations.DoNotStrip;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
 import org.pytorch.executorch.annotations.Experimental;
@@ -202,7 +203,7 @@ public class EValue {
     } else if (isDouble()) {
       return ByteBuffer.allocate(9).put((byte) TYPE_CODE_DOUBLE).putDouble(toDouble()).array();
     } else if (isString()) {
-      byte[] strBytes = toStr().getBytes();
+      byte[] strBytes = toStr().getBytes(StandardCharsets.UTF_8);
       return ByteBuffer.allocate(1 + 4 + strBytes.length)
           .put((byte) TYPE_CODE_STRING)
           .putInt(strBytes.length)
@@ -239,7 +240,7 @@ public class EValue {
         int strLen = buffer.getInt();
         byte[] strBytes = new byte[strLen];
         buffer.get(strBytes);
-        return from(new String(strBytes));
+        return from(new String(strBytes, StandardCharsets.UTF_8));
       case TYPE_CODE_DOUBLE:
         return from(buffer.getDouble());
       case TYPE_CODE_INT:
