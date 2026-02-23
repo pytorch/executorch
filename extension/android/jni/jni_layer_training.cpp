@@ -290,8 +290,7 @@ jobject newJTensorFromTensor(
 
   // Set byte order to native order (using cached classes/methods)
   jobject nativeOrder = env->CallStaticObjectMethod(
-      g_training_cache.byteorder_class,
-      g_training_cache.byteorder_nativeOrder);
+      g_training_cache.byteorder_class, g_training_cache.byteorder_nativeOrder);
   env->CallObjectMethod(
       jTensorBuffer, g_training_cache.bytebuffer_order, nativeOrder);
   env->DeleteLocalRef(nativeOrder);
@@ -356,7 +355,7 @@ TensorPtr newTensorFromJTensor(JNIEnv* env, jobject jtensor) {
 }
 
 // Helper to create Java EValue from native EValue
-jobject newJEValueFromEValue(JNIEnv* env, runtime::EValue evalue) {
+jobject newJEValueFromEValue(JNIEnv* env, executorch::runtime::EValue evalue) {
   g_training_cache.init(env);
 
   if (evalue.isTensor()) {
@@ -407,8 +406,7 @@ jobject newJEValueFromEValue(JNIEnv* env, runtime::EValue evalue) {
 TensorPtr JEValueToTensorImpl(JNIEnv* env, jobject jevalue) {
   g_training_cache.init(env);
 
-  jint typeCode =
-      env->GetIntField(jevalue, g_training_cache.evalue_mTypeCode);
+  jint typeCode = env->GetIntField(jevalue, g_training_cache.evalue_mTypeCode);
   if (typeCode == kTypeCodeTensor) {
     jobject jtensor =
         env->CallObjectMethod(jevalue, g_training_cache.evalue_toTensor);
@@ -432,10 +430,7 @@ class TrainingModuleNative {
  public:
   std::unique_ptr<training::TrainingModule> module_;
 
-  TrainingModuleNative(
-      JNIEnv* env,
-      jstring modelPath,
-      jstring dataPath) {
+  TrainingModuleNative(JNIEnv* env, jstring modelPath, jstring dataPath) {
     std::string modelPathString = jstring_to_string(env, modelPath);
     auto modelLoaderRes = FileDataLoader::from(modelPathString.c_str());
     if (modelLoaderRes.error() != Error::Ok) {
@@ -505,7 +500,8 @@ class SGDNative {
     jobject iterator =
         env->CallObjectMethod(entrySet, g_training_cache.set_iterator);
 
-    while (env->CallBooleanMethod(iterator, g_training_cache.iterator_hasNext)) {
+    while (
+        env->CallBooleanMethod(iterator, g_training_cache.iterator_hasNext)) {
       jobject entry =
           env->CallObjectMethod(iterator, g_training_cache.iterator_next);
       jstring key = static_cast<jstring>(
@@ -572,9 +568,8 @@ Java_org_pytorch_executorch_training_TrainingModule_nativeExecuteForwardBackward
     jlong nativeHandle,
     jstring methodName,
     jobjectArray jinputs) {
-  auto* native =
-      reinterpret_cast<executorch::extension::TrainingModuleNative*>(
-          nativeHandle);
+  auto* native = reinterpret_cast<executorch::extension::TrainingModuleNative*>(
+      nativeHandle);
   if (native == nullptr) {
     throwJavaException(env, "Native handle is null");
     return nullptr;
@@ -585,7 +580,7 @@ Java_org_pytorch_executorch_training_TrainingModule_nativeExecuteForwardBackward
   std::string method = jstring_to_string(env, methodName);
   jsize inputSize = jinputs != nullptr ? env->GetArrayLength(jinputs) : 0;
 
-  std::vector<runtime::EValue> evalues;
+  std::vector<executorch::runtime::EValue> evalues;
   std::vector<TensorPtr> tensors;
 
   for (jsize i = 0; i < inputSize; i++) {
@@ -599,8 +594,7 @@ Java_org_pytorch_executorch_training_TrainingModule_nativeExecuteForwardBackward
     } else if (typeCode == kTypeCodeInt) {
       jobject mData =
           env->GetObjectField(jevalue, g_training_cache.evalue_mData);
-      jlong value =
-          env->CallLongMethod(mData, g_training_cache.long_longValue);
+      jlong value = env->CallLongMethod(mData, g_training_cache.long_longValue);
       evalues.emplace_back(static_cast<int64_t>(value));
       env->DeleteLocalRef(mData);
     } else if (typeCode == kTypeCodeDouble) {
@@ -650,9 +644,8 @@ Java_org_pytorch_executorch_training_TrainingModule_nativeNamedParameters(
     jclass /* clazz */,
     jlong nativeHandle,
     jstring methodName) {
-  auto* native =
-      reinterpret_cast<executorch::extension::TrainingModuleNative*>(
-          nativeHandle);
+  auto* native = reinterpret_cast<executorch::extension::TrainingModuleNative*>(
+      nativeHandle);
   if (native == nullptr) {
     throwJavaException(env, "Native handle is null");
     return nullptr;
@@ -678,8 +671,7 @@ Java_org_pytorch_executorch_training_TrainingModule_nativeNamedParameters(
   for (auto& [layer, tensor] : result.get()) {
     jstring jkey = env->NewStringUTF(std::string(layer).c_str());
     jobject jtensor = newJTensorFromTensor(env, tensor);
-    env->CallObjectMethod(
-        hashMap, g_training_cache.hashmap_put, jkey, jtensor);
+    env->CallObjectMethod(hashMap, g_training_cache.hashmap_put, jkey, jtensor);
     env->DeleteLocalRef(jkey);
     if (jtensor != nullptr) {
       env->DeleteLocalRef(jtensor);
@@ -695,9 +687,8 @@ Java_org_pytorch_executorch_training_TrainingModule_nativeNamedGradients(
     jclass /* clazz */,
     jlong nativeHandle,
     jstring methodName) {
-  auto* native =
-      reinterpret_cast<executorch::extension::TrainingModuleNative*>(
-          nativeHandle);
+  auto* native = reinterpret_cast<executorch::extension::TrainingModuleNative*>(
+      nativeHandle);
   if (native == nullptr) {
     throwJavaException(env, "Native handle is null");
     return nullptr;
@@ -723,8 +714,7 @@ Java_org_pytorch_executorch_training_TrainingModule_nativeNamedGradients(
   for (auto& [layer, tensor] : result.get()) {
     jstring jkey = env->NewStringUTF(std::string(layer).c_str());
     jobject jtensor = newJTensorFromTensor(env, tensor);
-    env->CallObjectMethod(
-        hashMap, g_training_cache.hashmap_put, jkey, jtensor);
+    env->CallObjectMethod(hashMap, g_training_cache.hashmap_put, jkey, jtensor);
     env->DeleteLocalRef(jkey);
     if (jtensor != nullptr) {
       env->DeleteLocalRef(jtensor);
@@ -734,8 +724,7 @@ Java_org_pytorch_executorch_training_TrainingModule_nativeNamedGradients(
   return hashMap;
 }
 
-JNIEXPORT jlong JNICALL
-Java_org_pytorch_executorch_training_SGD_nativeCreate(
+JNIEXPORT jlong JNICALL Java_org_pytorch_executorch_training_SGD_nativeCreate(
     JNIEnv* env,
     jclass /* clazz */,
     jobject namedParameters,
@@ -755,8 +744,7 @@ Java_org_pytorch_executorch_training_SGD_nativeCreate(
   return reinterpret_cast<jlong>(native);
 }
 
-JNIEXPORT void JNICALL
-Java_org_pytorch_executorch_training_SGD_nativeDestroy(
+JNIEXPORT void JNICALL Java_org_pytorch_executorch_training_SGD_nativeDestroy(
     JNIEnv* /* env */,
     jclass /* clazz */,
     jlong nativeHandle) {
@@ -767,8 +755,7 @@ Java_org_pytorch_executorch_training_SGD_nativeDestroy(
   }
 }
 
-JNIEXPORT void JNICALL
-Java_org_pytorch_executorch_training_SGD_nativeStep(
+JNIEXPORT void JNICALL Java_org_pytorch_executorch_training_SGD_nativeStep(
     JNIEnv* env,
     jclass /* clazz */,
     jlong nativeHandle,
@@ -787,8 +774,7 @@ Java_org_pytorch_executorch_training_SGD_nativeStep(
   std::vector<TensorPtr> tensorKeepalives;
 
   // Get the size of the map
-  jint mapSize =
-      env->CallIntMethod(namedGradients, g_training_cache.map_size);
+  jint mapSize = env->CallIntMethod(namedGradients, g_training_cache.map_size);
 
   gradientNames.reserve(mapSize);
   tensorKeepalives.reserve(mapSize);
@@ -813,8 +799,7 @@ Java_org_pytorch_executorch_training_SGD_nativeStep(
     // Store the gradient name and tensor
     gradientNames.push_back(gradName);
     tensorKeepalives.push_back(tensor);
-    cppNamedGradients.emplace(
-        std::string_view(gradientNames.back()), *tensor);
+    cppNamedGradients.emplace(std::string_view(gradientNames.back()), *tensor);
 
     env->DeleteLocalRef(key);
     env->DeleteLocalRef(value);
