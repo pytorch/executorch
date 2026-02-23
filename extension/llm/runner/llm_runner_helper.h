@@ -125,7 +125,7 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
  * (deprecated)
  * @param event_tracer Optional event tracer for profiling
  * @param method_name Name of the method to execute in the model
- * @param load_mode Loading strategy for the model file. Defaults to  
+ * @param load_mode Loading strategy for the model file. Defaults to
  * MmapUseMlockIgnoreErrors which uses mmap to avoid loading the entire
  * model into RAM and attempts to pin pages with mlock for lower inference
  * latency, gracefully falling back to standard mmap if mlock is unavailable.
