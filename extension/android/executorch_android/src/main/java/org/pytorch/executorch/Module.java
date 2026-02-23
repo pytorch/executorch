@@ -64,14 +64,12 @@ public class Module {
     mMethodMetadata = populateMethodMeta();
   }
 
-  Map<String, MethodMetadata> populateMethodMeta() {
+  private Map<String, MethodMetadata> populateMethodMeta() {
     String[] methods = getMethods();
     Map<String, MethodMetadata> metadata = new HashMap<String, MethodMetadata>();
-    for (int i = 0; i < methods.length; i++) {
-      String name = methods[i];
-      metadata.put(name, new MethodMetadata().setName(name));
+    for (String name : methods) {
+      metadata.put(name, new MethodMetadata(name, getUsedBackends(name)));
     }
-
     return metadata;
   }
 
@@ -200,13 +198,9 @@ public class Module {
    * @return @MethodMetadata for this method
    */
   public MethodMetadata getMethodMetadata(String name) {
-    if (!mMethodMetadata.containsKey(name)) {
-      throw new RuntimeException("method " + name + " does not exist for this module");
-    }
-
     MethodMetadata methodMetadata = mMethodMetadata.get(name);
-    if (methodMetadata != null) {
-      methodMetadata.setBackends(getUsedBackends(name));
+    if (methodMetadata == null) {
+      throw new IllegalArgumentException("method " + name + " does not exist for this module");
     }
     return methodMetadata;
   }
