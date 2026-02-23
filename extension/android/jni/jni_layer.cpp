@@ -43,7 +43,6 @@
 #include <fbjni/fbjni.h>
 
 using namespace executorch::extension;
-using namespace executorch::jni_helper;
 using namespace torch::executor;
 
 namespace executorch::extension {
