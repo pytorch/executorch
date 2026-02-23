@@ -1171,6 +1171,8 @@ def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List[Partitione
     """Get XNNPACK partitioners for multimethod_lora export."""
     partitioners = []
 
+    # Order matters here, dynamic quantization should be applied first when
+    # both xnnpack and xnnpack_extended_ops are enabled.
     if llm_config.backend.xnnpack.enabled:
         partitioners.append(
             get_xnnpack_partitioner(dynamic_quant_only_partitioner=True)
