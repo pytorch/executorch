@@ -21,6 +21,7 @@ namespace native {
     const ::executorch::aten::Tensor& sin_tensor,
     const ::executorch::aten::Tensor& cos_tensor,
     const ::executorch::aten::optional<::executorch::aten::Tensor>& pos,
+    const int64_t rope_type,
     ::executorch::aten::Tensor& out);
 
 } // namespace native
