@@ -802,49 +802,65 @@ class EncoderRingKVCache(nn.Module):
 
 
 class StandardEncoderRingKVCache(nn.Module):
-    """Export-friendly ring buffer KV cache using index_copy_ for updates.
+    """Fixed-size KV cache for Metal/AOTI backend.
 
-    Compatible with torch.export and AOTI. Uses [B, S, H, D] layout
-    matching the encoder's convention. Ring buffer enables unlimited streaming.
+    Uses [B, S, H, D] layout matching the encoder's convention.
+    Unlike the ring buffer version, this has a fixed maximum length
+    and doesn't support wraparound. Simpler for AOTI to trace.
     """
 
     def __init__(self, window_size: int, n_heads: int, head_dim: int):
         super().__init__()
         self.window_size = window_size
-        self.buf_size = window_size * 2
-        cache_shape = (1, self.buf_size, n_heads, head_dim)
+        self.max_seq_len = window_size  # Fixed size, no ring buffer
+        cache_shape = (1, self.max_seq_len, n_heads, head_dim)
         self.register_buffer("k_cache", torch.zeros(cache_shape))
         self.register_buffer("v_cache", torch.zeros(cache_shape))
 
     def update(
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Write k_val/v_val into ring buffer using index_copy_ (export-friendly).
+        """Write k_val/v_val into cache using simple index_copy_.
 
         Args:
-            input_pos: (seq_len,) position indices.
+            input_pos: (seq_len,) position indices within [0, max_seq_len).
             k_val, v_val: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
         Returns:
-            k_cache, v_cache: (B, buf_size, n_heads, head_dim) in [B, S, H, D] layout.
+            k_cache, v_cache: (B, max_seq_len, n_heads, head_dim) in [B, S, H, D] layout.
         """
-        # Compute wrapped indices for ring buffer - work entirely with tensors
-        # to keep operations symbolic for AOTI
-        wrapped_indices = input_pos % self.buf_size
-
-        # Use index_copy_ on dimension 1 (sequence dimension in [B, S, H, D])
-        self.k_cache.index_copy_(1, wrapped_indices, k_val)
-        self.v_cache.index_copy_(1, wrapped_indices, v_val)
+        # Simple index_copy without modulo - assumes input_pos is already within bounds
+        self.k_cache.index_copy_(1, input_pos, k_val)
+        self.v_cache.index_copy_(1, input_pos, v_val)
 
         return self.k_cache, self.v_cache
 
-    def create_causal_mask(self, start_pos: int, seq_len: int) -> torch.Tensor:
-        """Create sliding window attention mask."""
-        total_written = start_pos + seq_len
-        j = torch.arange(self.buf_size, dtype=torch.long)
-        cache_pos = j + ((total_written - 1 - j) // self.buf_size) * self.buf_size
-        pos_q = (start_pos + torch.arange(seq_len, dtype=torch.long)).view(-1, 1)
-        delta = pos_q - cache_pos.unsqueeze(0)
-        valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
+    def create_causal_mask(self, start_pos: torch.Tensor, seq_len: int) -> torch.Tensor:
+        """Create sliding window attention mask.
+
+        For fixed-size cache, creates a mask that:
+        - Allows attention to positions [max(0, start_pos - window_size), start_pos + seq_len)
+        - Maintains causality (can only attend to current or earlier positions)
+
+        Args:
+            start_pos: Tensor containing the starting position (scalar tensor)
+            seq_len: Number of query positions
+        """
+        # Query positions: [start_pos, start_pos + 1, ..., start_pos + seq_len - 1]
+        # Use tensor operations to avoid .item() calls
+        q_offsets = torch.arange(seq_len, dtype=torch.long, device=start_pos.device)
+        q_pos = (start_pos + q_offsets).unsqueeze(1)  # [seq_len, 1]
+
+        # Key positions: all positions in cache [0, 1, 2, ..., max_seq_len - 1]
+        k_pos = torch.arange(self.max_seq_len, dtype=torch.long, device=start_pos.device).unsqueeze(0)  # [1, max_seq_len]
+
+        # Compute distance from each query to each key
+        delta = q_pos - k_pos  # [seq_len, max_seq_len]
+
+        # Valid if: key position <= query position AND within sliding window
+        # delta >= 0: causal (attend to earlier or same position)
+        # delta < window_size: within sliding window
+        valid = (delta >= 0) & (delta < self.window_size)
+
         return torch.where(valid, 0.0, float("-inf"))
 
 
@@ -961,9 +977,8 @@ class StreamingAudioEncoderExport(nn.Module):
 
         # Sliding window mask — identical for all layers, compute once.
         T = x.size(1)
-        start_pos = enc_input_pos[0].item()
-        torch._check_is_size(start_pos)
-        mask = self.kv_caches[0].create_causal_mask(start_pos, T)
+        # Pass start position as tensor (not .item()) to avoid unbacked symbols in AOTI
+        mask = self.kv_caches[0].create_causal_mask(enc_input_pos[0], T)
 
         for i, layer in enumerate(self.layers):
             x = self._streaming_encoder_layer(
