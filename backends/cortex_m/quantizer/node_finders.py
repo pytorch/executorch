@@ -18,6 +18,11 @@ def make_list(item_or_list):
         return [item_or_list]
 
 
+def format_items(items) -> str:
+    """Render an iterable as a comma-separated string."""
+    return ", ".join(str(item) for item in items)
+
+
 class NodeFinder(ABC):
     @abstractmethod
     def find_nodes(self, model: GraphModule) -> Iterator[Node]:
@@ -37,6 +42,9 @@ class GlobalNodeFinder(NodeFinder):
     def find_nodes(self, model: GraphModule) -> Iterator[Node]:
         return (n for n in model.graph.nodes)
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting all nodes"
+
 
 class InputNodeFinder(NodeFinder):
     """
@@ -46,6 +54,9 @@ class InputNodeFinder(NodeFinder):
     def find_nodes(self, model: GraphModule) -> Iterator[Node]:
         return (n for n in model.graph.nodes if n.op == "placeholder")
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting all placeholder nodes"
+
 
 class OutputNodeFinder(NodeFinder):
     """
@@ -54,6 +65,9 @@ class OutputNodeFinder(NodeFinder):
 
     def find_nodes(self, model: GraphModule) -> Iterator[Node]:
         return (n for n in model.graph.nodes if n.op == "output")
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting the output node"
 
 
 class NodeNameNodeFinder(NodeFinder):
@@ -68,6 +82,9 @@ class NodeNameNodeFinder(NodeFinder):
     def find_nodes(self, model: GraphModule) -> Iterator[Node]:
         return (n for n in model.graph.nodes if n.name in self.names)
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting names: {format_items(self.names)}"
+
 
 class NodeTargetNodeFinder(NodeFinder):
     """
@@ -81,6 +98,10 @@ class NodeTargetNodeFinder(NodeFinder):
     def find_nodes(self, model: GraphModule) -> Iterator[Node]:
         return (n for n in model.graph.nodes if n.target in self.targets)
 
+    def __repr__(self) -> str:
+        target_names = [t._name for t in self.targets]
+        return f"{self.__class__.__name__} targeting node targets: {format_items(target_names)}"
+
 
 class ModuleNameNodeFinder(NodeFinder):
     """
@@ -90,14 +111,19 @@ class ModuleNameNodeFinder(NodeFinder):
 
     def __init__(self, module_names: str | List[str]) -> None:
         super().__init__()
-        module_names = make_list(module_names)
-        module_name_filters = [get_module_name_filter(name) for name in module_names]
+        self.module_names = make_list(module_names)
+        module_name_filters = [
+            get_module_name_filter(name) for name in self.module_names
+        ]
         self.module_name_filter = lambda node: any(
             module_name_filter(node) for module_name_filter in module_name_filters
         )
 
     def find_nodes(self, model: GraphModule) -> Iterator[Node]:
         return (n for n in model.graph.nodes if self.module_name_filter(n))
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting module names: {format_items(self.module_names)}"
 
 
 class ModuleTypeNodeFinder(NodeFinder):
@@ -124,6 +150,7 @@ class ModuleTypeNodeFinder(NodeFinder):
     def __init__(self, module_types: Callable | List[Callable]) -> None:
         super().__init__()
         module_types = make_list(module_types)
+        self.module_type_names = [m.__name__ for m in module_types]
 
         module_type_filters = [self._get_module_type_filter(tp) for tp in module_types]
         self.module_type_filter = lambda node: any(
@@ -132,3 +159,6 @@ class ModuleTypeNodeFinder(NodeFinder):
 
     def find_nodes(self, model: GraphModule) -> Iterator[Node]:
         return (n for n in model.graph.nodes if self.module_type_filter(n))
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting module types: {format_items(self.module_type_names)}"

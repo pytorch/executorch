@@ -304,8 +304,8 @@ class BasePipeline(Generic[T]):
 
     def run_and_compare_to_initial_model(
         self,
-        frobenius_threshold: float = 0.01,
-        cosine_threshold: float = 0.99,
+        frobenius_threshold: float | None = 0.01,
+        cosine_threshold: float | None = 0.99,
         clean_reference: bool = True,
         compared_stage="export",
     ):
@@ -326,6 +326,7 @@ class BasePipeline(Generic[T]):
                 cosine_threshold,
                 clean_reference,
             ),
+            suffix="original_model",
         )
 
     def run(self):
@@ -375,16 +376,25 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
        module: The module which the pipeline is applied to.
        test_data: Data used for quantizing and testing the module.
 
-       aten_ops: Aten dialect ops expected to be found in the graph after export.
-       exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
-       if not using use_edge_to_transform_and_lower.
+       aten_op: Aten dialect ops expected to be found in the graph after export.
+       exir_op: Exir dialect ops expected to be found in the graph after to_edge.
+       if not using use_to_edge_transform_and_lower.
 
        run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
-
-       tosa_version: A string for identifying the TOSA version, see common.get_tosa_compile_spec for
-                     options.
-       use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
+       symmetric_io_quantization: Whether to use symmetric I/O quantization.
+       per_channel_quantization: Whether to use per-channel quantization.
+       use_to_edge_transform_and_lower: Selects betweeen two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+       tosa_debug_mode: Optional debug mode for TOSA compilation.
+       atol: Absolute tolerance for output comparison.
+       rtol: Relative tolerance for output comparison.
+       qtol: Quantization tolerance for output comparison.
+       frobenius_threshold: Threshold for Frobenius norm comparison with original model
+       cosine_threshold: Threshold for cosine similarity comparison with original model
+       dynamic_shapes: Optional dynamic shape specifications.
+       tosa_version: TOSA version string to target.
+       tosa_extensions: Optional list of TOSA extensions.
+       epsilon: Epsilon used in quantization configuration.
     """
 
     def __init__(
@@ -402,10 +412,12 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
+        frobenius_threshold: float | None = 0.15,
+        cosine_threshold: float | None = 0.9,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         tosa_version: Optional[str] = "1.0",
         tosa_extensions: Optional[List[str]] = None,
-        epsilon: float = 2**-12,
+        epsilon: float = 2**-16,
     ):
         if tosa_extensions is None:
             tosa_extensions = []
@@ -494,6 +506,12 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
                 qtol=qtol,
                 inputs=self.test_data,
             )
+
+        self.run_and_compare_to_initial_model(
+            frobenius_threshold=frobenius_threshold,
+            cosine_threshold=cosine_threshold,
+            clean_reference=True,
+        )
 
 
 class TosaPipelineFP(TOSAPipeline, Generic[T]):

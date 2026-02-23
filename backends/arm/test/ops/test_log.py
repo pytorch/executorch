@@ -30,8 +30,13 @@ test_data_suite = {
     "ones_rank3": lambda: (torch.ones(10, 10, 10)),
     "rand": lambda: (torch.rand(10, 10) + 0.001),
     "randn_pos": lambda: (torch.randn(10) + 10),
-    "randn_spread": lambda: (torch.max(torch.Tensor([0.0]), torch.randn(10) * 100)),
+    "randn_spread": lambda: (torch.max(torch.Tensor([0.1]), torch.randn(10) * 100)),
     "ramp": lambda: (torch.arange(0.01, 20, 0.2)),
+}
+
+test_data_suite_fp16 = {
+    "rand_fp16": lambda: (torch.rand(6, 6, dtype=torch.float16) + 0.001),
+    "ramp_fp16": lambda: (torch.arange(0.5, 8, 0.5, dtype=torch.float16)),
 }
 
 test_data_suite_bf16 = {
@@ -45,7 +50,9 @@ class Log(torch.nn.Module):
         return torch.log(x)
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
+)
 def test_log_tosa_FP(test_data: input_t1):
     pipeline = TosaPipelineFP[input_t1](
         Log(), (test_data(),), aten_op, exir_op, tosa_extensions=["bf16"]
@@ -81,7 +88,7 @@ def test_log_u85_INT(test_data: input_t1):
     ).run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_log_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](

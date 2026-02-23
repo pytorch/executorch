@@ -85,6 +85,12 @@ class Pow_TensorScalar(torch.nn.Module):
         ),
     }
 
+    test_data_fp16 = {
+        "exp_minus_three_fp16": lambda: (
+            (torch.randn((10, 5), dtype=torch.float16).relu() + 0.1, -3.0)
+        )
+    }
+
     test_data_bf16 = {
         "exp_minus_three_bf16": lambda: (
             (torch.randn((10, 5), dtype=torch.bfloat16).relu() + 0.1, -3.0)
@@ -142,7 +148,9 @@ x_fail = {
 
 @common.parametrize(
     "test_data",
-    Pow_TensorScalar.test_data | Pow_TensorScalar.test_data_bf16,
+    Pow_TensorScalar.test_data
+    | Pow_TensorScalar.test_data_fp16
+    | Pow_TensorScalar.test_data_bf16,
     xfails=x_fail,
     strict=False,
 )
@@ -196,7 +204,12 @@ def test_pow_tensor_scalar_u85_INT(test_data: Pow_TensorScalar.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+@common.parametrize(
+    "test_data",
+    Pow_TensorScalar.test_data | Pow_TensorScalar.test_data_fp16,
+    x_fail,
+    strict=False,
+)
 @common.SkipIfNoModelConverter
 def test_pow_tensor_scalar_vgf_no_quant(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
@@ -207,6 +220,8 @@ def test_pow_tensor_scalar_vgf_no_quant(test_data: Pow_TensorScalar.input_t):
         Pow_TensorScalar.exir_op,
         quantize=False,
     )
+    if base.dtype == torch.float16:
+        pipeline.change_args("run_method_and_compare_outputs", atol=128.0, rtol=0.01)
     pipeline.run()
 
 

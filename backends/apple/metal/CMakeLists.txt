@@ -39,10 +39,15 @@ set(_aoti_metal_sources
     runtime/stats.cpp
     runtime/shims/memory.cpp
     runtime/shims/et_metal.mm
-    runtime/shims/et_metal_ops.mm
     runtime/shims/shim_mps.mm
     runtime/shims/tensor_attribute.cpp
     runtime/shims/utils.cpp
+    runtime/ops/common.mm
+    runtime/ops/op_bmm.mm
+    runtime/ops/op_convolution.mm
+    runtime/ops/op_linear_4bit.mm
+    runtime/ops/op_mm.mm
+    runtime/ops/op_sdpa.mm
 )
 
 add_library(metal_backend STATIC ${_aoti_metal_sources})

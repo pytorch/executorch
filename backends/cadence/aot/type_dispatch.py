@@ -7,13 +7,14 @@
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import cast, Optional
 
 import torch
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     register_cadence_pass,
 )
+from executorch.backends.cadence.aot.utils import is_depthwise_conv
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from torch._ops import OpOverload
@@ -161,13 +162,13 @@ class CompileTimeTypeDispatchPass(ExportPass):
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
         ]:
-            groups = args[6]
+            groups = cast(int, args[6])
             input_channels = (
                 args[0].to_tensor().shape[1]
                 if op == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
                 else args[0].to_tensor().shape[-1]
             )
-            is_depthwise = groups == input_channels
+            is_depthwise = is_depthwise_conv(groups, input_channels)
             # pyre-ignore[16]: None has no attribute '__iter__'.
             is_dilated = any(d > 1 for d in args[5])
             is_1d = len(args[0].to_tensor().shape) == 3

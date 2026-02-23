@@ -69,6 +69,10 @@ test_data_suite = {
     "randn": lambda: (torch.randn(5, 16, 50, 32), [4, 2, 0]),
 }
 
+test_data_suite_fp16 = {
+    "rand_fp16": lambda: (torch.rand(1, 8, 20, 20, dtype=torch.float16), [3, 2, 1]),
+}
+
 test_data_suite_bf16 = {
     "rand_bf16": lambda: (
         torch.rand(1, 8, 20, 20, dtype=torch.bfloat16),
@@ -135,7 +139,9 @@ class MaxPool2d(torch.nn.Module):
         return self.max_pool_2d(x)
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
+)
 def test_max_pool2d_tosa_FP(test_data: torch.Tensor):
     test_data, model_params = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -263,7 +269,7 @@ dilation_test_data = {
 
 
 @common.parametrize("test_data", test_data_suite_unsupported_dilation)
-def test_max_pool2d_dilation_not_supported(test_data):
+def test_max_pool2d_tosa_FP_not_delegated_with_dilation(test_data):
     """
     Test that dilation cases not supported by TOSA are rejected.
     """
@@ -311,7 +317,7 @@ def test_max_pool2d_tosa_INT_dilation(test_data):
 
 
 # VGF tests
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_max_pool2d_vgf_no_quant(test_data: torch.Tensor):
     test_data, model_params = test_data()

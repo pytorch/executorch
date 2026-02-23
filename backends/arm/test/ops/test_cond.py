@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -227,7 +227,6 @@ def _set_branch_calibration_samples(
     "case",
     test_cases,
     xfails={
-        "one_arg_and_scalar_one_output": "Scalars become get_attr nodes that are not supported.",
         "nested_one_arg_one_output": "Not fully delegated.",
     },
 )
@@ -251,7 +250,6 @@ def test_cond_tosa_FP(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     "case",
     test_cases,
     xfails={
-        "one_arg_and_scalar_one_output": "Incorrect quantization on the scalar.",
         "nested_one_arg_one_output": "Node submodule_0 target submodule_0 references nonexistent attribute submodule_0",
     },
 )
@@ -287,13 +285,13 @@ def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     "case",
     test_cases,
     xfails={
-        "one_arg_and_scalar_one_output": "Incorrect quantization on the scalar.",
         "nested_one_arg_one_output": "Node submodule_0 target submodule_0 references nonexistent attribute submodule_0",
     },
     skips={
         "one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
         "one_arg_const_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
         "multiple_one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
+        "one_arg_and_scalar_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
     },
 )
 @common.XfailIfNoCorstone320.with_args(raises=None)

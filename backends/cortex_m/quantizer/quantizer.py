@@ -5,13 +5,13 @@
 
 
 import logging
-from typing import cast, List, Optional
+from typing import List, Optional
 
 import torch
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
+
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
-from executorch.backends.cortex_m.passes.passes_utils import coerce_int_pair
 from executorch.backends.cortex_m.quantizer.node_finders import (
     GlobalNodeFinder,
     NodeFinder,
@@ -20,16 +20,20 @@ from executorch.backends.cortex_m.quantizer.node_finders import (
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     INT8_PER_CHANNEL_CONFIG,
-    INT8_PER_CHANNEL_TRANSPOSE_CONFIG,
     INT8_PER_TENSOR_CONFIG,
     QuantizationSpec,
-    SOFTMAX_PER_TENSOR_CONFIG,
+)
+from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
+    QuantizerInfo,
+    QuantizerReporter,
+    QuantizerReporterUser,
+    SUPPORTED_QCONFIGS,
 )
 from executorch.backends.cortex_m.quantizer.quantizer_support import (
+    __name__ as cortex_m_quantizer_support_module,
     CONV_OP_PATTERNS,
     CONV_TRANSPOSE_OP_PATTERNS,
     CORTEX_M_QUANTIZER_SUPPORT_DICT,
-    SOFTMAX_OP_PATTERNS,
 )
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
@@ -56,6 +60,8 @@ def mark_node_as_annotated(
     node: Node,
     input_qspec_map: dict[Node, Optional[QuantizationSpec]],
     output_qspec: Optional[QuantizationSpec],
+    reporter: Optional[QuantizerReporter] = None,
+    quantizer: Optional[Quantizer] = None,
 ) -> None:
     node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(input_qspec_map, output_qspec)
     annotation_info = ArmAnnotationInfo(
@@ -70,29 +76,17 @@ class CortexMQuantizer(ComposableQuantizer):
 
     def __init__(self) -> None:
         conv_targets = set()
-        for key in CONV_OP_PATTERNS.keys():
+        for key in CONV_OP_PATTERNS.keys() | CONV_TRANSPOSE_OP_PATTERNS.keys():
             conv_targets.update(key)
 
-        softmax_targets = set()
-        for key in SOFTMAX_OP_PATTERNS.keys():
-            softmax_targets.update(key)
-
-        conv_transpose_targets = set()
-        for key in CONV_TRANSPOSE_OP_PATTERNS:
-            conv_transpose_targets.update(key)
-
-        pattern_matcher = PatternMatcher(CORTEX_M_QUANTIZER_SUPPORT_DICT)
+        support_dict_name = (
+            cortex_m_quantizer_support_module + ".CORTEX_M_QUANTIZER_SUPPORT_DICT"
+        )
+        pattern_matcher = PatternMatcher(
+            CORTEX_M_QUANTIZER_SUPPORT_DICT,
+            support_dict_name=support_dict_name,
+        )
         quantizers: List[Quantizer] = [
-            PatternQuantizer(
-                SOFTMAX_PER_TENSOR_CONFIG,
-                node_finder=NodeTargetNodeFinder(softmax_targets),
-                pattern_matcher=pattern_matcher,
-            ),
-            PatternQuantizer(
-                INT8_PER_CHANNEL_TRANSPOSE_CONFIG,
-                node_finder=NodeTargetNodeFinder(conv_transpose_targets),
-                pattern_matcher=pattern_matcher,
-            ),
             PatternQuantizer(
                 INT8_PER_CHANNEL_CONFIG,
                 node_finder=NodeTargetNodeFinder(conv_targets),
@@ -107,6 +101,12 @@ class CortexMQuantizer(ComposableQuantizer):
         ]
         super().__init__(quantizers)
 
+    def annotate(self, model):
+        reporter = QuantizerReporter(self.quantizers)
+        model = super().annotate(model)
+        reporter.log_quantizer_report(model)
+        return model
+
     def validate(self, model: GraphModule) -> bool:
         return True
 
@@ -115,7 +115,7 @@ class CortexMQuantizer(ComposableQuantizer):
         return pass_manager.transform_for_annotation(model)
 
 
-class PatternQuantizer(Quantizer):
+class PatternQuantizer(Quantizer, QuantizerReporterUser):
     """
     Quantizes a graph according to an OperatorConfig.
 
@@ -131,9 +131,25 @@ class PatternQuantizer(Quantizer):
         node_finder: NodeFinder,
         pattern_matcher: PatternMatcher,
     ) -> None:
-        self.quantization_config = quantization_config
-        self.node_finder = node_finder
-        self.pattern_matcher = pattern_matcher
+        super().__init__()
+        self.quantization_config: QuantizationConfig = quantization_config
+        self.node_finder: NodeFinder = node_finder
+        self.pattern_matcher: PatternMatcher = pattern_matcher
+
+    def get_quantizer_info(self):
+        name = self.__class__.__name__
+        targeted_nodes_description = str(self.node_finder)
+        quantization_config_path = SUPPORTED_QCONFIGS.get(
+            self.quantization_config, "CUSTOM_QCONFIG"
+        )
+        support_config_path = self.pattern_matcher.support_dict_name
+
+        return QuantizerInfo(
+            name,
+            targeted_nodes_description,
+            quantization_config_path,
+            support_config_path,
+        )
 
     def is_parameter(self, node: Node, model: GraphModule) -> bool:
         """Returns True if the given node is a parameter of the model."""
@@ -152,7 +168,7 @@ class PatternQuantizer(Quantizer):
         return len(params) == 2 and node == params[1]
 
     def annotate_match(
-        self, match: List[Node], config: QuantizationConfig, model: GraphModule
+        self, match: List[Node], config: QuantizationConfig | None, model: GraphModule
     ) -> None:
         """
         Annotates a matched pattern according to the given quantization config. The
@@ -180,19 +196,25 @@ class PatternQuantizer(Quantizer):
                 if not has_float_output(input_node):
                     continue
                 if self.is_weight(input_node, params, model):
-                    input_qspec_map[input_node] = config.weight if config else None
+                    input_qspec_map[input_node] = (
+                        config.get_weight_qspec(node) if config else None
+                    )
                 elif self.is_bias(input_node, params, model):
                     # Bias qspec is derived from input + weight qspecs
-                    input_qspec_map[input_node] = config.bias(node) if config else None
+                    input_qspec_map[input_node] = (
+                        config.get_bias_qspec(node) if config else None
+                    )
                 elif input_node not in match:
                     input_qspec_map[input_node] = (
-                        config.input_activation if config else None
+                        config.get_input_act_qspec() if config else None
                     )
 
             if all(node not in match for node in node.users) and output_qspec is None:
-                output_qspec = config.output_activation if config else None
+                output_qspec = config.get_output_act_qspec(node) if config else None
 
-            mark_node_as_annotated(node, input_qspec_map, output_qspec)
+            mark_node_as_annotated(
+                node, input_qspec_map, output_qspec, self.reporter, self
+            )
 
     def annotate(self, model: GraphModule) -> None:
         nodes = self.node_finder.find_nodes(model)
@@ -202,16 +224,18 @@ class PatternQuantizer(Quantizer):
         for result in matches:
             if result.accepted:
                 self.annotate_match(result.pattern, self.quantization_config, model)
+                self.report_accept(result.pattern)
             else:
-                logger.debug(
-                    f"PatternQuantizer skipped annotation of pattern {[n.target for n in result.pattern]}: {result.message}"
+                self.report_reject(
+                    result.pattern,
+                    result.message or "Pattern rejected.",
                 )
 
     def validate(self, model: GraphModule) -> bool:
         return True
 
 
-class SharedQspecQuantizer(Quantizer):
+class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
     """
     Special quantizer for assuring that given ops share the same quantization parameters on all input and outputs,
     i.e. ops which does not change the scale such as clone, min/max, transposes and so on.
@@ -229,10 +253,6 @@ class SharedQspecQuantizer(Quantizer):
         # Min/Max/Mean
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
-        # Max/avg pooling
-        torch.ops.aten.avg_pool2d.default,
-        torch.ops.aten.max_pool2d_with_indices.default,
-        torch.ops.aten.max_pool2d.default,
         # Data shuffling
         torch.ops.aten.permute.default,
         torch.ops.aten.permute_copy.default,
@@ -256,6 +276,9 @@ class SharedQspecQuantizer(Quantizer):
         torch.ops.aten._unsafe_view.default,
         torch.ops.aten.unflatten.int,
         torch.ops.aten.flatten.using_ints,
+        # Padding
+        torch.ops.aten.pad.default,
+        torch.ops.aten.constant_pad_nd.default,
     ]
 
     def __init__(self, targets: Optional[List[OpOverload]] = None) -> None:
@@ -264,6 +287,20 @@ class SharedQspecQuantizer(Quantizer):
             self.targets = self.SHARED_QSPEC_OPS_DEFAULT
         else:
             self.targets = targets
+
+    def get_quantizer_info(self):
+        name = self.__class__.__name__
+        targeted_nodes_description = ""
+        quantization_config_path = "SHARED_QCONFIG"
+        support_config_path = (
+            __name__ + f".{self.__class__.__name__}.SHARED_QSPEC_OPS_DEFAULT"
+        )
+        return QuantizerInfo(
+            name,
+            targeted_nodes_description,
+            quantization_config_path,
+            support_config_path,
+        )
 
     def _is_annotated(self, node: Node) -> bool:
         return Q_ANNOTATION_KEY in node.meta
@@ -321,6 +358,8 @@ class SharedQspecQuantizer(Quantizer):
         """
 
         shared_nodes, adjacent_qspecs = self._get_shared_clique(root_node)
+        node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
+        ordered_nodes = sorted(shared_nodes, key=lambda node: node_order.get(node, 0))
 
         # The selection of root node for the shared_qspec is important for
         # torchao.quantization.pt2e.prepare._create_obs_or_fq_from_qspec:
@@ -346,59 +385,34 @@ class SharedQspecQuantizer(Quantizer):
                     output_qspec = None
                 else:
                     output_qspec = shared_qspec
-                mark_node_as_annotated(node, input_qspec_map, output_qspec)
+                mark_node_as_annotated(
+                    node, input_qspec_map, output_qspec, self.reporter, self
+                )
 
             # Force the root qspec to be the adjacent spec
             root_node.meta[Q_ANNOTATION_KEY].input_qspec_map[
                 root_node_first_input
             ] = adjacent_qspecs.pop()
+            self.report_accept(ordered_nodes)
 
         elif len(adjacent_qspecs) == 0:
-            logger.warning(
-                "SharedQspecQuantizer found a cluster of supported ops surrounded by no quantized ops - leaving nodes unquantized."
+            self.report_reject(
+                ordered_nodes,
+                "Couldn't find any adjacent quantization spec to base shared quantization spec on.",
             )
             return
         else:
-            logger.warning(
-                "SharedQspecQuantizer found a cluster of supported ops surrounded by multiple different qspecs - leaving nodes unquantized."
+            self.report_reject(
+                ordered_nodes,
+                "Found multiple adjacent quantization specs to base shared quantization spec on.",
             )
             return
 
-    @staticmethod
-    def _pool_arg_as_bool(node: Node, index: int, name: str, default: bool) -> bool:
-        raw = node.args[index] if len(node.args) > index else default
-        if raw is None:
-            return default
-        return bool(raw)
-
     def annotate(self, model: GraphModule) -> None:
         """
-        Annotate shared quantization spec for supported ops, skipping pooling
-        configurations that the Cortex-M backend cannot lower.
+        Annotate shared quantization spec for supported ops.
         """
         for node in model.graph.nodes:
-            # TODO Skip avg_pool2d when ceil_mode=True or count_include_pad=True
-            # CMSIS-NN doesn't directly support this. But, it should be done.
-            if node.target is torch.ops.aten.avg_pool2d.default:
-                ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
-                count_include_pad = (
-                    cast(bool, node.args[5]) if len(node.args) > 5 else True
-                )
-                if ceil_mode or count_include_pad:
-                    continue
-            if node.target in (
-                torch.ops.aten.max_pool2d.default,
-                torch.ops.aten.max_pool2d_with_indices.default,
-            ):
-                raw_dilation = node.args[4] if len(node.args) > 4 else (1, 1)
-                dilation = coerce_int_pair(raw_dilation, (1, 1))
-                ceil_mode = self._pool_arg_as_bool(node, 5, "ceil_mode", False)
-                if dilation != (1, 1) or ceil_mode:
-                    meta_custom = node.meta.get("custom", {})
-                    cortex_m_meta = meta_custom.get("cortex_m", {})
-                    cortex_m_meta["skip_quantized_max_pool2d"] = True
-                    meta_custom["cortex_m"] = cortex_m_meta
-                    node.meta["custom"] = meta_custom
             if node.target in self.targets and not self._is_annotated(node):
                 self._annotate_shared_cluster(node)
 

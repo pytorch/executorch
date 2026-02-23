@@ -12,6 +12,7 @@ from typing import Callable, Optional, Protocol, TypeVar
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.backends.cadence.aot.utils import is_depthwise_conv
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
@@ -1019,11 +1020,13 @@ def quantized_w8a32_gru(
     assert inputs.dtype == torch.float32
     assert hidden.dtype == torch.float32
 
-    if len(hidden.shape) > 2:
-        raise ValueError("Hidden state must be 2D or 1D")
-
-    if len(hidden.shape) == 2 and hidden.shape[0] != 1:
-        raise ValueError("Leading dimension of hidden state must be 1")
+    # Hidden state can be 1D, 2D (1, hidden_dim), or 3D (1, 1, hidden_dim).
+    # All leading dimensions must be 1.
+    for d in range(len(hidden.shape) - 1):
+        if hidden.shape[d] != 1:
+            raise ValueError(
+                f"Leading dimension {d} of hidden state must be 1, got {hidden.shape[d]}"
+            )
 
     original_hidden_shape = hidden.shape
     hidden = hidden.view(-1)
@@ -1059,7 +1062,7 @@ def quantized_w8a32_gru(
 
     assert new_hidden.shape == original_hidden_shape
 
-    new_hidden = new_hidden.view(-1)
+    new_hidden = new_hidden.view(original_hidden_shape)
     return torch.stack([new_hidden, new_hidden], dim=0)
 
 
@@ -1101,18 +1104,29 @@ def quantized_conv2d_nhwc_per_tensor(
     """
 
     # Convert to NCHW format to reuse the existing implementation
-    conv_is_1d = False
+    in_channels = input_tensor.shape[-1]
+    depthwise = is_depthwise_conv(groups, in_channels)
+
     if len(input_tensor.shape) == 3:
-        conv_is_1d = True
+        # 1D conv: input is [N, L, C] -> [N, C, L]
         input_tensor = input_tensor.movedim(-1, 1).contiguous()
-        if len(weight.shape) != 3:
-            raise ValueError("Weight tensor must be 3D if input is 3D")
-        weight = weight.movedim(-1, 1).contiguous()
+        if depthwise:
+            # 1D depthwise: weight is [K, OC] -> [OC, 1, K]
+            weight = weight.permute(1, 0).unsqueeze(1).contiguous()
+        else:
+            # 1D regular: weight is [OC, K, IC] -> [OC, IC, K]
+            weight = weight.movedim(-1, 1).contiguous()
+        conv_is_1d = True
     else:
+        # 2D conv: input is [N, H, W, C] -> [N, C, H, W]
         input_tensor = input_tensor.movedim(-1, -3)
-        if len(weight.shape) != 4:
-            raise ValueError("Weight tensor must be 4D if input is nd > 3")
-        weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+        if depthwise:
+            # 2D depthwise: weight is [KH, KW, OC] -> [OC, 1, KH, KW]
+            weight = weight.permute(2, 0, 1).unsqueeze(1).contiguous()
+        else:
+            # 2D regular: weight is [OC, KH, KW, IC] -> [OC, IC, KH, KW]
+            weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+        conv_is_1d = False
 
     nchw_out = quantized_conv_per_tensor(
         input_tensor,

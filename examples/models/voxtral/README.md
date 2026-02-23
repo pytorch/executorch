@@ -74,6 +74,53 @@ optimum-cli export executorch \
 
 See the "Building the multimodal runner" section below for instructions on building with CUDA support, and the "Running the model" section for runtime instructions.
 
+### Exporting with CUDA-Windows
+
+Before running `cuda-windows` export, make sure these requirements are set up:
+- `x86_64-w64-mingw32-g++` is installed and on `PATH` (mingw-w64 cross-compiler).
+- `WINDOWS_CUDA_HOME` points to the extracted Windows CUDA package directory.
+
+Example setup on Ubuntu:
+
+```bash
+# 1) Install cross-compiler + extraction tools
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  g++-mingw-w64-x86-64-posix mingw-w64-tools p7zip-full wget
+
+# 2) Verify cross-compiler
+x86_64-w64-mingw32-g++ --version
+
+# 3) Download and extract Windows CUDA installer package
+CUDA_VERSION=12.8.1
+CUDA_DRIVER_VERSION=572.61
+CUDA_INSTALLER="cuda_${CUDA_VERSION}_${CUDA_DRIVER_VERSION}_windows.exe"
+CUDA_URL="https://developer.download.nvidia.com/compute/cuda/${CUDA_VERSION}/local_installers/${CUDA_INSTALLER}"
+
+mkdir -p /opt/cuda-windows
+cd /opt/cuda-windows
+wget -q "${CUDA_URL}" -O "${CUDA_INSTALLER}"
+7z x "${CUDA_INSTALLER}" -oextracted -y
+
+# 4) Point WINDOWS_CUDA_HOME to extracted Windows CUDA payload
+export WINDOWS_CUDA_HOME=/opt/cuda-windows/extracted/cuda_cudart/cudart
+```
+
+```
+optimum-cli export executorch \
+  --model "mistralai/Voxtral-Mini-3B-2507" \
+  --task "multimodal-text-to-text" \
+  --recipe "cuda-windows" \
+  --dtype bfloat16 \
+  --device cuda \
+  --max_seq_len 1024 \
+  --output_dir="voxtral_windows"
+```
+
+This will generate:
+- `model.pte` - The exported model
+- `aoti_cuda_blob.ptd` - The CUDA kernel blob required for runtime
+
 ## Metal Support
 On Apple Silicon, you can enable the runner to run on Metal. Follow the export and runtime commands below:
 
@@ -131,6 +178,14 @@ make voxtral-cpu
 make voxtral-cuda
 ```
 
+### Building for CUDA on Windows (PowerShell)
+```
+cmake --workflow --preset llm-release-cuda
+Push-Location examples/models/voxtral
+cmake --workflow --preset voxtral-cuda
+Pop-Location
+```
+
 ### Building for Metal
 ```
 # Build Voxtral runner with Metal
@@ -172,6 +227,19 @@ Add the `--data_path` argument to provide the CUDA data blob:
   --audio_path path/to/audio_input.wav \
   --processor_path path/to/voxtral_preprocessor.pte
 ```
+
+### Running on CUDA-Windows (PowerShell):
+```
+.\cmake-out\examples\models\voxtral\Release\voxtral_runner.exe `
+  --model_path C:\path\to\voxtral_windows\model.pte `
+  --data_path C:\path\to\voxtral_windows\aoti_cuda_blob.ptd `
+  --tokenizer_path C:\path\to\tekken.json `
+  --prompt "What can you tell me about this audio?" `
+  --audio_path C:\path\to\audio_input.wav `
+  --processor_path C:\path\to\voxtral_preprocessor.pte
+```
+
+If your generator is single-config, the runner may be at `.\cmake-out\examples\models\voxtral\voxtral_runner.exe` instead.
 
 ### Example output:
 ```

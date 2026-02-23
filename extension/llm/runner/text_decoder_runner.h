@@ -20,7 +20,10 @@ namespace llm {
 
 class ET_EXPERIMENTAL TextDecoderRunner {
  public:
-  explicit TextDecoderRunner(Module* module, IOManager* io_manager);
+  explicit TextDecoderRunner(
+      Module* module,
+      IOManager* io_manager,
+      std::string method_name = "forward");
 
   virtual ~TextDecoderRunner() = default;
 
@@ -40,7 +43,14 @@ class ET_EXPERIMENTAL TextDecoderRunner {
    * @return The error code.
    */
   virtual ::executorch::runtime::Error load() {
-    return module_->load_method("forward");
+    auto err = module_->load_method(method_name_);
+    if (err != ::executorch::runtime::Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to load method '%s'. Check available methods in the model.",
+          method_name_.c_str());
+    }
+    return err;
   }
 
   /**
@@ -48,7 +58,15 @@ class ET_EXPERIMENTAL TextDecoderRunner {
    * @return True if the Module is loaded, false otherwise.
    */
   virtual bool is_method_loaded() {
-    return module_->is_method_loaded("forward");
+    return module_->is_method_loaded(method_name_);
+  }
+
+  /**
+   * Get the method name used by this runner.
+   * @return The method name.
+   */
+  const std::string& method_name() const {
+    return method_name_;
   }
 
   inline void stop() {
@@ -79,6 +97,7 @@ class ET_EXPERIMENTAL TextDecoderRunner {
    */
   Module* module_;
   IOManager* io_manager_;
+  std::string method_name_;
   bool should_stop_{false};
 };
 

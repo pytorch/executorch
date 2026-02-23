@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -30,9 +30,7 @@ class ModuleMetadata(Protocol):
 
 
 class NoNHWC(torch.nn.Module):
-    """
-    Test-module with no ops requiring NHWC mermory format.
-    """
+    """Test-module with no ops requiring NHWC mermory format."""
 
     ops_before_pass: Dict[str, int] = {}
     ops_after_pass: Dict[str, int] = {
@@ -49,8 +47,8 @@ class NoNHWC(torch.nn.Module):
 
 
 class ParallelClusters(torch.nn.Module):
-    """
-    Test-module with multiple parallel clusters of nodes requiring different memory formats.
+    """Test-module with multiple parallel clusters of nodes requiring different
+    memory formats.
     """
 
     ops_before_pass: Dict[str, int] = {}
@@ -82,8 +80,8 @@ class ParallelClusters(torch.nn.Module):
 
 
 class SerialClusters(torch.nn.Module):
-    """
-    Test-module with multiple serial clusters of nodes requring different memory formats.
+    """Test-module with multiple serial clusters of nodes requring different
+    memory formats.
     """
 
     ops_before_pass: Dict[str, int] = {}
@@ -121,8 +119,8 @@ class SerialClusters(torch.nn.Module):
 
 
 class Reshapes(torch.nn.Module):
-    """
-    Test-module with different configurations of views requiring different memory formats.
+    """Test-module with different configurations of views requiring different
+    memory formats.
     """
 
     ops_before_pass: Dict[str, int] = {}

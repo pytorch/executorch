@@ -77,9 +77,18 @@ test_data_suite_bf16 = {
         (torch.randn(1, 1, 2, 2, dtype=torch.bfloat16),),
     ),
 }
+test_data_suite_fp16 = {
+    "2_x_2_fp16": lambda: (Repeat((2, 1)), (torch.randn(3, 4, dtype=torch.float16),)),
+    "4_x_4_fp16": lambda: (
+        Repeat((1, 2, 3, 2)),
+        (torch.randn(1, 1, 2, 2, dtype=torch.float16),),
+    ),
+}
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 def test_repeat_tosa_FP(test_data: Tuple):
     module, test_data = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -144,7 +153,7 @@ def test_repeat_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_repeat_vgf_no_quant(test_data: Tuple):
     module, args = test_data()

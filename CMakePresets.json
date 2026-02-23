@@ -197,9 +197,9 @@
         "EXECUTORCH_BUILD_CUDA": "ON"
       },
       "condition": {
-        "lhs": "${hostSystemName}",
-        "type": "equals",
-        "rhs": "Linux"
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
       }
     },
     {
@@ -224,6 +224,9 @@
         "llm-release-metal"
       ],
       "cacheVariables": {
+        "EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL": "ON",
+        "EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL": "ON",
+        "EXECUTORCH_BUILD_EXECUTOR_RUNNER": "ON",
         "EXECUTORCH_METAL_COLLECT_STATS": "ON",
         "EXECUTORCH_ENABLE_LOGGING": "ON",
         "EXECUTORCH_LOG_LEVEL": "Info"
@@ -289,6 +292,7 @@
       "name": "llm-release-install",
       "displayName": "Build and install LLM extension release artifacts",
       "configurePreset": "llm-release",
+      "configuration": "Release",
       "targets": [
         "install"
       ],
@@ -298,6 +302,7 @@
       "name": "llm-release-cuda-install",
       "displayName": "Build and install LLM extension release artifacts (CUDA)",
       "configurePreset": "llm-release-cuda",
+      "configuration": "Release",
       "targets": [
         "install"
       ],
@@ -307,6 +312,7 @@
       "name": "llm-release-metal-install",
       "displayName": "Build and install LLM extension release artifacts (Metal)",
       "configurePreset": "llm-release-metal",
+      "configuration": "Release",
       "targets": [
         "install"
       ],

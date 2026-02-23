@@ -12,8 +12,8 @@ from executorch.exir.pass_base import ExportPass
 
 
 class CanonicalizeGatherPass(ArmPass):
-    """
-    Canonicalize gather so it can be lowered to TOSA.GATHER via the backend dialect.
+    """Canonicalize gather so it can be lowered to TOSA.GATHER via the backend
+    dialect.
 
     This pass is intended to run only for nodes already gated by GatherSupported.
 
@@ -35,6 +35,7 @@ class CanonicalizeGatherPass(ArmPass):
     - Reshape and permute output to [N,W,C].
     - Note that this decomposition requires the channel size of the indices to be the same as the channel
     size of the input, which is not guaranteed in Pytorch. We reject nodes not fulfilling this when partitioning.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()

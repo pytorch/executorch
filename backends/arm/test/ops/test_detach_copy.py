@@ -31,7 +31,7 @@ class DetachCopy(torch.nn.Module):
     exir_op = exir_op
 
     def forward(self, x: torch.Tensor):
-        return torch.detach_copy(x)
+        return torch.detach_copy(x) + 1
 
 
 @common.parametrize("test_data", test_data_suite)

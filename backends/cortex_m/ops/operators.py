@@ -499,6 +499,46 @@ def transpose_impl(input: torch.Tensor, perm) -> torch.Tensor:
 
 
 # ===================================================================
+# PAD OPERATION DEFINITION
+# ===================================================================
+lib.define("pad(Tensor input, int[] pre_pad, int[] post_pad, int pad_value) -> Tensor")
+lib.define(
+    "pad.out(Tensor input, int[] pre_pad, int[] post_pad, int pad_value, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::pad")
+def pad_meta(
+    input: torch.Tensor,
+    pre_pad: list[int],
+    post_pad: list[int],
+    pad_value: int,
+) -> torch.Tensor:
+    rank = input.dim()
+    offset = 4 - rank
+    output_shape = list(input.shape)
+    for i in range(rank):
+        output_shape[i] += pre_pad[offset + i] + post_pad[offset + i]
+    return torch.empty(output_shape, dtype=input.dtype, device=input.device)
+
+
+@impl(lib, "pad", "CompositeExplicitAutograd")
+def pad_impl(
+    input: torch.Tensor,
+    pre_pad: list[int],
+    post_pad: list[int],
+    pad_value: int,
+) -> torch.Tensor:
+    rank = input.dim()
+    offset = 4 - rank
+    padding = []
+    for i in reversed(range(rank)):
+        padding.extend([pre_pad[offset + i], post_pad[offset + i]])
+    return F.pad(input, padding, mode="constant", value=pad_value)
+
+
+# ===================================================================
 # QUANTIZED CONV2D OPERATION DEFINITION
 # ===================================================================
 

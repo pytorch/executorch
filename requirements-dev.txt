@@ -1,6 +1,6 @@
 # Pip packages needed to build from source. Mainly for development of ExecuTorch.
 
-cmake>=3.29, <4.0.0  # For building binary targets in the wheel.
+cmake>=3.24, <4.0.0  # For building binary targets in the wheel.
 packaging>=24.2 # Lower bound required by setuptools
 pip>=23  # For building the pip package.
 pyyaml  # Imported by the kernel codegen tools.

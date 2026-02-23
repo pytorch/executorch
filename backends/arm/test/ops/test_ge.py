@@ -68,7 +68,16 @@ test_data_tensor = {
     "ge_tensor_rank3_randn": lambda: op_ge_tensor_rank3_randn,
     "ge_tensor_rank4_randn": lambda: op_ge_tensor_rank4_randn,
 }
-
+test_data_tensor_fp16 = {
+    "ge_tensor_rank2_rand_fp16": lambda: GreaterEqual(
+        torch.rand(4, 5, dtype=torch.float16),
+        torch.rand(1, 5, dtype=torch.float16),
+    ),
+    "ge_tensor_rank4_randn_fp16": lambda: GreaterEqual(
+        torch.randn(2, 3, 4, 2, dtype=torch.float16),
+        torch.randn(2, 3, 4, 1, dtype=torch.float16),
+    ),
+}
 test_data_tensor_bf16 = {
     "ge_tensor_rank2_rand_bf16": lambda: GreaterEqual(
         torch.rand(4, 5, dtype=torch.bfloat16),
@@ -86,7 +95,14 @@ test_data_scalar = {
     "ge_scalar_rank3_randn": lambda: op_ge_scalar_rank3_randn,
     "ge_scalar_rank4_randn": lambda: op_ge_scalar_rank4_randn,
 }
-
+test_data_scalar_fp16 = {
+    "ge_scalar_rank2_rand_fp16": lambda: GreaterEqual(
+        torch.rand(4, 5, dtype=torch.float16), 0.2
+    ),
+    "ge_scalar_rank3_randn_fp16": lambda: GreaterEqual(
+        torch.randn(2, 3, 4, dtype=torch.float16), -0.1
+    ),
+}
 test_data_scalar_bf16 = {
     "ge_scalar_rank2_rand_bf16": lambda: GreaterEqual(
         torch.rand(4, 5, dtype=torch.bfloat16), 0.2
@@ -97,7 +113,9 @@ test_data_scalar_bf16 = {
 }
 
 
-@common.parametrize("test_module", test_data_tensor | test_data_tensor_bf16)
+@common.parametrize(
+    "test_module", test_data_tensor | test_data_tensor_bf16 | test_data_tensor_fp16
+)
 def test_ge_tensor_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
@@ -109,7 +127,9 @@ def test_ge_tensor_tosa_FP(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_scalar | test_data_scalar_bf16)
+@common.parametrize(
+    "test_module", test_data_scalar | test_data_scalar_bf16 | test_data_scalar_fp16
+)
 def test_ge_scalar_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
@@ -128,6 +148,7 @@ def test_ge_tensor_tosa_INT(test_module):
         test_module().get_inputs(),
         GreaterEqual.aten_op_tensor,
         GreaterEqual.exir_op,
+        frobenius_threshold=0.5,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
     )
     pipeline.run()
 
@@ -139,6 +160,7 @@ def test_ge_scalar_tosa_INT(test_module):
         test_module().get_inputs(),
         GreaterEqual.aten_op_tensor,
         GreaterEqual.exir_op,
+        frobenius_threshold=0.5,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
     )
     pipeline.run()
 
@@ -262,7 +284,7 @@ def test_ge_scalar_16a8w_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_tensor)
+@common.parametrize("test_module", test_data_tensor | test_data_tensor_fp16)
 @common.SkipIfNoModelConverter
 def test_ge_tensor_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
@@ -288,7 +310,7 @@ def test_ge_tensor_vgf_quant(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_scalar)
+@common.parametrize("test_module", test_data_scalar | test_data_scalar_fp16)
 @common.SkipIfNoModelConverter
 def test_ge_scalar_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](

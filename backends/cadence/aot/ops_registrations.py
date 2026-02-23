@@ -14,6 +14,7 @@ from executorch.backends.cadence.aot.utils import (
     get_conv1d_output_size,
     get_conv2d_output_size,
     get_im2row_output_size,
+    is_depthwise_conv,
 )
 from executorch.exir.scalar_type import ScalarType
 from torch._meta_registrations import _linalg_svd_meta
@@ -1028,12 +1029,20 @@ def quantized_conv2d_nhwc_meta(
     out_multiplier: torch.Tensor,
     out_shift: torch.Tensor,
 ) -> torch.Tensor:
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+
+    # Determine weight layout based on depthwise vs regular conv.
+    in_channels = in_size[-1]
+    if is_depthwise_conv(groups, in_channels):
+        # Depthwise conv: weight is [*kernel_size, OC]
+        *kernel_size, out_channels = weight.shape
+    else:
+        # 1D conv: weight is [OC, K, IC]
+        # 2D regular conv: weight is [OC, KH, KW, IC]
+        out_channels, *kernel_size, _ = weight.shape
 
     # Compute the output tensor size
     output_size = (
@@ -1160,12 +1169,21 @@ def quantized_conv2d_nhwc_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+
+    # Determine weight layout based on depthwise vs regular conv.
+    in_channels = in_size[-1]
+    if is_depthwise_conv(groups, in_channels):
+        *kernel_size, out_channels = weight.shape
+    elif len(in_size) == 3:
+        # 1D conv: weight is [OC, K, IC]
+        out_channels, *kernel_size, _ = weight.shape
+    else:
+        # 2D regular conv: weight is [OC, KH, KW, IC]
+        out_channels, *kernel_size, _ = weight.shape
 
     # Compute the output tensor size
     output_size = (
@@ -1307,12 +1325,21 @@ def quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
         and weight.dtype == torch.int8
         and bias.dtype == torch.int32
     )
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+
+    # Determine weight layout based on depthwise vs regular conv.
+    in_channels = in_size[-1]
+    if is_depthwise_conv(groups, in_channels):
+        *kernel_size, out_channels = weight.shape
+    elif len(in_size) == 3:
+        # 1D conv: weight is [OC, K, IC]
+        out_channels, *kernel_size, _ = weight.shape
+    else:
+        # 2D regular conv: weight is [OC, KH, KW, IC]
+        out_channels, *kernel_size, _ = weight.shape
 
     # Compute the output tensor size
     output_size = (
@@ -1356,12 +1383,21 @@ def quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
         and weight.dtype == torch.uint8
         and bias.dtype == torch.int32
     )
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+
+    # Determine weight layout based on depthwise vs regular conv.
+    in_channels = in_size[-1]
+    if is_depthwise_conv(groups, in_channels):
+        *kernel_size, out_channels = weight.shape
+    elif len(in_size) == 3:
+        # 1D conv: weight is [OC, K, IC]
+        out_channels, *kernel_size, _ = weight.shape
+    else:
+        # 2D regular conv: weight is [OC, KH, KW, IC]
+        out_channels, *kernel_size, _ = weight.shape
 
     # Compute the output tensor size
     output_size = (
@@ -1705,12 +1741,13 @@ def quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
         and weight.dtype == torch.int8
         and bias.dtype == torch.int32
     )
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+    # Depthwise weight is always [*kernel_size, OC]:
+    # 2D: [KH, KW, OC], 1D: [K, OC]
+    *kernel_size, out_channels = weight.shape
 
     # Compute the output tensor size
     output_size = (
@@ -1756,12 +1793,13 @@ def quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
         and weight.dtype == torch.uint8
         and bias.dtype == torch.int32
     )
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+    # Depthwise weight is always [*kernel_size, OC]:
+    # 2D: [KH, KW, OC], 1D: [K, OC]
+    *kernel_size, out_channels = weight.shape
 
     # Compute the output tensor size
     output_size = (
@@ -2858,7 +2896,7 @@ def quantized_w8a32_gru_meta(
     bias_hidden: torch.Tensor,
     b_h_scale: float,
 ) -> torch.Tensor:
-    return hidden.new_empty((2, hidden.shape[-1]), dtype=torch.float32)
+    return hidden.new_empty((2, *hidden.shape), dtype=torch.float32)
 
 
 @register_fake("cadence::slice_scatter_")

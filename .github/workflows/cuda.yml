@@ -164,6 +164,8 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch"
+        # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
+        export USE_MKL=OFF
         ./install_executorch.sh
         echo "::endgroup::"
 
@@ -221,3 +223,68 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         source .ci/scripts/test_model_e2e.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+
+  test-cuda-pybind:
+    name: test-cuda-pybind
+    needs: export-model-cuda-artifact
+    # This job downloads models exported by export-model-cuda-artifact and runs them using pybind.
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ["gemma3-4b"]
+        quantize: ["", "--quantize"]
+    with:
+      timeout: 120
+      secrets-env: EXECUTORCH_HF_TOKEN
+      download-artifact: google-gemma-3-4b-it-cuda-${{ matrix.quantize && 'quantized-int4-tile-packed' || 'non-quantized' }}
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch"
+        # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
+        export USE_MKL=OFF
+        ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Fix libstdc++ GLIBCXX version"
+        # The embedded .so files in the CUDA blob require GLIBCXX_3.4.29
+        # which the default conda libstdc++ doesn't have. Install a newer
+        # libstdc++ from conda-forge and use it via LD_PRELOAD.
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+        # Verify the new libstdc++ has GLIBCXX_3.4.29
+        strings /opt/conda/lib/libstdc++.so.6 | grep GLIBCXX_3.4.29 || {
+            echo "Error: GLIBCXX_3.4.29 not found in /opt/conda/lib/libstdc++.so.6"
+            exit 1
+        }
+        echo "::endgroup::"
+
+        echo "::group::Setup Huggingface"
+        pip install -U "huggingface_hub[cli]<1.0"
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        echo "::endgroup::"
+
+        echo "::group::Install optimum-executorch"
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        echo "::endgroup::"
+
+        echo "::group::Test CUDA Multimodal: ${{ matrix.model }} ${{ matrix.quantize }}"
+        python .ci/scripts/test_huggingface_optimum_model.py \
+          --model ${{ matrix.model }} \
+          --recipe cuda \
+          --model_dir "${RUNNER_ARTIFACT_DIR}" \
+          --run_only \
+          ${{ matrix.quantize }}
+        echo "::endgroup::"

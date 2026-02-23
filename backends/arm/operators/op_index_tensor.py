@@ -18,6 +18,7 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta, TosaArg
 from torch.fx import Node
@@ -123,10 +124,30 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
 
         """
 
-        validate_same_dtype(self.target, [inputs[0], output])
-
         values, indices = inputs
         index_nodes = indices.special
+
+        validate_same_dtype(self.target, [values, output])
+        validate_valid_dtype(
+            self.target,
+            [values, output],
+            [
+                ts.DType.INT8,
+                ts.DType.INT32,
+                ts.DType.FP16,
+                ts.DType.BF16,
+                ts.DType.FP32,
+            ],
+            self.tosa_spec,
+        )
+
+        for index_node in index_nodes:
+            _, index_dtype, _ = self._get_tensor_info(index_node)
+            if index_dtype != ts.DType.INT32:
+                raise ValueError(
+                    f"Expected index tensor {index_node.name} in {self.target} to "
+                    f"have dtype {ts.DType.INT32}, got: {index_dtype}"
+                )
 
         # Broadcast indices
         broadcasted_tensors = tutils.broadcast_tensors(tosa_graph, index_nodes)

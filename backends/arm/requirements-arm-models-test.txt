@@ -8,3 +8,4 @@ diffusers[torch] @ git+https://github.com/huggingface/diffusers.git@a7cb14efbe4b
 pydantic
 slangtorch
 rich
+setuptools==80.10.2

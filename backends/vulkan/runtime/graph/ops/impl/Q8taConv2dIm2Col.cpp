@@ -132,7 +132,7 @@ void add_q8ta_im2col_node(
   // The implementation also requires that input channels is a multiple of 4
   VK_CHECK_COND(conv_params.in_channels_per_group % 4 == 0);
 
-  std::string kernel_name = "q8ta_im2col_4w4c";
+  std::string kernel_name = "q8ta_im2col";
 
   vkapi::ParamsBindList param_buffers = {
       graph.buffer_meta_ubo(packed_int8_im2col),
@@ -197,6 +197,7 @@ void q8ta_conv2d_im2col(
   const ValueRef padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
 
   QuantizationConfig weight_quant_config(8, kPerChannel, {});
@@ -224,6 +225,9 @@ void q8ta_conv2d_im2col(
     packed_bias =
         prepack_standard(graph, bias_data, utils::kBuffer, utils::kWidthPacked);
   }
+
+  uint32_t activation_type_val = static_cast<uint32_t>(
+      activation_type_from_string(graph.extract_string(activation)));
 
   // Calculate im2col output sizes
   std::vector<int64_t> im2col_sizes = calculate_q8ta_im2col_sizes(
@@ -265,11 +269,12 @@ void q8ta_conv2d_im2col(
       output_zp,
       bias_data,
       packed_bias,
+      activation_type_val,
       packed_int8_output);
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(etvk.q8ta_conv2d_im2col.default, q8ta_conv2d_im2col);
+  VK_REGISTER_OP(et_vk.q8ta_conv2d_im2col.default, q8ta_conv2d_im2col);
 }
 
 } // namespace vkcompute

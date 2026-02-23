@@ -44,7 +44,7 @@ class RsqrtVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.FP32, ts.DType.BF16],
+            [ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
             self.tosa_spec,
         )
         attr = ts.TosaSerializerAttribute()

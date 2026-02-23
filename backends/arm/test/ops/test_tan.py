@@ -2,8 +2,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-
 import math
 from typing import Tuple
 
@@ -98,6 +96,8 @@ def test_tan_tosa_INT(test_data: Tuple):
         (test_data,),
         aten_op,
         exir_op,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 

@@ -11,7 +11,6 @@ import torch
 from datasets import load_dataset
 
 from optimum.executorch import (
-    ExecuTorchModelForCausalLM,
     ExecuTorchModelForImageClassification,
     ExecuTorchModelForMaskedLM,
     ExecuTorchModelForSeq2SeqLM,
@@ -152,18 +151,24 @@ def test_text_generation(model_id, model_dir, recipe, *, quantize=True, run_only
         cli_export(command, model_dir)
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    tokenizer.save_pretrained(model_dir)
-    model = ExecuTorchModelForCausalLM.from_pretrained(model_dir)
-    generated_text = model.text_generation(
-        tokenizer=tokenizer,
-        prompt="Simply put, the theory of relativity states that",
-        max_seq_len=64,
+    saved_files = tokenizer.save_pretrained(model_dir)
+    tokenizer_path = get_tokenizer_path(model_dir, saved_files)
+
+    from executorch.extension.llm.runner import GenerationConfig, TextLLMRunner
+
+    runner = TextLLMRunner(f"{model_dir}/model.pte", tokenizer_path)
+    tokens = []
+    runner.generate(
+        "Simply put, the theory of relativity states that",
+        GenerationConfig(seq_len=64, temperature=0, echo=True),
+        token_callback=lambda t: tokens.append(t),
     )
+    generated_text = "".join(tokens)
     print(f"\nGenerated text:\n\t{generated_text}")
     generated_tokens = tokenizer(generated_text, return_tensors="pt").input_ids
 
     # Free memory before loading eager for quality check
-    del model
+    del runner
     del tokenizer
     gc.collect()
 
@@ -214,15 +219,38 @@ def test_llm_with_image_modality(
         recipe,
         "--output_dir",
         model_dir,
-        "--use_custom_sdpa",
-        "--use_custom_kv_cache",
-        "--qlinear",
-        "8da4w",
-        "--qembedding",
-        "8w",
     ]
+
+    # Recipe-specific configurations
+    if "xnnpack" in recipe:
+        command += ["--use_custom_sdpa", "--use_custom_kv_cache"]
+        if quantize:
+            command += ["--qlinear", "8da4w", "--qembedding", "8w"]
+    elif recipe == "cuda":
+        command += ["--dtype", "bfloat16", "--device", "cuda"]
+        if quantize:
+            command += [
+                "--qlinear",
+                "4w",
+                "--qlinear_encoder",
+                "4w",
+                "--qlinear_packing_format",
+                "tile_packed_to_4d",
+                "--qlinear_encoder_packing_format",
+                "tile_packed_to_4d",
+            ]
+    else:
+        assert not quantize, f"Quantization not supported for {recipe} recipe"
+
     if not run_only:
         cli_export(command, model_dir)
+
+    # CUDA artifact validation
+    if recipe == "cuda":
+        model_path = Path(model_dir) / "model.pte"
+        cuda_blob_path = Path(model_dir) / "aoti_cuda_blob.ptd"
+        assert model_path.exists(), f"Main model file not found: {model_path}"
+        assert cuda_blob_path.exists(), f"CUDA blob not found: {cuda_blob_path}"
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     saved_files = tokenizer.save_pretrained(model_dir)
@@ -262,7 +290,14 @@ def test_llm_with_image_modality(
 
     from executorch.extension.llm.runner import GenerationConfig, MultimodalRunner
 
-    runner = MultimodalRunner(f"{model_dir}/model.pte", tokenizer_path)
+    # Recipe-specific MultimodalRunner instantiation
+    if recipe == "cuda":
+        runner = MultimodalRunner(
+            f"{model_dir}/model.pte", tokenizer_path, f"{model_dir}/aoti_cuda_blob.ptd"
+        )
+    else:
+        runner = MultimodalRunner(f"{model_dir}/model.pte", tokenizer_path)
+
     generated_text = runner.generate_text_hf(
         inputs,
         GenerationConfig(max_new_tokens=128, temperature=0, echo=False),

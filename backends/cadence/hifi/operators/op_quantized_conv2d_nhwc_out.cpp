@@ -176,15 +176,16 @@ void xa_opt_quantized_conv2d_nhwc(
     WORD32* __restrict__ p_bias =
         (WORD32* __restrict__)bias.const_data_ptr<int32_t>();
 
-    WORD32 input_height = conv1d ? 1 : input.size(2);
-    WORD32 input_width = conv1d ? input.size(2) : input.size(3);
-    WORD32 input_channels = input.size(1);
-    WORD32 kernel_height = conv1d ? 1 : weight.size(2);
-    WORD32 kernel_width = conv1d ? weight.size(2) : weight.size(3);
-    WORD32 kernel_channels = weight.size(1);
+    // NHWC layout: 4D=[N,H,W,C], 3D=[N,W,C]
+    WORD32 input_height = conv1d ? 1 : input.size(1);
+    WORD32 input_width = conv1d ? input.size(1) : input.size(2);
+    WORD32 input_channels = conv1d ? input.size(2) : input.size(3);
+    WORD32 kernel_height = conv1d ? 1 : weight.size(1);
+    WORD32 kernel_width = conv1d ? weight.size(1) : weight.size(2);
+    WORD32 kernel_channels = conv1d ? weight.size(2) : weight.size(3);
     WORD32 out_channels = weight.size(0);
-    WORD32 out_height = conv1d ? 1 : out.size(2);
-    WORD32 out_width = conv1d ? out.size(2) : out.size(3);
+    WORD32 out_height = conv1d ? 1 : out.size(1);
+    WORD32 out_width = conv1d ? out.size(1) : out.size(2);
     WORD32 batches = input.size(0);
 
     WORD32 x_stride = stride[1];
@@ -307,18 +308,10 @@ void xa_opt_quantized_conv2d_nhwc(
 
       p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
 
-      WORD8* ptr1 = (WORD8*)kernels::allocate_temp_memory(
-          ctx,
-          ((batches * out_channels * out_height * out_width) + 8) *
-              sizeof(WORD8));
-
-      WORD8* p_out_temp = (WORD8*)ALIGN_PTR(ptr1, 8);
-
       for (int _n = 0; _n < batches; _n++) {
         WORD8* in_batch =
             p_inp + _n * input_channels * input_height * input_width;
-        WORD8* out_batch =
-            p_out_temp + _n * out_channels * out_height * out_width;
+        WORD8* out_batch = p_out + _n * out_channels * out_height * out_width;
 
         xa_nn_conv2d_depthwise_per_chan_sym8sxasym8s(
             out_batch,

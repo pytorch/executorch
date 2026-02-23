@@ -98,6 +98,7 @@ def to_quantized_edge_program(
     custom_delegation_options=CustomDelegationOptions(),  # noqa B008
     get_quantizer_fn=None,
     use_neutron_for_format_conversion=True,
+    use_quant_state_dict=True,
 ) -> EdgeProgramManager:
     _neutron_target_spec = NeutronTargetSpec(target, neutron_converter_flavor)
     if get_quantizer_fn is None:
@@ -120,15 +121,24 @@ def to_quantized_edge_program(
         is_qat=use_qat,
     )
 
+    # List of operators to not decompose during the lowering.
+    preserve_ops = [torch.ops.aten.prelu.default]
     compile_spec = generate_neutron_compile_spec(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
         neutron_converter_flavor=neutron_converter_flavor,
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
     )
+    post_quant_state_dict = (
+        exir_program_aten__module_quant.state_dict() if use_quant_state_dict else None
+    )
     partitioners = [
         NeutronPartitioner(
-            compile_spec, _neutron_target_spec, custom_delegation_options
+            compile_spec,
+            _neutron_target_spec,
+            custom_delegation_options,
+            post_quant_state_dict,
+            preserve_ops=preserve_ops,
         )
     ]
 
@@ -136,7 +146,9 @@ def to_quantized_edge_program(
         export(exir_program_aten__module_quant, example_input, strict=True),
         transform_passes=NeutronEdgePassManager(),
         partitioner=partitioners,
-        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+        ),
     )
 
     if remove_quant_io_ops:
