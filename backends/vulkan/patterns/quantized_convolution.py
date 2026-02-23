@@ -156,7 +156,7 @@ def find_quantized_convolution_patterns(
 
 
 @register_pattern_replacement("quantized_convolution")
-def make_conv2d_q8ta_q8csw_custom_op(
+def make_q8ta_conv2d_custom_op(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
     match: QuantizedConvolutionMatch,
@@ -215,9 +215,27 @@ def make_conv2d_q8ta_q8csw_custom_op(
     with graph_module.graph.inserting_before(first_graph_node):
         qweight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
         # Pre-compute the weight sums which are needed to apply activation zero point
-        # when using integer accumulation. For the reshaped 2D weight matrix (IC_per_group * H * W, OC),
-        # sum over dimension 0 to get sums per output channel
-        sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.int32).contiguous()
+        # when using integer accumulation. Sum all weight elements per output channel.
+        if is_depthwise_conv:
+            # weight_tensor shape is (H, W, OC); sum over spatial dims (H, W)
+            sum_per_output_channel = (
+                weight_tensor.sum(dim=(0, 1)).to(torch.int32).contiguous()
+            )
+        else:
+            # weight_tensor shape is (OC, H*W*IC_per_group); sum over dim 1
+            sum_per_output_channel = (
+                weight_tensor.sum(dim=1).to(torch.int32).contiguous()
+            )
+        # Pad weight sums to align OC to multiple of 4, matching the alignment
+        # applied to weight, weight_scales, and bias above. Without this, the
+        # GPU shader would read out-of-bounds when OC is not a multiple of 4.
+        oc = sum_per_output_channel.shape[0]
+        if oc % 4 != 0:
+            num_padding = 4 - (oc % 4)
+            sum_per_output_channel = torch.nn.functional.pad(
+                sum_per_output_channel, (0, num_padding)
+            ).contiguous()
+
         sums_name = qweight_tensor_name + "_sums"
         # Sanitize the name
         sums_name = sums_name.replace(".", "_")
@@ -230,10 +248,20 @@ def make_conv2d_q8ta_q8csw_custom_op(
             data=sum_per_output_channel,
         )
 
+    is_pointwise_conv = (
+        H == 1
+        and W == 1
+        and list(match.stride) == [1, 1]
+        and list(match.dilation) == [1, 1]
+        and list(match.padding) == [0, 0]
+    )
+
     with graph_module.graph.inserting_before(match.output_node):
-        op_target = exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to.default
+        op_target = exir_ops.edge.et_vk.q8ta_conv2d.default
         if is_depthwise_conv:
-            op_target = exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to_dw.default
+            op_target = exir_ops.edge.et_vk.q8ta_conv2d_dw.default
+        elif is_pointwise_conv:
+            op_target = exir_ops.edge.et_vk.q8ta_conv2d_pw.default
 
         qconv_node = graph_module.graph.create_node(
             "call_function",
@@ -253,6 +281,7 @@ def make_conv2d_q8ta_q8csw_custom_op(
                 match.padding,
                 match.dilation,
                 match.groups,
+                "relu" if match.relu_node is not None else "none",
             ),
         )
 

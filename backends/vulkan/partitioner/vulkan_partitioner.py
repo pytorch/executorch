@@ -266,6 +266,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "op args not supported")
             return False
 
+        if not features.supports_highdim and utils.op_contains_high_dim_tensor(node):
+            self.log_skip(node, "op does not support high dim tensors")
+            return False
+
         if self.require_dynamic_shapes and not features.supports_resize:
             self.log_skip(node, "no dynamic shape support")
             return False

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,9 +14,7 @@ input_t = Tuple[torch.Tensor]  # Input x
 
 
 class Softmax(torch.nn.Module):
-    """
-    Basic torch.nn.softmax layer model
-    """
+    """Basic torch.nn.softmax layer model."""
 
     def __init__(self):
         super(Softmax, self).__init__()
@@ -31,9 +29,7 @@ class Softmax(torch.nn.Module):
 
 
 class SoftmaxLog(torch.nn.Module):
-    """
-    Basic torch.nn.log_softmax layer model
-    """
+    """Basic torch.nn.log_softmax layer model."""
 
     def __init__(self):
         super(SoftmaxLog, self).__init__()

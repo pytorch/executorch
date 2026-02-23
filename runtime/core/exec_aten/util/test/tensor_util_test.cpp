@@ -223,7 +223,8 @@ TEST_F(TensorUtilTest, ContiguousCheckSupported) {
   ET_CHECK_CONTIGUOUS(t_contiguous);
 
   // Assert t_incontiguous is incontiguous.
-  ET_EXPECT_DEATH(ET_CHECK_CONTIGUOUS(t_incontiguous), "");
+  ET_EXPECT_DEATH(
+      ET_CHECK_CONTIGUOUS(t_incontiguous), "stride of the.*dimension shall");
 }
 
 TEST_F(TensorUtilTest, CheckSameContiguousStrideSupported) {

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -106,7 +106,7 @@ class ComboConv2dMeandim(torch.nn.Module):
         self.adaptive_avg_pool2d = torch.nn.AdaptiveAvgPool2d((1, 1))
 
     def get_inputs(self) -> Tuple[torch.Tensor]:
-        return (torch.randn(1, 3, 48, 48),)
+        return (torch.randn(1, 3, 48, 48) + 1,)
 
     def forward(self, x):
         x = self.conv2d(x)

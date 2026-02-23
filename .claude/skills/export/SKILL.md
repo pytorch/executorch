@@ -26,3 +26,6 @@ with open("model.pte", "wb") as f:
 ## Debugging
 - Draft export: `export(model, inputs, strict=False)`
 - tlparse: `TORCH_LOGS="+dynamo,+export" python script.py 2>&1 | tlparse`
+
+## Guides
+- [torch.export basics](guides/torch-export.md) — `torch.export.export()`, dynamic shapes, strict mode, debugging

@@ -38,8 +38,10 @@ target_include_directories(
 )
 target_compile_options(
   aoti_common
-  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
-         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+  PUBLIC
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/EHsc /GR>
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-fexceptions
+    -frtti -fPIC>
 )
 target_compile_definitions(
   aoti_common PRIVATE $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
@@ -107,14 +109,40 @@ endif()
 add_library(aoti_common_shims_slim STATIC ${_aoti_common_shims_slim_sources})
 target_compile_options(
   aoti_common_shims_slim
-  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
-         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+  PUBLIC
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/EHsc /GR>
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-fexceptions
+    -frtti -fPIC>
 )
 target_compile_definitions(
   aoti_common_shims_slim PUBLIC $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
 )
 
 target_link_libraries(aoti_common_shims_slim PUBLIC slimtensor ${CMAKE_DL_LIBS})
+
+if(MSVC)
+  # MSVC drops unreferenced symbols from static libs; export symbols by
+  # including the objects directly in the CUDA shims DLL.
+  add_library(
+    aoti_common_shims_slim_obj OBJECT ${_aoti_common_shims_slim_sources}
+  )
+  target_compile_options(
+    aoti_common_shims_slim_obj
+    PUBLIC
+      $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/EHsc
+      /GR>
+      $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-fexceptions
+      -frtti
+      -fPIC>
+  )
+  target_compile_definitions(
+    aoti_common_shims_slim_obj
+    PUBLIC $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
+  )
+  target_link_libraries(
+    aoti_common_shims_slim_obj PUBLIC slimtensor ${CMAKE_DL_LIBS}
+  )
+endif()
 
 install(
   TARGETS aoti_common_shims_slim

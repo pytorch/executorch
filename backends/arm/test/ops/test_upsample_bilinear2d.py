@@ -65,6 +65,20 @@ test_data_suite_tosa_bf16 = {
         True,
     ),
 }
+test_data_suite_tosa_fp16 = {
+    "randn_double_scale_fp16": (
+        torch.randn(1, 2, 2, 2, dtype=torch.float16),
+        None,
+        2.0,
+        True,
+    ),
+    "randn_double_size_fp16": (
+        torch.randn(1, 1, 3, 2, dtype=torch.float16),
+        (6, 4),
+        None,
+        True,
+    ),
+}
 
 test_data_suite_Uxx = {
     "rand_half_scale": (torch.rand(2, 4, 8, 6), None, 0.5, False),
@@ -123,7 +137,10 @@ class Interpolate(torch.nn.Module):
         return self.upsample(x)
 
 
-@common.parametrize("test_data", test_data_suite_tosa | test_data_suite_tosa_bf16)
+@common.parametrize(
+    "test_data",
+    test_data_suite_tosa | test_data_suite_tosa_bf16 | test_data_suite_tosa_fp16,
+)
 def test_upsample_bilinear2d_vec_tosa_FP_UpsamplingBilinear2d(
     test_data: torch.Tensor,
 ):
@@ -150,7 +167,10 @@ def test_upsample_bilinear2d_vec_tosa_FP_UpsamplingBilinear2d(
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_tosa | test_data_suite_tosa_bf16)
+@common.parametrize(
+    "test_data",
+    test_data_suite_tosa | test_data_suite_tosa_bf16 | test_data_suite_tosa_fp16,
+)
 def test_upsample_bilinear2d_vec_tosa_FP_Upsample(
     test_data: torch.Tensor,
 ):
@@ -178,7 +198,10 @@ def test_upsample_bilinear2d_vec_tosa_FP_Upsample(
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_tosa | test_data_suite_tosa_bf16)
+@common.parametrize(
+    "test_data",
+    test_data_suite_tosa | test_data_suite_tosa_bf16 | test_data_suite_tosa_fp16,
+)
 def test_upsample_bilinear2d_vec_tosa_FP_Interpolate(
     test_data: torch.Tensor,
 ):
@@ -387,7 +410,7 @@ def test_upsample_bilinear2d_vec_u85_INT_a16w8(
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_tosa)
+@common.parametrize("test_data", test_data_suite_tosa | test_data_suite_tosa_fp16)
 @common.SkipIfNoModelConverter
 def test_upsample_bilinear2d_vec_vgf_no_quant_UpsamplingBilinear2d(
     test_data: torch.Tensor,
@@ -405,23 +428,32 @@ def test_upsample_bilinear2d_vec_vgf_no_quant_UpsamplingBilinear2d(
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_tosa)
+@common.parametrize("test_data", test_data_suite_tosa | test_data_suite_tosa_fp16)
 @common.SkipIfNoModelConverter
 def test_upsample_bilinear2d_vec_vgf_no_quant_Upsample(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data
+    match test_data[0].dtype:
+        case torch.float16:
+            atol = 1e-2
+            rtol = 1e-2
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t1](
         Upsample(size, scale_factor),
         (data,),
         aten_op,
         exir_op,
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     if not compare:
         pipeline.pop_stage(-1)
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_tosa)
+@common.parametrize("test_data", test_data_suite_tosa | test_data_suite_tosa_fp16)
 @common.SkipIfNoModelConverter
 def test_upsample_bilinear2d_vec_vgf_no_quant_Interpolate(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data

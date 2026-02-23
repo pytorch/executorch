@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class RemoveNoopPass(ArmPass):
-    """Remove no-ops from graph_module"""
+    """Remove no-ops from graph_module."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 

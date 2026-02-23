@@ -197,7 +197,7 @@ TEST_F(OperatorRegistryTest, RegisterOpsMoreThanOnceDie) {
       Kernel("foo", [](KernelRuntimeContext&, Span<EValue*>) {}),
       Kernel("foo", [](KernelRuntimeContext&, Span<EValue*>) {})};
   Span<const Kernel> kernels_span = Span<const Kernel>(kernels);
-  ET_EXPECT_DEATH({ (void)register_kernels(kernels_span); }, "");
+  ET_EXPECT_DEATH((void)register_kernels(kernels_span), "registration failed");
 }
 
 TEST_F(OperatorRegistryTest, KernelKeyEquals) {
@@ -408,7 +408,7 @@ TEST_F(OperatorRegistryTest, DoubleRegisterKernelsDies) {
       });
   Kernel kernels[] = {kernel_1, kernel_2};
   // clang-tidy off
-  ET_EXPECT_DEATH({ (void)register_kernels(kernels); }, "");
+  ET_EXPECT_DEATH((void)register_kernels(kernels), "registration failed");
   // clang-tidy on
 }
 

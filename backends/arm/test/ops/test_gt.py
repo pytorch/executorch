@@ -149,6 +149,7 @@ def test_gt_tensor_tosa_INT(test_module):
         test_module().get_inputs(),
         Greater.aten_op_tensor,
         Greater.exir_op,
+        frobenius_threshold=0.5,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
     )
     pipeline.run()
 
@@ -160,6 +161,7 @@ def test_gt_scalar_tosa_INT(test_module):
         test_module().get_inputs(),
         Greater.aten_op_tensor,
         Greater.exir_op,
+        frobenius_threshold=0.5,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
     )
     pipeline.run()
 

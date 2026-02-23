@@ -36,8 +36,7 @@ def _get_leaky_relu_ops(op) -> tuple:
 
 
 class DecomposeLeakyReLUPass(ArmPass):
-    """
-    This pass decomposes Leaky ReLU into primitive operations.
+    """This pass decomposes Leaky ReLU into primitive operations.
     LeakyReLU(x,slope) = max(0,x) + slope * min(0,x)
 
     Example:
@@ -46,6 +45,7 @@ class DecomposeLeakyReLUPass(ArmPass):
         %op3 = full(x.shape,slope)
         %op4 = mul(%op3,%op2)
         %op5 = add(%op1,%op4)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()

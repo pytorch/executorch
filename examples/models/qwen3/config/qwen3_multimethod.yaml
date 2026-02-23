@@ -1,0 +1,32 @@
+base:
+  model_class: "qwen3_0_6b"
+  params: "examples/models/qwen3/config/0_6b_config.json"
+  metadata: '{"get_bos_id": 151644, "get_eos_ids":[151645]}'
+
+model:
+  use_kv_cache: true
+  use_sdpa_with_kv_cache: true
+  dtype_override: fp32
+
+export:
+  output_name: multimethod_qwen
+  max_seq_length: 2048
+  max_context_length: 2048
+
+backend:
+  xnnpack:
+    enabled: true
+    extended_ops: True
+
+quantization:
+  qmode: "8da4w"
+  group_size: 32
+
+multimethod_lora:
+  methods:
+    # LoRA method - adapter paths from environment variables
+    lora_forward:
+      adapter_checkpoint: ${oc.env:LORA_ADAPTER_CHECKPOINT}
+      adapter_config: ${oc.env:LORA_ADAPTER_CONFIG}
+    # Base method - no LoRA
+    base_forward: null

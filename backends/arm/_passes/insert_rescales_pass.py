@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -76,12 +76,14 @@ class InsertRescalePass(ArmPass):
 
 
 class InsertRescaleInt32Pass(ArmPass):
-    """Numerous TOSA ops require inputs and outputs to be 32-bit integers in their
-    quantized implementations. This pass treats such operator nodes by
-    inserting rescale ops before and after them if needed. Note that extra
-    logic that handles the scales and zero points are in place here because the
-    affected TOSA ops have naive implementations that do not account for the
-    quantization parameters.
+    """Numerous TOSA ops require inputs and outputs to be 32-bit integers in
+    their quantized implementations.
+
+    This pass treats such operator nodes by inserting rescale ops before and
+    after them if needed. Note that extra logic that handles the scales and zero
+    points are in place here because the affected TOSA ops have naive
+    implementations that do not account for the quantization parameters.
+
     """
 
     # SUM must be decomposed after this pass to prevent insertion of RESCALE
@@ -106,7 +108,7 @@ class InsertRescaleInt32Pass(ArmPass):
     ]
 
     def _int32_qargs(self, s):
-        """Helper creator function for INT32-based QuantArgs"""
+        """Helper creator function for INT32-based QuantArgs."""
 
         return QuantArgs(
             scale=s,
@@ -124,6 +126,7 @@ class InsertRescaleInt32Pass(ArmPass):
         Inputs to the INT32-based operator must be rescaled from INT8 to INT32.
         This function computes the ``QuantArgs`` for each of the operands and returns
         it as a dict, mapping tensor index to ``QuantArgs``.
+
         """
 
         if target in [
@@ -190,8 +193,10 @@ class InsertRescaleInt32Pass(ArmPass):
     def _get_output_qparams(
         self, target, inputs_qparams: Dict[int, QuantArgs]
     ) -> Optional[QuantArgs]:
-        """Given an op ``target`` and the ``QuantArgs`` for each of its inputs, compute
-        the scale of the output based on how the operator itself affects it."""
+        """Given an op ``target`` and the ``QuantArgs`` for each of its inputs,
+        compute the scale of the output based on how the operator itself affects
+        it.
+        """
 
         if target in [
             exir_ops.edge.aten.abs.default,
@@ -233,8 +238,7 @@ class InsertRescaleInt32Pass(ArmPass):
     def _get_rescale_qparams(
         self, target, input_qparams: Dict[int, QuantArgs]
     ) -> Tuple[Dict[int, QuantArgs], Optional[QuantArgs]]:
-        """
-        Get the quantization parameters of the INT32 inputs/outputs that will
+        """Get the quantization parameters of the INT32 inputs/outputs that will
         surround the node after the new RESCALE ops have been inserted.
         """
 
@@ -372,14 +376,18 @@ class InsertRescaleInt32Pass(ArmPass):
 
 
 class InsertControlFlowRescalesPass(ArmPass):
-    """The quantization parameters for tensors going into and coming out of a submodule are not guaranteed to
-    match the quantization parameters for the corresponding tensors inside the submodule. For example, cond has
-    different annotation on input and output, while the entire graph inside the submodule could be using shared
-    annotation. This pass solves this by inserting rescales in the beginning and end of the submodule
-    that transform the tensor from one set of quantization parameters to another.
+    """The quantization parameters for tensors going into and coming out of a
+    submodule are not guaranteed to match the quantization parameters for the
+    corresponding tensors inside the submodule. For example, cond has different
+    annotation on input and output, while the entire graph inside the submodule
+    could be using shared annotation. This pass solves this by inserting
+    rescales in the beginning and end of the submodule that transform the tensor
+    from one set of quantization parameters to another.
 
-    The pass is run by the graph_module containing the control flow operator, but requires that the affected nodes
-    inside the submodule have been q-dq folded and have input/output_qparams meta.
+    The pass is run by the graph_module containing the control flow operator,
+    but requires that the affected nodes inside the submodule have been q-dq
+    folded and have input/output_qparams meta.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -395,7 +403,10 @@ class InsertControlFlowRescalesPass(ArmPass):
         graph_module: GraphModule,
     ):
         """Insert a rescale into the graph, inheriting meta from `from_node`.
-        The node is not connected to anything, that is up to the user."""
+
+        The node is not connected to anything, that is up to the user.
+
+        """
 
         new_scales = [
             in_qparams.get_scale_per_tensor() / out_qparams.get_scale_per_tensor()

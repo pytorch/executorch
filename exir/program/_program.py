@@ -1193,7 +1193,10 @@ def _gen_edge_manager_for_partitioners(
 
             # Decompose by default if there are no partitioners for the method
             if not partitioners_for_program:
-                program = program.run_decompositions(_default_decomposition_table())
+                table = _default_decomposition_table()
+                for op in config.preserve_ops:
+                    table.pop(op, None)
+                program = program.run_decompositions(table)
 
             # Process each partitioner individually using their specific requirements
             for curr_partitioner in partitioners_for_program:
@@ -1252,11 +1255,21 @@ def _gen_edge_manager_for_partitioners(
             preserve_ops=ops_set_to_not_decompose_by_program.get(name, []),
         )
 
+    # Merge ops_to_not_decompose into config so that downstream calls (e.g.
+    # EdgeProgramManager.transform()) carry the exception list through their
+    # verifiers automatically.
+    all_ops_not_to_decompose = list(
+        set().union(*ops_set_to_not_decompose_by_program.values())
+    )
+    config._core_aten_ops_exception_list = list(
+        set(config._core_aten_ops_exception_list) | set(all_ops_not_to_decompose)
+    )
+
     edge_manager = EdgeProgramManager(
         edge_programs,
         constant_methods,
         config,
-        list(set().union(*ops_set_to_not_decompose_by_program.values())),
+        all_ops_not_to_decompose,
     )
 
     if generate_etrecord:

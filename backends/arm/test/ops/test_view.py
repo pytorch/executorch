@@ -74,7 +74,10 @@ class View(torch.nn.Module):
         self.new_shape = new_shape
 
     def forward(self, x: torch.Tensor):
-        return x.view(self.new_shape)
+        view_op = x.view(self.new_shape)
+        # Because we treat a single view as a no compute operation and therefore do not partition it,
+        # we want to provide a mul op to verify that it does indeed get partitioned when bundled with another op.
+        return view_op * view_op
 
 
 @common.parametrize(
@@ -152,7 +155,7 @@ def test_view_u55_INT_not_delegated(test_data: Tuple):
         View(new_shape),
         (test_tensor,),
         {"executorch_exir_dialects_edge__ops_aten_view_copy": 1},
-        n_expected_delegates=0,
+        n_expected_delegates=1,
         quantize=True,
         u55_subset=True,
     )

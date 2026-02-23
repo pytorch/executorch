@@ -17,9 +17,11 @@ Op = OpOverload | EdgeOpOverload
 
 
 def _get_round_decomposition_ops(op) -> tuple[Op, Op, Op, Op, Op, Op, Op]:
-    """
-    Returns the (full_op, ge_op, add_op, sub_op, floor_op, ceil_op, where_op) for the
-    given round operation. The ops depend on whether the round op is an aten or edge op.
+    """Returns the (full_op, ge_op, add_op, sub_op, floor_op, ceil_op, where_op)
+    for the given round operation.
+
+    The ops depend on whether the round op is an aten or edge op.
+
     """
     if op == exir_ops.edge.aten.round.default:
         return (

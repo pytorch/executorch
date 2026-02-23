@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,12 +25,11 @@ def _get_sum_decomp(op):
 
 
 class DecomposeSumPass(ArmPass):
-    """
-    In Pytorch, the default behaviour of for example Tensor.sum is to squeeze the
-    dimension that is summed (keep_dim = False). However, in TOSA, REDUCE_SUM always
-    preserves the rank of the input (keep_dim = True). To get a 1-1 mapping in the sum
-    lowering, normalize the keep_dim = False case to keep_dim = True and lower the rank
-    with a view op.
+    """In Pytorch, the default behaviour of for example Tensor.sum is to squeeze
+    the dimension that is summed (keep_dim = False). However, in TOSA,
+    REDUCE_SUM always preserves the rank of the input (keep_dim = True). To get
+    a 1-1 mapping in the sum lowering, normalize the keep_dim = False case to
+    keep_dim = True and lower the rank with a view op.
 
     Since TOSA can only reduce one dimension at a time, multiple dims are additionally
     unrolled into multiple ops.
@@ -41,6 +40,7 @@ class DecomposeSumPass(ArmPass):
         sum(dim_1, keep_dim = True) -> unsqueezed_shape
         sum(dim_2, keep_dim = True) -> unsqueezed_shape
         view(shape = squeezed_shape) -> squeezed_shape
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()

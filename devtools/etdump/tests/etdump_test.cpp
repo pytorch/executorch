@@ -247,7 +247,9 @@ TEST_F(ProfilerETDumpTest, AddAllocators) {
     // Add a profiling event and then try to add an allocator which should fail.
     EventTracerEntry entry = etdump_gen[i]->start_profiling("test_event", 0, 1);
     etdump_gen[i]->end_profiling(entry);
-    ET_EXPECT_DEATH(etdump_gen[i]->track_allocator("test_allocator"), "");
+    ET_EXPECT_DEATH(
+        etdump_gen[i]->track_allocator("test_allocator"),
+        "before any events are added");
   }
 }
 
@@ -1018,4 +1020,29 @@ TEST_F(ProfilerETDumpTest, LogWithNullptrAndUnsetDebugHandle) {
       /*use_tensor_input=*/true,
       /*expected_log=*/false,
       /*expected_ok=*/false);
+}
+
+TEST_F(ProfilerETDumpTest, AllocatorOverrunAborts) {
+  // Create an ETDumpGen with a buffer just above the minimum size.
+  // We then create many profiling events which will exhaust either the
+  // allocator or emitter buffer, triggering an abort with an out of memory
+  // message.
+  const size_t small_buf_size = 300 * 1024;
+  uint8_t* small_buf = (uint8_t*)malloc(small_buf_size);
+  ETDumpGen* small_etdump =
+      new ETDumpGen(Span<uint8_t>(small_buf, small_buf_size));
+
+  ET_EXPECT_DEATH(
+      {
+        small_etdump->create_event_block("test_block");
+        for (size_t j = 0; j < 100000; j++) {
+          EventTracerEntry entry =
+              small_etdump->start_profiling("test_event", 0, 1);
+          small_etdump->end_profiling(entry);
+        }
+      },
+      "ETDump .* out of memory");
+
+  delete small_etdump;
+  free(small_buf);
 }

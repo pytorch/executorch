@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -36,7 +36,7 @@ test_data_suite = {
         torch.ones(5, 10, 25, 20),
         (-1) * torch.ones(5, 10, 25, 20),
     ),
-    "op_floor_div_rank4_randn_mutltiple_broadcasts": lambda: (
+    "op_floor_div_rank4_randn_multiple_broadcasts": lambda: (
         torch.randn(1, 4, 4, 1),
         torch.randn(1, 1, 4, 4),
     ),
@@ -85,7 +85,13 @@ def test_floor_divide_tosa_FP(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data",
+    test_data_suite,
+    xfails={
+        "op_floor_div_rank4_large_rand": "Numerical failure in TFA",
+    },
+)
 def test_floor_divide_tosa_INT(test_data: input_t1):
     pipeline = TosaPipelineINT[input_t1](
         FloorDivide(),

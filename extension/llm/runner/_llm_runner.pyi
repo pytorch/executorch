@@ -339,6 +339,77 @@ class MultimodalInput:
 
     def __repr__(self) -> str: ...
 
+class TextLLMRunner:
+    """Runner for text language models."""
+
+    def __init__(
+        self, model_path: str, tokenizer_path: str, data_path: Optional[str] = None
+    ) -> None:
+        """
+        Initialize a TextLLMRunner.
+
+        Args:
+            model_path: Path to the model file (.pte)
+            tokenizer_path: Path to the tokenizer file
+            data_path: Optional path to additional data file
+        Raises:
+            RuntimeError: If initialization fails
+        """
+        ...
+
+    def generate(
+        self,
+        prompt: str,
+        config: GenerationConfig,
+        token_callback: Optional[Callable[[str], None]] = None,
+        stats_callback: Optional[Callable[[Stats], None]] = None,
+    ) -> None:
+        """
+        Generate text from text input.
+
+        Args:
+            prompt: text input
+            config: Generation configuration
+            token_callback: Optional callback called for each generated token
+            stats_callback: Optional callback called with generation statistics
+
+        Raises:
+            RuntimeError: If generation fails
+        """
+        ...
+
+    def prefill(self, prompt: str, config: GenerationConfig) -> None:
+        """
+        Prefill text input (e.g., to rebuild KV cache from chat history)
+        without generating tokens.
+
+        Args:
+            prompt: text input to prefill
+
+        Raises:
+            RuntimeError: If prefill fails
+        """
+        ...
+
+    def stop(self) -> None:
+        """Stop the current generation process."""
+        ...
+
+    def reset(self) -> None:
+        """Reset the runner state and KV cache."""
+        ...
+
+    def get_vocab_size(self) -> int:
+        """
+        Get the vocabulary size of the model.
+
+        Returns:
+            The vocabulary size, or -1 if not available
+        """
+        ...
+
+    def __repr__(self) -> str: ...
+
 class MultimodalRunner:
     """Runner for multimodal language models."""
 

@@ -52,7 +52,8 @@ def calculate_tosa_values(
 
 def calculate_values_stride(source_shape: list[int]) -> list[int]:
     """Calculate strides for a flattened view of the source tensor that are
-    multiplied with the indices to build the [N, W] tensor."""
+    multiplied with the indices to build the [N, W] tensor.
+    """
     values_strides: list[int] = []
     stride = 1
     for dim in reversed(source_shape):
