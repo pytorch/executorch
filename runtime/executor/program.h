@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <cinttypes>
 #include <cstdint>
 #include <optional>
 
@@ -58,10 +57,15 @@ class Program final {
      */
     Minimal,
     /**
+     * When ET_ENABLE_PROGRAM_VERIFICATION is enabled,
      * Do full verification of the data, ensuring that internal pointers are
      * self-consistent and that the data has not been truncated or obviously
      * corrupted. May not catch all types of corruption, but should guard
      * against illegal memory operations during parsing.
+     * Also performs additional semantic validation such as:
+     * - Tensor numel overflow checks (ensuring size calculations don't
+     * overflow)
+     * - List element type validation
      *
      * Will have higher runtime overhead, scaling with the complexity of the
      * proram data.

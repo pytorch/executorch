@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -35,8 +35,6 @@ test_data_suite = {
     "2dim_last1dim": (torch.rand(1, 1, 16), (1, 1, 0, 0), 1),
     "2dim_last2dim": (torch.rand(1, 1, 16), (1, 0, 1, 1), 2),
 }
-
-
 """Tests conv + pad."""
 
 

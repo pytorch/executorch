@@ -166,7 +166,7 @@ def test_permute_vgf_quant(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 def test_permute_16a8w_tosa_INT(test_data: torch.Tensor):
-    """Test permute operation with int16 quantization"""
+    """Test permute operation with int16 quantization."""
     test_data, dims = test_data()
     pipeline = TosaPipelineINT[input_t1](
         SimplePermute(dims=dims),
@@ -196,7 +196,7 @@ test_data_suite_exact = {
 )
 @common.XfailIfNoCorstone300
 def test_permute_16a8w_u55_INT(test_data: torch.Tensor):
-    """Test permute operation with int16 quantization on U55"""
+    """Test permute operation with int16 quantization on U55."""
     test_data, dims = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
         SimplePermute(dims=dims),
@@ -218,7 +218,7 @@ def test_permute_16a8w_u55_INT(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_permute_16a8w_u85_INT(test_data: torch.Tensor):
-    """Test permute operation with int16 quantization on U85"""
+    """Test permute operation with int16 quantization on U85."""
     test_data, dims = test_data()
     pipeline = EthosU85PipelineINT[input_t1](
         SimplePermute(dims=dims),

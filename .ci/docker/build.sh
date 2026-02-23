@@ -40,6 +40,15 @@ case "${IMAGE_NAME}" in
     LINTRUNNER=""
     GCC_VERSION=11
     ;;
+  executorch-ubuntu-22.04-gcc11-aarch64-android)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ANDROID_NDK_VERSION=r28c
+    ;;
+  executorch-ubuntu-22.04-gcc11-aarch64-arm-sdk)
+    ARM_SDK=yes
+    GCC_VERSION=11
+    ;;
   executorch-ubuntu-22.04-linter)
     LINTRUNNER=yes
     CLANG_VERSION=12

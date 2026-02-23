@@ -435,10 +435,7 @@ def get_compile_spec(
 ) -> TosaCompileSpec | EthosUCompileSpec | VgfCompileSpec:
     compile_spec = None
     if target.startswith("TOSA"):
-        try:
-            tosa_spec = TosaSpecification.create_from_string(target)
-        except Exception:
-            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
+        tosa_spec = TosaSpecification.create_from_string(target)
         compile_spec = TosaCompileSpec(tosa_spec)
     elif "ethos-u" in target:
         extra_flags = ["--verbose-operators", "--verbose-cycle-estimate"]
