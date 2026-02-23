@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,7 +18,9 @@ from executorch.exir.pass_base import ExportPass
 
 
 class DecomposeLog1pPass(ArmPass):
-    """Decompose log1p into a small polynomial with a log fallback for larger inputs."""
+    """Decompose log1p into a small polynomial with a log fallback for larger
+    inputs.
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = {
         InsertTableOpsPass,
@@ -64,11 +66,7 @@ class DecomposeLog1pPass(ArmPass):
         if op not in self._supported_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
-        is_quantized = (
-            len(meta.data.get("input_qparams", {})) > 0
-            and len(meta.data.get("output_qparams", {})) > 0
-        )
-        if is_quantized:
+        if self._is_quantized_meta(meta):
             # Quantized log1p should be handled by LUT/table instead of decomposition.
             return super().call_operator(op, args, kwargs, meta)
 

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,6 +7,8 @@ import json
 from dataclasses import dataclass, fields
 from enum import auto, Enum
 from typing import Any
+
+from executorch.exir._warnings import deprecated
 
 
 class SoftmaxDecompositionConfig(Enum):
@@ -24,7 +26,16 @@ class ArmPassPipelineConfig:
     softmax: SoftmaxDecompositionConfig = SoftmaxDecompositionConfig.MASKED
     fuse_duplicate_users: FuseDuplicateUsersConfig = FuseDuplicateUsersConfig.ENABLED
 
+    @deprecated(
+        "The stable softmax decomposition is now supported by all arm targets and will be made default in a future release. Overwrite the default config using `compile_spec.set_pass_pipeline_config(ArmPassPipelineConfig())` to use the stable algorithm and avoid this error."
+    )
     def disable_masked_softmax(self) -> None:
+        """
+            .. warning::
+
+        The stable softmax decomposition is now supported by all arm targets and will be made default in a future release. Overwrite the default config using `compile_spec.set_pass_pipeline_config(ArmPassPipelineConfig())` to use the stable algorithm and avoid this error."
+        """
+
         self.softmax = SoftmaxDecompositionConfig.UNSTABLE
 
     def disable_fuse_duplicate_users(self) -> None:

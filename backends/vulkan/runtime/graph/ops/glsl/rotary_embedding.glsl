@@ -8,11 +8,12 @@
 
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
 
-${define_required_extensions(DTYPE)}
 ${define_active_storage_type(STORAGE)}
 
 layout(std430) buffer;

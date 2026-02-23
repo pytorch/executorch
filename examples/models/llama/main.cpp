@@ -67,10 +67,20 @@ DEFINE_int32(
 
 DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 
+DEFINE_bool(
+    ignore_eos,
+    false,
+    "Whether to ignore EOS token and continue generating until max_new_tokens is reached.");
+
 DEFINE_string(
     etdump_path,
     "etdump.in",
     "If an etdump path is provided, generate an ETDump file at the specified path for profiling purposes.");
+
+DEFINE_string(
+    method_name,
+    "forward",
+    "Method name to execute in the model (e.g., 'forward', 'lora_forward').");
 
 // Helper function to parse comma-separated string lists
 std::vector<std::string> parseStringList(const std::string& input) {
@@ -140,11 +150,11 @@ int32_t main(int32_t argc, char** argv) {
           data_paths,
           temperature,
 #ifdef ET_EVENT_TRACER_ENABLED
-          std::move(etdump_gen_ptr)
+          std::move(etdump_gen_ptr),
 #else
-          nullptr
+          nullptr,
 #endif
-      );
+          FLAGS_method_name);
 
   if (runner == nullptr) {
     ET_LOG(Error, "Failed to create llama runner");
@@ -164,6 +174,10 @@ int32_t main(int32_t argc, char** argv) {
   // generate
   executorch::extension::llm::GenerationConfig config{
       .temperature = temperature};
+
+  config.ignore_eos = FLAGS_ignore_eos;
+  config.num_bos = FLAGS_num_bos;
+  config.num_eos = FLAGS_num_eos;
 
   if (FLAGS_max_new_tokens != -1) {
     config.max_new_tokens = FLAGS_max_new_tokens;

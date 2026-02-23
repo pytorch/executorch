@@ -8,6 +8,7 @@ import os
 import re
 import warnings
 from collections import defaultdict, OrderedDict
+from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
@@ -243,7 +244,12 @@ def update_spill_fill_size(
                     qnn_mgr = PyQnnManagerAdaptor.QnnManager(
                         m.compile_specs[0].value, m.processed_bytes
                     )
-                    assert qnn_mgr.Init().value == 0, "failed to load context binary"
+                    assert (
+                        qnn_mgr.InitBackend().value == 0
+                    ), "failed to initialize backend"
+                    assert (
+                        qnn_mgr.InitContextCache().value == 0
+                    ), "failed to init context cache"
                     max_sf_buf_size = max(
                         max_sf_buf_size, qnn_mgr.GetSpillFillBufferSize()
                     )
@@ -255,7 +261,8 @@ def update_spill_fill_size(
             qnn_mgr = PyQnnManagerAdaptor.QnnManager(
                 module.compile_specs[0].value, module.processed_bytes
             )
-            assert qnn_mgr.Init().value == 0, "failed to load context binary"
+            assert qnn_mgr.InitBackend().value == 0, "failed to initialize backend"
+            assert qnn_mgr.InitContextCache().value == 0, "failed to init context cache"
             spill_fill_size = qnn_mgr.GetSpillFillBufferSize()
             qnn_mgr.Destroy()
             return spill_fill_size, {
@@ -924,10 +931,24 @@ def from_context_binary(  # noqa: C901
     return bundle_prog
 
 
-def draw_graph(title, path, graph_module: torch.fx.GraphModule):
+class DrawFormat(Enum):
+    SVG = 1
+    PYDOT = 2
+
+
+def draw_graph(title, path, graph_module: torch.fx.GraphModule, format=DrawFormat.SVG):
     graph = passes.graph_drawer.FxGraphDrawer(graph_module, title)
-    with open(f"{path}/{title}.svg", "wb") as f:
-        f.write(graph.get_dot_graph().create_svg())
+    warnings.warn(
+        "For large models such as LLM, it is strongly recommended to use PYDOT format.",
+        stacklevel=1,
+    )
+    if format == DrawFormat.SVG:
+        with open(f"{path}/{title}.svg", "wb") as f:
+            f.write(graph.get_dot_graph().create_svg())
+    elif format == DrawFormat.PYDOT:
+        graph.get_dot_graph().write_raw(f"{path}/{title}.dot")
+    else:
+        raise RuntimeError(f"Unknown format {format}.")
 
 
 def generate_gpu_compiler_spec(
@@ -976,6 +997,7 @@ def generate_htp_compiler_spec(
     use_dlbc: bool = False,
     use_multi_contexts: bool = False,
     use_weight_sharing: bool = False,
+    use_slc_allocator: bool = False,
 ) -> QnnExecuTorchBackendOptions:
     """
     Helper function generating backend options for QNN HTP
@@ -991,6 +1013,9 @@ def generate_htp_compiler_spec(
             could be re-used across all the splits.
         use_weight_sharing: Used with multiple_graphs, where model size will be
             reduced when operations have the same weights across multiple graphs.
+        use_slc_allocator: Allows user to enable the usage of the System Level Cache Allocator for a given graph.
+            It will help the by reducing overall bandwith on the use case.
+            The feature is only supported by specific SOCs.
 
     Returns:
         QnnExecuTorchHtpBackendOptions: backend options for QNN HTP.
@@ -1008,6 +1033,7 @@ def generate_htp_compiler_spec(
     htp_options.use_multi_contexts = use_multi_contexts
     htp_options.use_weight_sharing = use_weight_sharing
     htp_options.use_dlbc = use_dlbc
+    htp_options.use_slc_allocator = use_slc_allocator
     return QnnExecuTorchBackendOptions(
         backend_type=QnnExecuTorchBackendType.kHtpBackend,
         htp_options=htp_options,
@@ -1129,6 +1155,7 @@ def generate_qnn_executorch_compiler_spec(
 def get_soc_to_arch_map():
     return {
         "SA8295": HtpArch.V68,
+        "SA8797": HtpArch.V81,
         "SM8350": HtpArch.V68,
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
@@ -1153,6 +1180,7 @@ def get_soc_to_arch_map():
 def get_soc_to_chipset_map():
     return {
         "SA8295": QcomChipset.SA8295,
+        "SA8797": QcomChipset.SA8797,
         "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,

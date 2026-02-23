@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -25,9 +25,9 @@ bool validate_conv2d_arguments(
     const Tensor& weight,
     const torch::executor::optional<Tensor>& bias,
     const Tensor& output,
-    const IntArrayRef& stride,
-    const IntArrayRef& padding,
-    const IntArrayRef& dilation,
+    const Int64ArrayRef& stride,
+    const Int64ArrayRef& padding,
+    const Int64ArrayRef& dilation,
     const Tensor& requantize_multipliers,
     const Tensor& requantize_shifts) {
   if (input.dim() != kConvDim || weight.dim() != kConvDim ||
@@ -44,7 +44,7 @@ bool validate_conv2d_arguments(
   executorch::aten::ArrayRef<executorch::aten::DimOrderType>
       channels_last_order(kChannelsLastDimOrder, 4);
 
-  if (input.size(1) > 1 && input.dim_order() != channels_last_order) {
+  if (input.size(1) > 1 && !is_channels_last_tensor(input)) {
     ET_LOG(
         Error,
         "quantized_conv2d_out: input must have channels_last dim_order (NHWC)");
@@ -52,7 +52,7 @@ bool validate_conv2d_arguments(
     return false;
   }
 
-  if (output.size(1) > 1 && output.dim_order() != channels_last_order) {
+  if (output.size(1) > 1 && !is_channels_last_tensor(input)) {
     ET_LOG(
         Error,
         "quantized_conv2d_out: output must have channels_last dim_order (NHWC)");
@@ -107,9 +107,9 @@ Tensor& quantized_conv2d_out(
     const Tensor& input,
     const Tensor& weight,
     const torch::executor::optional<Tensor>& bias,
-    const IntArrayRef stride,
-    const IntArrayRef padding,
-    const IntArrayRef dilation,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
     const int64_t input_offset,
     const int64_t output_offset,
     const Tensor& requantize_multipliers,

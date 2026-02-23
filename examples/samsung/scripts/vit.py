@@ -69,7 +69,7 @@ if __name__ == "__main__":
         "-c",
         "--chipset",
         default="E9955",
-        help="Samsung chipset, i.e. E9945, E9955, etc",
+        help="Samsung chipset, i.e. E9955, E9965, etc",
         type=str,
     )
     parser.add_argument(

@@ -42,6 +42,7 @@ class LayerNorm(torch.nn.LayerNorm, Norm):
         super().__init__(hidden_size, eps=eps)
 
 
+@register_norm("gemma2")
 @register_norm("gemma3")
 @register_norm("rmsnorm")
 class RMSNorm(torch.nn.RMSNorm, Norm):

@@ -86,17 +86,47 @@ Result<BufferCleanup> prepare_input_tensors(
             Debug, "Verifying and setting input for non-tensor input %zu", i);
 
         if (tag.get() == Tag::Int) {
-          int64_t int_input;
-          std::memcpy(&int_input, buffer, buffer_size);
-          err = method.set_input(runtime::EValue(int_input), i);
+          if (buffer_size != sizeof(int64_t)) {
+            ET_LOG(
+                Error,
+                "Int input at index %zu has size %zu, expected sizeof(int64_t) %zu",
+                i,
+                buffer_size,
+                sizeof(int64_t));
+            err = Error::InvalidArgument;
+          } else {
+            int64_t int_input;
+            std::memcpy(&int_input, buffer, buffer_size);
+            err = method.set_input(runtime::EValue(int_input), i);
+          }
         } else if (tag.get() == Tag::Double) {
-          double double_input;
-          std::memcpy(&double_input, buffer, buffer_size);
-          err = method.set_input(runtime::EValue(double_input), i);
+          if (buffer_size != sizeof(double)) {
+            ET_LOG(
+                Error,
+                "Double input at index %zu has size %zu, expected sizeof(double) %zu",
+                i,
+                buffer_size,
+                sizeof(double));
+            err = Error::InvalidArgument;
+          } else {
+            double double_input;
+            std::memcpy(&double_input, buffer, buffer_size);
+            err = method.set_input(runtime::EValue(double_input), i);
+          }
         } else if (tag.get() == Tag::Bool) {
-          bool bool_input;
-          std::memcpy(&bool_input, buffer, buffer_size);
-          err = method.set_input(runtime::EValue(bool_input), i);
+          if (buffer_size != sizeof(bool)) {
+            ET_LOG(
+                Error,
+                "Bool input at index %zu has size %zu, expected sizeof(bool) %zu",
+                i,
+                buffer_size,
+                sizeof(bool));
+            err = Error::InvalidArgument;
+          } else {
+            bool bool_input;
+            std::memcpy(&bool_input, buffer, buffer_size);
+            err = method.set_input(runtime::EValue(bool_input), i);
+          }
         } else {
           ET_LOG(
               Error,

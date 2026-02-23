@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,7 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 
 class IndexTensorTestCommon:
-    """Class containing constants common between the tests"""
+    """Class containing constants common between the tests."""
 
     aten_op = "torch.ops.aten.index.Tensor"
     exir_op = "executorch_exir_dialects_edge__ops_aten_index_Tensor"
@@ -34,10 +34,9 @@ input_params = Tuple[torch.Tensor, Tuple[torch.Tensor]]
 
 
 class IndexTensor_Ellipsis(torch.nn.Module):
-    """
-    There are technical limitations with torch/export as it does not support
-    the ellipsis class and as such the forward function has been crafted
-    to circumvent that limitation.
+    """There are technical limitations with torch/export as it does not support
+    the ellipsis class and as such the forward function has been crafted to
+    circumvent that limitation.
     """
 
     # xfail - ellipsis unsupported
@@ -130,10 +129,9 @@ def test_index_tensor_tosa_INT_ellipsis(test_data: input_params):
 
 
 class IndexTensor_Slice(torch.nn.Module):
-    """
-    There are technical limitations with Dynamo as it does not support the
-    slice class and as such the forward function has been crafted
-    to circumvent that limitation.
+    """There are technical limitations with Dynamo as it does not support the
+    slice class and as such the forward function has been crafted to circumvent
+    that limitation.
     """
 
     # xfail - None unsupported
@@ -321,6 +319,18 @@ class IndexTensor(torch.nn.Module):
             ),
         ),
     }
+    test_data_bf16: dict[input_params] = {
+        "test_2d_1_idx_bf16": (
+            torch.rand(size=(3, 4), dtype=torch.bfloat16),
+            (torch.arange(2, dtype=torch.int32),),
+        ),
+    }
+    test_data_fp16: dict[input_params] = {
+        "test_2d_1_idx_fp16": (
+            torch.rand(3, 4, dtype=torch.float16),
+            (torch.arange(2, dtype=torch.int32),),
+        ),
+    }
 
     # xfail - None (unsqueeze) unsupported
     test_data_none: dict[input_params] = {
@@ -372,7 +382,10 @@ class IndexTensor(torch.nn.Module):
         return input_[indices]
 
 
-@common.parametrize("test_data", IndexTensor.test_data)
+@common.parametrize(
+    "test_data",
+    IndexTensor.test_data | IndexTensor.test_data_bf16 | IndexTensor.test_data_fp16,
+)
 def test_index_tensor_tosa_FP(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
@@ -384,6 +397,7 @@ def test_index_tensor_tosa_FP(test_data: input_params):
                 IndexTensorTestCommon.exir_op,
                 atol=IndexTensorTestCommon.atol,
                 rtol=IndexTensorTestCommon.rtol,
+                tosa_extensions=["bf16"],
             ).run()
         )
 
@@ -455,7 +469,7 @@ def test_index_tensor_tosa_INT_none(test_data: input_params):
 @common.parametrize("test_data", IndexTensor.test_data)
 @common.XfailIfNoCorstone300
 def test_index_tensor_u55_INT_not_delegated(test_data: input_params):
-    """Ethos-U55 backend BI pipeline test for index.Tensor"""
+    """Ethos-U55 backend BI pipeline test for index.Tensor."""
     test_input = test_data
     with torch.no_grad():
         OpNotSupportedPipeline[input_params](

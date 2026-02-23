@@ -1,0 +1,50 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "kv_cache",
+    srcs = [
+        "kv_cache.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/torchtune:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "attention",
+    srcs = [
+        "attention.py",
+    ],
+    deps = [
+        ":kv_cache",
+        "//caffe2:torch",
+        "//executorch/extension/llm/custom_ops:custom_ops",
+        "//pytorch/torchtune:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "position_embeddings",
+    srcs = [
+        "_position_embeddings.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "module_lib",
+    srcs = [
+        "__init__.py",
+    ],
+    deps= [
+        ":position_embeddings",
+        ":attention",
+        ":kv_cache",
+    ]
+)

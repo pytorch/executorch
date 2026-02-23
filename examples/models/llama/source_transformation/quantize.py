@@ -131,7 +131,7 @@ def quantize(  # noqa C901
         if verbose:
             print("quantized model:", model)
         return model
-    elif qmode == "8da4w":
+    elif qmode in ("8da4w", "8da8w"):
         if group_size is None:
             # TODO: Default value for group size for 8da4w. Need this here for refactor, will clean this up.
             group_size = 128
@@ -140,7 +140,7 @@ def quantize(  # noqa C901
             Int8DynamicActivationIntxWeightConfig,
             quantize_,
         )
-        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.granularity import PerAxis, PerGroup
         from torchao.utils import unwrap_tensor_subclass
 
         def filter_fn(m, fqn):
@@ -159,19 +159,25 @@ def quantize(  # noqa C901
             # Check if the weight shape is compatible with group size
             has_shape_compatible_with_group_size = False
             if is_linear or is_lora_linear:
-                has_shape_compatible_with_group_size = (
-                    m.weight.shape[1] % group_size == 0
-                )
+                if group_size == 0:
+                    has_shape_compatible_with_group_size = True
+                else:
+                    has_shape_compatible_with_group_size = (
+                        m.weight.shape[1] % group_size == 0
+                    )
             return (
                 is_linear or is_lora_linear
             ) and has_shape_compatible_with_group_size
 
+        weight_dtype = torch.int4 if qmode == "8da4w" else torch.int8
         quantize_(
             model,
             Int8DynamicActivationIntxWeightConfig(
                 # pyre-ignore[16]
-                weight_dtype=torch.int4,
-                weight_granularity=PerGroup(group_size),
+                weight_dtype=weight_dtype,
+                weight_granularity=(
+                    PerAxis(0) if group_size == 0 else PerGroup(group_size)
+                ),
                 # pyre-ignore[6]
                 intx_choose_qparams_algorithm=(
                     "hqq_scale_only" if quantize_with_hqq else "affine"

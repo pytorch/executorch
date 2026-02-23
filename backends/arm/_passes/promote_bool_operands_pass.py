@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,7 +17,9 @@ from executorch.exir.pass_base import ExportPass
 
 
 class PromoteBoolOperandsPass(ArmPass):
-    """Promote boolean operands to the appropriate integer dtype for unsupported ops."""
+    """Promote boolean operands to the appropriate integer dtype for unsupported
+    ops.
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 

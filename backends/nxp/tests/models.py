@@ -457,6 +457,53 @@ class Conv2dReLUMaxPoolModule(torch.nn.Module):
         return self.pool(x)
 
 
+class ConvBNModule(torch.nn.Module):
+    def __init__(self, conv_module, conv_bias, bn_affine):
+        super().__init__()
+
+        if conv_module == "conv1d":
+            self.conv = torch.nn.Conv1d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm1d(64, affine=bn_affine)
+        elif conv_module == "conv2d":
+            self.conv = torch.nn.Conv2d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm2d(64, affine=bn_affine)
+        elif conv_module == "conv1d_t":
+            self.conv = torch.nn.ConvTranspose1d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm1d(64, affine=bn_affine)
+        elif conv_module == "conv2d_t":
+            self.conv = torch.nn.ConvTranspose2d(3, 64, 3, padding=1, bias=conv_bias)
+            self.bn = torch.nn.BatchNorm2d(64, affine=bn_affine)
+        else:
+            raise ValueError(f"Unknown conv_module: {conv_module}")
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.bn(x)
+
+
+class LinearBNModule(torch.nn.Module):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        linear_bias: bool,
+        bn_eps: float = 1e-5,
+        act: nn.Module | None = None,
+    ):
+        super().__init__()
+
+        self.linear = torch.nn.Linear(
+            in_features=in_features, out_features=out_features, bias=linear_bias
+        )
+        self.bn = torch.nn.BatchNorm1d(out_features, eps=bn_eps)
+        self.act = act
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = self.bn(x)
+        return self.act(x) if self.act is not None else x
+
+
 class MulTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -711,3 +758,45 @@ class UnsqueezeAddModel(torch.nn.Module):
 
     def forward(self, x, y):
         return torch.unsqueeze(x + y, self.dim)
+
+
+class LinearPReLUModule(torch.nn.Module):
+    def __init__(self, in_features, out_features, num_parameters=1):
+        super().__init__()
+
+        self.linear = nn.Linear(in_features=in_features, out_features=out_features)
+        self.prelu = torch.nn.PReLU(num_parameters)
+
+    def forward(self, x):
+        x = self.linear(x)
+        return self.prelu(x)
+
+
+class TwoPartitionPReLUModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.prelu = torch.nn.PReLU()
+
+    def forward(self, x, divisor):
+        # partition 1
+        x = self.prelu(x)
+
+        # `div` with non-static divisor is not supported in Neutron
+        x = torch.div(x, divisor)
+
+        # partition 2
+        x = self.prelu(x)
+        return x
+
+
+class SqueezeAddModel(torch.nn.Module):
+    def __init__(self, dim=None):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, y):
+        if self.dim is None:
+            return torch.squeeze(x + y)
+        else:
+            return torch.squeeze(x + y, self.dim)

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -35,16 +35,20 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch import nn
 from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 @pytest.fixture(autouse=True)
 def reseed_model_per_test_run():
     torch.manual_seed(23)
     np.random.seed(23)
+
+
+# noinspection PyProtectedMember
+ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
 
 
 class FormatlessToChannelsFirstModule(nn.Module):
@@ -323,7 +327,7 @@ def test__view_copy__context_dependent__channels_first_to_formatless__transpose_
     ).exported_program()
 
     # Make sure all 3 nodes were delegated
-    assert any(n.name == "executorch_call_delegate" for n in ep.graph.nodes)
+    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
     assert not graph_contains_any_of_ops(
         ep.graph,
         [
@@ -367,7 +371,7 @@ def test__view_copy__context_dependent__channels_first_to_formatless__transpose_
     ).exported_program()
 
     # Make sure the convolution and the linear were delegated, but not the view_copy.
-    assert any(n.name == "executorch_call_delegate" for n in ep.graph.nodes)
+    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
     assert not graph_contains_any_of_ops(
         ep.graph,
         [
@@ -398,7 +402,7 @@ def test__view_copy__formatless_to_channels_first__transpose_supported(mocker):
     ).exported_program()
 
     # Make sure both nodes were delegated
-    assert any(n.name == "executorch_call_delegate" for n in ep.graph.nodes)
+    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
     assert not graph_contains_any_of_ops(
         ep.graph,
         [
@@ -431,7 +435,7 @@ def test__view_copy__formatless_to_channels_first__transpose_not_supported():
     ).exported_program()
 
     # Make sure the view_copy was not delegated.
-    assert any(n.name == "executorch_call_delegate" for n in ep.graph.nodes)
+    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
     assert not graph_contains_any_of_ops(
         ep.graph,
         [
@@ -460,7 +464,7 @@ def test__view_copy__channels_first_to_channels_first__transpose_supported(mocke
     ).exported_program()
 
     # Make sure all nodes were delegated
-    assert any(n.name == "executorch_call_delegate" for n in ep.graph.nodes)
+    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
     assert not graph_contains_any_of_ops(
         ep.graph,
         [
@@ -494,7 +498,7 @@ def test__view_copy__channels_first_to_channels_first__transpose_not_supported()
     ).exported_program()
 
     # Make sure the view_copy was NOT delegated
-    assert any(n.name == "executorch_call_delegate" for n in ep.graph.nodes)
+    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
     assert not graph_contains_any_of_ops(
         ep.graph,
         [
@@ -504,6 +508,70 @@ def test__view_copy__channels_first_to_channels_first__transpose_not_supported()
     assert graph_contains_any_of_ops(
         ep.graph,
         [
+            exir_ops.edge.aten.view_copy.default,
+        ],
+    )
+
+
+class ViewViewModel(nn.Module):
+    def __init__(self, new_shape_1: list[int], new_shape_2: list[int]):
+        super().__init__()
+        self.new_shape_1 = new_shape_1
+        self.new_shape_2 = new_shape_2
+
+    def forward(self, x):
+        x = x.view(self.new_shape_1)
+        return x.view(self.new_shape_2)
+
+
+class ViewAddZeroModel(nn.Module):
+    def __init__(self, new_shape: list[int]):
+        super().__init__()
+        self.new_shape = new_shape
+
+    def forward(self, x):
+        x = x.view(self.new_shape)
+        zero = torch.zeros(self.new_shape)
+        return x + zero
+
+
+def test__view_copy__noop_partitions__second_view():
+    input_shape = (1, 2, 3, 4)
+    new_shape1 = [2, 12]
+    new_shape2 = [6, 4]
+    module = ViewViewModel(new_shape1, new_shape2)
+
+    ep = to_quantized_edge_program(
+        module,
+        input_shape,
+    ).exported_program()
+
+    # Make sure neither `view_copy` was delegated.
+    assert not any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
+    assert graph_contains_any_of_ops(
+        ep.graph,
+        [
+            exir_ops.edge.aten.view_copy.default,
+        ],
+    )
+
+
+def test__view_copy__noop_partitions__add_zeros():
+    input_shape = (1, 2, 3, 4)
+    new_shape = [2, 12]
+    module = ViewAddZeroModel(new_shape)
+
+    ep = to_quantized_edge_program(
+        module,
+        input_shape,
+    ).exported_program()
+
+    # Make sure neither the `view` nor the `add` was delegated
+    assert not any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
+    assert graph_contains_any_of_ops(
+        ep.graph,
+        [
+            exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.view_copy.default,
         ],
     )

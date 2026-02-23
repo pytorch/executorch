@@ -33,7 +33,8 @@ def define_common_targets():
         ],
     )
 
-    # AOTI common shims functionality
+    # AOTI common shims functionality using ETensor
+    # TODO(gasoonjia): Remove this after metal migration
     runtime.cxx_library(
         name = "common_shims",
         srcs = [
@@ -83,6 +84,42 @@ def define_common_targets():
         visibility = ["PUBLIC"],
         exported_deps = [
             ":common_shims",
+            ":delegate_handle",
+        ],
+    )
+
+    # SlimTensor-based common shims library
+    # Uses SlimTensor for all tensor operations
+    # TODO(gasoonjia): Replace common_shims with this one after metal migration
+    runtime.cxx_library(
+        name = "common_shims_slim",
+        srcs = [
+            "common_shims_slim.cpp",
+        ],
+        headers = [
+            "common_shims_slim.h",
+            "export.h",
+            "utils.h",
+        ],
+        visibility = ["@EXECUTORCH_CLIENTS"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/backends/aoti/slim/core:slimtensor",
+        ],
+    )
+
+    # Common AOTI functionality for SlimTensor-based backends (combining common_shims_slim and delegate_handle)
+    # All CUDA backend code should depend on this target
+    # TODO(gasoonjia): Replace aoti_common with this one after metal migration
+    runtime.cxx_library(
+        name = "aoti_common_slim",
+        # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+        link_whole = True,
+        supports_python_dlopen = True,
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            ":common_shims_slim",
             ":delegate_handle",
         ],
     )

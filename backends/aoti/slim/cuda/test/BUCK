@@ -1,0 +1,7 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+fbcode_target(_kind = define_common_targets,)

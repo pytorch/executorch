@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -77,9 +77,9 @@ Tensor& softmax_out(
   const int32_t diff_min_val = static_cast<int32_t>(diff_min);
 
   validate_single_quant_params(
-      Scalar(static_cast<int32_t>(input_zero_point)),
-      Scalar(input_multiplier_val),
-      Scalar(input_shift_val),
+      static_cast<int32_t>(input_zero_point),
+      input_multiplier_val,
+      input_shift_val,
       "softmax input");
 
   const auto positive_dim = normalize_dim(input, dim);

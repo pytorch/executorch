@@ -1,0 +1,41 @@
+load("@fbsource//tools/build_defs:fb_xplat_cxx_library.bzl", "fb_xplat_cxx_library")
+
+oncall("executorch")
+
+# fb_xplat_cxx_library is used here instead of runtime.cxx_library because
+# citadel-orchestrator-xplat will attempt to build this target in fbcode,
+# but platforms and use_host_platform is not supported in fbcode which will
+# result in build failure.
+fb_xplat_cxx_library(
+    name = "wasm",
+    srcs = ["wasm_bindings.cpp"],
+    visibility = ["PUBLIC"],
+    platforms = ["Default"],
+    compatible_with = ["ovr_config//runtime:wasm-emscripten"],
+    default_target_platform = "ovr_config//platform/wasm:emcc-release",
+    use_host_platform = False,
+    exported_deps = [
+        "//xplat/executorch/extension/module:module",
+        "//xplat/executorch/extension/data_loader:buffer_data_loader",
+        "//xplat/executorch/extension/tensor:tensor",
+    ],
+    link_whole = True,
+)
+
+fb_xplat_cxx_library(
+    name = "wasm_etdump",
+    srcs = ["wasm_bindings.cpp"],
+    visibility = ["PUBLIC"],
+    platforms = ["Default"],
+    compatible_with = ["ovr_config//runtime:wasm-emscripten"],
+    default_target_platform = "ovr_config//platform/wasm:emcc-release",
+    use_host_platform = False,
+    exported_deps = [
+        "//xplat/executorch/extension/module:module",
+        "//xplat/executorch/extension/data_loader:buffer_data_loader",
+        "//xplat/executorch/extension/tensor:tensor",
+        "//xplat/executorch/devtools/etdump:etdump_flatcc",
+    ],
+    exported_preprocessor_flags = ["-DEXECUTORCH_ENABLE_EVENT_TRACER=1"],
+    link_whole = True,
+)

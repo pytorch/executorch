@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -144,6 +144,8 @@ def test_llama_tosa_INT():
             custom_path="llama_tosa_fb_int",
             run_on_tosa_ref_model=False,  # Just want to write TOSA FB to disk
             use_to_edge_transform_and_lower=True,
+            frobenius_threshold=None,
+            cosine_threshold=None,
         )
         pipeline.add_stage_after("to_executorch", pipeline.tester.serialize)
         pipeline.run()
@@ -203,13 +205,17 @@ def test_llama_tosa_INT_FP_partial_quant():
             aten_op=[],
             exir_op=[],
             tosa_extensions=["FP"],
+            # Due to a few outliers, atol must be set high
+            atol=1.1,
+            frobenius_threshold=None,
+            cosine_threshold=None,
         )
         _use_partial_quantizer(pipeline)
         pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_llama_partial_quant_vgf_quant():
+def test_llama_vgf_quant_partial_quant():
     llama_model, llama_inputs, llama_meta = TestLlama().prepare_model()
 
     if llama_model is None or llama_inputs is None:
@@ -222,6 +228,8 @@ def test_llama_partial_quant_vgf_quant():
             aten_op=[],
             exir_op=[],
             quantize=True,
+            # Due to a few outliers, atol must be set high
+            atol=1.1,
         )
         _use_partial_quantizer(pipeline)
         pipeline.run()

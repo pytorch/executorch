@@ -1,0 +1,3 @@
+evaluate == 0.4.6
+transformers[torch] == 4.56.1 
+tqdm == 4.67.1

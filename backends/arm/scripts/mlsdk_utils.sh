@@ -9,7 +9,7 @@ set -euo pipefail
 # URL and tag of the MLSDK manifest repository. Can be overridden by environment variables.
 # eg. export MLSDK_MANIFEST_URL=...; export MLSDK_MANIFEST_TAG=...
 mlsdk_manifest_url="${MLSDK_MANIFEST_URL:-https://github.com/arm/ai-ml-sdk-manifest.git}"
-mlsdk_manifest_tag="${MLSDK_MANIFEST_TAG:-refs/tags/v2025.10.0}"
+mlsdk_manifest_tag="${MLSDK_MANIFEST_TAG:-refs/tags/v2025.12.0}"
 
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 
@@ -37,13 +37,6 @@ function mlsdk_sync_manifest() {
 
     local default_manifest=".repo/manifests/default.xml"
 
-    # TODO: Remove this workaround once 2GB capable mlir translator is available
-    # in the official MLSDK repository.
-    if [[ "${OSTYPE:-}" == darwin* ]]; then
-        sed -i '' 's|revision="refs/tags/v2025.07.1"|revision="c3b324e643b4b4e592de8a9123a58c4179649d8c"|' "${default_manifest}"
-    else
-        sed -i 's|revision="refs/tags/v2025.07.1"|revision="c3b324e643b4b4e592de8a9123a58c4179649d8c"|' "${default_manifest}"
-    fi
     ./repo sync --force-sync -j"${parallel_jobs}"
 
     popd
@@ -118,6 +111,16 @@ function download_ai_mlsdk_manifest() {
     if [[ -d "${_manifest_dir}/.repo/manifests" ]]; then
         git -C "${_manifest_dir}/.repo/manifests" reset --hard HEAD >/dev/null 2>&1 || true
         git -C "${_manifest_dir}/.repo/manifests" clean -fd >/dev/null 2>&1 || true
+    fi
+
+    # Going from v2025.10.0 to v2025.12.0 seems particular hard so just keep it simple.
+    # TODO: Remove once this is history
+    if [[ "${cached_tag}" == "refs/tags/v2025.10.0" ]] && [[ "${mlsdk_manifest_tag}" == "refs/tags/v2025.12.0" ]]; then
+        pushd "${_manifest_dir}/.."
+        log_step "mlsdk" "Deleting ${mlsdk_manifest_dir} and starting fresh"
+        manifest_base_dir=$(basename "${_manifest_dir}")
+        rm -fr $manifest_base_dir
+        popd
     fi
 
     mlsdk_sync_manifest "${_manifest_dir}"

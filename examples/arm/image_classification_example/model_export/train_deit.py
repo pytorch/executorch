@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -61,7 +61,9 @@ if __name__ == "__main__":
         "--num-epochs", type=int, default=3, help="Number of training epochs"
     )
     args = argparser.parse_args()
-    ds = load_dataset("timm/oxford-iiit-pet")
+    ds = load_dataset(
+        "timm/oxford-iiit-pet", revision="089695c834a7deb60505b7cc506672db1c31a6aa"
+    )
 
     # Create the mappings between labels and IDs
     labels = ds["train"].features["label"].names
@@ -74,9 +76,12 @@ if __name__ == "__main__":
         ignore_mismatched_sizes=True,
         id2label=ids2label,
         label2id=label2ids,
+        revision="b3428f18dcc7b543470d07f14b4a4157815d1880",
     )
     image_preprocessor = AutoImageProcessor.from_pretrained(
-        "facebook/deit-tiny-patch16-224", use_fast=True
+        "facebook/deit-tiny-patch16-224",
+        use_fast=True,
+        revision="b3428f18dcc7b543470d07f14b4a4157815d1880",
     )
 
     # Create a validation set by splitting the training set into two parts

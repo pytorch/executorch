@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -23,9 +23,7 @@ TestParam = Tuple[ModuleWithInputs, int]
 
 
 class Square(torch.nn.Module):
-    """
-    Basic squaring
-    """
+    """Basic squaring."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x.square()
@@ -35,9 +33,7 @@ class Square(torch.nn.Module):
 
 
 class Pow(torch.nn.Module):
-    """
-    Basic squaring
-    """
+    """Basic squaring."""
 
     def __init__(self, exponent: int) -> None:
         super().__init__()

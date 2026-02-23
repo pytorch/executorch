@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taStaging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
@@ -148,7 +149,10 @@ void add_prepack_standard_node(
     const ValueRef tensor,
     const bool transpose_hw = false) {
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
-      graph, tensor, graph.dtype_of(tensor_data), graph.int8_buffers_enabled());
+      graph,
+      tensor,
+      graph.get_staging_dtype_for(tensor_data),
+      graph.int8_buffers_enabled());
 
   vkapi::ParamsBindList param_buffers = {};
   if (graph.is_buffer_storage(tensor)) {
@@ -324,6 +328,9 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
 }
 
 void prepack_op(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  if (graph.dtype_of(args[1]) == vkapi::kInt8x4) {
+    return add_staging_to_int8x4_buffer_node(graph, args[0], args[1]);
+  }
   return add_prepack_standard_node(graph, args[0], args[1]);
 }
 

@@ -71,6 +71,7 @@ set(optional_lib_list
     extension_asr_runner
     extension_evalue_util
     extension_llm_runner
+    extension_llm_sampler
     extension_module
     extension_module_static
     extension_runner_util

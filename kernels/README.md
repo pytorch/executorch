@@ -1,5 +1,7 @@
-This subtree contains operator implementations that ExecuTorch clients can use and
-contribute to. For internal users, please see `executorch/kernels/fb/README.md`.
+This subtree contains operator implementations that ExecuTorch clients can use
+and contribute to.
+For internal users, please see `executorch/kernels/fb/README.md` under fbcode.
+Note: `executorch/kernels/fb/README.md` is not mirrored to the OSS repo.
 
 ## Layout
 

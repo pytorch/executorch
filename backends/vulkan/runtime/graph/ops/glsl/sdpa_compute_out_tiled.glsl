@@ -28,7 +28,7 @@ $if V_CACHE_STORAGE == "buffer":
 #define TILE_K ${TILE_K4 * 4}
 #define TILE_N ${TILE_N4 * 4}
 
-${define_required_extensions(DTYPE)}
+${define_required_extensions(IO_STORAGE, DTYPE)}
 
 layout(std430) buffer;
 

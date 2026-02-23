@@ -193,6 +193,9 @@ Error TextLLMRunner::generate(
   // start the main loop
   prompt_tokens.push_back(cur_token);
 
+  // Set ignore_eos based on config
+  text_token_generator_->set_ignore_eos(config.ignore_eos);
+
   // Generate max_new_tokens - 1 because prefill already generated 1 token.
   auto generate_result = text_token_generator_->generate(
       prompt_tokens,
@@ -233,6 +236,28 @@ Error TextLLMRunner::generate(
     stats_callback(*stats_);
   }
 
+  return Error::Ok;
+}
+
+Error TextLLMRunner::prefill(
+    const std::string& prompt,
+    const GenerationConfig& config) {
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
+
+  ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
+      prompt,
+      /*bos=*/config.num_bos,
+      /*eos=*/config.num_eos);
+
+  ET_CHECK_TK_OK_OR_RETURN_ERROR(
+      encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
+
+  // encode the (string) prompt into tokens sequence
+  std::vector<uint64_t> prompt_tokens = encode_res.get();
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos_);
+  ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   return Error::Ok;
 }
 

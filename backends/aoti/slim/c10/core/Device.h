@@ -36,7 +36,7 @@ struct Device final {
   }
 
   /// Constructs a Device from a string description.
-  /// The string must be "cpu" or "cpu:0".
+  /// The string must be "cpu", "cpu:0", "cuda", or "cuda:N".
   /* implicit */ Device(const std::string& device_string)
       : Device(DeviceType::CPU) {
     ET_CHECK_MSG(!device_string.empty(), "Device string must not be empty");
@@ -46,11 +46,19 @@ struct Device final {
       index_ = -1;
     } else if (device_string == "cpu:0" || device_string == "CPU:0") {
       type_ = DeviceType::CPU;
+      index_ = 0;
+    } else if (device_string == "cuda" || device_string == "CUDA") {
+      type_ = DeviceType::CUDA;
+      index_ = 0;
+    } else if (
+        device_string.substr(0, 5) == "cuda:" ||
+        device_string.substr(0, 5) == "CUDA:") {
+      type_ = DeviceType::CUDA;
       index_ = static_cast<DeviceIndex>(device_string.back() - '0');
     } else {
       ET_CHECK_MSG(
           false,
-          "Invalid device string: %s. Currently only 'cpu' is supported.",
+          "Invalid device string: %s. Supported: 'cpu', 'cuda', 'cuda:N'.",
           device_string.c_str());
     }
     validate();
@@ -92,7 +100,12 @@ struct Device final {
     return type_ == DeviceType::CPU;
   }
 
-  /// Returns a string representation of the device (e.g., "cpu" or "cpu:0").
+  /// Returns true if the device is of CUDA type.
+  bool is_cuda() const noexcept {
+    return type_ == DeviceType::CUDA;
+  }
+
+  /// Returns a string representation of the device (e.g., "cpu" or "cuda:0").
   std::string str() const {
     std::string str = DeviceTypeName(type(), /* lower_case */ true);
     if (has_index()) {

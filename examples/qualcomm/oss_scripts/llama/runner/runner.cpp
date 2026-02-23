@@ -98,7 +98,8 @@ Runner<T>::Runner(
     const int ngram,
     const int window,
     const int gcap,
-    std::unique_ptr<tokenizers::Tokenizer> tokenizer)
+    std::unique_ptr<tokenizers::Tokenizer> tokenizer,
+    std::unique_ptr<executorch::extension::Module> attention_sink_rope_module)
     : module_(std::move(module)),
       ngram_(ngram),
       window_(window),
@@ -109,7 +110,8 @@ Runner<T>::Runner(
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
       shared_buffer_(shared_buffer),
-      tokenizer_(std::move(tokenizer)) {
+      tokenizer_(std::move(tokenizer)),
+      attention_sink_rope_module_(std::move(attention_sink_rope_module)) {
   stats_.reset();
 
   if (decoder_model_version == "llama2") {
@@ -118,6 +120,9 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kLlama3;
   } else if (decoder_model_version == "gemma") {
     decoder_model_version_ = DecoderModelVersion::kGemma;
+  } else if (decoder_model_version == "gemma2") {
+    decoder_model_version_ = DecoderModelVersion::kGemma2;
+    cache_mode_ = CacheMode::HybridCache;
   } else if (decoder_model_version == "gemma3") {
     decoder_model_version_ = DecoderModelVersion::kGemma3;
     cache_mode_ = CacheMode::HybridCache;
@@ -162,8 +167,8 @@ Error Runner<T>::load() {
   std::vector<std::string> method_names;
   switch (eval_mode_) {
     case EvalMode::kKVCached:
-      prompt_processor_method_name = "forward";
-      token_generator_method_name = "forward";
+      prompt_processor_method_name = "kv_forward";
+      token_generator_method_name = "kv_forward";
       method_names.emplace_back(token_generator_method_name);
       break;
     case EvalMode::kHybrid:
@@ -202,6 +207,7 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
   } else if (
       decoder_model_version_ == DecoderModelVersion::kGemma ||
+      decoder_model_version_ == DecoderModelVersion::kGemma2 ||
       decoder_model_version_ == DecoderModelVersion::kGemma3) {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kCodegen) {
@@ -210,7 +216,6 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|user|>", 0, 0).get()[0]);
   }
 
-  // Try avoid getMetadataHelper as it is time consuming.
   Result<MethodMeta> method_meta =
       module_->method_meta(token_generator_method_name);
 
@@ -276,6 +281,13 @@ Error Runner<T>::load() {
       max_cache_len,
       num_heads,
       num_layers});
+
+  if (attention_sink_rope_module_ != nullptr) {
+    attention_sink_rope_runner_ = std::make_unique<AttentionSinkRopeRunner>(
+        attention_sink_rope_module_.get());
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        attention_sink_rope_runner_->load(method_names));
+  }
 
   prompt_processor_ = std::make_unique<PromptProcessor<T>>(
       decoder_runner_.get(),
@@ -373,10 +385,10 @@ Error Runner<T>::generate_from_prompt_or_file(
   stats_.inference_start_ms = time_in_ms();
 
   int32_t seq_len = config.seq_len;
-  if (seq_len > context_len_) {
+  if (attention_sink_rope_runner_ == nullptr && seq_len > context_len_) {
     ET_LOG(
         Info,
-        "Warning: Requested seq_len (%d) exceeds compiled max_seq_len (%d). Clamping to %d.",
+        "Warning: Requested seq_len (%d) exceeds compiled max_context_len (%d) without attention sink. Clamping to %d.",
         seq_len,
         context_len_,
         context_len_);
@@ -384,7 +396,7 @@ Error Runner<T>::generate_from_prompt_or_file(
   } else if (seq_len <= 0) {
     ET_LOG(
         Info,
-        "Warning: Invalid seq_len (%d). Using compiled max_seq_len (%d).",
+        "Warning: Invalid seq_len (%d). Using compiled max_context_len (%d).",
         seq_len,
         context_len_);
     seq_len = context_len_;
@@ -430,8 +442,8 @@ Error Runner<T>::generate_from_prompt_or_file(
     token_callback(prompt);
   }
   bool dump_logits = dump_logits_path_.empty() ? false : true;
-  auto prefill_res =
-      prompt_processor_->prefill(prompt_tokens, cur_pos_, dump_logits);
+  auto prefill_res = prompt_processor_->prefill(
+      prompt_tokens, cur_pos_, dump_logits, attention_sink_rope_runner_.get());
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
   cur_pos_ += num_prompt_tokens;
@@ -452,7 +464,12 @@ Error Runner<T>::generate_from_prompt_or_file(
   // start the main loop
   prompt_tokens.push_back(cur_token);
   int64_t num_generated_tokens = ET_UNWRAP(token_generator_->generate(
-      prompt_tokens, cur_pos_, seq_len, token_callback, dump_logits));
+      prompt_tokens,
+      cur_pos_,
+      seq_len,
+      token_callback,
+      dump_logits,
+      attention_sink_rope_runner_.get()));
   stats_.inference_end_ms = time_in_ms();
   ET_LOG(
       Info,
