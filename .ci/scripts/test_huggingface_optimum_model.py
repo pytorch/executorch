@@ -11,7 +11,6 @@ import torch
 from datasets import load_dataset
 
 from optimum.executorch import (
-    ExecuTorchModelForCausalLM,
     ExecuTorchModelForImageClassification,
     ExecuTorchModelForMaskedLM,
     ExecuTorchModelForSeq2SeqLM,
@@ -152,18 +151,24 @@ def test_text_generation(model_id, model_dir, recipe, *, quantize=True, run_only
         cli_export(command, model_dir)
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    tokenizer.save_pretrained(model_dir)
-    model = ExecuTorchModelForCausalLM.from_pretrained(model_dir)
-    generated_text = model.text_generation(
-        tokenizer=tokenizer,
-        prompt="Simply put, the theory of relativity states that",
-        max_seq_len=64,
+    saved_files = tokenizer.save_pretrained(model_dir)
+    tokenizer_path = get_tokenizer_path(model_dir, saved_files)
+
+    from executorch.extension.llm.runner import GenerationConfig, TextLLMRunner
+
+    runner = TextLLMRunner(f"{model_dir}/model.pte", tokenizer_path)
+    tokens = []
+    runner.generate(
+        "Simply put, the theory of relativity states that",
+        GenerationConfig(seq_len=64, temperature=0, echo=True),
+        token_callback=lambda t: tokens.append(t),
     )
+    generated_text = "".join(tokens)
     print(f"\nGenerated text:\n\t{generated_text}")
     generated_tokens = tokenizer(generated_text, return_tensors="pt").input_ids
 
     # Free memory before loading eager for quality check
-    del model
+    del runner
     del tokenizer
     gc.collect()
 

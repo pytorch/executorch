@@ -14,6 +14,7 @@ from executorch.backends.cadence.aot.utils import (
     get_conv1d_output_size,
     get_conv2d_output_size,
     get_im2row_output_size,
+    is_depthwise_conv,
 )
 from executorch.exir.scalar_type import ScalarType
 from torch._meta_registrations import _linalg_svd_meta
@@ -1034,11 +1035,8 @@ def quantized_conv2d_nhwc_meta(
     assert len(in_size) < 6
 
     # Determine weight layout based on depthwise vs regular conv.
-    # Depthwise is defined by in_channels == groups, where in_channels
-    # is the last dim of the NHWC input.
     in_channels = in_size[-1]
-    is_depthwise = in_channels == groups
-    if is_depthwise:
+    if is_depthwise_conv(groups, in_channels):
         # Depthwise conv: weight is [*kernel_size, OC]
         *kernel_size, out_channels = weight.shape
     else:
@@ -1177,12 +1175,8 @@ def quantized_conv2d_nhwc_per_tensor_meta(
     assert len(in_size) < 6
 
     # Determine weight layout based on depthwise vs regular conv.
-    # Depthwise is defined by in_channels == groups, where in_channels
-    # is the last dim of the NHWC input.
     in_channels = in_size[-1]
-    is_depthwise = in_channels == groups
-    if is_depthwise:
-        # Depthwise conv: weight is [*kernel_size, OC]
+    if is_depthwise_conv(groups, in_channels):
         *kernel_size, out_channels = weight.shape
     elif len(in_size) == 3:
         # 1D conv: weight is [OC, K, IC]
@@ -1336,12 +1330,9 @@ def quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
     assert len(in_size) > 2
     assert len(in_size) < 6
 
-    # Determine weight layout based on input and weight dimensions:
-    # - Depthwise conv: input is 3D/4D, weight is 2/3D [K, OC]/[KH, KW, OC]
-    # - 1D conv: input is 3D, weight is 3D [OC, K, IC]
-    # - 2D regular conv: input is 4D, weight is 4D [OC, KH, KW, IC]
-    if len(weight.shape) == 3:
-        # 2D depthwise conv: weight is [KH, KW, OC]
+    # Determine weight layout based on depthwise vs regular conv.
+    in_channels = in_size[-1]
+    if is_depthwise_conv(groups, in_channels):
         *kernel_size, out_channels = weight.shape
     elif len(in_size) == 3:
         # 1D conv: weight is [OC, K, IC]
@@ -1397,12 +1388,9 @@ def quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
     assert len(in_size) > 2
     assert len(in_size) < 6
 
-    # Determine weight layout based on input and weight dimensions:
-    # - Depthwise conv: input is 3D/4D, weight is 3D [KH, KW, OC]
-    # - 1D conv: input is 3D, weight is 3D [OC, K, IC]
-    # - 2D regular conv: input is 4D, weight is 4D [OC, KH, KW, IC]
-    if len(weight.shape) == 3:
-        # 2D depthwise conv: weight is [KH, KW, OC]
+    # Determine weight layout based on depthwise vs regular conv.
+    in_channels = in_size[-1]
+    if is_depthwise_conv(groups, in_channels):
         *kernel_size, out_channels = weight.shape
     elif len(in_size) == 3:
         # 1D conv: weight is [OC, K, IC]

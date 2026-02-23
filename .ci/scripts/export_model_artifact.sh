@@ -9,7 +9,7 @@
 
 show_help() {
   cat << EOF
-Usage: export_model_artifact.sh <device> <hf_model> [quant_name] [output_dir]
+Usage: export_model_artifact.sh <device> <hf_model> [quant_name] [output_dir] [mode]
 
 Export a HuggingFace model to CUDA/Metal/XNNPACK format with optional quantization.
 
@@ -34,13 +34,22 @@ Arguments:
 
   output_dir   Output directory for artifacts (optional, default: current directory)
 
+  mode         Export mode (optional, default: auto-detect based on model and device)
+               Supported modes:
+                 - vr-streaming: Voxtral Realtime streaming mode
+                 - vr-offline: Voxtral Realtime offline mode
+
 Examples:
   export_model_artifact.sh metal "openai/whisper-small"
   export_model_artifact.sh metal "nvidia/parakeet-tdt" "quantized-int4-metal"
+  export_model_artifact.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-int4-metal"
+  export_model_artifact.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "." "vr-streaming"
   export_model_artifact.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed"
   export_model_artifact.sh cuda "google/gemma-3-4b-it" "non-quantized" "./output"
   export_model_artifact.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./output"
   export_model_artifact.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./output"
+  export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-8da4w" "./output"
+  export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "./output" "vr-offline"
 EOF
 }
 
@@ -61,6 +70,26 @@ DEVICE="$1"
 HF_MODEL="$2"
 QUANT_NAME="${3:-non-quantized}"
 OUTPUT_DIR="${4:-.}"
+MODE="${5:-}"
+
+# Validate mode if specified
+if [ -n "$MODE" ]; then
+  case "$MODE" in
+    vr-streaming|vr-offline)
+      # Voxtral Realtime modes require Voxtral Realtime model
+      if [ "$HF_MODEL" != "mistralai/Voxtral-Mini-4B-Realtime-2602" ]; then
+        echo "Error: Mode '$MODE' can only be used with Voxtral Realtime model"
+        echo "Provided model: $HF_MODEL"
+        exit 1
+      fi
+      ;;
+    *)
+      echo "Error: Unsupported mode '$MODE'"
+      echo "Supported modes: vr-streaming, vr-offline"
+      exit 1
+      ;;
+  esac
+fi
 
 case "$DEVICE" in
   cuda)
@@ -210,7 +239,7 @@ if [ "$MODEL_NAME" = "parakeet" ]; then
   exit 0
 fi
 
-# Voxtral Realtime uses a custom export script (streaming mode)
+# Voxtral Realtime uses a custom export script
 if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   pip install safetensors huggingface_hub
 
@@ -222,20 +251,42 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   VR_QUANT_ARGS=""
   if [ "$QUANT_NAME" = "quantized-8da4w" ]; then
     VR_QUANT_ARGS="--qlinear-encoder 8da4w --qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
+  elif [ "$QUANT_NAME" = "quantized-int4-metal" ]; then
+    VR_QUANT_ARGS="--qlinear-encoder fpa4w --qlinear fpa4w"
+  fi
+
+  # Determine streaming mode based on MODE parameter
+  USE_STREAMING="false"
+  if [ "$MODE" = "vr-streaming" ]; then
+    USE_STREAMING="true"
+  elif [ "$MODE" = "vr-offline" ]; then
+    USE_STREAMING="false"
+  elif [ -z "$MODE" ]; then
+    # Auto-detect: XNNPACK uses streaming, others use offline
+    if [ "$DEVICE" = "xnnpack" ]; then
+      USE_STREAMING="true"
+    fi
+  fi
+
+  # Configure export and preprocessor based on streaming mode
+  STREAMING_ARG=""
+  PREPROCESSOR_ARGS="--feature_size 128 --output_file ${OUTPUT_DIR}/preprocessor.pte"
+  if [ "$USE_STREAMING" = "true" ]; then
+    STREAMING_ARG="--streaming"
+    PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --streaming"
+  else
+    PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --stack_output --max_audio_len 300"
   fi
 
   python -m executorch.examples.models.voxtral_realtime.export_voxtral_rt \
       --model-path "$LOCAL_MODEL_DIR" \
-      --backend xnnpack \
-      --streaming \
+      --backend "$DEVICE" \
+      ${STREAMING_ARG} \
       --output-dir "${OUTPUT_DIR}" \
       ${VR_QUANT_ARGS}
 
-  # Export streaming preprocessor (no chunk padding)
-  python -m executorch.extension.audio.mel_spectrogram \
-      --feature_size 128 \
-      --streaming \
-      --output_file "${OUTPUT_DIR}/preprocessor.pte"
+  # Export preprocessor
+  python -m executorch.extension.audio.mel_spectrogram ${PREPROCESSOR_ARGS}
 
   test -f "${OUTPUT_DIR}/model.pte"
   test -f "${OUTPUT_DIR}/preprocessor.pte"

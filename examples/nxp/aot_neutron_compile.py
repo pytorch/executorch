@@ -39,11 +39,11 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.extension.export_util import save_pte_program
-from torch.ao.quantization import (
+from torch.export import export
+from torchao.quantization.pt2e import (
     move_exported_model_to_eval,
     move_exported_model_to_train,
 )
-from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
 from .experimental.cifar_net.cifar_net import (
@@ -85,7 +85,7 @@ def print_ops_in_edge_program(edge_program):
         print(f"{op: <50} {count}x")
 
 
-def get_model_and_inputs_from_name(model_name: str):
+def get_model_and_inputs_from_name(model_name: str, use_random_dataset: bool):
     """Given the name of an example pytorch model, return it, example inputs and calibration inputs (can be None)
 
     Raises RuntimeError if there is no example model corresponding to the given name.
@@ -94,7 +94,15 @@ def get_model_and_inputs_from_name(model_name: str):
     calibration_inputs = None
     # Case 1: Model is defined in this file
     if model_name in models.keys():
-        m = models[model_name]()
+        if use_random_dataset:
+            if model_name != "mobilenetv2":
+                raise NotImplementedError(
+                    f"Random dataset for model {model_name} is not implemented."
+                )
+            m = models[model_name](use_random_dataset=use_random_dataset)
+        else:
+            m = models[model_name]()
+
         model = m.get_eager_model()
         example_inputs = m.get_example_inputs()
         calibration_inputs = m.get_calibration_inputs(64)
@@ -214,6 +222,13 @@ if __name__ == "__main__":  # noqa C901
         help="The model (including the Neutron backend) will use the channels last dim order, which can result in faster "
         "inference. The inputs must also be provided in the channels last dim order.",
     )
+    parser.add_argument(
+        "--use_random_dataset",
+        required=False,
+        default=False,
+        action="store_true",
+        help="The calibration and testing datasets will be generated randomly instead of being downloaded.",
+    )
 
     args = parser.parse_args()
 
@@ -226,7 +241,7 @@ if __name__ == "__main__":  # noqa C901
 
     # 1. pick model from one of the supported lists
     model, example_inputs, calibration_inputs = get_model_and_inputs_from_name(
-        args.model_name
+        args.model_name, args.use_random_dataset
     )
     model = model.eval()
 
@@ -300,7 +315,15 @@ if __name__ == "__main__":  # noqa C901
         neutron_converter_flavor=args.neutron_converter_flavor,
     )
     partitioners = (
-        [NeutronPartitioner(compile_spec, neutron_target_spec)] if args.delegate else []
+        [
+            NeutronPartitioner(
+                compile_spec,
+                neutron_target_spec,
+                post_quantization_state_dict=module.state_dict(),
+            )
+        ]
+        if args.delegate
+        else []
     )
 
     edge_program_manager = to_edge_transform_and_lower(

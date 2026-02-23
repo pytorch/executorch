@@ -232,7 +232,9 @@ def test_upsample_nearest2d_vec_tosa_INT_interpolate(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 def test_upsample_nearest2d_vec_tosa_INT_a16w8(test_data: torch.Tensor):
-    """Test upsample_nearest2d vector op with int16 I/O quantization for TOSA INT."""
+    """Test upsample_nearest2d vector op with int16 I/O quantization for TOSA
+    INT.
+    """
     test_data, size, scale_factor, compare_outputs = test_data()
     pipeline = TosaPipelineINT[input_t1](
         Upsample(size, scale_factor),
