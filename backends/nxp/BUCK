@@ -13,6 +13,7 @@ fbcode_target(_kind = runtime.python_library,
     name = "aten_passes",
     srcs = glob([
         "aten_passes/*.py",
+        "aten_passes/**/*.py",
     ]),
     deps = [
         "//caffe2:torch",
