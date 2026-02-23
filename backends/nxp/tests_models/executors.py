@@ -336,7 +336,7 @@ def _run_pytorch_program(
     # Store all the results.
     store_results(all_outputs, cpu_results_dir, npu_results_dir)
 
-#TODO Remove before upstream!!!!
+
 def assert_NSYS():
     assert os.path.exists(NSYS_PATH)
     assert os.path.exists(NSYS_CONFIG_PATH)
@@ -370,10 +370,6 @@ def convert_run_compare(
     :param use_qat: If True, applies quantization-aware training before conversion (without the QAT training).
     :param train_fn: Train/finetune function for QAT training. Is used only when `use_qat=True`.
     """
-    assert os.path.exists(NSYS_PATH)
-    assert os.path.exists(NSYS_CONFIG_PATH)
-    assert os.path.exists(NSYS_FIRMWARE_PATH)
-
     assert_NSYS()
 
     if not dataset_creator:
@@ -454,8 +450,8 @@ def convert_run_compare_ptq_qat(
     input_spec: list[ModelInputSpec] | tuple,
     dlg_model_verifier: GraphVerifier,
     train_fn: Callable,
-    dataset_creator=RandomDatasetCreator(),
-    output_comparator=AllCloseOutputComparator(),
+    dataset_creator=None,
+    output_comparator=None,
     mocker: MockerFixture = None,
 ):
     """
@@ -472,6 +468,11 @@ def convert_run_compare_ptq_qat(
     :param mocker: Mocker instance used by visualizer.
     """
     assert_NSYS()
+
+    if not dataset_creator:
+        dataset_creator = RandomDatasetCreator()
+    if not output_comparator:
+        output_comparator = AllCloseOutputComparator()
 
     model_ptq = model
     model_qat = deepcopy(model)

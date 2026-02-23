@@ -7,7 +7,7 @@
 
 import logging
 import os
-from typing import Any, Dict, Optional, Tuple, Union, Callable
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import executorch.exir as exir
 
@@ -33,7 +33,10 @@ from executorch.exir import (
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.tracer import Value
 from torch.export import export, ExportedProgram
-from torchao.quantization.pt2e import move_exported_model_to_eval, move_exported_model_to_train
+from torchao.quantization.pt2e import (
+    move_exported_model_to_eval,
+    move_exported_model_to_train,
+)
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
@@ -52,7 +55,7 @@ def to_quantized_edge_program(
     dataset_dir,
     delegate_to_npu=True,
     use_qat: bool = False,
-    train_fn: Callable | None = None
+    train_fn: Callable | None = None,
 ) -> EdgeProgramManager:
     assert isinstance(input_spec, list) and all(
         isinstance(spec, ModelInputSpec) for spec in input_spec
@@ -119,7 +122,9 @@ def to_quantized_edge_program(
                 if len(input_data) == inputs_needed:
                     break
 
-                tensor = np.fromfile(file, dtype=input_spec[idx].type).reshape(input_spec[idx].shape)
+                tensor = np.fromfile(file, dtype=input_spec[idx].type).reshape(
+                    input_spec[idx].shape
+                )
                 input_data += (torch.from_numpy(tensor),)
                 continue
 
@@ -169,7 +174,12 @@ def to_quantized_executorch_program(
     train_fn: Callable | None = None,
 ) -> ExecutorchProgramManager:
     edge_program_manager = to_quantized_edge_program(
-        model, input_spec, dataset_dir, delegate_to_npu, use_qat=use_qat, train_fn=train_fn
+        model,
+        input_spec,
+        dataset_dir,
+        delegate_to_npu,
+        use_qat=use_qat,
+        train_fn=train_fn,
     )
 
     return edge_program_manager.to_executorch(
