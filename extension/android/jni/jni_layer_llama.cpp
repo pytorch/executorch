@@ -44,41 +44,7 @@
 namespace llm = ::executorch::extension::llm;
 using ::executorch::runtime::Error;
 
-namespace {
-bool utf8_check_validity(const char* str, size_t length) {
-  for (size_t i = 0; i < length; ++i) {
-    uint8_t byte = static_cast<uint8_t>(str[i]);
-    if (byte >= 0x80) { // Non-ASCII byte
-      if (i + 1 >= length) { // Incomplete sequence
-        return false;
-      }
-      uint8_t next_byte = static_cast<uint8_t>(str[i + 1]);
-      if ((byte & 0xE0) == 0xC0 &&
-          (next_byte & 0xC0) == 0x80) { // 2-byte sequence
-        i += 1;
-      } else if (
-          (byte & 0xF0) == 0xE0 && (next_byte & 0xC0) == 0x80 &&
-          (i + 2 < length) &&
-          (static_cast<uint8_t>(str[i + 2]) & 0xC0) ==
-              0x80) { // 3-byte sequence
-        i += 2;
-      } else if (
-          (byte & 0xF8) == 0xF0 && (next_byte & 0xC0) == 0x80 &&
-          (i + 2 < length) &&
-          (static_cast<uint8_t>(str[i + 2]) & 0xC0) == 0x80 &&
-          (i + 3 < length) &&
-          (static_cast<uint8_t>(str[i + 3]) & 0xC0) ==
-              0x80) { // 4-byte sequence
-        i += 3;
-      } else {
-        return false; // Invalid sequence
-      }
-    }
-  }
-  return true; // All bytes were valid
-}
-
-} // namespace
+using executorch::jni_helper::utf8_check_validity;
 
 namespace executorch_jni {
 
