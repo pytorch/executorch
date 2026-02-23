@@ -216,7 +216,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           data_files_vector,
           executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
       std::string decoder_model = "llama3"; // use llama3 for now
-      runner_ = std::make_unique<example::Runner<uint16_t>>( // QNN runner
+      runner_ = std::make_unique<example::Runner<uint8_t>>( // QNN runner (8-bit KV cache)
           std::move(module),
           decoder_model.c_str(),
           model_path->toStdString().c_str(),
