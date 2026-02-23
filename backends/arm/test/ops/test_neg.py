@@ -115,7 +115,9 @@ def test_neg_tosa_INT_a16w8(test_data: input_t1):
 @common.parametrize("test_data", Neg.test_data)
 @common.XfailIfNoCorstone300
 def test_neg_u55_INT_a16w8(test_data: input_t1):
-    """Test neg with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test neg with 16A8W quantization on U55 (16-bit activations, 8-bit
+    weights)
+    """
     pipeline = EthosU55PipelineINT[Tuple[torch.Tensor]](
         Neg(),
         test_data,
@@ -131,7 +133,9 @@ def test_neg_u55_INT_a16w8(test_data: input_t1):
 @common.parametrize("test_data", Neg.test_data)
 @common.XfailIfNoCorstone320
 def test_neg_u85_INT_a16w8(test_data: input_t1):
-    """Test neg with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test neg with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     pipeline = EthosU85PipelineINT[Tuple[torch.Tensor]](
         Neg(),
         test_data,

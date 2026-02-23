@@ -510,7 +510,6 @@ include_patterns = ['backends/arm/**/*.py']
 exclude_patterns = [
   'third-party/**',
   '**/third-party/**',
-  'backends/arm/_passes/**',
   'backends/arm/test/**',
 ]
 command = [

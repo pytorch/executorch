@@ -23,8 +23,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, Input y
-
-
 """Tests Tensor.repeat for different ranks and dimensions."""
 
 
@@ -195,7 +193,9 @@ def test_repeat_tosa_INT_a16w8(test_data):
 @common.parametrize("test_data", test_data_suite_u55)
 @common.XfailIfNoCorstone300
 def test_repeat_u55_INT_a16w8(test_data):
-    """Test repeat with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test repeat with 16A8W quantization on U55 (16-bit activations, 8-bit
+    weights)
+    """
     module, args = test_data()
     pipeline = EthosU55PipelineINT[Tuple[torch.Tensor]](
         module,
@@ -211,7 +211,9 @@ def test_repeat_u55_INT_a16w8(test_data):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_repeat_u85_INT_a16w8(test_data):
-    """Test repeat with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test repeat with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     module, args = test_data()
     pipeline = EthosU85PipelineINT[Tuple[torch.Tensor]](
         module,
