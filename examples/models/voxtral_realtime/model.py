@@ -827,16 +827,13 @@ class StandardEncoderRingKVCache(nn.Module):
         Returns:
             k_cache, v_cache: (B, buf_size, n_heads, head_dim) in [B, S, H, D] layout.
         """
-        start_pos = input_pos[0].item()
-        torch._check_is_size(start_pos)
-        seq_len = k_val.size(1)
-
-        # Compute wraparound indices
-        indices = (torch.arange(seq_len, dtype=torch.long, device=k_val.device) + start_pos) % self.buf_size
+        # Compute wrapped indices for ring buffer - work entirely with tensors
+        # to keep operations symbolic for AOTI
+        wrapped_indices = input_pos % self.buf_size
 
         # Use index_copy_ on dimension 1 (sequence dimension in [B, S, H, D])
-        self.k_cache.index_copy_(1, indices, k_val)
-        self.v_cache.index_copy_(1, indices, v_val)
+        self.k_cache.index_copy_(1, wrapped_indices, k_val)
+        self.v_cache.index_copy_(1, wrapped_indices, v_val)
 
         return self.k_cache, self.v_cache
 
