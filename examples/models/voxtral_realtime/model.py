@@ -756,11 +756,10 @@ class StreamingAudioEncoderExport(nn.Module):
 
     Shares conv/transformer/adapter weights with the offline encoder.
     Owns separate KV caches and SDPA for incremental KV-cached attention.
+    Conv states are maintained as internal buffers.
 
     Forward:
-        mel_chunk(1,128,8) + conv1_state(1,128,2) + conv2_state(1,1280,2)
-        + enc_input_pos(4,)
-        -> audio_embeds(1,1,3072), new_conv1_state(1,128,2), new_conv2_state(1,1280,2)
+        mel_chunk(1,128,8) + enc_input_pos(4,) -> audio_embeds(1,1,3072)
     """
 
     def __init__(self, model: VoxtralRealtimeModel, max_enc_len: int = 750):
@@ -777,6 +776,10 @@ class StreamingAudioEncoderExport(nn.Module):
         self.downsample_factor = config.downsample_factor
         self.n_heads = config.enc_n_heads
         self.head_dim = config.enc_head_dim
+
+        # Register conv states as buffers (mutable state for streaming)
+        self.register_buffer("conv1_state", torch.zeros(1, config.num_mel_bins, 2))
+        self.register_buffer("conv2_state", torch.zeros(1, config.enc_dim, 2))
 
         # Ring buffer KV caches for unlimited streaming.
         # Window size = max_enc_len (encoder sliding window from params.json).
@@ -831,21 +834,21 @@ class StreamingAudioEncoderExport(nn.Module):
     def forward(
         self,
         mel_chunk: torch.Tensor,
-        conv1_state: torch.Tensor,
-        conv2_state: torch.Tensor,
         enc_input_pos: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         # Conv1: cat state + chunk, raw Conv1d (no CausalConv1d padding)
         # (1, 128, 2+8=10) -> conv1(k=3, s=1) -> (1, 1280, 8)
-        conv1_input = torch.cat([conv1_state, mel_chunk], dim=2)
+        conv1_input = torch.cat([self.conv1_state, mel_chunk], dim=2)
         conv1_out = F.gelu(self.conv1(conv1_input))
-        new_conv1_state = mel_chunk[:, :, -2:]
+        # Update conv1 state in-place with last 2 frames from input
+        self.conv1_state.copy_(conv1_input[:, :, -2:])
 
         # Conv2: cat state + conv1_out, raw Conv1d
         # (1, 1280, 2+8=10) -> conv2(k=3, s=2) -> (1, 1280, 4)
-        conv2_input = torch.cat([conv2_state, conv1_out], dim=2)
+        conv2_input = torch.cat([self.conv2_state, conv1_out], dim=2)
         conv2_out = F.gelu(self.conv2(conv2_input))
-        new_conv2_state = conv1_out[:, :, -2:]
+        # Update conv2 state in-place with last 2 frames from conv1_out
+        self.conv2_state.copy_(conv2_input[:, :, -2:])
 
         x = conv2_out.transpose(1, 2)  # (1, 4, 1280)
 
@@ -873,7 +876,7 @@ class StreamingAudioEncoderExport(nn.Module):
 
         audio_embeds = self.adapter(x)  # (1, 1, 3072)
 
-        return audio_embeds, new_conv1_state, new_conv2_state
+        return audio_embeds
 
 
 # ---------------------------------------------------------------------------
