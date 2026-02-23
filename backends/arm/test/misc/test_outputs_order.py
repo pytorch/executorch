@@ -115,7 +115,7 @@ def test_network_output_order_and_restore_tosa_INT(batch_size, output_order_work
         out_shapes = _read_tosa_outputs(tosa_files[0])
     # We use shape that is unique to output to check
     # that we preserve output order
-    channel_dims = [s[1] for s in reversed(out_shapes)]
+    channel_dims = [s[1] for s in out_shapes]
     assert channel_dims == [1, 2, 3], (
         "Outputs in .tosa do not keep author order: "
         f"expected [1, 2, 3], got {channel_dims}"
