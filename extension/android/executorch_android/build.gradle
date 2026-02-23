@@ -27,7 +27,7 @@ def flavor = System.properties['flavor']
 
 android {
     namespace = "org.pytorch.executorch"
-    compileSdk = 35
+    compileSdk = 34
 
     defaultConfig {
         minSdk = 23
