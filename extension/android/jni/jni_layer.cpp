@@ -58,14 +58,15 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     // Java wrapper currently only supports contiguous tensors.
 
     const auto scalarType = tensor.scalar_type();
-    int jdtype = scalar_type_to_java_dtype.at(scalarType);
     if (scalar_type_to_java_dtype.count(scalarType) == 0) {
       std::stringstream ss;
-      ss << "executorch::aten::Tensor scalar [java] type: " << jdtype
+      ss << "executorch::aten::Tensor scalar type "
+         << static_cast<int>(scalarType)
          << " is not supported on java side";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
     }
+    int jdtype = scalar_type_to_java_dtype.at(scalarType);
 
     const auto& tensor_shape = tensor.sizes();
     std::vector<jlong> tensor_shape_vec;
