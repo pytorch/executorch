@@ -10,7 +10,11 @@ import torch
 
 from executorch.backends.nxp.tests_models.config_importer import test_config
 from executorch.backends.nxp.tests_models.dataset_creator import CopyDatasetCreator
-from executorch.backends.nxp.tests_models.executors import convert_run_compare
+
+from executorch.backends.nxp.tests_models.executors import (
+    convert_run_compare,
+    ReferenceModel,
+)
 from executorch.backends.nxp.tests_models.graph_verifier import (
     BaseGraphVerifier,
     NonDelegatedNode,
@@ -23,8 +27,6 @@ from executorch.examples.nxp.experimental.cifar_net.cifar_net import (
     CifarNet,
     store_test_data,
 )
-
-from thirdparty.executorch.backends.nxp.tests_models.executors import ReferenceModel
 
 
 @pytest.fixture(scope="module")
@@ -59,9 +61,8 @@ def test_cifarnet(mocker, cifar_test_files, channels_last):
 
     non_dlg_nodes = [NonDelegatedNode("aten__softmax_default", 1)]
 
-    mse = 2.4e-3 if channels_last else 1e-3
     comparator = NumericalStatsOutputComparator(
-        max_mse_error=mse, is_classification_task=True
+        max_mse_error=1.0e-3, is_classification_task=True
     )
     convert_run_compare(
         model,
@@ -74,7 +75,7 @@ def test_cifarnet(mocker, cifar_test_files, channels_last):
         #  lowered channels last convolution weights, which cause incorrect inference results. The issue
         #  is caused by ExecuTorch (not NXP). https://github.com/pytorch/executorch/issues/16464
         reference_model=(
-            ReferenceModel.FLOAT_PYTORCH_PYTHON
+            ReferenceModel.QUANTIZED_EDGE_PYTHON
             if channels_last
             else ReferenceModel.QUANTIZED_EXECUTORCH_CPP
         ),
