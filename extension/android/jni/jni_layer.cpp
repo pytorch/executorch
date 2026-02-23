@@ -61,8 +61,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     if (scalar_type_to_java_dtype.count(scalarType) == 0) {
       std::stringstream ss;
       ss << "executorch::aten::Tensor scalar type "
-         << static_cast<int>(scalarType)
-         << " is not supported on java side";
+         << static_cast<int>(scalarType) << " is not supported on java side";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
     }
