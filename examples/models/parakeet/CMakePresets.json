@@ -62,24 +62,28 @@
             "name": "parakeet-cpu",
             "displayName": "Build Parakeet runner (CPU)",
             "configurePreset": "parakeet-cpu",
+            "configuration": "Release",
             "targets": ["parakeet_runner"]
         },
         {
             "name": "parakeet-cuda",
             "displayName": "Build Parakeet runner (CUDA)",
             "configurePreset": "parakeet-cuda",
+            "configuration": "Release",
             "targets": ["parakeet_runner"]
         },
         {
             "name": "parakeet-cuda-debug",
             "displayName": "Build Parakeet runner (CUDA, Debug)",
             "configurePreset": "parakeet-cuda-debug",
+            "configuration": "Debug",
             "targets": ["parakeet_runner"]
         },
         {
             "name": "parakeet-metal",
             "displayName": "Build Parakeet runner (Metal)",
             "configurePreset": "parakeet-metal",
+            "configuration": "Release",
             "targets": ["parakeet_runner"]
         }
     ],

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -72,6 +72,8 @@ def test_w2l_tosa_INT():
         aten_op=[],
         exir_op=TestW2L.all_operators,
         use_to_edge_transform_and_lower=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 

@@ -139,7 +139,9 @@ def test_minimum_tosa_INT_a16w8(test_data: test_t):
 @common.parametrize("test_data", Minimum.test_parameters)
 @common.XfailIfNoCorstone300
 def test_minimum_u55_INT_a16w8(test_data: test_t):
-    """Test minimum with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test minimum with 16A8W quantization on U55 (16-bit activations, 8-bit
+    weights)
+    """
     pipeline = EthosU55PipelineINT[test_t](
         Minimum(),
         test_data(),
@@ -155,7 +157,9 @@ def test_minimum_u55_INT_a16w8(test_data: test_t):
 @common.parametrize("test_data", Minimum.test_parameters)
 @common.XfailIfNoCorstone320
 def test_minimum_u85_INT_a16w8(test_data: test_t):
-    """Test minimum with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test minimum with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     pipeline = EthosU85PipelineINT[test_t](
         Minimum(),
         test_data(),

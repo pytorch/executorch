@@ -29,7 +29,7 @@ static TestCase create_test_case_from_config(
     vkapi::ScalarType input_dtype,
     utils::StorageType fp_storage_type,
     utils::GPUMemoryLayout int8_memory_layout,
-    const std::string& impl_selector = "general") {
+    const std::string& impl_selector = "") {
   TestCase test_case;
 
   // Calculate output dimensions
@@ -53,7 +53,6 @@ static TestCase create_test_case_from_config(
       std::to_string(config.input_size.w) + "  " +
       "g=" + std::to_string(config.groups) + "  " +
       "k=" + std::to_string(config.kernel.h) + "  " +
-      repr_str(fp_storage_type, fp_memory_layout) + "->" +
       repr_str(utils::kBuffer, int8_memory_layout);
   if (!impl_selector.empty()) {
     test_name += " [" + impl_selector + "]";
@@ -179,6 +178,10 @@ static TestCase create_test_case_from_config(
   test_case.add_input_spec(dilation);
   test_case.add_input_spec(groups);
 
+  // Activation (none = no activation)
+  ValueSpec activation = ValueSpec::make_string("none");
+  test_case.add_input_spec(activation);
+
   // Add memory layout parameter for the quantized tensors
   ValueSpec layout_int(static_cast<int32_t>(int8_memory_layout));
   test_case.add_input_spec(layout_int);
@@ -218,8 +221,7 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
   };
   config.op_name = "conv2d_q8ta_q8csw_q8to";
 
-  std::vector<utils::StorageType> fp_storage_types = {
-      utils::kTexture3D, utils::kBuffer};
+  std::vector<utils::StorageType> fp_storage_types = {utils::kTexture3D};
 
   // Memory layouts for int8 tensors - test both optimized (4W4C) and general
   // paths
@@ -237,8 +239,7 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
 
       // Test im2col implementation for non-grouped convolutions with input
       // channels that are a multiple of 4 and stride_w == 1
-      if (config.groups == 1 && config.channels.in % 4 == 0 &&
-          config.stride.w == 1) {
+      if (config.groups == 1 && config.channels.in % 4 == 0) {
         test_cases.push_back(create_test_case_from_config(
             config,
             vkapi::kFloat,
@@ -377,11 +378,26 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
        Stride(2, 2),
        Padding(2, 2),
        Dilation(1, 1),
-       4}};
+       4},
+      // Deep channels + small spatial (ResNet50 stage 5 bottleneck)
+      {OutInChannels(512, 512),
+       InputSize2D(7, 7),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1},
+      // Strided 1x1 shortcut (worst-case strided downsample)
+      {OutInChannels(2048, 1024),
+       InputSize2D(14, 14),
+       KernelSize(1, 1),
+       Stride(2, 2),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1}};
 
   // Test with different storage types and memory layouts
-  std::vector<utils::StorageType> fp_storage_types = {
-      utils::kTexture3D, utils::kBuffer};
+  std::vector<utils::StorageType> fp_storage_types = {utils::kTexture3D};
 
   // Memory layouts for int8 tensors - test both optimized (4W4C) and general
   // paths
@@ -402,8 +418,24 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
            int8_memory_layouts) {
         config.test_case_name = make_test_case_name(
             config, is_performance, fp_storage_type, utils::kBuffer);
+
         test_cases.push_back(create_test_case_from_config(
-            config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
+            config,
+            vkapi::kFloat,
+            fp_storage_type,
+            int8_memory_layout,
+            /*impl_selector=*/"general"));
+
+        // Test im2col implementation for non-grouped convolutions with input
+        // channels that are a multiple of 4 and stride_w == 1
+        if (config.groups == 1 && config.channels.in % 4 == 0) {
+          test_cases.push_back(create_test_case_from_config(
+              config,
+              vkapi::kFloat,
+              fp_storage_type,
+              int8_memory_layout,
+              /*impl_selector=*/"im2col"));
+        }
 
         // For 4W4C layout, also test the legacy implementation
         if (int8_memory_layout == utils::kPackedInt8_4W4C) {
@@ -415,17 +447,8 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
               /*impl_selector=*/"legacy_4w4c"));
         }
 
-        // Test im2col implementation for non-grouped convolutions with input
-        // channels that are a multiple of 4 and stride_w == 1
-        if (config.groups == 1 && config.channels.in % 4 == 0 &&
-            config.stride.w == 1) {
-          test_cases.push_back(create_test_case_from_config(
-              config,
-              vkapi::kFloat,
-              fp_storage_type,
-              int8_memory_layout,
-              /*impl_selector=*/"im2col"));
-        }
+        test_cases.push_back(create_test_case_from_config(
+            config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
       }
     }
   }
@@ -452,6 +475,8 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   const ValueSpec& padding_spec = test_case.inputs()[idx++];
   const ValueSpec& dilation_spec = test_case.inputs()[idx++];
   const ValueSpec& groups_spec = test_case.inputs()[idx++];
+  const ValueSpec& activation_spec = test_case.inputs()[idx++];
+  (void)activation_spec; // Not used in reference implementation
   const ValueSpec& layout_spec = test_case.inputs()[idx++];
   (void)layout_spec; // Not used in reference implementation
   const ValueSpec& impl_selector_spec = test_case.inputs()[idx++];

@@ -136,8 +136,12 @@ StagingBuffer::StagingBuffer(
     const vkapi::CopyDirection direction)
     : context_p_(context_p),
       dtype_(get_staging_dtype(context_p, dtype)),
+      // For 8-bit types, align numel to the next multiple of 4. Devices that
+      // lack 8-bit storage buffer support will interpret the data as int32, so
+      // the buffer size must be a multiple of 4 bytes.
       vulkan_buffer_(context_p_->adapter_ptr()->vma().create_staging_buffer(
-          element_size(dtype_) * numel,
+          element_size(dtype_) *
+              (element_size(dtype_) == 1 ? utils::align_up_4(numel) : numel),
           direction)),
       mapped_data_(nullptr) {}
 
@@ -159,6 +163,11 @@ void StagingBuffer::cast_half_to_float_and_copy_from(
   for (size_t i = 0; i < numel; ++i) {
     dst[i] = half_to_float(src[i]);
   }
+  vmaFlushAllocation(
+      vulkan_buffer_.vma_allocator(),
+      vulkan_buffer_.allocation(),
+      0u,
+      VK_WHOLE_SIZE);
 }
 
 void StagingBuffer::cast_float_to_half_and_copy_to(

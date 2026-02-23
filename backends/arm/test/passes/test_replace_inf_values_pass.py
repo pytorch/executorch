@@ -27,8 +27,8 @@ class ModuleWithInf(torch.nn.Module):
 
 
 def _get_add_constants(module_with_infinf: fx.GraphModule) -> list[float]:
-    """
-    Return the scalar literals passed to `aten.add.Tensor`, skipping tensor inputs.
+    """Return the scalar literals passed to `aten.add.Tensor`, skipping tensor
+    inputs.
     """
     return [
         node.args[1]
@@ -41,18 +41,16 @@ def _get_add_constants(module_with_infinf: fx.GraphModule) -> list[float]:
 
 
 def _get_mask_buffer(graph_module: fx.GraphModule) -> torch.Tensor:
-    """
-    Fetch the `mask` buffer tensor from the traced module.
-    """
+    """Fetch the `mask` buffer tensor from the traced module."""
     buffers = dict(graph_module.named_buffers())
     assert "mask" in buffers, "Mask buffer not found"
     return buffers["mask"]
 
 
 def test_replace_inf_and_limit_values_no_target_clamps_inf_constants():
-    """
-    Trace a module with infinities, run ReplaceInfAndLimitValuesPass, and expect the buffer and scalar
-    literals to be clamped to ±255 with no infinities left.
+    """Trace a module with infinities, run ReplaceInfAndLimitValuesPass, and
+    expect the buffer and scalar literals to be clamped to ±255 with no
+    infinities left.
     """
     gm = fx.symbolic_trace(ModuleWithInf())
 
@@ -67,9 +65,9 @@ def test_replace_inf_and_limit_values_no_target_clamps_inf_constants():
 
 
 def test_replace_inf_and_limit_values_no_target_respects_disallowed_nodes():
-    """
-    When nodes opt out of transforms, running the pass in TFA mode should leave the mask buffer
-    untouched while still clamping scalar literals to ±255.
+    """When nodes opt out of transforms, running the pass in TFA mode should
+    leave the mask buffer untouched while still clamping scalar literals to
+    ±255.
     """
     gm = fx.symbolic_trace(ModuleWithInf())
     mask_before = _get_mask_buffer(gm).clone()

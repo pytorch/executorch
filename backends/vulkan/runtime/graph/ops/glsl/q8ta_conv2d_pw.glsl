@@ -57,6 +57,7 @@ layout(push_constant) uniform restrict Block {
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
+${layout_declare_spec_const(C, "int", "activation_type", "0")}
 ${layout_declare_spec_const(C, "int", "conv2d_params_K4_per_group", "1")}
 
 // Layout specialization constants
@@ -197,6 +198,10 @@ void main() {
               fma(vec4(accum_adjusted),
                   vec4(weight_scales[n4]) * input_scale,
                   vec4(bias[n4]));
+          // Apply ReLU if enabled
+          if (activation_type > 0) {
+            float_out_texel = max(float_out_texel, vec4(0.0));
+          }
           // Requantize to int8
           float_out_texel =
               round(float_out_texel * output_inv_scale) + output_zp;
@@ -216,6 +221,10 @@ void main() {
               input_zp_vec * weight_sums[n4] + out_accum[m][n4];
           vec4 float_out_texel =
               vec4(accum_adjusted) * vec4(weight_scales[n4] * input_scale);
+          // Apply ReLU if enabled
+          if (activation_type > 0) {
+            float_out_texel = max(float_out_texel, vec4(0.0));
+          }
           // Requantize to int8
           float_out_texel =
               round(float_out_texel * output_inv_scale) + output_zp;

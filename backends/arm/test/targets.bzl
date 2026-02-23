@@ -20,6 +20,7 @@ def define_arm_tests():
         "ops/test_cat.py",
         "ops/test_conv2d.py",
         "ops/test_linear.py",
+        "ops/test_max_pool1d.py",
         "ops/test_mul.py",
         "ops/test_permute.py",
         "ops/test_rsqrt.py",

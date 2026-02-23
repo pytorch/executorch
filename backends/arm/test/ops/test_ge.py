@@ -148,6 +148,8 @@ def test_ge_tensor_tosa_INT(test_module):
         test_module().get_inputs(),
         GreaterEqual.aten_op_tensor,
         GreaterEqual.exir_op,
+        frobenius_threshold=0.6,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=0.8,
     )
     pipeline.run()
 
@@ -159,6 +161,8 @@ def test_ge_scalar_tosa_INT(test_module):
         test_module().get_inputs(),
         GreaterEqual.aten_op_tensor,
         GreaterEqual.exir_op,
+        frobenius_threshold=0.6,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=0.8,
     )
     pipeline.run()
 
@@ -249,7 +253,9 @@ def test_ge_scalar_u85_INT(test_module):
 @common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone320
 def test_ge_tensor_16a8w_u85_INT(test_module):
-    """Test ge operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test ge operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t](
@@ -267,7 +273,9 @@ def test_ge_tensor_16a8w_u85_INT(test_module):
 @common.parametrize("test_module", test_data_scalar)
 @common.XfailIfNoCorstone320
 def test_ge_scalar_16a8w_u85_INT(test_module):
-    """Test ge operation (scalar) with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test ge operation (scalar) with 16A8W quantization on U85 (16-bit
+    activations, 8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t](

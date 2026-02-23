@@ -127,16 +127,47 @@ struct DeviceTraits<c10::DeviceType::CUDA> {
   /// @param ptr Pointer to device memory to free.
   static void free(void* ptr) {
     // Get the current stream for the current device
+    // Currently all cuda slimtensors should be on the same device same stream,
+    // so we can just use the stream on current device.
+    // TODO(gasoonjia): add cuda stream as a member of MaybeOwningStorage to
+    // support multiple devices.
     auto stream_result = executorch::backends::cuda::getCurrentCUDAStream(-1);
-    if (stream_result.ok()) {
-      ET_CUDA_LOG_WARN(cudaFreeAsync(ptr, stream_result.get()));
-    } else {
-      // Fallback to synchronous free if we can't get the stream
-      ET_CUDA_LOG_WARN(cudaFree(ptr));
-    }
+    ET_CHECK_MSG(stream_result.ok(), "Failed to get current CUDA stream");
+    ET_CUDA_LOG_WARN(cudaFreeAsync(ptr, stream_result.get()));
   }
 
-  /// Copies memory between CPU and CUDA or CUDA and CUDA.
+  /// Copies memory between CPU and CUDA or CUDA and CUDA asynchronously.
+  /// @param dst Destination pointer.
+  /// @param src Source pointer.
+  /// @param nbytes Number of bytes to copy.
+  /// @param dst_device Destination device.
+  /// @param src_device Source device.
+  /// @param stream CUDA stream for async copy.
+  static void memcpy_async(
+      void* dst,
+      const void* src,
+      size_t nbytes,
+      const c10::Device& dst_device,
+      const c10::Device& src_device,
+      cudaStream_t stream) {
+    cudaMemcpyKind direction = cudaMemcpyDeviceToDevice;
+
+    if (src_device.is_cpu()) {
+      direction = cudaMemcpyHostToDevice;
+    } else if (dst_device.is_cpu()) {
+      direction = cudaMemcpyDeviceToHost;
+    } else {
+      ET_CHECK_MSG(
+          src_device.index() == dst_device.index(),
+          "CUDA memcpy across different device indices not supported: %d != %d",
+          static_cast<int>(src_device.index()),
+          static_cast<int>(dst_device.index()));
+    }
+
+    ET_CUDA_CHECK(cudaMemcpyAsync(dst, src, nbytes, direction, stream));
+  }
+
+  /// Copies memory between CPU and CUDA or CUDA and CUDA synchronously.
   /// @param dst Destination pointer.
   /// @param src Source pointer.
   /// @param nbytes Number of bytes to copy.

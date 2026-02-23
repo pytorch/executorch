@@ -236,4 +236,10 @@ target_include_directories(
 
 target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
+target_link_options(
+  executorch_jni PRIVATE
+  "LINKER:--version-script,${CMAKE_CURRENT_SOURCE_DIR}/jni/version_script.txt"
+)
+target_link_options_gc_sections(executorch_jni)
+
 target_link_libraries(executorch_jni ${link_libraries} log)

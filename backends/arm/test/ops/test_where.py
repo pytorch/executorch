@@ -175,13 +175,13 @@ test_modules_common = {
     "two_dim_scalar_cond": lambda: two_dim_scalar_cond,
     "three_dim_scalar_cond": lambda: three_dim_scalar_cond,
     "float32_scalar_cond": lambda: float32_scalar_cond,
-    "const_float32": lambda: const_float32,
 }
 
 test_modules_FP = {
     **test_modules_common,
     "float32_tensor_cond_tuple_dtype_bool": lambda: float32_tensor_cond_tuple_dtype_bool,
     "float16_tensor_cond": lambda: float16_tensor_cond,
+    "const_float32": lambda: const_float32,
 }
 
 test_modules_FP_bf16 = {
@@ -231,6 +231,16 @@ def test_where_self_tosa_INT(test_module):
         test_module().get_inputs(),
         aten_op,
         exir_op,
+    )
+    pipeline.run()
+
+
+def test_where_self_tosa_INT_constant():
+    test_module = const_float32
+    pipeline = TosaPipelineINT[input_t](
+        test_module,
+        test_module.get_inputs(),
+        [],  # No where op expected as the condition is constant and can be folded into the other two inputs
     )
     pipeline.run()
 
