@@ -24,6 +24,8 @@ from executorch.examples.nxp.experimental.cifar_net.cifar_net import (
     store_test_data,
 )
 
+from thirdparty.executorch.backends.nxp.tests_models.executors import ReferenceModel
+
 
 @pytest.fixture(scope="module")
 def cifar_test_files(tmp_path_factory):
@@ -71,7 +73,11 @@ def test_cifarnet(mocker, cifar_test_files, channels_last):
         # Run the channels last reference in PyTorch as the ExecuTorch CPU model contains incorrectly
         #  lowered channels last convolution weights, which cause incorrect inference results. The issue
         #  is caused by ExecuTorch (not NXP). https://github.com/pytorch/executorch/issues/16464
-        run_cpu_version_in_pytorch=channels_last,
+        reference_model=(
+            ReferenceModel.FLOAT_PYTORCH_PYTHON
+            if channels_last
+            else ReferenceModel.QUANTIZED_EXECUTORCH_CPP
+        ),
     )
 
 

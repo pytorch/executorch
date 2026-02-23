@@ -9,6 +9,7 @@ import logging
 import os.path
 import shutil
 import subprocess
+from enum import Enum
 from os import mkdir
 
 import numpy as np
@@ -43,6 +44,14 @@ NSYS_PATH = test_config.NSYS_PATH
 NSYS_CONFIG_PATH = test_config.NSYS_CONFIG_PATH
 NSYS_FIRMWARE_PATH = test_config.NSYS_FIRMWARE_PATH
 NEUTRON_TEST_PATH = test_config.NEUTRON_TEST_PATH
+
+
+class ReferenceModel(Enum):
+    QUANTIZED_EXECUTORCH_CPP = 0
+    QUANTIZED_EDGE_PYTHON = 1
+    # QUANTIZED_ATEN_PYTHON = 2  # Not implemented.
+    # FLOAT_ATEN_PYTHON = 3  # Not implemented.
+    FLOAT_PYTORCH_PYTHON = 4
 
 
 def _run_delegated_executorch_program(
@@ -333,7 +342,7 @@ def convert_run_compare(
     dataset_creator=None,
     output_comparator=None,
     mocker: MockerFixture = None,
-    run_cpu_version_in_pytorch: bool = False,
+    reference_model: ReferenceModel = ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
     use_qat: bool = False,
 ):
     """
@@ -347,7 +356,7 @@ def convert_run_compare(
     :param dataset_creator: Creator that should fill provided `dataset_dir` with model input samples.
     :param output_comparator: Comparator of results produced by NPU and CPU runs of the program.
     :param dlg_model_verifier: Graph verifier instance.
-    :param run_cpu_version_in_pytorch: If True, runs CPU version in float32 PyTorch instead of quantized ExecuTorch.
+    :param reference_model: Version of the model which will be run to obtain reference output data.
     :param mocker: Mocker instance used by visualizer.
     :param use_qat: If True, applies quantization-aware training before conversion (without the QAT training).
     """
@@ -393,25 +402,29 @@ def convert_run_compare(
 
     output_spec = _get_program_output_spec(delegated_program)
 
-    if run_cpu_version_in_pytorch:
-        _run_pytorch_program(
-            model,
-            testing_dataset_dir,
-            input_spec,
-            output_spec,
-            cpu_results_dir,
-            npu_results_dir,
-        )
-    else:
-        _run_non_delegated_executorch_program(
-            model,
-            test_dir,
-            test_name,
-            calibration_dataset_dir,
-            testing_dataset_dir,
-            input_spec,
-            cpu_results_dir,
-        )
+    match reference_model:
+        case ReferenceModel.QUANTIZED_EXECUTORCH_CPP:
+            _run_non_delegated_executorch_program(
+                model,
+                test_dir,
+                test_name,
+                calibration_dataset_dir,
+                testing_dataset_dir,
+                input_spec,
+                cpu_results_dir,
+            )
+        case ReferenceModel.FLOAT_PYTORCH_PYTHON:
+            _run_pytorch_program(
+                model,
+                testing_dataset_dir,
+                input_spec,
+                output_spec,
+                cpu_results_dir,
+                npu_results_dir,
+            )
+
+        case _:
+            raise ValueError(f"Unsupported reference model: `{reference_model}`.")
 
     output_tensor_spec = _get_program_output_spec(delegated_program)
 
