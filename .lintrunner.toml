@@ -221,6 +221,8 @@ exclude_patterns = [
     '**/*.gif',
     'extension/llm/tokenizers',
     'extension/llm/tokenizers/**',
+    'kernels/portable',
+    'kernels/quantized',
     'examples/cuda',
     'kernels/portable',
     # File contains @generated
