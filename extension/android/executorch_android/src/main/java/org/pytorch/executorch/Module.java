@@ -54,7 +54,7 @@ public class Module {
 
   @DoNotStrip
   private static native HybridData initHybrid(
-      String moduleAbsolutePath, int loadMode, int initHybrid);
+      String moduleAbsolutePath, int loadMode, int numThreads);
 
   private Module(String moduleAbsolutePath, int loadMode, int numThreads) {
     ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
@@ -201,7 +201,7 @@ public class Module {
    */
   public MethodMetadata getMethodMetadata(String name) {
     if (!mMethodMetadata.containsKey(name)) {
-      throw new RuntimeException("method " + name + "does not exist for this module");
+      throw new RuntimeException("method " + name + " does not exist for this module");
     }
 
     MethodMetadata methodMetadata = mMethodMetadata.get(name);
