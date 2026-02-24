@@ -46,6 +46,7 @@ class NeutronCompileSpecBuilder:
         self.operators_not_to_delegate: List[str] = []
         self.neutron_converter_flavor = None
         self.use_neutron_for_format_conversion = True
+        self.fetch_constants_to_sram = False
 
     def _replace_colons(self, operator: str) -> str:
         """
@@ -60,6 +61,7 @@ class NeutronCompileSpecBuilder:
         extra_flags: Optional[str] = None,
         operators_not_to_delegate: Optional[List[str]] = None,
         use_neutron_for_format_conversion: bool = True,
+        fetch_constants_to_sram: bool = False,
     ):
         """
         Generate compile spec for Neutron NPU
@@ -73,6 +75,8 @@ class NeutronCompileSpecBuilder:
             use_neutron_for_format_conversion: If True, the EdgeProgramToIRConverter will insert `Transpose` ops to
                                                 ensure that the IO matches the executorch partition, which will be
                                                 delegated to Neutron.
+            fetch_constants_to_sram: If True, the Neutron Converter will insert microinstructions to prefetch weights
+                                     from FLASH to SRAM. This should be used when the whole model does not fit into SRAM.
         """
 
         self.neutron_converter_flavor = neutron_converter_flavor
@@ -93,6 +97,8 @@ class NeutronCompileSpecBuilder:
             ]
 
         self.use_neutron_for_format_conversion = use_neutron_for_format_conversion
+
+        self.fetch_constants_to_sram = fetch_constants_to_sram
 
         return self
 
@@ -116,6 +122,10 @@ class NeutronCompileSpecBuilder:
                     "use_neutron_for_format_conversion",
                     f"{self.use_neutron_for_format_conversion}".encode(),
                 ),
+                CompileSpec(
+                    "fetch_constants_to_sram",
+                    f"{self.fetch_constants_to_sram}".encode(),
+                ),
             ]
 
         return self.compile_spec
@@ -128,6 +138,7 @@ def generate_neutron_compile_spec(
     extra_flags: Optional[str] = None,
     operators_not_to_delegate: Optional[List[str]] = None,
     use_neutron_for_format_conversion: bool = True,
+    fetch_constants_to_sram: bool = False,
 ) -> List[CompileSpec]:
     return (
         NeutronCompileSpecBuilder()
@@ -137,6 +148,7 @@ def generate_neutron_compile_spec(
             extra_flags=extra_flags,
             operators_not_to_delegate=operators_not_to_delegate,
             use_neutron_for_format_conversion=use_neutron_for_format_conversion,
+            fetch_constants_to_sram=fetch_constants_to_sram,
         )
         .build()
     )
@@ -160,6 +172,7 @@ class NeutronBackend(BackendDetails):
         target = ""
         neutron_converter_flavor = ""
         use_neutron_for_format_conversion = None
+        fetch_constants_to_sram = False
         for spec in compile_spec:
             if spec.key == "output_format":
                 output_format = spec.value.decode()
@@ -171,6 +184,8 @@ class NeutronBackend(BackendDetails):
                 neutron_converter_flavor = spec.value.decode()
             if spec.key == "use_neutron_for_format_conversion":
                 use_neutron_for_format_conversion = spec.value.decode() == "True"
+            if spec.key == "fetch_constants_to_sram":
+                fetch_constants_to_sram = spec.value.decode() == "True"
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -212,7 +227,7 @@ class NeutronBackend(BackendDetails):
             )
 
             neutron_model = NeutronConverterManager(neutron_converter_flavor).convert(
-                tflite_model, target
+                tflite_model, target, fetch_constants_to_sram
             )
 
             # Dump the tflite file if logging level is enabled

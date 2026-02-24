@@ -65,6 +65,9 @@ class DecomposeSoftmaxPass(ArmPass):
         %op6 = mul(%op3, %op5)
         (in logsoftmax case: %op7 = log(%op6))
 
+    When skip_safe_softmax=True, _safe_softmax is left undecomposed so
+    the partitioner delegates it to CPU instead of the NPU.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -72,11 +75,19 @@ class DecomposeSoftmaxPass(ArmPass):
         InsertTableOpsPass,
     }
 
+    def __init__(self, skip_safe_softmax: bool = False, **kwargs):
+        super().__init__(**kwargs)
+        self._skip_safe_softmax = skip_safe_softmax
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in torch_softmax + edge_softmax or not self.allowed_to_transform(
             meta
         ):
             return super().call_operator(op, args, kwargs, meta)
+
+        if self._skip_safe_softmax and op == torch.ops.aten._safe_softmax.default:
+            return super().call_operator(op, args, kwargs, meta)
+
         log_op, sub_op, max_op, exp_op, sum_op, reciprocal_op, mul_op = (
             _get_logsoftmax_ops(op)
         )

@@ -229,6 +229,13 @@ if __name__ == "__main__":  # noqa C901
         action="store_true",
         help="The calibration and testing datasets will be generated randomly instead of being downloaded.",
     )
+    parser.add_argument(
+        "--fetch_constants_to_sram",
+        required=False,
+        default=False,
+        action="store_true",
+        help="This feature allows running models which do not fit into SRAM by offloading them to an external memory.",
+    )
 
     args = parser.parse_args()
 
@@ -313,6 +320,7 @@ if __name__ == "__main__":  # noqa C901
         args.target,
         operators_not_to_delegate=args.operators_not_to_delegate,
         neutron_converter_flavor=args.neutron_converter_flavor,
+        fetch_constants_to_sram=args.fetch_constants_to_sram,
     )
     partitioners = (
         [

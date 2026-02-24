@@ -31,6 +31,9 @@
 #ifdef ET_USE_THREADPOOL
 #include <cpuinfo.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#ifdef EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD
+#include <executorch/extension/threadpool/fb/threadpool_use_n_threads.h>
+#endif
 #endif
 
 #ifdef EXECUTORCH_ANDROID_PROFILING
@@ -58,14 +61,15 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     // Java wrapper currently only supports contiguous tensors.
 
     const auto scalarType = tensor.scalar_type();
-    int jdtype = scalar_type_to_java_dtype.at(scalarType);
     if (scalar_type_to_java_dtype.count(scalarType) == 0) {
       std::stringstream ss;
-      ss << "executorch::aten::Tensor scalar [java] type: " << jdtype
-         << " is not supported on java side";
+      ss << "executorch::aten::Tensor scalar type "
+         << static_cast<int>(scalarType) << " is not supported on java side";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+      return nullptr;
     }
+    int jdtype = scalar_type_to_java_dtype.at(scalarType);
 
     const auto& tensor_shape = tensor.sizes();
     std::vector<jlong> tensor_shape_vec;
@@ -131,6 +135,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
       ss << "Unknown Tensor jdtype: [" << jdtype << "]";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+      return nullptr;
     }
     ScalarType scalar_type = java_dtype_to_scalar_type.at(jdtype);
     const jlong dataCapacity = jni->GetDirectBufferCapacity(jbuffer.get());
@@ -139,6 +144,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
       ss << "Tensor buffer is not direct or has invalid capacity";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+      return nullptr;
     }
     const size_t elementSize = executorch::runtime::elementSize(scalar_type);
     const jlong expectedElements = static_cast<jlong>(numel);
@@ -153,6 +159,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
          << " (element size bytes: " << elementSize << ")";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+      return nullptr;
     }
     return from_blob(
         jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type);
@@ -242,6 +249,10 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
  private:
   friend HybridBase;
   std::unique_ptr<Module> module_;
+#if defined(ET_USE_THREADPOOL) && \
+    defined(EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD)
+  int num_threads_{0};
+#endif
 
  public:
   constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/Module;";
@@ -284,14 +295,18 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     // Based on testing, this is almost universally faster than using all
     // cores, as efficiency cores can be quite slow. In extreme cases, using
     // all cores can be 10x slower than using cores/2.
+    int thread_count =
+        numThreads != 0 ? numThreads : cpuinfo_get_processors_count() / 2;
+#ifdef EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD
+    num_threads_ = thread_count;
+#else
     auto threadpool = executorch::extension::threadpool::get_threadpool();
     if (threadpool) {
-      int thread_count =
-          numThreads != 0 ? numThreads : cpuinfo_get_processors_count() / 2;
       if (thread_count > 0) {
         threadpool->_unsafe_reset_threadpool(thread_count);
       }
     }
+#endif
 #endif
   }
 
@@ -372,6 +387,12 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         evalues.emplace_back(static_cast<bool>(toBoolMethod(jevalue)));
       }
     }
+
+#if defined(ET_USE_THREADPOOL) && \
+    defined(EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD)
+    ::executorch::extension::threadpool::UseNThreadsThreadPoolGuard
+        thread_pool_guard(num_threads_);
+#endif
 
 #ifdef EXECUTORCH_ANDROID_PROFILING
     auto start = std::chrono::high_resolution_clock::now();
@@ -503,10 +524,24 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getUsedBackends(
       facebook::jni::alias_ref<jstring> methodName) {
-    auto methodMeta = module_->method_meta(methodName->toStdString()).get();
+    auto method_name = methodName->toStdString();
+    auto methodMetaResult = module_->method_meta(method_name);
+    if (!methodMetaResult.ok()) {
+      std::stringstream ss;
+      ss << "Cannot get method meta for '" << method_name
+         << "' [Native Error: 0x" << std::hex << std::uppercase
+         << static_cast<uint32_t>(methodMetaResult.error()) << "]";
+      jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(methodMetaResult.error()), ss.str());
+      return {};
+    }
+    auto methodMeta = methodMetaResult.get();
     std::unordered_set<std::string> backends;
     for (auto i = 0; i < methodMeta.num_backends(); i++) {
-      backends.insert(methodMeta.get_backend_name(i).get());
+      auto backend_name_result = methodMeta.get_backend_name(i);
+      if (backend_name_result.ok()) {
+        backends.insert(backend_name_result.get());
+      }
     }
 
     facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =

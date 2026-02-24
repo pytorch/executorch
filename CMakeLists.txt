@@ -947,6 +947,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs openvino_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_CUDA)
+    string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/cuda")
+  endif()
+
   if(EXECUTORCH_BUILD_QNN)
     list(APPEND _dep_libs qnn_executorch_backend)
     string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/qualcomm")

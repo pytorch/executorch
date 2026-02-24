@@ -193,7 +193,9 @@ test_cases: dict[str, Callable[[], tuple[torch.nn.Module, tuple]]] = {
 def _make_calibration_samples(
     module: torch.nn.Module, example_inputs: tuple
 ) -> tuple[tuple[torch.Tensor, ...], ...]:
-    """Return one example input that triggers the if branch, and one that triggers the else branch."""
+    """Return one example input that triggers the if branch, and one that
+    triggers the else branch.
+    """
 
     if isinstance(module, CondTwoArgsOneOutput):
         # Predicate is sum(lhs-rhs) > 0
